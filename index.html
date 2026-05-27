@@ -66,7 +66,12 @@
   tbody tr:hover{background:#fafbf9;}
   tbody tr.inactive{opacity:.5;}
   .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
-  .name-cell{display:flex; flex-direction:column;}
+  .name-cell{display:flex; align-items:center; gap:10px;}
+  .name-cell .thumb{width:32px; height:32px; border-radius:8px; overflow:hidden; flex:none;
+        background:var(--green-soft); color:var(--green-d); display:grid; place-items:center;
+        font-size:14px; font-weight:600;}
+  .name-cell .thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .name-cell .ntext{display:flex; flex-direction:column; min-width:0;}
   .name-cell .nm{font-weight:500;}
   .name-cell .nick{font-size:12.5px; color:var(--muted);}
   .rowact{text-align:right; white-space:nowrap;}
@@ -78,7 +83,8 @@
   .vhead{padding:22px 24px; background:linear-gradient(180deg, #f6faf7 0%, #fff 100%); border-bottom:1px solid var(--line);
         display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
   .avatar{width:60px; height:60px; border-radius:14px; background:var(--green-soft); color:var(--green-d);
-        display:grid; place-items:center; font-size:24px; font-weight:600; flex:none;}
+        display:grid; place-items:center; font-size:24px; font-weight:600; flex:none; overflow:hidden;}
+  .avatar img{width:100%; height:100%; object-fit:cover; display:block;}
   .vh-main{flex:1; min-width:180px;}
   .vh-name{font-size:20px; font-weight:600; line-height:1.2;}
   .vh-sub{font-size:13.5px; color:var(--muted); margin-top:3px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
@@ -131,6 +137,17 @@
   .toggle .lbl{font-size:14px; font-weight:500;}
   .toggle .sub{font-size:12.5px; color:var(--muted); margin-top:2px;}
   .facehint{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted);}
+
+  /* photo picker ในฟอร์ม */
+  .photo-row{display:flex; align-items:center; gap:16px; padding:6px 0 4px;}
+  .photo-prev{width:80px; height:80px; border-radius:14px; overflow:hidden; flex:none;
+        background:var(--green-soft); color:var(--green-d); display:grid; place-items:center;
+        font-size:30px; font-weight:600; border:1px solid var(--line);}
+  .photo-prev img{width:100%; height:100%; object-fit:cover; display:block;}
+  .photo-act{display:flex; flex-direction:column; gap:8px;}
+  .photo-act .btn{font-size:13.5px; padding:8px 13px;}
+  .photo-act .hint{font-size:12px; color:var(--muted); margin-top:-2px;}
+  .photo-loading{opacity:.5; pointer-events:none;}
 
   .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); padding:13px 20px;
         border-radius:11px; font-size:14.5px; font-weight:500; z-index:99; box-shadow:0 6px 20px rgba(0,0,0,.15);
@@ -271,6 +288,19 @@
     </div>
     <div class="modal-b">
       <div class="section">
+        <h3>รูปพนักงาน</h3>
+        <div class="photo-row">
+          <div class="photo-prev" id="f_photo_prev"><span id="f_photo_letter">?</span></div>
+          <div class="photo-act">
+            <label class="btn btn-sec" for="f_photo_input" id="f_photo_pick">เลือกรูป / ถ่ายรูป</label>
+            <input id="f_photo_input" type="file" accept="image/*" capture="user" style="display:none">
+            <button type="button" class="btn btn-danger" id="f_photo_remove" style="display:none">ลบรูป</button>
+            <div class="hint">รูปจะถูกย่อ ก่อนอัปโหลด</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
         <h3>ข้อมูลพื้นฐาน</h3>
         <div class="grid">
           <div class="field"><label>รหัสพนักงาน<span class="req">*</span></label><input id="f_emp_id" type="text" inputmode="numeric" placeholder="เช่น 001"></div>
@@ -395,9 +425,12 @@ function renderTable(){
     const face = r.face_descriptor==='registered'
       ? '<span class="pill ok" style="font-size:11.5px; padding:3px 9px;">ลงทะเบียนแล้ว</span>'
       : '<span class="pill muted" style="font-size:11.5px; padding:3px 9px;">ยัง</span>';
+    const thumb = r.photo_url
+      ? `<div class="thumb"><img src="${esc(r.photo_url)}" alt=""></div>`
+      : `<div class="thumb">${esc(pickInitial(r.nickname || r.name))}</div>`;
     return `<tr class="${act?'':'inactive'}" data-view="${esc(r.emp_id)}">
       <td class="mono">${esc(r.emp_id)}</td>
-      <td><div class="name-cell"><span class="nm">${esc(r.name||'')}</span>${r.nickname?`<span class="nick">${esc(r.nickname)}</span>`:''}</div></td>
+      <td><div class="name-cell">${thumb}<div class="ntext"><span class="nm">${esc(r.name||'')}</span>${r.nickname?`<span class="nick">${esc(r.nickname)}</span>`:''}</div></div></td>
       <td>${esc(shiftName(r.default_shift))}</td>
       <td>${esc(branchName(r.branch_id))}</td>
       <td class="mono">${esc(r.phone||'—')}</td>
@@ -416,12 +449,72 @@ $('q').addEventListener('input', renderTable);
 const FIELDS = ['emp_id','start_date','name','nickname','default_shift','branch_id','phone',
                 'emergency_phone','emergency_name','bank_name','bank_account','id_card','address','line_user_id'];
 
+// state รูปในฟอร์ม
+let photoState = { url:'', newBase64:'' };   // url = ที่เก็บใน sheet, newBase64 = รูปที่เพิ่งเลือก (จะอัปตอน save)
+
+function setPhotoPreview(){
+  const prev = $('f_photo_prev');
+  const letter = $('f_photo_letter');
+  const remove = $('f_photo_remove');
+  const src = photoState.newBase64 || photoState.url;
+  if(src){
+    prev.innerHTML = '<img src="'+src+'" alt="">';
+    remove.style.display = '';
+  } else {
+    const nm = ($('f_name').value || $('f_nickname').value || '?').trim();
+    prev.innerHTML = '<span id="f_photo_letter">'+esc(nm.charAt(0).toUpperCase()||'?')+'</span>';
+    remove.style.display = 'none';
+  }
+}
+
+// ย่อรูปเป็น JPEG ขนาดไม่เกิน 480px ก่อนอัปโหลด เพื่อประหยัด bandwidth/quota imgbb
+function resizeToDataUrl(file, max=480){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const r = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width*r); c.height = Math.round(img.height*r);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+$('f_photo_input').addEventListener('change', async e=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  try{
+    const dataUrl = await resizeToDataUrl(file);
+    photoState.newBase64 = dataUrl;
+    setPhotoPreview();
+  }catch(err){ toast('err','อ่านรูปไม่สำเร็จ'); }
+  e.target.value = '';   // เผื่อเลือกไฟล์เดิมซ้ำ
+});
+$('f_photo_remove').onclick = ()=>{
+  photoState = { url:'', newBase64:'' };
+  setPhotoPreview();
+};
+// อัปเดต initial เมื่อพิมพ์ชื่อ/ชื่อเล่น (ถ้ายังไม่มีรูป)
+['f_name','f_nickname'].forEach(id => $(id).addEventListener('input', ()=>{
+  if(!photoState.newBase64 && !photoState.url) setPhotoPreview();
+}));
+
 function openNew(){
   editing = null; $('formTitle').textContent = 'เพิ่มพนักงาน';
   FIELDS.forEach(k => { const el = $('f_'+k); if(el) el.value = ''; });
   $('f_emp_id').readOnly = false;
   $('f_active').checked = true;
   $('faceHint').textContent = '';
+  photoState = { url:'', newBase64:'' };
+  setPhotoPreview();
   $('formOverlay').classList.add('show');
   setTimeout(()=>$('f_emp_id').focus(), 50);
 }
@@ -436,6 +529,8 @@ function openEdit(empId){
   $('faceHint').textContent = r.face_descriptor==='registered'
     ? '✓ ลงทะเบียนใบหน้าแล้ว (เปลี่ยนได้ผ่านแอปลงเวลา)'
     : '○ ยังไม่ลงทะเบียนใบหน้า ให้พนักงานลงทะเบียนผ่านแอปลงเวลา';
+  photoState = { url: r.photo_url || '', newBase64:'' };
+  setPhotoPreview();
   $('formOverlay').classList.add('show');
 }
 
@@ -448,7 +543,11 @@ function openView(empId){
   const face = r.face_descriptor === 'registered';
 
   // หัวการ์ด
-  $('v_avatar').textContent = pickInitial(r.nickname || r.name);
+  if(r.photo_url){
+    $('v_avatar').innerHTML = '<img src="' + esc(r.photo_url) + '" alt="">';
+  } else {
+    $('v_avatar').textContent = pickInitial(r.nickname || r.name);
+  }
   $('v_name').textContent = r.name || '—';
   const sub = [];
   if(r.nickname) sub.push('"' + r.nickname + '"');
@@ -540,6 +639,10 @@ $('saveBtn').onclick = async ()=>{
   if(!data.emp_id){ toast('err','ต้องระบุรหัสพนักงาน'); return; }
   if(!data.name){ toast('err','ต้องระบุชื่อ'); return; }
   if(data.id_card && !/^\d{13}$/.test(data.id_card)){ toast('err','เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก'); return; }
+
+  // รูป: ถ้ามีรูปใหม่ส่ง base64 ให้ backend อัป imgbb / ถ้าผู้ใช้ลบรูป ส่ง photo_url ว่างเพื่อเคลียร์
+  if(photoState.newBase64) data._photo_base64 = photoState.newBase64;
+  else if(!photoState.url) data.photo_url = '';
 
   $('saveBtn').innerHTML='<span class="spin"></span>';
   const r = await post({ action:'hr_save', password:pwd, data });
