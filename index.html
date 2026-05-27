@@ -62,7 +62,7 @@
   thead th{background:#fafbf9; text-align:left; font-weight:600; font-size:12.5px; color:var(--muted);
         letter-spacing:.4px; padding:11px 14px; border-bottom:1px solid var(--line); text-transform:uppercase;}
   tbody td{padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:middle;}
-  tbody tr{transition:background .12s;}
+  tbody tr{transition:background .12s; cursor:pointer;}
   tbody tr:hover{background:#fafbf9;}
   tbody tr.inactive{opacity:.5;}
   .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
@@ -73,6 +73,32 @@
   .icobtn{background:transparent; border:0; padding:6px 10px; border-radius:8px; color:var(--muted); font-size:13px; font-weight:500;}
   .icobtn:hover{background:#eef0ec; color:var(--txt);}
   .empty{padding:48px 20px; text-align:center; color:var(--muted); font-size:14px;}
+
+  /* View mode (อ่านอย่างเดียว) */
+  .vhead{padding:22px 24px; background:linear-gradient(180deg, #f6faf7 0%, #fff 100%); border-bottom:1px solid var(--line);
+        display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+  .avatar{width:60px; height:60px; border-radius:14px; background:var(--green-soft); color:var(--green-d);
+        display:grid; place-items:center; font-size:24px; font-weight:600; flex:none;}
+  .vh-main{flex:1; min-width:180px;}
+  .vh-name{font-size:20px; font-weight:600; line-height:1.2;}
+  .vh-sub{font-size:13.5px; color:var(--muted); margin-top:3px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .vh-sub .sep{color:#cfd3cc;}
+  .vh-pills{display:flex; gap:6px; flex-wrap:wrap;}
+
+  .vsec{padding:14px 24px;}
+  .vsec + .vsec{border-top:1px solid var(--line);}
+  .vsec h3{font-size:11.5px; color:var(--green-d); font-weight:600; letter-spacing:.6px;
+        text-transform:uppercase; margin-bottom:10px;}
+  .vgrid{display:grid; grid-template-columns:1fr 1fr; gap:11px 22px;}
+  .vgrid .span2{grid-column:span 2;}
+  @media (max-width:520px){ .vgrid{grid-template-columns:1fr;} .vgrid .span2{grid-column:auto;} }
+  .vitem{display:flex; flex-direction:column; gap:2px;}
+  .vlabel{font-size:11.5px; color:var(--muted); letter-spacing:.3px;}
+  .vvalue{font-size:14.5px; color:var(--txt); word-break:break-word;}
+  .vvalue.mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .vvalue.empty{color:#aab0a9; font-style:italic; font-size:13.5px;}
+  .vvalue a{color:var(--green-d); text-decoration:none;}
+  .vvalue a:hover{text-decoration:underline;}
 
   /* Modal */
   .overlay{position:fixed; inset:0; background:rgba(20,24,21,.55); backdrop-filter:blur(3px);
@@ -176,6 +202,66 @@
   </div>
 </div>
 
+<!-- Modal ดูรายละเอียด -->
+<div class="overlay" id="viewOverlay">
+  <div class="modal">
+    <div class="vhead">
+      <div class="avatar" id="v_avatar">?</div>
+      <div class="vh-main">
+        <div class="vh-name" id="v_name">—</div>
+        <div class="vh-sub" id="v_sub"></div>
+      </div>
+      <div class="vh-pills" id="v_pills"></div>
+      <button class="close" id="viewClose">×</button>
+    </div>
+
+    <div class="vsec">
+      <h3>ข้อมูลพื้นฐาน</h3>
+      <div class="vgrid">
+        <div class="vitem"><span class="vlabel">รหัสพนักงาน</span><span class="vvalue mono" id="v_emp_id">—</span></div>
+        <div class="vitem"><span class="vlabel">วันที่เริ่มงาน</span><span class="vvalue mono" id="v_start_date">—</span></div>
+        <div class="vitem span2"><span class="vlabel">ชื่อ-นามสกุล</span><span class="vvalue" id="v_fullname">—</span></div>
+        <div class="vitem"><span class="vlabel">ชื่อเล่น</span><span class="vvalue" id="v_nickname">—</span></div>
+        <div class="vitem"><span class="vlabel">อายุงาน</span><span class="vvalue" id="v_tenure">—</span></div>
+        <div class="vitem"><span class="vlabel">กะประจำ</span><span class="vvalue" id="v_shift">—</span></div>
+        <div class="vitem"><span class="vlabel">สาขา</span><span class="vvalue" id="v_branch">—</span></div>
+      </div>
+    </div>
+
+    <div class="vsec">
+      <h3>ติดต่อ</h3>
+      <div class="vgrid">
+        <div class="vitem"><span class="vlabel">เบอร์โทร</span><span class="vvalue mono" id="v_phone">—</span></div>
+        <div class="vitem"><span class="vlabel">LINE User ID</span><span class="vvalue mono" id="v_line">—</span></div>
+        <div class="vitem span2"><span class="vlabel">ที่อยู่</span><span class="vvalue" id="v_address">—</span></div>
+      </div>
+    </div>
+
+    <div class="vsec">
+      <h3>ติดต่อฉุกเฉิน</h3>
+      <div class="vgrid">
+        <div class="vitem"><span class="vlabel">ชื่อผู้ติดต่อ</span><span class="vvalue" id="v_em_name">—</span></div>
+        <div class="vitem"><span class="vlabel">เบอร์โทร</span><span class="vvalue mono" id="v_em_phone">—</span></div>
+      </div>
+    </div>
+
+    <div class="vsec">
+      <h3>การเงิน · ข้อมูลอ่อนไหว</h3>
+      <div class="vgrid">
+        <div class="vitem"><span class="vlabel">ธนาคาร</span><span class="vvalue" id="v_bank">—</span></div>
+        <div class="vitem"><span class="vlabel">เลขบัญชี</span><span class="vvalue mono" id="v_account">—</span></div>
+        <div class="vitem span2"><span class="vlabel">เลขบัตรประชาชน</span><span class="vvalue mono" id="v_idcard">—</span></div>
+      </div>
+    </div>
+
+    <div class="modal-f">
+      <button class="btn btn-danger" id="v_toggleBtn" style="margin-right:auto">ปิดการใช้งาน</button>
+      <button class="btn btn-sec" id="v_closeBtn">ปิด</button>
+      <button class="btn btn-pri" id="v_editBtn">แก้ไขข้อมูล</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal แก้ไข/เพิ่ม -->
 <div class="overlay" id="formOverlay">
   <div class="modal">
@@ -236,7 +322,6 @@
       </div>
     </div>
     <div class="modal-f">
-      <button class="btn btn-danger" id="deleteBtn" style="margin-right:auto; display:none">ปิดการใช้งาน</button>
       <button class="btn btn-sec" id="cancelBtn">ยกเลิก</button>
       <button class="btn btn-pri" id="saveBtn">บันทึก</button>
     </div>
@@ -310,7 +395,7 @@ function renderTable(){
     const face = r.face_descriptor==='registered'
       ? '<span class="pill ok" style="font-size:11.5px; padding:3px 9px;">ลงทะเบียนแล้ว</span>'
       : '<span class="pill muted" style="font-size:11.5px; padding:3px 9px;">ยัง</span>';
-    return `<tr class="${act?'':'inactive'}">
+    return `<tr class="${act?'':'inactive'}" data-view="${esc(r.emp_id)}">
       <td class="mono">${esc(r.emp_id)}</td>
       <td><div class="name-cell"><span class="nm">${esc(r.name||'')}</span>${r.nickname?`<span class="nick">${esc(r.nickname)}</span>`:''}</div></td>
       <td>${esc(shiftName(r.default_shift))}</td>
@@ -319,10 +404,10 @@ function renderTable(){
       <td class="mono">${esc(r.start_date||'—')}</td>
       <td>${face}</td>
       <td>${act?'<span class="pill ok">ทำงานอยู่</span>':'<span class="pill bad">ปิดใช้งาน</span>'}</td>
-      <td class="rowact"><button class="icobtn" data-edit="${esc(r.emp_id)}">แก้ไข ›</button></td>
+      <td class="rowact"><span class="icobtn">ดู ›</span></td>
     </tr>`;
   }).join('');
-  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(b.dataset.edit));
+  document.querySelectorAll('[data-view]').forEach(tr=>tr.onclick=()=>openView(tr.dataset.view));
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 $('q').addEventListener('input', renderTable);
@@ -337,7 +422,6 @@ function openNew(){
   $('f_emp_id').readOnly = false;
   $('f_active').checked = true;
   $('faceHint').textContent = '';
-  $('deleteBtn').style.display = 'none';
   $('formOverlay').classList.add('show');
   setTimeout(()=>$('f_emp_id').focus(), 50);
 }
@@ -352,10 +436,97 @@ function openEdit(empId){
   $('faceHint').textContent = r.face_descriptor==='registered'
     ? '✓ ลงทะเบียนใบหน้าแล้ว (เปลี่ยนได้ผ่านแอปลงเวลา)'
     : '○ ยังไม่ลงทะเบียนใบหน้า ให้พนักงานลงทะเบียนผ่านแอปลงเวลา';
-  $('deleteBtn').style.display = '';
-  $('deleteBtn').textContent = isActive(r.active) ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน';
   $('formOverlay').classList.add('show');
 }
+
+// ---------- view (อ่านอย่างเดียว) ----------
+function openView(empId){
+  const r = DATA.rows.find(x => String(x.emp_id) === String(empId));
+  if(!r) return;
+  editing = String(r.emp_id);
+  const act = isActive(r.active);
+  const face = r.face_descriptor === 'registered';
+
+  // หัวการ์ด
+  $('v_avatar').textContent = pickInitial(r.nickname || r.name);
+  $('v_name').textContent = r.name || '—';
+  const sub = [];
+  if(r.nickname) sub.push('"' + r.nickname + '"');
+  sub.push('รหัส ' + r.emp_id);
+  sub.push(shiftName(r.default_shift));
+  sub.push(branchName(r.branch_id));
+  $('v_sub').innerHTML = sub.map(s=>esc(s)).join(' <span class="sep">·</span> ');
+
+  const pills = [];
+  pills.push(act ? '<span class="pill ok">ทำงานอยู่</span>' : '<span class="pill bad">ปิดใช้งาน</span>');
+  pills.push(face ? '<span class="pill ok">มีใบหน้า</span>' : '<span class="pill muted">ยังไม่มีใบหน้า</span>');
+  $('v_pills').innerHTML = pills.join('');
+
+  // รายละเอียด
+  vSet('v_emp_id', r.emp_id);
+  vSet('v_start_date', r.start_date);
+  vSet('v_fullname', r.name);
+  vSet('v_nickname', r.nickname);
+  vSet('v_tenure', tenureText(r.start_date));
+  vSet('v_shift', shiftName(r.default_shift));
+  vSet('v_branch', branchName(r.branch_id));
+  vSetPhone('v_phone', r.phone);
+  vSet('v_line', r.line_user_id);
+  vSet('v_address', r.address);
+  vSet('v_em_name', r.emergency_name);
+  vSetPhone('v_em_phone', r.emergency_phone);
+  vSet('v_bank', r.bank_name);
+  vSet('v_account', r.bank_account);
+  vSet('v_idcard', r.id_card);
+
+  $('v_toggleBtn').textContent = act ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน';
+  $('viewOverlay').classList.add('show');
+}
+function vSet(id, val){
+  const el = $(id);
+  if(val == null || String(val).trim() === ''){ el.textContent = '—'; el.classList.add('empty'); }
+  else { el.textContent = String(val); el.classList.remove('empty'); }
+}
+function vSetPhone(id, val){
+  const el = $(id);
+  const s = String(val||'').trim();
+  if(!s){ el.textContent = '—'; el.classList.add('empty'); return; }
+  el.classList.remove('empty');
+  el.innerHTML = '<a href="tel:' + esc(s) + '">' + esc(s) + '</a>';
+}
+function pickInitial(s){
+  s = String(s||'').trim();
+  if(!s) return '?';
+  return s.charAt(0).toUpperCase();
+}
+function tenureText(startDate){
+  if(!startDate) return '';
+  const d = new Date(String(startDate));
+  if(isNaN(d.getTime())) return '';
+  const now = new Date();
+  let months = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+  if(now.getDate() < d.getDate()) months--;
+  if(months < 0) return '';
+  if(months < 1) return 'น้อยกว่า 1 เดือน';
+  const y = Math.floor(months / 12), m = months % 12;
+  return (y ? y + ' ปี ' : '') + (m ? m + ' เดือน' : (y ? '' : '0 เดือน'));
+}
+
+function closeView(){ $('viewOverlay').classList.remove('show'); }
+$('viewClose').onclick = closeView;
+$('v_closeBtn').onclick = closeView;
+$('viewOverlay').addEventListener('click', e=>{ if(e.target===$('viewOverlay')) closeView(); });
+$('v_editBtn').onclick = ()=>{ if(editing){ closeView(); openEdit(editing); } };
+$('v_toggleBtn').onclick = async ()=>{
+  if(!editing) return;
+  const r = DATA.rows.find(x=>String(x.emp_id)===editing);
+  const willActive = !isActive(r.active);
+  if(!confirm(willActive ? 'เปิดการใช้งานพนักงานคนนี้?' : 'ปิดการใช้งานพนักงานคนนี้?\n(ข้อมูลและประวัติเดิมยังอยู่ครบ)')) return;
+  $('v_toggleBtn').innerHTML='<span class="spin" style="border-color:rgba(225,31,38,.3); border-top-color:var(--red);"></span>';
+  const res = await post({ action:'hr_toggle', password:pwd, emp_id:editing });
+  if(res.ok){ toast('ok', res.active?'เปิดการใช้งานแล้ว':'ปิดการใช้งานแล้ว'); closeView(); await loadList(); }
+  else { toast('err', res.error||'ดำเนินการไม่สำเร็จ'); $('v_toggleBtn').textContent = willActive ? 'เปิดการใช้งาน' : 'ปิดการใช้งาน'; }
+};
 function closeForm(){ $('formOverlay').classList.remove('show'); }
 $('newBtn').onclick = openNew;
 $('formClose').onclick = closeForm;
@@ -377,16 +548,8 @@ $('saveBtn').onclick = async ()=>{
   else toast('err', r.error||'บันทึกไม่สำเร็จ');
 };
 
-$('deleteBtn').onclick = async ()=>{
-  if(!editing) return;
-  const r = DATA.rows.find(x=>String(x.emp_id)===editing);
-  const willActive = !isActive(r.active);
-  if(!confirm(willActive ? 'เปิดการใช้งานพนักงานคนนี้?' : 'ปิดการใช้งานพนักงานคนนี้?\n(ข้อมูลและประวัติเดิมยังอยู่ครบ)')) return;
-  $('deleteBtn').innerHTML='<span class="spin" style="border-color:rgba(225,31,38,.3); border-top-color:var(--red);"></span>';
-  const res = await post({ action:'hr_toggle', password:pwd, emp_id:editing });
-  if(res.ok){ toast('ok', res.active?'เปิดการใช้งานแล้ว':'ปิดการใช้งานแล้ว'); closeForm(); await loadList(); }
-  else toast('err', res.error||'ดำเนินการไม่สำเร็จ');
-};
+// auto login ถ้ามีรหัสค้าง session
+if(pwd) tryLogin(pwd);
 
 // auto login ถ้ามีรหัสค้าง session
 if(pwd) tryLogin(pwd);
