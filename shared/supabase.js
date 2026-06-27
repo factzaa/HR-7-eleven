@@ -1,0 +1,171 @@
+// ============================================================
+// 7-Eleven HR — ชั้นเชื่อมต่อ Supabase กลาง
+// โหลดหลัง: <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+//           <script src="../shared/config.js"></script>
+// ============================================================
+(function () {
+  const cfg = window.SUPABASE_CONFIG;
+  if (!cfg || cfg.url.includes('YOUR-PROJECT')) {
+    console.error('ยังไม่ได้ตั้งค่า shared/config.js');
+  }
+  const sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+
+  // ---------- ข้อมูลตั้งต้น (config สาธารณะ) ----------
+  async function loadConfig() {
+    const [branches, shifts, employees] = await Promise.all([
+      sb.from('branches').select('*'),
+      sb.from('shifts').select('*'),
+      sb.from('employees').select('emp_id,name,nickname,default_shift,branch_id,active,face_descriptor').eq('active', true),
+    ]);
+    return {
+      branches: branches.data || [],
+      shifts: shifts.data || [],
+      employees: employees.data || [],
+      threshold: 0.5,
+    };
+  }
+
+  // ---------- อัปโหลดรูป base64 -> Storage, คืน public URL ----------
+  async function uploadPhoto(bucket, path, dataUrl) {
+    const blob = await (await fetch(dataUrl)).blob();
+    const { error } = await sb.storage.from(bucket).upload(path, blob, {
+      upsert: true, contentType: blob.type || 'image/jpeg',
+    });
+    if (error) throw error;
+    return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  }
+
+  // ---------- ลงทะเบียนใบหน้า ----------
+  async function registerFace(empId, descriptor) {
+    const { error } = await sb.from('employees')
+      .update({ face_descriptor: descriptor }).eq('emp_id', empId);
+    if (error) throw error;
+    return true;
+  }
+
+  // ---------- เช็กอิน ----------
+  async function checkIn({ empId, shiftId, branchId, lat, lng, accuracy, photoDataUrl, faceMatch }) {
+    const today = bangkokDate();
+    let photo_url = null;
+    if (photoDataUrl) {
+      photo_url = await uploadPhoto('attendance-photos', `${empId}/${today}.jpg`, photoDataUrl);
+    }
+    // คำนวณสายผ่าน RPC
+    const nowIso = new Date().toISOString();
+    const { data: lateMin } = await sb.rpc('calc_late_min', { p_shift_id: shiftId, p_check_in: nowIso });
+
+    const { error } = await sb.from('attendance').upsert({
+      emp_id: empId, work_date: today, shift_id: shiftId, branch_id: branchId,
+      check_in: nowIso, late_min: lateMin || 0,
+      photo_url, gps_lat: lat, gps_lng: lng, gps_accuracy: accuracy,
+      face_match: faceMatch, status: 'OPEN',
+    }, { onConflict: 'emp_id,work_date' });
+    if (error) throw error;
+    return { late_min: lateMin || 0 };
+  }
+
+  // ---------- เช็กเอาท์ ----------
+  async function checkOut({ empId, shiftId }) {
+    const today = bangkokDate();
+    const { data: row } = await sb.from('attendance')
+      .select('check_in').eq('emp_id', empId).eq('work_date', today).maybeSingle();
+    const nowIso = new Date().toISOString();
+    let ot = 0;
+    if (row?.check_in) {
+      const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', shiftId).maybeSingle();
+      ot = computeOt(nowIso, sh?.end_time);
+    }
+    const { error } = await sb.from('attendance')
+      .update({ check_out: nowIso, ot_hours: ot, status: 'CLOSED' })
+      .eq('emp_id', empId).eq('work_date', today);
+    if (error) throw error;
+    return { ot_hours: ot };
+  }
+
+  // ---------- สถานะของฉัน (พนักงานตรวจวินัยตนเอง — ไม่แสดง OT) ----------
+  async function selfStatus(empId) {
+    const today = bangkokDate();
+    const cyc = cycleRange21();
+    const endEff = cyc.end < today ? cyc.end : today;
+    const [empR, attR, holR, lvR] = await Promise.all([
+      sb.from('employees').select('emp_id,name,nickname,default_shift,branch_id,weekly_off').eq('emp_id', empId).maybeSingle(),
+      sb.from('attendance').select('work_date,check_in,late_min,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
+      sb.from('leaves').select('start_date,end_date,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
+    ]);
+    if (empR.error) throw empR.error;
+    if (!empR.data) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const att = attR.data || [];
+    const todayRow = att.find(a => a.work_date === today);
+    const late = att.filter(a => a.late_min > 0);
+    const worked = new Set(att.filter(a => a.check_in).map(a => a.work_date));
+    const holidaySet = new Set((holR.data || []).map(h => h.date));
+    let leave_days = 0;
+    (lvR.data || []).forEach(l => {
+      const s = l.start_date < cyc.start ? cyc.start : l.start_date;
+      const e = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date);
+      if (s <= e) leave_days += _daysBetween(s, e);
+    });
+    const days_should = _workingDays(cyc.start, endEff, empR.data.weekly_off, holidaySet);
+    const days_worked = worked.size;
+    const late_count = late.length;
+    const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
+    const absent = Math.max(0, days_should - days_worked - leave_days);
+    const level = _disciplineLevel(late_count, absent);
+    return {
+      emp: empR.data, cycle: cyc,
+      today: {
+        checked_in: !!(todayRow && todayRow.check_in),
+        check_in_time: (todayRow && todayRow.check_in) ? _fmtTime(todayRow.check_in) : null,
+        late_min: todayRow ? (todayRow.late_min || 0) : 0,
+        status: todayRow ? todayRow.status : null,
+      },
+      stats: { days_worked, days_should, late_count, late_total, absent, leave_days },
+      level,
+    };
+  }
+
+  // ---------- helper ----------
+  function bangkokDate() {
+    const d = new Date(Date.now() + 7 * 3600 * 1000);
+    return d.toISOString().slice(0, 10);
+  }
+  const _iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  function cycleRange21() {
+    const t = new Date(bangkokDate() + 'T00:00:00');
+    const day = t.getDate();
+    const endRef = (day <= 20) ? new Date(t.getFullYear(), t.getMonth(), 20) : new Date(t.getFullYear(), t.getMonth() + 1, 20);
+    const end = new Date(endRef.getFullYear(), endRef.getMonth(), 20);
+    const start = new Date(endRef.getFullYear(), endRef.getMonth() - 1, 21);
+    return { start: _iso(start), end: _iso(end) };
+  }
+  function _daysBetween(a, b) { const s = new Date(a + 'T00:00:00'), e = new Date((b || a) + 'T00:00:00'); return Math.round((e - s) / 86400000) + 1; }
+  const _DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+  function _workingDays(start, end, weeklyOff, holidaySet) {
+    const off = new Set(); String(weeklyOff || '').split(',').map(x => x.trim().toLowerCase().slice(0, 3)).forEach(x => { if (x in _DOW) off.add(_DOW[x]); });
+    let n = 0; const d = new Date(start + 'T00:00:00'), e = new Date(end + 'T00:00:00');
+    for (; d <= e; d.setDate(d.getDate() + 1)) { if (off.has(d.getDay())) continue; if (holidaySet.has(_iso(d))) continue; n++; }
+    return n;
+  }
+  function _fmtTime(ts) { try { return new Date(ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }); } catch (e) { return ''; } }
+  function _disciplineLevel(lateCount, absent) {
+    if (lateCount >= 10 || absent >= 3) return { level: 4, name: 'ใบเตือนระดับ 2', color: '#b91c1c', message: '⚠️ เข้าข่ายใบเตือนระดับสูง กรุณาปรับปรุงการมาทำงานโดยด่วน' };
+    if (lateCount >= 7  || absent >= 2) return { level: 3, name: 'ใบเตือนระดับ 1', color: '#ea580c', message: '⚠️ คุณเข้าข่ายได้รับใบเตือน โปรดระวังการมาสาย/ขาดงาน' };
+    if (lateCount >= 5  || absent >= 1) return { level: 2, name: 'ตักเตือนลายลักษณ์อักษร', color: '#d97706', message: 'โปรดระวัง หากสะสมเพิ่มอาจเข้าข่ายใบเตือน' };
+    if (lateCount >= 3)                 return { level: 1, name: 'ตักเตือนด้วยวาจา', color: '#ca8a04', message: 'เริ่มมาสายบ่อย ควรปรับปรุงให้ตรงเวลา' };
+    return { level: 0, name: 'ดีเยี่ยม', color: '#16a34a', message: 'รักษาวินัยได้ดีมาก ขอให้รักษามาตรฐานนี้ไว้ 👍' };
+  }
+  function computeOt(checkOutIso, endTime) {
+    if (!endTime) return 0;
+    const out = new Date(checkOutIso);
+    const [h, m] = endTime.split(':').map(Number);
+    const endLocal = new Date(out);
+    endLocal.setHours(h, m, 0, 0);
+    let diff = (out - endLocal) / 3600000;       // ชั่วโมง
+    if (diff < 0) diff = 0;
+    return Math.round(diff * 100) / 100;
+  }
+
+  // export
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus };
+})();
