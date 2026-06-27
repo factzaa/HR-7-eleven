@@ -107,6 +107,13 @@
   button.out .spin, .sheet .spin{border-color:rgba(0,112,60,.3); border-top-color:var(--green);}
   @keyframes sp{to{transform:rotate(360deg)}}
 </style>
+<link rel="manifest" href="../manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="HR 7-Eleven">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 </head>
 <body>
 <div class="app">
@@ -458,6 +465,9 @@ function renderSelf(s){
      <div style="font-size:13px;color:var(--txt);margin-top:6px">${escH(lv.message)}</div>
    </div>`;
 }
+</script>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js').catch(function(){});});}
 </script>
 </body>
 </html>

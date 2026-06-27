@@ -23,6 +23,13 @@
   .foot{margin-top:18px;font-size:12px;color:#9ca3af}
   .logo{width:120px;height:auto;margin:0 auto 18px;display:block;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
 </style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="HR 7-Eleven">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 </head>
 <body>
   <div class="card">
@@ -33,5 +40,8 @@
     <a class="btn hr" href="./hr/"><span class="ico">🗂️</span>ฝ่าย HR — จัดการ</a>
     <div class="foot">กล้องและ GPS ทำงานบน HTTPS เท่านั้น</div>
   </div>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
+</script>
 </body>
 </html>
