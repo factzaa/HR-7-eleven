@@ -76,6 +76,14 @@
         case 'hr_holidays_list':  return await hrHolidaysList();
         case 'hr_holidays_save':  return await hrHolidaysSave(p.data);
         case 'hr_holidays_delete':return await hrHolidaysDelete(p.date);
+        case 'hr_branch_list':    return await hrBranchList();
+        case 'hr_branch_save':    return await hrBranchSave(p.data);
+        case 'hr_branch_delete':  return await hrBranchDelete(p.branch_id);
+        case 'hr_sched_week':     return await hrSchedWeek(p.start, p.end);
+        case 'hr_sched_save':     return await hrSchedSave(p.data);
+        case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date);
+        case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start);
+        case 'hr_coverage':       return await hrCoverage(p.filter);
         default: return { ok: false, error: 'unknown action: ' + p.action };
       }
     } catch (e) {
@@ -189,34 +197,54 @@
   // ---------- REPORT ----------
   async function hrReport(f) {
     let q = sb().from('attendance')
-      .select('*, employees(name,photo_url), shifts(name), branches(name)')
+      .select('*, employees(name,photo_url,branch_id), shifts(name), branches(name)')
       .gte('work_date', f.start).lte('work_date', f.end)
       .order('work_date', { ascending: false });
     if (f.emp_id) q = q.eq('emp_id', f.emp_id);
     if (f.branch_id) q = q.eq('branch_id', f.branch_id);
     if (f.shift_id) q = q.eq('shift_id', f.shift_id);
-    const { data, error } = await q;
+    const [{ data, error }, brR] = await Promise.all([
+      q,
+      sb().from('branches').select('branch_id,name'),
+    ]);
     if (error) throw error;
+    const brName = {};
+    (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
 
-    let rows = (data || []).map(r => ({
-      work_date: r.work_date, emp_id: r.emp_id,
-      emp_name: (r.employees && r.employees.name) || r.emp_id,
-      emp_photo: (r.employees && r.employees.photo_url) || '',
-      shift_name: (r.shifts && r.shifts.name) || r.shift_id || '',
-      branch_name: (r.branches && r.branches.name) || r.branch_id || '',
-      check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
-      late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,
-      photo_url: r.photo_url || '', gps_lat: r.gps_lat, gps_lng: r.gps_lng, status: r.status,
-    }));
+    let rows = (data || []).map(r => {
+      const home = (r.employees && r.employees.branch_id) || null;
+      const is_cover = !!(r.branch_id && home && r.branch_id !== home && r.check_in);
+      return {
+        work_date: r.work_date, emp_id: r.emp_id,
+        emp_name: (r.employees && r.employees.name) || r.emp_id,
+        emp_photo: (r.employees && r.employees.photo_url) || '',
+        shift_name: (r.shifts && r.shifts.name) || r.shift_id || '',
+        branch_id: r.branch_id || '',
+        branch_name: (r.branches && r.branches.name) || r.branch_id || '',
+        home_branch: brName[home] || home || '',
+        is_cover,
+        check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
+        late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,
+        photo_url: r.photo_url || '', gps_lat: r.gps_lat, gps_lng: r.gps_lng, status: r.status,
+      };
+    });
     if (f.only_late) rows = rows.filter(r => r.late_min > 0);
     if (f.only_ot) rows = rows.filter(r => r.ot_hours > 0);
+    if (f.only_cover) rows = rows.filter(r => r.is_cover);
 
     const map = {};
     rows.forEach(r => {
-      const m = map[r.emp_id] || (map[r.emp_id] = { emp_id: r.emp_id, emp_name: r.emp_name, photo_url: r.emp_photo, days: 0, late_count: 0, late_total: 0, ot: 0 });
-      m.days++; if (r.late_min > 0) { m.late_count++; m.late_total += r.late_min; } m.ot += Number(r.ot_hours) || 0;
+      const m = map[r.emp_id] || (map[r.emp_id] = { emp_id: r.emp_id, emp_name: r.emp_name, photo_url: r.emp_photo, days: 0, days_home: 0, days_cover: 0, late_count: 0, late_total: 0, ot: 0, cover_by: {} });
+      m.days++;
+      if (r.is_cover) { m.days_cover++; m.cover_by[r.branch_name] = (m.cover_by[r.branch_name] || 0) + 1; }
+      else m.days_home++;
+      if (r.late_min > 0) { m.late_count++; m.late_total += r.late_min; }
+      m.ot += Number(r.ot_hours) || 0;
     });
-    const summary = Object.values(map).map(m => ({ ...m, ot: Math.round(m.ot * 100) / 100 }));
+    const summary = Object.values(map).map(m => ({
+      ...m, ot: Math.round(m.ot * 100) / 100,
+      cover_detail: Object.keys(m.cover_by).map(k => k + ' ' + m.cover_by[k] + ' วัน').join(' · '),
+    }));
     return { ok: true, rows, summary };
   }
 
@@ -225,38 +253,57 @@
     const cyc = cycleRange(which === 'previous' ? 'previous' : 'current');
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
-    const [empsR, attR, holR, lvR] = await Promise.all([
+    const [empsR, attR, holR, lvR, schR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date').eq('active', true),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
+      sb().from('schedules').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
     ]);
     if (empsR.error) throw empsR.error;
     const holidaySet = new Set((holR.data || []).map(h => h.date));
     const att = attR.data || [], leaves = lvR.data || [];
+    // ตารางเวรต่อพนักงาน (เซ็ตของวันที่ถูกจัดเวร)
+    const schByEmp = {};
+    (schR.data || []).forEach(s => { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = new Set())).add(s.work_date); });
 
     const employees = (empsR.data || []).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id);
-      const worked = new Set(myAtt.filter(a => a.check_in).map(a => a.work_date));
+      const workedSet = new Set(myAtt.filter(a => a.check_in).map(a => a.work_date));
       const late = myAtt.filter(a => a.late_min > 0);
       const late_count = late.length;
       const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
       const ot_hours = Math.round(myAtt.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
-      // วันลาที่อนุมัติในรอบ
-      let leaveDays = 0;
-      leaves.filter(l => l.emp_id === e.emp_id).forEach(l => {
-        const s = l.start_date < cyc.start ? cyc.start : l.start_date;
-        const en = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date);
-        if (s <= en) leaveDays += daysBetween(s, en);
-      });
-      const days_should = workingDays(cyc.start, endEff, e.weekly_off, holidaySet);
-      const days_worked = worked.size;
-      const absent = Math.max(0, days_should - days_worked - leaveDays);
+      const myLeaves = leaves.filter(l => l.emp_id === e.emp_id);
+      const onLeave = (dateStr) => myLeaves.some(l => dateStr >= l.start_date && dateStr <= (l.end_date || l.start_date));
+
+      const days_worked = workedSet.size;
+      let days_should, absent, basis;
+      const mySched = schByEmp[e.emp_id];
+      if (mySched && mySched.size > 0) {
+        // อิงตารางเวรจริง: ขาด = วันที่ถูกจัดเวรแต่ไม่มา และไม่ได้ลา
+        basis = 'roster';
+        days_should = mySched.size;
+        let ab = 0;
+        mySched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) ab++; });
+        absent = ab;
+      } else {
+        // ไม่มีตารางเวร → ใช้ weekly_off แบบเดิม
+        basis = 'pattern';
+        let leaveDays = 0;
+        myLeaves.forEach(l => {
+          const s = l.start_date < cyc.start ? cyc.start : l.start_date;
+          const en = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date);
+          if (s <= en) leaveDays += daysBetween(s, en);
+        });
+        days_should = workingDays(cyc.start, endEff, e.weekly_off, holidaySet);
+        absent = Math.max(0, days_should - days_worked - leaveDays);
+      }
       const lv = disciplineLevel(late_count, absent);
       return {
         emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '',
         late_count, late_total, ot_hours, absent,
-        days_should, days_worked,
+        days_should, days_worked, basis,
         level: lv.level, level_name: lv.level_name, level_color: lv.level_color,
       };
     }).sort((a, b) => b.level - a.level || b.late_total - a.late_total);
@@ -339,6 +386,132 @@
     const { error } = await sb().from('holidays').delete().eq('date', date);
     if (error) throw error;
     return { ok: true };
+  }
+
+  // ---------- BRANCHES (จัดการสาขา) ----------
+  async function hrBranchList() {
+    const { data, error } = await sb().from('branches').select('*').order('branch_id');
+    if (error) throw error;
+    // นับพนักงานประจำแต่ละสาขา
+    const { data: emps } = await sb().from('employees').select('branch_id').eq('active', true);
+    const cnt = {};
+    (emps || []).forEach(e => { if (e.branch_id) cnt[e.branch_id] = (cnt[e.branch_id] || 0) + 1; });
+    const rows = (data || []).map(b => ({ ...b, emp_count: cnt[b.branch_id] || 0 }));
+    return { ok: true, rows };
+  }
+  async function hrBranchSave(d) {
+    if (!d.branch_id || !d.name) return { ok: false, error: 'ต้องมีรหัสสาขาและชื่อ' };
+    const lat = parseFloat(d.lat), lng = parseFloat(d.lng), radius = parseInt(d.radius_m);
+    if (!isFinite(lat) || !isFinite(lng)) return { ok: false, error: 'พิกัด lat/lng ไม่ถูกต้อง' };
+    const row = {
+      branch_id: String(d.branch_id).trim(), name: d.name.trim(),
+      lat, lng, radius_m: isFinite(radius) && radius > 0 ? radius : 80,
+    };
+    const { data: existing } = await sb().from('branches').select('branch_id').eq('branch_id', row.branch_id).maybeSingle();
+    const action = existing ? 'updated' : 'created';
+    const { error } = await sb().from('branches').upsert(row, { onConflict: 'branch_id' });
+    if (error) throw error;
+    return { ok: true, action };
+  }
+  async function hrBranchDelete(branchId) {
+    // กันลบสาขาที่ยังมีพนักงานประจำอยู่
+    const { count: empCount } = await sb().from('employees').select('emp_id', { count: 'exact', head: true }).eq('branch_id', branchId);
+    if (empCount && empCount > 0) return { ok: false, error: 'ลบไม่ได้: ยังมีพนักงานประจำ ' + empCount + ' คนที่สาขานี้ (ย้ายสาขาพนักงานก่อน)' };
+    const { count: attCount } = await sb().from('attendance').select('id', { count: 'exact', head: true }).eq('branch_id', branchId);
+    if (attCount && attCount > 0) return { ok: false, error: 'ลบไม่ได้: มีประวัติการลงเวลา ' + attCount + ' รายการที่สาขานี้' };
+    const { error } = await sb().from('branches').delete().eq('branch_id', branchId);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- SCHEDULES (ตารางเวรรายสัปดาห์) ----------
+  async function hrSchedWeek(start, end) {
+    const [empsR, schR, brR, shR] = await Promise.all([
+      sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id').eq('active', true).order('emp_id'),
+      sb().from('schedules').select('*').gte('work_date', start).lte('work_date', end),
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('shifts').select('shift_id,name').order('start_time'),
+    ]);
+    if (empsR.error) throw empsR.error;
+    if (schR.error) throw schR.error;
+    // index ตารางเวร: key = emp_id|work_date
+    const cells = {};
+    (schR.data || []).forEach(s => { cells[s.emp_id + '|' + s.work_date] = s; });
+    return {
+      ok: true,
+      employees: empsR.data || [],
+      schedules: cells,
+      branches: brR.data || [],
+      shifts: shR.data || [],
+    };
+  }
+  async function hrSchedSave(d) {
+    if (!d.emp_id || !d.work_date) return { ok: false, error: 'ต้องระบุพนักงานและวันที่' };
+    // หาสาขาประจำ เพื่อ auto-set is_cover เมื่อสาขาในตาราง ≠ สาขาประจำ
+    const { data: emp } = await sb().from('employees').select('branch_id').eq('emp_id', d.emp_id).maybeSingle();
+    const home = emp ? emp.branch_id : null;
+    const branch_id = d.branch_id || home || null;
+    const is_cover = !!(branch_id && home && branch_id !== home);
+    const row = {
+      emp_id: d.emp_id, work_date: d.work_date,
+      shift_id: d.shift_id || null, branch_id,
+      is_cover, note: d.note || null,
+    };
+    const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date' });
+    if (error) throw error;
+    return { ok: true, is_cover };
+  }
+  async function hrSchedDelete(empId, workDate) {
+    const { error } = await sb().from('schedules').delete().eq('emp_id', empId).eq('work_date', workDate);
+    if (error) throw error;
+    return { ok: true };
+  }
+  // คัดลอกตารางทั้งสัปดาห์ (7 วันจาก from_start) ไปยังสัปดาห์ใหม่ (to_start)
+  async function hrSchedCopy(fromStart, toStart) {
+    const fromEnd = addDays(fromStart, 6);
+    const { data, error } = await sb().from('schedules').select('*').gte('work_date', fromStart).lte('work_date', fromEnd);
+    if (error) throw error;
+    const offset = daysBetween(fromStart, toStart) - 1; // จำนวนวันเลื่อน
+    const rows = (data || []).map(s => ({
+      emp_id: s.emp_id, work_date: addDays(s.work_date, offset),
+      shift_id: s.shift_id, branch_id: s.branch_id, is_cover: s.is_cover, note: s.note,
+    }));
+    if (!rows.length) return { ok: true, copied: 0 };
+    const { error: e2 } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date' });
+    if (e2) throw e2;
+    return { ok: true, copied: rows.length };
+  }
+
+  // ---------- COVERAGE (รายงานการไปทำแทนสาขา) ----------
+  // ใช้ attendance จริง: สาขาที่เช็กอิน ≠ สาขาประจำ = ไปแทน
+  async function hrCoverage(f) {
+    f = f || {};
+    const start = f.start, end = f.end;
+    const [attR, empsR, brR, schR] = await Promise.all([
+      sb().from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in,late_min').gte('work_date', start).lte('work_date', end).not('check_in', 'is', null),
+      sb().from('employees').select('emp_id,name,branch_id'),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('schedules').select('emp_id,work_date,note,branch_id').gte('work_date', start).lte('work_date', end),
+    ]);
+    if (attR.error) throw attR.error;
+    const home = {}, empName = {}, brName = {};
+    (empsR.data || []).forEach(e => { home[e.emp_id] = e.branch_id; empName[e.emp_id] = e.name; });
+    (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const schNote = {};
+    (schR.data || []).forEach(s => { schNote[s.emp_id + '|' + s.work_date] = s.note; });
+
+    const rows = (attR.data || [])
+      .filter(a => a.branch_id && home[a.emp_id] && a.branch_id !== home[a.emp_id])
+      .map(a => ({
+        work_date: a.work_date, emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id,
+        from_branch: brName[home[a.emp_id]] || home[a.emp_id] || '—',
+        to_branch: brName[a.branch_id] || a.branch_id,
+        shift_id: a.shift_id || '', late_min: a.late_min || 0,
+        note: schNote[a.emp_id + '|' + a.work_date] || '',
+        check_in: fmtTime(a.check_in),
+      }))
+      .sort((x, y) => (y.work_date < x.work_date ? -1 : 1));
+    return { ok: true, rows };
   }
 
   window.HRAPI = { dispatch };
