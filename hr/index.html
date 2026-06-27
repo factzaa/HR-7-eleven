@@ -228,6 +228,13 @@
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
 <script src="../shared/hr-api.js"></script>
+<link rel="manifest" href="../manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="HR 7-Eleven">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 </head>
 <body>
 <div class="stripe"><i class="g"></i><i class="o"></i><i class="r"></i></div>
@@ -248,6 +255,8 @@
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
+  <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
+  <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
 </div>
 
 <div class="login" id="loginView">
@@ -291,11 +300,12 @@
       <div class="field-mini"><label>พนักงาน</label><select id="r_emp"></select></div>
       <div class="field-mini"><label>สาขา</label><select id="r_branch"></select></div>
       <div class="field-mini"><label>กะ</label><select id="r_shift"></select></div>
-      <div class="field-mini"><label>มุมมอง</label><select id="r_mode"><option value="detail">รายละเอียด</option><option value="summary">สรุปต่อคน</option></select></div>
+      <div class="field-mini"><label>มุมมอง</label><select id="r_mode"><option value="detail">รายละเอียด</option><option value="summary">สรุปต่อคน</option><option value="coverage">การไปทำแทนสาขา</option></select></div>
     </div>
     <div style="display:flex; gap:10px; margin-top:11px; align-items:center; flex-wrap:wrap">
       <label class="check"><input type="checkbox" id="r_late">เฉพาะที่สาย</label>
       <label class="check"><input type="checkbox" id="r_ot">เฉพาะที่มี OT</label>
+      <label class="check"><input type="checkbox" id="r_cover">เฉพาะวันไปแทน</label>
       <span class="count" id="r_count" style="flex:1; text-align:right">—</span>
       <button class="btn btn-sec" id="r_export">⬇ Export CSV</button>
       <button class="btn btn-pri" id="r_apply">ค้นหา</button>
@@ -333,6 +343,36 @@
       <div id="hd_body"></div>
     </div>
   </div>
+</div>
+
+<!-- Schedule (ตารางงานรายสัปดาห์) -->
+<div id="view_schedule" class="container" style="display:none">
+  <div class="filterbar">
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+      <button class="btn btn-sec btn-sm" id="sc_prev">◀ ก่อนหน้า</button>
+      <b id="sc_weeklabel" style="min-width:190px; text-align:center">—</b>
+      <button class="btn btn-sec btn-sm" id="sc_next">ถัดไป ▶</button>
+      <button class="btn btn-sec btn-sm" id="sc_thisweek">สัปดาห์นี้</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-sec btn-sm" id="sc_copy">⧉ คัดลอกสัปดาห์ก่อนมาวาง</button>
+    </div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:8px">คลิกช่องเพื่อกำหนดกะ + สาขา · <span style="color:#ea580c; font-weight:600">ช่องสีส้ม = ไปแทนสาขาอื่น</span></div>
+  </div>
+  <div class="card"><div class="tablewrap"><table id="scTable" style="min-width:760px">
+    <thead id="scHead"></thead><tbody id="scBody"></tbody>
+  </table></div><div class="empty" id="scEmpty" style="display:none">ยังไม่มีพนักงาน</div></div>
+</div>
+
+<!-- Branches (จัดการสาขา) -->
+<div id="view_branches" class="container" style="display:none">
+  <div class="toolbar">
+    <h3 style="flex:1; font-size:15px; font-weight:600">จัดการสาขา</h3>
+    <button class="btn btn-pri" id="br_new">+ เพิ่มสาขา</button>
+  </div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>รหัส</th><th>ชื่อสาขา</th><th>พิกัด (lat, lng)</th><th>รัศมี</th><th>พนักงานประจำ</th><th></th></tr></thead>
+    <tbody id="brRows"></tbody>
+  </table></div><div class="empty" id="brEmpty" style="display:none">ยังไม่มีสาขา</div></div>
 </div>
 
 </div>
@@ -833,13 +873,20 @@ function initReportFilters(){
   if(!$('r_start').value) $('r_start').value = c.start;
   if(!$('r_end').value) $('r_end').value = c.end;
 }
+let COVER = null;
 async function loadReport(){
   initReportFilters();
   $('r_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  const mode = $('r_mode').value;
+  if(mode==='coverage'){
+    const r = await post({ action:'hr_coverage', password:pwd, filter:{ start:$('r_start').value, end:$('r_end').value } });
+    if(!r.ok){ $('r_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+    COVER = r; renderCoverage(); return;
+  }
   const filter = {
     start: $('r_start').value, end: $('r_end').value,
     emp_id: $('r_emp').value, branch_id: $('r_branch').value, shift_id: $('r_shift').value,
-    only_late: $('r_late').checked, only_ot: $('r_ot').checked
+    only_late: $('r_late').checked, only_ot: $('r_ot').checked, only_cover: $('r_cover').checked
   };
   const r = await post({ action:'hr_report', password:pwd, filter });
   if(!r.ok){ $('r_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
@@ -849,21 +896,22 @@ async function loadReport(){
 function renderReport(){
   const mode = $('r_mode').value;
   if(mode==='detail') renderReportDetail();
+  else if(mode==='coverage') renderCoverage();
   else renderReportSummary();
 }
 function renderReportDetail(){
-  if(!REPORT.rows.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; return; }
+  if(!REPORT.rows.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; $('r_count').textContent='0 รายการ'; return; }
   $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr>
       <th>วันที่</th><th>พนักงาน</th><th>กะ</th><th>สาขา</th>
       <th>เข้า</th><th>ออก</th><th>สาย</th><th>OT</th><th>รูป</th><th>GPS</th><th>สถานะ</th>
     </tr></thead>
     <tbody>${REPORT.rows.map(r=>`
-      <tr>
+      <tr${r.is_cover?' style="background:#fff7ed"':''}>
         <td class="mono">${esc(r.work_date)}</td>
         <td><div class="ntext"><span class="nm">${esc(r.emp_name)}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
         <td>${esc(r.shift_name)}</td>
-        <td>${esc(r.branch_name)}</td>
+        <td>${esc(r.branch_name)}${r.is_cover?` <span class="pill" style="background:#ffedd5;color:#c2410c">ไปแทน · ประจำ ${esc(r.home_branch)}</span>`:''}</td>
         <td class="mono">${esc(r.check_in||'—')}</td>
         <td class="mono">${esc(r.check_out||'—')}</td>
         <td class="mono">${r.late_min>0?'<span style="color:var(--red)">'+r.late_min+'</span>':'—'}</td>
@@ -875,26 +923,47 @@ function renderReportDetail(){
   $('r_count').textContent = REPORT.rows.length + ' รายการ';
 }
 function renderReportSummary(){
-  if(!REPORT.summary.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; return; }
+  if(!REPORT.summary.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; $('r_count').textContent='0 คน'; return; }
   $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>พนักงาน</th><th>มาทำงาน</th><th>สาย (ครั้ง)</th><th>สาย (นาที)</th><th>OT (ชม.)</th></tr></thead>
+    <thead><tr><th>พนักงาน</th><th>มาทำงาน</th><th>สาขาประจำ</th><th>ไปแทน</th><th>รายละเอียดไปแทน</th><th>สาย (ครั้ง)</th><th>สาย (นาที)</th><th>OT (ชม.)</th></tr></thead>
     <tbody>${REPORT.summary.sort((a,b)=>b.late_total-a.late_total).map(e=>`
       <tr>
         <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
         <td class="mono">${e.days} วัน</td>
+        <td class="mono">${e.days_home||0}</td>
+        <td class="mono">${e.days_cover>0?'<span style="color:#c2410c;font-weight:600">'+e.days_cover+'</span>':'0'}</td>
+        <td style="font-size:12.5px;color:var(--muted)">${esc(e.cover_detail||'—')}</td>
         <td class="mono">${e.late_count>0?'<span style="color:var(--red)">'+e.late_count+'</span>':'0'}</td>
         <td class="mono">${e.late_total}</td>
         <td class="mono">${e.ot}</td>
       </tr>`).join('')}</tbody></table></div></div>`;
   $('r_count').textContent = REPORT.summary.length + ' คน';
 }
+function renderCoverage(){
+  const rows = (COVER&&COVER.rows)||[];
+  if(!rows.length){ $('r_body').innerHTML='<div class="empty">ไม่มีการไปทำแทนสาขาในช่วงนี้</div>'; $('r_count').textContent='0 รายการ'; return; }
+  $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>วันที่</th><th>พนักงาน</th><th>จากสาขา (ประจำ)</th><th>ไปทำที่</th><th>กะ</th><th>เข้า</th><th>สาย</th><th>เหตุผล</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td class="mono">${esc(r.work_date)}</td>
+      <td><div class="ntext"><span class="nm">${esc(r.emp_name)}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
+      <td>${esc(r.from_branch)}</td>
+      <td><b style="color:#ea580c">${esc(r.to_branch)}</b></td>
+      <td>${esc(shiftName(r.shift_id))}</td>
+      <td class="mono">${esc(r.check_in||'—')}</td>
+      <td class="mono">${r.late_min>0?'<span style="color:var(--red)">'+r.late_min+'</span>':'—'}</td>
+      <td>${esc(r.note||'—')}</td>
+    </tr>`).join('')}</tbody></table></div></div>`;
+  $('r_count').textContent = rows.length + ' รายการ';
+}
 $('r_apply').onclick = loadReport;
-$('r_mode').addEventListener('change', renderReport);
+$('r_mode').addEventListener('change', loadReport);
+$('r_cover').addEventListener('change', loadReport);
 $('r_export').onclick = ()=>{
   const mode = $('r_mode').value;
-  const data = mode==='detail' ? REPORT.rows : REPORT.summary;
+  const data = mode==='detail' ? REPORT.rows : mode==='coverage' ? ((COVER&&COVER.rows)||[]) : REPORT.summary;
   if(!data.length){ toast('err','ไม่มีข้อมูลให้ export'); return; }
-  const keys = Object.keys(data[0]);
+  const keys = Object.keys(data[0]).filter(k=>typeof data[0][k]!=='object');
   const csv = [keys.join(',')].concat(data.map(r=>keys.map(k=>{
     let v = r[k]; if(v==null) v=''; v=String(v).replace(/"/g,'""');
     return /[,"\n]/.test(v) ? '"'+v+'"' : v;
@@ -1108,8 +1177,226 @@ $('hdSave').onclick = async ()=>{
   else toast('err', r.error||'บันทึกไม่สำเร็จ');
 };
 
+// ============================================================
+// ตารางงาน (Schedule) + จัดการสาขา (Branches)  — เพิ่มภายหลัง
+// ============================================================
+const TH_MON_S = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TH_DOW_S = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+function isoLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDaysStr(s,n){ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()+n); return isoLocal(d); }
+function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7; d.setDate(d.getDate()-wd); return isoLocal(d); }
+function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
+
+// ---------- override showTab รองรับแท็บใหม่ ----------
+const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches'];
+showTab = function(name){
+  ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
+  if(name==='dashboard') loadDashboard();
+  else if(name==='employees') renderEmployees();
+  else if(name==='report') loadReport();
+  else if(name==='discipline') loadDiscipline();
+  else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
+  else if(name==='schedule') loadSchedule();
+  else if(name==='branches') loadBranches();
+};
+ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
+
+// ========== จัดการสาขา ==========
+let BR = null, brEditing = null;
+async function loadBranches(){
+  $('brRows').innerHTML=''; $('brEmpty').style.display='none';
+  const r = await post({ action:'hr_branch_list', password:pwd });
+  if(!r.ok){ $('brEmpty').style.display='block'; $('brEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
+  BR = r;
+  if(!r.rows.length){ $('brEmpty').style.display='block'; $('brEmpty').textContent='ยังไม่มีสาขา'; return; }
+  $('brRows').innerHTML = r.rows.map(b=>`
+    <tr>
+      <td class="mono">${esc(b.branch_id)}</td>
+      <td>${esc(b.name)}</td>
+      <td class="mono" style="font-size:12.5px"><a href="https://maps.google.com/?q=${b.lat},${b.lng}" target="_blank">${b.lat}, ${b.lng}</a></td>
+      <td class="mono">${b.radius_m} ม.</td>
+      <td class="mono">${b.emp_count} คน</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sec btn-sm" onclick="brEdit('${esc(b.branch_id)}')">แก้ไข</button>
+        <button class="btn btn-danger btn-sm" onclick="brDelete('${esc(b.branch_id)}')">ลบ</button>
+      </td>
+    </tr>`).join('');
+}
+function brOpen(branch){
+  brEditing = branch ? branch.branch_id : null;
+  $('brTitle').textContent = branch ? 'แก้ไขสาขา' : 'เพิ่มสาขา';
+  $('br_id').value = branch ? branch.branch_id : '';
+  $('br_id').disabled = !!branch;
+  $('br_name').value = branch ? branch.name : '';
+  $('br_lat').value = branch ? branch.lat : '';
+  $('br_lng').value = branch ? branch.lng : '';
+  $('br_radius').value = branch ? branch.radius_m : 80;
+  brUpdateMap();
+  $('brOverlay').classList.add('show');
+}
+function brEdit(id){ const b=(BR&&BR.rows||[]).find(x=>x.branch_id===id); if(b) brOpen(b); }
+async function brDelete(id){
+  if(!confirm('ลบสาขา '+id+' ?')) return;
+  const r = await post({ action:'hr_branch_delete', password:pwd, branch_id:id });
+  if(r.ok){ toast('ok','ลบสาขาแล้ว'); loadBranches(); loadAll(); }
+  else toast('err', r.error||'ลบไม่สำเร็จ');
+}
+function brUpdateMap(){
+  const lat=$('br_lat').value, lng=$('br_lng').value;
+  $('br_map').href = (lat&&lng) ? `https://maps.google.com/?q=${lat},${lng}` : '#';
+}
+
+// ========== ตารางงานรายสัปดาห์ ==========
+let SC = null, scEditing = null;
+let scWeek = mondayOf(isoLocal(new Date()));
+async function loadSchedule(){
+  const start=scWeek, end=addDaysStr(scWeek,6);
+  $('scEmpty').style.display='none';
+  const r = await post({ action:'hr_sched_week', password:pwd, start, end });
+  if(!r.ok){ $('scEmpty').style.display='block'; $('scEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
+  SC = r; renderSchedule();
+}
+function renderSchedule(){
+  const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
+  $('sc_weeklabel').textContent = fmtThaiShort(days[0])+' – '+fmtThaiShort(days[6]);
+  $('scHead').innerHTML = '<tr><th style="text-align:left;min-width:150px">พนักงาน</th>'+days.map(d=>{
+    const dd=new Date(d+'T00:00:00');
+    return `<th style="min-width:86px">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;
+  }).join('')+'</tr>';
+  const emps = (SC&&SC.employees)||[];
+  if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent='ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; return; }
+  $('scEmpty').style.display='none';
+  $('scBody').innerHTML = emps.map(e=>{
+    const cells = days.map(d=>{
+      const c = SC.schedules[e.emp_id+'|'+d];
+      if(!c) return `<td onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;text-align:center;color:#cbd5e1">·</td>`;
+      const cover=c.is_cover, sh=c.shift_id?shiftName(c.shift_id):'—', br=c.branch_id?branchName(c.branch_id):'';
+      return `<td onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;text-align:center;${cover?'background:#fff7ed;':''}">
+        <div style="font-weight:600;font-size:13px">${esc(sh)}</div>
+        <div style="font-size:11px;color:${cover?'#ea580c':'var(--muted)'}">${esc(br)}${cover?' (แทน)':''}</div>
+      </td>`;
+    }).join('');
+    return `<tr><td style="text-align:left"><div class="ntext"><span class="nm">${esc(e.name)}</span><span class="nick">${esc(e.emp_id)} · ประจำ ${esc(branchName(e.branch_id))}</span></div></td>${cells}</tr>`;
+  }).join('');
+}
+function scCell(empId, workDate){
+  const e = (SC.employees||[]).find(x=>x.emp_id===empId); if(!e) return;
+  const cur = SC.schedules[empId+'|'+workDate] || null;
+  scEditing = { emp_id:empId, work_date:workDate, home:e.branch_id };
+  $('scTitle').textContent = e.name + ' · ' + fmtThaiShort(workDate);
+  fillSelect($('sc_shift'), DATA.shifts.map(s=>[s.shift_id, s.name]), '— หยุด —');
+  fillSelect($('sc_branch'), DATA.branches.map(b=>[b.branch_id, b.name]), '— สาขาประจำ —');
+  $('sc_shift').value = cur ? (cur.shift_id||'') : (e.default_shift||'');
+  $('sc_branch').value = cur ? (cur.branch_id||'') : (e.branch_id||'');
+  $('sc_note').value = cur ? (cur.note||'') : '';
+  scCoverHint();
+  $('scDelete').style.display = cur ? 'inline-flex' : 'none';
+  $('scOverlay').classList.add('show');
+}
+function scCoverHint(){
+  const b = $('sc_branch').value || (scEditing&&scEditing.home);
+  const cover = !!(b && scEditing && scEditing.home && b !== scEditing.home);
+  $('sc_coverhint').style.display = cover ? 'block' : 'none';
+}
+
+// ---------- สร้าง modal สาขา + ตารางเวร ----------
+(function buildModals(){
+  const br = document.createElement('div'); br.className='overlay'; br.id='brOverlay';
+  br.innerHTML = `<div class="modal" style="max-width:460px">
+    <div class="modal-h"><h2 id="brTitle">เพิ่มสาขา</h2><button class="close" id="brClose">×</button></div>
+    <div class="modal-b">
+      <div class="field"><label>รหัสสาขา<span class="req">*</span></label><input id="br_id" type="text" placeholder="เช่น B003"></div>
+      <div class="field"><label>ชื่อสาขา<span class="req">*</span></label><input id="br_name" type="text"></div>
+      <div class="field"><label>ละติจูด (lat)<span class="req">*</span></label><input id="br_lat" type="text" inputmode="decimal"></div>
+      <div class="field"><label>ลองจิจูด (lng)<span class="req">*</span></label><input id="br_lng" type="text" inputmode="decimal"></div>
+      <div class="field"><label>รัศมี geofence (เมตร)</label><input id="br_radius" type="number" value="80"></div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button type="button" class="btn btn-sec btn-sm" id="br_gps">📍 ดึงพิกัดปัจจุบัน</button>
+        <a class="btn btn-sec btn-sm" id="br_map" target="_blank" href="#">🗺️ ดูบนแผนที่</a>
+      </div>
+    </div>
+    <div class="modal-f"><button class="btn btn-pri" id="brSave">บันทึก</button></div>
+  </div>`;
+  document.body.appendChild(br);
+
+  const sc = document.createElement('div'); sc.className='overlay'; sc.id='scOverlay';
+  sc.innerHTML = `<div class="modal" style="max-width:420px">
+    <div class="modal-h"><h2 id="scTitle">จัดเวร</h2><button class="close" id="scClose">×</button></div>
+    <div class="modal-b">
+      <div class="field"><label>กะ</label><select id="sc_shift"></select></div>
+      <div class="field"><label>สาขาที่ไปทำ</label><select id="sc_branch"></select></div>
+      <div id="sc_coverhint" style="display:none; font-size:12.5px; color:#ea580c; margin:-4px 0 8px">⚠ ต่างจากสาขาประจำ = บันทึกเป็น "ไปแทน"</div>
+      <div class="field"><label>หมายเหตุ (เช่น แทนใคร)</label><input id="sc_note" type="text" placeholder="เช่น แทนสมชายลาป่วย"></div>
+    </div>
+    <div class="modal-f" style="display:flex; gap:8px; justify-content:space-between">
+      <button class="btn btn-danger" id="scDelete">ลบ / เป็นวันหยุด</button>
+      <button class="btn btn-pri" id="scSave">บันทึก</button>
+    </div>
+  </div>`;
+  document.body.appendChild(sc);
+
+  // handlers — สาขา
+  $('brClose').onclick = ()=>$('brOverlay').classList.remove('show');
+  $('brOverlay').addEventListener('click', e=>{ if(e.target===$('brOverlay')) $('brOverlay').classList.remove('show'); });
+  $('br_new') && ($('br_new').onclick = ()=>brOpen(null));
+  $('br_lat').addEventListener('input', brUpdateMap);
+  $('br_lng').addEventListener('input', brUpdateMap);
+  $('br_gps').onclick = ()=>{
+    if(!navigator.geolocation){ toast('err','อุปกรณ์ไม่รองรับ GPS'); return; }
+    $('br_gps').textContent='กำลังหาพิกัด…';
+    navigator.geolocation.getCurrentPosition(p=>{
+      $('br_lat').value = p.coords.latitude.toFixed(6);
+      $('br_lng').value = p.coords.longitude.toFixed(6);
+      $('br_gps').textContent='📍 ดึงพิกัดปัจจุบัน'; brUpdateMap();
+    }, ()=>{ $('br_gps').textContent='📍 ดึงพิกัดปัจจุบัน'; toast('err','ดึงพิกัดไม่สำเร็จ (อนุญาตตำแหน่ง)'); }, { enableHighAccuracy:true, timeout:10000 });
+  };
+  $('brSave').onclick = async ()=>{
+    const data = { branch_id:$('br_id').value.trim(), name:$('br_name').value.trim(), lat:$('br_lat').value.trim(), lng:$('br_lng').value.trim(), radius_m:$('br_radius').value };
+    if(!data.branch_id||!data.name){ toast('err','กรอกรหัสและชื่อสาขา'); return; }
+    $('brSave').innerHTML='<span class="spin"></span>';
+    const r = await post({ action:'hr_branch_save', password:pwd, data });
+    $('brSave').textContent='บันทึก';
+    if(r.ok){ toast('ok', r.action==='created'?'เพิ่มสาขาแล้ว':'บันทึกแล้ว'); $('brOverlay').classList.remove('show'); loadBranches(); loadAll(); }
+    else toast('err', r.error||'บันทึกไม่สำเร็จ');
+  };
+
+  // handlers — ตารางเวร
+  $('scClose').onclick = ()=>$('scOverlay').classList.remove('show');
+  $('scOverlay').addEventListener('click', e=>{ if(e.target===$('scOverlay')) $('scOverlay').classList.remove('show'); });
+  $('sc_branch').addEventListener('change', scCoverHint);
+  $('scSave').onclick = async ()=>{
+    if(!scEditing) return;
+    const data = { emp_id:scEditing.emp_id, work_date:scEditing.work_date, shift_id:$('sc_shift').value, branch_id:$('sc_branch').value, note:$('sc_note').value.trim() };
+    $('scSave').innerHTML='<span class="spin"></span>';
+    const r = await post({ action:'hr_sched_save', password:pwd, data });
+    $('scSave').textContent='บันทึก';
+    if(r.ok){ toast('ok','บันทึกเวรแล้ว'); $('scOverlay').classList.remove('show'); loadSchedule(); }
+    else toast('err', r.error||'บันทึกไม่สำเร็จ');
+  };
+  $('scDelete').onclick = async ()=>{
+    if(!scEditing) return;
+    const r = await post({ action:'hr_sched_delete', password:pwd, emp_id:scEditing.emp_id, work_date:scEditing.work_date });
+    if(r.ok){ toast('ok','ลบเวรแล้ว (เป็นวันหยุด)'); $('scOverlay').classList.remove('show'); loadSchedule(); }
+    else toast('err', r.error||'ลบไม่สำเร็จ');
+  };
+
+  // นำทางสัปดาห์
+  $('sc_prev').onclick = ()=>{ scWeek=addDaysStr(scWeek,-7); loadSchedule(); };
+  $('sc_next').onclick = ()=>{ scWeek=addDaysStr(scWeek,7); loadSchedule(); };
+  $('sc_thisweek').onclick = ()=>{ scWeek=mondayOf(isoLocal(new Date())); loadSchedule(); };
+  $('sc_copy').onclick = async ()=>{
+    if(!confirm('คัดลอกตารางจากสัปดาห์ก่อนหน้า มาวางทับสัปดาห์นี้?')) return;
+    const r = await post({ action:'hr_sched_copy', password:pwd, from_start:addDaysStr(scWeek,-7), to_start:scWeek });
+    if(r.ok){ toast('ok','คัดลอก '+r.copied+' เวร'); loadSchedule(); }
+    else toast('err', r.error||'คัดลอกไม่สำเร็จ');
+  };
+})();
+
 if(pwd) tryLogin(pwd);
 
+</script>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js').catch(function(){});});}
 </script>
 </body>
 </html>
