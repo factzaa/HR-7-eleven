@@ -419,6 +419,8 @@
     if (empCount && empCount > 0) return { ok: false, error: 'ลบไม่ได้: ยังมีพนักงานประจำ ' + empCount + ' คนที่สาขานี้ (ย้ายสาขาพนักงานก่อน)' };
     const { count: attCount } = await sb().from('attendance').select('id', { count: 'exact', head: true }).eq('branch_id', branchId);
     if (attCount && attCount > 0) return { ok: false, error: 'ลบไม่ได้: มีประวัติการลงเวลา ' + attCount + ' รายการที่สาขานี้' };
+    // ลบเวรในตารางเวรที่อ้างถึงสาขานี้ก่อน (เป็นเพียงแผน ไม่ใช่หลักฐาน) กัน foreign key
+    await sb().from('schedules').delete().eq('branch_id', branchId);
     const { error } = await sb().from('branches').delete().eq('branch_id', branchId);
     if (error) throw error;
     return { ok: true };
