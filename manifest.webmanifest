@@ -1,0 +1,21 @@
+{
+  "name": "ระบบบริหารบุคลากร 7-Eleven",
+  "short_name": "HR 7-Eleven",
+  "description": "ลงเวลาพนักงาน + จัดการ HR สำหรับร้าน 7-Eleven",
+  "lang": "th",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "ลงเวลาพนักงาน", "short_name": "ลงเวลา", "url": "./employee/" },
+    { "name": "หน้า HR", "short_name": "HR", "url": "./hr/" }
+  ]
+}
