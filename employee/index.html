@@ -329,11 +329,105 @@ async function getDescriptor(){
     .withFaceLandmarks().withFaceDescriptor();
   return det ? Array.from(det.descriptor) : null;
 }
+// ---------- สแตมป์เวลา/วันที่/สถานที่ ลงบนรูป (หลักฐานเข้างาน) ----------
+const TH_MONTHS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TH_DOW=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+function thaiStamp(){
+  const d=new Date();
+  const hh=String(d.getHours()).padStart(2,'0');
+  const mm=String(d.getMinutes()).padStart(2,'0');
+  const be=String((d.getFullYear()+543)%100).padStart(2,'0');
+  return { time:hh+':'+mm, date:d.getDate()+' '+TH_MONTHS[d.getMonth()]+' '+be, dow:TH_DOW[d.getDay()] };
+}
+function _rrect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);     ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function drawStamp(ctx,w,h){
+  const F="'Anuphan','Noto Sans Thai',sans-serif";
+  const pad=Math.round(w*0.045);
+  const within=!!gps.within;
+  const st=thaiStamp();
+  const empName=(typeof empMatch!=='undefined'&&empMatch)?empMatch.name:'';
+  const locName=gps.branch?gps.branch.name:'นอกเขตสาขา';
+  const coords=(gps.lat!=null&&gps.lng!=null)?gps.lat.toFixed(5)+', '+gps.lng.toFixed(5):'ไม่มีพิกัด';
+  const accTxt=gps.accuracy!=null?' · ±'+Math.round(gps.accuracy)+' ม.':'';
+
+  // แถบดำไล่เฉดด้านล่าง
+  const bandTop=Math.round(h*0.56);
+  const g=ctx.createLinearGradient(0,bandTop,0,h);
+  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(0.45,'rgba(0,0,0,0.55)'); g.addColorStop(1,'rgba(0,0,0,0.85)');
+  ctx.fillStyle=g; ctx.fillRect(0,bandTop,w,h-bandTop);
+
+  // ป้ายบน
+  ctx.textBaseline='middle';
+  const pillH=Math.round(h*0.058), pillFont=Math.round(pillH*0.48);
+  if(empName){
+    ctx.font='600 '+pillFont+'px '+F; ctx.textAlign='left';
+    const tw=ctx.measureText('● '+empName).width;
+    _rrect(ctx,pad,pad,tw+pad,pillH,pillH/2); ctx.fillStyle='rgba(22,163,74,0.92)'; ctx.fill();
+    ctx.fillStyle='#fff'; ctx.fillText('● '+empName,pad+pad*0.5,pad+pillH/2);
+  }
+  { const label=within?'✓ ในเขต':'✗ นอกเขต';
+    ctx.font='700 '+pillFont+'px '+F; ctx.textAlign='center';
+    const pw=ctx.measureText(label).width+pad;
+    _rrect(ctx,w-pad-pw,pad,pw,pillH,pillH/2); ctx.fillStyle=within?'rgba(22,163,74,0.95)':'rgba(220,38,38,0.95)'; ctx.fill();
+    ctx.fillStyle='#fff'; ctx.fillText(label,w-pad-pw/2,pad+pillH/2);
+  }
+
+  // เนื้อหาด้านล่าง
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  const timeSize=Math.round(h*0.115), dateSize=Math.round(h*0.046), dowSize=Math.round(h*0.038);
+  const locSize=Math.round(h*0.041), subSize=Math.round(h*0.030);
+  const bottom=h-pad;
+  // บรรทัดพิกัด
+  ctx.font='500 '+subSize+'px '+F; ctx.fillStyle='rgba(255,255,255,0.85)';
+  ctx.fillText('พิกัด '+coords+accTxt,pad,bottom);
+  // บรรทัดสถานที่
+  const locY=bottom-subSize-Math.round(h*0.018);
+  ctx.font='600 '+locSize+'px '+F;
+  ctx.fillStyle='#fb923c'; ctx.fillText('📍',pad,locY);
+  const pinW=ctx.measureText('📍 ').width;
+  ctx.fillStyle='#fff'; ctx.fillText(locName,pad+pinW,locY);
+  // แถวเวลา + วันที่
+  const timeY=locY-locSize-Math.round(h*0.020);
+  ctx.fillStyle='#16a34a';
+  ctx.fillRect(pad,timeY-timeSize+Math.round(timeSize*0.14),Math.round(w*0.013),timeSize);
+  const timeX=pad+Math.round(w*0.013)+Math.round(w*0.028);
+  ctx.font='700 '+timeSize+'px '+F; ctx.fillStyle='#fff'; ctx.fillText(st.time,timeX,timeY);
+  const timeW=ctx.measureText(st.time).width;
+  const divX=timeX+timeW+Math.round(w*0.03);
+  ctx.strokeStyle='rgba(255,255,255,0.45)'; ctx.lineWidth=Math.max(1,Math.round(w*0.004));
+  ctx.beginPath(); ctx.moveTo(divX,timeY-timeSize*0.78); ctx.lineTo(divX,timeY); ctx.stroke();
+  const dx=divX+Math.round(w*0.03);
+  ctx.font='600 '+dateSize+'px '+F; ctx.fillStyle='#fff'; ctx.fillText(st.date,dx,timeY-dateSize*0.55);
+  ctx.font='500 '+dowSize+'px '+F; ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fillText(st.dow,dx,timeY);
+
+  // ลายน้ำโลโก้ + ข้อความ (ขวา)
+  const logoEl=document.querySelector('.emblem img');
+  const lh=Math.round(h*0.085);
+  if(logoEl&&logoEl.complete&&logoEl.naturalHeight){
+    const lw=Math.round(lh*(logoEl.naturalWidth/logoEl.naturalHeight))||lh;
+    const lx=w-pad-lw, ly=timeY-timeSize+Math.round(timeSize*0.05);
+    ctx.globalAlpha=0.95; ctx.drawImage(logoEl,lx,ly,lw,lh); ctx.globalAlpha=1;
+    ctx.textAlign='right';
+    ctx.font='700 '+subSize+'px '+F; ctx.fillStyle='#fff'; ctx.fillText('HR 7-Eleven',w-pad,ly+lh+subSize);
+    ctx.font='500 '+Math.round(subSize*0.85)+'px '+F; ctx.fillStyle='rgba(255,255,255,0.8)';
+    ctx.fillText('เวลา & สถานที่จริง',w-pad,ly+lh+subSize*2.15);
+    ctx.textAlign='left';
+  }
+}
 function capturePhoto(){
   const v=$('video'), c=document.createElement('canvas');
-  const w=320, h=Math.round(v.videoHeight/v.videoWidth*w)||320;
-  c.width=w; c.height=h; c.getContext('2d').drawImage(v,0,0,w,h);
-  return c.toDataURL('image/jpeg',0.7);
+  const w=720, h=Math.round(v.videoHeight/v.videoWidth*w)||720;
+  c.width=w; c.height=h;
+  const ctx=c.getContext('2d');
+  ctx.drawImage(v,0,0,w,h);
+  try{ drawStamp(ctx,w,h); }catch(e){ console.warn('stamp error',e); }
+  return c.toDataURL('image/jpeg',0.82);
 }
 // เทียบใบหน้าฝั่ง client: ระยะ Euclidean < threshold = ตรง
 function euclidean(a,b){
