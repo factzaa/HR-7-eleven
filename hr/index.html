@@ -260,6 +260,7 @@
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
   <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
   <button class="tab" id="tab_submissions"><span class="tabicon">📥</span>ข้อมูลรอตรวจ</button>
+  <button class="tab" id="tab_activity"><span class="tabicon">🕘</span>บันทึกกิจกรรม</button>
 </div>
 
 <div class="login" id="loginView">
@@ -384,6 +385,12 @@
     <thead><tr><th>รหัส</th><th>ชื่อสาขา</th><th>พิกัด (lat, lng)</th><th>รัศมี</th><th>พนักงานประจำ</th><th></th></tr></thead>
     <tbody id="brRows"></tbody>
   </table></div><div class="empty" id="brEmpty" style="display:none">ยังไม่มีสาขา</div></div>
+</div>
+
+<!-- Activity: บันทึกกิจกรรม -->
+<div id="view_activity" class="container" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">บันทึกกิจกรรมล่าสุด</h3><button class="btn btn-sec btn-sm" id="ac_refresh">รีเฟรช</button></div>
+  <div id="ac_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Submissions: ข้อมูลพนักงานรอตรวจ -->
@@ -1248,7 +1255,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches','settings','submissions'];
+const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches','settings','submissions','activity'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
@@ -1260,6 +1267,7 @@ showTab = function(name){
   else if(name==='branches') loadBranches();
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadRuleStatus(); }
   else if(name==='submissions') loadSubmissions();
+  else if(name==='activity') loadActivity();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
 
@@ -1539,6 +1547,23 @@ async function loadRuleStatus(){
     </tr>`).join('')+'</tbody></table></div></div>';
 }
 
+// ========== บันทึกกิจกรรม ==========
+async function loadActivity(){
+  $('ac_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_activity', password:pwd });
+  if(!r.ok){ $('ac_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  if(!r.rows.length){ $('ac_body').innerHTML='<div class="empty">ยังไม่มีกิจกรรม</div>'; return; }
+  const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return String(w||'').slice(0,16).replace('T',' '); } };
+  const color=ev=> ev.status==='rejected'?'#dc2626': ev.status==='approved'?'#16a34a': ev.type==='ลงเวลา'?'#0ea5e9': ev.type==='ยอมรับระเบียบ'?'#7c3aed': ev.type==='คำขอลา'?'#d97706':'#475569';
+  $('ac_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>เวลา</th><th>ประเภท</th><th>พนักงาน</th><th>รายละเอียด</th></tr></thead><tbody>'+
+    r.rows.map(ev=>`<tr>
+      <td class="mono" style="white-space:nowrap">${esc(fmt(ev.when))}</td>
+      <td style="white-space:nowrap"><span style="color:${color(ev)};font-weight:600">${ev.icon||''} ${esc(ev.type)}</span></td>
+      <td>${esc(ev.emp)} <span style="color:var(--muted);font-size:11.5px">(${esc(ev.emp_id)})</span></td>
+      <td>${esc(ev.detail)}</td>
+    </tr>`).join('')+'</tbody></table></div></div>';
+}
+
 // ========== แจ้งเตือนแอดมิน ==========
 async function loadNotifications(){
   const r = await post({ action:'hr_notifications', password:pwd });
@@ -1607,6 +1632,7 @@ async function loadSubmissions(){
 (function buildModals(){
   const _subRef=$('sub_refresh'); if(_subRef) _subRef.onclick=loadSubmissions;
   const _ruRef=$('ru_refresh'); if(_ruRef) _ruRef.onclick=loadRuleStatus;
+  const _acRef=$('ac_refresh'); if(_acRef) _acRef.onclick=loadActivity;
   const br = document.createElement('div'); br.className='overlay'; br.id='brOverlay';
   br.innerHTML = `<div class="modal" style="max-width:460px">
     <div class="modal-h"><h2 id="brTitle">เพิ่มสาขา</h2><button class="close" id="brClose">×</button></div>

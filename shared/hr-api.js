@@ -92,6 +92,7 @@
         case 'hr_leavetype_list': return await hrLeaveTypeList();
         case 'hr_leavetype_save': return await hrLeaveTypeSave(p.data);
         case 'hr_rule_status':    return await hrRuleStatus();
+        case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications();
         case 'hr_submission_list':    return await hrSubmissionList();
         case 'hr_submission_approve': return await hrSubmissionApprove(p.id);
@@ -685,6 +686,25 @@
     const rows = (empsR.data || []).map(e => ({ emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, accepted_at: ack[e.emp_id] || null }));
     const accepted = rows.filter(r => r.accepted_at).length;
     return { ok: true, version, rows, counts: { accepted, pending: rows.length - accepted } };
+  }
+
+  // ---------- ACTIVITY LOG (บันทึกกิจกรรมพนักงาน) ----------
+  async function hrActivity() {
+    const [subR, lvR, akR, atR] = await Promise.all([
+      sb().from('profile_submissions').select('emp_id,status,submitted_at, employees(name)').order('submitted_at', { ascending: false }).limit(50),
+      sb().from('leaves').select('emp_id,type,start_date,end_date,status,created_at, employees(name)').order('created_at', { ascending: false }).limit(50),
+      sb().from('rule_acks').select('emp_id,version,accepted_at, employees(name)').order('accepted_at', { ascending: false }).limit(50),
+      sb().from('attendance').select('emp_id,branch_id,check_in,check_out, employees(name), branches(name)').not('check_in', 'is', null).order('check_in', { ascending: false }).limit(50),
+    ]);
+    const stTh = s => s === 'approved' ? 'อนุมัติ' : s === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ';
+    const nm = o => (o && o.employees && o.employees.name) || o.emp_id;
+    const ev = [];
+    (subR.data || []).forEach(s => ev.push({ when: s.submitted_at, type: 'ข้อมูล/เอกสาร', icon: '📄', emp: nm(s), emp_id: s.emp_id, detail: 'ส่งข้อมูล/เอกสาร — ' + stTh(s.status), status: s.status }));
+    (lvR.data || []).forEach(l => ev.push({ when: l.created_at, type: 'คำขอลา', icon: '📝', emp: nm(l), emp_id: l.emp_id, detail: (l.type || 'ลา') + ' ' + l.start_date + (l.end_date && l.end_date !== l.start_date ? (' – ' + l.end_date) : '') + ' — ' + stTh(l.status), status: l.status }));
+    (akR.data || []).forEach(a => ev.push({ when: a.accepted_at, type: 'ยอมรับระเบียบ', icon: '✅', emp: nm(a), emp_id: a.emp_id, detail: 'ยอมรับระเบียบ ฉบับ ' + a.version }));
+    (atR.data || []).forEach(a => ev.push({ when: a.check_in, type: 'ลงเวลา', icon: '⏰', emp: nm(a), emp_id: a.emp_id, detail: 'เข้า ' + fmtTime(a.check_in) + (a.check_out ? (' · ออก ' + fmtTime(a.check_out)) : '') + ' @ ' + ((a.branches && a.branches.name) || a.branch_id || '') }));
+    ev.sort((a, b) => String(b.when || '').localeCompare(String(a.when || '')));
+    return { ok: true, rows: ev.slice(0, 120) };
   }
 
   window.HRAPI = { dispatch };
