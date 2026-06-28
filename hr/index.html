@@ -766,10 +766,17 @@ function renderEmployees(){
       <td class="mono">${esc(r.phone||'—')}</td>
       <td>${face}</td>
       <td>${act?'<span class="pill ok">ทำงานอยู่</span>':'<span class="pill bad">ปิดใช้งาน</span>'}</td>
-      <td class="rowact"><span class="icobtn">ดู ›</span></td>
+      <td class="rowact" style="white-space:nowrap"><button class="icobtn" data-del="${esc(r.emp_id)}" style="color:#dc2626">ลบ</button> <span class="icobtn">ดู ›</span></td>
     </tr>`;
   }).join('');
   document.querySelectorAll('[data-view]').forEach(tr=>tr.onclick=()=>openView(tr.dataset.view));
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async(ev)=>{
+    ev.stopPropagation();
+    const id=b.dataset.del; const emp=DATA.rows.find(x=>x.emp_id===id);
+    if(!confirm('ลบพนักงาน '+id+' ('+((emp&&emp.name)||'')+') และข้อมูลทั้งหมดอย่างถาวร?\nกู้คืนไม่ได้')) return;
+    const r=await post({ action:'hr_emp_delete', password:pwd, emp_id:id });
+    if(r.ok){ toast('ok','ลบพนักงานแล้ว'); await loadAll(); renderEmployees(); } else toast('err', r.error||'ลบไม่สำเร็จ');
+  });
 }
 $('q').addEventListener('input', renderEmployees);
 $('newBtn').onclick = ()=>openNew();

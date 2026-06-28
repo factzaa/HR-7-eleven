@@ -65,6 +65,7 @@
         case 'hr_dashboard':      return await hrDashboard();
         case 'hr_save':           return await hrSave(p.data);
         case 'hr_toggle':         return await hrToggle(p.emp_id);
+        case 'hr_emp_delete':     return await hrEmpDelete(p.emp_id);
         case 'hr_report':         return await hrReport(p.filter);
         case 'hr_discipline':     return await hrDiscipline(p.cycle);
         case 'hr_warnings_list':  return await hrWarningsList();
@@ -203,6 +204,21 @@
     const { error } = await sb().from('employees').update({ active: next }).eq('emp_id', empId);
     if (error) throw error;
     return { ok: true, active: next };
+  }
+
+  // ---------- DELETE EMPLOYEE (ลบพนักงาน + ข้อมูลที่ผูกอยู่) ----------
+  async function hrEmpDelete(empId) {
+    if (!empId) return { ok: false, error: 'ไม่ระบุรหัสพนักงาน' };
+    // ลบข้อมูลที่อ้างถึงก่อน (กัน foreign key)
+    await sb().from('attendance').delete().eq('emp_id', empId);
+    await sb().from('leaves').delete().eq('emp_id', empId);
+    await sb().from('warnings').delete().eq('emp_id', empId);
+    await sb().from('schedules').delete().eq('emp_id', empId);
+    await sb().from('rule_acks').delete().eq('emp_id', empId);
+    await sb().from('profile_submissions').delete().eq('emp_id', empId);
+    const { error } = await sb().from('employees').delete().eq('emp_id', empId);
+    if (error) throw error;
+    return { ok: true };
   }
 
   // ---------- REPORT ----------
