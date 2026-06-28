@@ -173,7 +173,13 @@
   /* View modal */
   .vhead{padding:22px 24px; background:linear-gradient(180deg, #f6faf7 0%, #fff 100%); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
   .avatar{width:60px; height:60px; border-radius:14px; background:var(--green-soft); color:var(--green-d); display:grid; place-items:center; font-size:24px; font-weight:600; flex:none; overflow:hidden;}
-  .avatar img{width:100%; height:100%; object-fit:cover;}
+  .avatar img{width:100%; height:100%; object-fit:cover; object-position:center;}
+  .docgrid{display:flex; gap:12px; flex-wrap:wrap;}
+  .docitem{width:96px; text-align:center; font-size:12px; color:var(--muted);}
+  .docitem .dimg{width:96px; height:96px; border-radius:10px; border:1px solid var(--line); overflow:hidden; background:#f9fafb; display:grid; place-items:center;}
+  .docitem .dimg img{width:100%; height:100%; object-fit:cover; object-position:center; display:block;}
+  .docitem .none{color:#cbd5e1; font-size:26px;}
+  .docitem a{text-decoration:none;}
   .vh-main{flex:1; min-width:180px;}
   .vh-name{font-size:20px; font-weight:600; line-height:1.2;}
   .vh-sub{font-size:13.5px; color:var(--muted); margin-top:3px; display:flex; gap:8px; flex-wrap:wrap;}
@@ -370,6 +376,7 @@
     </div>
     <div style="font-size:12.5px; color:var(--muted); margin-top:8px">พิมพ์โค้ดกะในช่อง (เช่น 1/2/3/D) แล้วกด Enter · ช่องว่าง = วันหยุด · คลิก "ไปแทน" ใต้ช่องเพื่อจัดไปสาขาอื่น <span style="color:#ea580c; font-weight:600">(ช่องสีส้ม)</span> · ดู/แก้โค้ดได้ที่แท็บ "ตั้งค่ากะ"</div>
   </div>
+  <div id="sc_summary"></div>
   <div class="card"><div class="tablewrap"><table id="scTable" style="min-width:760px">
     <thead id="scHead"></thead><tbody id="scBody"></tbody>
   </table></div><div class="empty" id="scEmpty" style="display:none">ยังไม่มีพนักงาน</div></div>
@@ -470,6 +477,9 @@
         <div class="vitem"><span class="vlabel">เลขบัญชี</span><span class="vvalue mono" id="v_account">—</span></div>
         <div class="vitem span2"><span class="vlabel">เลขบัตรประชาชน</span><span class="vvalue mono" id="v_idcard">—</span></div>
       </div>
+    </div>
+    <div class="vsec"><h3>เอกสารแนบ</h3>
+      <div id="v_docs" class="docgrid"></div>
     </div>
     <div class="modal-f">
       <button class="btn btn-danger" id="v_toggleBtn" style="margin-right:auto">ปิดการใช้งาน</button>
@@ -888,6 +898,10 @@ function openView(empId){
   vSetPhone('v_phone', r.phone); vSet('v_line', r.line_user_id); vSet('v_address', r.address);
   vSet('v_em_name', r.emergency_name); vSetPhone('v_em_phone', r.emergency_phone);
   vSet('v_bank', r.bank_name); vSet('v_account', r.bank_account); vSet('v_idcard', r.id_card);
+  const docs=[['รูปถ่าย',r.photo_url],['สำเนาบัตร',r.idcard_url],['สมุดบัญชี',r.bankbook_url],['ทะเบียนบ้าน',r.house_url],['วุฒิการศึกษา',r.edu_url]];
+  $('v_docs').innerHTML = docs.some(d=>d[1])
+    ? docs.map(([label,url])=>`<div class="docitem">${url?`<a href="${esc(url)}" target="_blank"><div class="dimg"><img src="${esc(url)}"></div></a>`:`<div class="dimg"><span class="none">—</span></div>`}<div style="margin-top:4px">${label}</div></div>`).join('')
+    : '<div class="empty" style="padding:12px">ยังไม่มีเอกสารแนบ (พนักงานยังไม่ได้กรอกผ่านหน้า "กรอกข้อมูล" หรือ HR ยังไม่อนุมัติ)</div>';
   $('v_toggleBtn').textContent = act ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน';
   $('viewOverlay').classList.add('show');
 }
@@ -1345,7 +1359,7 @@ function renderSchedule(){
   }).join('')+'</tr>';
   const bf = $('sc_branchfilter') ? $('sc_branchfilter').value : '';
   const emps = ((SC&&SC.employees)||[]).filter(e=>!bf || e.branch_id===bf);
-  if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; return; }
+  if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; if($('sc_summary'))$('sc_summary').innerHTML=''; return; }
   $('scEmpty').style.display='none';
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
@@ -1365,6 +1379,12 @@ function renderSchedule(){
       <div style="font-size:11.5px;color:var(--muted);margin-top:1px">${esc(e.nickname?e.name:('รหัส '+e.emp_id))} · ประจำ ${esc(branchName(e.branch_id))}</div>
     </td>${cells}</tr>`;
   }).join('');
+  // สรุปจำนวนต่อกะทั้งสัปดาห์
+  const counts={}; let cover=0;
+  emps.forEach(e=>days.forEach(d=>{ const c=SC.schedules[e.emp_id+'|'+d]; if(c&&c.shift_id){ counts[c.shift_id]=(counts[c.shift_id]||0)+1; if(c.is_cover) cover++; } }));
+  const chips=(DATA.shifts||[]).filter(s=>counts[s.shift_id]).map(s=>`<span class="lvl-pill" style="background:#16a34a"><span class="lvl-dot"></span> ${esc(s.name)} ${counts[s.shift_id]}</span>`).join('')
+    + (cover?`<span class="lvl-pill" style="background:#ea580c"><span class="lvl-dot"></span> ไปแทนสาขา ${cover}</span>`:'');
+  if($('sc_summary')) $('sc_summary').innerHTML = chips ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><b style="font-size:13px">รวมทั้งสัปดาห์ (จำนวนกะ):</b>${chips}</div>` : '';
 }
 async function scKey(inp, emp, date){
   const v = inp.value.trim();
