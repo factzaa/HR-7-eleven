@@ -360,6 +360,13 @@
       <span style="flex:1"></span>
       <button class="btn btn-sec btn-sm" id="sc_copy">⧉ คัดลอกสัปดาห์ก่อนมาวาง</button>
     </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px">
+      <label style="font-size:13px; font-weight:600">เลือกดูตามสาขา:</label>
+      <select id="sc_branchfilter" style="padding:7px 11px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px"></select>
+      <span style="flex:1"></span>
+      <button class="btn btn-sec btn-sm" id="sc_copytext">📋 คัดลอกข้อความ</button>
+      <button class="btn btn-pri btn-sm" id="sc_image">🖼️ บันทึก/แชร์รูป (Line)</button>
+    </div>
     <div style="font-size:12.5px; color:var(--muted); margin-top:8px">พิมพ์โค้ดกะในช่อง (เช่น 1/2/3/D) แล้วกด Enter · ช่องว่าง = วันหยุด · คลิก "ไปแทน" ใต้ช่องเพื่อจัดไปสาขาอื่น <span style="color:#ea580c; font-weight:600">(ช่องสีส้ม)</span> · ดู/แก้โค้ดได้ที่แท็บ "ตั้งค่ากะ"</div>
   </div>
   <div class="card"><div class="tablewrap"><table id="scTable" style="min-width:760px">
@@ -1299,7 +1306,11 @@ async function loadSchedule(){
   $('scEmpty').style.display='none';
   const r = await post({ action:'hr_sched_week', password:pwd, start, end });
   if(!r.ok){ $('scEmpty').style.display='block'; $('scEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
-  SC = r; renderSchedule();
+  SC = r;
+  // เติมตัวเลือกสาขาครั้งแรก (ไม่ล้างค่าที่เลือกไว้)
+  const bfSel=$('sc_branchfilter');
+  if(bfSel && bfSel.options.length===0) fillSelect(bfSel, (SC.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  renderSchedule();
 }
 function shiftCodeOf(shiftId){ const s=DATA.shifts.find(x=>x.shift_id===shiftId); return s?(s.code||s.shift_id):''; }
 function codeToShift(code){
@@ -1314,8 +1325,9 @@ function renderSchedule(){
     const dd=new Date(d+'T00:00:00');
     return `<th style="min-width:92px">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;
   }).join('')+'</tr>';
-  const emps = (SC&&SC.employees)||[];
-  if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent='ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; return; }
+  const bf = $('sc_branchfilter') ? $('sc_branchfilter').value : '';
+  const emps = ((SC&&SC.employees)||[]).filter(e=>!bf || e.branch_id===bf);
+  if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; return; }
   $('scEmpty').style.display='none';
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
@@ -1343,6 +1355,79 @@ async function scKey(inp, emp, date){
   if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
   loadSchedule();
 }
+// ---------- สรุปตาราง → ข้อความ / รูป (สำหรับส่ง Line) ----------
+function scFilteredEmps(){ const bf=$('sc_branchfilter')?$('sc_branchfilter').value:''; return ((SC&&SC.employees)||[]).filter(e=>!bf||e.branch_id===bf); }
+function buildScheduleText(){
+  const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
+  const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
+  const emps=scFilteredEmps();
+  let txt='📅 ตารางงาน '+fmtThaiShort(days[0])+' - '+fmtThaiShort(days[6]);
+  if(bf) txt+=' ('+branchName(bf)+')';
+  emps.forEach(e=>{
+    const cells=days.map(d=>{ const c=SC.schedules[e.emp_id+'|'+d]; if(!c||!c.shift_id) return '-'; let s=shiftCodeOf(c.shift_id); if(c.is_cover) s+='→'+branchName(c.branch_id); return s; });
+    txt+='\n• '+e.name+': '+days.map((d,i)=>TH_DOW_S[new Date(d+'T00:00:00').getDay()]+cells[i]).join('  ');
+  });
+  txt+='\n\n(→ = ไปแทนสาขา)';
+  return txt;
+}
+async function copyScheduleText(){
+  const t=buildScheduleText();
+  try{ await navigator.clipboard.writeText(t); toast('ok','คัดลอกข้อความแล้ว — วางในกลุ่ม Line ได้เลย'); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(_){} ta.remove(); toast('ok','คัดลอกข้อความแล้ว'); }
+}
+function buildScheduleCanvas(){
+  const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
+  const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
+  const emps=scFilteredEmps();
+  const nameW=190, colW=82, rowH=48, headTop=70, padX=16;
+  const W=padX*2+nameW+colW*7, H=headTop+rowH*Math.max(1,emps.length)+44;
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const x=c.getContext('2d');
+  x.fillStyle='#fff'; x.fillRect(0,0,W,H);
+  x.textBaseline='middle';
+  x.fillStyle='#15803d'; x.font='700 20px Anuphan,sans-serif'; x.textAlign='left';
+  let title='ตารางงาน '+fmtThaiShort(days[0])+' - '+fmtThaiShort(days[6]); if(bf) title+=' · '+branchName(bf);
+  x.fillText(title, padX, 28);
+  const top=headTop;
+  x.fillStyle='#16a34a'; x.fillRect(padX, top-26, nameW+colW*7, 24);
+  x.fillStyle='#fff'; x.font='600 13px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('พนักงาน', padX+8, top-14);
+  x.textAlign='center';
+  days.forEach((d,i)=>{ const dd=new Date(d+'T00:00:00'); x.fillText(TH_DOW_S[dd.getDay()]+' '+dd.getDate()+'/'+(dd.getMonth()+1), padX+nameW+colW*i+colW/2, top-14); });
+  emps.forEach((e,r)=>{
+    const y=top+rowH*r;
+    if(r%2){ x.fillStyle='#f9fafb'; x.fillRect(padX,y,nameW+colW*7,rowH); }
+    x.textAlign='left'; x.fillStyle='#1f2937'; x.font='600 13px Anuphan,sans-serif'; x.fillText(e.name, padX+8, y+rowH/2-7);
+    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText(e.emp_id+' · '+branchName(e.branch_id), padX+8, y+rowH/2+10);
+    x.textAlign='center';
+    days.forEach((d,i)=>{
+      const cx=padX+nameW+colW*i, cell=SC.schedules[e.emp_id+'|'+d], cover=cell&&cell.is_cover;
+      if(cover){ x.fillStyle='#fff7ed'; x.fillRect(cx,y,colW,rowH); }
+      if(cell&&cell.shift_id){
+        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(shiftCodeOf(cell.shift_id), cx+colW/2, y+rowH/2-7);
+        if(cell.branch_id){ x.fillStyle=cover?'#ea580c':'#9ca3af'; x.font='400 10px Anuphan,sans-serif'; x.fillText((cover?'แทน ':'')+branchName(cell.branch_id), cx+colW/2, y+rowH/2+10); }
+      } else { x.fillStyle='#d1d5db'; x.font='400 13px Anuphan,sans-serif'; x.fillText('-', cx+colW/2, y+rowH/2); }
+    });
+  });
+  x.strokeStyle='#e5e7eb'; x.lineWidth=1;
+  for(let i=0;i<=7;i++){ const gx=padX+nameW+colW*i; x.beginPath(); x.moveTo(gx,top-2); x.lineTo(gx,top+rowH*emps.length); x.stroke(); }
+  for(let r=0;r<=emps.length;r++){ const gy=top+rowH*r; x.beginPath(); x.moveTo(padX,gy); x.lineTo(padX+nameW+colW*7,gy); x.stroke(); }
+  x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('ระบบ HR 7-Eleven · ช่องสีส้ม = ไปแทนสาขา', padX, H-16);
+  return c;
+}
+async function shareScheduleImage(){
+  if(!scFilteredEmps().length){ toast('err','ไม่มีข้อมูลให้สร้างรูป'); return; }
+  const c=buildScheduleCanvas();
+  c.toBlob(async(blob)=>{
+    if(!blob){ toast('err','สร้างรูปไม่สำเร็จ'); return; }
+    const file=new File([blob],'schedule_'+scWeek+'.png',{type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file], title:'ตารางงาน'}); return; }catch(e){ if(e&&e.name==='AbortError') return; }
+    }
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='schedule_'+scWeek+'.png'; a.click();
+    toast('ok','บันทึกรูปแล้ว นำไปส่งในกลุ่ม Line ได้เลย');
+  },'image/png');
+}
+
 function scCell(empId, workDate){
   const e = (SC.employees||[]).find(x=>x.emp_id===empId); if(!e) return;
   const cur = SC.schedules[empId+'|'+workDate] || null;
@@ -1605,6 +1690,9 @@ async function loadSubmissions(){
   $('sc_prev').onclick = ()=>{ scWeek=addDaysStr(scWeek,-7); loadSchedule(); };
   $('sc_next').onclick = ()=>{ scWeek=addDaysStr(scWeek,7); loadSchedule(); };
   $('sc_thisweek').onclick = ()=>{ scWeek=mondayOf(isoLocal(new Date())); loadSchedule(); };
+  if($('sc_branchfilter')) $('sc_branchfilter').onchange = renderSchedule;
+  if($('sc_copytext')) $('sc_copytext').onclick = copyScheduleText;
+  if($('sc_image')) $('sc_image').onclick = shareScheduleImage;
   $('sc_copy').onclick = async ()=>{
     if(!confirm('คัดลอกตารางจากสัปดาห์ก่อนหน้า มาวางทับสัปดาห์นี้?')) return;
     const r = await post({ action:'hr_sched_copy', password:pwd, from_start:addDaysStr(scWeek,-7), to_start:scWeek });
