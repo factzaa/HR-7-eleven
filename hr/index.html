@@ -1379,12 +1379,21 @@ function renderSchedule(){
       <div style="font-size:11.5px;color:var(--muted);margin-top:1px">${esc(e.nickname?e.name:('รหัส '+e.emp_id))} · ประจำ ${esc(branchName(e.branch_id))}</div>
     </td>${cells}</tr>`;
   }).join('');
-  // สรุปจำนวนต่อกะทั้งสัปดาห์
-  const counts={}; let cover=0;
-  emps.forEach(e=>days.forEach(d=>{ const c=SC.schedules[e.emp_id+'|'+d]; if(c&&c.shift_id){ counts[c.shift_id]=(counts[c.shift_id]||0)+1; if(c.is_cover) cover++; } }));
-  const chips=(DATA.shifts||[]).filter(s=>counts[s.shift_id]).map(s=>`<span class="lvl-pill" style="background:#16a34a"><span class="lvl-dot"></span> ${esc(s.name)} ${counts[s.shift_id]}</span>`).join('')
-    + (cover?`<span class="lvl-pill" style="background:#ea580c"><span class="lvl-dot"></span> ไปแทนสาขา ${cover}</span>`:'');
-  if($('sc_summary')) $('sc_summary').innerHTML = chips ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><b style="font-size:13px">รวมทั้งสัปดาห์ (จำนวนกะ):</b>${chips}</div>` : '';
+  // สรุปจำนวนคน/กะ แยกรายวัน
+  const dayShift=days.map(()=>({})); const dayCover=days.map(()=>0);
+  emps.forEach(e=>days.forEach((d,di)=>{ const c=SC.schedules[e.emp_id+'|'+d]; if(c&&c.shift_id){ dayShift[di][c.shift_id]=(dayShift[di][c.shift_id]||0)+1; if(c.is_cover) dayCover[di]++; } }));
+  const usedShifts=(DATA.shifts||[]).filter(s=>dayShift.some(d=>d[s.shift_id]));
+  const dash='<span style="color:#d1d5db">-</span>';
+  if($('sc_summary')){
+    if(!usedShifts.length){ $('sc_summary').innerHTML=''; }
+    else {
+      const head='<th style="text-align:left;padding:5px 8px;color:var(--muted)">สรุปคน/กะ</th>'+days.map(d=>{const dd=new Date(d+'T00:00:00');return `<th style="padding:5px 8px;text-align:center">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;}).join('');
+      let body=usedShifts.map(s=>`<tr><td style="padding:5px 8px;font-weight:600">${esc(s.name)}</td>${days.map((d,di)=>`<td style="padding:5px 8px;text-align:center">${dayShift[di][s.shift_id]||dash}</td>`).join('')}</tr>`).join('');
+      if(dayCover.some(x=>x)) body+=`<tr><td style="padding:5px 8px;font-weight:600;color:#ea580c">ไปแทนสาขา</td>${days.map((d,di)=>`<td style="padding:5px 8px;text-align:center;color:#ea580c">${dayCover[di]||dash}</td>`).join('')}</tr>`;
+      body+=`<tr style="border-top:1.5px solid var(--line2)"><td style="padding:5px 8px;font-weight:700">รวม</td>${days.map((d,di)=>{const tot=Object.values(dayShift[di]).reduce((a,b)=>a+b,0);return `<td style="padding:5px 8px;text-align:center;font-weight:700">${tot||dash}</td>`;}).join('')}</tr>`;
+      $('sc_summary').innerHTML=`<div class="card" style="margin-bottom:10px;padding:8px 10px"><div style="font-size:13px;font-weight:600;margin:2px 4px 6px">สรุปคน/กะ รายวัน</div><div class="tablewrap"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:560px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`;
+    }
+  }
 }
 async function scKey(inp, emp, date){
   const v = inp.value.trim();
