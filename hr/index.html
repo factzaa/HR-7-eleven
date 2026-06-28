@@ -1382,7 +1382,7 @@ function renderSchedule(){
   // สรุปจำนวนคน/กะ แยกรายวัน
   const dayShift=days.map(()=>({})); const dayCover=days.map(()=>0);
   emps.forEach(e=>days.forEach((d,di)=>{ const c=SC.schedules[e.emp_id+'|'+d]; if(c&&c.shift_id){ dayShift[di][c.shift_id]=(dayShift[di][c.shift_id]||0)+1; if(c.is_cover) dayCover[di]++; } }));
-  const usedShifts=(DATA.shifts||[]).filter(s=>dayShift.some(d=>d[s.shift_id]));
+  const usedShifts=(DATA.shifts||[]);   // แสดงครบทุกผลัด แม้บางวันจะ 0
   const dash='<span style="color:#d1d5db">-</span>';
   if($('sc_summary')){
     if(!usedShifts.length){ $('sc_summary').innerHTML=''; }
@@ -1430,7 +1430,7 @@ function buildScheduleCanvas(){
   const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
   const emps=scFilteredEmps();
   const nameW=190, colW=82, rowH=48, headTop=70, padX=16;
-  const W=padX*2+nameW+colW*7, H=headTop+rowH*Math.max(1,emps.length)+44;
+  const W=padX*2+nameW+colW*7, H=headTop+rowH*Math.max(1,emps.length)+64;
   const c=document.createElement('canvas'); c.width=W; c.height=H;
   const x=c.getContext('2d');
   x.fillStyle='#fff'; x.fillRect(0,0,W,H);
@@ -1447,35 +1447,51 @@ function buildScheduleCanvas(){
     const y=top+rowH*r;
     if(r%2){ x.fillStyle='#f9fafb'; x.fillRect(padX,y,nameW+colW*7,rowH); }
     x.textAlign='left'; x.fillStyle='#1f2937'; x.font='600 13px Anuphan,sans-serif'; x.fillText(e.nickname||e.name, padX+8, y+rowH/2-7);
-    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText((e.nickname?e.name:e.emp_id)+' · '+branchName(e.branch_id), padX+8, y+rowH/2+10);
+    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText((e.nickname?e.name:('รหัส '+e.emp_id)), padX+8, y+rowH/2+10);
     x.textAlign='center';
     days.forEach((d,i)=>{
       const cx=padX+nameW+colW*i, cell=SC.schedules[e.emp_id+'|'+d], cover=cell&&cell.is_cover;
       if(cover){ x.fillStyle='#fff7ed'; x.fillRect(cx,y,colW,rowH); }
       if(cell&&cell.shift_id){
-        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(shiftCodeOf(cell.shift_id), cx+colW/2, y+rowH/2-7);
-        if(cell.branch_id){ x.fillStyle=cover?'#ea580c':'#9ca3af'; x.font='400 10px Anuphan,sans-serif'; x.fillText((cover?'แทน ':'')+branchName(cell.branch_id), cx+colW/2, y+rowH/2+10); }
+        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 16px Anuphan,sans-serif'; x.fillText(shiftCodeOf(cell.shift_id), cx+colW/2, y+rowH/2 - (cover?6:0));
+        if(cover){ x.fillStyle='#ea580c'; x.font='400 10px Anuphan,sans-serif'; x.fillText('แทน '+(cell.branch_id||''), cx+colW/2, y+rowH/2+12); }
       } else { x.fillStyle='#d1d5db'; x.font='400 13px Anuphan,sans-serif'; x.fillText('-', cx+colW/2, y+rowH/2); }
     });
   });
   x.strokeStyle='#e5e7eb'; x.lineWidth=1;
   for(let i=0;i<=7;i++){ const gx=padX+nameW+colW*i; x.beginPath(); x.moveTo(gx,top-2); x.lineTo(gx,top+rowH*emps.length); x.stroke(); }
   for(let r=0;r<=emps.length;r++){ const gy=top+rowH*r; x.beginPath(); x.moveTo(padX,gy); x.lineTo(padX+nameW+colW*7,gy); x.stroke(); }
+  // คำอธิบายโค้ดกะ (รวมผลัดที่เพิ่มใหม่ในระบบ)
+  const legend=(DATA.shifts||[]).map(s=>(s.code||s.shift_id)+'='+s.name).join('    ·    ');
+  x.fillStyle='#374151'; x.font='600 11px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('โค้ดกะ:  '+legend, padX, H-38);
   x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('ระบบ HR 7-Eleven · ช่องสีส้ม = ไปแทนสาขา', padX, H-16);
   return c;
 }
-async function shareScheduleImage(){
+let _scImgBlob=null;
+function openSchedImage(){
   if(!scFilteredEmps().length){ toast('err','ไม่มีข้อมูลให้สร้างรูป'); return; }
-  const c=buildScheduleCanvas();
-  c.toBlob(async(blob)=>{
-    if(!blob){ toast('err','สร้างรูปไม่สำเร็จ'); return; }
-    const file=new File([blob],'schedule_'+scWeek+'.png',{type:'image/png'});
+  let c;
+  try{ c=buildScheduleCanvas(); }catch(e){ toast('err','สร้างรูปไม่สำเร็จ: '+(e.message||'')); return; }
+  $('sc_imgview').src = c.toDataURL('image/png');
+  _scImgBlob=null;
+  c.toBlob(b=>{ _scImgBlob=b; }, 'image/png');
+  $('scImgOverlay').classList.add('show');
+}
+function downloadSchedImage(){
+  const src=$('sc_imgview').src; if(!src){ return; }
+  const a=document.createElement('a'); a.href=src; a.download='schedule_'+scWeek+'.png'; document.body.appendChild(a); a.click(); a.remove();
+  toast('ok','บันทึกรูปแล้ว นำไปส่งในกลุ่ม Line ได้เลย');
+}
+async function shareSchedImage(){
+  try{
+    if(!_scImgBlob){ const c=buildScheduleCanvas(); _scImgBlob=await new Promise(res=>c.toBlob(res,'image/png')); }
+    const file=new File([_scImgBlob],'schedule_'+scWeek+'.png',{type:'image/png'});
     if(navigator.canShare && navigator.canShare({files:[file]})){
-      try{ await navigator.share({files:[file], title:'ตารางงาน'}); return; }catch(e){ if(e&&e.name==='AbortError') return; }
+      await navigator.share({files:[file], title:'ตารางงาน'});
+    } else {
+      toast('err','อุปกรณ์นี้แชร์ไฟล์ตรงไม่ได้ — กด "บันทึกรูป" แล้วส่งใน Line แทน');
     }
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='schedule_'+scWeek+'.png'; a.click();
-    toast('ok','บันทึกรูปแล้ว นำไปส่งในกลุ่ม Line ได้เลย');
-  },'image/png');
+  }catch(e){ if(!(e&&e.name==='AbortError')) toast('err','แชร์ไม่สำเร็จ'); }
 }
 
 function scCell(empId, workDate){
@@ -1776,7 +1792,22 @@ async function loadSubmissions(){
   $('sc_thisweek').onclick = ()=>{ scWeek=mondayOf(isoLocal(new Date())); loadSchedule(); };
   if($('sc_branchfilter')) $('sc_branchfilter').onchange = renderSchedule;
   if($('sc_copytext')) $('sc_copytext').onclick = copyScheduleText;
-  if($('sc_image')) $('sc_image').onclick = shareScheduleImage;
+  if($('sc_image')) $('sc_image').onclick = openSchedImage;
+  // หน้าต่างพรีวิวรูปตาราง
+  const im = document.createElement('div'); im.className='overlay'; im.id='scImgOverlay';
+  im.innerHTML = `<div class="modal" style="max-width:600px">
+    <div class="modal-h"><h2>รูปสรุปตารางงาน</h2><button class="close" id="scImgClose">×</button></div>
+    <div class="modal-b" style="text-align:center"><img id="sc_imgview" alt="ตารางงาน" style="max-width:100%;border:1px solid var(--line);border-radius:10px"></div>
+    <div class="modal-f" style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-sec" id="scImgShare">📤 แชร์</button>
+      <button class="btn btn-pri" id="scImgDownload">⬇ บันทึกรูป</button>
+    </div>
+  </div>`;
+  document.body.appendChild(im);
+  $('scImgClose').onclick = ()=>$('scImgOverlay').classList.remove('show');
+  $('scImgOverlay').addEventListener('click', e=>{ if(e.target===$('scImgOverlay')) $('scImgOverlay').classList.remove('show'); });
+  $('scImgDownload').onclick = downloadSchedImage;
+  $('scImgShare').onclick = shareSchedImage;
   $('sc_copy').onclick = async ()=>{
     if(!confirm('คัดลอกตารางจากสัปดาห์ก่อนหน้า มาวางทับสัปดาห์นี้?')) return;
     const r = await post({ action:'hr_sched_copy', password:pwd, from_start:addDaysStr(scWeek,-7), to_start:scWeek });
