@@ -65,11 +65,17 @@
       <label>รหัสพนักงาน</label><input id="lvEmp" type="text" inputmode="numeric" placeholder="เช่น 001">
       <label>ประเภทการลา</label>
       <select id="lvType"><option>ลาป่วย</option><option>ลากิจ</option><option>ลาพักร้อน</option><option>อื่นๆ</option></select>
+      <div id="lvRule" style="font-size:12px;margin-top:4px"></div>
       <div class="row">
         <div style="flex:1"><label>ตั้งแต่</label><input id="lvStart" type="date"></div>
         <div style="flex:1"><label>ถึง</label><input id="lvEnd" type="date"></div>
       </div>
       <label>เหตุผล</label><input id="lvReason" type="text" placeholder="ระบุเหตุผล (ถ้ามี)">
+      <div id="lvDocWrap" style="display:none">
+        <label>แนบใบรับรองแพทย์ / เอกสาร <span style="color:#dc2626">*</span></label>
+        <input id="lvDoc" type="file" accept="image/*">
+        <img id="lvDocPrev" style="max-width:100%;max-height:120px;border-radius:8px;margin-top:6px;display:none">
+      </div>
       <button class="mbtn" id="lvSubmit">ส่งคำขอลา</button>
       <div id="lvMine" style="font-size:12.5px;margin-top:10px"></div>
     </div>
@@ -83,17 +89,39 @@
 const $=id=>document.getElementById(id);
 function toast(kind,msg){const t=$('toast');t.className='toast show '+kind;t.textContent=msg;setTimeout(()=>t.classList.remove('show'),3500);}
 const ovl=$('leaveOvl');
-$('leaveBtn').onclick=()=>{ if(!$('lvStart').value)$('lvStart').value=HR.bangkokDate(); if(!$('lvEnd').value)$('lvEnd').value=HR.bangkokDate(); ovl.classList.add('show'); myLeaves(); };
+let LRULES=null, LUSAGE={};
+async function ensureRules(){ if(!LRULES){ try{ LRULES=await HR.getLeaveRules(); }catch(e){ LRULES=[]; } } }
+function updateRule(){
+  const t=$('lvType').value; const r=(LRULES||[]).find(x=>x.type===t);
+  if(!r){ $('lvRule').innerHTML=''; return; }
+  const parts=[];
+  if(r.allow_backdate) parts.push('ลาย้อนหลังได้');
+  else if(r.advance_days>0) parts.push('ต้องลาล่วงหน้า ≥ '+r.advance_days+' วัน');
+  if(r.quota_per_year!=null){ const used=LUSAGE[t]||0; parts.push('โควตา '+r.quota_per_year+' วัน/ปี (เหลือ '+Math.max(0,r.quota_per_year-used)+')'); }
+  if(r.require_doc) parts.push('ต้องแนบเอกสาร');
+  $('lvRule').innerHTML = parts.length ? '<span style="color:#6b7280">เงื่อนไข: '+parts.join(' · ')+'</span>' : '';
+  $('lvDocWrap').style.display = r.require_doc ? 'block' : 'none';
+}
+let LDOC=null;
+$('lvDoc').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f){ LDOC=null; return; }
+  const rd=new FileReader(); rd.onload=()=>{ LDOC=rd.result; const p=$('lvDocPrev'); p.src=rd.result; p.style.display='block'; }; rd.readAsDataURL(f);
+});
+$('leaveBtn').onclick=async()=>{ if(!$('lvStart').value)$('lvStart').value=HR.bangkokDate(); if(!$('lvEnd').value)$('lvEnd').value=HR.bangkokDate(); ovl.classList.add('show'); await ensureRules(); myLeaves(); };
 $('lvClose').onclick=()=>ovl.classList.remove('show');
 ovl.addEventListener('click',e=>{ if(e.target===ovl) ovl.classList.remove('show'); });
 $('lvEmp').addEventListener('change', myLeaves);
+$('lvType').addEventListener('change', updateRule);
 async function myLeaves(){
-  const id=$('lvEmp').value.trim(); if(!id){ $('lvMine').innerHTML=''; return; }
+  const id=$('lvEmp').value.trim(); if(!id){ $('lvMine').innerHTML=''; LUSAGE={}; updateRule(); return; }
+  try{ LUSAGE = await HR.getLeaveUsage(id); }catch(e){ LUSAGE={}; }
+  updateRule();
   try{ const rows=await HR.myLeaves(id);
     $('lvMine').innerHTML = rows.length ? '<b>คำขอล่าสุด</b>'+rows.map(r=>{
       const st=r.status==='approved'?'<span style="color:#16a34a">✓ อนุมัติ</span>':r.status==='rejected'?'<span style="color:#dc2626">✗ ปฏิเสธ</span>':'<span style="color:#d97706">⏳ รออนุมัติ</span>';
       const range=(r.end_date&&r.end_date!==r.start_date)?(r.start_date+' – '+r.end_date):r.start_date;
-      return `<div style="padding:2px 0">• ${range} · ${r.type||''} — ${st}</div>`;
+      const why=(r.status==='rejected'&&r.hr_note)?(' <span style="color:#dc2626">('+r.hr_note+')</span>'):'';
+      return `<div style="padding:2px 0">• ${range} · ${r.type||''} — ${st}${why}</div>`;
     }).join('') : '<span style="color:#9ca3af">ยังไม่มีคำขอ</span>';
   }catch(e){ $('lvMine').innerHTML=''; }
 }
@@ -104,8 +132,8 @@ $('lvSubmit').onclick=async()=>{
   if(!start){ toast('err','เลือกวันที่เริ่มลา'); return; }
   if(end&&end<start){ toast('err','วันสิ้นสุดต้องไม่ก่อนวันเริ่ม'); return; }
   $('lvSubmit').disabled=true; $('lvSubmit').textContent='กำลังส่ง…';
-  try{ await HR.requestLeave({ empId:id, start_date:start, end_date:end||start, type, reason });
-    toast('ok','ส่งคำขอลาแล้ว รอ HR อนุมัติ'); $('lvReason').value=''; myLeaves();
+  try{ await HR.requestLeave({ empId:id, start_date:start, end_date:end||start, type, reason, doc:LDOC });
+    toast('ok','ส่งคำขอลาแล้ว รอ HR อนุมัติ'); $('lvReason').value=''; LDOC=null; $('lvDoc').value=''; $('lvDocPrev').style.display='none'; myLeaves();
   }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); }
   $('lvSubmit').disabled=false; $('lvSubmit').textContent='ส่งคำขอลา';
 };

@@ -87,7 +87,9 @@
         case 'hr_shift_list':     return await hrShiftList();
         case 'hr_shift_save':     return await hrShiftSave(p.data);
         case 'hr_shift_delete':   return await hrShiftDelete(p.shift_id);
-        case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status);
+        case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status, p.note);
+        case 'hr_leavetype_list': return await hrLeaveTypeList();
+        case 'hr_leavetype_save': return await hrLeaveTypeSave(p.data);
         case 'hr_notifications':  return await hrNotifications();
         case 'hr_submission_list':    return await hrSubmissionList();
         case 'hr_submission_approve': return await hrSubmissionApprove(p.id);
@@ -557,10 +559,35 @@
     return { ok: true };
   }
 
-  // ---------- LEAVE APPROVAL (อนุมัติ/ปฏิเสธใบลา) ----------
-  async function hrLeaveStatus(leaveId, status) {
+  // ---------- LEAVE APPROVAL (อนุมัติ/ปฏิเสธใบลา + เหตุผล) ----------
+  async function hrLeaveStatus(leaveId, status, note) {
     if (!['approved', 'rejected', 'pending'].includes(status)) return { ok: false, error: 'สถานะไม่ถูกต้อง' };
-    const { error } = await sb().from('leaves').update({ status }).eq('leave_id', leaveId);
+    const upd = { status };
+    if (note !== undefined) upd.hr_note = note || null;
+    const { error } = await sb().from('leaves').update(upd).eq('leave_id', leaveId);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- LEAVE TYPES (เงื่อนไขการลา) ----------
+  async function hrLeaveTypeList() {
+    const { data, error } = await sb().from('leave_types').select('*').order('sort');
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+  async function hrLeaveTypeSave(d) {
+    if (!d.type) return { ok: false, error: 'ต้องระบุประเภท' };
+    const q = d.quota_per_year;
+    const row = {
+      type: String(d.type).trim(),
+      advance_days: parseInt(d.advance_days) >= 0 ? parseInt(d.advance_days) : 0,
+      quota_per_year: (q === '' || q == null) ? null : (parseInt(q) >= 0 ? parseInt(q) : null),
+      allow_backdate: !!d.allow_backdate,
+      require_doc: !!d.require_doc,
+      active: d.active !== false,
+      sort: parseInt(d.sort) || 0,
+    };
+    const { error } = await sb().from('leave_types').upsert(row, { onConflict: 'type' });
     if (error) throw error;
     return { ok: true };
   }

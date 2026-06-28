@@ -81,11 +81,21 @@ HR-7-eleven-main/
 - ไฟล์แก้: index.html, employee/index.html, hr/index.html, shared/hr-api.js, shared/supabase.js · ไฟล์ใหม่: staff/index.html, supabase/profile.sql
   ⚠️ ต้องรัน `supabase/profile.sql` (คอลัมน์เอกสาร + ตาราง profile_submissions + bucket employee-docs) แล้วอัปไฟล์ขึ้น GitHub
 
+## รอบ 28 มิ.ย. 2026 (4) — เงื่อนไขการลา
+- ✅ พนักงานตรวจสถานะคำขอลาได้ที่หน้าแรก (กรอกรหัส → เห็น รออนุมัติ/อนุมัติ/ปฏิเสธ + เหตุผลถ้าถูกปฏิเสธ)
+- ✅ HR ปฏิเสธใบลาต้องระบุเหตุผล (prompt) → เก็บใน leaves.hr_note และพนักงานเห็น
+- ✅ แท็บ "ตั้งค่ากะ" เพิ่มตาราง "เงื่อนไขการลา" (ตาราง leave_types): ตั้งลาล่วงหน้าขั้นต่ำ/โควตาต่อปี/ลาย้อนหลัง/ต้องแนบเอกสาร · API hr_leavetype_list/save
+- ✅ ตรวจเงื่อนไขตอนพนักงานส่ง: ลาล่วงหน้าไม่พอ/เกินโควตา/ทับวันไปแทนสาขา → บล็อก พร้อมข้อความ
+- ✅ ลาป่วยต้องแนบใบรับรองแพทย์ (require_doc) — ฟอร์มขอลาโชว์ช่องแนบรูป, บล็อกถ้าไม่แนบ, HR เปิดดูได้ (📎) เก็บใน leaves.doc_url
+- ไฟล์แก้: index.html, hr/index.html, shared/hr-api.js, shared/supabase.js · ไฟล์ใหม่: supabase/leave_rules.sql
+  ⚠️ ต้องรัน `supabase/leave_rules.sql` แล้วอัปไฟล์ขึ้น GitHub
+
 ## SQL ที่ต้องรันบน Supabase (รวมทุกรอบที่ยังไม่ได้รัน)
 1. `schedules.sql` — ตารางเวร
 2. `branches_rls.sql` — ให้เพิ่ม/แก้/ลบสาขาได้
 3. `shift_codes.sql` — โค้ดกะ + กะ Delivery + ให้แก้กะได้
 4. `profile.sql` — พนักงานกรอกข้อมูล/อัปเอกสารเอง + bucket เอกสาร
+5. `leave_rules.sql` — เงื่อนไขการลา + เหตุผลปฏิเสธ + แนบใบรับรองแพทย์
 
 ## ค้างไว้ / จะทำต่อ
 **Phase 3 — เก็บรายละเอียดให้สมจริง**

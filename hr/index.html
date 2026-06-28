@@ -399,6 +399,13 @@
     <b>โค้ดคีย์</b> = อักษร/เลขย่อที่ใช้พิมพ์ในแท็บ "ตารางงาน" เพื่อจัดเวรเร็วๆ (เช่น 1=เช้า, 2=บ่าย, 3=ดึก, D=Delivery) ·
     <b>เข้า/ออก</b> ใช้คำนวณการมาสายและ OT
   </div>
+
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">เงื่อนไขการลา</h3></div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>ประเภท</th><th>ลาล่วงหน้าขั้นต่ำ (วัน)</th><th>โควตา/ปี<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่จำกัด</span></th><th>ลาย้อนหลังได้</th><th>ต้องแนบเอกสาร</th><th></th></tr></thead>
+    <tbody id="ltRows"></tbody>
+  </table></div></div>
+  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">เช่น ลากิจ ต้องลาล่วงหน้า ≥ 2 วัน · ลาพักร้อน โควตา 6 วัน/ปี · ลาป่วย แนบใบรับรองแพทย์ ลาย้อนหลังได้</div>
 </div>
 
 </div>
@@ -1138,8 +1145,8 @@ async function loadLeaves(){
         <td class="mono">${esc(l.start_date)}</td>
         <td class="mono">${esc(l.end_date)}</td>
         <td class="mono">${l.days}</td>
-        <td>${esc(l.type||'—')}</td>
-        <td>${l.status==='approved'?'<span class="pill ok">อนุมัติ</span>':l.status==='rejected'?'<span class="pill bad">ปฏิเสธ</span>':'<span class="pill warn">รอ</span>'}</td>
+        <td>${esc(l.type||'—')}${l.doc_url?` <a href="${esc(l.doc_url)}" target="_blank" title="เอกสารแนบ">📎</a>`:''}</td>
+        <td>${l.status==='approved'?'<span class="pill ok">อนุมัติ</span>':l.status==='rejected'?'<span class="pill bad">ปฏิเสธ</span>':'<span class="pill warn">รอ</span>'}${l.status==='rejected'&&l.hr_note?`<div style="font-size:11px;color:#dc2626">${esc(l.hr_note)}</div>`:''}</td>
         <td class="rowact">${l.status==='pending'?`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> `:''}<button class="icobtn" data-ldel="${esc(l.leave_id)}">ลบ</button></td>
       </tr>`).join('')}</tbody></table></div></div>`;
   document.querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{
@@ -1152,7 +1159,9 @@ async function loadLeaves(){
     if(r.ok){ toast('ok','อนุมัติใบลาแล้ว'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
   });
   document.querySelectorAll('[data-lrej]').forEach(b=>b.onclick=async()=>{
-    const r = await post({ action:'hr_leave_status', password:pwd, leave_id:b.dataset.lrej, status:'rejected' });
+    const note = prompt('เหตุผลที่ปฏิเสธ (พนักงานจะเห็น):','');
+    if(note===null) return;
+    const r = await post({ action:'hr_leave_status', password:pwd, leave_id:b.dataset.lrej, status:'rejected', note });
     if(r.ok){ toast('ok','ปฏิเสธใบลาแล้ว'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
   });
 }
@@ -1232,7 +1241,7 @@ showTab = function(name){
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings') loadShifts();
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); }
   else if(name==='submissions') loadSubmissions();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
@@ -1395,6 +1404,26 @@ async function shDelete(id){
   const r = await post({ action:'hr_shift_delete', password:pwd, shift_id:id });
   if(r.ok){ toast('ok','ลบกะแล้ว'); loadShifts(); loadAll(); }
   else toast('err', r.error||'ลบไม่สำเร็จ');
+}
+
+// ========== เงื่อนไขการลา ==========
+async function loadLeaveTypes(){
+  const r = await post({ action:'hr_leavetype_list', password:pwd });
+  if(!r.ok){ $('ltRows').innerHTML=''; return; }
+  $('ltRows').innerHTML = r.rows.map((t,i)=>`<tr>
+    <td style="font-weight:600">${esc(t.type)}</td>
+    <td><input type="number" min="0" value="${t.advance_days}" id="lt_adv_${i}" style="width:80px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="number" min="0" value="${t.quota_per_year==null?'':t.quota_per_year}" placeholder="ไม่จำกัด" id="lt_q_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td style="text-align:center"><input type="checkbox" ${t.allow_backdate?'checked':''} id="lt_bd_${i}"></td>
+    <td style="text-align:center"><input type="checkbox" ${t.require_doc?'checked':''} id="lt_doc_${i}"></td>
+    <td><button class="btn btn-pri btn-sm" data-lt="${i}">บันทึก</button></td>
+  </tr>`).join('');
+  document.querySelectorAll('[data-lt]').forEach(b=>b.onclick=async()=>{
+    const i=b.dataset.lt, t=r.rows[i];
+    const data={ type:t.type, advance_days:$('lt_adv_'+i).value, quota_per_year:$('lt_q_'+i).value, allow_backdate:$('lt_bd_'+i).checked, require_doc:$('lt_doc_'+i).checked, sort:t.sort };
+    const rr=await post({ action:'hr_leavetype_save', password:pwd, data });
+    if(rr.ok) toast('ok','บันทึกเงื่อนไข '+t.type); else toast('err', rr.error||'ไม่สำเร็จ');
+  });
 }
 
 // ========== แจ้งเตือนแอดมิน ==========

@@ -166,24 +166,65 @@
     return Math.round(diff * 100) / 100;
   }
 
+  // ---------- เงื่อนไขการลา ----------
+  function _inclusiveDays(a, b) { const s = new Date(a + 'T00:00:00'), e = new Date((b || a) + 'T00:00:00'); return Math.round((e - s) / 86400000) + 1; }
+  function _diffDays(from, to) { const s = new Date(from + 'T00:00:00'), e = new Date(to + 'T00:00:00'); return Math.round((e - s) / 86400000); }
+  async function getLeaveRules() {
+    const { data } = await sb.from('leave_types').select('*').eq('active', true).order('sort');
+    return data || [];
+  }
+  async function getLeaveUsage(empId) {
+    const yr = bangkokDate().slice(0, 4);
+    const { data } = await sb.from('leaves').select('type,start_date,end_date,status')
+      .eq('emp_id', empId).in('status', ['approved', 'pending'])
+      .gte('start_date', yr + '-01-01').lte('start_date', yr + '-12-31');
+    const used = {};
+    (data || []).forEach(l => { used[l.type] = (used[l.type] || 0) + _inclusiveDays(l.start_date, l.end_date || l.start_date); });
+    return used;
+  }
+
   // ---------- พนักงานส่งคำขอลา (รออนุมัติ) ----------
-  async function requestLeave({ empId, start_date, end_date, type, reason }) {
+  async function requestLeave({ empId, start_date, end_date, type, reason, doc }) {
     if (!empId || !start_date) throw new Error('ต้องระบุรหัสพนักงานและวันที่');
-    // ตรวจว่ามีพนักงานรหัสนี้จริง
-    const { data: emp } = await sb.from('employees').select('emp_id').eq('emp_id', empId).maybeSingle();
+    const emp = await lookupEmployee(empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const row = {
-      emp_id: empId, start_date, end_date: end_date || start_date,
-      type: type || null, reason: reason || null, status: 'pending',
-    };
+    if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
+    const end = end_date || start_date;
+    const today = bangkokDate();
+    // เงื่อนไขตามประเภทการลา
+    const { data: rule } = await sb.from('leave_types').select('*').eq('type', type).maybeSingle();
+    if (rule) {
+      if (!rule.allow_backdate && start_date < today)
+        throw new Error('ประเภท "' + type + '" ลาย้อนหลังไม่ได้');
+      if (!rule.allow_backdate && rule.advance_days > 0 && _diffDays(today, start_date) < rule.advance_days)
+        throw new Error('ประเภท "' + type + '" ต้องลาล่วงหน้าอย่างน้อย ' + rule.advance_days + ' วัน');
+      if (rule.quota_per_year != null) {
+        const usage = await getLeaveUsage(empId);
+        const used = usage[type] || 0;
+        const reqDays = _inclusiveDays(start_date, end);
+        if (used + reqDays > rule.quota_per_year)
+          throw new Error('เกินโควตา "' + type + '" (' + rule.quota_per_year + ' วัน/ปี) — ใช้ไปแล้ว ' + used + ' วัน ขอเพิ่ม ' + reqDays + ' วัน');
+      }
+      if (rule.require_doc && !doc)
+        throw new Error('ประเภท "' + type + '" ต้องแนบเอกสาร (เช่น ใบรับรองแพทย์)');
+    }
+    // ทับวันที่ถูกจัดไปทำแทนสาขา → บล็อก
+    const { data: cov } = await sb.from('schedules').select('work_date')
+      .eq('emp_id', empId).eq('is_cover', true).gte('work_date', start_date).lte('work_date', end);
+    if (cov && cov.length)
+      throw new Error('ช่วงนี้คุณถูกจัดไปทำแทนสาขา (' + cov.map(c => c.work_date).join(', ') + ') กรุณาติดต่อ HR ก่อนลา');
+    // อัปโหลดเอกสารแนบ (ถ้ามี)
+    let doc_url = null;
+    if (doc) doc_url = await uploadPhoto('employee-docs', empId + '/leave_' + Date.now() + '.jpg', doc);
+    const row = { emp_id: empId, start_date, end_date: end, type: type || null, reason: reason || null, status: 'pending', doc_url };
     const { error } = await sb.from('leaves').insert(row);
     if (error) throw error;
     return { ok: true };
   }
-  // ---------- ใบลาของฉัน (ดูสถานะอนุมัติ) ----------
+  // ---------- ใบลาของฉัน (ดูสถานะ + เหตุผลปฏิเสธ) ----------
   async function myLeaves(empId) {
     const { data, error } = await sb.from('leaves')
-      .select('leave_id,start_date,end_date,type,reason,status,created_at')
+      .select('leave_id,start_date,end_date,type,reason,status,hr_note,created_at')
       .eq('emp_id', empId).order('start_date', { ascending: false }).limit(10);
     if (error) throw error;
     return data || [];
@@ -218,5 +259,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage };
 })();
