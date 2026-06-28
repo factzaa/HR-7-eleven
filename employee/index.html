@@ -194,6 +194,20 @@
   </div>
 </div>
 
+<div class="overlay" id="rulesOverlay">
+  <div class="sheet" style="gap:12px;">
+    <h2>ยอมรับระเบียบการทำงาน</h2>
+    <p style="font-size:13.5px; color:#6b7280; margin:0">ก่อนเริ่มลงเวลา กรุณาอ่านและยอมรับระเบียบการทำงานของบริษัท</p>
+    <a class="link" href="../rules/" target="_blank" style="font-size:14px">📋 เปิดอ่านระเบียบการทำงาน</a>
+    <label style="display:flex; gap:10px; align-items:flex-start; font-size:14px; font-weight:600; text-align:left; cursor:pointer">
+      <input type="checkbox" id="rulesAgree" style="width:20px; height:20px; margin-top:1px; flex:none">
+      <span>ข้าพเจ้าได้อ่านและยอมรับระเบียบการทำงาน และยินยอมให้เก็บข้อมูลตำแหน่ง/ภาพถ่าย/ใบหน้า</span>
+    </label>
+    <button class="act in" id="rulesAcceptBtn">ยอมรับและเริ่มลงเวลา</button>
+    <button class="link" id="rulesCancelBtn">ยกเลิก</button>
+  </div>
+</div>
+
 <script>
 // ====== ตั้งค่า ======
 // backend ใช้ Supabase ผ่าน window.HR (ดู ../shared/supabase.js)
@@ -447,6 +461,7 @@ function matchFace(descriptor, emp){
 
 async function submit(action){
   if(busy || !empMatch) return;
+  if(!(await ensureRulesAccepted(empMatch.emp_id))) return;   // ต้องยอมรับระเบียบก่อน
   busy=true; updateUI(); $('lockMsg').textContent='';
   setBtnBusy(true);
   try{
@@ -494,6 +509,28 @@ $('empId').addEventListener('input', e=>{
 });
 $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');
+
+// ---------- บังคับยอมรับระเบียบก่อนเช็กอินครั้งแรก ----------
+const acceptedRules = new Set();
+const RULES_VERSION = window.RULES_VERSION || '2026-06-28';
+async function ensureRulesAccepted(empId){
+  if(acceptedRules.has(empId)) return true;
+  try{ const a = await HR.getRuleAck(empId, RULES_VERSION); if(a){ acceptedRules.add(empId); return true; } }catch(e){}
+  $('rulesAgree').checked = false;
+  $('rulesOverlay').classList.add('show');
+  return false;
+}
+$('rulesCancelBtn').onclick = ()=> $('rulesOverlay').classList.remove('show');
+$('rulesOverlay').addEventListener('click', e=>{ if(e.target===$('rulesOverlay')) $('rulesOverlay').classList.remove('show'); });
+$('rulesAcceptBtn').onclick = async ()=>{
+  if(!$('rulesAgree').checked){ showToast('err','กรุณาติ๊กยอมรับก่อน'); return; }
+  const id = $('empId').value.trim();
+  if(!id){ showToast('err','กรอกรหัสพนักงานก่อน'); return; }
+  $('rulesAcceptBtn').innerHTML='<span class="spin"></span>';
+  try{ await HR.acceptRules(id, RULES_VERSION); acceptedRules.add(id); $('rulesOverlay').classList.remove('show'); showToast('ok','ยอมรับระเบียบแล้ว กดเข้างานได้เลย'); }
+  catch(e){ showToast('err', e.message||'บันทึกไม่สำเร็จ'); }
+  $('rulesAcceptBtn').textContent='ยอมรับและเริ่มลงเวลา';
+};
 
 $('regBtn').onclick   = ()=>$('regOverlay').classList.add('show');
 $('regClose').onclick = ()=>$('regOverlay').classList.remove('show');

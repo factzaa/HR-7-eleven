@@ -102,7 +102,9 @@ HR-7-eleven-main/
 - ✅ เพิ่มปุ่ม "📋 ระเบียบการทำงาน" ที่หน้าแรก
 - ✅ บันทึกการยอมรับลงตาราง rule_acks (emp_id, version) · แสดงถ้ารหัสนั้นยอมรับแล้ว
 - ร่างเอกสารต้นฉบับ: `ระเบียบการทำงาน-ร่าง.md`
-- ไฟล์ใหม่: rules/index.html, supabase/rules_ack.sql · แก้: index.html, shared/supabase.js
+- ✅ บังคับยอมรับก่อนใช้งาน: หน้า employee เด้ง popup ระเบียบ + บล็อกเช็กอินจนกว่าจะยอมรับ · หน้า staff ต้องติ๊กยอมรับก่อนส่ง
+- ✅ เวอร์ชันระเบียบเป็นค่ากลางที่ `shared/config.js` (`window.RULES_VERSION`) — เปลี่ยนเลขนี้เมื่อมีฉบับใหม่ → พนักงานทุกคนต้องยอมรับใหม่อัตโนมัติ
+- ไฟล์ใหม่: rules/index.html, supabase/rules_ack.sql · แก้: index.html, employee/index.html, staff/index.html, shared/supabase.js, shared/config.js
   ⚠️ ต้องรัน `supabase/rules_ack.sql`
 
 ## SQL ที่ต้องรันบน Supabase (รวมทุกรอบที่ยังไม่ได้รัน)

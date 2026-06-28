@@ -90,6 +90,10 @@
     <label>วุฒิการศึกษา</label>
     <div class="doc"><label for="d_edu">เลือก/ถ่ายรูป</label><input id="d_edu" type="file" accept="image/*"><img id="p_edu"></div>
 
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;margin:6px 0 12px;cursor:pointer">
+      <input type="checkbox" id="agreeRules" style="width:18px;height:18px;margin-top:2px;flex:none">
+      <span>ข้าพเจ้าได้อ่านและยอมรับ <a href="../rules/" target="_blank" style="color:var(--green)">ระเบียบการทำงาน</a> และยินยอมให้เก็บข้อมูลส่วนบุคคลตาม PDPA</span>
+    </label>
     <button class="btn" id="submitBtn">ส่งข้อมูลให้ HR ตรวจ</button>
     <div class="hint" style="text-align:center;margin-top:8px">ข้อมูลจะถูกส่งให้ HR ตรวจสอบและอนุมัติก่อนบันทึกเข้าระบบ</div>
   </div>
@@ -150,9 +154,11 @@ $('submitBtn').onclick = async ()=>{
     photo:docs.photo, idcard:docs.idcard, bankbook:docs.bankbook, house:docs.house, edu:docs.edu,
   };
   if(!p.name){ toast('err','กรอกชื่อ-นามสกุล'); return; }
+  if(!$('agreeRules').checked){ toast('err','กรุณาติ๊กยอมรับระเบียบการทำงานก่อน'); return; }
   $('submitBtn').disabled=true; $('submitBtn').textContent='กำลังส่ง…';
   try{
     await HR.submitProfile(p);
+    try{ await HR.acceptRules(id, window.RULES_VERSION||'2026-06-28'); }catch(_){}
     $('step2').style.display='none'; $('done').style.display='block';
     window.scrollTo(0,0);
   }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); $('submitBtn').disabled=false; $('submitBtn').textContent='ส่งข้อมูลให้ HR ตรวจ'; }

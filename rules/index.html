@@ -107,7 +107,7 @@
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
 <script>
-const RULES_VERSION = '2026-06-28';
+const RULES_VERSION = window.RULES_VERSION || '2026-06-28';
 const $ = id => document.getElementById(id);
 function toast(kind,msg){ const t=$('toast'); t.className='toast show '+kind; t.textContent=msg; setTimeout(()=>t.classList.remove('show'),3500); }
 function sync(){ $('acceptBtn').disabled = !($('agree').checked && $('empId').value.trim()); }
