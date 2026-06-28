@@ -19,7 +19,6 @@ alter table public.leave_types add column if not exists require_doc boolean not 
 insert into public.leave_types (type, advance_days, quota_per_year, allow_backdate, require_doc, sort) values
   ('ลาป่วย',     0, null, true,  true,  1),
   ('ลากิจ',      2, null, false, false, 2),
-  ('ลาพักร้อน',  7, 6,    false, false, 3),
   ('อื่นๆ',      0, null, false, false, 4)
 on conflict (type) do nothing;
 -- ตั้งให้ลาป่วยต้องแนบใบรับรองแพทย์ (กรณีตารางมีอยู่แล้ว)
