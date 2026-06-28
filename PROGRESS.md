@@ -41,7 +41,51 @@ HR-7-eleven-main/
 - ✅ ยืนยันเกณฑ์วินัยตรงกัน 2 ไฟล์ (`hr-api.js` / `supabase.js`) — คงเกณฑ์เดิมตามที่ตัดสินใจ
 - ✅ เตรียม SQL แก้รัศมี B002 → 20 ม. ที่ `supabase/fix_branch_radius.sql` (ต้องรันบน Supabase)
 - ✅ เตรียม deploy GitHub Pages: `index.html` (หน้าเลือกเมนู), `.nojekyll`, `.gitignore`, `DEPLOY-GITHUB.md`
-  (path เป็น relative อยู่แล้ว ใช้กับ Pages ได้เลย)
+  (path เป็น relative อยู่แล้ว ใช้กับ Pages ได้เลย) — deploy แล้วที่ factzaa.github.io/HR-7-eleven/
+- ✅ ทำเป็น PWA ติดตั้งบนมือถือได้: `manifest.webmanifest`, `sw.js`, โฟลเดอร์ `icons/`
+  ผูก manifest + meta + register service worker เข้าทั้ง 3 หน้า (index/employee/hr)
+  ⚠️ ไฟล์ใหม่เหล่านี้ต้องอัปขึ้น GitHub ด้วย: `manifest.webmanifest`, `sw.js`, `icons/` (ทั้งโฟลเดอร์)
+     และอัป `index.html`, `employee/index.html`, `hr/index.html` ทับของเดิม
+- ✅ สแตมป์เวลา/สถานที่บนรูปเช็กอิน (หน้า employee): เบิร์น overlay ลงรูปตอนกดเข้างาน
+  เนื้อหา: เวลา (ตัวใหญ่) + วันที่ พ.ศ.ย่อ + วันในสัปดาห์ + ชื่อสาขา + พิกัด/ความแม่นยำ
+  + ชื่อพนักงาน + สถานะ ในเขต/นอกเขต + ลายน้ำโลโก้ 7-Eleven (แก้ใน capturePhoto/drawStamp)
+  เพิ่มความละเอียดรูปจาก 320px → 720px เพื่อให้ตัวอักษรคมชัด
+  ⚠️ ต้องอัป employee/index.html ทับบน GitHub
+
+## รอบ 28 มิ.ย. 2026 — จัดการสาขา + ตารางงาน + ไปทำแทนสาขา
+- ✅ ตารางใหม่ `schedules` (ตารางเวร) — ไฟล์ `supabase/schedules.sql` (ยังไม่ได้รันบน Supabase)
+- ✅ แท็บ "สาขา" 🏪 — CRUD สาขา (ชื่อ/lat/lng/รัศมี) + ปุ่มดึงพิกัด GPS + ลิงก์แผนที่
+  API: `hr_branch_list/save/delete` (ลบไม่ได้ถ้ายังมีพนักงาน/ประวัติลงเวลา)
+- ✅ แท็บ "ตารางงาน" 🗓️ — กริดรายสัปดาห์ (พนักงาน×7วัน) ตั้งกะ+สาขา, นำทางสัปดาห์, คัดลอกสัปดาห์
+  API: `hr_sched_week/save/delete/copy` — ช่องสีส้ม = ไปแทนสาขาอื่น (auto เมื่อสาขา≠สาขาประจำ)
+- ✅ ไปทำแทนสาขา: เช็กอินที่สาขาไหนก็ได้ในเขต geofence, ระบบ flag "ไปแทน" อัตโนมัติ (attendance.branch_id ≠ สาขาประจำ)
+- ✅ วินัย/ขาดงาน อิงตารางเวร: ถ้ารอบมีตารางเวร → วันควรมา = วันที่จัดเวร, ไม่งั้น fallback weekly_off
+- ✅ รายงานเพิ่ม: คอลัมน์ "ไปแทน" + สรุปวันประจำ/วันไปแทนต่อคน + มุมมอง "การไปทำแทนสาขา" รายวัน + export
+- ไฟล์ที่แก้: `shared/hr-api.js`, `hr/index.html` · ไฟล์ใหม่: `supabase/schedules.sql`
+  ⚠️ ต้องทำ 2 อย่าง: (1) รัน `supabase/schedules.sql` บน Supabase (2) อัป `shared/hr-api.js` + `hr/index.html` ขึ้น GitHub
+
+## รอบ 28 มิ.ย. 2026 (2) — คีย์โค้ดจัดเวร + ตั้งค่ากะ + ลาออนไลน์ + แจ้งเตือน
+- ✅ จัดตารางแบบ "คีย์โค้ด": พิมพ์โค้ดย่อในช่อง (1=เช้า 2=บ่าย 3=ดึก D=Delivery) Enter เพื่อบันทึก, ช่องว่าง=วันหยุด, คลิก "ไปแทน" ใต้ช่องเพื่อจัด cover
+- ✅ แท็บใหม่ "ตั้งค่ากะ" ⚙️ — เพิ่ม/แก้/ลบกะ: โค้ดคีย์, ชื่อ, เวลาเข้า-ออก, ผ่อนผัน · API hr_shift_list/save/delete
+- ✅ หน้าพนักงาน (index): ปุ่ม "ขอลา" + ฟอร์มส่งคำขอ → สถานะ "รออนุมัติ" + ดูสถานะคำขอของตนเอง (HR.requestLeave/myLeaves)
+- ✅ HR อนุมัติ/ปฏิเสธใบลา ในแท็บ "ลา & วันหยุด" (ใบลารออนุมัติเด้งขึ้นก่อน) · API hr_leave_status
+- ✅ แผงแจ้งเตือนแอดมินบน Dashboard: ใบลารออนุมัติ / คนยังไม่กดออก / มาสายวันนี้ / ขาด-ยังไม่มาตามตาราง · API hr_notifications
+- ไฟล์แก้: shared/hr-api.js, hr/index.html, employee/index.html, shared/supabase.js · ไฟล์ใหม่: supabase/shift_codes.sql
+  ⚠️ ต้องรัน `supabase/shift_codes.sql` บน Supabase (เพิ่มคอลัมน์ code + กะ D + เปิดสิทธิ์แก้กะ) แล้วอัปไฟล์ที่แก้ขึ้น GitHub
+
+## รอบ 28 มิ.ย. 2026 (3) — โฮม + พนักงานกรอกข้อมูลเอง + ย้ายขอลา
+- ✅ ปุ่ม 🏠 หน้าแรก ในหน้า employee, hr, staff (กลับไป landing index)
+- ✅ ย้าย "ขอลา" จากหน้า employee ไปไว้ที่ "หน้าแรก" (index.html) แล้ว — มี modal + ดูสถานะคำขอ
+- ✅ หน้าใหม่ `staff/index.html` — ลิงก์ส่งให้พนักงานกรอกข้อมูลเอง: กรอกรหัส → กรอกข้อมูลส่วนตัว/บัญชี + อัปเอกสาร 5 ชนิด (รูปถ่าย, สำเนาบัตร, สมุดบัญชี, ทะเบียนบ้าน, วุฒิ) → ส่งเข้าสถานะ "รอตรวจ"
+- ✅ แท็บ HR ใหม่ "ข้อมูลรอตรวจ" 📥 — ดูข้อมูล+เปิดเอกสาร, กดอนุมัติ (เขียนเข้า employees) / ปฏิเสธ + เด้งในแผงแจ้งเตือน
+- ไฟล์แก้: index.html, employee/index.html, hr/index.html, shared/hr-api.js, shared/supabase.js · ไฟล์ใหม่: staff/index.html, supabase/profile.sql
+  ⚠️ ต้องรัน `supabase/profile.sql` (คอลัมน์เอกสาร + ตาราง profile_submissions + bucket employee-docs) แล้วอัปไฟล์ขึ้น GitHub
+
+## SQL ที่ต้องรันบน Supabase (รวมทุกรอบที่ยังไม่ได้รัน)
+1. `schedules.sql` — ตารางเวร
+2. `branches_rls.sql` — ให้เพิ่ม/แก้/ลบสาขาได้
+3. `shift_codes.sql` — โค้ดกะ + กะ Delivery + ให้แก้กะได้
+4. `profile.sql` — พนักงานกรอกข้อมูล/อัปเอกสารเอง + bucket เอกสาร
 
 ## ค้างไว้ / จะทำต่อ
 **Phase 3 — เก็บรายละเอียดให้สมจริง**

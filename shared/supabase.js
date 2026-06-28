@@ -166,6 +166,57 @@
     return Math.round(diff * 100) / 100;
   }
 
+  // ---------- พนักงานส่งคำขอลา (รออนุมัติ) ----------
+  async function requestLeave({ empId, start_date, end_date, type, reason }) {
+    if (!empId || !start_date) throw new Error('ต้องระบุรหัสพนักงานและวันที่');
+    // ตรวจว่ามีพนักงานรหัสนี้จริง
+    const { data: emp } = await sb.from('employees').select('emp_id').eq('emp_id', empId).maybeSingle();
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const row = {
+      emp_id: empId, start_date, end_date: end_date || start_date,
+      type: type || null, reason: reason || null, status: 'pending',
+    };
+    const { error } = await sb.from('leaves').insert(row);
+    if (error) throw error;
+    return { ok: true };
+  }
+  // ---------- ใบลาของฉัน (ดูสถานะอนุมัติ) ----------
+  async function myLeaves(empId) {
+    const { data, error } = await sb.from('leaves')
+      .select('leave_id,start_date,end_date,type,reason,status,created_at')
+      .eq('emp_id', empId).order('start_date', { ascending: false }).limit(10);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ---------- พนักงานกรอกข้อมูลตัวเอง + อัปเอกสาร (รอ HR อนุมัติ) ----------
+  async function lookupEmployee(empId) {
+    const { data } = await sb.from('employees').select('emp_id,name,nickname,active').eq('emp_id', empId).maybeSingle();
+    return data || null;
+  }
+  async function submitProfile(p) {
+    const emp = await lookupEmployee(p.empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้ (ให้ HR สร้างรหัสก่อน)');
+    if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
+    const base = p.empId + '/' + Date.now();
+    const up = async (val, name) => val ? await uploadPhoto('employee-docs', base + '_' + name + '.jpg', val) : null;
+    const row = {
+      emp_id: p.empId, name: p.name || emp.name, nickname: p.nickname || null,
+      phone: p.phone || null, address: p.address || null,
+      emergency_name: p.emergency_name || null, emergency_phone: p.emergency_phone || null,
+      bank_name: p.bank_name || null, bank_account: p.bank_account || null, id_card: p.id_card || null,
+      photo_url: await up(p.photo, 'photo'),
+      idcard_url: await up(p.idcard, 'idcard'),
+      bankbook_url: await up(p.bankbook, 'bankbook'),
+      house_url: await up(p.house, 'house'),
+      edu_url: await up(p.edu, 'edu'),
+      status: 'pending',
+    };
+    const { error } = await sb.from('profile_submissions').insert(row);
+    if (error) throw error;
+    return { ok: true };
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile };
 })();

@@ -84,6 +84,14 @@
         case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date);
         case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start);
         case 'hr_coverage':       return await hrCoverage(p.filter);
+        case 'hr_shift_list':     return await hrShiftList();
+        case 'hr_shift_save':     return await hrShiftSave(p.data);
+        case 'hr_shift_delete':   return await hrShiftDelete(p.shift_id);
+        case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status);
+        case 'hr_notifications':  return await hrNotifications();
+        case 'hr_submission_list':    return await hrSubmissionList();
+        case 'hr_submission_approve': return await hrSubmissionApprove(p.id);
+        case 'hr_submission_reject':  return await hrSubmissionReject(p.id);
         default: return { ok: false, error: 'unknown action: ' + p.action };
       }
     } catch (e) {
@@ -514,6 +522,110 @@
       }))
       .sort((x, y) => (y.work_date < x.work_date ? -1 : 1));
     return { ok: true, rows };
+  }
+
+  // ---------- SHIFTS (ตั้งค่ากะ + โค้ดย่อ) ----------
+  async function hrShiftList() {
+    const { data, error } = await sb().from('shifts').select('*').order('start_time');
+    if (error) throw error;
+    // นับการใช้งานแต่ละกะ
+    const { data: emps } = await sb().from('employees').select('default_shift').eq('active', true);
+    const cnt = {};
+    (emps || []).forEach(e => { if (e.default_shift) cnt[e.default_shift] = (cnt[e.default_shift] || 0) + 1; });
+    return { ok: true, rows: (data || []).map(s => ({ ...s, emp_count: cnt[s.shift_id] || 0 })) };
+  }
+  async function hrShiftSave(d) {
+    if (!d.shift_id || !d.name) return { ok: false, error: 'ต้องมีรหัสกะและชื่อ' };
+    const row = {
+      shift_id: String(d.shift_id).trim(), name: d.name.trim(),
+      code: (d.code || '').trim() || null,
+      start_time: d.start_time || '00:00', end_time: d.end_time || '00:00',
+      grace_min: parseInt(d.grace_min) >= 0 ? parseInt(d.grace_min) : 5,
+    };
+    const { error } = await sb().from('shifts').upsert(row, { onConflict: 'shift_id' });
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrShiftDelete(shiftId) {
+    const { count: e1 } = await sb().from('employees').select('emp_id', { count: 'exact', head: true }).eq('default_shift', shiftId);
+    if (e1 && e1 > 0) return { ok: false, error: 'ลบไม่ได้: มีพนักงานใช้กะนี้เป็นกะประจำ ' + e1 + ' คน' };
+    const { count: a1 } = await sb().from('attendance').select('id', { count: 'exact', head: true }).eq('shift_id', shiftId);
+    if (a1 && a1 > 0) return { ok: false, error: 'ลบไม่ได้: มีประวัติการลงเวลากะนี้ ' + a1 + ' รายการ' };
+    await sb().from('schedules').delete().eq('shift_id', shiftId);
+    const { error } = await sb().from('shifts').delete().eq('shift_id', shiftId);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- LEAVE APPROVAL (อนุมัติ/ปฏิเสธใบลา) ----------
+  async function hrLeaveStatus(leaveId, status) {
+    if (!['approved', 'rejected', 'pending'].includes(status)) return { ok: false, error: 'สถานะไม่ถูกต้อง' };
+    const { error } = await sb().from('leaves').update({ status }).eq('leave_id', leaveId);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- NOTIFICATIONS (แจ้งเตือนแอดมิน) ----------
+  async function hrNotifications() {
+    const today = bkkToday();
+    const [lvR, todayR, schR, empR, lvApprR, subR] = await Promise.all([
+      sb().from('leaves').select('*, employees(name)').eq('status', 'pending').order('created_at', { ascending: false }),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id').eq('work_date', today),
+      sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today),
+      sb().from('employees').select('emp_id,name,branch_id').eq('active', true),
+      sb().from('leaves').select('emp_id,start_date,end_date').eq('status', 'approved').lte('start_date', today),
+      sb().from('profile_submissions').select('id,emp_id,name,submitted_at').eq('status', 'pending').order('submitted_at', { ascending: false }),
+    ]);
+    const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; });
+    const att = todayR.data || [];
+    const checkedIn = new Set(att.filter(a => a.check_in).map(a => a.emp_id));
+    const onleave = new Set((lvApprR.data || []).filter(l => today <= (l.end_date || l.start_date)).map(l => l.emp_id));
+
+    const pending_leaves = (lvR.data || []).map(l => ({
+      leave_id: l.leave_id, emp_id: l.emp_id, emp_name: (l.employees && l.employees.name) || l.emp_id,
+      start_date: l.start_date, end_date: l.end_date, type: l.type, reason: l.reason,
+      days: daysBetween(l.start_date, l.end_date || l.start_date),
+    }));
+    const not_checked_out = att.filter(a => a.check_in && !a.check_out)
+      .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, check_in: fmtTime(a.check_in) }));
+    const late_today = att.filter(a => a.late_min > 0)
+      .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, late_min: a.late_min }));
+    const absent_roster = (schR.data || []).filter(s => !checkedIn.has(s.emp_id) && !onleave.has(s.emp_id))
+      .map(s => ({ emp_id: s.emp_id, emp_name: empName[s.emp_id] || s.emp_id, shift_id: s.shift_id }));
+
+    const pending_profiles = (subR.data || []).map(s => ({ id: s.id, emp_id: s.emp_id, name: s.name || s.emp_id }));
+    return {
+      ok: true, pending_leaves, not_checked_out, late_today, absent_roster, pending_profiles,
+      counts: { pending_leaves: pending_leaves.length, not_checked_out: not_checked_out.length, late_today: late_today.length, absent_roster: absent_roster.length, pending_profiles: pending_profiles.length },
+    };
+  }
+
+  // ---------- PROFILE SUBMISSIONS (ข้อมูลพนักงานกรอกเอง — รอตรวจ) ----------
+  async function hrSubmissionList() {
+    const { data, error } = await sb().from('profile_submissions')
+      .select('*, employees(name)').eq('status', 'pending').order('submitted_at', { ascending: false });
+    if (error) throw error;
+    return { ok: true, rows: (data || []).map(s => ({ ...s, current_name: (s.employees && s.employees.name) || s.emp_id })) };
+  }
+  async function hrSubmissionApprove(id) {
+    const { data: s, error } = await sb().from('profile_submissions').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!s) return { ok: false, error: 'ไม่พบรายการ' };
+    const upd = {};
+    ['name', 'nickname', 'phone', 'address', 'emergency_name', 'emergency_phone', 'bank_name', 'bank_account', 'id_card', 'photo_url', 'idcard_url', 'bankbook_url', 'house_url', 'edu_url']
+      .forEach(k => { if (s[k] != null && s[k] !== '') upd[k] = s[k]; });
+    if (Object.keys(upd).length) {
+      const { error: e2 } = await sb().from('employees').update(upd).eq('emp_id', s.emp_id);
+      if (e2) throw e2;
+    }
+    const { error: e3 } = await sb().from('profile_submissions').update({ status: 'approved' }).eq('id', id);
+    if (e3) throw e3;
+    return { ok: true };
+  }
+  async function hrSubmissionReject(id) {
+    const { error } = await sb().from('profile_submissions').update({ status: 'rejected' }).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
   }
 
   window.HRAPI = { dispatch };

@@ -245,6 +245,7 @@
     <div class="t2">ระบบบริหารพนักงาน</div>
   </div>
   <div class="topact" id="topact" style="display:none">
+    <a class="btn-ghost" href="../" title="หน้าแรก" style="text-decoration:none">🏠 หน้าแรก</a>
     <button class="btn-ghost" id="logoutBtn">ออกจากระบบ</button>
   </div>
 </div>
@@ -258,6 +259,7 @@
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
   <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
+  <button class="tab" id="tab_submissions"><span class="tabicon">📥</span>ข้อมูลรอตรวจ</button>
 </div>
 
 <div class="login" id="loginView">
@@ -375,6 +377,12 @@
     <thead><tr><th>รหัส</th><th>ชื่อสาขา</th><th>พิกัด (lat, lng)</th><th>รัศมี</th><th>พนักงานประจำ</th><th></th></tr></thead>
     <tbody id="brRows"></tbody>
   </table></div><div class="empty" id="brEmpty" style="display:none">ยังไม่มีสาขา</div></div>
+</div>
+
+<!-- Submissions: ข้อมูลพนักงานรอตรวจ -->
+<div id="view_submissions" class="container" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">ข้อมูล/เอกสารพนักงานที่รอตรวจ</h3><button class="btn btn-sec btn-sm" id="sub_refresh">รีเฟรช</button></div>
+  <div id="sub_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Settings: ตั้งค่ากะ -->
@@ -1214,7 +1222,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches','settings'];
+const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches','settings','submissions'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
@@ -1225,6 +1233,7 @@ showTab = function(name){
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
   else if(name==='settings') loadShifts();
+  else if(name==='submissions') loadSubmissions();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
 
@@ -1393,7 +1402,7 @@ async function loadNotifications(){
   const r = await post({ action:'hr_notifications', password:pwd });
   if(!r.ok) return;
   const c = r.counts;
-  const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster;
+  const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster + (c.pending_profiles||0);
   if(!total){ $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px;color:#16a34a">🔔 ไม่มีรายการที่ต้องดำเนินการวันนี้</div>`; return; }
   const chip=(n,label,color)=> n>0?`<span class="lvl-pill" style="background:${color}"><span class="lvl-dot"></span> ${label} ${n}</span>`:'';
   const list=(title,arr,fmt)=> arr.length?`<div style="margin-top:10px"><div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:3px">${title}</div>${arr.map(fmt).join('')}</div>`:'';
@@ -1401,18 +1410,60 @@ async function loadNotifications(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <b style="font-size:15px">🔔 แจ้งเตือน</b>
       ${chip(c.pending_leaves,'ใบลารออนุมัติ','#d97706')}
+      ${chip(c.pending_profiles||0,'ข้อมูลรอตรวจ','#7c3aed')}
       ${chip(c.absent_roster,'ขาด/ยังไม่มา','#b91c1c')}
       ${chip(c.late_today,'มาสายวันนี้','#ea580c')}
       ${chip(c.not_checked_out,'ยังไม่กดออก','#0ea5e9')}
     </div>
+    ${list('ข้อมูล/เอกสารพนักงานรอตรวจ (ไปแท็บ "ข้อมูลรอตรวจ")', r.pending_profiles||[], p=>`<div style="font-size:13px;padding:2px 0">• ${esc(p.name)} (${esc(p.emp_id)})</div>`)}
     ${list('ใบลารออนุมัติ (ไปแท็บ "ลา & วันหยุด" เพื่ออนุมัติ)', r.pending_leaves, l=>`<div style="font-size:13px;padding:2px 0">• ${esc(l.emp_name)} · ${esc(l.type||'')} ${esc(l.start_date)}${l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):''} (${l.days} วัน)</div>`)}
     ${list('ขาด/ยังไม่มาตามตารางวันนี้', r.absent_roster, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · กะ ${esc(shiftName(a.shift_id))}</div>`)}
     ${list('ยังไม่กดออกงาน', r.not_checked_out, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · เข้า ${esc(a.check_in)}</div>`)}
   </div>`;
 }
 
+// ========== ข้อมูลพนักงานรอตรวจ ==========
+async function loadSubmissions(){
+  $('sub_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r = await post({ action:'hr_submission_list', password:pwd });
+  if(!r.ok){ $('sub_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  if(!r.rows.length){ $('sub_body').innerHTML='<div class="empty">ไม่มีข้อมูลรอตรวจ 🎉</div>'; return; }
+  const docLink=(u,label)=> u?`<a href="${esc(u)}" target="_blank" class="btn btn-sec btn-sm" style="margin:2px 4px 2px 0">${label}</a>`:`<span style="color:#cbd5e1;font-size:12px;margin-right:8px">${label}: —</span>`;
+  $('sub_body').innerHTML = r.rows.map(s=>`
+    <div class="card" style="margin-bottom:12px;padding:16px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        ${s.photo_url?`<img src="${esc(s.photo_url)}" style="width:48px;height:48px;border-radius:8px;object-fit:cover">`:''}
+        <div style="flex:1;min-width:160px">
+          <div style="font-weight:700">${esc(s.name||s.current_name)} <span style="color:var(--muted);font-weight:400">(${esc(s.emp_id)})</span></div>
+          <div style="font-size:12.5px;color:var(--muted)">ส่งเมื่อ ${esc(String(s.submitted_at||'').slice(0,16).replace('T',' '))}</div>
+        </div>
+        <button class="btn btn-pri btn-sm" data-sapp="${s.id}">อนุมัติ</button>
+        <button class="btn btn-danger btn-sm" data-srej="${s.id}">ปฏิเสธ</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-top:10px;font-size:13px">
+        <div>ชื่อเล่น: ${esc(s.nickname||'—')}</div><div>เบอร์: ${esc(s.phone||'—')}</div>
+        <div style="grid-column:1/3">ที่อยู่: ${esc(s.address||'—')}</div>
+        <div>ผู้ติดต่อฉุกเฉิน: ${esc(s.emergency_name||'—')}</div><div>เบอร์ฉุกเฉิน: ${esc(s.emergency_phone||'—')}</div>
+        <div>ธนาคาร: ${esc(s.bank_name||'—')}</div><div>เลขบัญชี: ${esc(s.bank_account||'—')}</div>
+        <div>เลขบัตรประชาชน: ${esc(s.id_card||'—')}</div>
+      </div>
+      <div style="margin-top:10px">${docLink(s.idcard_url,'สำเนาบัตร')}${docLink(s.bankbook_url,'สมุดบัญชี')}${docLink(s.house_url,'ทะเบียนบ้าน')}${docLink(s.edu_url,'วุฒิการศึกษา')}${docLink(s.photo_url,'รูปถ่าย')}</div>
+    </div>`).join('');
+  document.querySelectorAll('[data-sapp]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('อนุมัติและบันทึกข้อมูลนี้เข้าระบบพนักงาน?')) return;
+    const r=await post({ action:'hr_submission_approve', password:pwd, id:b.dataset.sapp });
+    if(r.ok){ toast('ok','อนุมัติและบันทึกแล้ว'); loadSubmissions(); loadAll(); loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+  document.querySelectorAll('[data-srej]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ปฏิเสธรายการนี้?')) return;
+    const r=await post({ action:'hr_submission_reject', password:pwd, id:b.dataset.srej });
+    if(r.ok){ toast('ok','ปฏิเสธแล้ว'); loadSubmissions(); loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+}
+
 // ---------- สร้าง modal สาขา + ตารางเวร ----------
 (function buildModals(){
+  const _subRef=$('sub_refresh'); if(_subRef) _subRef.onclick=loadSubmissions;
   const br = document.createElement('div'); br.className='overlay'; br.id='brOverlay';
   br.innerHTML = `<div class="modal" style="max-width:460px">
     <div class="modal-h"><h2 id="brTitle">เพิ่มสาขา</h2><button class="close" id="brClose">×</button></div>

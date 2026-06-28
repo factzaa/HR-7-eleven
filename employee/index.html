@@ -94,6 +94,12 @@
   .minibtn:hover{border-color:var(--green); background:var(--green-soft);}
   .minibtn.primary{background:var(--green-soft); border-color:var(--green); color:var(--green-d);}
   .minibtn .ic{font-size:14px; line-height:1;}
+  .camfab{position:absolute; top:10px; right:10px; z-index:4; display:inline-flex; align-items:center; gap:5px;
+        font:inherit; font-size:12.5px; font-weight:600; color:var(--green-d); background:rgba(255,255,255,.92);
+        border:0; border-radius:999px; padding:7px 12px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.22); backdrop-filter:blur(2px);}
+  .camfab:active{transform:scale(.96);}
+  .reglink{font-size:12.5px; font-weight:600; color:var(--green-d); cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:4px;}
+  .reglink:hover{text-decoration:underline;}
 
   .overlay{position:fixed; inset:0; background:rgba(20,24,21,.55); backdrop-filter:blur(3px);
         display:none; align-items:center; justify-content:center; padding:20px; z-index:9;}
@@ -125,6 +131,7 @@
         <div class="t1">สำหรับพนักงาน</div>
         <div class="t2">ระบบลงเวลาเข้างาน</div>
       </div>
+      <a href="../" title="หน้าแรก" style="text-decoration:none;font-size:18px;background:rgba(0,0,0,.06);border-radius:9px;padding:6px 10px;margin-left:auto;margin-right:8px;line-height:1">🏠</a>
       <div id="clock">--:--:--</div>
     </header>
 
@@ -134,17 +141,14 @@
       <div class="facebadge"><span class="dot" id="facedot"></span><span id="facetext">กำลังเตรียมกล้อง…</span></div>
       <div class="camnote" id="camnote">แตะ "อนุญาต" เพื่อเปิดกล้อง</div>
       <div class="toast" id="toast"></div>
+      <button class="camfab" id="selfBtn"><span class="ic">📊</span>สถานะของฉัน</button>
     </div>
 
     <div class="controls">
       <div>
         <div class="labelrow">
           <label>รหัสพนักงาน</label>
-          <div style="display:flex; gap:8px;">
-            <button class="minibtn primary" id="selfBtn"><span class="ic">📊</span>สถานะของฉัน</button>
-            <button class="minibtn" id="leaveBtn"><span class="ic">📝</span>ขอลา</button>
-            <button class="minibtn" id="regBtn"><span class="ic">📷</span>ลงทะเบียนใบหน้า</button>
-          </div>
+          <span class="reglink" id="regBtn"><span class="ic">📷</span>ลงทะเบียนใบหน้า</span>
         </div>
         <input id="empId" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="กรอกรหัสตัวเลข">
         <div class="hint idle" id="empHint"></div>
@@ -187,29 +191,6 @@
       <button class="link" id="selfClose">ปิด</button>
     </div>
     <div id="selfBody"><p>กรอกรหัสพนักงานก่อน แล้วกด "สถานะของฉัน"</p></div>
-  </div>
-</div>
-
-<div class="overlay" id="leaveOverlay">
-  <div class="sheet" style="gap:10px;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <h2>ขอลา</h2>
-      <button class="link" id="leaveClose">ปิด</button>
-    </div>
-    <p style="margin:0; color:#6b7280; font-size:13px">ส่งคำขอให้ HR อนุมัติ (ใช้รหัสพนักงานที่กรอกไว้)</p>
-    <div style="text-align:left; display:grid; gap:9px;">
-      <label style="font-size:13px; font-weight:600">ประเภทการลา
-        <select id="lvType" style="width:100%; margin-top:4px"><option>ลาป่วย</option><option>ลากิจ</option><option>ลาพักร้อน</option><option>อื่นๆ</option></select>
-      </label>
-      <label style="font-size:13px; font-weight:600">ตั้งแต่วันที่
-        <input id="lvStart" type="date" style="width:100%; margin-top:4px"></label>
-      <label style="font-size:13px; font-weight:600">ถึงวันที่
-        <input id="lvEnd" type="date" style="width:100%; margin-top:4px"></label>
-      <label style="font-size:13px; font-weight:600">เหตุผล
-        <input id="lvReason" type="text" placeholder="ระบุเหตุผล (ถ้ามี)" style="width:100%; margin-top:4px"></label>
-    </div>
-    <button class="act in" id="lvSubmit">ส่งคำขอลา</button>
-    <div id="lvMine" style="text-align:left; font-size:12.5px;"></div>
   </div>
 </div>
 
@@ -513,47 +494,6 @@ $('empId').addEventListener('input', e=>{
 });
 $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');
-
-// ---------- ขอลา (ส่งให้ HR อนุมัติ) ----------
-const _lvOv = $('leaveOverlay');
-$('leaveBtn').onclick = ()=>{
-  const id = $('empId').value.trim();
-  if(!$('lvStart').value){ $('lvStart').value = HR.bangkokDate(); }
-  if(!$('lvEnd').value){ $('lvEnd').value = HR.bangkokDate(); }
-  _lvOv.classList.add('show');
-  loadMyLeaves(id);
-};
-$('leaveClose').onclick = ()=> _lvOv.classList.remove('show');
-_lvOv.addEventListener('click', e=>{ if(e.target===_lvOv) _lvOv.classList.remove('show'); });
-async function loadMyLeaves(id){
-  if(!id){ $('lvMine').innerHTML = '<div style="margin-top:8px;color:#9ca3af">กรอกรหัสพนักงานเพื่อดูสถานะคำขอ</div>'; return; }
-  try{
-    const rows = await HR.myLeaves(id);
-    $('lvMine').innerHTML = rows.length
-      ? '<div style="margin-top:8px;color:#6b7280;font-weight:600">คำขอล่าสุด</div>' + rows.map(r=>{
-          const st = r.status==='approved' ? '<span style="color:#16a34a">✓ อนุมัติ</span>'
-                   : r.status==='rejected' ? '<span style="color:#dc2626">✗ ปฏิเสธ</span>'
-                   : '<span style="color:#d97706">⏳ รออนุมัติ</span>';
-          const range = (r.end_date && r.end_date!==r.start_date) ? (r.start_date+' – '+r.end_date) : r.start_date;
-          return `<div style="padding:2px 0">• ${range} · ${escH(r.type||'')} — ${st}</div>`;
-        }).join('')
-      : '<div style="margin-top:8px;color:#9ca3af">ยังไม่มีคำขอลา</div>';
-  }catch(e){ $('lvMine').innerHTML=''; }
-}
-$('lvSubmit').onclick = async ()=>{
-  const id = $('empId').value.trim();
-  if(!id){ showToast('err','กรอกรหัสพนักงานก่อน'); return; }
-  const start=$('lvStart').value, end=$('lvEnd').value, type=$('lvType').value, reason=$('lvReason').value.trim();
-  if(!start){ showToast('err','เลือกวันที่เริ่มลา'); return; }
-  if(end && end < start){ showToast('err','วันที่สิ้นสุดต้องไม่ก่อนวันเริ่ม'); return; }
-  $('lvSubmit').innerHTML='<span class="spin"></span>';
-  try{
-    await HR.requestLeave({ empId:id, start_date:start, end_date:end||start, type, reason });
-    showToast('ok','ส่งคำขอลาแล้ว รอ HR อนุมัติ');
-    $('lvReason').value=''; loadMyLeaves(id);
-  }catch(e){ showToast('err', e.message||'ส่งคำขอไม่สำเร็จ'); }
-  $('lvSubmit').textContent='ส่งคำขอลา';
-};
 
 $('regBtn').onclick   = ()=>$('regOverlay').classList.add('show');
 $('regClose').onclick = ()=>$('regOverlay').classList.remove('show');
