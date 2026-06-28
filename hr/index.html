@@ -257,6 +257,7 @@
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
+  <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
 </div>
 
 <div class="login" id="loginView">
@@ -272,6 +273,7 @@
 
 <!-- Dashboard -->
 <div id="view_dashboard" class="container" style="display:none">
+  <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
@@ -356,7 +358,7 @@
       <span style="flex:1"></span>
       <button class="btn btn-sec btn-sm" id="sc_copy">⧉ คัดลอกสัปดาห์ก่อนมาวาง</button>
     </div>
-    <div style="font-size:12.5px; color:var(--muted); margin-top:8px">คลิกช่องเพื่อกำหนดกะ + สาขา · <span style="color:#ea580c; font-weight:600">ช่องสีส้ม = ไปแทนสาขาอื่น</span></div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:8px">พิมพ์โค้ดกะในช่อง (เช่น 1/2/3/D) แล้วกด Enter · ช่องว่าง = วันหยุด · คลิก "ไปแทน" ใต้ช่องเพื่อจัดไปสาขาอื่น <span style="color:#ea580c; font-weight:600">(ช่องสีส้ม)</span> · ดู/แก้โค้ดได้ที่แท็บ "ตั้งค่ากะ"</div>
   </div>
   <div class="card"><div class="tablewrap"><table id="scTable" style="min-width:760px">
     <thead id="scHead"></thead><tbody id="scBody"></tbody>
@@ -373,6 +375,22 @@
     <thead><tr><th>รหัส</th><th>ชื่อสาขา</th><th>พิกัด (lat, lng)</th><th>รัศมี</th><th>พนักงานประจำ</th><th></th></tr></thead>
     <tbody id="brRows"></tbody>
   </table></div><div class="empty" id="brEmpty" style="display:none">ยังไม่มีสาขา</div></div>
+</div>
+
+<!-- Settings: ตั้งค่ากะ -->
+<div id="view_settings" class="container" style="display:none">
+  <div class="toolbar">
+    <h3 style="flex:1; font-size:15px; font-weight:600">ตั้งค่ากะเข้างาน</h3>
+    <button class="btn btn-pri" id="sh_new">+ เพิ่มกะ</button>
+  </div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>โค้ดคีย์</th><th>รหัสกะ</th><th>ชื่อกะ</th><th>เข้า</th><th>ออก</th><th>ผ่อนผัน (นาที)</th><th>ใช้เป็นกะประจำ</th><th></th></tr></thead>
+    <tbody id="shRows"></tbody>
+  </table></div><div class="empty" id="shEmpty" style="display:none">ยังไม่มีกะ</div></div>
+  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">
+    <b>โค้ดคีย์</b> = อักษร/เลขย่อที่ใช้พิมพ์ในแท็บ "ตารางงาน" เพื่อจัดเวรเร็วๆ (เช่น 1=เช้า, 2=บ่าย, 3=ดึก, D=Delivery) ·
+    <b>เข้า/ออก</b> ใช้คำนวณการมาสายและ OT
+  </div>
 </div>
 
 </div>
@@ -1105,8 +1123,8 @@ async function loadLeaves(){
   if(!r.rows.length){ $('lv_body').innerHTML='<div class="empty">ยังไม่มีใบลา</div>'; return; }
   $('lv_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>ตั้งแต่</th><th>ถึง</th><th>วัน</th><th>ประเภท</th><th>สถานะ</th><th></th></tr></thead>
-    <tbody>${r.rows.map(l=>`
-      <tr>
+    <tbody>${r.rows.slice().sort((a,b)=>(b.status==='pending')-(a.status==='pending')).map(l=>`
+      <tr${l.status==='pending'?' style="background:#fffbeb"':''}>
         <td class="mono">${esc(l.leave_id)}</td>
         <td><div class="ntext"><span class="nm">${esc(l.emp_name)}</span><span class="nick">${esc(l.emp_id)}</span></div></td>
         <td class="mono">${esc(l.start_date)}</td>
@@ -1114,12 +1132,20 @@ async function loadLeaves(){
         <td class="mono">${l.days}</td>
         <td>${esc(l.type||'—')}</td>
         <td>${l.status==='approved'?'<span class="pill ok">อนุมัติ</span>':l.status==='rejected'?'<span class="pill bad">ปฏิเสธ</span>':'<span class="pill warn">รอ</span>'}</td>
-        <td class="rowact"><button class="icobtn" data-ldel="${esc(l.leave_id)}">ลบ</button></td>
+        <td class="rowact">${l.status==='pending'?`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> `:''}<button class="icobtn" data-ldel="${esc(l.leave_id)}">ลบ</button></td>
       </tr>`).join('')}</tbody></table></div></div>`;
   document.querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{
     if(!confirm('ลบใบลานี้?')) return;
     const r = await post({ action:'hr_leaves_delete', password:pwd, leave_id:b.dataset.ldel });
     if(r.ok){ toast('ok','ลบแล้ว'); loadLeaves(); } else toast('err', r.error||'ลบไม่สำเร็จ');
+  });
+  document.querySelectorAll('[data-lapp]').forEach(b=>b.onclick=async()=>{
+    const r = await post({ action:'hr_leave_status', password:pwd, leave_id:b.dataset.lapp, status:'approved' });
+    if(r.ok){ toast('ok','อนุมัติใบลาแล้ว'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+  document.querySelectorAll('[data-lrej]').forEach(b=>b.onclick=async()=>{
+    const r = await post({ action:'hr_leave_status', password:pwd, leave_id:b.dataset.lrej, status:'rejected' });
+    if(r.ok){ toast('ok','ปฏิเสธใบลาแล้ว'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
   });
 }
 $('lv_new').onclick = ()=>{
@@ -1188,16 +1214,17 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches'];
+const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches','settings'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
-  if(name==='dashboard') loadDashboard();
+  if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
   else if(name==='employees') renderEmployees();
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
+  else if(name==='settings') loadShifts();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
 
@@ -1256,12 +1283,18 @@ async function loadSchedule(){
   if(!r.ok){ $('scEmpty').style.display='block'; $('scEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
   SC = r; renderSchedule();
 }
+function shiftCodeOf(shiftId){ const s=DATA.shifts.find(x=>x.shift_id===shiftId); return s?(s.code||s.shift_id):''; }
+function codeToShift(code){
+  code=String(code||'').trim().toLowerCase(); if(!code) return null;
+  const s=DATA.shifts.find(x=>String(x.code||'').toLowerCase()===code) || DATA.shifts.find(x=>String(x.shift_id).toLowerCase()===code);
+  return s ? s.shift_id : undefined; // undefined = ไม่รู้จักโค้ด
+}
 function renderSchedule(){
   const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
   $('sc_weeklabel').textContent = fmtThaiShort(days[0])+' – '+fmtThaiShort(days[6]);
   $('scHead').innerHTML = '<tr><th style="text-align:left;min-width:150px">พนักงาน</th>'+days.map(d=>{
     const dd=new Date(d+'T00:00:00');
-    return `<th style="min-width:86px">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;
+    return `<th style="min-width:92px">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;
   }).join('')+'</tr>';
   const emps = (SC&&SC.employees)||[];
   if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent='ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; return; }
@@ -1269,15 +1302,28 @@ function renderSchedule(){
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
       const c = SC.schedules[e.emp_id+'|'+d];
-      if(!c) return `<td onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;text-align:center;color:#cbd5e1">·</td>`;
-      const cover=c.is_cover, sh=c.shift_id?shiftName(c.shift_id):'—', br=c.branch_id?branchName(c.branch_id):'';
-      return `<td onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;text-align:center;${cover?'background:#fff7ed;':''}">
-        <div style="font-weight:600;font-size:13px">${esc(sh)}</div>
-        <div style="font-size:11px;color:${cover?'#ea580c':'var(--muted)'}">${esc(br)}${cover?' (แทน)':''}</div>
+      const cover = c && c.is_cover;
+      const codeVal = c ? shiftCodeOf(c.shift_id) : '';
+      const brLabel = (c && c.branch_id) ? branchName(c.branch_id) : '';
+      const sub = cover ? (esc(brLabel)+' (แทน)') : '✎ ไปแทน';
+      return `<td style="text-align:center;padding:5px 4px;${cover?'background:#fff7ed;':''}">
+        <input value="${esc(codeVal)}" maxlength="3" onchange="scKey(this,'${esc(e.emp_id)}','${d}')" onkeydown="if(event.key==='Enter')this.blur()"
+          style="width:46px;height:30px;text-align:center;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-weight:600;text-transform:uppercase">
+        <div onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;font-size:10.5px;margin-top:3px;color:${cover?'#ea580c':'#94a3b8'}">${sub}</div>
       </td>`;
     }).join('');
     return `<tr><td style="text-align:left"><div class="ntext"><span class="nm">${esc(e.name)}</span><span class="nick">${esc(e.emp_id)} · ประจำ ${esc(branchName(e.branch_id))}</span></div></td>${cells}</tr>`;
   }).join('');
+}
+async function scKey(inp, emp, date){
+  const v = inp.value.trim();
+  if(!v){ await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date }); loadSchedule(); return; }
+  const sid = codeToShift(v);
+  if(sid===undefined){ toast('err','ไม่รู้จักโค้ด "'+v+'" — ดู/ตั้งโค้ดที่แท็บ "ตั้งค่ากะ"'); loadSchedule(); return; }
+  const prev = SC.schedules[emp+'|'+date] || {};
+  const r = await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:sid, branch_id:prev.branch_id||'', note:prev.note||'' } });
+  if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
+  loadSchedule();
 }
 function scCell(empId, workDate){
   const e = (SC.employees||[]).find(x=>x.emp_id===empId); if(!e) return;
@@ -1297,6 +1343,72 @@ function scCoverHint(){
   const b = $('sc_branch').value || (scEditing&&scEditing.home);
   const cover = !!(b && scEditing && scEditing.home && b !== scEditing.home);
   $('sc_coverhint').style.display = cover ? 'block' : 'none';
+}
+
+// ========== ตั้งค่ากะ ==========
+let SH=null, shEditing=null;
+async function loadShifts(){
+  $('shRows').innerHTML=''; $('shEmpty').style.display='none';
+  const r = await post({ action:'hr_shift_list', password:pwd });
+  if(!r.ok){ $('shEmpty').style.display='block'; $('shEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
+  SH=r;
+  if(!r.rows.length){ $('shEmpty').style.display='block'; $('shEmpty').textContent='ยังไม่มีกะ'; return; }
+  $('shRows').innerHTML = r.rows.map(s=>`
+    <tr>
+      <td><span class="pill" style="background:#dcfce7;color:#15803d;font-weight:700">${esc(s.code||'—')}</span></td>
+      <td class="mono">${esc(s.shift_id)}</td>
+      <td>${esc(s.name)}</td>
+      <td class="mono">${esc((s.start_time||'').slice(0,5))}</td>
+      <td class="mono">${esc((s.end_time||'').slice(0,5))}</td>
+      <td class="mono">${s.grace_min}</td>
+      <td class="mono">${s.emp_count} คน</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sec btn-sm" onclick="shEdit('${esc(s.shift_id)}')">แก้ไข</button>
+        <button class="btn btn-danger btn-sm" onclick="shDelete('${esc(s.shift_id)}')">ลบ</button>
+      </td>
+    </tr>`).join('');
+}
+function shOpen(shift){
+  shEditing = shift ? shift.shift_id : null;
+  $('shTitle').textContent = shift ? 'แก้ไขกะ' : 'เพิ่มกะ';
+  $('sh_id').value = shift ? shift.shift_id : '';
+  $('sh_id').disabled = !!shift;
+  $('sh_code').value = shift ? (shift.code||'') : '';
+  $('sh_name').value = shift ? shift.name : '';
+  $('sh_start').value = shift ? (shift.start_time||'').slice(0,5) : '';
+  $('sh_end').value = shift ? (shift.end_time||'').slice(0,5) : '';
+  $('sh_grace').value = shift ? shift.grace_min : 5;
+  $('shOverlay').classList.add('show');
+}
+function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
+async function shDelete(id){
+  if(!confirm('ลบกะ '+id+' ?')) return;
+  const r = await post({ action:'hr_shift_delete', password:pwd, shift_id:id });
+  if(r.ok){ toast('ok','ลบกะแล้ว'); loadShifts(); loadAll(); }
+  else toast('err', r.error||'ลบไม่สำเร็จ');
+}
+
+// ========== แจ้งเตือนแอดมิน ==========
+async function loadNotifications(){
+  const r = await post({ action:'hr_notifications', password:pwd });
+  if(!r.ok) return;
+  const c = r.counts;
+  const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster;
+  if(!total){ $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px;color:#16a34a">🔔 ไม่มีรายการที่ต้องดำเนินการวันนี้</div>`; return; }
+  const chip=(n,label,color)=> n>0?`<span class="lvl-pill" style="background:${color}"><span class="lvl-dot"></span> ${label} ${n}</span>`:'';
+  const list=(title,arr,fmt)=> arr.length?`<div style="margin-top:10px"><div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:3px">${title}</div>${arr.map(fmt).join('')}</div>`:'';
+  $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <b style="font-size:15px">🔔 แจ้งเตือน</b>
+      ${chip(c.pending_leaves,'ใบลารออนุมัติ','#d97706')}
+      ${chip(c.absent_roster,'ขาด/ยังไม่มา','#b91c1c')}
+      ${chip(c.late_today,'มาสายวันนี้','#ea580c')}
+      ${chip(c.not_checked_out,'ยังไม่กดออก','#0ea5e9')}
+    </div>
+    ${list('ใบลารออนุมัติ (ไปแท็บ "ลา & วันหยุด" เพื่ออนุมัติ)', r.pending_leaves, l=>`<div style="font-size:13px;padding:2px 0">• ${esc(l.emp_name)} · ${esc(l.type||'')} ${esc(l.start_date)}${l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):''} (${l.days} วัน)</div>`)}
+    ${list('ขาด/ยังไม่มาตามตารางวันนี้', r.absent_roster, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · กะ ${esc(shiftName(a.shift_id))}</div>`)}
+    ${list('ยังไม่กดออกงาน', r.not_checked_out, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · เข้า ${esc(a.check_in)}</div>`)}
+  </div>`;
 }
 
 // ---------- สร้าง modal สาขา + ตารางเวร ----------
@@ -1334,6 +1446,35 @@ function scCoverHint(){
     </div>
   </div>`;
   document.body.appendChild(sc);
+
+  const sh = document.createElement('div'); sh.className='overlay'; sh.id='shOverlay';
+  sh.innerHTML = `<div class="modal" style="max-width:440px">
+    <div class="modal-h"><h2 id="shTitle">เพิ่มกะ</h2><button class="close" id="shClose">×</button></div>
+    <div class="modal-b">
+      <div class="field"><label>รหัสกะ<span class="req">*</span> (เช่น M, A, N, D)</label><input id="sh_id" type="text"></div>
+      <div class="field"><label>โค้ดคีย์ (ย่อสำหรับพิมพ์ในตาราง เช่น 1,2,3,D)</label><input id="sh_code" type="text" maxlength="3"></div>
+      <div class="field"><label>ชื่อกะ<span class="req">*</span></label><input id="sh_name" type="text"></div>
+      <div style="display:flex; gap:10px">
+        <div class="field" style="flex:1"><label>เวลาเข้า</label><input id="sh_start" type="time"></div>
+        <div class="field" style="flex:1"><label>เวลาออก</label><input id="sh_end" type="time"></div>
+      </div>
+      <div class="field"><label>ผ่อนผันก่อนนับสาย (นาที)</label><input id="sh_grace" type="number" value="5"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-pri" id="shSave">บันทึก</button></div>
+  </div>`;
+  document.body.appendChild(sh);
+  $('shClose').onclick = ()=>$('shOverlay').classList.remove('show');
+  $('shOverlay').addEventListener('click', e=>{ if(e.target===$('shOverlay')) $('shOverlay').classList.remove('show'); });
+  $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
+  $('shSave').onclick = async ()=>{
+    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value };
+    if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
+    $('shSave').innerHTML='<span class="spin"></span>';
+    const r = await post({ action:'hr_shift_save', password:pwd, data });
+    $('shSave').textContent='บันทึก';
+    if(r.ok){ toast('ok','บันทึกกะแล้ว'); $('shOverlay').classList.remove('show'); loadShifts(); loadAll(); }
+    else toast('err', r.error||'บันทึกไม่สำเร็จ');
+  };
 
   // handlers — สาขา
   $('brClose').onclick = ()=>$('brOverlay').classList.remove('show');
