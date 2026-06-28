@@ -57,6 +57,11 @@
   // ============================================================
   // Dispatcher
   // ============================================================
+  // บันทึกกิจกรรมลง activity_log (ไม่ให้ error กระทบงานหลัก)
+  async function logAct(action, emp_id, detail, actor) {
+    try { await sb().from('activity_log').insert({ action, emp_id: emp_id || null, detail: detail || null, actor: actor || 'HR' }); } catch (e) { console.warn('logAct', e); }
+  }
+
   async function dispatch(p) {
     try {
       switch (p.action) {
@@ -71,6 +76,8 @@
         case 'hr_warnings_list':  return await hrWarningsList();
         case 'hr_warning_issue':  return await hrWarningIssue(p.data);
         case 'hr_warning_get':    return await hrWarningGet(p.warning_id);
+        case 'hr_warning_update': return await hrWarningUpdate(p.data);
+        case 'hr_warning_delete': return await hrWarningDelete(p.warning_id);
         case 'hr_leaves_list':    return await hrLeavesList();
         case 'hr_leaves_save':    return await hrLeavesSave(p.data);
         case 'hr_leaves_delete':  return await hrLeavesDelete(p.leave_id);
@@ -306,27 +313,13 @@
       const onLeave = (dateStr) => myLeaves.some(l => dateStr >= l.start_date && dateStr <= (l.end_date || l.start_date));
 
       const days_worked = workedSet.size;
-      let days_should, absent, basis;
-      const mySched = schByEmp[e.emp_id];
-      if (mySched && mySched.size > 0) {
-        // อิงตารางเวรจริง: ขาด = วันที่ถูกจัดเวรแต่ไม่มา และไม่ได้ลา
-        basis = 'roster';
-        days_should = mySched.size;
-        let ab = 0;
-        mySched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) ab++; });
-        absent = ab;
-      } else {
-        // ไม่มีตารางเวร → ใช้ weekly_off แบบเดิม
-        basis = 'pattern';
-        let leaveDays = 0;
-        myLeaves.forEach(l => {
-          const s = l.start_date < cyc.start ? cyc.start : l.start_date;
-          const en = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date);
-          if (s <= en) leaveDays += daysBetween(s, en);
-        });
-        days_should = workingDays(cyc.start, endEff, e.weekly_off, holidaySet);
-        absent = Math.max(0, days_should - days_worked - leaveDays);
-      }
+      // นับเฉพาะ "วันที่มีการจัดเวร (จัดจ๊อบ) ถึงวันนี้" เท่านั้น
+      // ขาด = วันที่ถูกจัดเวรแต่ไม่มาทำงานและไม่ได้ลา · ไม่มีตารางเวร = ไม่นับ (ไม่มีใบเตือน)
+      const basis = 'roster';
+      const mySched = schByEmp[e.emp_id] || new Set();
+      const days_should = mySched.size;
+      let absent = 0;
+      mySched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent++; });
       const lv = disciplineLevel(late_count, absent);
       return {
         emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '',
@@ -360,7 +353,26 @@
     };
     const { error } = await sb().from('warnings').insert(row);
     if (error) throw error;
+    await logAct('ออกใบเตือน ' + warning_id, d.emp_id, (d.level_name || '') + ' · สาย ' + (d.late_count || 0) + ' ครั้ง · ขาด ' + (d.absent_count || 0) + ' วัน');
     return { ok: true, warning_id };
+  }
+
+  async function hrWarningUpdate(d) {
+    if (!d.warning_id) return { ok: false, error: 'ไม่ระบุเลขที่ใบเตือน' };
+    const upd = {};
+    if (d.reason !== undefined) upd.reason = d.reason;
+    if (d.level !== undefined && d.level !== '') { upd.level = parseInt(d.level) || null; upd.level_name = d.level_name || null; }
+    const { error } = await sb().from('warnings').update(upd).eq('warning_id', d.warning_id);
+    if (error) throw error;
+    await logAct('แก้ไขใบเตือน ' + d.warning_id, d.emp_id || null, 'แก้ไขรายละเอียดใบเตือน');
+    return { ok: true };
+  }
+  async function hrWarningDelete(wid) {
+    const { data: w } = await sb().from('warnings').select('emp_id').eq('warning_id', wid).maybeSingle();
+    const { error } = await sb().from('warnings').delete().eq('warning_id', wid);
+    if (error) throw error;
+    await logAct('ลบใบเตือน ' + wid, w ? w.emp_id : null, 'ลบใบเตือนออกจากระบบ');
+    return { ok: true };
   }
 
   async function hrWarningGet(wid) {
@@ -582,8 +594,13 @@
     if (!['approved', 'rejected', 'pending'].includes(status)) return { ok: false, error: 'สถานะไม่ถูกต้อง' };
     const upd = { status };
     if (note !== undefined) upd.hr_note = note || null;
+    const { data: lv } = await sb().from('leaves').select('emp_id,type,start_date,end_date').eq('leave_id', leaveId).maybeSingle();
     const { error } = await sb().from('leaves').update(upd).eq('leave_id', leaveId);
     if (error) throw error;
+    if (lv && status !== 'pending') {
+      const range = lv.start_date + (lv.end_date && lv.end_date !== lv.start_date ? (' – ' + lv.end_date) : '');
+      await logAct(status === 'approved' ? 'อนุมัติใบลา' : 'ปฏิเสธใบลา', lv.emp_id, (lv.type || 'ลา') + ' ' + range + (note ? (' · เหตุผล: ' + note) : ''));
+    }
     return { ok: true };
   }
 
@@ -613,13 +630,14 @@
   // ---------- NOTIFICATIONS (แจ้งเตือนแอดมิน) ----------
   async function hrNotifications() {
     const today = bkkToday();
-    const [lvR, todayR, schR, empR, lvApprR, subR] = await Promise.all([
+    const [lvR, todayR, schR, empR, lvApprR, subR, shR] = await Promise.all([
       sb().from('leaves').select('*, employees(name)').eq('status', 'pending').order('created_at', { ascending: false }),
       sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id').eq('work_date', today),
       sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today),
       sb().from('employees').select('emp_id,name,branch_id').eq('active', true),
       sb().from('leaves').select('emp_id,start_date,end_date').eq('status', 'approved').lte('start_date', today),
       sb().from('profile_submissions').select('id,emp_id,name,submitted_at').eq('status', 'pending').order('submitted_at', { ascending: false }),
+      sb().from('shifts').select('shift_id,name,start_time'),
     ]);
     const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; });
     const att = todayR.data || [];
@@ -635,8 +653,16 @@
       .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, check_in: fmtTime(a.check_in) }));
     const late_today = att.filter(a => a.late_min > 0)
       .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, late_min: a.late_min }));
-    const absent_roster = (schR.data || []).filter(s => !checkedIn.has(s.emp_id) && !onleave.has(s.emp_id))
-      .map(s => ({ emp_id: s.emp_id, emp_name: empName[s.emp_id] || s.emp_id, shift_id: s.shift_id }));
+    // เตือน "ขาด/ยังไม่มา" เฉพาะกะที่ถึงเวลาเข้างานแล้วเท่านั้น (ไม่ใช่ตอนเพิ่งจัดเวร)
+    const nowHM = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 16);
+    const shiftStart = {}, shiftName = {};
+    (shR.data || []).forEach(s => { shiftStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shiftName[s.shift_id] = s.name; });
+    const absent_roster = (schR.data || []).filter(s => {
+      if (checkedIn.has(s.emp_id) || onleave.has(s.emp_id)) return false;
+      const st = shiftStart[s.shift_id];
+      if (!st) return false;            // ไม่มีเวลากะ = ยังไม่เตือน
+      return nowHM >= st;               // ถึงเวลาเข้ากะแล้วเท่านั้น
+    }).map(s => ({ emp_id: s.emp_id, emp_name: empName[s.emp_id] || s.emp_id, shift_id: s.shift_id, shift_name: shiftName[s.shift_id] || s.shift_id, start_time: shiftStart[s.shift_id] }));
 
     const pending_profiles = (subR.data || []).map(s => ({ id: s.id, emp_id: s.emp_id, name: s.name || s.emp_id }));
     return {
@@ -665,11 +691,14 @@
     }
     const { error: e3 } = await sb().from('profile_submissions').update({ status: 'approved' }).eq('id', id);
     if (e3) throw e3;
+    await logAct('อนุมัติข้อมูล/เอกสาร', s.emp_id, 'HR อนุมัติและบันทึกข้อมูลที่พนักงานส่ง');
     return { ok: true };
   }
   async function hrSubmissionReject(id) {
+    const { data: s } = await sb().from('profile_submissions').select('emp_id').eq('id', id).maybeSingle();
     const { error } = await sb().from('profile_submissions').update({ status: 'rejected' }).eq('id', id);
     if (error) throw error;
+    await logAct('ปฏิเสธข้อมูล/เอกสาร', s ? s.emp_id : null, 'HR ปฏิเสธข้อมูลที่พนักงานส่ง');
     return { ok: true };
   }
 
@@ -690,21 +719,30 @@
 
   // ---------- ACTIVITY LOG (บันทึกกิจกรรมพนักงาน) ----------
   async function hrActivity() {
-    const [subR, lvR, akR, atR] = await Promise.all([
-      sb().from('profile_submissions').select('emp_id,status,submitted_at, employees(name)').order('submitted_at', { ascending: false }).limit(50),
-      sb().from('leaves').select('emp_id,type,start_date,end_date,status,created_at, employees(name)').order('created_at', { ascending: false }).limit(50),
+    const [subR, lvR, akR, atR, logR, empR] = await Promise.all([
+      sb().from('profile_submissions').select('emp_id,submitted_at, employees(name)').order('submitted_at', { ascending: false }).limit(50),
+      sb().from('leaves').select('emp_id,type,start_date,end_date,created_at, employees(name)').order('created_at', { ascending: false }).limit(50),
       sb().from('rule_acks').select('emp_id,version,accepted_at, employees(name)').order('accepted_at', { ascending: false }).limit(50),
       sb().from('attendance').select('emp_id,branch_id,check_in,check_out, employees(name), branches(name)').not('check_in', 'is', null).order('check_in', { ascending: false }).limit(50),
+      sb().from('activity_log').select('*').order('at', { ascending: false }).limit(100),
+      sb().from('employees').select('emp_id,name'),
     ]);
-    const stTh = s => s === 'approved' ? 'อนุมัติ' : s === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ';
     const nm = o => (o && o.employees && o.employees.name) || o.emp_id;
+    const empMap = {}; (empR.data || []).forEach(e => { empMap[e.emp_id] = e.name; });
     const ev = [];
-    (subR.data || []).forEach(s => ev.push({ when: s.submitted_at, type: 'ข้อมูล/เอกสาร', icon: '📄', emp: nm(s), emp_id: s.emp_id, detail: 'ส่งข้อมูล/เอกสาร — ' + stTh(s.status), status: s.status }));
-    (lvR.data || []).forEach(l => ev.push({ when: l.created_at, type: 'คำขอลา', icon: '📝', emp: nm(l), emp_id: l.emp_id, detail: (l.type || 'ลา') + ' ' + l.start_date + (l.end_date && l.end_date !== l.start_date ? (' – ' + l.end_date) : '') + ' — ' + stTh(l.status), status: l.status }));
-    (akR.data || []).forEach(a => ev.push({ when: a.accepted_at, type: 'ยอมรับระเบียบ', icon: '✅', emp: nm(a), emp_id: a.emp_id, detail: 'ยอมรับระเบียบ ฉบับ ' + a.version }));
-    (atR.data || []).forEach(a => ev.push({ when: a.check_in, type: 'ลงเวลา', icon: '⏰', emp: nm(a), emp_id: a.emp_id, detail: 'เข้า ' + fmtTime(a.check_in) + (a.check_out ? (' · ออก ' + fmtTime(a.check_out)) : '') + ' @ ' + ((a.branches && a.branches.name) || a.branch_id || '') }));
+    // เหตุการณ์ "ที่พนักงานสร้าง" (ตามเวลาที่สร้างจริง)
+    (subR.data || []).forEach(s => ev.push({ when: s.submitted_at, type: 'ส่งข้อมูล/เอกสาร', icon: '📄', emp: nm(s), emp_id: s.emp_id, detail: 'พนักงานส่งข้อมูล/เอกสารเข้าระบบ', actor: s.emp_id }));
+    (lvR.data || []).forEach(l => ev.push({ when: l.created_at, type: 'ยื่นคำขอลา', icon: '📝', emp: nm(l), emp_id: l.emp_id, detail: (l.type || 'ลา') + ' ' + l.start_date + (l.end_date && l.end_date !== l.start_date ? (' – ' + l.end_date) : ''), actor: l.emp_id }));
+    (akR.data || []).forEach(a => ev.push({ when: a.accepted_at, type: 'ยอมรับระเบียบ', icon: '✅', emp: nm(a), emp_id: a.emp_id, detail: 'ยอมรับระเบียบ ฉบับ ' + a.version, actor: a.emp_id }));
+    (atR.data || []).forEach(a => ev.push({ when: a.check_in, type: 'ลงเวลา', icon: '⏰', emp: nm(a), emp_id: a.emp_id, detail: 'เข้า ' + fmtTime(a.check_in) + (a.check_out ? (' · ออก ' + fmtTime(a.check_out)) : '') + ' @ ' + ((a.branches && a.branches.name) || a.branch_id || ''), actor: a.emp_id }));
+    // เหตุการณ์ "HR ดำเนินการ" (จาก activity_log ตามเวลาที่ทำจริง)
+    (logR.data || []).forEach(l => {
+      const st = (l.action || '').indexOf('ปฏิเสธ') >= 0 || (l.action || '').indexOf('ลบ') >= 0 ? 'rejected'
+        : (l.action || '').indexOf('อนุมัติ') >= 0 ? 'approved' : '';
+      ev.push({ when: l.at, type: l.action, icon: '🗂️', emp: (l.emp_id ? (empMap[l.emp_id] || l.emp_id) : '—'), emp_id: l.emp_id || '', detail: (l.detail || '') + (l.actor ? ' · โดย ' + l.actor : ''), status: st, actor: l.actor || 'HR' });
+    });
     ev.sort((a, b) => String(b.when || '').localeCompare(String(a.when || '')));
-    return { ok: true, rows: ev.slice(0, 120) };
+    return { ok: true, rows: ev.slice(0, 150) };
   }
 
   window.HRAPI = { dispatch };

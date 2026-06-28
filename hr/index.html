@@ -590,7 +590,7 @@
         <div class="field span2"><label>พนักงาน<span class="req">*</span></label><select id="lv_emp"></select></div>
         <div class="field"><label>ตั้งแต่<span class="req">*</span></label><input id="lv_start" type="date"></div>
         <div class="field"><label>ถึง</label><input id="lv_end" type="date"></div>
-        <div class="field"><label>ประเภท</label><select id="lv_type"><option value="ลาป่วย">ลาป่วย</option><option value="ลากิจ">ลากิจ</option><option value="แจ้งขอหยุด">แจ้งขอหยุด</option></select></div>
+        <div class="field"><label>ประเภท</label><select id="lv_type"><option value="ลาป่วย">ลาป่วย</option><option value="แจ้งขอหยุดฉุกเฉิน">แจ้งขอหยุดฉุกเฉิน</option><option value="แจ้งขอหยุด">แจ้งขอหยุด</option></select></div>
         <div class="field"><label>สถานะ</label><select id="lv_status"><option value="approved">อนุมัติ</option><option value="pending">รออนุมัติ</option><option value="rejected">ปฏิเสธ</option></select></div>
         <div class="field span2"><label>เหตุผล</label><textarea id="lv_reason" rows="2"></textarea></div>
       </div>
@@ -1100,9 +1100,22 @@ async function loadWarningsTable(){
         <td>${esc(w.level_name)}</td>
         <td class="mono">${w.late_count} ครั้ง · ${w.late_total} นาที</td>
         <td class="mono">${w.absent_count}</td>
-        <td class="rowact"><button class="btn btn-sec btn-sm" data-wview="${esc(w.warning_id)}">พรีวิว</button></td>
+        <td class="rowact" style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-wview="${esc(w.warning_id)}">พรีวิว</button> <button class="btn btn-sec btn-sm" data-wedit="${esc(w.warning_id)}">แก้ไข</button> <button class="btn btn-danger btn-sm" data-wdel="${esc(w.warning_id)}" data-wemp="${esc(w.emp_id)}">ลบ</button></td>
       </tr>`).join('')}</tbody></table></div></div>`;
   document.querySelectorAll('[data-wview]').forEach(b=>b.onclick=()=>openWarningView(b.dataset.wview));
+  document.querySelectorAll('[data-wedit]').forEach(b=>b.onclick=async()=>{
+    const wid=b.dataset.wedit, w=(r.rows||[]).find(x=>x.warning_id===wid);
+    const reason=prompt('แก้ไขรายละเอียดใบเตือน '+wid+':', (w&&w.reason)||'');
+    if(reason===null) return;
+    const rr=await post({ action:'hr_warning_update', password:pwd, data:{ warning_id:wid, emp_id:w?w.emp_id:null, reason } });
+    if(rr.ok){ toast('ok','แก้ไขใบเตือนแล้ว'); loadWarningsTable(); } else toast('err', rr.error||'ไม่สำเร็จ');
+  });
+  document.querySelectorAll('[data-wdel]').forEach(b=>b.onclick=async()=>{
+    const wid=b.dataset.wdel;
+    if(!confirm('ลบใบเตือน '+wid+' ?\n(จะถูกบันทึกในบันทึกกิจกรรม)')) return;
+    const rr=await post({ action:'hr_warning_delete', password:pwd, warning_id:wid });
+    if(rr.ok){ toast('ok','ลบใบเตือนแล้ว'); loadWarningsTable(); } else toast('err', rr.error||'ไม่สำเร็จ');
+  });
 }
 
 function openIssueWarning(empId){
