@@ -313,13 +313,14 @@
       const onLeave = (dateStr) => myLeaves.some(l => dateStr >= l.start_date && dateStr <= (l.end_date || l.start_date));
 
       const days_worked = workedSet.size;
-      // นับเฉพาะ "วันที่มีการจัดเวร (จัดจ๊อบ) ถึงวันนี้" เท่านั้น
-      // ขาด = วันที่ถูกจัดเวรแต่ไม่มาทำงานและไม่ได้ลา · ไม่มีตารางเวร = ไม่นับ (ไม่มีใบเตือน)
+      // นับเฉพาะ "วันที่มีการจัดเวร (จัดจ๊อบ) ที่ผ่านไปแล้วจริง คือก่อนวันนี้" เท่านั้น
+      // ขาด = วันที่ถูกจัดเวรแต่ไม่มาทำงานและไม่ได้ลา · วันนี้ที่ยังไม่จบ/ไม่มีตารางเวร = ไม่นับ
       const basis = 'roster';
       const mySched = schByEmp[e.emp_id] || new Set();
-      const days_should = mySched.size;
+      const pastSched = [...mySched].filter(d => d < today);   // เฉพาะวันก่อนวันนี้
+      const days_should = pastSched.length;
       let absent = 0;
-      mySched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent++; });
+      pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent++; });
       const lv = disciplineLevel(late_count, absent);
       return {
         emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '',
