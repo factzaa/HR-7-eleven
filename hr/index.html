@@ -1342,7 +1342,10 @@ function renderSchedule(){
         <div onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;font-size:10.5px;margin-top:3px;color:${cover?'#ea580c':'#94a3b8'}">${sub}</div>
       </td>`;
     }).join('');
-    return `<tr><td style="text-align:left"><div class="ntext"><span class="nm">${esc(e.nickname||e.name)}</span><span class="nick">${esc(e.nickname?e.name:e.emp_id)} · ประจำ ${esc(branchName(e.branch_id))}</span></div></td>${cells}</tr>`;
+    return `<tr><td style="text-align:left">
+      <div style="font-weight:700;font-size:14px">${esc(e.nickname||e.name)}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:1px">${esc(e.nickname?e.name:('รหัส '+e.emp_id))} · ประจำ ${esc(branchName(e.branch_id))}</div>
+    </td>${cells}</tr>`;
   }).join('');
 }
 async function scKey(inp, emp, date){
