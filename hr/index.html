@@ -1342,7 +1342,7 @@ function renderSchedule(){
         <div onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;font-size:10.5px;margin-top:3px;color:${cover?'#ea580c':'#94a3b8'}">${sub}</div>
       </td>`;
     }).join('');
-    return `<tr><td style="text-align:left"><div class="ntext"><span class="nm">${esc(e.name)}</span><span class="nick">${esc(e.emp_id)} · ประจำ ${esc(branchName(e.branch_id))}</span></div></td>${cells}</tr>`;
+    return `<tr><td style="text-align:left"><div class="ntext"><span class="nm">${esc(e.nickname||e.name)}</span><span class="nick">${esc(e.nickname?e.name:e.emp_id)} · ประจำ ${esc(branchName(e.branch_id))}</span></div></td>${cells}</tr>`;
   }).join('');
 }
 async function scKey(inp, emp, date){
@@ -1396,8 +1396,8 @@ function buildScheduleCanvas(){
   emps.forEach((e,r)=>{
     const y=top+rowH*r;
     if(r%2){ x.fillStyle='#f9fafb'; x.fillRect(padX,y,nameW+colW*7,rowH); }
-    x.textAlign='left'; x.fillStyle='#1f2937'; x.font='600 13px Anuphan,sans-serif'; x.fillText(e.name, padX+8, y+rowH/2-7);
-    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText(e.emp_id+' · '+branchName(e.branch_id), padX+8, y+rowH/2+10);
+    x.textAlign='left'; x.fillStyle='#1f2937'; x.font='600 13px Anuphan,sans-serif'; x.fillText(e.nickname||e.name, padX+8, y+rowH/2-7);
+    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText((e.nickname?e.name:e.emp_id)+' · '+branchName(e.branch_id), padX+8, y+rowH/2+10);
     x.textAlign='center';
     days.forEach((d,i)=>{
       const cx=padX+nameW+colW*i, cell=SC.schedules[e.emp_id+'|'+d], cover=cell&&cell.is_cover;
