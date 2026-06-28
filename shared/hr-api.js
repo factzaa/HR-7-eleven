@@ -90,6 +90,7 @@
         case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status, p.note);
         case 'hr_leavetype_list': return await hrLeaveTypeList();
         case 'hr_leavetype_save': return await hrLeaveTypeSave(p.data);
+        case 'hr_rule_status':    return await hrRuleStatus();
         case 'hr_notifications':  return await hrNotifications();
         case 'hr_submission_list':    return await hrSubmissionList();
         case 'hr_submission_approve': return await hrSubmissionApprove(p.id);
@@ -653,6 +654,21 @@
     const { error } = await sb().from('profile_submissions').update({ status: 'rejected' }).eq('id', id);
     if (error) throw error;
     return { ok: true };
+  }
+
+  // ---------- RULE ACK STATUS (สถานะรับทราบระเบียบ) ----------
+  async function hrRuleStatus() {
+    const version = (typeof window !== 'undefined' && window.RULES_VERSION) ? window.RULES_VERSION : '';
+    const [empsR, ackR] = await Promise.all([
+      sb().from('employees').select('emp_id,name,nickname,branch_id').eq('active', true).order('emp_id'),
+      sb().from('rule_acks').select('emp_id,accepted_at').eq('version', version).order('accepted_at', { ascending: false }),
+    ]);
+    if (empsR.error) throw empsR.error;
+    const ack = {};
+    (ackR.data || []).forEach(a => { if (!ack[a.emp_id]) ack[a.emp_id] = a.accepted_at; });
+    const rows = (empsR.data || []).map(e => ({ emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, accepted_at: ack[e.emp_id] || null }));
+    const accepted = rows.filter(r => r.accepted_at).length;
+    return { ok: true, version, rows, counts: { accepted, pending: rows.length - accepted } };
   }
 
   window.HRAPI = { dispatch };

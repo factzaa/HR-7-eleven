@@ -413,6 +413,9 @@
     <tbody id="ltRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">เช่น ลากิจ ต้องลาล่วงหน้า ≥ 2 วัน · ลาพักร้อน โควตา 6 วัน/ปี · ลาป่วย แนบใบรับรองแพทย์ ลาย้อนหลังได้</div>
+
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">สถานะการรับทราบระเบียบ <span id="ru_ver" style="font-weight:400; color:var(--muted); font-size:13px"></span></h3><button class="btn btn-sec btn-sm" id="ru_refresh">รีเฟรช</button></div>
+  <div id="ru_body"></div>
 </div>
 
 </div>
@@ -1248,7 +1251,7 @@ showTab = function(name){
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadRuleStatus(); }
   else if(name==='submissions') loadSubmissions();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
@@ -1514,6 +1517,21 @@ async function loadLeaveTypes(){
   });
 }
 
+// ========== สถานะการรับทราบระเบียบ ==========
+async function loadRuleStatus(){
+  $('ru_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_rule_status', password:pwd });
+  if(!r.ok){ $('ru_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  $('ru_ver').textContent='(ฉบับ '+esc(r.version||'-')+') · ยอมรับแล้ว '+r.counts.accepted+'/'+(r.counts.accepted+r.counts.pending)+' คน';
+  $('ru_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>สถานะ</th><th>เมื่อ</th></tr></thead><tbody>'+
+    r.rows.map(e=>`<tr${e.accepted_at?'':' style="background:#fff7ed"'}>
+      <td><div style="font-weight:600">${esc(e.nickname||e.name)}</div><div style="font-size:11.5px;color:var(--muted)">${esc(e.nickname?e.name:('รหัส '+e.emp_id))}</div></td>
+      <td>${esc(branchName(e.branch_id))}</td>
+      <td>${e.accepted_at?'<span class="pill ok">✓ รับทราบแล้ว</span>':'<span class="pill bad">✗ ยังไม่รับทราบ</span>'}</td>
+      <td class="mono">${e.accepted_at?esc(String(e.accepted_at).slice(0,10)):'—'}</td>
+    </tr>`).join('')+'</tbody></table></div></div>';
+}
+
 // ========== แจ้งเตือนแอดมิน ==========
 async function loadNotifications(){
   const r = await post({ action:'hr_notifications', password:pwd });
@@ -1581,6 +1599,7 @@ async function loadSubmissions(){
 // ---------- สร้าง modal สาขา + ตารางเวร ----------
 (function buildModals(){
   const _subRef=$('sub_refresh'); if(_subRef) _subRef.onclick=loadSubmissions;
+  const _ruRef=$('ru_refresh'); if(_ruRef) _ruRef.onclick=loadRuleStatus;
   const br = document.createElement('div'); br.className='overlay'; br.id='brOverlay';
   br.innerHTML = `<div class="modal" style="max-width:460px">
     <div class="modal-h"><h2 id="brTitle">เพิ่มสาขา</h2><button class="close" id="brClose">×</button></div>
