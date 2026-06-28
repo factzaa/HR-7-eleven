@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7-Eleven · กรอกข้อมูลพนักงาน</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#16a34a;--green-d:#15803d;--orange:#ea580c;--ink:#1f2937;--bg:#f3f4f6;--line:#e5e7eb;--muted:#6b7280}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Anuphan',system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:16px;min-height:100vh}
+  .wrap{max-width:520px;margin:0 auto}
+  .top{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .top img{width:40px;height:40px;border-radius:9px}
+  .top h1{font-size:18px;font-weight:700;flex:1}
+  .home{text-decoration:none;color:var(--muted);border:1.5px solid var(--line);background:#fff;border-radius:9px;padding:7px 12px;font-weight:600;font-size:13px}
+  .card{background:#fff;border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.06);padding:20px}
+  label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
+  input,textarea{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;background:#fff}
+  input:focus,textarea:focus{outline:none;border-color:var(--green)}
+  .sec{font-size:13px;font-weight:700;color:var(--green-d);margin:18px 0 4px;letter-spacing:.3px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-size:16px;font-weight:600;color:#fff;background:var(--green);cursor:pointer;margin-top:16px}
+  .btn:disabled{opacity:.6}
+  .doc{border:1.5px dashed var(--line);border-radius:10px;padding:10px;text-align:center;margin-top:4px}
+  .doc img{max-width:100%;max-height:120px;border-radius:8px;margin-top:8px;display:none}
+  .doc label{display:inline-block;background:var(--green);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer;margin:0}
+  .doc input{display:none}
+  .who{font-size:14px;font-weight:600;color:var(--green-d);margin-bottom:6px}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:4px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;max-width:90%;text-align:center;z-index:9}
+  .toast.show{opacity:1}
+  .toast.err{background:#dc2626}.toast.ok{background:#16a34a}
+  .done{text-align:center;padding:20px}
+  .done .big{font-size:40px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <img src="../icons/icon-192.png" alt="7-11">
+    <h1>กรอกข้อมูลพนักงาน</h1>
+    <a class="home" href="../">🏠 หน้าแรก</a>
+  </div>
+
+  <div class="card" id="step1">
+    <p style="color:var(--muted);font-size:14px;margin-bottom:10px">กรอกรหัสพนักงานที่ได้รับจาก HR เพื่อเริ่มกรอกข้อมูลและแนบเอกสาร</p>
+    <label>รหัสพนักงาน</label>
+    <input id="empId" type="text" inputmode="numeric" placeholder="เช่น 001">
+    <div class="hint">ถ้ายังไม่มีรหัส ให้ติดต่อ HR เพื่อสร้างรหัสก่อน</div>
+    <button class="btn" id="checkBtn">ถัดไป</button>
+  </div>
+
+  <div class="card" id="step2" style="display:none">
+    <div class="who" id="who"></div>
+
+    <div class="sec">ข้อมูลส่วนตัว</div>
+    <label>ชื่อ-นามสกุล</label><input id="f_name" type="text">
+    <div class="grid2">
+      <div><label>ชื่อเล่น</label><input id="f_nickname" type="text"></div>
+      <div><label>เบอร์โทร</label><input id="f_phone" type="tel" inputmode="tel"></div>
+    </div>
+    <label>ที่อยู่</label><textarea id="f_address" rows="2"></textarea>
+
+    <div class="sec">ผู้ติดต่อฉุกเฉิน</div>
+    <div class="grid2">
+      <div><label>ชื่อผู้ติดต่อ</label><input id="f_em_name" type="text"></div>
+      <div><label>เบอร์โทร</label><input id="f_em_phone" type="tel" inputmode="tel"></div>
+    </div>
+
+    <div class="sec">บัญชีธนาคาร</div>
+    <div class="grid2">
+      <div><label>ธนาคาร</label><input id="f_bank" type="text"></div>
+      <div><label>เลขที่บัญชี</label><input id="f_acct" type="text" inputmode="numeric"></div>
+    </div>
+    <label>เลขบัตรประชาชน</label><input id="f_idcard" type="text" inputmode="numeric">
+
+    <div class="sec">แนบเอกสาร (ถ่ายรูป/เลือกไฟล์ภาพ)</div>
+    <label>รูปถ่ายพนักงาน</label>
+    <div class="doc"><label for="d_photo">เลือก/ถ่ายรูป</label><input id="d_photo" type="file" accept="image/*" capture="user"><img id="p_photo"></div>
+    <label>สำเนาบัตรประชาชน</label>
+    <div class="doc"><label for="d_idcard">เลือก/ถ่ายรูป</label><input id="d_idcard" type="file" accept="image/*"><img id="p_idcard"></div>
+    <label>หน้าสมุดบัญชีธนาคาร</label>
+    <div class="doc"><label for="d_bankbook">เลือก/ถ่ายรูป</label><input id="d_bankbook" type="file" accept="image/*"><img id="p_bankbook"></div>
+    <label>ทะเบียนบ้าน</label>
+    <div class="doc"><label for="d_house">เลือก/ถ่ายรูป</label><input id="d_house" type="file" accept="image/*"><img id="p_house"></div>
+    <label>วุฒิการศึกษา</label>
+    <div class="doc"><label for="d_edu">เลือก/ถ่ายรูป</label><input id="d_edu" type="file" accept="image/*"><img id="p_edu"></div>
+
+    <button class="btn" id="submitBtn">ส่งข้อมูลให้ HR ตรวจ</button>
+    <div class="hint" style="text-align:center;margin-top:8px">ข้อมูลจะถูกส่งให้ HR ตรวจสอบและอนุมัติก่อนบันทึกเข้าระบบ</div>
+  </div>
+
+  <div class="card done" id="done" style="display:none">
+    <div class="big">✅</div>
+    <h2 style="font-size:18px;margin:8px 0">ส่งข้อมูลเรียบร้อย</h2>
+    <p style="color:var(--muted)">รอ HR ตรวจสอบและอนุมัติ ขอบคุณครับ</p>
+    <a class="home" style="display:inline-block;margin-top:14px" href="../">กลับหน้าแรก</a>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const docs = { photo:null, idcard:null, bankbook:null, house:null, edu:null };
+function toast(kind, msg){ const t=$('toast'); t.className='toast show '+kind; t.textContent=msg; setTimeout(()=>t.classList.remove('show'), 3500); }
+
+$('checkBtn').onclick = async ()=>{
+  const id = $('empId').value.trim();
+  if(!id){ toast('err','กรอกรหัสพนักงานก่อน'); return; }
+  $('checkBtn').disabled=true; $('checkBtn').textContent='กำลังตรวจ…';
+  try{
+    const emp = await HR.lookupEmployee(id);
+    if(!emp){ toast('err','ไม่พบรหัสนี้ — ให้ HR สร้างรหัสก่อน'); return; }
+    if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); return; }
+    $('who').textContent = 'พนักงาน: '+emp.name+' ('+id+')';
+    $('f_name').value = emp.name||''; $('f_nickname').value = emp.nickname||'';
+    $('step1').style.display='none'; $('step2').style.display='block';
+  }catch(e){ toast('err', e.message||'ตรวจสอบไม่สำเร็จ'); }
+  $('checkBtn').disabled=false; $('checkBtn').textContent='ถัดไป';
+};
+
+function bindFile(inputId, key, prevId){
+  $(inputId).addEventListener('change', e=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=>{ docs[key]=r.result; const p=$(prevId); p.src=r.result; p.style.display='block'; };
+    r.readAsDataURL(f);
+  });
+}
+bindFile('d_photo','photo','p_photo');
+bindFile('d_idcard','idcard','p_idcard');
+bindFile('d_bankbook','bankbook','p_bankbook');
+bindFile('d_house','house','p_house');
+bindFile('d_edu','edu','p_edu');
+
+$('submitBtn').onclick = async ()=>{
+  const id = $('empId').value.trim();
+  const p = {
+    empId:id, name:$('f_name').value.trim(), nickname:$('f_nickname').value.trim(),
+    phone:$('f_phone').value.trim(), address:$('f_address').value.trim(),
+    emergency_name:$('f_em_name').value.trim(), emergency_phone:$('f_em_phone').value.trim(),
+    bank_name:$('f_bank').value.trim(), bank_account:$('f_acct').value.trim(), id_card:$('f_idcard').value.trim(),
+    photo:docs.photo, idcard:docs.idcard, bankbook:docs.bankbook, house:docs.house, edu:docs.edu,
+  };
+  if(!p.name){ toast('err','กรอกชื่อ-นามสกุล'); return; }
+  $('submitBtn').disabled=true; $('submitBtn').textContent='กำลังส่ง…';
+  try{
+    await HR.submitProfile(p);
+    $('step2').style.display='none'; $('done').style.display='block';
+    window.scrollTo(0,0);
+  }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); $('submitBtn').disabled=false; $('submitBtn').textContent='ส่งข้อมูลให้ HR ตรวจ'; }
+};
+</script>
+</body>
+</html>

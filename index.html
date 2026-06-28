@@ -19,9 +19,23 @@
   a.btn:active{transform:scale(.98)}
   .emp{background:var(--green)}
   .hr{background:var(--orange)}
+  .leave{background:#0ea5e9}
+  .staff{background:#7c3aed}
+  button.btn{border:0;width:100%;cursor:pointer;font-family:inherit}
   .ico{font-size:22px;margin-right:8px}
   .foot{margin-top:18px;font-size:12px;color:#9ca3af}
   .logo{width:120px;height:auto;margin:0 auto 18px;display:block;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+  .ovl{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:18px;z-index:20}
+  .ovl.show{display:flex}
+  .modal{background:#fff;border-radius:16px;max-width:420px;width:100%;padding:22px;text-align:left}
+  .modal h2{font-size:18px;margin-bottom:12px}
+  .modal label{display:block;font-size:13px;font-weight:600;margin:8px 0 4px}
+  .modal input,.modal select{width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit}
+  .modal .row{display:flex;gap:10px}
+  .mbtn{margin-top:14px;background:var(--green);color:#fff;border:0;border-radius:11px;padding:13px;width:100%;font:inherit;font-size:15px;font-weight:600;cursor:pointer}
+  .mx{float:right;border:0;background:none;font-size:22px;cursor:pointer;color:#9ca3af;margin-top:-4px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;z-index:30;max-width:90%;text-align:center}
+  .toast.show{opacity:1}.toast.err{background:#dc2626}.toast.ok{background:#16a34a}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#16a34a">
@@ -37,10 +51,64 @@
     <h1>ระบบบริหารบุคลากร</h1>
     <p class="sub">7-Eleven HR System</p>
     <a class="btn emp" href="./employee/"><span class="ico">📍</span>พนักงาน — ลงเวลา</a>
+    <button class="btn leave" id="leaveBtn"><span class="ico">📝</span>ขอลา</button>
+    <a class="btn staff" href="./staff/"><span class="ico">🪪</span>กรอกข้อมูล / เอกสารของฉัน</a>
     <a class="btn hr" href="./hr/"><span class="ico">🗂️</span>ฝ่าย HR — จัดการ</a>
     <div class="foot">กล้องและ GPS ทำงานบน HTTPS เท่านั้น</div>
   </div>
+
+  <div class="ovl" id="leaveOvl">
+    <div class="modal">
+      <button class="mx" id="lvClose">×</button>
+      <h2>ขอลา</h2>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:6px">ส่งให้ HR อนุมัติ — กรอกรหัสพนักงานของคุณ</p>
+      <label>รหัสพนักงาน</label><input id="lvEmp" type="text" inputmode="numeric" placeholder="เช่น 001">
+      <label>ประเภทการลา</label>
+      <select id="lvType"><option>ลาป่วย</option><option>ลากิจ</option><option>ลาพักร้อน</option><option>อื่นๆ</option></select>
+      <div class="row">
+        <div style="flex:1"><label>ตั้งแต่</label><input id="lvStart" type="date"></div>
+        <div style="flex:1"><label>ถึง</label><input id="lvEnd" type="date"></div>
+      </div>
+      <label>เหตุผล</label><input id="lvReason" type="text" placeholder="ระบุเหตุผล (ถ้ามี)">
+      <button class="mbtn" id="lvSubmit">ส่งคำขอลา</button>
+      <div id="lvMine" style="font-size:12.5px;margin-top:10px"></div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./shared/config.js"></script>
+<script src="./shared/supabase.js"></script>
 <script>
+const $=id=>document.getElementById(id);
+function toast(kind,msg){const t=$('toast');t.className='toast show '+kind;t.textContent=msg;setTimeout(()=>t.classList.remove('show'),3500);}
+const ovl=$('leaveOvl');
+$('leaveBtn').onclick=()=>{ if(!$('lvStart').value)$('lvStart').value=HR.bangkokDate(); if(!$('lvEnd').value)$('lvEnd').value=HR.bangkokDate(); ovl.classList.add('show'); myLeaves(); };
+$('lvClose').onclick=()=>ovl.classList.remove('show');
+ovl.addEventListener('click',e=>{ if(e.target===ovl) ovl.classList.remove('show'); });
+$('lvEmp').addEventListener('change', myLeaves);
+async function myLeaves(){
+  const id=$('lvEmp').value.trim(); if(!id){ $('lvMine').innerHTML=''; return; }
+  try{ const rows=await HR.myLeaves(id);
+    $('lvMine').innerHTML = rows.length ? '<b>คำขอล่าสุด</b>'+rows.map(r=>{
+      const st=r.status==='approved'?'<span style="color:#16a34a">✓ อนุมัติ</span>':r.status==='rejected'?'<span style="color:#dc2626">✗ ปฏิเสธ</span>':'<span style="color:#d97706">⏳ รออนุมัติ</span>';
+      const range=(r.end_date&&r.end_date!==r.start_date)?(r.start_date+' – '+r.end_date):r.start_date;
+      return `<div style="padding:2px 0">• ${range} · ${r.type||''} — ${st}</div>`;
+    }).join('') : '<span style="color:#9ca3af">ยังไม่มีคำขอ</span>';
+  }catch(e){ $('lvMine').innerHTML=''; }
+}
+$('lvSubmit').onclick=async()=>{
+  const id=$('lvEmp').value.trim();
+  if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  const start=$('lvStart').value, end=$('lvEnd').value, type=$('lvType').value, reason=$('lvReason').value.trim();
+  if(!start){ toast('err','เลือกวันที่เริ่มลา'); return; }
+  if(end&&end<start){ toast('err','วันสิ้นสุดต้องไม่ก่อนวันเริ่ม'); return; }
+  $('lvSubmit').disabled=true; $('lvSubmit').textContent='กำลังส่ง…';
+  try{ await HR.requestLeave({ empId:id, start_date:start, end_date:end||start, type, reason });
+    toast('ok','ส่งคำขอลาแล้ว รอ HR อนุมัติ'); $('lvReason').value=''; myLeaves();
+  }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); }
+  $('lvSubmit').disabled=false; $('lvSubmit').textContent='ส่งคำขอลา';
+};
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
 </script>
 </body>
