@@ -258,6 +258,21 @@
     return { ok: true };
   }
 
+  // ---------- รับทราบ/ยอมรับระเบียบการทำงาน ----------
+  async function acceptRules(empId, version) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้ (ติดต่อ HR)');
+    if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
+    const { error } = await sb.from('rule_acks').insert({ emp_id: empId, version });
+    if (error) throw error;
+    return { ok: true, name: emp.name };
+  }
+  async function getRuleAck(empId, version) {
+    const { data } = await sb.from('rule_acks').select('accepted_at')
+      .eq('emp_id', empId).eq('version', version).order('accepted_at', { ascending: false }).limit(1).maybeSingle();
+    return data || null;
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck };
 })();

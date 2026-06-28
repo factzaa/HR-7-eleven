@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7-Eleven · ระเบียบการทำงาน</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#16a34a;--green-d:#15803d;--ink:#1f2937;--bg:#f3f4f6;--line:#e5e7eb;--muted:#6b7280;--red:#dc2626}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Anuphan',system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:16px;min-height:100vh}
+  .wrap{max-width:640px;margin:0 auto}
+  .top{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .top img{width:40px;height:40px;border-radius:9px}
+  .top h1{font-size:18px;font-weight:700;flex:1}
+  .home{text-decoration:none;color:var(--muted);border:1.5px solid var(--line);background:#fff;border-radius:9px;padding:7px 12px;font-weight:600;font-size:13px}
+  .card{background:#fff;border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.06);padding:22px 20px;margin-bottom:14px}
+  .doc h2{font-size:16px;color:var(--green-d);margin:18px 0 6px;border-bottom:2px solid #eef2f1;padding-bottom:4px}
+  .doc h2:first-child{margin-top:0}
+  .doc p{font-size:14px;line-height:1.7;margin:4px 0}
+  .doc .warn{background:#fef2f2;border:1px solid #fee2e2;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:13.5px;line-height:1.6}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left}
+  th{background:#f0fdf4;color:var(--green-d);font-weight:600}
+  .accept{position:sticky;bottom:0}
+  label.chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;font-weight:600;cursor:pointer;margin:6px 0 12px}
+  label.chk input{width:20px;height:20px;margin-top:2px;flex:none}
+  input[type=text]{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;margin-bottom:10px}
+  .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-size:16px;font-weight:600;color:#fff;background:var(--green);cursor:pointer}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .status{font-size:13px;margin-top:10px;text-align:center}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;z-index:30;max-width:90%;text-align:center}
+  .toast.show{opacity:1}.toast.err{background:#dc2626}.toast.ok{background:#16a34a}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <img src="../icons/icon-192.png" alt="7-11">
+    <h1>ระเบียบการทำงาน</h1>
+    <a class="home" href="../">🏠 หน้าแรก</a>
+  </div>
+
+  <div class="card doc">
+    <p class="warn">เอกสารนี้เป็นข้อบังคับที่พนักงานทุกคนต้องถือปฏิบัติอย่างเคร่งครัด การฝ่าฝืนจะถูกพิจารณาโทษทางวินัยตามลำดับ จนถึงขั้นเลิกจ้างตามระเบียบบริษัทและกฎหมายแรงงาน</p>
+
+    <h2>1. เวลาทำงานและการตรงต่อเวลา</h2>
+    <p>1.1 พนักงานต้องมาถึงจุดปฏิบัติงานและพร้อมทำงาน <b>ก่อนเวลาเข้ากะของตน</b> ทุกครั้ง</p>
+    <p>1.2 ต้องปฏิบัติงานตามกะและสาขาที่ได้รับมอบหมายอย่างเคร่งครัด ห้ามสลับหรือเปลี่ยนกะเองโดยไม่ได้รับอนุญาต</p>
+    <p>1.3 การมาสายเป็นความผิดทางวินัยที่ถูกบันทึกและสะสมทุกครั้ง</p>
+
+    <h2>2. การลงเวลาเข้า–ออกงาน</h2>
+    <p>2.1 พนักงานต้องลงเวลา <b>เข้า</b> และ <b>ออก</b> ด้วยตนเองทุกครั้ง ณ จุดปฏิบัติงานจริง</p>
+    <p>2.2 <b>ห้ามลงเวลาแทนกันโดยเด็ดขาด</b> ถือเป็นการทุจริตและความผิดวินัยร้ายแรง อาจถูกเลิกจ้างทันที</p>
+    <p>2.3 ห้ามแก้ไข ปลอมแปลง หรือบิดเบือนข้อมูลการลงเวลาทุกรูปแบบ</p>
+    <p>2.4 หากระบบขัดข้อง ต้องแจ้งหัวหน้างานหรือฝ่ายบุคคลทันที ห้ามละเลยการลงเวลา</p>
+
+    <h2>3. การมาสายและการขาดงาน</h2>
+    <p>3.1 การมาสายและการขาดงานจะถูกรวบรวมและพิจารณาโทษตามลำดับ ดังนี้</p>
+    <table>
+      <tr><th>การสะสม (ต่อรอบ)</th><th>บทลงโทษ</th></tr>
+      <tr><td>มาสาย 3 ครั้งขึ้นไป</td><td>ตักเตือนด้วยวาจา</td></tr>
+      <tr><td>มาสาย 5 ครั้งขึ้นไป หรือ ขาดงาน 1 วัน</td><td>ตักเตือนเป็นลายลักษณ์อักษร</td></tr>
+      <tr><td>มาสาย 7 ครั้งขึ้นไป หรือ ขาดงาน 2 วัน</td><td>ใบเตือนระดับ 1</td></tr>
+      <tr><td>มาสาย 10 ครั้งขึ้นไป หรือ ขาดงาน 3 วัน</td><td>ใบเตือนระดับ 2</td></tr>
+    </table>
+    <p>3.2 การขาดงานโดยไม่ได้รับอนุมัติการลา ถือเป็นการ <b>"ละทิ้งหน้าที่"</b> และเป็นความผิดวินัยร้ายแรง</p>
+    <p>3.3 การขาดงานติดต่อกันโดยไม่แจ้งเหตุอันสมควร อาจถูกพิจารณาเลิกจ้างโดยไม่จ่ายค่าชดเชยตามกฎหมาย</p>
+    <p>3.4 การสะสมใบเตือนถึงระดับที่บริษัทกำหนด จะนำไปสู่การพิจารณาพักงานหรือเลิกจ้าง</p>
+
+    <h2>4. การลาหยุด</h2>
+    <p>4.1 การลาทุกประเภทต้องยื่นคำขอและ <b>ได้รับอนุมัติก่อน</b> จึงถือว่าเป็นการลาที่ถูกต้อง</p>
+    <p>4.2 การลากิจต้องยื่นล่วงหน้าตามที่กำหนด การลาป่วยต้องมีใบรับรองแพทย์ประกอบ</p>
+    <p>4.3 การหยุดงานโดยไม่ได้รับอนุมัติ จะถูกนับเป็นการขาดงานและพิจารณาโทษตามข้อ 3 ทันที</p>
+    <p>4.4 ห้ามใช้สิทธิการลาโดยไม่สุจริต เช่น ลาป่วยเท็จ การตรวจพบถือเป็นความผิดวินัยร้ายแรง</p>
+
+    <h2>5. การปฏิบัติงานแทนสาขาอื่น</h2>
+    <p>5.1 เมื่อได้รับมอบหมายให้ไปปฏิบัติงานแทนที่สาขาอื่น ต้องไปปฏิบัติตามคำสั่งโดยไม่ขัดขืน</p>
+    <p>5.2 ห้ามยื่นลาทับวันที่ได้รับมอบหมายให้ไปทำแทน เว้นแต่ได้รับอนุมัติล่วงหน้า</p>
+
+    <h2>6. ความประพฤติและวินัยทั่วไป</h2>
+    <p>6.1 ปฏิบัติงานด้วยความซื่อสัตย์ สุจริต และเต็มความสามารถ</p>
+    <p>6.2 ห้ามทุจริต ยักยอก หรือเอาทรัพย์สิน/เงินของบริษัทหรือลูกค้าไปโดยมิชอบ — เป็นความผิดร้ายแรงและดำเนินคดีตามกฎหมาย</p>
+    <p>6.3 ปฏิบัติตามคำสั่งอันชอบด้วยหน้าที่ของผู้บังคับบัญชา และรักษามารยาทต่อเพื่อนร่วมงานและลูกค้า</p>
+    <p>6.4 แต่งกายสุภาพเรียบร้อยตามที่บริษัทกำหนด และรักษาความสะอาดพื้นที่ปฏิบัติงาน</p>
+    <p>6.5 ห้ามดื่มสุรา เสพของมึนเมาหรือสารเสพติด หรือเข้าปฏิบัติงานในสภาพที่ไม่พร้อม</p>
+    <p>6.6 รักษาความลับของบริษัทและข้อมูลลูกค้า ห้ามเปิดเผยต่อบุคคลภายนอก</p>
+
+    <h2>7. ความยินยอมข้อมูลส่วนบุคคล</h2>
+    <p>7.1 พนักงานยินยอมให้บริษัทเก็บและใช้ข้อมูลส่วนบุคคล ภาพถ่าย ข้อมูลใบหน้า และตำแหน่งที่ตั้งขณะลงเวลา เพื่อการบริหารงานบุคคลและยืนยันตัวตนในการปฏิบัติงาน</p>
+  </div>
+
+  <div class="card accept">
+    <h2 style="font-size:15px;margin-bottom:8px">การรับทราบและยอมรับ</h2>
+    <input id="empId" type="text" inputmode="numeric" placeholder="กรอกรหัสพนักงานของคุณ">
+    <label class="chk"><input type="checkbox" id="agree"><span>ข้าพเจ้าได้อ่านและเข้าใจระเบียบข้อบังคับนี้โดยตลอด และยินยอมปฏิบัติตามทุกประการ</span></label>
+    <button class="btn" id="acceptBtn" disabled>ยืนยันการรับทราบ</button>
+    <div class="status" id="status"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script>
+const RULES_VERSION = '2026-06-28';
+const $ = id => document.getElementById(id);
+function toast(kind,msg){ const t=$('toast'); t.className='toast show '+kind; t.textContent=msg; setTimeout(()=>t.classList.remove('show'),3500); }
+function sync(){ $('acceptBtn').disabled = !($('agree').checked && $('empId').value.trim()); }
+$('agree').addEventListener('change', sync);
+$('empId').addEventListener('input', sync);
+$('empId').addEventListener('change', checkAck);
+async function checkAck(){
+  const id=$('empId').value.trim(); if(!id){ $('status').innerHTML=''; return; }
+  try{ const a=await HR.getRuleAck(id, RULES_VERSION);
+    $('status').innerHTML = a ? '<span style="color:#16a34a">✓ รหัสนี้ยอมรับระเบียบฉบับนี้แล้ว ('+String(a.accepted_at).slice(0,10)+')</span>' : '';
+  }catch(e){ $('status').innerHTML=''; }
+}
+$('acceptBtn').onclick = async ()=>{
+  const id=$('empId').value.trim();
+  if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  if(!$('agree').checked){ toast('err','กรุณาติ๊กยอมรับก่อน'); return; }
+  $('acceptBtn').disabled=true; $('acceptBtn').textContent='กำลังบันทึก…';
+  try{
+    const r=await HR.acceptRules(id, RULES_VERSION);
+    $('status').innerHTML='<span style="color:#16a34a">✓ บันทึกการรับทราบเรียบร้อย — ขอบคุณ '+(r.name||'')+'</span>';
+    toast('ok','บันทึกการยอมรับแล้ว');
+  }catch(e){ toast('err', e.message||'บันทึกไม่สำเร็จ'); $('status').innerHTML=''; }
+  $('acceptBtn').textContent='ยืนยันการรับทราบ'; sync();
+};
+</script>
+</body>
+</html>
