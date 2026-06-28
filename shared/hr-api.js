@@ -44,14 +44,60 @@
   }
 
   // ============================================================
-  // ตรรกะระดับวินัย (ปรับ threshold ได้ตามระเบียบบริษัท)
+  // ตรรกะระดับวินัย — อ่านเกณฑ์จากตาราง discipline_rules (ปรับได้จากหน้า HR)
   // ============================================================
-  function disciplineLevel(lateCount, absent) {
-    if (lateCount >= 10 || absent >= 3) return { level: 4, level_name: 'ใบเตือนระดับ 2', level_color: '#b91c1c' };
-    if (lateCount >= 7  || absent >= 2) return { level: 3, level_name: 'ใบเตือนระดับ 1', level_color: '#ea580c' };
-    if (lateCount >= 5  || absent >= 1) return { level: 2, level_name: 'ตักเตือนลายลักษณ์อักษร', level_color: '#d97706' };
-    if (lateCount >= 3)                 return { level: 1, level_name: 'ตักเตือนด้วยวาจา', level_color: '#ca8a04' };
+  // เกณฑ์เริ่มต้น (ใช้เมื่อยังไม่มีตาราง/ตารางว่าง)
+  const DEFAULT_DISC_RULES = [
+    { level: 1, level_name: 'ตักเตือนด้วยวาจา',        level_color: '#ca8a04', late_min: 3,  absent_min: null, enabled: true },
+    { level: 2, level_name: 'ตักเตือนลายลักษณ์อักษร', level_color: '#d97706', late_min: 5,  absent_min: 1,    enabled: true },
+    { level: 3, level_name: 'ใบเตือนระดับ 1',          level_color: '#ea580c', late_min: 7,  absent_min: 2,    enabled: true },
+    { level: 4, level_name: 'ใบเตือนระดับ 2',          level_color: '#b91c1c', late_min: 10, absent_min: 3,    enabled: true },
+  ];
+
+  async function loadDisciplineRules() {
+    try {
+      const r = await sb().from('discipline_rules').select('*').order('level');
+      if (r.error || !r.data || !r.data.length) return DEFAULT_DISC_RULES;
+      return r.data;
+    } catch (e) { return DEFAULT_DISC_RULES; }
+  }
+
+  // หา "ระดับสูงสุด" ที่เข้าเกณฑ์ (สาย OR ขาด ตามค่าที่ตั้ง) — rules = อาเรย์เกณฑ์
+  function disciplineLevel(lateCount, absent, rules) {
+    const rs = (rules && rules.length ? rules : DEFAULT_DISC_RULES)
+      .filter(r => r.enabled !== false)
+      .slice().sort((a, b) => b.level - a.level);   // รุนแรงสุดก่อน
+    for (const r of rs) {
+      const hitLate   = (r.late_min   != null) && lateCount >= r.late_min;
+      const hitAbsent = (r.absent_min != null) && absent    >= r.absent_min;
+      if (hitLate || hitAbsent) {
+        return { level: r.level, level_name: r.level_name, level_color: r.level_color };
+      }
+    }
     return { level: 0, level_name: 'ปกติ', level_color: '#16a34a' };
+  }
+
+  // อ่านเกณฑ์ใบเตือน (ถ้ายังไม่มีตาราง/ว่าง คืนค่าเริ่มต้น)
+  async function hrDiscRulesGet() {
+    const rules = await loadDisciplineRules();
+    return { ok: true, rules };
+  }
+
+  // บันทึกเกณฑ์ใบเตือน — data = อาเรย์ [{level,level_name,level_color,late_min,absent_min,enabled}]
+  async function hrDiscRulesSave(data) {
+    if (!Array.isArray(data) || !data.length) return { ok: false, error: 'ไม่มีข้อมูลเกณฑ์' };
+    const rows = data.map(r => ({
+      level: Number(r.level),
+      level_name: r.level_name,
+      level_color: r.level_color,
+      late_min:   (r.late_min   === '' || r.late_min   == null) ? null : Number(r.late_min),
+      absent_min: (r.absent_min === '' || r.absent_min == null) ? null : Number(r.absent_min),
+      enabled: r.enabled !== false,
+    }));
+    const r = await sb().from('discipline_rules').upsert(rows, { onConflict: 'level' });
+    if (r.error) throw r.error;
+    await logAct('แก้ไขเกณฑ์ใบเตือน', null, 'อัปเดตเกณฑ์วินัย ' + rows.length + ' ระดับ');
+    return { ok: true };
   }
 
   // ============================================================
@@ -99,6 +145,8 @@
         case 'hr_leavetype_list': return await hrLeaveTypeList();
         case 'hr_leavetype_save': return await hrLeaveTypeSave(p.data);
         case 'hr_rule_status':    return await hrRuleStatus();
+        case 'hr_disc_rules_get': return await hrDiscRulesGet();
+        case 'hr_disc_rules_save':return await hrDiscRulesSave(p.data);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications();
         case 'hr_submission_list':    return await hrSubmissionList();
@@ -288,6 +336,7 @@
     const cyc = cycleRange(which === 'previous' ? 'previous' : 'current');
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
+    const discRules = await loadDisciplineRules();
     const [empsR, attR, holR, lvR, schR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date').eq('active', true),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours').gte('work_date', cyc.start).lte('work_date', endEff),
@@ -321,7 +370,7 @@
       const days_should = pastSched.length;
       let absent = 0;
       pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent++; });
-      const lv = disciplineLevel(late_count, absent);
+      const lv = disciplineLevel(late_count, absent, discRules);
       return {
         emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '',
         late_count, late_total, ot_hours, absent,

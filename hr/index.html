@@ -428,6 +428,16 @@
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">เช่น ลากิจ ต้องลาล่วงหน้า ≥ 2 วัน · ลาป่วย แนบใบรับรองแพทย์ ลาย้อนหลังได้</div>
 
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">เกณฑ์ใบเตือน / วินัย</h3><button class="btn btn-pri btn-sm" id="dr_save">บันทึกเกณฑ์</button></div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>ระดับ</th><th>ชื่อระดับ</th><th>มาสาย ≥ (ครั้ง)<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ใช้</span></th><th>ขาดงาน ≥ (วัน)<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ใช้</span></th><th>เปิดใช้</th></tr></thead>
+    <tbody id="drRows"></tbody>
+  </table></div></div>
+  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">
+    ระบบจะให้ใบเตือน <b>ระดับสูงสุด</b> ที่เข้าเกณฑ์ โดยใช้ "มาสาย <b>หรือ</b> ขาดงาน" อย่างใดอย่างหนึ่งถึงเกณฑ์ก็ได้ ·
+    การนับขาดงานอ้างอิงเฉพาะวันที่จัดเวรไว้และผ่านไปแล้ว · แก้แล้วกด "บันทึกเกณฑ์" จากนั้นไปแท็บ "วินัย &amp; ใบเตือน" กดรีเฟรช
+  </div>
+
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">สถานะการรับทราบระเบียบ <span id="ru_ver" style="font-weight:400; color:var(--muted); font-size:13px"></span></h3><button class="btn btn-sec btn-sm" id="ru_refresh">รีเฟรช</button></div>
   <div id="ru_body"></div>
 </div>
@@ -1292,7 +1302,7 @@ showTab = function(name){
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadRuleStatus(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadRuleStatus(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
 };
@@ -1590,6 +1600,34 @@ async function loadLeaveTypes(){
   });
 }
 
+// ========== เกณฑ์ใบเตือน / วินัย ==========
+let DR=null;
+async function loadDiscRules(){
+  const r = await post({ action:'hr_disc_rules_get', password:pwd });
+  if(!r.ok){ $('drRows').innerHTML=''; return; }
+  DR = r.rules.slice().sort((a,b)=>a.level-b.level);
+  const num=(v)=>v==null?'':v;
+  $('drRows').innerHTML = DR.map((d,i)=>`<tr>
+    <td><span class="pill" style="background:${esc(d.level_color)};color:#fff;font-weight:700">${d.level}</span></td>
+    <td><input type="text" value="${esc(d.level_name)}" id="dr_name_${i}" style="width:180px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="number" min="0" value="${num(d.late_min)}" placeholder="ไม่ใช้" id="dr_late_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="number" min="0" value="${num(d.absent_min)}" placeholder="ไม่ใช้" id="dr_abs_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td style="text-align:center"><input type="checkbox" ${d.enabled!==false?'checked':''} id="dr_en_${i}"></td>
+  </tr>`).join('');
+}
+async function saveDiscRules(){
+  if(!DR) return;
+  const data = DR.map((d,i)=>({
+    level:d.level, level_color:d.level_color,
+    level_name:$('dr_name_'+i).value.trim()||d.level_name,
+    late_min:$('dr_late_'+i).value, absent_min:$('dr_abs_'+i).value,
+    enabled:$('dr_en_'+i).checked,
+  }));
+  const r = await post({ action:'hr_disc_rules_save', password:pwd, data });
+  if(r.ok){ toast('ok','บันทึกเกณฑ์ใบเตือนแล้ว · ไปแท็บวินัยแล้วกดรีเฟรช'); loadDiscRules(); }
+  else toast('err', r.error||'บันทึกไม่สำเร็จ');
+}
+
 // ========== สถานะการรับทราบระเบียบ ==========
 async function loadRuleStatus(){
   $('ru_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -1744,6 +1782,7 @@ async function loadSubmissions(){
   $('shClose').onclick = ()=>$('shOverlay').classList.remove('show');
   $('shOverlay').addEventListener('click', e=>{ if(e.target===$('shOverlay')) $('shOverlay').classList.remove('show'); });
   $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
+  $('dr_save') && ($('dr_save').onclick = saveDiscRules);
   $('shSave').onclick = async ()=>{
     const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value };
     if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
