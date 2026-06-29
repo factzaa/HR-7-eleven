@@ -45,6 +45,9 @@
   .mainbtn{display:flex;align-items:center;gap:12px;background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px;cursor:pointer;font-size:16px;font-weight:600;width:100%;text-align:left;}
   .mainbtn .e{font-size:22px;} .mainbtn .d{font-size:12px;color:var(--muted);font-weight:400;margin-top:2px;}
   .mainbtn.pri{background:var(--green);color:#fff;border-color:var(--green);} .mainbtn.pri .d{color:#d7e7dd;}
+  .imgbtn{display:block;width:100%;padding:0;margin:0 0 12px;border:none;background:none;cursor:pointer;border-radius:14px;}
+  .imgbtn img{display:block;width:100%;height:auto;border-radius:14px;}
+  .imgbtn:active{transform:scale(.99);}
 </style>
 </head>
 <body>
@@ -66,10 +69,10 @@
     <!-- step_menu -->
     <div id="step_menu" class="hide">
       <div class="who"><div><div class="nm" id="m_nm">—</div><div class="sub" id="m_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
-      <button class="mainbtn pri" id="bMenu1"><span class="e">👔</span><span>หัวหน้าผลัด · มอบหมายงาน<div class="d">รับเป็นคนคุมผลัด แล้วแจกงานให้คนในผลัด</div></span></button>
-      <button class="mainbtn" id="bMenu2"><span class="e">✅</span><span>งานที่ได้รับมอบหมาย<div class="d">ดูงานของฉัน/ทีม · ดึงงานว่างมาทำ · ส่งงาน</div></span></button>
-      <button class="mainbtn" id="bMenu3"><span class="e">🔍</span><span>รับผลัด · ตรวจงานผลัดก่อนหน้า<div class="d">หัวหน้าผลัดตรวจ/ตีกลับงานของผลัดก่อนหน้า</div></span></button>
-      <button class="mainbtn" id="bReport"><span class="e">🖼️</span><span>รายงานรับส่งผลัด<div class="d">ดูรูปงาน + ใครทำ/ใครตรวจ/เวลา</div></span></button>
+      <button class="imgbtn" id="bMenu1"><img src="../01_shift_leader_assign.png?v=1" alt="หัวหน้าผลัด · มอบหมายงาน"></button>
+      <button class="imgbtn" id="bMenu2"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"></button>
+      <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
+      <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
     </div>
 
     <!-- menu1: leader -->
