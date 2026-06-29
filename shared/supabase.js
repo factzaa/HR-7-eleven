@@ -369,6 +369,63 @@
     return { ok: true };
   }
 
+  // ---------- กระดานงานตามกะ (พนักงานหยิบทำเอง/แบ่งงานกันเอง) ----------
+  // เห็นงานของกะ + สถานะใครทำ + เพื่อนร่วมสาขา (ไว้แบ่งงาน) + รายการกะ
+  async function getShiftBoard(empId, shiftId) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const shift = shiftId || emp.default_shift || '';
+    const today = bangkokDate();
+    const [defsR, asgR, empsR, shR] = await Promise.all([
+      sb.from('task_defs').select('*').eq('active', true).order('sort'),
+      sb.from('task_assignments').select('*').eq('branch_id', emp.branch_id || '').eq('work_date', today).eq('shift_id', shift),
+      sb.from('employees').select('emp_id,name,nickname').eq('active', true).eq('branch_id', emp.branch_id || ''),
+      sb.from('shifts').select('shift_id,name').order('start_time'),
+    ]);
+    const defs = (defsR.data || []).filter(d => !d.shift_id || d.shift_id === shift);
+    const byDef = {}; (asgR.data || []).forEach(a => { byDef[a.task_def_id] = a; });
+    return {
+      emp, shift, shifts: shR.data || [], colleagues: empsR.data || [],
+      defs: defs.map(d => ({ id: d.id, title: d.title, require_photo: !!d.require_photo, assignment: byDef[d.id] || null })),
+    };
+  }
+  // หางาน assignment เดิมของ (สาขา+วัน+กะ+งาน)
+  async function _findAsg(branch, today, shift, defId) {
+    return (await sb.from('task_assignments').select('id').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', shift).eq('task_def_id', defId).maybeSingle()).data;
+  }
+  // พนักงานกดทำงานนี้เอง + บันทึกว่าเป็นผู้ทำ (ส่งเลย)
+  async function doTaskSelf({ empId, task_def_id, shiftId, photo, note }) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const def = (await sb.from('task_defs').select('*').eq('id', task_def_id).maybeSingle()).data;
+    if (!def) throw new Error('ไม่พบงานนี้');
+    const shift = shiftId || emp.default_shift || '';
+    const today = bangkokDate();
+    let photo_url = null;
+    if (photo) photo_url = await uploadPhoto('employee-docs', 'task/' + (emp.branch_id || 'x') + '_' + task_def_id + '_' + Date.now() + '.jpg', photo);
+    if (def.require_photo && !photo_url) throw new Error('งานนี้ต้องแนบรูปก่อนส่ง');
+    const base = { emp_id: emp.emp_id, emp_name: emp.nickname || emp.name, status: 'submitted', emp_note: note || null, submitted_at: new Date().toISOString(), reviewer: null, review_note: null, reviewed_at: null };
+    if (photo_url) base.photo_url = photo_url;
+    const existing = await _findAsg(emp.branch_id, today, shift, task_def_id);
+    if (existing) { const { error } = await sb.from('task_assignments').update(base).eq('id', existing.id); if (error) throw error; }
+    else { const { error } = await sb.from('task_assignments').insert(Object.assign({ work_date: today, branch_id: emp.branch_id || null, shift_id: shift, task_def_id, title: def.title, require_photo: !!def.require_photo }, base)); if (error) throw error; }
+    return { ok: true };
+  }
+  // หัวหน้าผลัดแบ่งงานให้เพื่อนในกะ (มอบหมาย — ยังไม่ส่ง)
+  async function assignColleague({ byEmpId, toEmpId, task_def_id, shiftId }) {
+    const by = await lookupEmployee(byEmpId); if (!by) throw new Error('ไม่พบรหัสผู้แบ่งงาน');
+    const to = await lookupEmployee(toEmpId); if (!to) throw new Error('ไม่พบพนักงานที่จะมอบ');
+    const def = (await sb.from('task_defs').select('*').eq('id', task_def_id).maybeSingle()).data;
+    if (!def) throw new Error('ไม่พบงานนี้');
+    const shift = shiftId || by.default_shift || '';
+    const today = bangkokDate();
+    const base = { emp_id: to.emp_id, emp_name: to.nickname || to.name, status: 'todo', photo_url: null, emp_note: null, submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
+    const existing = await _findAsg(by.branch_id, today, shift, task_def_id);
+    if (existing) { const { error } = await sb.from('task_assignments').update(base).eq('id', existing.id); if (error) throw error; }
+    else { const { error } = await sb.from('task_assignments').insert(Object.assign({ work_date: today, branch_id: by.branch_id || null, shift_id: shift, task_def_id, title: def.title, require_photo: !!def.require_photo }, base)); if (error) throw error; }
+    return { ok: true };
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague };
 })();

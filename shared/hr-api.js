@@ -1012,7 +1012,7 @@
   }
   async function hrTaskDefSave(d) {
     if (!d || !d.title) return { ok: false, error: 'ต้องมีชื่องาน' };
-    const row = { title: String(d.title).trim(), require_photo: !!d.require_photo, active: d.active !== false, sort: Number(d.sort) || 0 };
+    const row = { title: String(d.title).trim(), require_photo: !!d.require_photo, active: d.active !== false, sort: Number(d.sort) || 0, shift_id: d.shift_id || null };
     if (d.id) { const { error } = await sb().from('task_defs').update(row).eq('id', d.id); if (error) throw error; }
     else { const { error } = await sb().from('task_defs').insert(row); if (error) throw error; }
     return { ok: true };
@@ -1030,9 +1030,10 @@
     const { data: defs } = await sb().from('task_defs').select('*').in('id', d.def_ids);
     const { data: existing } = await sb().from('task_assignments').select('task_def_id').eq('emp_id', d.emp_id).eq('work_date', date);
     const have = new Set((existing || []).map(x => x.task_def_id));
+    const shift = d.shift_id || emp.default_shift || null;
     const rows = (defs || []).filter(df => !have.has(df.id)).map(df => ({
       work_date: date, emp_id: emp.emp_id, emp_name: emp.nickname || emp.name, branch_id: emp.branch_id || null,
-      task_def_id: df.id, title: df.title, require_photo: !!df.require_photo, status: 'todo',
+      task_def_id: df.id, title: df.title, require_photo: !!df.require_photo, status: 'todo', shift_id: shift,
     }));
     if (!rows.length) return { ok: true, added: 0 };
     const { error } = await sb().from('task_assignments').insert(rows);

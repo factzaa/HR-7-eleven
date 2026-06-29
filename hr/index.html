@@ -425,7 +425,8 @@
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">มอบหมายงานในกะ</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
-      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">พนักงาน</label><select id="ta_emp" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:200px"></select></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">กะ</label><select id="ta_shift" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">พนักงาน (ในกะ)</label><select id="ta_emp" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:200px"></select></div>
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">วันที่</label><input id="ta_date" type="date" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
       <button class="btn btn-pri btn-sm" id="ta_assign">มอบหมายงานที่เลือก</button>
     </div>
@@ -554,7 +555,7 @@
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>งาน</th><th>ต้องแนบรูป</th><th>ลำดับ</th><th>เปิดใช้</th><th></th></tr></thead>
+    <thead><tr><th>งาน</th><th>กะ</th><th>ต้องแนบรูป</th><th>ลำดับ</th><th>เปิดใช้</th><th></th></tr></thead>
     <tbody id="tdRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">รายการนี้ใช้ตอน "มอบหมายงาน" ในแท็บ ส่ง/รับผลัด · ติ๊ก "ต้องแนบรูป" = พนักงานต้องถ่ายรูปก่อนส่งงานนั้น</div>
@@ -2039,20 +2040,29 @@ $('ho_refresh').onclick=loadHandover;
 function bkkTodayStr(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
 let TASKDEFS=[];
 async function loadTaskTab(){
-  $('ta_emp').innerHTML=(DATA.rows||[]).map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('');
   if(!$('ta_date').value) $('ta_date').value=bkkTodayStr();
   if(!$('tk_date').value) $('tk_date').value=bkkTodayStr();
+  $('ta_shift').innerHTML=(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc(s.name)}</option>`).join('')||'<option value="">(ไม่มีกะ)</option>';
   const r=await post({ action:'hr_task_defs_get', password:pwd });
   TASKDEFS=(r.ok?r.rows:[]).filter(d=>d.active!==false);
-  $('ta_defs').innerHTML=TASKDEFS.length
-    ? TASKDEFS.map(d=>`<label class="check"><input type="checkbox" value="${d.id}" class="tadef">${esc(d.title)}${d.require_photo?' 📷':''}</label>`).join('')
-    : '<span style="color:var(--muted);font-size:13px">ยังไม่มีรายการงาน — เพิ่มที่แท็บ "ตั้งค่ากะ"</span>';
+  renderAssign();
   loadTaskList();
 }
+function renderAssign(){
+  const shift=$('ta_shift').value;
+  let emps=(DATA.rows||[]).filter(e=>e.default_shift===shift);
+  if(!emps.length) emps=(DATA.rows||[]);
+  $('ta_emp').innerHTML=emps.map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('');
+  const defs=TASKDEFS.filter(d=>!d.shift_id||d.shift_id===shift);
+  $('ta_defs').innerHTML=defs.length
+    ? defs.map(d=>`<label class="check"><input type="checkbox" value="${d.id}" class="tadef">${esc(d.title)}${d.require_photo?' 📷':''}</label>`).join('')
+    : '<span style="color:var(--muted);font-size:13px">กะนี้ยังไม่มีงาน — เพิ่ม/ตั้งกะที่แท็บ "ตั้งค่ากะ"</span>';
+}
+$('ta_shift') && ($('ta_shift').onchange=renderAssign);
 $('ta_assign').onclick=async()=>{
   const def_ids=[...document.querySelectorAll('.tadef:checked')].map(c=>Number(c.value));
   if(!def_ids.length){ toast('err','เลือกงานอย่างน้อย 1 รายการ'); return; }
-  const r=await post({ action:'hr_task_assign', password:pwd, data:{ emp_id:$('ta_emp').value, work_date:$('ta_date').value, def_ids } });
+  const r=await post({ action:'hr_task_assign', password:pwd, data:{ emp_id:$('ta_emp').value, work_date:$('ta_date').value, def_ids, shift_id:$('ta_shift').value } });
   if(r.ok){ toast('ok','มอบหมาย '+r.added+' งาน'+(r.added===0?' (มอบไว้แล้ว)':'')); document.querySelectorAll('.tadef:checked').forEach(c=>c.checked=false); loadTaskList(); }
   else toast('err', r.error||'ไม่สำเร็จ');
 };
@@ -2086,16 +2096,18 @@ $('tk_date').addEventListener('change', loadTaskList);
 async function loadTaskDefs(){
   const r=await post({ action:'hr_task_defs_get', password:pwd });
   if(!r.ok){ if($('tdRows')) $('tdRows').innerHTML=''; return; }
+  const shOpt=(sel)=>'<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>'<option value="'+esc(s.shift_id)+'"'+(s.shift_id===sel?' selected':'')+'>'+esc(s.name)+'</option>').join('');
   $('tdRows').innerHTML=r.rows.length ? r.rows.map(d=>`<tr>
-    <td><input type="text" value="${esc(d.title)}" id="td_t_${d.id}" style="width:220px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="text" value="${esc(d.title)}" id="td_t_${d.id}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><select id="td_sh_${d.id}" style="padding:6px;border:1.5px solid var(--line2);border-radius:7px">${shOpt(d.shift_id||'')}</select></td>
     <td style="text-align:center"><input type="checkbox" ${d.require_photo?'checked':''} id="td_p_${d.id}"></td>
     <td><input type="number" value="${d.sort||0}" id="td_s_${d.id}" style="width:60px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td style="text-align:center"><input type="checkbox" ${d.active!==false?'checked':''} id="td_a_${d.id}"></td>
     <td style="white-space:nowrap"><button class="btn btn-pri btn-sm" data-tdsave="${d.id}">บันทึก</button> <button class="btn btn-danger btn-sm" data-tddel="${d.id}">ลบ</button></td>
-  </tr>`).join('') : '<tr><td colspan="5" style="padding:14px;color:var(--muted)">ยังไม่มีรายการงาน</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="6" style="padding:14px;color:var(--muted)">ยังไม่มีรายการงาน</td></tr>';
   document.querySelectorAll('[data-tdsave]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.tdsave);
-    const data={ id, title:$('td_t_'+id).value, require_photo:$('td_p_'+id).checked, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked };
+    const data={ id, title:$('td_t_'+id).value, require_photo:$('td_p_'+id).checked, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked, shift_id:$('td_sh_'+id).value };
     const r=await post({ action:'hr_task_def_save', password:pwd, data });
     if(r.ok) toast('ok','บันทึกแล้ว'); else toast('err', r.error||'ไม่สำเร็จ');
   });
