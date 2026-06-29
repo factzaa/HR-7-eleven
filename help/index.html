@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือการใช้งาน · ระบบ HR 7-Eleven</title>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#16a34a;--green-d:#15803d;--orange:#ea580c;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--bg:#eef0f2}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Anuphan',system-ui,sans-serif;background:#f3f4f6;color:var(--ink);min-height:100vh;display:flex;justify-content:center}
+  .app{background:#fff;width:100%;max-width:480px;min-height:100vh;box-shadow:0 0 40px rgba(0,0,0,.06);display:flex;flex-direction:column}
+  .topbar{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:20px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+  .home{margin-left:auto;background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:10px;padding:8px 14px;font:inherit;font-size:13px;font-weight:600;text-decoration:none;cursor:pointer}
+  .home:active{transform:scale(.97)}
+  .tt1{font-size:18px;font-weight:700;line-height:1.2}
+  .tt2{font-size:12px;opacity:.9;margin-top:2px}
+  .intro{padding:16px 18px;color:var(--muted);font-size:13.5px;line-height:1.6;border-bottom:1px solid var(--line)}
+  .toc{display:flex;flex-wrap:wrap;gap:7px;padding:14px 16px 4px}
+  .toc a{font-size:12.5px;font-weight:600;color:var(--green-d);background:#e9f7ee;border:1px solid #cdeed8;border-radius:999px;padding:6px 12px;text-decoration:none}
+  .wrap{padding:8px 14px 30px}
+  .card{border:1px solid var(--line);border-radius:14px;margin:10px 0;overflow:hidden;background:#fff}
+  .head{display:flex;align-items:center;gap:12px;padding:15px 14px;cursor:pointer;user-select:none;background:#fff}
+  .head .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-size:20px;flex:none}
+  .head .t{flex:1;font-size:15.5px;font-weight:700;line-height:1.25}
+  .head .t small{display:block;font-size:12px;font-weight:400;color:var(--muted);margin-top:2px}
+  .head .ar{font-size:14px;color:#9ca3af;transition:transform .2s}
+  .card.open .ar{transform:rotate(90deg)}
+  .body{display:none;padding:2px 16px 16px;font-size:14px;line-height:1.7;color:#374151}
+  .card.open .body{display:block}
+  ol.steps{margin:6px 0 6px;padding:0;list-style:none;counter-reset:s}
+  ol.steps li{position:relative;padding:7px 0 7px 38px;border-bottom:1px dashed #eef0f2}
+  ol.steps li:last-child{border-bottom:0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:7px;width:26px;height:26px;border-radius:50%;background:var(--green);color:#fff;font-size:13px;font-weight:700;display:grid;place-items:center}
+  .tip{display:flex;gap:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;margin:9px 0;font-size:13px;color:#92400e}
+  .warn{display:flex;gap:8px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:9px 11px;margin:9px 0;font-size:13px;color:#b91c1c}
+  .ok{display:flex;gap:8px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:9px 11px;margin:9px 0;font-size:13px;color:#065f46}
+  .sub{font-weight:700;margin:12px 0 2px;font-size:14px;color:#111}
+  .pill{display:inline-block;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:1px 7px;font-size:12.5px;font-weight:600;color:#334155;margin:0 1px}
+  .foot{margin:14px 18px 30px;font-size:12px;color:#9ca3af;text-align:center;line-height:1.6}
+</style>
+<link rel="manifest" href="../manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div><div class="tt1">📖 คู่มือการใช้งาน</div><div class="tt2">สำหรับพนักงาน · ระบบ HR 7-Eleven</div></div>
+      <a class="home" href="../">🏠 หน้าแรก</a>
+    </div>
+
+    <div class="intro">
+      ยินดีต้อนรับ! คู่มือนี้รวมวิธีใช้ทุกเมนูในแอปแบบทีละขั้นตอน แตะหัวข้อเพื่อกางดูรายละเอียด
+      <br>ทุกเมนูใช้ <b>รหัสพนักงาน</b> ของคุณ (เช่น 001) ในการเข้าใช้งาน
+    </div>
+
+    <div class="toc">
+      <a href="#s-install">📲 ติดตั้งแอป</a>
+      <a href="#s-checkin">⏰ ลงเวลา</a>
+      <a href="#s-leave">📝 ขอลา</a>
+      <a href="#s-handover">🔄 รับส่งผลัด</a>
+      <a href="#s-profile">🪪 ข้อมูล/เอกสาร</a>
+      <a href="#s-rules">📋 ระเบียบ</a>
+      <a href="#s-faq">❓ ปัญหาพบบ่อย</a>
+    </div>
+
+    <div class="wrap">
+
+      <!-- ติดตั้ง -->
+      <div class="card" id="s-install">
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#eef2ff">📲</div><div class="t">ติดตั้งแอปลงมือถือ<small>เปิดเร็วขึ้น เหมือนแอปจริง (ไม่บังคับ)</small></div><div class="ar">▶</div></div>
+        <div class="body">
+          <div class="sub">ไอโฟน (Safari)</div>
+          <ol class="steps">
+            <li>เปิดลิงก์แอปใน <b>Safari</b></li>
+            <li>แตะปุ่ม <b>แชร์</b> (รูปสี่เหลี่ยมมีลูกศรขึ้น)</li>
+            <li>เลือก <b>"เพิ่มไปยังหน้าจอโฮม"</b> → เพิ่ม</li>
+          </ol>
+          <div class="sub">แอนดรอยด์ (Chrome)</div>
+          <ol class="steps">
+            <li>เปิดลิงก์แอปใน <b>Chrome</b></li>
+            <li>แตะจุด 3 จุดมุมขวาบน</li>
+            <li>เลือก <b>"ติดตั้งแอป"</b> หรือ "เพิ่มไปยังหน้าจอหลัก"</li>
+          </ol>
+          <div class="tip">💡 จะมีไอคอนแอปขึ้นหน้าจอ กดเปิดได้เลยไม่ต้องพิมพ์ลิงก์</div>
+        </div>
+      </div>
+
+      <!-- ลงเวลา -->
+      <div class="card" id="s-checkin">
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#eff6ff">⏰</div><div class="t">ลงเวลาเข้า–ออกงาน<small>ถ่ายรูป + ระบุพิกัด GPS หน้าร้าน</small></div><div class="ar">▶</div></div>
+        <div class="body">
+          <ol class="steps">
+            <li>หน้าแรก แตะ <span class="pill">ลงเวลาเข้า-ออกงาน</span></li>
+            <li>กรอก <b>รหัสพนักงาน</b> ของคุณ</li>
+            <li>กด <b>อนุญาต</b> ให้แอปใช้ <b>กล้อง</b> และ <b>ตำแหน่ง (GPS)</b></li>
+            <li>ถ่ายรูปตัวเองที่หน้าร้าน (รูปจะมีวันเวลา+พิกัดติดอยู่)</li>
+            <li>กดปุ่ม <b>เข้างาน</b> — ระบบบันทึกเวลาให้ทันที</li>
+            <li>ตอนเลิกงาน เปิดเมนูเดิม กรอกรหัส แล้วกด <b>ออกงาน</b></li>
+          </ol>
+          <div class="ok">✅ หลังเข้างานแล้ว ปุ่มจะเปลี่ยนเป็น <b>"ออกงาน"</b> ให้อัตโนมัติ</div>
+          <div class="warn">⚠️ ลงเวลาซ้ำไม่ได้ — ถ้าเข้างานไปแล้ว ระบบจะแจ้งเวลาที่ลงไว้ และไม่ให้กดซ้ำ</div>
+          <div class="tip">💡 ต้องอยู่ในรัศมีร้านที่กำหนด ระบบถึงจะรับลงเวลา และกล้อง/GPS ทำงานเฉพาะบนลิงก์ HTTPS เท่านั้น</div>
+        </div>
+      </div>
+
+      <!-- ขอลา -->
+      <div class="card" id="s-leave">
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#fef3c7">📝</div><div class="t">ยื่นคำขอลา<small>ลาป่วย / แจ้งหยุดฉุกเฉิน / แจ้งหยุด</small></div><div class="ar">▶</div></div>
+        <div class="body">
+          <ol class="steps">
+            <li>หน้าแรก แตะ <span class="pill">ยื่นคำขอลางาน</span></li>
+            <li>กรอก <b>รหัสพนักงาน</b> (ระบบจะแสดงโควตาวันลาที่เหลือให้)</li>
+            <li>เลือก <b>ประเภทการลา</b> — ใต้ช่องจะบอกเงื่อนไข เช่น ต้องลาล่วงหน้ากี่วัน / โควตาเหลือเท่าไร</li>
+            <li>เลือก <b>วันที่เริ่ม–สิ้นสุด</b> และพิมพ์ <b>เหตุผล</b></li>
+            <li>ถ้าระบบขอ ให้ <b>แนบใบรับรองแพทย์/เอกสาร</b> (เช่น ลาป่วย)</li>
+            <li>กด <b>ส่งคำขอลา</b> — รอ HR อนุมัติ</li>
+          </ol>
+          <div class="tip">💡 ดูสถานะคำขอ (รออนุมัติ/อนุมัติ/ปฏิเสธ) ได้ที่ด้านล่างของหน้าต่างขอลา ถ้าถูกปฏิเสธจะเห็นเหตุผลด้วย</div>
+          <div class="warn">⚠️ ลาบางประเภทต้องแจ้งล่วงหน้า ถ้ายื่นไม่ทันกำหนดหรือเกินโควตา ระบบ/HR อาจไม่อนุมัติ</div>
+        </div>
+      </div>
+
+      <!-- รับส่งผลัด -->
+      <div class="card" id="s-handover">
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#dcfce7">🔄</div><div class="t">รับส่งผลัด (งานในกะ)<small>มอบหมายงาน · ทำงาน+ส่งรูป · ตรวจผลัดก่อนหน้า · รายงาน</small></div><div class="ar">▶</div></div>
+        <div class="body">
+          เข้าจากหน้าแรก แตะ <span class="pill">ตรวจรับ-ส่งผลัด</span> แล้วกรอกรหัสพนักงาน จะเห็น 4 เมนู:
+
+          <div class="sub">👔 1. หัวหน้าผลัด · มอบหมายงาน</div>
+          <ol class="steps">
+            <li>กด <b>รับเป็นหัวหน้าผลัด</b> (ยืนยัน 1 ครั้งต่อกะ) — ถ้ามีคนรับไว้แล้ว สามารถกดรับช่วงต่อได้</li>
+            <li>เลือกงานจากรายการ แล้ว <b>แจกให้คนในผลัด</b> ของคุณ</li>
+            <li>ถ้าวันนั้นยังไม่ได้จัดตารางเวร กด <b>เพิ่มคนเข้ากะ</b> ได้เอง</li>
+          </ol>
+
+          <div class="sub">✅ 2. งานที่ได้รับมอบหมาย</div>
+          <ol class="steps">
+            <li>ดู <b>งานของฉัน</b> ที่ถูกแจกมา (และสถานะงานของทีม)</li>
+            <li>งานที่ยัง <b>ว่าง</b> (ไม่มีคนทำ) กด <b>"ดึงมาทำ"</b> เป็นของตัวเองได้</li>
+            <li>ทำงานเสร็จ <b>ถ่ายรูป</b> เป็นหลักฐาน (บางงานต้องครบจำนวนรูปขั้นต่ำ) แล้วกด <b>ส่งงาน</b></li>
+          </ol>
+
+          <div class="sub">🔍 3. รับผลัด · ตรวจงานผลัดก่อนหน้า</div>
+          <ol class="steps">
+            <li>เฉพาะ <b>หัวหน้าผลัด</b> เท่านั้นที่ตรวจได้</li>
+            <li>ระบบแสดงงานของ <b>ผลัดก่อนหน้า</b> ให้ตรวจ (กะเช้าจะตรวจกะดึกของเมื่อวาน)</li>
+            <li>งานไหนเรียบร้อยกด <b>✅ ผ่าน</b> · ไม่เรียบร้อยกด <b>⤴ ตีกลับ</b> พร้อมเขียนเหตุผล</li>
+          </ol>
+
+          <div class="sub">🖼️ 4. รายงานรับส่งผลัด</div>
+          <ol class="steps">
+            <li>เลือกวันที่ ดูสรุปงานทั้งหมดของร้าน แยกตามกะ</li>
+            <li>เห็นรูปงาน + ใครทำ / ใครตรวจ / เวลา / ส่งแก้กี่ครั้ง</li>
+          </ol>
+
+          <div class="tip">💡 "ผลัดหลัก" คือ เช้า / บ่าย / ดึก — กะพิเศษ (เช่น วิ่งส่ง Delivery) ทำงานและส่งงานได้ แต่ไม่อยู่ในวงจรตรวจรับผลัด</div>
+        </div>
+      </div>
+
+      <!-- โปรไฟล์ -->
+      <div class="card" id="s-profile">
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#f3e8ff">🪪</div><div class="t">กรอกข้อมูล / อัปโหลดเอกสาร<small>ข้อมูลส่วนตัว + สำเนาบัตร/เอกสาร</small></div><div class="ar">▶</div></div>
+        <div class="body">
+          <ol class="steps">
+            <li>หน้าแรก แตะ <span class="pill">กรอกข้อมูล/เอกสาร</span></li>
+            <li>กรอก <b>รหัสพนักงาน</b> แล้วกรอกข้อมูลส่วนตัวให้ครบ</li>
+            <li><b>อัปโหลดเอกสาร</b> ที่ต้องใช้ (เช่น สำเนาบัตรประชาชน) — ถ่ายรูปหรือเลือกไฟล์</li>
+            <li>กด <b>บันทึก/ส่ง</b> — ข้อมูลจะส่งให้ HR ตรวจและอนุมัติ</li>
+          </ol>
+          <div class="tip">💡 กรอกให้ถูกต้องครบถ้วน จะช่วยให้ HR อนุมัติได้เร็วขึ้น</div>
+        </div>
+      </div>
+
+      <!-- ระเบียบ -->
+      <div class="card" id="s-rules">
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#e0f2fe">📋</div><div class="t">รับทราบระเบียบการทำงาน<small>อ่าน + กดยอมรับเก็บเป็นหลักฐาน</small></div><div class="ar">▶</div></div>
+        <div class="body">
+          <ol class="steps">
+            <li>หน้าแรก แตะ <span class="pill">ระเบียบการทำงาน</span></li>
+            <li>อ่านระเบียบให้ครบ</li>
+            <li>กรอกรหัสพนักงาน แล้ว <b>ติ๊กช่องยอมรับ</b> เพื่อยืนยันการรับทราบ</li>
+          </ol>
+          <div class="tip">💡 การกดยอมรับจะถูกบันทึกพร้อมวันเวลา ใช้เป็นหลักฐานว่าได้อ่านระเบียบแล้ว</div>
+        </div>
+      </div>
+
+      <!-- FAQ -->
+      <div class="card" id="s-faq">
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#fee2e2">❓</div><div class="t">ปัญหาที่พบบ่อย<small>ลงเวลาไม่ได้ · กล้องไม่ขึ้น · อื่น ๆ</small></div><div class="ar">▶</div></div>
+        <div class="body">
+          <div class="sub">กล้อง/ตำแหน่งไม่ทำงาน?</div>
+          ต้องเปิดผ่านลิงก์ <b>HTTPS</b> และกด <b>อนุญาต</b> สิทธิ์กล้อง+ตำแหน่งของเบราว์เซอร์ ถ้าเคยกดปฏิเสธ ให้ไปเปิดสิทธิ์ใหม่ในตั้งค่าเบราว์เซอร์/แอป
+
+          <div class="sub">ลงเวลาไม่ผ่าน บอกว่าอยู่นอกพื้นที่?</div>
+          ต้องอยู่ใน <b>รัศมีหน้าร้าน</b> ที่กำหนด ลองขยับมาใกล้ร้าน/หน้าร้านแล้วลองใหม่ และเปิด GPS ความแม่นยำสูง
+
+          <div class="sub">ระบบบอกว่าลงเวลาไปแล้ว?</div>
+          แปลว่าวันนี้คุณเข้างานเรียบร้อยแล้ว — ลงซ้ำไม่ได้ ถ้าจะออกงานให้กดปุ่ม <b>ออกงาน</b>
+
+          <div class="sub">กดรับหัวหน้าผลัดไม่ได้ / ตรวจงานไม่ได้?</div>
+          เมนูตรวจผลัดก่อนหน้าใช้ได้เฉพาะ <b>หัวหน้าผลัด</b> ของกะนั้น และเฉพาะกะหลัก (เช้า/บ่าย/ดึก) เท่านั้น
+
+          <div class="sub">ลืมรหัสพนักงาน / ข้อมูลผิด?</div>
+          ติดต่อ <b>HR</b> หรือหัวหน้าร้านเพื่อขอรหัสหรือแก้ไขข้อมูล
+        </div>
+      </div>
+
+    </div>
+
+    <div class="foot">หากติดปัญหาการใช้งาน ติดต่อฝ่ายบุคคล (HR)<br>ระบบบริหารบุคลากร · 7-Eleven</div>
+  </div>
+
+<script>
+  function tg(h){ h.parentElement.classList.toggle('open'); }
+  // เปิดหัวข้อแรกไว้ให้เห็นตัวอย่าง + เปิดอัตโนมัติเมื่อกดลิงก์สารบัญ
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.querySelectorAll('.toc a').forEach(a=>a.addEventListener('click',()=>{
+      const c=document.querySelector(a.getAttribute('href')); if(c&&!c.classList.contains('open')) c.classList.add('open');
+    }));
+  });
+</script>
+</body>
+</html>
