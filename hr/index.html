@@ -170,6 +170,14 @@
   .photo-act .btn{font-size:13.5px; padding:8px 13px;}
   .photo-act .hint{font-size:12px; color:var(--muted); margin-top:-2px;}
 
+  /* Crop modal */
+  .crop-stage{width:280px; height:280px; max-width:78vw; max-height:78vw; margin:0 auto; position:relative; overflow:hidden; border-radius:16px; background:#111; touch-action:none; cursor:grab; user-select:none;}
+  .crop-stage.dragging{cursor:grabbing;}
+  .crop-stage img{position:absolute; top:0; left:0; transform-origin:0 0; pointer-events:none; -webkit-user-drag:none;}
+  .crop-stage::after{content:""; position:absolute; inset:0; border-radius:16px; box-shadow:0 0 0 9999px rgba(0,0,0,.0); pointer-events:none; border:2px solid rgba(255,255,255,.85);}
+  .crop-ctrls{display:flex; align-items:center; gap:10px; margin-top:16px; padding:0 4px;}
+  .crop-ctrls input[type=range]{flex:1;}
+
   /* View modal */
   .vhead{padding:22px 24px; background:linear-gradient(180deg, #f6faf7 0%, #fff 100%); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
   .avatar{width:60px; height:60px; border-radius:14px; background:var(--green-soft); color:var(--green-d); display:grid; place-items:center; font-size:24px; font-weight:600; flex:none; overflow:hidden;}
@@ -444,6 +452,25 @@
 
 </div>
 
+<!-- Modal: Crop/Reposition Photo -->
+<div class="overlay" id="cropOverlay">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-h"><h2>ปรับตำแหน่งรูป</h2><button class="close" id="cropClose">×</button></div>
+    <div class="modal-b">
+      <div class="crop-stage" id="cropStage"><img id="cropImg" alt=""></div>
+      <div class="crop-ctrls">
+        <span style="font-size:18px">🔍</span>
+        <input type="range" id="cropZoom" min="1" max="3" step="0.01" value="1">
+      </div>
+      <div class="hint" style="text-align:center; font-size:12px; color:var(--muted); margin-top:8px">ลากรูปเพื่อเลื่อน · เลื่อนแถบเพื่อซูม</div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-sec" id="cropCancel">ยกเลิก</button>
+      <button class="btn btn-pri" id="cropApply">ใช้รูปนี้</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: View Employee -->
 <div class="overlay" id="viewOverlay">
   <div class="modal">
@@ -510,8 +537,9 @@
           <div class="photo-act">
             <label class="btn btn-sec" for="f_photo_input">เลือกรูป / ถ่ายรูป</label>
             <input id="f_photo_input" type="file" accept="image/*" capture="user" style="display:none">
+            <button type="button" class="btn btn-sec" id="f_photo_crop" style="display:none">ปรับตำแหน่ง / ครอป</button>
             <button type="button" class="btn btn-danger" id="f_photo_remove" style="display:none">ลบรูป</button>
-            <div class="hint">รูปจะถูกย่อก่อนอัปโหลด</div>
+            <div class="hint">รูปจะถูกครอปเป็นสี่เหลี่ยม · กด "ปรับตำแหน่ง" เพื่อเลื่อน/ซูมได้ภายหลัง</div>
           </div>
         </div>
       </div>
@@ -813,13 +841,16 @@ function setPhotoPreview(){
   if(src){
     prev.innerHTML = '<img src="'+src+'">';
     $('f_photo_remove').style.display = '';
+    $('f_photo_crop').style.display = '';
   } else {
     const nm = ($('f_name').value || $('f_nickname').value || '?').trim();
     prev.innerHTML = '<span>'+esc(nm.charAt(0).toUpperCase()||'?')+'</span>';
     $('f_photo_remove').style.display = 'none';
+    $('f_photo_crop').style.display = 'none';
   }
 }
-function resizeToDataUrl(file, max=480){
+// อ่านไฟล์เป็น dataURL (ย่อด้านยาวสุดไม่เกิน 1200px เพื่อคงความคมตอนครอป)
+function fileToDataUrl(file, max=1200){
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
     reader.onload = e => {
@@ -829,19 +860,85 @@ function resizeToDataUrl(file, max=480){
         const c = document.createElement('canvas');
         c.width = Math.round(img.width*r); c.height = Math.round(img.height*r);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        resolve(c.toDataURL('image/jpeg', 0.85));
+        resolve(c.toDataURL('image/jpeg', 0.92));
       };
       img.onerror = reject; img.src = e.target.result;
     };
     reader.onerror = reject; reader.readAsDataURL(file);
   });
 }
+
+// ---------- ครอป/เลื่อนตำแหน่งรูป (สี่เหลี่ยมจัตุรัส) ----------
+const CROP_OUT = 480;
+let cropS = null, cropDrag = null;
+function openCrop(src){
+  if(!src) return;
+  const img = $('cropImg');
+  const isRemote = /^https?:/i.test(src);
+  img.onload = () => {
+    $('cropOverlay').classList.add('show');
+    const stage = $('cropStage');
+    const box = stage.clientWidth || 280;
+    const natW = img.naturalWidth, natH = img.naturalHeight;
+    const baseScale = box / Math.min(natW, natH);   // ขยายให้เต็มกรอบ (cover)
+    cropS = { natW, natH, box, baseScale, zoom:1, tx:0, ty:0 };
+    $('cropZoom').value = 1;
+    cropCenter(); cropApplyTransform();
+  };
+  img.onerror = () => toast('err','โหลดรูปไม่สำเร็จ — ถ้าเป็นรูปเก่า ลองเลือกรูปใหม่แล้วครอป');
+  if(isRemote){ img.crossOrigin = 'anonymous'; img.src = src + (src.indexOf('?')>=0?'&':'?') + 'cb=' + Date.now(); }
+  else { img.removeAttribute('crossorigin'); img.src = src; }
+}
+function cropClamp(){
+  const s = cropS; const sc = s.baseScale*s.zoom;
+  s.tx = Math.min(0, Math.max(s.box - s.natW*sc, s.tx));
+  s.ty = Math.min(0, Math.max(s.box - s.natH*sc, s.ty));
+}
+function cropCenter(){
+  const s = cropS; const sc = s.baseScale*s.zoom;
+  s.tx = (s.box - s.natW*sc)/2; s.ty = (s.box - s.natH*sc)/2; cropClamp();
+}
+function cropApplyTransform(){
+  const s = cropS; const sc = s.baseScale*s.zoom; const img = $('cropImg');
+  img.style.width = s.natW+'px'; img.style.height = s.natH+'px';
+  img.style.transform = 'translate('+s.tx+'px,'+s.ty+'px) scale('+sc+')';
+}
+function cropToDataUrl(){
+  const s = cropS; const sc = s.baseScale*s.zoom;
+  const sx = (-s.tx)/sc, sy = (-s.ty)/sc, sSize = s.box/sc;
+  const c = document.createElement('canvas'); c.width = CROP_OUT; c.height = CROP_OUT;
+  c.getContext('2d').drawImage($('cropImg'), sx, sy, sSize, sSize, 0, 0, CROP_OUT, CROP_OUT);
+  return c.toDataURL('image/jpeg', 0.9);
+}
+(function(){
+  const stage = $('cropStage');
+  stage.addEventListener('pointerdown', e=>{ if(!cropS) return; cropDrag={x:e.clientX,y:e.clientY,tx:cropS.tx,ty:cropS.ty}; stage.classList.add('dragging'); try{stage.setPointerCapture(e.pointerId);}catch(_){} });
+  stage.addEventListener('pointermove', e=>{ if(!cropDrag) return; cropS.tx=cropDrag.tx+(e.clientX-cropDrag.x); cropS.ty=cropDrag.ty+(e.clientY-cropDrag.y); cropClamp(); cropApplyTransform(); });
+  const end=()=>{ cropDrag=null; stage.classList.remove('dragging'); };
+  stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
+  $('cropZoom').addEventListener('input', ()=>{
+    const s=cropS; if(!s) return;
+    const oldSc=s.baseScale*s.zoom;
+    const cx=(s.box/2 - s.tx)/oldSc, cy=(s.box/2 - s.ty)/oldSc; // จุดกึ่งกลางกรอบ (พิกัดรูป)
+    s.zoom=parseFloat($('cropZoom').value);
+    const newSc=s.baseScale*s.zoom;
+    s.tx=s.box/2 - cx*newSc; s.ty=s.box/2 - cy*newSc; cropClamp(); cropApplyTransform();
+  });
+  $('cropApply').onclick = ()=>{
+    if(!cropS) return;
+    try{ photoState.newBase64 = cropToDataUrl(); setPhotoPreview(); $('cropOverlay').classList.remove('show'); }
+    catch(err){ toast('err','ครอปรูปไม่สำเร็จ — รูปนี้อาจมีข้อจำกัดสิทธิ์ ลองเลือกรูปใหม่'); }
+  };
+  $('cropCancel').onclick = $('cropClose').onclick = ()=>$('cropOverlay').classList.remove('show');
+})();
+
 $('f_photo_input').addEventListener('change', async e=>{
   const file = e.target.files && e.target.files[0]; if(!file) return;
-  try{ const u = await resizeToDataUrl(file); photoState.newBase64 = u; setPhotoPreview(); }
+  try{ const u = await fileToDataUrl(file); openCrop(u); }
   catch(err){ toast('err','อ่านรูปไม่สำเร็จ'); }
   e.target.value = '';
 });
+$('f_photo_crop').onclick = ()=>{ openCrop(photoState.newBase64 || photoState.url); };
 $('f_photo_remove').onclick = ()=>{ photoState = { url:'', newBase64:'' }; setPhotoPreview(); };
 ['f_name','f_nickname'].forEach(id=>$(id).addEventListener('input', ()=>{
   if(!photoState.newBase64 && !photoState.url) setPhotoPreview();
