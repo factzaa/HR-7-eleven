@@ -308,6 +308,7 @@
     <div class="t2">ระบบบริหารพนักงาน</div>
   </div>
   <div class="topact" id="topact" style="display:none">
+    <button class="btn-ghost" id="pushBtn" title="แจ้งเตือนอุปกรณ์นี้">🔔 แจ้งเตือน: ปิด</button>
     <a class="btn-ghost" href="../" title="หน้าแรก" style="text-decoration:none">🏠 หน้าแรก</a>
     <button class="btn-ghost" id="logoutBtn">ออกจากระบบ</button>
   </div>
@@ -2221,6 +2222,58 @@ if(pwd) tryLogin(pwd);
 </script>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js').catch(function(){});});}
+
+// ========== Web Push (แจ้งเตือนฝั่ง HR แม้ปิดแอป) ==========
+(function(){
+  const btn = document.getElementById('pushBtn');
+  if(!btn) return;
+  const supported = ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+  function setLabel(on){ btn.textContent = on ? '🔔 แจ้งเตือน: เปิด' : '🔔 แจ้งเตือน: ปิด'; btn.style.color = on ? 'var(--green-d)' : ''; }
+  function b64ToU8(base64){
+    const pad='='.repeat((4-base64.length%4)%4);
+    const s=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
+    const raw=atob(s); const out=new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i);
+    return out;
+  }
+  async function currentSub(){
+    const reg = await navigator.serviceWorker.ready;
+    return reg.pushManager.getSubscription();
+  }
+  async function refresh(){
+    if(!supported){ btn.style.display='none'; return; }
+    try{ const s=await currentSub(); setLabel(!!s); }catch(e){ setLabel(false); }
+  }
+  async function enable(){
+    if(typeof window.VAPID_PUBLIC!=='string' || window.VAPID_PUBLIC.length<20){ toast('err','ยังไม่ได้ตั้งค่า VAPID_PUBLIC ใน config.js'); return; }
+    const perm = await Notification.requestPermission();
+    if(perm!=='granted'){ toast('err','ไม่ได้รับอนุญาตแจ้งเตือน — เปิดสิทธิ์ในเบราว์เซอร์ก่อน'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64ToU8(window.VAPID_PUBLIC) });
+    const j = sub.toJSON();
+    const label = prompt('ตั้งชื่ออุปกรณ์นี้ (เช่น โทรศัพท์ร้าน A / มือถือ HR)', 'อุปกรณ์ HR') || 'อุปกรณ์ HR';
+    const { error } = await window.HR.sb.from('push_subscriptions').upsert({
+      endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, label
+    }, { onConflict:'endpoint' });
+    if(error){ toast('err','บันทึกไม่สำเร็จ: '+error.message); return; }
+    setLabel(true); toast('ok','เปิดแจ้งเตือนอุปกรณ์นี้แล้ว');
+  }
+  async function disable(){
+    const sub = await currentSub();
+    if(sub){ try{ await window.HR.sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); }catch(e){} await sub.unsubscribe(); }
+    setLabel(false); toast('ok','ปิดแจ้งเตือนอุปกรณ์นี้แล้ว');
+  }
+  btn.onclick = async ()=>{
+    btn.disabled=true;
+    try{ const s=await currentSub(); if(s) await disable(); else await enable(); }
+    catch(e){ toast('err','ทำรายการไม่สำเร็จ: '+(e.message||e)); }
+    btn.disabled=false;
+  };
+  // อัปเดตสถานะปุ่มหลังล็อกอิน (เมื่อ topact แสดง)
+  const obs=new MutationObserver(()=>{ const t=document.getElementById('topact'); if(t && t.style.display!=='none'){ refresh(); } });
+  const topact=document.getElementById('topact'); if(topact) obs.observe(topact,{attributes:true,attributeFilter:['style']});
+  refresh();
+})();
 </script>
 </body>
 </html>

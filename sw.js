@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v1';
+const CACHE = 'hr7-eleven-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -32,6 +32,35 @@ self.addEventListener('activate', (e) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
     self.clients.claim();
+  })());
+});
+
+// ---------- Web Push (แจ้งเตือนฝั่ง HR แม้ปิดแอป) ----------
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data && e.data.text ? e.data.text() : '' }; }
+  const title = d.title || 'แจ้งเตือน HR · 7-Eleven';
+  const opts = {
+    body: d.body || '',
+    icon: d.icon || './icons/icon-192.png',
+    badge: './icons/icon-192.png',
+    tag: d.tag || 'hr-notify',          // tag เดียวกัน = รวมเป็นอันเดียว ไม่รก
+    renotify: true,
+    data: { url: d.url || './hr/' },
+    vibrate: [120, 60, 120]
+  };
+  e.waitUntil(self.registration.showNotification(title, opts));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './hr/';
+  e.waitUntil((async () => {
+    const all = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) {
+      if (c.url.includes('/hr') && 'focus' in c) return c.focus();
+    }
+    if (clients.openWindow) return clients.openWindow(url);
   })());
 });
 

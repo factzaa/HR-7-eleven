@@ -9,3 +9,7 @@ window.SUPABASE_CONFIG = {
 // เวอร์ชันระเบียบการทำงาน — แก้เลขนี้เมื่อประกาศระเบียบฉบับใหม่
 // (พนักงานทุกคนจะถูกขอให้ยอมรับใหม่อัตโนมัติ)
 window.RULES_VERSION = '2026-06-28';
+
+// Web Push — กุญแจสาธารณะ VAPID (ใส่ได้ในไฟล์ client ปลอดภัย ห้ามใส่ private key)
+// คู่กับ private key ที่ตั้งเป็น secret ของ Edge Function (ดู supabase/PUSH-SETUP.md)
+window.VAPID_PUBLIC = 'BPOFTKZjK1dz1DXjLpsQKCa5RXa6oxu5qgqauordoECbvXIgxNeS4pkjxJiy_yh-o-D-YeUoNpyHc96-Jb0SKqI';
