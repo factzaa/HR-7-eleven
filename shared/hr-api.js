@@ -147,6 +147,15 @@
         case 'hr_rule_status':    return await hrRuleStatus();
         case 'hr_disc_rules_get': return await hrDiscRulesGet();
         case 'hr_disc_rules_save':return await hrDiscRulesSave(p.data);
+        case 'hr_score_get':         return await hrScoreGet(p.cycle);
+        case 'hr_score_config_get':  return await hrScoreConfigGet();
+        case 'hr_score_config_save': return await hrScoreConfigSave(p.data);
+        case 'hr_score_rules_save':  return await hrScoreRulesSave(p.data);
+        case 'hr_score_bands_save':  return await hrScoreBandsSave(p.data);
+        case 'hr_score_event_add':   return await hrScoreEventAdd(p.data);
+        case 'hr_score_event_list':  return await hrScoreEventList(p.emp_id, p.cycle);
+        case 'hr_score_event_delete':return await hrScoreEventDelete(p.id);
+        case 'hr_score_issue_warnings': return await hrScoreIssueWarnings(p.cycle);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications();
         case 'hr_submission_list':    return await hrSubmissionList();
@@ -793,6 +802,182 @@
     });
     ev.sort((a, b) => String(b.when || '').localeCompare(String(a.when || '')));
     return { ok: true, rows: ev.slice(0, 150) };
+  }
+
+  // ============================================================
+  // SCORE SYSTEM — ระบบคะแนนวินัยรายเดือน (รอบ 21–20)
+  // ============================================================
+  async function hrScoreGet(which) {
+    const cyc = cycleRange(which === 'previous' ? 'previous' : 'current');
+    const today = bkkToday();
+    const endEff = cyc.end < today ? cyc.end : today;
+    const [cfgR, rulesR, bandsR, empsR, attR, schR, lvR, evR] = await Promise.all([
+      sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
+      sb().from('score_rules').select('*').order('sort'),
+      sb().from('score_bands').select('*').order('sort'),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true),
+      sb().from('attendance').select('emp_id,work_date,check_in,late_min').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('schedules').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
+      sb().from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
+    ]);
+    if (empsR.error) throw empsR.error;
+    const start = (cfgR.data && cfgR.data.start_score) || 100;
+    const rules = rulesR.data || [];
+    const bands = (bandsR.data || []).slice().sort((a, b) => b.min_score - a.min_score);
+    const ruleByKind = {};
+    rules.forEach(r => { if (r.enabled !== false) ruleByKind[r.kind] = r; });
+    const att = attR.data || [], leaves = lvR.data || [], events = evR.data || [];
+    const schByEmp = {};
+    (schR.data || []).forEach(s => { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = new Set())).add(s.work_date); });
+    const bandFor = (sc) => bands.find(b => sc >= b.min_score && sc <= b.max_score) || null;
+
+    const employees = (empsR.data || []).map(e => {
+      const myAtt = att.filter(a => a.emp_id === e.emp_id && a.check_in);
+      const myLeaves = leaves.filter(l => l.emp_id === e.emp_id);
+      const onLeave = d => myLeaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+      const items = [];
+      let autoDeduct = 0;
+      // มาสาย (แยกช่วง)
+      const tiers = [
+        { kind: 'auto_late_1_10',   test: m => m >= 1 && m <= 10 },
+        { kind: 'auto_late_11_30',  test: m => m >= 11 && m <= 30 },
+        { kind: 'auto_late_30plus', test: m => m > 30 },
+      ];
+      tiers.forEach(t => {
+        const r = ruleByKind[t.kind]; if (!r) return;
+        const hits = myAtt.filter(a => t.test(a.late_min || 0));
+        if (hits.length) { const sum = r.points * hits.length; autoDeduct += sum; items.push({ label: r.label, count: hits.length, points: sum, source: 'auto' }); }
+      });
+      // ขาดและไม่แจ้ง (วันที่จัดเวรไว้ ผ่านไปแล้ว ไม่มา ไม่ลา)
+      const ra = ruleByKind['auto_absent_no_notify'];
+      if (ra) {
+        const mySched = [...(schByEmp[e.emp_id] || new Set())].filter(d => d < today);
+        const workedSet = new Set(myAtt.map(a => a.work_date));
+        const absDays = mySched.filter(d => !workedSet.has(d) && !onLeave(d));
+        if (absDays.length) { const sum = ra.points * absDays.length; autoDeduct += sum; items.push({ label: ra.label, count: absDays.length, points: sum, source: 'auto' }); }
+      }
+      // เหตุการณ์ที่ HR เพิ่มเอง
+      const myEv = events.filter(ev => ev.emp_id === e.emp_id);
+      let manualDeduct = 0;
+      myEv.forEach(ev => { manualDeduct += ev.points; items.push({ label: ev.label || '(เหตุการณ์)', count: 1, points: ev.points, source: 'manual', date: ev.event_date, note: ev.note, id: ev.id }); });
+
+      let score = start + autoDeduct + manualDeduct;
+      if (score < 0) score = 0;
+      const band = bandFor(score);
+      return {
+        emp_id: e.emp_id, emp_name: e.name, nickname: e.nickname || '', photo_url: e.photo_url || '', branch_id: e.branch_id || '',
+        start, score, auto_deduct: autoDeduct, manual_deduct: manualDeduct, total_deduct: autoDeduct + manualDeduct,
+        items,
+        band_label: band ? band.label : '', band_color: band ? band.color : '#475569',
+        bonus: band && band.bonus_amount ? band.bonus_amount : 0,
+        warn_level: band ? band.warn_level : null, warn_name: band ? band.warn_name : null,
+      };
+    }).sort((a, b) => a.score - b.score);
+
+    return { ok: true, cycle: cyc, start_score: start, bands: bandsR.data || [], employees };
+  }
+
+  async function hrScoreConfigGet() {
+    const [cfgR, rulesR, bandsR] = await Promise.all([
+      sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
+      sb().from('score_rules').select('*').order('sort'),
+      sb().from('score_bands').select('*').order('sort'),
+    ]);
+    return { ok: true, start_score: (cfgR.data && cfgR.data.start_score) || 100, rules: rulesR.data || [], bands: bandsR.data || [] };
+  }
+  async function hrScoreConfigSave(d) {
+    const s = parseInt(d.start_score);
+    const { error } = await sb().from('score_config').upsert({ id: 1, start_score: (isFinite(s) && s > 0) ? s : 100 }, { onConflict: 'id' });
+    if (error) throw error;
+    await logAct('แก้ไขคะแนนเริ่มต้น', null, 'คะแนนเริ่มเดือน = ' + (isFinite(s) ? s : 100));
+    return { ok: true };
+  }
+  async function hrScoreRulesSave(data) {
+    if (!Array.isArray(data) || !data.length) return { ok: false, error: 'ไม่มีข้อมูลกฎ' };
+    const rows = data.map(r => ({
+      rule_key: r.rule_key, label: r.label, kind: r.kind,
+      points: Number(r.points) || 0,
+      range_min: (r.range_min === '' || r.range_min == null) ? null : Number(r.range_min),
+      enabled: r.enabled !== false, sort: Number(r.sort) || 0,
+    }));
+    const { error } = await sb().from('score_rules').upsert(rows, { onConflict: 'rule_key' });
+    if (error) throw error;
+    await logAct('แก้ไขกฎคะแนนวินัย', null, 'อัปเดต ' + rows.length + ' กฎ');
+    return { ok: true };
+  }
+  async function hrScoreBandsSave(data) {
+    if (!Array.isArray(data) || !data.length) return { ok: false, error: 'ไม่มีข้อมูลแถบ' };
+    const rows = data.map(b => ({
+      id: b.id, min_score: Number(b.min_score), max_score: Number(b.max_score),
+      label: b.label, bonus_amount: (b.bonus_amount === '' || b.bonus_amount == null) ? 0 : Number(b.bonus_amount),
+      warn_level: (b.warn_level === '' || b.warn_level == null) ? null : Number(b.warn_level),
+      warn_name: b.warn_name || null, color: b.color || '#475569', sort: Number(b.sort) || 0,
+    }));
+    const { error } = await sb().from('score_bands').upsert(rows, { onConflict: 'id' });
+    if (error) throw error;
+    await logAct('แก้ไขแถบผลคะแนน', null, 'อัปเดต ' + rows.length + ' แถบ');
+    return { ok: true };
+  }
+  async function hrScoreEventAdd(d) {
+    if (!d.emp_id || !d.rule_key) return { ok: false, error: 'ต้องระบุพนักงานและเหตุ' };
+    const { data: rule } = await sb().from('score_rules').select('*').eq('rule_key', d.rule_key).maybeSingle();
+    let points = Number(d.points);
+    if (!isFinite(points)) points = rule ? rule.points : 0;
+    if (rule) {
+      const hi = rule.points, lo = rule.range_min != null ? rule.range_min : rule.points;
+      const maxV = Math.max(hi, lo), minV = Math.min(hi, lo);
+      if (points > maxV) points = maxV; if (points < minV) points = minV;
+    }
+    if (points > 0) points = -Math.abs(points);
+    const row = {
+      emp_id: d.emp_id, event_date: d.event_date || bkkToday(),
+      rule_key: d.rule_key, label: rule ? rule.label : (d.label || 'เหตุการณ์'),
+      points, note: d.note || null,
+    };
+    const { error } = await sb().from('score_events').insert(row);
+    if (error) throw error;
+    await logAct('ตัดคะแนนวินัย', d.emp_id, row.label + ' (' + points + ')' + (d.note ? (' · ' + d.note) : ''));
+    return { ok: true };
+  }
+  async function hrScoreEventList(empId, which) {
+    const cyc = cycleRange(which === 'previous' ? 'previous' : 'current');
+    let q = sb().from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end).order('event_date', { ascending: false });
+    if (empId) q = q.eq('emp_id', empId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return { ok: true, rows: data || [], cycle: cyc };
+  }
+  async function hrScoreEventDelete(id) {
+    const { data: ev } = await sb().from('score_events').select('emp_id,label,points').eq('id', id).maybeSingle();
+    const { error } = await sb().from('score_events').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ลบรายการตัดคะแนน', ev ? ev.emp_id : null, ev ? (ev.label + ' (' + ev.points + ')') : '');
+    return { ok: true };
+  }
+  async function hrScoreIssueWarnings(which) {
+    const sc = await hrScoreGet(which);
+    if (!sc.ok) return sc;
+    const cyc = sc.cycle;
+    const { data: existing } = await sb().from('warnings').select('emp_id,level,cycle_start').eq('cycle_start', cyc.start);
+    const has = new Set((existing || []).map(w => w.emp_id + '|' + w.level));
+    const targets = sc.employees.filter(e => e.warn_level != null);
+    let issued = 0;
+    for (const e of targets) {
+      if (has.has(e.emp_id + '|' + e.warn_level)) continue;
+      const year = new Date().getFullYear();
+      const { count } = await sb().from('warnings').select('warning_id', { count: 'exact', head: true }).like('warning_id', 'W-' + year + '-%');
+      const warning_id = 'W-' + year + '-' + String((count || 0) + 1).padStart(4, '0');
+      const { error } = await sb().from('warnings').insert({
+        warning_id, emp_id: e.emp_id, issue_date: bkkToday(),
+        level: e.warn_level, level_name: e.warn_name,
+        cycle_start: cyc.start, cycle_end: cyc.end,
+        late_count: 0, late_total: 0, absent_count: 0,
+        reason: '[ระบบคะแนนวินัย] คะแนนปลายเดือน ' + e.score + '/' + e.start + ' → ' + e.band_label, issued_by: 'HR(คะแนน)',
+      });
+      if (!error) { issued++; has.add(e.emp_id + '|' + e.warn_level); await logAct('ออกใบเตือน ' + warning_id, e.emp_id, '(จากคะแนนวินัย) ' + e.warn_name + ' · คะแนน ' + e.score); }
+    }
+    return { ok: true, issued, total: targets.length };
   }
 
   window.HRAPI = { dispatch };

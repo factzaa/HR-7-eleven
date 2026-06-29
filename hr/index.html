@@ -269,6 +269,7 @@
   <button class="tab" id="tab_employees"><span class="tabicon">👥</span>พนักงาน</button>
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
+  <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
@@ -348,6 +349,24 @@
   <div id="d_body"><div class="empty">กำลังโหลด…</div></div>
   <h3 style="margin:22px 4px 10px; font-size:14px; color:var(--muted); letter-spacing:.4px; text-transform:uppercase">ใบเตือนที่ออกไปแล้ว</h3>
   <div id="d_warnings"></div>
+</div>
+
+<!-- Score (คะแนนวินัยรายเดือน) -->
+<div id="view_score" class="container" style="display:none">
+  <div class="toolbar">
+    <div style="flex:1">
+      <div style="font-size:13.5px; color:var(--muted)">รอบคะแนน <b id="sc_cycleinfo">—</b> · เริ่มต้น <b id="sc_startinfo">100</b> คะแนน</div>
+    </div>
+    <select id="sc_cycle" style="padding:8px 12px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px;">
+      <option value="current">รอบปัจจุบัน</option>
+      <option value="previous">รอบที่แล้ว</option>
+    </select>
+    <button class="btn btn-pri btn-sm" id="sc_addEvent">+ ตัดคะแนน</button>
+    <button class="btn btn-danger btn-sm" id="sc_issue">ออกใบเตือนตามคะแนน</button>
+    <button class="btn btn-sec" id="sc_refresh">รีเฟรช</button>
+  </div>
+  <div id="sc_legend" style="display:flex; flex-wrap:wrap; gap:8px; margin:0 4px 14px"></div>
+  <div id="sc_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Leaves -->
@@ -446,6 +465,23 @@
     การนับขาดงานอ้างอิงเฉพาะวันที่จัดเวรไว้และผ่านไปแล้ว · แก้แล้วกด "บันทึกเกณฑ์" จากนั้นไปแท็บ "วินัย &amp; ใบเตือน" กดรีเฟรช
   </div>
 
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">ระบบคะแนนวินัย — คะแนนเริ่มต้น/เดือน</h3><button class="btn btn-pri btn-sm" id="scCfg_save">บันทึก</button></div>
+  <div class="card" style="padding:16px"><div class="field" style="max-width:240px"><label>คะแนนเริ่มต้นต่อเดือน</label><input id="scCfg_start" type="number" min="1" value="100"></div></div>
+
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">กฎการตัดคะแนน</h3><button class="btn btn-pri btn-sm" id="scRules_save">บันทึกกฎ</button></div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>พฤติกรรม</th><th>ประเภท</th><th>คะแนนที่หัก</th><th>ถึง (ช่วง)<br><span style="font-weight:400;color:var(--muted)">ว่าง=ค่าเดียว</span></th><th>เปิดใช้</th></tr></thead>
+    <tbody id="scRulesRows"></tbody>
+  </table></div></div>
+  <div style="font-size:12.5px; color:var(--muted); margin-top:10px"><b>auto</b> = ระบบหักให้เองจากข้อมูลลงเวลา/ตารางเวร · <b>manual</b> = HR กดเพิ่มในแท็บคะแนนวินัย · คะแนนเป็นค่าลบ เช่น -3</div>
+
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">เกณฑ์ผลลัพธ์ปลายเดือน + โบนัส</h3><button class="btn btn-pri btn-sm" id="scBands_save">บันทึกเกณฑ์</button></div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>คะแนน (ต่ำ–สูง)</th><th>ผลที่ได้</th><th>โบนัส (บาท)</th><th>ออกใบเตือนระดับ<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ออก</span></th></tr></thead>
+    <tbody id="scBandsRows"></tbody>
+  </table></div></div>
+  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">โบนัส "ความรับผิดชอบ" แสดงผล/คำนวณสิทธิให้ (ระบบไม่จ่ายเงินจริง) · ระดับใบเตือน 3=ครั้งที่ 1, 4=ครั้งที่ 2 (ใช้กับปุ่ม "ออกใบเตือนตามคะแนน")</div>
+
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">สถานะการรับทราบระเบียบ <span id="ru_ver" style="font-weight:400; color:var(--muted); font-size:13px"></span></h3><button class="btn btn-sec btn-sm" id="ru_refresh">รีเฟรช</button></div>
   <div id="ru_body"></div>
 </div>
@@ -468,6 +504,33 @@
       <button class="btn btn-sec" id="cropCancel">ยกเลิก</button>
       <button class="btn btn-pri" id="cropApply">ใช้รูปนี้</button>
     </div>
+  </div>
+</div>
+
+<!-- Modal: Add Score Event (ตัดคะแนน) -->
+<div class="overlay" id="scEventOverlay">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-h"><h2>ตัดคะแนนวินัย</h2><button class="close" id="scEvClose">×</button></div>
+    <div class="modal-b">
+      <div class="field"><label>พนักงาน<span class="req">*</span></label><select id="scEv_emp"></select></div>
+      <div class="field"><label>เหตุ / พฤติกรรม<span class="req">*</span></label><select id="scEv_rule"></select></div>
+      <div class="field"><label>คะแนนที่หัก <span id="scEv_range" style="color:var(--muted); font-weight:400; font-size:12px"></span></label><input id="scEv_points" type="number" max="0"></div>
+      <div class="field"><label>วันที่</label><input id="scEv_date" type="date"></div>
+      <div class="field"><label>หมายเหตุ / รายละเอียด</label><textarea id="scEv_note" rows="2" style="width:100%; padding:9px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; resize:vertical"></textarea></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-sec" id="scEvCancel">ยกเลิก</button>
+      <button class="btn btn-pri" id="scEvSave">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Score Detail (รายละเอียดการตัดคะแนน) -->
+<div class="overlay" id="scDetailOverlay">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-h"><h2 id="scDetailTitle">รายละเอียดคะแนน</h2><button class="close" id="scDetailClose">×</button></div>
+    <div class="modal-b" id="scDetailBody"></div>
+    <div class="modal-f"><button class="btn btn-sec" id="scDetailCloseBtn">ปิด</button></div>
   </div>
 </div>
 
@@ -1389,17 +1452,18 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','employees','report','discipline','leaves','schedule','branches','settings','submissions','activity'];
+const ALL_TABS = ['dashboard','employees','report','discipline','score','leaves','schedule','branches','settings','submissions','activity'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
   else if(name==='employees') renderEmployees();
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
+  else if(name==='score') loadScore();
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadRuleStatus(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadRuleStatus(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
 };
@@ -1724,6 +1788,126 @@ async function saveDiscRules(){
   if(r.ok){ toast('ok','บันทึกเกณฑ์ใบเตือนแล้ว · ไปแท็บวินัยแล้วกดรีเฟรช'); loadDiscRules(); }
   else toast('err', r.error||'บันทึกไม่สำเร็จ');
 }
+
+// ========== คะแนนวินัยรายเดือน ==========
+let SCORE=null, SCORE_SETTINGS=null;
+async function loadScore(){
+  $('sc_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r = await post({ action:'hr_score_get', password:pwd, cycle:$('sc_cycle').value });
+  if(!r.ok){ $('sc_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  SCORE=r;
+  $('sc_cycleinfo').textContent = r.cycle.start+' ถึง '+r.cycle.end;
+  $('sc_startinfo').textContent = r.start_score;
+  $('sc_legend').innerHTML = (r.bands||[]).slice().sort((a,b)=>b.min_score-a.min_score).map(b=>
+    `<span class="pill" style="background:${esc(b.color)};color:#fff;font-weight:600">${b.min_score}–${b.max_score}: ${esc(b.label)}${b.bonus_amount?(' · ฿'+b.bonus_amount):''}</span>`).join('');
+  if(!r.employees.length){ $('sc_body').innerHTML='<div class="empty">ยังไม่มีพนักงาน</div>'; return; }
+  $('sc_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>พนักงาน</th><th>คะแนน</th><th>ผล</th><th>โบนัส</th><th>หักรวม</th><th></th></tr></thead>
+    <tbody>${r.employees.map(e=>`<tr>
+      <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.nickname||e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
+      <td><span style="font-weight:800;font-size:17px;color:${esc(e.band_color)}">${e.score}</span><span style="color:var(--muted)">/${e.start}</span></td>
+      <td><span class="pill" style="background:${esc(e.band_color)};color:#fff;font-weight:600">${esc(e.band_label||'—')}</span>${e.warn_level!=null?' ⚠️':''}</td>
+      <td class="mono">${e.bonus?('฿'+Number(e.bonus).toLocaleString()):'—'}</td>
+      <td class="mono">${e.total_deduct?('<span style="color:var(--red)">'+e.total_deduct+'</span>'):'0'}</td>
+      <td><button class="btn btn-sec btn-sm" data-scd="${esc(e.emp_id)}">รายละเอียด</button></td>
+    </tr>`).join('')}</tbody></table></div></div>`;
+  document.querySelectorAll('[data-scd]').forEach(b=>b.onclick=()=>openScoreDetail(b.dataset.scd));
+}
+function openScoreDetail(empId){
+  const e = (SCORE&&SCORE.employees||[]).find(x=>x.emp_id===empId); if(!e) return;
+  $('scDetailTitle').textContent = 'คะแนน '+(e.nickname||e.emp_name)+' · '+e.score+'/'+e.start;
+  const items = e.items||[];
+  $('scDetailBody').innerHTML = items.length
+    ? `<table style="width:100%;border-collapse:collapse">${items.map(it=>`<tr style="border-bottom:1px solid var(--line)">
+        <td style="padding:8px 4px">${esc(it.label)}${it.count>1?` ×${it.count}`:''} ${it.source==='manual'?'<span class="pill" style="background:#fee2e2;color:#b91c1c">เพิ่มเอง</span>':'<span class="pill" style="background:#e0f2fe;color:#0369a1">auto</span>'}${it.note?`<div style="font-size:12px;color:var(--muted)">${esc(it.note)}</div>`:''}</td>
+        <td style="padding:8px 4px;text-align:right;font-weight:700;color:var(--red)">${it.points}</td>
+        <td style="padding:8px 4px;text-align:right">${it.source==='manual'&&it.id?`<button class="btn btn-danger btn-sm" data-scev="${it.id}">ลบ</button>`:''}</td>
+      </tr>`).join('')}
+      <tr><td style="padding:10px 4px;font-weight:700">รวมหัก</td><td style="padding:10px 4px;text-align:right;font-weight:800;color:var(--red)">${e.total_deduct}</td><td></td></tr>
+      </table>`
+    : '<div class="empty">ยังไม่มีการตัดคะแนนในรอบนี้ (เต็ม '+e.start+')</div>';
+  document.querySelectorAll('[data-scev]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบรายการตัดคะแนนนี้?')) return;
+    const r=await post({ action:'hr_score_event_delete', password:pwd, id:Number(b.dataset.scev) });
+    if(r.ok){ toast('ok','ลบแล้ว'); $('scDetailOverlay').classList.remove('show'); loadScore(); }
+    else toast('err', r.error||'ลบไม่สำเร็จ');
+  });
+  $('scDetailOverlay').classList.add('show');
+}
+async function openScoreEvent(){
+  if(!SCORE_SETTINGS) await loadScoreSettings(true);
+  $('scEv_emp').innerHTML = (DATA.rows||[]).map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('');
+  const rules = (SCORE_SETTINGS&&SCORE_SETTINGS.rules||[]).filter(r=>r.kind==='manual'&&r.enabled!==false);
+  $('scEv_rule').innerHTML = rules.map(r=>`<option value="${esc(r.rule_key)}">${esc(r.label)} (${r.points}${r.range_min!=null?(' ถึง '+r.range_min):''})</option>`).join('');
+  $('scEv_date').value = new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+  $('scEv_note').value='';
+  updateScoreEvRange();
+  $('scEventOverlay').classList.add('show');
+}
+function updateScoreEvRange(){
+  const r=(SCORE_SETTINGS&&SCORE_SETTINGS.rules||[]).find(x=>x.rule_key===$('scEv_rule').value);
+  if(!r){ $('scEv_range').textContent=''; return; }
+  if(r.range_min!=null){ $('scEv_range').textContent='(เลือกได้ '+r.points+' ถึง '+r.range_min+')'; }
+  else { $('scEv_range').textContent='(ค่าคงที่ '+r.points+')'; }
+  $('scEv_points').value=r.points;
+}
+async function loadScoreSettings(silent){
+  const r=await post({ action:'hr_score_config_get', password:pwd });
+  if(!r.ok){ if(!silent && $('scRulesRows')) $('scRulesRows').innerHTML=''; return; }
+  SCORE_SETTINGS=r;
+  if($('scCfg_start')) $('scCfg_start').value=r.start_score;
+  if($('scRulesRows')) $('scRulesRows').innerHTML=(r.rules||[]).map((x,i)=>`<tr>
+    <td style="font-weight:600">${esc(x.label)}</td>
+    <td><span class="pill" style="background:${x.kind==='manual'?'#fee2e2':'#e0f2fe'};color:${x.kind==='manual'?'#b91c1c':'#0369a1'}">${x.kind==='manual'?'manual':'auto'}</span></td>
+    <td><input type="number" max="0" value="${x.points}" id="scr_p_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="number" max="0" value="${x.range_min==null?'':x.range_min}" placeholder="—" id="scr_r_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td style="text-align:center"><input type="checkbox" ${x.enabled!==false?'checked':''} id="scr_e_${i}"></td>
+  </tr>`).join('');
+  if($('scBandsRows')) $('scBandsRows').innerHTML=(r.bands||[]).map((b,i)=>`<tr>
+    <td><input type="number" value="${b.min_score}" id="scb_min_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"> – <input type="number" value="${b.max_score}" id="scb_max_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="text" value="${esc(b.label)}" id="scb_l_${i}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="number" min="0" value="${b.bonus_amount==null?'':b.bonus_amount}" id="scb_b_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="number" min="0" value="${b.warn_level==null?'':b.warn_level}" placeholder="—" id="scb_w_${i}" style="width:80px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+  </tr>`).join('');
+}
+async function saveScoreConfig(){
+  const r=await post({ action:'hr_score_config_save', password:pwd, data:{ start_score:$('scCfg_start').value } });
+  if(r.ok){ toast('ok','บันทึกคะแนนเริ่มต้นแล้ว'); SCORE_SETTINGS=null; } else toast('err',r.error||'ไม่สำเร็จ');
+}
+async function saveScoreRules(){
+  if(!SCORE_SETTINGS) return;
+  const data=(SCORE_SETTINGS.rules||[]).map((x,i)=>({ rule_key:x.rule_key, label:x.label, kind:x.kind, points:$('scr_p_'+i).value, range_min:$('scr_r_'+i).value, enabled:$('scr_e_'+i).checked, sort:x.sort }));
+  const r=await post({ action:'hr_score_rules_save', password:pwd, data });
+  if(r.ok){ toast('ok','บันทึกกฎแล้ว'); loadScoreSettings(true); } else toast('err',r.error||'ไม่สำเร็จ');
+}
+async function saveScoreBands(){
+  if(!SCORE_SETTINGS) return;
+  const data=(SCORE_SETTINGS.bands||[]).map((b,i)=>({ id:b.id, min_score:$('scb_min_'+i).value, max_score:$('scb_max_'+i).value, label:$('scb_l_'+i).value.trim()||b.label, bonus_amount:$('scb_b_'+i).value, warn_level:$('scb_w_'+i).value, warn_name:b.warn_name, color:b.color, sort:b.sort }));
+  const r=await post({ action:'hr_score_bands_save', password:pwd, data });
+  if(r.ok){ toast('ok','บันทึกเกณฑ์แล้ว'); loadScoreSettings(true); } else toast('err',r.error||'ไม่สำเร็จ');
+}
+$('sc_refresh').onclick = loadScore;
+$('sc_cycle').addEventListener('change', loadScore);
+$('sc_addEvent').onclick = openScoreEvent;
+$('sc_issue').onclick = async()=>{
+  if(!confirm('ออกใบเตือนอัตโนมัติให้พนักงานที่คะแนนตกถึงเกณฑ์ (รอบนี้)?\nระบบจะข้ามคนที่ออกใบเตือนระดับเดียวกันในรอบนี้แล้ว')) return;
+  const r=await post({ action:'hr_score_issue_warnings', password:pwd, cycle:$('sc_cycle').value });
+  if(r.ok){ toast('ok','ออกใบเตือน '+r.issued+' ใบ (เข้าเกณฑ์ '+r.total+' คน)'); loadScore(); }
+  else toast('err', r.error||'ไม่สำเร็จ');
+};
+$('scEvClose').onclick = $('scEvCancel').onclick = ()=>$('scEventOverlay').classList.remove('show');
+$('scEv_rule').addEventListener('change', updateScoreEvRange);
+$('scEvSave').onclick = async()=>{
+  const data={ emp_id:$('scEv_emp').value, rule_key:$('scEv_rule').value, points:$('scEv_points').value, event_date:$('scEv_date').value, note:$('scEv_note').value.trim() };
+  if(!data.emp_id||!data.rule_key){ toast('err','เลือกพนักงานและเหตุ'); return; }
+  const r=await post({ action:'hr_score_event_add', password:pwd, data });
+  if(r.ok){ toast('ok','ตัดคะแนนแล้ว'); $('scEventOverlay').classList.remove('show'); loadScore(); }
+  else toast('err', r.error||'บันทึกไม่สำเร็จ');
+};
+$('scDetailClose').onclick = $('scDetailCloseBtn').onclick = ()=>$('scDetailOverlay').classList.remove('show');
+$('scCfg_save').onclick = saveScoreConfig;
+$('scRules_save').onclick = saveScoreRules;
+$('scBands_save').onclick = saveScoreBands;
 
 // ========== สถานะการรับทราบระเบียบ ==========
 async function loadRuleStatus(){
