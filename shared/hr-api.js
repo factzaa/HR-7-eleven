@@ -156,6 +156,13 @@
         case 'hr_score_event_list':  return await hrScoreEventList(p.emp_id, p.cycle);
         case 'hr_score_event_delete':return await hrScoreEventDelete(p.id);
         case 'hr_score_issue_warnings': return await hrScoreIssueWarnings(p.cycle);
+        case 'hr_handover_list':     return await hrHandoverList();
+        case 'hr_task_defs_get':     return await hrTaskDefsGet();
+        case 'hr_task_def_save':     return await hrTaskDefSave(p.data);
+        case 'hr_task_def_delete':   return await hrTaskDefDelete(p.id);
+        case 'hr_task_assign':       return await hrTaskAssign(p.data);
+        case 'hr_task_list':         return await hrTaskList(p.date);
+        case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications();
         case 'hr_submission_list':    return await hrSubmissionList();
@@ -978,6 +985,85 @@
       if (!error) { issued++; has.add(e.emp_id + '|' + e.warn_level); await logAct('ออกใบเตือน ' + warning_id, e.emp_id, '(จากคะแนนวินัย) ' + e.warn_name + ' · คะแนน ' + e.score); }
     }
     return { ok: true, issued, total: targets.length };
+  }
+
+  // ---------- HANDOVER (ส่ง/รับผลัด) ----------
+  async function hrHandoverList() {
+    const [hR, brR] = await Promise.all([
+      sb().from('handovers').select('*').order('created_at', { ascending: false }).limit(120),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    if (hR.error) throw hR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (hR.data || []).map(h => ({ ...h, branch_name: brName[h.branch_id] || h.branch_id || '—' }));
+    const counts = {
+      no_handover: rows.filter(r => r.status === 'no_handover').length,
+      rejected: rows.filter(r => r.status === 'rejected').length,
+      pending: rows.filter(r => r.status === 'sent').length,
+    };
+    return { ok: true, rows, counts };
+  }
+
+  // ---------- TASKS (งานในกะ) ----------
+  async function hrTaskDefsGet() {
+    const { data, error } = await sb().from('task_defs').select('*').order('sort');
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+  async function hrTaskDefSave(d) {
+    if (!d || !d.title) return { ok: false, error: 'ต้องมีชื่องาน' };
+    const row = { title: String(d.title).trim(), require_photo: !!d.require_photo, active: d.active !== false, sort: Number(d.sort) || 0 };
+    if (d.id) { const { error } = await sb().from('task_defs').update(row).eq('id', d.id); if (error) throw error; }
+    else { const { error } = await sb().from('task_defs').insert(row); if (error) throw error; }
+    return { ok: true };
+  }
+  async function hrTaskDefDelete(id) {
+    const { error } = await sb().from('task_defs').delete().eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrTaskAssign(d) {
+    if (!d || !d.emp_id || !Array.isArray(d.def_ids) || !d.def_ids.length) return { ok: false, error: 'เลือกพนักงานและงานอย่างน้อย 1 รายการ' };
+    const date = d.work_date || bkkToday();
+    const { data: emp } = await sb().from('employees').select('emp_id,name,nickname,branch_id').eq('emp_id', d.emp_id).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบพนักงาน' };
+    const { data: defs } = await sb().from('task_defs').select('*').in('id', d.def_ids);
+    const { data: existing } = await sb().from('task_assignments').select('task_def_id').eq('emp_id', d.emp_id).eq('work_date', date);
+    const have = new Set((existing || []).map(x => x.task_def_id));
+    const rows = (defs || []).filter(df => !have.has(df.id)).map(df => ({
+      work_date: date, emp_id: emp.emp_id, emp_name: emp.nickname || emp.name, branch_id: emp.branch_id || null,
+      task_def_id: df.id, title: df.title, require_photo: !!df.require_photo, status: 'todo',
+    }));
+    if (!rows.length) return { ok: true, added: 0 };
+    const { error } = await sb().from('task_assignments').insert(rows);
+    if (error) throw error;
+    await logAct('มอบหมายงาน', emp.emp_id, rows.length + ' งาน · ' + date);
+    return { ok: true, added: rows.length };
+  }
+  async function hrTaskList(date) {
+    const d = date || bkkToday();
+    const [tR, brR] = await Promise.all([
+      sb().from('task_assignments').select('*').eq('work_date', d).order('status').order('emp_name'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    if (tR.error) throw tR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (tR.data || []).map(t => ({ ...t, branch_name: brName[t.branch_id] || t.branch_id || '—' }));
+    const counts = {
+      submitted: rows.filter(r => r.status === 'submitted').length,
+      sent_back: rows.filter(r => r.status === 'sent_back').length,
+      todo: rows.filter(r => r.status === 'todo').length,
+      approved: rows.filter(r => r.status === 'approved').length,
+    };
+    return { ok: true, date: d, rows, counts };
+  }
+  async function hrTaskReview(id, status, note) {
+    const { data: t } = await sb().from('task_assignments').select('emp_id,title').eq('id', id).maybeSingle();
+    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
+    if (error) throw error;
+    await logAct(status === 'approved' ? 'อนุมัติงาน' : 'ตีงานกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
+    return { ok: true };
   }
 
   window.HRAPI = { dispatch };

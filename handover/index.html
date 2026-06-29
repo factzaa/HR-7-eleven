@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00703c">
+<title>ส่ง/รับผลัด · 7-Eleven</title>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#00703c;--green-d:#00582f;--green-soft:#e7f3ec;--orange:#f5821f;--red:#e11f26;--bg:#eef1ec;--line:#dbe2dc;--muted:#6b756d;--txt:#1b2a20;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:'Anuphan',sans-serif;background:var(--bg);color:var(--txt);min-height:100dvh;}
+  .wrap{max-width:480px;margin:0 auto;min-height:100dvh;background:#fff;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.06);}
+  .top{background:linear-gradient(135deg,var(--green),var(--green-d));color:#fff;padding:18px 18px 16px;display:flex;align-items:center;gap:12px;}
+  .top .ic{font-size:26px;}
+  .top h1{font-size:18px;font-weight:600;flex:1;}
+  .home{color:#fff;text-decoration:none;font-size:13px;opacity:.9;background:rgba(255,255,255,.15);padding:6px 11px;border-radius:9px;}
+  .body{padding:18px;flex:1;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px 2px;font-weight:500;}
+  input[type=text],textarea{width:100%;font:inherit;font-size:16px;border:1.5px solid var(--line);border-radius:11px;padding:12px 13px;background:#fff;color:var(--txt);}
+  input:focus,textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px var(--green-soft);}
+  textarea{resize:vertical;min-height:54px;}
+  .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-size:16px;font-weight:600;cursor:pointer;transition:transform .08s;}
+  .btn:active{transform:scale(.98);}
+  .btn-pri{background:var(--green);color:#fff;}
+  .btn-sec{background:#fff;color:var(--txt);border:1.5px solid var(--line);}
+  .btn-danger{background:#fff;color:var(--red);border:1.5px solid #f1bcbe;}
+  .btn-warn{background:#fff7ed;color:#9a3412;border:1.5px solid #fed7aa;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .who{display:flex;align-items:center;gap:12px;background:var(--green-soft);border-radius:12px;padding:12px 14px;margin-bottom:14px;}
+  .who .nm{font-weight:600;font-size:16px;}
+  .who .sub{font-size:12.5px;color:var(--green-d);}
+  .who .ch{margin-left:auto;font-size:12.5px;color:var(--green-d);background:#fff;border:1px solid var(--green-soft);padding:5px 10px;border-radius:8px;cursor:pointer;}
+  h3.sec{font-size:13px;color:var(--green-d);font-weight:700;margin:14px 2px 8px;letter-spacing:.3px;}
+  .chk{display:flex;align-items:center;gap:11px;padding:11px 12px;border:1.5px solid var(--line);border-radius:11px;margin-bottom:8px;cursor:pointer;user-select:none;}
+  .chk.on{border-color:var(--green);background:var(--green-soft);}
+  .chk .box{width:24px;height:24px;border-radius:7px;border:2px solid var(--line);flex:none;display:grid;place-items:center;font-size:15px;color:#fff;}
+  .chk.on .box{background:var(--green);border-color:var(--green);}
+  .chk .t{font-size:14.5px;}
+  .hint{font-size:12.5px;color:var(--muted);margin:2px 2px 10px;}
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;}
+  .ok{background:var(--green-soft);color:var(--green-d);} .bad{background:#fdeaea;color:var(--red);} .warn{background:#fff4e0;color:#a06515;}
+  .kv{display:flex;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px dashed var(--line);}
+  .kv .k{color:var(--muted);min-width:96px;} .kv:last-child{border-bottom:0;}
+  .photo{width:100%;border-radius:11px;border:1px solid var(--line);margin-top:8px;display:none;}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);padding:12px 18px;border-radius:11px;color:#fff;font-weight:500;font-size:14.5px;display:none;z-index:50;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.18);}
+  .toast.ok{background:var(--green);} .toast.err{background:var(--red);} .toast.show{display:block;}
+  .hide{display:none;}
+  .muted{color:var(--muted);font-size:13.5px;}
+  .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-2px;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><span class="ic">🔄</span><h1>ส่ง / รับผลัด</h1><a class="home" href="../">🏠 หน้าแรก</a></div>
+  <div class="body">
+
+    <!-- ขั้น 1: ระบุรหัสพนักงาน -->
+    <div id="step_id">
+      <div class="card">
+        <label>รหัสพนักงาน</label>
+        <input id="empId" type="text" inputmode="numeric" placeholder="กรอกรหัสพนักงาน">
+        <div style="height:12px"></div>
+        <button class="btn btn-pri" id="goBtn">เริ่ม</button>
+        <div class="hint" style="text-align:center;margin-top:10px">ใช้รหัสเดียวกับที่ลงเวลาเข้า-ออกงาน</div>
+      </div>
+    </div>
+
+    <!-- ขั้น 2: เลือกส่ง/รับ -->
+    <div id="step_menu" class="hide">
+      <div class="who"><div><div class="nm" id="who_nm">—</div><div class="sub" id="who_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
+      <button class="btn btn-pri" id="taskBtn" style="margin-bottom:12px">✅ งานของฉันวันนี้ <span id="taskBadge"></span></button>
+      <button class="btn btn-sec" id="reviewBtn" style="margin-bottom:12px">🔍 ตรวจงาน (หัวหน้า/รับผลัด)</button>
+      <div style="height:6px;border-top:1px dashed var(--line);margin:6px 0 12px"></div>
+      <button class="btn btn-sec" id="sendBtn" style="margin-bottom:12px">📤 ส่งผลัด (ก่อนออกงาน)</button>
+      <button class="btn btn-sec" id="recvBtn">📥 รับผลัด (เริ่มกะ)</button>
+    </div>
+
+    <!-- ขั้น 3: ฟอร์มส่งผลัด -->
+    <div id="step_send" class="hide">
+      <div class="who"><div><div class="nm" id="s_nm">—</div><div class="sub">ส่งผลัด · <span id="s_branch"></span></div></div></div>
+      <div id="checklist"></div>
+      <h3 class="sec">งานค้าง / สิ่งที่ต้องสานต่อ</h3>
+      <textarea id="pending" placeholder="เช่น ของยังไม่เติม... งานที่ต้องทำต่อ..."></textarea>
+      <h3 class="sec">ปัญหา / เหตุการณ์ในกะ</h3>
+      <textarea id="issues" placeholder="เช่น ตู้แช่เสีย ลูกค้าร้องเรียน (ถ้าไม่มี เว้นว่าง)"></textarea>
+      <h3 class="sec">รูปหน้าร้าน (ถ้ามี)</h3>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" style="font-size:13px">
+      <img id="photoPrev" class="photo" alt="">
+      <div style="height:14px"></div>
+      <button class="btn btn-pri" id="sendSave">บันทึกส่งผลัด</button>
+      <div style="height:8px"></div>
+      <button class="btn btn-sec" id="sendBack">ย้อนกลับ</button>
+    </div>
+
+    <!-- ขั้น 4: รับผลัด -->
+    <div id="step_recv" class="hide">
+      <div class="who"><div><div class="nm" id="r_nm">—</div><div class="sub">รับผลัด · <span id="r_branch"></span></div></div></div>
+      <div id="recvBody"><div class="card muted">กำลังโหลด…</div></div>
+      <button class="btn btn-sec" id="recvBack" style="margin-top:6px">ย้อนกลับ</button>
+    </div>
+
+    <!-- งานของฉันวันนี้ -->
+    <div id="step_tasks" class="hide">
+      <div class="who"><div><div class="nm" id="t_nm">—</div><div class="sub">งานของฉันวันนี้</div></div></div>
+      <div id="tasksBody"><div class="card muted">กำลังโหลด…</div></div>
+      <button class="btn btn-sec" id="tasksBack" style="margin-top:6px">ย้อนกลับ</button>
+    </div>
+
+    <!-- ตรวจงาน -->
+    <div id="step_review" class="hide">
+      <div class="who"><div><div class="nm" id="rv_nm">—</div><div class="sub">ตรวจงาน · <span id="rv_branch"></span></div></div></div>
+      <div id="reviewBody"><div class="card muted">กำลังโหลด…</div></div>
+      <button class="btn btn-sec" id="reviewBack" style="margin-top:6px">ย้อนกลับ</button>
+    </div>
+
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',2600);}
+function show(id){['step_id','step_menu','step_send','step_recv','step_tasks','step_review'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
+
+const CHECKLIST = [
+  ['ความสะอาด', ['พื้น/ทางเดินสะอาด','เคาน์เตอร์/ชั้นวางสะอาด','ห้องน้ำสะอาด','จัดการขยะเรียบร้อย']],
+  ['การเติมสินค้า', ['เติมสินค้าหน้าชั้นเต็ม','เติมตู้แช่/เครื่องดื่ม','ตรวจ/แจ้งสินค้าใกล้หมด']],
+  ['ความเรียบร้อย', ['จัดเรียงหน้าร้าน','อุปกรณ์/รถเข็นเข้าที่','พื้นที่หลังร้านเรียบร้อย']],
+];
+let EMP=null, BRANCHES={}, photoData=null;
+
+async function loadBranches(){
+  try{ const cfg=await window.HR.loadConfig(); (cfg.branches||[]).forEach(b=>BRANCHES[b.branch_id]=b.name); }catch(e){}
+}
+function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขาประจำ)'; }
+
+$('goBtn').onclick = async ()=>{
+  const id=$('empId').value.trim();
+  if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  $('goBtn').innerHTML='<span class="spin"></span>';
+  try{
+    const emp=await window.HR.lookupEmployee(id);
+    if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); $('goBtn').textContent='เริ่ม'; return; }
+    if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); $('goBtn').textContent='เริ่ม'; return; }
+    EMP=emp;
+    $('who_nm').textContent=emp.nickname||emp.name;
+    $('who_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
+    show('step_menu');
+  }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
+  $('goBtn').textContent='เริ่ม';
+};
+$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; show('step_id'); };
+
+// ---------- ส่งผลัด ----------
+$('sendBtn').onclick=()=>{
+  $('s_nm').textContent=EMP.nickname||EMP.name;
+  $('s_branch').textContent=branchName(EMP.branch_id);
+  $('pending').value=''; $('issues').value=''; photoData=null;
+  $('photoPrev').style.display='none'; $('photoInput').value='';
+  renderChecklist();
+  show('step_send');
+};
+$('sendBack').onclick=()=>show('step_menu');
+function renderChecklist(){
+  let h='';
+  CHECKLIST.forEach((sec,si)=>{
+    h+='<h3 class="sec">'+sec[0]+'</h3>';
+    sec[1].forEach((item,ii)=>{
+      h+='<div class="chk" data-k="'+si+'_'+ii+'"><div class="box">✓</div><div class="t">'+item+'</div></div>';
+    });
+  });
+  $('checklist').innerHTML=h;
+  document.querySelectorAll('.chk').forEach(c=>c.onclick=()=>c.classList.toggle('on'));
+}
+$('photoInput').addEventListener('change', e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{ const img=new Image(); img.onload=()=>{
+    const max=900, sc=Math.min(1,max/Math.max(img.width,img.height));
+    const c=document.createElement('canvas'); c.width=img.width*sc; c.height=img.height*sc;
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    photoData=c.toDataURL('image/jpeg',0.85);
+    $('photoPrev').src=photoData; $('photoPrev').style.display='block';
+  }; img.src=ev.target.result; };
+  r.readAsDataURL(f);
+});
+$('sendSave').onclick=async ()=>{
+  const checklist={}; let done=0,total=0;
+  CHECKLIST.forEach((sec,si)=>sec[1].forEach((item,ii)=>{
+    const on=document.querySelector('.chk[data-k="'+si+'_'+ii+'"]').classList.contains('on');
+    checklist[item]=on; total++; if(on) done++;
+  }));
+  $('sendSave').innerHTML='<span class="spin"></span>';
+  try{
+    await window.HR.submitHandover({ empId:EMP.emp_id, checklist, done_count:done, total_count:total,
+      pending_work:$('pending').value.trim(), issues:$('issues').value.trim(), photo:photoData });
+    toast('ok','ส่งผลัดเรียบร้อย ('+done+'/'+total+' ข้อ)');
+    setTimeout(()=>show('step_menu'),900);
+  }catch(e){ toast('err','บันทึกไม่สำเร็จ: '+(e.message||e)); }
+  $('sendSave').textContent='บันทึกส่งผลัด';
+};
+
+// ---------- รับผลัด ----------
+$('recvBtn').onclick=async ()=>{
+  $('r_nm').textContent=EMP.nickname||EMP.name;
+  $('r_branch').textContent=branchName(EMP.branch_id);
+  show('step_recv');
+  $('recvBody').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  if(!EMP.branch_id){ $('recvBody').innerHTML='<div class="card muted">คุณยังไม่มีสาขาประจำ ติดต่อ HR เพื่อกำหนดสาขา</div>'; return; }
+  try{
+    const h=await window.HR.getPendingHandover(EMP.branch_id);
+    if(!h){ renderNoHandover(); return; }
+    renderHandover(h);
+  }catch(e){ $('recvBody').innerHTML='<div class="card muted">โหลดไม่สำเร็จ</div>'; }
+};
+$('recvBack').onclick=()=>show('step_menu');
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function renderHandover(h){
+  let cl='';
+  if(h.checklist){ Object.keys(h.checklist).forEach(k=>{ cl+='<div class="kv"><span class="k">'+(h.checklist[k]?'✅':'⬜')+'</span><span>'+esc(k)+'</span></div>'; }); }
+  const fmt=t=>{try{return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'});}catch(e){return '';}};
+  $('recvBody').innerHTML=
+    '<div class="card">'
+    + '<div style="margin-bottom:8px"><span class="pill ok">รอรับผลัด</span></div>'
+    + '<div class="kv"><span class="k">ผู้ส่ง</span><span>'+esc(h.from_name||h.from_emp_id)+'</span></div>'
+    + '<div class="kv"><span class="k">เวลาส่ง</span><span>'+fmt(h.created_at)+'</span></div>'
+    + '<div class="kv"><span class="k">เช็กลิสต์</span><span>'+(h.done_count||0)+'/'+(h.total_count||0)+' ข้อ</span></div>'
+    + (h.pending_work?'<div class="kv"><span class="k">งานค้าง</span><span>'+esc(h.pending_work)+'</span></div>':'')
+    + (h.issues?'<div class="kv"><span class="k">ปัญหา</span><span>'+esc(h.issues)+'</span></div>':'')
+    + cl
+    + (h.photo_url?'<img class="photo" style="display:block" src="'+esc(h.photo_url)+'">':'')
+    + '</div>'
+    + '<button class="btn btn-pri" id="confirmRecv" style="margin-bottom:10px">✅ ยืนยันรับผลัด (เรียบร้อย)</button>'
+    + '<button class="btn btn-warn" id="rejectRecv">⚠️ รับผลัด แต่ไม่เรียบร้อย</button>';
+  $('confirmRecv').onclick=()=>doReceive(h.id,'received');
+  $('rejectRecv').onclick=()=>{ const note=prompt('ระบุสิ่งที่ไม่เรียบร้อย (จะแจ้ง HR):'); if(note===null) return; doReceive(h.id,'rejected',note); };
+}
+function renderNoHandover(){
+  $('recvBody').innerHTML=
+    '<div class="card"><div style="margin-bottom:6px"><span class="pill warn">ไม่พบผลัดที่รอรับ</span></div>'
+    + '<div class="muted">ยังไม่มีใครส่งผลัดของสาขานี้ในวันนี้ — ถ้ากะก่อนหน้าไม่ได้ส่งผลัด กดปุ่มด้านล่างเพื่อแจ้ง HR</div></div>'
+    + '<button class="btn btn-danger" id="noHandover">แจ้งว่าไม่มีการส่งผลัด</button>';
+  $('noHandover').onclick=async ()=>{
+    const note=prompt('รายละเอียดเพิ่มเติม (ถ้ามี):')||'';
+    try{ await window.HR.reportNoHandover({ empId:EMP.emp_id, note }); toast('ok','แจ้ง HR เรียบร้อย'); setTimeout(()=>show('step_menu'),900); }
+    catch(e){ toast('err','แจ้งไม่สำเร็จ'); }
+  };
+}
+async function doReceive(id,status,note){
+  try{ await window.HR.receiveHandover({ id, empId:EMP.emp_id, status, note });
+    toast('ok', status==='rejected'?'รับผลัดแล้ว · แจ้ง HR เรื่องไม่เรียบร้อย':'ยืนยันรับผลัดเรียบร้อย');
+    setTimeout(()=>show('step_menu'),900);
+  }catch(e){ toast('err','ทำรายการไม่สำเร็จ'); }
+}
+
+// ---------- งานของฉันวันนี้ ----------
+const ST = { todo:['ยังไม่ทำ','warn'], submitted:['รอตรวจ','muted'], approved:['ผ่านแล้ว','ok'], sent_back:['ถูกตีกลับ','bad'] };
+function resizeFile(file){ return new Promise(res=>{ const r=new FileReader(); r.onload=ev=>{ const img=new Image(); img.onload=()=>{ const max=900,sc=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=img.width*sc; c.height=img.height*sc; c.getContext('2d').drawImage(img,0,0,c.width,c.height); res(c.toDataURL('image/jpeg',0.85)); }; img.src=ev.target.result; }; r.readAsDataURL(file); }); }
+$('taskBtn').onclick=()=>{ $('t_nm').textContent=EMP.nickname||EMP.name; show('step_tasks'); loadMyTasks(); };
+$('tasksBack').onclick=()=>show('step_menu');
+async function loadMyTasks(){
+  $('tasksBody').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  let tasks=[]; try{ tasks=await window.HR.getMyTasks(EMP.emp_id); }catch(e){ $('tasksBody').innerHTML='<div class="card muted">โหลดไม่สำเร็จ</div>'; return; }
+  if(!tasks.length){ $('tasksBody').innerHTML='<div class="card muted">วันนี้ยังไม่มีงานที่ถูกมอบหมาย</div>'; return; }
+  $('tasksBody').innerHTML=tasks.map(t=>{
+    const st=ST[t.status]||['','muted'];
+    const canDo=(t.status==='todo'||t.status==='sent_back');
+    return '<div class="card">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:'+(canDo?'10px':'4px')+'"><div style="font-weight:600;flex:1">'+esc(t.title)+(t.require_photo?' <span class="pill muted">📷 ต้องมีรูป</span>':'')+'</div><span class="pill '+st[1]+'">'+st[0]+'</span></div>'
+      +(t.status==='sent_back'&&t.review_note?'<div style="color:#b91c1c;font-size:13px;margin-bottom:8px">⚠️ ตีกลับ: '+esc(t.review_note)+(t.reviewer?(' (โดย '+esc(t.reviewer)+')'):'')+'</div>':'')
+      +(t.photo_url&&!canDo?'<img class="photo" style="display:block;margin-bottom:6px" src="'+esc(t.photo_url)+'">':'')
+      +(t.emp_note&&!canDo?'<div class="muted" style="margin-bottom:4px">หมายเหตุ: '+esc(t.emp_note)+'</div>':'')
+      +(canDo?(
+        (t.require_photo?'<input type="file" accept="image/*" capture="environment" id="tf_'+t.id+'" style="font-size:13px;margin-bottom:8px"><img class="photo" id="tp_'+t.id+'">':'')
+        +'<input type="text" id="tn_'+t.id+'" placeholder="หมายเหตุ (ถ้ามี)" style="margin-bottom:8px">'
+        +'<button class="btn btn-pri" data-submit="'+t.id+'" data-photo="'+(t.require_photo?1:0)+'">ส่งงาน</button>'
+      ):'')
+      +'</div>';
+  }).join('');
+  // bind photo previews
+  tasks.forEach(t=>{ if((t.status==='todo'||t.status==='sent_back')&&t.require_photo){ const inp=$('tf_'+t.id); if(inp) inp.addEventListener('change', async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const d=await resizeFile(f); inp._data=d; const im=$('tp_'+t.id); im.src=d; im.style.display='block'; }); } });
+  document.querySelectorAll('[data-submit]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.submit), needPhoto=b.dataset.photo==='1';
+    const inp=$('tf_'+id), note=($('tn_'+id)||{}).value||'';
+    const photo = inp&&inp._data ? inp._data : null;
+    if(needPhoto&&!photo){ toast('err','งานนี้ต้องแนบรูปก่อนส่ง'); return; }
+    b.innerHTML='<span class="spin"></span>';
+    try{ await window.HR.submitTask({ id, empId:EMP.emp_id, photo, note }); toast('ok','ส่งงานแล้ว'); loadMyTasks(); }
+    catch(e){ toast('err','ส่งไม่สำเร็จ: '+(e.message||e)); b.textContent='ส่งงาน'; }
+  });
+}
+
+// ---------- ตรวจงาน (หัวหน้า/คนรับผลัด) ----------
+$('reviewBtn').onclick=()=>{ $('rv_nm').textContent=EMP.nickname||EMP.name; $('rv_branch').textContent=branchName(EMP.branch_id); show('step_review'); loadReviewTasks(); };
+$('reviewBack').onclick=()=>show('step_menu');
+async function loadReviewTasks(){
+  $('reviewBody').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  if(!EMP.branch_id){ $('reviewBody').innerHTML='<div class="card muted">คุณยังไม่มีสาขาประจำ</div>'; return; }
+  let tasks=[]; try{ tasks=await window.HR.getBranchTasks(EMP.branch_id); }catch(e){ $('reviewBody').innerHTML='<div class="card muted">โหลดไม่สำเร็จ</div>'; return; }
+  if(!tasks.length){ $('reviewBody').innerHTML='<div class="card muted">ไม่มีงานที่รอตรวจในสาขานี้วันนี้</div>'; return; }
+  $('reviewBody').innerHTML=tasks.map(t=>'<div class="card">'
+    +'<div style="font-weight:600;margin-bottom:4px">'+esc(t.title)+'</div>'
+    +'<div class="muted" style="margin-bottom:6px">โดย '+esc(t.emp_name||t.emp_id)+'</div>'
+    +(t.photo_url?'<img class="photo" style="display:block;margin-bottom:6px" src="'+esc(t.photo_url)+'">':'')
+    +(t.emp_note?'<div class="muted" style="margin-bottom:8px">หมายเหตุ: '+esc(t.emp_note)+'</div>':'')
+    +'<div class="row2"><button class="btn btn-pri" data-ap="'+t.id+'">✅ ผ่าน</button><button class="btn btn-warn" data-rb="'+t.id+'">⤴ ตีกลับ</button></div>'
+    +'</div>').join('');
+  document.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>doReview(Number(b.dataset.ap),'approved'));
+  document.querySelectorAll('[data-rb]').forEach(b=>b.onclick=()=>{ const note=prompt('ระบุสิ่งที่ต้องแก้ (จะส่งกลับให้พนักงาน):'); if(note===null) return; doReview(Number(b.dataset.rb),'sent_back',note); });
+}
+async function doReview(id,status,note){
+  try{ await window.HR.reviewTask({ id, reviewerId:EMP.emp_id, status, note }); toast('ok', status==='approved'?'อนุมัติงานแล้ว':'ตีงานกลับแล้ว'); loadReviewTasks(); }
+  catch(e){ toast('err','ทำรายการไม่สำเร็จ'); }
+}
+
+loadBranches();
+</script>
+</body>
+</html>

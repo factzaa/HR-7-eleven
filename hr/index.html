@@ -320,6 +320,7 @@
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
+  <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
@@ -417,6 +418,25 @@
   </div>
   <div id="sc_legend" style="display:flex; flex-wrap:wrap; gap:8px; margin:0 4px 14px"></div>
   <div id="sc_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- Handover + Tasks (ส่ง/รับผลัด + งานในกะ) -->
+<div id="view_handover" class="container" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">มอบหมายงานในกะ</h3></div>
+  <div class="card" style="padding:14px">
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">พนักงาน</label><select id="ta_emp" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:200px"></select></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">วันที่</label><input id="ta_date" type="date" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <button class="btn btn-pri btn-sm" id="ta_assign">มอบหมายงานที่เลือก</button>
+    </div>
+    <div id="ta_defs" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px"></div>
+  </div>
+
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
+  <div id="tk_body"><div class="empty">กำลังโหลด…</div></div>
+
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">ส่ง / รับผลัด (สภาพร้าน)</h3><div id="ho_counts" style="display:flex; gap:8px; flex-wrap:wrap"></div><button class="btn btn-sec btn-sm" id="ho_refresh">รีเฟรช</button></div>
+  <div id="ho_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Leaves -->
@@ -531,6 +551,13 @@
     <tbody id="scBandsRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">โบนัส "ความรับผิดชอบ" แสดงผล/คำนวณสิทธิให้ (ระบบไม่จ่ายเงินจริง) · ระดับใบเตือน 3=ครั้งที่ 1, 4=ครั้งที่ 2 (ใช้กับปุ่ม "ออกใบเตือนตามคะแนน")</div>
+
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>งาน</th><th>ต้องแนบรูป</th><th>ลำดับ</th><th>เปิดใช้</th><th></th></tr></thead>
+    <tbody id="tdRows"></tbody>
+  </table></div></div>
+  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">รายการนี้ใช้ตอน "มอบหมายงาน" ในแท็บ ส่ง/รับผลัด · ติ๊ก "ต้องแนบรูป" = พนักงานต้องถ่ายรูปก่อนส่งงานนั้น</div>
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">สถานะการรับทราบระเบียบ <span id="ru_ver" style="font-weight:400; color:var(--muted); font-size:13px"></span></h3><button class="btn btn-sec btn-sm" id="ru_refresh">รีเฟรช</button></div>
   <div id="ru_body"></div>
@@ -1520,7 +1547,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','employees','report','discipline','score','leaves','schedule','branches','settings','submissions','activity'];
+const ALL_TABS = ['dashboard','employees','report','discipline','score','handover','leaves','schedule','branches','settings','submissions','activity'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
@@ -1528,10 +1555,11 @@ showTab = function(name){
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
+  else if(name==='handover'){ loadTaskTab(); loadHandover(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadRuleStatus(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
 };
@@ -1976,6 +2004,112 @@ $('scDetailClose').onclick = $('scDetailCloseBtn').onclick = ()=>$('scDetailOver
 $('scCfg_save').onclick = saveScoreConfig;
 $('scRules_save').onclick = saveScoreRules;
 $('scBands_save').onclick = saveScoreBands;
+
+// ========== ส่ง/รับผลัด ==========
+async function loadHandover(){
+  $('ho_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_handover_list', password:pwd });
+  if(!r.ok){ $('ho_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const c=r.counts||{};
+  $('ho_counts').innerHTML=
+    (c.no_handover?'<span class="pill bad">ไม่ส่งผลัด '+c.no_handover+'</span>':'')
+    +(c.rejected?'<span class="pill warn">ไม่เรียบร้อย '+c.rejected+'</span>':'')
+    +(c.pending?'<span class="pill muted">รอรับ '+c.pending+'</span>':'');
+  if(!r.rows.length){ $('ho_body').innerHTML='<div class="empty">ยังไม่มีการส่ง/รับผลัด</div>'; return; }
+  const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
+  const stPill=s=> s==='no_handover'?'<span class="pill bad">ไม่ส่งผลัด</span>'
+    : s==='rejected'?'<span class="pill warn">ไม่เรียบร้อย</span>'
+    : s==='received'?'<span class="pill ok">รับแล้ว</span>'
+    : '<span class="pill muted">รอรับ</span>';
+  $('ho_body').innerHTML='<div class="card"><div class="tablewrap"><table>'
+    +'<thead><tr><th>วันที่/เวลา</th><th>สาขา</th><th>ผู้ส่ง → ผู้รับ</th><th>เช็กลิสต์</th><th>งานค้าง/ปัญหา</th><th>สถานะ</th><th>รูป</th></tr></thead><tbody>'
+    +r.rows.map(h=>`<tr>
+      <td class="mono" style="white-space:nowrap;font-size:12.5px">${esc(fmt(h.created_at||h.received_at))}</td>
+      <td>${esc(h.branch_name)}</td>
+      <td style="font-size:13px">${esc(h.from_name||'—')} ${h.to_name?('→ '+esc(h.to_name)):'<span style="color:var(--muted)">→ ยังไม่รับ</span>'}</td>
+      <td class="mono">${h.total_count?((h.done_count||0)+'/'+h.total_count):'—'}</td>
+      <td style="font-size:12.5px;max-width:240px">${[h.pending_work?('ค้าง: '+esc(h.pending_work)):'',h.issues?('ปัญหา: '+esc(h.issues)):'',h.receiver_note?('<span style="color:#b45309">หมายเหตุ: '+esc(h.receiver_note)+'</span>'):''].filter(Boolean).join('<br>')||'—'}</td>
+      <td>${stPill(h.status)}</td>
+      <td>${h.photo_url?('<a href="'+esc(h.photo_url)+'" target="_blank">ดูรูป</a>'):'—'}</td>
+    </tr>`).join('')+'</tbody></table></div></div>';
+}
+$('ho_refresh').onclick=loadHandover;
+
+// ========== งานในกะ (มอบหมาย/ตรวจ) ==========
+function bkkTodayStr(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
+let TASKDEFS=[];
+async function loadTaskTab(){
+  $('ta_emp').innerHTML=(DATA.rows||[]).map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('');
+  if(!$('ta_date').value) $('ta_date').value=bkkTodayStr();
+  if(!$('tk_date').value) $('tk_date').value=bkkTodayStr();
+  const r=await post({ action:'hr_task_defs_get', password:pwd });
+  TASKDEFS=(r.ok?r.rows:[]).filter(d=>d.active!==false);
+  $('ta_defs').innerHTML=TASKDEFS.length
+    ? TASKDEFS.map(d=>`<label class="check"><input type="checkbox" value="${d.id}" class="tadef">${esc(d.title)}${d.require_photo?' 📷':''}</label>`).join('')
+    : '<span style="color:var(--muted);font-size:13px">ยังไม่มีรายการงาน — เพิ่มที่แท็บ "ตั้งค่ากะ"</span>';
+  loadTaskList();
+}
+$('ta_assign').onclick=async()=>{
+  const def_ids=[...document.querySelectorAll('.tadef:checked')].map(c=>Number(c.value));
+  if(!def_ids.length){ toast('err','เลือกงานอย่างน้อย 1 รายการ'); return; }
+  const r=await post({ action:'hr_task_assign', password:pwd, data:{ emp_id:$('ta_emp').value, work_date:$('ta_date').value, def_ids } });
+  if(r.ok){ toast('ok','มอบหมาย '+r.added+' งาน'+(r.added===0?' (มอบไว้แล้ว)':'')); document.querySelectorAll('.tadef:checked').forEach(c=>c.checked=false); loadTaskList(); }
+  else toast('err', r.error||'ไม่สำเร็จ');
+};
+async function loadTaskList(){
+  $('tk_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_task_list', password:pwd, date:$('tk_date').value });
+  if(!r.ok){ $('tk_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  const c=r.counts||{};
+  $('tk_counts').innerHTML=(c.submitted?'<span class="pill warn">รอตรวจ '+c.submitted+'</span>':'')+(c.sent_back?'<span class="pill bad">ตีกลับ '+c.sent_back+'</span>':'')+(c.todo?'<span class="pill muted">ยังไม่ทำ '+c.todo+'</span>':'')+(c.approved?'<span class="pill ok">ผ่าน '+c.approved+'</span>':'');
+  if(!r.rows.length){ $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
+  const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
+  $('tk_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>งาน</th><th>สถานะ</th><th>รูป</th><th></th></tr></thead><tbody>'
+    +r.rows.map(t=>`<tr>
+      <td>${esc(t.emp_name||t.emp_id)}</td><td>${esc(t.branch_name)}</td>
+      <td>${esc(t.title)}${t.require_photo?' 📷':''}${t.review_note?('<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>'):''}</td>
+      <td>${stP(t.status)}</td>
+      <td>${t.photo_url?('<a href="'+esc(t.photo_url)+'" target="_blank">ดู</a>'):'—'}</td>
+      <td style="white-space:nowrap">${t.status==='submitted'?('<button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>'):''}</td>
+    </tr>`).join('')+'</tbody></table></div></div>';
+  document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
+  document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>{ const note=prompt('ระบุสิ่งที่ต้องแก้ (ส่งกลับให้พนักงาน):'); if(note===null) return; taskReview(Number(b.dataset.trb),'sent_back',note); });
+}
+async function taskReview(id,status,note){
+  const r=await post({ action:'hr_task_review', password:pwd, id, status, note });
+  if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadTaskList(); } else toast('err', r.error||'ไม่สำเร็จ');
+}
+$('tk_refresh').onclick=loadTaskList;
+$('tk_date').addEventListener('change', loadTaskList);
+
+// ตั้งค่ารายการงาน (ในแท็บตั้งค่ากะ)
+async function loadTaskDefs(){
+  const r=await post({ action:'hr_task_defs_get', password:pwd });
+  if(!r.ok){ if($('tdRows')) $('tdRows').innerHTML=''; return; }
+  $('tdRows').innerHTML=r.rows.length ? r.rows.map(d=>`<tr>
+    <td><input type="text" value="${esc(d.title)}" id="td_t_${d.id}" style="width:220px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td style="text-align:center"><input type="checkbox" ${d.require_photo?'checked':''} id="td_p_${d.id}"></td>
+    <td><input type="number" value="${d.sort||0}" id="td_s_${d.id}" style="width:60px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td style="text-align:center"><input type="checkbox" ${d.active!==false?'checked':''} id="td_a_${d.id}"></td>
+    <td style="white-space:nowrap"><button class="btn btn-pri btn-sm" data-tdsave="${d.id}">บันทึก</button> <button class="btn btn-danger btn-sm" data-tddel="${d.id}">ลบ</button></td>
+  </tr>`).join('') : '<tr><td colspan="5" style="padding:14px;color:var(--muted)">ยังไม่มีรายการงาน</td></tr>';
+  document.querySelectorAll('[data-tdsave]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tdsave);
+    const data={ id, title:$('td_t_'+id).value, require_photo:$('td_p_'+id).checked, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked };
+    const r=await post({ action:'hr_task_def_save', password:pwd, data });
+    if(r.ok) toast('ok','บันทึกแล้ว'); else toast('err', r.error||'ไม่สำเร็จ');
+  });
+  document.querySelectorAll('[data-tddel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบงานนี้?')) return;
+    const r=await post({ action:'hr_task_def_delete', password:pwd, id:Number(b.dataset.tddel) });
+    if(r.ok){ toast('ok','ลบแล้ว'); loadTaskDefs(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+}
+$('td_new') && ($('td_new').onclick=async()=>{
+  const title=prompt('ชื่องานใหม่:'); if(!title) return;
+  const r=await post({ action:'hr_task_def_save', password:pwd, data:{ title, require_photo:false, active:true, sort:0 } });
+  if(r.ok){ toast('ok','เพิ่มงานแล้ว'); loadTaskDefs(); } else toast('err', r.error||'ไม่สำเร็จ');
+});
 
 // ========== สถานะการรับทราบระเบียบ ==========
 async function loadRuleStatus(){

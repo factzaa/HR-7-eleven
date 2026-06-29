@@ -131,6 +131,39 @@ HR-7-eleven-main/
   ⚠️ ต้องรัน `supabase/score_system.sql` แล้วอัป `shared/hr-api.js` + `hr/index.html` ขึ้น GitHub
   หมายเหตุ: โบนัสเป็นการ "แสดงผล/คำนวณสิทธิ" ระบบไม่จ่ายเงินจริง
 
+## รอบ 29 มิ.ย. 2026 (4) — หน้า HR รองรับมือถือ + แก้ครอปรูป
+- ✅ แก้ครอปรูป: หน้าต่างครอป z-index สูงกว่า modal แก้ไข (ไม่อยู่ข้างหลังแล้ว) · โหลดรูปเดิมจาก Supabase ผ่าน client เป็น object URL เลี่ยง CORS taint → ครอปรูปเก่าแล้วบันทึกได้จริง
+- ✅ ปรับ responsive หน้า HR (≤640px): หัว/แท็บกระชับ, ตารางบีบช่อง+เลื่อนแนวนอนลื่น, KPI เล็กลง, Modal แบบเต็มจอพร้อมแถบปุ่มติดล่าง (กดง่าย), toolbar ปุ่ม/ดรอปดาวน์เต็มความกว้าง · จอ ≤380px ปุ่มใน modal เรียงเต็มแถว
+- ไฟล์แก้: `hr/index.html` เท่านั้น (ไม่มี SQL ใหม่)
+
+## รอบ 29 มิ.ย. 2026 (5) — Web Push แจ้งเตือนฝั่ง HR (เด้งแม้ปิดแอป)
+- ✅ ตาราง `push_subscriptions` (อุปกรณ์ที่สมัคร) + `notify_sent` (กันส่งซ้ำ) — `supabase/push_notifications.sql`
+- ✅ service worker (`sw.js`) รับ `push` + `notificationclick` (คลิกเปิดหน้า HR) · bump cache v2
+- ✅ หน้า HR: ปุ่ม 🔔 เปิด/ปิดแจ้งเตือนต่ออุปกรณ์ (subscribe ด้วย VAPID → บันทึก Supabase) · VAPID public อยู่ใน `config.js`
+- ✅ Edge Function `supabase/functions/hr-notify/index.ts` — คำนวณ ขาด/สาย/ลืมเช็กเอาต์/ใบลาใหม่/ข้อมูลรอตรวจ แล้วส่ง web push (รวมเป็นแจ้งเตือนเดียว กันซ้ำ ลบ subscription ที่หมดอายุ)
+- ✅ cron `supabase/push_cron.sql` (ทุก 15 นาที ผ่าน pg_cron + pg_net) · คู่มือ `supabase/PUSH-SETUP.md`
+- ไฟล์แก้: `sw.js`, `hr/index.html`, `shared/config.js` · ไฟล์ใหม่: push_notifications.sql, push_cron.sql, PUSH-SETUP.md, functions/hr-notify/index.ts
+  ⚠️ ทำตาม `supabase/PUSH-SETUP.md`: รัน SQL → ตั้ง secret VAPID_PRIVATE → deploy function → เปิด pg_cron/pg_net → ตั้ง cron → กดปุ่ม 🔔 ที่อุปกรณ์
+  หมายเหตุ: เฟสนี้ทำเฉพาะฝั่ง HR · ฝั่งแอปพนักงานวางแผนเพิ่มภายหลัง
+
+## รอบ 29 มิ.ย. 2026 (6) — ส่ง/รับผลัด (Shift Handover)
+- ✅ ตาราง `handovers` — `supabase/handover.sql`
+- ✅ หน้าพนักงานใหม่ `handover/index.html` — เช็กลิสต์สภาพร้าน 3 หมวด (ความสะอาด/เติมสินค้า/ความเรียบร้อย) + งานค้าง + ปัญหา + แนบรูป · แบบ 2 ขั้น (ส่ง→รับยืนยัน) · ถ้าไม่มีผลัดรอรับ กดแจ้ง "ไม่มีการส่งผลัด"
+- ✅ ลิงก์ "🔄 ส่ง/รับผลัด" บนหน้าแรก · ฟังก์ชันใน `shared/supabase.js` (submitHandover/getPendingHandover/receiveHandover/reportNoHandover) · ขยาย lookupEmployee ให้คืน branch_id/default_shift
+- ✅ HR แท็บใหม่ "ส่ง/รับผลัด" — ประวัติทุกสาขา สถานะ เช็กลิสต์ งานค้าง รูป + ป้ายนับ "ไม่ส่งผลัด/ไม่เรียบร้อย/รอรับ" (`hr_handover_list`)
+- ✅ แจ้งเตือน HR (push) เมื่อมี "ไม่มีการส่งผลัด" หรือ "รับผลัดไม่เรียบร้อย" — เพิ่มใน Edge Function `hr-notify`
+- ไฟล์ใหม่: handover.sql, handover/index.html · แก้: index.html, shared/supabase.js, shared/hr-api.js, hr/index.html, functions/hr-notify/index.ts
+  ⚠️ ต้องทำ: (1) รัน `supabase/handover.sql` (2) อัปไฟล์เว็บขึ้น GitHub (3) อัปเดตโค้ด Edge Function hr-notify ในหน้าเว็บ Supabase แล้วกด Deploy updates (เพราะเพิ่มแจ้งเตือนผลัด)
+
+## รอบ 29 มิ.ย. 2026 (7) — ระบบงานในกะ (Shift Tasks)
+- ✅ รายการงานตั้งค่าได้ (`task_defs`) — HR เพิ่ม/ลบ/แก้ในแท็บ "ตั้งค่ากะ" · ตั้งได้รายงานว่า "ต้องแนบรูป" ไหม
+- ✅ มอบหมายงานรายบุคคล (`task_assignments`) — เลือกพนักงาน+วันที่+งาน ในแท็บ "ส่ง/รับผลัด"
+- ✅ พนักงานส่งงาน (หน้า handover → "งานของฉันวันนี้") · ถ่ายรูปส่งงาน (ถ้างานนั้นต้องมีรูป) · งานที่ถูกตีกลับแสดงเหตุผลให้แก้แล้วส่งใหม่
+- ✅ ตีงานกลับได้ทั้ง 2 ทาง: คนรับผลัด/หัวหน้า (หน้า handover → "ตรวจงาน") และ HR (แท็บ ส่ง/รับผลัด → งานในกะ) · อนุมัติ/ตีกลับพร้อมเหตุผล
+- สถานะงาน: ยังไม่ทำ → รอตรวจ → ผ่าน / ตีกลับ (วนแก้ได้)
+- ไฟล์ใหม่: task_system.sql · แก้: shared/supabase.js, shared/hr-api.js, hr/index.html, handover/index.html
+  ⚠️ ต้องรัน `supabase/task_system.sql` แล้วอัปไฟล์เว็บขึ้น GitHub
+
 ## SQL ที่ต้องรันบน Supabase (รวมทุกรอบที่ยังไม่ได้รัน)
 1. `schedules.sql` — ตารางเวร
 2. `branches_rls.sql` — ให้เพิ่ม/แก้/ลบสาขาได้
@@ -141,6 +174,10 @@ HR-7-eleven-main/
 7. `activity_log.sql` — ตารางบันทึกกิจกรรม (audit log)
 8. `discipline_rules.sql` — เกณฑ์ใบเตือน/วินัย (ปรับจากหน้า HR ได้)
 9. `score_system.sql` — ระบบคะแนนวินัยรายเดือน (config/rules/bands/events)
+10. `push_notifications.sql` — ตาราง Web Push (subscription + กันส่งซ้ำ)
+11. `push_cron.sql` — ตั้ง cron เรียก Edge Function (หลัง deploy function + เปิด pg_cron/pg_net)
+12. `handover.sql` — ส่ง/รับผลัด (เช็กลิสต์สภาพร้าน)
+13. `task_system.sql` — ระบบงานในกะ (รายการงานตั้งค่าได้ + มอบหมาย + ส่งงาน/ตรวจ)
 
 ## ค้างไว้ / จะทำต่อ
 **Phase 3 — เก็บรายละเอียดให้สมจริง**

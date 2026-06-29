@@ -232,7 +232,7 @@
 
   // ---------- พนักงานกรอกข้อมูลตัวเอง + อัปเอกสาร (รอ HR อนุมัติ) ----------
   async function lookupEmployee(empId) {
-    const { data } = await sb.from('employees').select('emp_id,name,nickname,active').eq('emp_id', empId).maybeSingle();
+    const { data } = await sb.from('employees').select('emp_id,name,nickname,active,branch_id,default_shift').eq('emp_id', empId).maybeSingle();
     return data || null;
   }
   async function submitProfile(p) {
@@ -273,6 +273,102 @@
     return data || null;
   }
 
+  // ---------- ส่ง/รับผลัด (Shift Handover) ----------
+  async function submitHandover(p) {
+    const emp = await lookupEmployee(p.empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
+    let photo_url = null;
+    if (p.photo) photo_url = await uploadPhoto('employee-docs', 'handover/' + (emp.branch_id || 'x') + '_' + Date.now() + '.jpg', p.photo);
+    const row = {
+      branch_id: emp.branch_id || null, shift_id: emp.default_shift || null, work_date: bangkokDate(),
+      from_emp_id: emp.emp_id, from_name: emp.nickname || emp.name,
+      status: 'sent', checklist: p.checklist || {},
+      done_count: p.done_count || 0, total_count: p.total_count || 0,
+      pending_work: p.pending_work || null, issues: p.issues || null, photo_url,
+    };
+    const { error } = await sb.from('handovers').insert(row);
+    if (error) throw error;
+    return { ok: true, branch_id: row.branch_id };
+  }
+  // ผลัดที่รอรับของสาขานี้วันนี้ (ล่าสุดที่ยังไม่ถูกรับ)
+  async function getPendingHandover(branchId) {
+    if (!branchId) return null;
+    const { data } = await sb.from('handovers').select('*')
+      .eq('branch_id', branchId).eq('work_date', bangkokDate()).eq('status', 'sent')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    return data || null;
+  }
+  // คนกะถัดไปกดยืนยันรับผลัด (หรือแจ้งไม่เรียบร้อย)
+  async function receiveHandover({ id, empId, status, note }) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const upd = {
+      to_emp_id: emp.emp_id, to_name: emp.nickname || emp.name,
+      status: status === 'rejected' ? 'rejected' : 'received',
+      receiver_note: note || null, received_at: new Date().toISOString(),
+    };
+    const { error } = await sb.from('handovers').update(upd).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+  // คนกะถัดไปแจ้งว่า "ไม่มีการส่งผลัด" → HR ได้รับแจ้งเตือน
+  async function reportNoHandover({ empId, note }) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const row = {
+      branch_id: emp.branch_id || null, shift_id: emp.default_shift || null, work_date: bangkokDate(),
+      to_emp_id: emp.emp_id, to_name: emp.nickname || emp.name,
+      status: 'no_handover', receiver_note: note || null, received_at: new Date().toISOString(),
+    };
+    const { error } = await sb.from('handovers').insert(row);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- งานในกะ (Shift Tasks) ----------
+  // งานของฉันวันนี้
+  async function getMyTasks(empId) {
+    if (!empId) return [];
+    const { data } = await sb.from('task_assignments').select('*')
+      .eq('emp_id', empId).eq('work_date', bangkokDate())
+      .order('status', { ascending: true }).order('id', { ascending: true });
+    return data || [];
+  }
+  // ส่งงาน (แนบรูปถ้าต้องการ) — ใช้ตอนส่งครั้งแรกหรือแก้หลังถูกตีกลับ
+  async function submitTask({ id, empId, photo, note }) {
+    const row = (await sb.from('task_assignments').select('require_photo,branch_id').eq('id', id).maybeSingle()).data;
+    if (!row) throw new Error('ไม่พบงานนี้');
+    let photo_url = null;
+    if (photo) photo_url = await uploadPhoto('employee-docs', 'task/' + (row.branch_id || 'x') + '_' + id + '_' + Date.now() + '.jpg', photo);
+    if (row.require_photo && !photo_url) throw new Error('งานนี้ต้องแนบรูปก่อนส่ง');
+    const upd = { status: 'submitted', emp_note: note || null, submitted_at: new Date().toISOString(), reviewer: null, review_note: null, reviewed_at: null };
+    if (photo_url) upd.photo_url = photo_url;
+    const { error } = await sb.from('task_assignments').update(upd).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+  // (ผู้ตรวจหน้างาน) งานที่ส่งแล้วของสาขานี้วันนี้ — ไว้ตรวจ/ตีกลับ
+  async function getBranchTasks(branchId) {
+    if (!branchId) return [];
+    const { data } = await sb.from('task_assignments').select('*')
+      .eq('branch_id', branchId).eq('work_date', bangkokDate()).eq('status', 'submitted')
+      .order('submitted_at', { ascending: true });
+    return data || [];
+  }
+  // ตรวจงาน: ผ่าน (approved) หรือ ตีกลับ (sent_back) — โดยพนักงาน(หัวหน้า)หรือคนรับผลัด
+  async function reviewTask({ id, reviewerId, status, note }) {
+    let reviewer = 'หัวหน้า';
+    if (reviewerId) { const e = await lookupEmployee(reviewerId); if (e) reviewer = e.nickname || e.name; }
+    const upd = {
+      status: status === 'approved' ? 'approved' : 'sent_back',
+      reviewer, review_note: note || null, reviewed_at: new Date().toISOString(),
+    };
+    const { error } = await sb.from('task_assignments').update(upd).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask };
 })();
