@@ -448,6 +448,15 @@
   </div>
   <div id="tl_leaders" style="margin:0 4px 12px"></div>
   <div id="tl_body"><div class="empty">เลือกช่วงวันที่แล้วกด "ดู Log"</div></div>
+
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">📷 รายงานรับส่งผลัด (รูปภาพ)</h3>
+    <input id="rr_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <span style="color:var(--muted);font-size:13px">ถึง</span>
+    <input id="rr_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="rr_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-pri btn-sm" id="rr_go">ดูรายงาน</button>
+  </div>
+  <div id="rr_body"><div class="empty">เลือกช่วงวันที่แล้วกด "ดูรายงาน"</div></div>
 </div>
 
 <!-- Leaves -->
@@ -2135,6 +2144,30 @@ async function loadTaskLog(){
     </tr>`).join('')+'</tbody></table></div></div>';
 }
 $('tl_go').onclick=loadTaskLog;
+
+// รายงานรับส่งผลัด (รูปภาพ) — แยกจาก Log
+function hThumbs(photos){ if(!photos||!photos.length) return ''; return '<div style="display:flex;gap:6px;overflow-x:auto;margin-top:6px">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="window.open(\''+esc(u)+'\',\'_blank\')" style="height:70px;border-radius:8px;border:1px solid var(--line);cursor:pointer;flex:none">').join('')+'</div>'; }
+async function loadImgReport(){
+  if($('rr_branch')&&!$('rr_branch').innerHTML){ $('rr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); }
+  if(!$('rr_start').value) $('rr_start').value=bkkTodayStr();
+  if(!$('rr_end').value) $('rr_end').value=bkkTodayStr();
+  $('rr_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_task_log', password:pwd, filter:{ start:$('rr_start').value, end:$('rr_end').value, branch_id:$('rr_branch').value } });
+  if(!r.ok){ $('rr_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  if(!r.rows.length){ $('rr_body').innerHTML='<div class="empty">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
+  const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
+  const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
+  $('rr_body').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">'+r.rows.map(t=>
+    '<div class="card" style="padding:12px"><div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><div style="font-weight:600;flex:1;font-size:14px">'+esc(t.title)+'</div>'+stP(t.status)+'</div>'
+    +'<div style="font-size:12px;color:var(--muted)">'+esc(String(t.work_date))+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_id||'-')+'</div>'
+    +'<div style="font-size:12.5px;margin-top:2px">ผู้ทำ: '+esc(t.emp_name||t.emp_id||'—')+(t.submitted_at?(' · ส่ง '+esc(fmt(t.submitted_at))):'')+'</div>'
+    +'<div style="font-size:12.5px">ตรวจ: '+esc(t.reviewer||'—')+(t.reviewed_at?(' · '+esc(fmt(t.reviewed_at))):'')+'</div>'
+    +((t.sent_back_count>0)?'<div style="font-size:12px;color:#b45309">ส่งแก้ไข '+t.sent_back_count+' ครั้ง</div>':'')
+    +(t.review_note?'<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>':'')
+    +hThumbs(t.photos)+'</div>'
+  ).join('')+'</div>';
+}
+$('rr_go').onclick=loadImgReport;
 
 // ตั้งค่ารายการงาน (ในแท็บตั้งค่ากะ)
 async function loadTaskDefs(){
