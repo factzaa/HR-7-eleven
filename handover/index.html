@@ -72,7 +72,8 @@
     <div id="step_menu" class="hide">
       <div class="who"><div><div class="nm" id="who_nm">—</div><div class="sub" id="who_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
       <button class="btn btn-pri" id="taskBtn" style="margin-bottom:12px">✅ งานของฉันวันนี้ <span id="taskBadge"></span></button>
-      <button class="btn btn-sec" id="reviewBtn" style="margin-bottom:12px">🔍 ตรวจงาน (หัวหน้า/รับผลัด)</button>
+      <button class="btn btn-sec" id="leaderBtn" style="margin-bottom:12px">👔 หัวหน้าผลัด (แจกงาน/เพิ่มคน)</button>
+      <button class="btn btn-sec" id="reviewBtn" style="margin-bottom:12px">🔍 ตรวจงาน (อนุมัติ/ตีกลับ)</button>
       <div style="height:6px;border-top:1px dashed var(--line);margin:6px 0 12px"></div>
       <button class="btn btn-sec" id="sendBtn" style="margin-bottom:12px">📤 ส่งผลัด (ก่อนออกงาน)</button>
       <button class="btn btn-sec" id="recvBtn">📥 รับผลัด (เริ่มกะ)</button>
@@ -117,6 +118,18 @@
       <button class="btn btn-sec" id="reviewBack" style="margin-top:6px">ย้อนกลับ</button>
     </div>
 
+    <!-- หัวหน้าผลัด: แจกงาน + เพิ่มคนเข้ากะ -->
+    <div id="step_leader" class="hide">
+      <div class="who"><div><div class="nm" id="ld_nm">—</div><div class="sub">หัวหน้าผลัด · <span id="ld_info"></span></div></div></div>
+      <div class="card" style="padding:12px;margin-bottom:12px">
+        <label>กะ</label><select id="ld_shift" style="width:100%;font:inherit;font-size:15px;border:1.5px solid var(--line);border-radius:11px;padding:11px 12px;background:#fff;margin-bottom:10px"></select>
+        <label>เพิ่มคนเข้ากะ (กรณียังไม่จัดเวร)</label>
+        <div style="display:flex;gap:8px"><select id="ld_addemp" style="flex:1;font:inherit;border:1.5px solid var(--line);border-radius:11px;padding:11px 12px;background:#fff"></select><button class="btn btn-sec" id="ld_addbtn" style="width:auto;padding:0 16px">เพิ่ม</button></div>
+      </div>
+      <div id="leaderBody"><div class="card muted">กำลังโหลด…</div></div>
+      <button class="btn btn-sec" id="leaderBack" style="margin-top:6px">ย้อนกลับ</button>
+    </div>
+
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -127,7 +140,7 @@
 <script>
 const $ = id => document.getElementById(id);
 function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',2600);}
-function show(id){['step_id','step_menu','step_send','step_recv','step_tasks','step_review'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
+function show(id){['step_id','step_menu','step_send','step_recv','step_tasks','step_review','step_leader'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
 
 const CHECKLIST = [
   ['ความสะอาด', ['พื้น/ทางเดินสะอาด','เคาน์เตอร์/ชั้นวางสะอาด','ห้องน้ำสะอาด','จัดการขยะเรียบร้อย']],
@@ -296,8 +309,7 @@ async function loadBoard(){
       body+='<div style="font-weight:600;margin-bottom:8px">'+esc(d.title)+(d.require_photo?' <span class="pill muted">📷</span>':'')+' <span class="pill muted">ยังไม่มีใครทำ</span></div>';
       if(d.require_photo) body+='<input type="file" accept="image/*" capture="environment" id="bf_'+d.id+'" style="font-size:13px;margin-bottom:8px"><img class="photo" id="bp_'+d.id+'">';
       body+='<input type="text" id="bn_'+d.id+'" placeholder="หมายเหตุ (ถ้ามี)" style="margin-bottom:8px">';
-      body+='<button class="btn btn-pri" data-self="'+d.id+'" data-photo="'+(d.require_photo?1:0)+'" style="margin-bottom:8px">ทำงานนี้เอง</button>';
-      body+='<div style="display:flex;gap:6px"><select id="bc_'+d.id+'" style="flex:1;font:inherit;border:1.5px solid var(--line);border-radius:9px;padding:8px">'+colOpts+'</select><button class="btn btn-sec" data-give="'+d.id+'">มอบให้</button></div>';
+      body+='<button class="btn btn-pri" data-self="'+d.id+'" data-photo="'+(d.require_photo?1:0)+'">ทำงานนี้เอง</button>';
     }
     return '<div class="card">'+body+'</div>';
   }).join('');
@@ -325,6 +337,59 @@ function bindBoard(){
     const def=Number(b.dataset.give), to=($('bc_'+def)||{}).value;
     if(!to){ toast('err','เลือกเพื่อนก่อน'); return; }
     try{ await window.HR.assignColleague({ byEmpId:EMP.emp_id, toEmpId:to, task_def_id:def, shiftId:$('bd_shift').value }); toast('ok','แบ่งงานให้เพื่อนแล้ว'); loadBoard(); }
+    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+  });
+}
+
+// ---------- หัวหน้าผลัด: แจกงาน + เพิ่มคนเข้ากะ ----------
+let LEADER=null, LB=null, leaderShiftInit=false;
+function shName(b,id){ const s=(b.shifts||[]).find(x=>x.shift_id===id); return s?s.name:(id||'-'); }
+$('leaderBtn').onclick=async()=>{
+  const code=prompt('ยืนยันตัวตนหัวหน้าผลัด — กรอกรหัสพนักงานของคุณอีกครั้ง:', EMP.emp_id);
+  if(!code) return;
+  try{
+    const r=await window.HR.leaderLogin(code, null);
+    LEADER={ empId:code, shift:r.shift, branch:r.branch_id };
+    $('ld_nm').textContent=(r.emp.nickname||r.emp.name);
+    leaderShiftInit=false; show('step_leader'); await loadLeaderBoard(true);
+  }catch(e){ toast('err',(e.message||'เข้าไม่สำเร็จ')); }
+};
+$('leaderBack').onclick=()=>show('step_menu');
+$('ld_shift').addEventListener('change', ()=>loadLeaderBoard(false));
+$('ld_addbtn').onclick=async()=>{
+  const emp=($('ld_addemp')||{}).value;
+  if(!emp){ toast('err','ไม่มีคนให้เพิ่ม'); return; }
+  try{ await window.HR.addShiftMember({ branchId:LEADER.branch, shiftId:$('ld_shift').value, empId:emp }); toast('ok','เพิ่มเข้ากะแล้ว'); loadLeaderBoard(false); }
+  catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+};
+async function loadLeaderBoard(initShift){
+  $('leaderBody').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  let b; try{ b=await window.HR.getShiftBoard(LEADER.empId, (leaderShiftInit&&!initShift)?$('ld_shift').value:null); }
+  catch(e){ $('leaderBody').innerHTML='<div class="card muted">'+esc(e.message||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  LB=b;
+  if(initShift || !leaderShiftInit){
+    $('ld_shift').innerHTML=(b.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}" ${s.shift_id===b.shift?'selected':''}>${esc(s.name)}</option>`).join('')||'<option value="">(ไม่มีกะ)</option>';
+    leaderShiftInit=true;
+  }
+  $('ld_info').textContent='กะ '+shName(b,b.shift)+' · คนในกะ '+b.members.length+' คน';
+  const inShift=new Set(b.members.map(m=>m.emp_id));
+  const addable=(b.colleagues||[]).filter(c=>!inShift.has(c.emp_id));
+  $('ld_addemp').innerHTML=addable.length?addable.map(c=>`<option value="${esc(c.emp_id)}">${esc(c.name)}</option>`).join(''):'<option value="">(ทุกคนอยู่ในกะแล้ว)</option>';
+  if(!b.defs.length){ $('leaderBody').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (HR ตั้งที่ "ตั้งค่ากะ")</div>'; return; }
+  const memOpts=b.members.map(m=>`<option value="${esc(m.emp_id)}">${esc(m.name)}</option>`).join('');
+  const ST2={ todo:['มอบหมายแล้ว','warn'], submitted:['รอตรวจ','muted'], approved:['ผ่านแล้ว','ok'], sent_back:['ตีกลับ','bad'] };
+  $('leaderBody').innerHTML=b.defs.map(d=>{
+    const a=d.assignment; let body='';
+    body+='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.require_photo?' <span class="pill muted">📷</span>':'')+'</div>';
+    if(a){ const st=ST2[a.status]||['','muted']; body+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span class="pill '+st[1]+'">'+st[0]+'</span><span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
+    if(!b.members.length){ body+='<div class="muted">ยังไม่มีคนในกะ — เพิ่มคนด้านบนก่อน</div>'; }
+    else { body+='<div style="display:flex;gap:6px"><select id="lg_'+d.id+'" style="flex:1;font:inherit;border:1.5px solid var(--line);border-radius:9px;padding:8px">'+memOpts+'</select><button class="btn btn-sec" style="width:auto;padding:0 14px" data-lgive="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>'; }
+    return '<div class="card">'+body+'</div>';
+  }).join('');
+  document.querySelectorAll('[data-lgive]').forEach(btn=>btn.onclick=async()=>{
+    const def=Number(btn.dataset.lgive), to=($('lg_'+def)||{}).value;
+    if(!to){ toast('err','เลือกคนก่อน'); return; }
+    try{ await window.HR.assignColleague({ byEmpId:LEADER.empId, toEmpId:to, task_def_id:def, shiftId:$('ld_shift').value }); toast('ok','แจกงานแล้ว'); loadLeaderBoard(false); }
     catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
   });
 }

@@ -163,6 +163,7 @@
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note);
+        case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications();
         case 'hr_submission_list':    return await hrSubmissionList();
@@ -1065,6 +1066,26 @@
     if (error) throw error;
     await logAct(status === 'approved' ? 'อนุมัติงาน' : 'ตีงานกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
     return { ok: true };
+  }
+
+  // ---------- TASK LOG (ตรวจสอบงานย้อนหลัง) ----------
+  async function hrTaskLog(f) {
+    f = f || {};
+    const today = bkkToday();
+    const start = f.start || today, end = f.end || today;
+    let tq = sb().from('task_assignments').select('*').gte('work_date', start).lte('work_date', end);
+    let lq = sb().from('shift_leads').select('*').gte('work_date', start).lte('work_date', end);
+    if (f.branch_id) { tq = tq.eq('branch_id', f.branch_id); lq = lq.eq('branch_id', f.branch_id); }
+    const [tR, lR, brR] = await Promise.all([
+      tq.order('work_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(400),
+      lq.order('work_date', { ascending: false }),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    if (tR.error) throw tR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (tR.data || []).map(t => ({ ...t, branch_name: brName[t.branch_id] || t.branch_id || '—' }));
+    const leaders = (lR.data || []).map(l => ({ ...l, branch_name: brName[l.branch_id] || l.branch_id || '—' }));
+    return { ok: true, start, end, rows, leaders };
   }
 
   window.HRAPI = { dispatch };

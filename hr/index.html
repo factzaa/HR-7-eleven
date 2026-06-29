@@ -438,6 +438,16 @@
 
   <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">ส่ง / รับผลัด (สภาพร้าน)</h3><div id="ho_counts" style="display:flex; gap:8px; flex-wrap:wrap"></div><button class="btn btn-sec btn-sm" id="ho_refresh">รีเฟรช</button></div>
   <div id="ho_body"><div class="empty">กำลังโหลด…</div></div>
+
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">Log งาน (ตรวจสอบย้อนหลัง)</h3>
+    <input id="tl_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <span style="color:var(--muted);font-size:13px">ถึง</span>
+    <input id="tl_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="tl_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-pri btn-sm" id="tl_go">ดู Log</button>
+  </div>
+  <div id="tl_leaders" style="margin:0 4px 12px"></div>
+  <div id="tl_body"><div class="empty">เลือกช่วงวันที่แล้วกด "ดู Log"</div></div>
 </div>
 
 <!-- Leaves -->
@@ -2046,6 +2056,9 @@ async function loadTaskTab(){
   const r=await post({ action:'hr_task_defs_get', password:pwd });
   TASKDEFS=(r.ok?r.rows:[]).filter(d=>d.active!==false);
   renderAssign();
+  fillTlBranch();
+  if(!$('tl_start').value) $('tl_start').value=bkkTodayStr();
+  if(!$('tl_end').value) $('tl_end').value=bkkTodayStr();
   loadTaskList();
 }
 function renderAssign(){
@@ -2091,6 +2104,37 @@ async function taskReview(id,status,note){
 }
 $('tk_refresh').onclick=loadTaskList;
 $('tk_date').addEventListener('change', loadTaskList);
+
+// Log งาน (ย้อนหลัง)
+function fillTlBranch(){ if($('tl_branch')&&!$('tl_branch').innerHTML){ $('tl_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); } }
+async function loadTaskLog(){
+  fillTlBranch();
+  if(!$('tl_start').value) $('tl_start').value=bkkTodayStr();
+  if(!$('tl_end').value) $('tl_end').value=bkkTodayStr();
+  $('tl_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_task_log', password:pwd, filter:{ start:$('tl_start').value, end:$('tl_end').value, branch_id:$('tl_branch').value } });
+  if(!r.ok){ $('tl_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  $('tl_leaders').innerHTML = (r.leaders&&r.leaders.length)
+    ? '<div class="card" style="padding:12px"><b style="font-size:13px">หัวหน้าผลัด/คุมผลัด</b><div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">'
+      + r.leaders.map(l=>`<div style="font-size:13px">${esc(String(l.work_date))} · ${esc(l.branch_name)} · กะ ${esc(l.shift_id||'-')} → <b>${esc(l.emp_name||l.emp_id)}</b></div>`).join('')
+      + '</div></div>' : '';
+  const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
+  const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
+  if(!r.rows.length){ $('tl_body').innerHTML='<div class="empty">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
+  $('tl_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>วันที่</th><th>สาขา</th><th>กะ</th><th>งาน</th><th>ผู้ทำ</th><th>สถานะ</th><th>ผู้ตรวจ</th><th>ส่งเมื่อ</th><th>รูป</th></tr></thead><tbody>'
+    + r.rows.map(t=>`<tr>
+      <td class="mono">${esc(String(t.work_date))}</td>
+      <td>${esc(t.branch_name)}</td>
+      <td>${esc(t.shift_id||'-')}</td>
+      <td>${esc(t.title)}${t.review_note?('<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>'):''}</td>
+      <td>${esc(t.emp_name||t.emp_id)}</td>
+      <td>${stP(t.status)}</td>
+      <td>${esc(t.reviewer||'—')}</td>
+      <td class="mono" style="white-space:nowrap;font-size:12px">${t.submitted_at?esc(fmt(t.submitted_at)):'—'}</td>
+      <td>${t.photo_url?('<a href="'+esc(t.photo_url)+'" target="_blank">ดู</a>'):'—'}</td>
+    </tr>`).join('')+'</tbody></table></div></div>';
+}
+$('tl_go').onclick=loadTaskLog;
 
 // ตั้งค่ารายการงาน (ในแท็บตั้งค่ากะ)
 async function loadTaskDefs(){

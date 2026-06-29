@@ -374,20 +374,54 @@
   async function getShiftBoard(empId, shiftId) {
     const emp = await lookupEmployee(empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const shift = shiftId || emp.default_shift || '';
     const today = bangkokDate();
-    const [defsR, asgR, empsR, shR] = await Promise.all([
+    let shift = shiftId;
+    if (!shift) {   // อิงกะจาก "ตารางเวรจริง" ของวันนี้ก่อน → ถ้าไม่มีค่อยใช้กะประจำ
+      const sc = (await sb.from('schedules').select('shift_id').eq('emp_id', emp.emp_id).eq('work_date', today).maybeSingle()).data;
+      shift = (sc && sc.shift_id) || emp.default_shift || '';
+    }
+    const [defsR, asgR, rosterR, empsR, shR] = await Promise.all([
       sb.from('task_defs').select('*').eq('active', true).order('sort'),
       sb.from('task_assignments').select('*').eq('branch_id', emp.branch_id || '').eq('work_date', today).eq('shift_id', shift),
+      sb.from('schedules').select('emp_id').eq('branch_id', emp.branch_id || '').eq('work_date', today).eq('shift_id', shift),
       sb.from('employees').select('emp_id,name,nickname').eq('active', true).eq('branch_id', emp.branch_id || ''),
       sb.from('shifts').select('shift_id,name').order('start_time'),
     ]);
+    const nameOf = {}; (empsR.data || []).forEach(e => { nameOf[e.emp_id] = e.nickname || e.name; });
+    const memberIds = [...new Set((rosterR.data || []).map(r => r.emp_id))];
     const defs = (defsR.data || []).filter(d => !d.shift_id || d.shift_id === shift);
     const byDef = {}; (asgR.data || []).forEach(a => { byDef[a.task_def_id] = a; });
     return {
-      emp, shift, shifts: shR.data || [], colleagues: empsR.data || [],
+      emp, shift, shifts: shR.data || [],
+      members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id })),       // คนในกะวันนี้ (จากตารางเวรจริง)
+      colleagues: (empsR.data || []).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })), // ทุกคนในสาขา (ไว้เพิ่มเข้ากะ)
+      scheduled: memberIds.includes(emp.emp_id),
       defs: defs.map(d => ({ id: d.id, title: d.title, require_photo: !!d.require_photo, assignment: byDef[d.id] || null })),
     };
+  }
+  // หัวหน้าผลัด: กรอกรหัสซ้ำเพื่อรับเป็นคนคุมผลัดวันนี้ (บันทึก Log)
+  async function leaderLogin(empId, shiftId) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if (emp.active === false) throw new Error('รหัสนี้ถูกปิดใช้งาน');
+    const today = bangkokDate();
+    let shift = shiftId;
+    if (!shift) {
+      const sc = (await sb.from('schedules').select('shift_id').eq('emp_id', emp.emp_id).eq('work_date', today).maybeSingle()).data;
+      shift = (sc && sc.shift_id) || emp.default_shift || '';
+    }
+    await sb.from('shift_leads').upsert({ work_date: today, branch_id: emp.branch_id || null, shift_id: shift, emp_id: emp.emp_id, emp_name: emp.nickname || emp.name }, { onConflict: 'work_date,branch_id,shift_id' });
+    try { await sb.from('activity_log').insert({ action: 'คุมผลัด', emp_id: emp.emp_id, detail: 'รับเป็นหัวหน้าผลัด กะ ' + (shift || '-') + ' สาขา ' + (emp.branch_id || '-'), actor: emp.nickname || emp.name }); } catch (e) {}
+    return { ok: true, emp, shift, branch_id: emp.branch_id || '' };
+  }
+  // เพิ่มคนเข้ากะวันนี้เฉพาะกิจ (กรณียังไม่จัดตารางเวร) = สร้างแถวตารางเวรของวันนี้
+  async function addShiftMember({ branchId, shiftId, empId }) {
+    const e = await lookupEmployee(empId);
+    if (!e) throw new Error('ไม่พบรหัสพนักงานที่จะเพิ่ม');
+    const today = bangkokDate();
+    const { error } = await sb.from('schedules').upsert({ emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: branchId || e.branch_id || null, is_cover: false, note: 'เพิ่มเข้ากะเฉพาะกิจ' }, { onConflict: 'emp_id,work_date' });
+    if (error) throw error;
+    return { ok: true, name: e.nickname || e.name };
   }
   // หางาน assignment เดิมของ (สาขา+วัน+กะ+งาน)
   async function _findAsg(branch, today, shift, defId) {
@@ -427,5 +461,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember };
 })();
