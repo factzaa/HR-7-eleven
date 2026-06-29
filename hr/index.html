@@ -831,6 +831,8 @@ async function post(payload){
 function toast(kind, msg){ const t=$('toast'); t.className='toast show '+kind; t.textContent=msg; setTimeout(()=>t.classList.remove('show'), 3500); }
 function shiftName(id){ const s = DATA.shifts.find(x=>x.shift_id===id); return s?s.name:(id||'—'); }
 function branchName(id){ const b = DATA.branches.find(x=>x.branch_id===id); return b?b.name:(id||'—'); }
+function grpOf(shiftId){ const s=(DATA.shifts||[]).find(x=>x.shift_id===shiftId); return (s&&s.main_shift)||shiftId; }
+function groupShifts(){ return (DATA.shifts||[]).filter(s=> (s.main_shift&&s.main_shift===s.shift_id) || !s.main_shift ); }
 function pickInitial(s){ s=String(s||'').trim(); return s ? s.charAt(0).toUpperCase() : '?'; }
 
 // ---------- LOGIN ----------
@@ -1847,6 +1849,12 @@ function shOpen(shift){
   $('sh_start').value = shift ? (shift.start_time||'').slice(0,5) : '';
   $('sh_end').value = shift ? (shift.end_time||'').slice(0,5) : '';
   $('sh_grace').value = shift ? shift.grace_min : 5;
+  const mains=(DATA.shifts||[]).filter(s=>s.main_shift&&s.main_shift===s.shift_id);
+  let opts='<option value="">— พิเศษ (ไม่นับในวงจรตรวจผลัด)</option>';
+  mains.forEach(s=>{ opts+='<option value="'+esc(s.shift_id)+'">'+esc(s.name)+' (ผลัดหลัก)</option>'; });
+  if(shift && !mains.some(s=>s.shift_id===shift.shift_id)) opts+='<option value="'+esc(shift.shift_id)+'">— ตั้งกะนี้เป็นผลัดหลักเอง</option>';
+  $('sh_main').innerHTML=opts;
+  $('sh_main').value = shift ? (shift.main_shift||'') : '';
   $('shOverlay').classList.add('show');
 }
 function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
@@ -2061,7 +2069,7 @@ let TASKDEFS=[];
 async function loadTaskTab(){
   if(!$('ta_date').value) $('ta_date').value=bkkTodayStr();
   if(!$('tk_date').value) $('tk_date').value=bkkTodayStr();
-  $('ta_shift').innerHTML=(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc(s.name)}</option>`).join('')||'<option value="">(ไม่มีกะ)</option>';
+  $('ta_shift').innerHTML=groupShifts().map(s=>`<option value="${esc(s.shift_id)}">${esc(s.name)}${s.main_shift?'':' (พิเศษ)'}</option>`).join('')||'<option value="">(ไม่มีกะ)</option>';
   const r=await post({ action:'hr_task_defs_get', password:pwd });
   TASKDEFS=(r.ok?r.rows:[]).filter(d=>d.active!==false);
   renderAssign();
@@ -2072,7 +2080,7 @@ async function loadTaskTab(){
 }
 function renderAssign(){
   const shift=$('ta_shift').value;
-  let emps=(DATA.rows||[]).filter(e=>e.default_shift===shift);
+  let emps=(DATA.rows||[]).filter(e=>grpOf(e.default_shift)===shift);
   if(!emps.length) emps=(DATA.rows||[]);
   $('ta_emp').innerHTML=emps.map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('');
   const defs=TASKDEFS.filter(d=>!d.shift_id||d.shift_id===shift);
@@ -2173,7 +2181,7 @@ $('rr_go').onclick=loadImgReport;
 async function loadTaskDefs(){
   const r=await post({ action:'hr_task_defs_get', password:pwd });
   if(!r.ok){ if($('tdRows')) $('tdRows').innerHTML=''; return; }
-  const shOpt=(sel)=>'<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>'<option value="'+esc(s.shift_id)+'"'+(s.shift_id===sel?' selected':'')+'>'+esc(s.name)+'</option>').join('');
+  const shOpt=(sel)=>'<option value="">ทุกกะ</option>'+groupShifts().map(s=>'<option value="'+esc(s.shift_id)+'"'+(s.shift_id===sel?' selected':'')+'>'+esc(s.name)+(s.main_shift?'':' (พิเศษ)')+'</option>').join('');
   $('tdRows').innerHTML=r.rows.length ? r.rows.map(d=>`<tr>
     <td><input type="text" value="${esc(d.title)}" id="td_t_${d.id}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td><select id="td_sh_${d.id}" style="padding:6px;border:1.5px solid var(--line2);border-radius:7px">${shOpt(d.shift_id||'')}</select></td>
@@ -2347,6 +2355,7 @@ async function loadSubmissions(){
         <div class="field" style="flex:1"><label>เวลาออก</label><input id="sh_end" type="time"></div>
       </div>
       <div class="field"><label>ผ่อนผันก่อนนับสาย (นาที)</label><input id="sh_grace" type="number" value="5"></div>
+      <div class="field"><label>ผลัดหลัก (ระบบงานผลัด) — กะนี้นับเป็น เช้า/บ่าย/ดึก หรือพิเศษ</label><select id="sh_main"></select></div>
     </div>
     <div class="modal-f"><button class="btn btn-pri" id="shSave">บันทึก</button></div>
   </div>`;
@@ -2356,7 +2365,7 @@ async function loadSubmissions(){
   $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
   $('dr_save') && ($('dr_save').onclick = saveDiscRules);
   $('shSave').onclick = async ()=>{
-    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value };
+    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value };
     if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
     $('shSave').innerHTML='<span class="spin"></span>';
     const r = await post({ action:'hr_shift_save', password:pwd, data });

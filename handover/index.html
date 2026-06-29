@@ -250,6 +250,7 @@ async function openM3(){
   $('pv_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
   let r; try{ r=await window.HR.getPrevShiftReview(EMP.emp_id); }catch(e){ $('pv_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   $('pv_sub').textContent='ผลัดของคุณ: '+esc(r.cur_name||'-');
+  if(r.isMain===false){ $('pv_body').innerHTML='<div class="card warn">กะของคุณเป็น <b>กะพิเศษ</b> ไม่อยู่ในวงจรตรวจรับผลัด (เช้า/บ่าย/ดึก)<br><span class="muted">ถ้าต้องการให้กะนี้ตรวจผลัดก่อนหน้าได้ ให้ HR ตั้ง "ผลัดหลัก" ของกะนี้ในหน้าตั้งค่ากะ</span></div>'; return; }
   let head='<div class="card"><div style="font-weight:600">ตรวจงานผลัดก่อนหน้า: '+esc(r.prev_name||'-')+'</div><div class="muted">วันที่ '+esc(String(r.prev_date))+'</div>'
     +(r.canReview?'<div class="pill ok" style="margin-top:6px">คุณเป็นหัวหน้าผลัด — ตรวจ/ตีกลับได้</div>':'<div class="pill warn" style="margin-top:6px">ดูได้อย่างเดียว (เฉพาะหัวหน้าผลัดตรวจได้)</div>')+'</div>';
   if(!r.tasks.length){ $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานบันทึกไว้</div>'; return; }

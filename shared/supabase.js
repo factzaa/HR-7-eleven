@@ -388,24 +388,21 @@
     const emp = await lookupEmployee(empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const today = bangkokDate();
-    let shift = shiftId;
-    if (!shift) {   // อิงกะจาก "ตารางเวรจริง" ของวันนี้ก่อน → ถ้าไม่มีค่อยใช้กะประจำ
-      const sc = (await sb.from('schedules').select('shift_id').eq('emp_id', emp.emp_id).eq('work_date', today).maybeSingle()).data;
-      shift = (sc && sc.shift_id) || emp.default_shift || '';
-    }
-    const [defsR, asgR, rosterR, empsR, shR] = await Promise.all([
+    const group = shiftId || await _empGroup(emp);   // ผลัดหลัก (เช้า/บ่าย/ดึก หรือ กะพิเศษ)
+    const [defsR, asgR, schR, empsR, shR] = await Promise.all([
       sb.from('task_defs').select('*').eq('active', true).order('sort'),
-      sb.from('task_assignments').select('*').eq('branch_id', emp.branch_id || '').eq('work_date', today).eq('shift_id', shift),
-      sb.from('schedules').select('emp_id').eq('branch_id', emp.branch_id || '').eq('work_date', today).eq('shift_id', shift),
+      sb.from('task_assignments').select('*').eq('branch_id', emp.branch_id || '').eq('work_date', today).eq('shift_id', group),
+      sb.from('schedules').select('emp_id,shift_id').eq('branch_id', emp.branch_id || '').eq('work_date', today),
       sb.from('employees').select('emp_id,name,nickname').eq('active', true).eq('branch_id', emp.branch_id || ''),
-      sb.from('shifts').select('shift_id,name').order('start_time'),
+      sb.from('shifts').select('shift_id,name,main_shift').order('start_time'),
     ]);
     const nameOf = {}; (empsR.data || []).forEach(e => { nameOf[e.emp_id] = e.nickname || e.name; });
-    const memberIds = [...new Set((rosterR.data || []).map(r => r.emp_id))];
-    const defs = (defsR.data || []).filter(d => !d.shift_id || d.shift_id === shift);
+    const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
+    const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group).map(r => r.emp_id))];
+    const defs = (defsR.data || []).filter(d => !d.shift_id || d.shift_id === group);
     const byDef = {}; (asgR.data || []).forEach(a => { byDef[a.task_def_id] = a; });
     return {
-      emp, shift, shifts: shR.data || [],
+      emp, shift: group, shifts: shR.data || [],
       members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id })),       // คนในกะวันนี้ (จากตารางเวรจริง)
       colleagues: (empsR.data || []).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })), // ทุกคนในสาขา (ไว้เพิ่มเข้ากะ)
       scheduled: memberIds.includes(emp.emp_id),
@@ -464,7 +461,7 @@
     const to = await lookupEmployee(toEmpId); if (!to) throw new Error('ไม่พบพนักงานที่จะมอบ');
     const def = (await sb.from('task_defs').select('*').eq('id', task_def_id).maybeSingle()).data;
     if (!def) throw new Error('ไม่พบงานนี้');
-    const shift = shiftId || by.default_shift || '';
+    const shift = shiftId || await _empGroup(by) || '';
     const today = bangkokDate();
     const base = { emp_id: to.emp_id, emp_name: to.nickname || to.name, status: 'todo', photo_url: null, emp_note: null, submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
     const existing = await _findAsg(by.branch_id, today, shift, task_def_id);
@@ -488,12 +485,36 @@
     if(idx===0) return { shift:list[list.length-1]||null, date:_addDays(today,-1), list };  // กะแรก → ผลัดก่อนหน้า = กะสุดท้ายเมื่อวาน
     return { shift:list[idx-1], date:today, list };
   }
+  // ---- ผลัดหลัก (จัดกลุ่ม): group = main_shift ของกะ (ว่าง = ใช้ shift_id เดิม = พิเศษ) ----
+  async function _empGroup(emp){
+    const today=bangkokDate();
+    const sc=(await sb.from('schedules').select('shift_id').eq('emp_id',emp.emp_id).eq('work_date',today).maybeSingle()).data;
+    const raw=(sc&&sc.shift_id)||emp.default_shift||'';
+    if(!raw) return '';
+    const sh=(await sb.from('shifts').select('main_shift').eq('shift_id',raw).maybeSingle()).data;
+    return (sh&&sh.main_shift)||raw;
+  }
+  // ผลัดหลักก่อนหน้า (วนเฉพาะกะที่เป็นผลัดหลัก main_shift===shift_id เรียงตามเวลาเริ่ม)
+  async function _prevMainGroup(group){
+    const today=bangkokDate();
+    const list=(await sb.from('shifts').select('shift_id,main_shift,start_time').order('start_time')).data||[];
+    const chain=list.filter(s=>s.main_shift && s.main_shift===s.shift_id).map(s=>s.shift_id);
+    const idx=chain.indexOf(group);
+    if(idx<0) return { group:null, date:today, isMain:false };
+    if(idx===0) return { group: chain[chain.length-1]||null, date:_addDays(today,-1), isMain:true };  // ผลัดหลักแรก → ก่อนหน้า = ผลัดหลักสุดท้ายเมื่อวาน
+    return { group: chain[idx-1], date:today, isMain:true };
+  }
+  async function _shiftName(group){
+    if(!group) return '';
+    const s=(await sb.from('shifts').select('name').eq('shift_id',group).maybeSingle()).data;
+    return s?s.name:group;
+  }
 
   // เมนู 1: หัวหน้าผลัด — ดูสถานะ / ยืนยัน (โอนสิทธิ์ได้)
   async function leaderInfo(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     if(emp.active===false) throw new Error('รหัสนี้ถูกปิดใช้งาน');
-    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    const today=bangkokDate(); const shift=await _empGroup(emp);
     const lead=(await sb.from('shift_leads').select('emp_id,emp_name').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',shift).maybeSingle()).data;
     const sh=(await sb.from('shifts').select('name').eq('shift_id',shift).maybeSingle()).data;
     return { emp, shift, shift_name: sh?sh.name:shift, branch_id:emp.branch_id||'',
@@ -501,7 +522,7 @@
   }
   async function leaderConfirm(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    const today=bangkokDate(); const shift=await _empGroup(emp);
     await sb.from('shift_leads').upsert({ work_date:today, branch_id:emp.branch_id||null, shift_id:shift, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name }, { onConflict:'work_date,branch_id,shift_id' });
     try{ await sb.from('activity_log').insert({ action:'คุมผลัด', emp_id:emp.emp_id, detail:'รับเป็นหัวหน้าผลัด กะ '+(shift||'-')+' สาขา '+(emp.branch_id||'-'), actor:emp.nickname||emp.name }); }catch(e){}
     return { ok:true, emp, shift };
@@ -510,7 +531,7 @@
   // เมนู 2: งานที่ได้รับมอบหมาย (ของฉัน / ทีม / ยังว่าง)
   async function getMyAssignments(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    const today=bangkokDate(); const shift=await _empGroup(emp);
     const [defsR, asgR, shR, leadR] = await Promise.all([
       sb.from('task_defs').select('*').eq('active',true).order('sort'),
       sb.from('task_assignments').select('*').eq('branch_id',emp.branch_id||'').eq('work_date',today).eq('shift_id',shift),
@@ -527,7 +548,7 @@
   async function pullTask({ empId, task_def_id }){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const def=(await sb.from('task_defs').select('*').eq('id',task_def_id).maybeSingle()).data; if(!def) throw new Error('ไม่พบงานนี้');
-    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    const today=bangkokDate(); const shift=await _empGroup(emp);
     const existing=await _findAsg(emp.branch_id,today,shift,task_def_id);
     const base={ emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, status:'todo', photos:null, photo_url:null, emp_note:null, submitted_at:null, reviewer:null, review_note:null, reviewed_at:null };
     if(existing){ const {error}=await sb.from('task_assignments').update(base).eq('id',existing.id); if(error) throw error; }
@@ -550,23 +571,22 @@
   // เมนู 3: ตรวจผลัดก่อนหน้า (เฉพาะหัวหน้าผลัดถัดไป)
   async function getPrevShiftReview(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const today=bangkokDate(); const curShift=await _empShiftToday(emp);
-    const pv=await _prevShift(curShift);
-    const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',curShift).maybeSingle()).data;
-    const canReview=!!(lead&&lead.emp_id===emp.emp_id);
+    const today=bangkokDate(); const curGroup=await _empGroup(emp);
+    const pv=await _prevMainGroup(curGroup);
+    const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',curGroup).maybeSingle()).data;
+    const canReview=!!(lead&&lead.emp_id===emp.emp_id)&&pv.isMain;   // ตรวจได้เฉพาะหัวหน้าผลัดของผลัดหลัก
     let tasks=[];
-    if(pv.shift) tasks=(await sb.from('task_assignments').select('*').eq('branch_id',emp.branch_id||'').eq('work_date',pv.date).eq('shift_id',pv.shift.shift_id).order('id')).data||[];
-    const curName=(pv.list.find(s=>s.shift_id===curShift)||{}).name||curShift;
-    return { emp, curShift, cur_name:curName, prev_shift: pv.shift?pv.shift.shift_id:null, prev_name: pv.shift?pv.shift.name:'-', prev_date: pv.date, canReview, tasks };
+    if(pv.group) tasks=(await sb.from('task_assignments').select('*').eq('branch_id',emp.branch_id||'').eq('work_date',pv.date).eq('shift_id',pv.group).order('id')).data||[];
+    return { emp, curShift:curGroup, cur_name:await _shiftName(curGroup), prev_shift: pv.group, prev_name: pv.group?(await _shiftName(pv.group)):'-', prev_date: pv.date, isMain:pv.isMain, canReview, tasks };
   }
   async function reviewPrevTask({ reviewerId, id, status, note }){
     const emp=await lookupEmployee(reviewerId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const today=bangkokDate(); const curShift=await _empShiftToday(emp);
-    const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',curShift).maybeSingle()).data;
+    const today=bangkokDate(); const curGroup=await _empGroup(emp);
+    const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',curGroup).maybeSingle()).data;
     if(!lead||lead.emp_id!==emp.emp_id) throw new Error('เฉพาะหัวหน้าผลัดเท่านั้นที่ตรวจได้');
     const task=(await sb.from('task_assignments').select('shift_id,work_date,sent_back_count').eq('id',id).maybeSingle()).data; if(!task) throw new Error('ไม่พบงานนี้');
-    const pv=await _prevShift(curShift);
-    if(!pv.shift || task.shift_id!==pv.shift.shift_id || String(task.work_date)!==pv.date) throw new Error('ตรวจได้เฉพาะงานของผลัดก่อนหน้าเท่านั้น');
+    const pv=await _prevMainGroup(curGroup);
+    if(!pv.group || task.shift_id!==pv.group || String(task.work_date)!==pv.date) throw new Error('ตรวจได้เฉพาะงานของผลัดก่อนหน้าเท่านั้น');
     const upd={ status: status==='approved'?'approved':'sent_back', reviewer: emp.nickname||emp.name, review_note:note||null, reviewed_at:new Date().toISOString() };
     if(status!=='approved') upd.sent_back_count=(task.sent_back_count||0)+1;
     const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;

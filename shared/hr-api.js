@@ -640,7 +640,9 @@
       code: (d.code || '').trim() || null,
       start_time: d.start_time || '00:00', end_time: d.end_time || '00:00',
       grace_min: parseInt(d.grace_min) >= 0 ? parseInt(d.grace_min) : 5,
+      main_shift: (d.main_shift === undefined) ? undefined : (d.main_shift || null),  // ผลัดหลักที่สังกัด (ว่าง=พิเศษ)
     };
+    if (row.main_shift === undefined) delete row.main_shift;
     const { error } = await sb().from('shifts').upsert(row, { onConflict: 'shift_id' });
     if (error) throw error;
     return { ok: true };
