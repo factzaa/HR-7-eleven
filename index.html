@@ -28,11 +28,12 @@
   .tile:active{transform:scale(.98)}
   .tic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:22px}
   .tlabel{font-size:14.5px;font-weight:600;text-align:left;line-height:1.25}
-  .menu{display:flex;flex-direction:column;gap:8px;padding:0 14px 0;margin-top:-40px}
-  .bgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:-26px}
-  .banner{display:block;width:100%;border:0;background:none;padding:0;cursor:pointer;transition:transform .1s}
+  .menu{display:flex;flex-direction:column;gap:8px;padding:0 14px 0;margin-top:-14px}
+  .bgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:0}
+  .banner{display:block;width:100%;border:0;background:none;padding:0;cursor:pointer;transition:transform .12s, filter .12s}
   .banner:active{transform:scale(.98)}
-  .banner img{width:100%;height:auto;display:block}
+  .banner img{width:100%;height:auto;display:block;filter:drop-shadow(0 5px 12px rgba(20,40,30,.18))}
+  .banner:active img{filter:drop-shadow(0 2px 5px rgba(20,40,30,.16))}
   .foot{margin:24px 18px 28px;font-size:12px;color:#9ca3af;text-align:center}
   .ovl{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:18px;z-index:20}
   .ovl.show{display:flex}
@@ -63,13 +64,13 @@
 
     <div class="menu">
       <a class="banner" href="./employee/"><img src="banners/checkin.png" alt="ลงเวลาเข้า-ออกงาน"></a>
+      <a class="banner" href="./handover/"><img src="banners/handover.png" alt="ตรวจรับ-ส่งผลัด"></a>
       <div class="bgrid">
         <button class="banner" id="leaveBtn"><img src="banners/leave.png" alt="ยื่นคำขอลางาน"></button>
         <a class="banner" href="./staff/"><img src="banners/profile.png" alt="กรอกข้อมูล/เอกสาร"></a>
         <a class="banner" href="./rules/"><img src="banners/rules.png" alt="ระเบียบการทำงาน"></a>
         <a class="banner" href="./hr/"><img src="banners/hr.png" alt="ฝ่าย HR"></a>
       </div>
-      <a class="banner" href="./handover/" style="margin-top:10px"><img src="banners/handover.png" alt="ตรวจรับ-ส่งผลัด"></a>
     </div>
 
     <div class="foot">กล้องและ GPS ทำงานบน HTTPS เท่านั้น</div>
