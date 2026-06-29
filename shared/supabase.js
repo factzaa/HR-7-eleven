@@ -46,6 +46,11 @@
   // ---------- เช็กอิน ----------
   async function checkIn({ empId, shiftId, branchId, lat, lng, accuracy, photoDataUrl, faceMatch }) {
     const today = bangkokDate();
+    // กันเช็กอินซ้ำ: ถ้าวันนี้เคยเช็กอินแล้ว ไม่ให้เขียนทับ (ต้องให้ HR แก้)
+    const { data: ex } = await sb.from('attendance').select('check_in,check_out').eq('emp_id', empId).eq('work_date', today).maybeSingle();
+    if (ex && ex.check_in) {
+      throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + (ex.check_out ? ' (และเช็กเอาต์แล้ว)' : '') + ' — หากต้องแก้ไข ติดต่อ HR');
+    }
     let photo_url = null;
     if (photoDataUrl) {
       photo_url = await uploadPhoto('attendance-photos', `${empId}/${today}.jpg`, photoDataUrl);
@@ -80,6 +85,14 @@
       .eq('emp_id', empId).eq('work_date', today);
     if (error) throw error;
     return { ot_hours: ot };
+  }
+
+  // ---------- สถานะการลงเวลาวันนี้ (ไว้สลับปุ่มเข้า/ออก) ----------
+  async function todayAttendance(empId) {
+    if (!empId) return null;
+    const { data } = await sb.from('attendance').select('check_in,check_out,status,late_min')
+      .eq('emp_id', empId).eq('work_date', bangkokDate()).maybeSingle();
+    return data || null;
   }
 
   // ---------- สถานะของฉัน (พนักงานตรวจวินัยตนเอง — ไม่แสดง OT) ----------
@@ -460,6 +473,117 @@
     return { ok: true };
   }
 
+  // ===== ระบบงานผลัดใหม่ (เฟส 1) =====
+  function _addDays(dateStr, n){ const d=new Date(dateStr+'T00:00:00'); d.setDate(d.getDate()+n); return _iso(d); }
+  async function _empShiftToday(emp){
+    const today=bangkokDate();
+    const sc=(await sb.from('schedules').select('shift_id').eq('emp_id',emp.emp_id).eq('work_date',today).maybeSingle()).data;
+    return (sc&&sc.shift_id)||emp.default_shift||'';
+  }
+  async function _prevShift(curShift){
+    const today=bangkokDate();
+    const list=(await sb.from('shifts').select('shift_id,name,start_time').order('start_time')).data||[];
+    const idx=list.findIndex(s=>s.shift_id===curShift);
+    if(idx<0) return { shift:null, date:today, list };
+    if(idx===0) return { shift:list[list.length-1]||null, date:_addDays(today,-1), list };  // กะแรก → ผลัดก่อนหน้า = กะสุดท้ายเมื่อวาน
+    return { shift:list[idx-1], date:today, list };
+  }
+
+  // เมนู 1: หัวหน้าผลัด — ดูสถานะ / ยืนยัน (โอนสิทธิ์ได้)
+  async function leaderInfo(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if(emp.active===false) throw new Error('รหัสนี้ถูกปิดใช้งาน');
+    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    const lead=(await sb.from('shift_leads').select('emp_id,emp_name').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',shift).maybeSingle()).data;
+    const sh=(await sb.from('shifts').select('name').eq('shift_id',shift).maybeSingle()).data;
+    return { emp, shift, shift_name: sh?sh.name:shift, branch_id:emp.branch_id||'',
+      currentLeader: lead?{ emp_id:lead.emp_id, name:lead.emp_name }:null, isMe: !!(lead&&lead.emp_id===emp.emp_id) };
+  }
+  async function leaderConfirm(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    await sb.from('shift_leads').upsert({ work_date:today, branch_id:emp.branch_id||null, shift_id:shift, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name }, { onConflict:'work_date,branch_id,shift_id' });
+    try{ await sb.from('activity_log').insert({ action:'คุมผลัด', emp_id:emp.emp_id, detail:'รับเป็นหัวหน้าผลัด กะ '+(shift||'-')+' สาขา '+(emp.branch_id||'-'), actor:emp.nickname||emp.name }); }catch(e){}
+    return { ok:true, emp, shift };
+  }
+
+  // เมนู 2: งานที่ได้รับมอบหมาย (ของฉัน / ทีม / ยังว่าง)
+  async function getMyAssignments(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    const [defsR, asgR, shR, leadR] = await Promise.all([
+      sb.from('task_defs').select('*').eq('active',true).order('sort'),
+      sb.from('task_assignments').select('*').eq('branch_id',emp.branch_id||'').eq('work_date',today).eq('shift_id',shift),
+      sb.from('shifts').select('name').eq('shift_id',shift).maybeSingle(),
+      sb.from('shift_leads').select('emp_id,emp_name').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',shift).maybeSingle(),
+    ]);
+    const defs=(defsR.data||[]).filter(d=>!d.shift_id||d.shift_id===shift);
+    const asg=asgR.data||[]; const byDef={}; asg.forEach(a=>{ byDef[a.task_def_id]=a; });
+    return { emp, shift, shift_name: shR.data?shR.data.name:shift,
+      leader: leadR.data?{ emp_id:leadR.data.emp_id, name:leadR.data.emp_name }:null,
+      mine: asg.filter(a=>a.emp_id===emp.emp_id), team: asg,
+      unassigned: defs.filter(d=>!byDef[d.id]).map(d=>({ id:d.id, title:d.title, min_photos:d.min_photos||0 })) };
+  }
+  async function pullTask({ empId, task_def_id }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const def=(await sb.from('task_defs').select('*').eq('id',task_def_id).maybeSingle()).data; if(!def) throw new Error('ไม่พบงานนี้');
+    const today=bangkokDate(); const shift=await _empShiftToday(emp);
+    const existing=await _findAsg(emp.branch_id,today,shift,task_def_id);
+    const base={ emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, status:'todo', photos:null, photo_url:null, emp_note:null, submitted_at:null, reviewer:null, review_note:null, reviewed_at:null };
+    if(existing){ const {error}=await sb.from('task_assignments').update(base).eq('id',existing.id); if(error) throw error; }
+    else { const {error}=await sb.from('task_assignments').insert(Object.assign({ work_date:today, branch_id:emp.branch_id||null, shift_id:shift, task_def_id, title:def.title, require_photo:(def.min_photos||0)>0 }, base)); if(error) throw error; }
+    return { ok:true };
+  }
+  async function submitTaskMulti({ id, empId, photos, note }){
+    const row=(await sb.from('task_assignments').select('branch_id,task_def_id').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
+    const def=(await sb.from('task_defs').select('min_photos').eq('id',row.task_def_id).maybeSingle()).data;
+    const minP=def?(def.min_photos||0):0;
+    const urls=[];
+    for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','task/'+(row.branch_id||'x')+'_'+id+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    if(urls.length < minP) throw new Error('งานนี้ต้องแนบรูปอย่างน้อย '+minP+' รูป');
+    const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null };
+    if(urls.length){ upd.photos=urls; upd.photo_url=urls[0]; }
+    const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
+    return { ok:true };
+  }
+
+  // เมนู 3: ตรวจผลัดก่อนหน้า (เฉพาะหัวหน้าผลัดถัดไป)
+  async function getPrevShiftReview(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const today=bangkokDate(); const curShift=await _empShiftToday(emp);
+    const pv=await _prevShift(curShift);
+    const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',curShift).maybeSingle()).data;
+    const canReview=!!(lead&&lead.emp_id===emp.emp_id);
+    let tasks=[];
+    if(pv.shift) tasks=(await sb.from('task_assignments').select('*').eq('branch_id',emp.branch_id||'').eq('work_date',pv.date).eq('shift_id',pv.shift.shift_id).order('id')).data||[];
+    const curName=(pv.list.find(s=>s.shift_id===curShift)||{}).name||curShift;
+    return { emp, curShift, cur_name:curName, prev_shift: pv.shift?pv.shift.shift_id:null, prev_name: pv.shift?pv.shift.name:'-', prev_date: pv.date, canReview, tasks };
+  }
+  async function reviewPrevTask({ reviewerId, id, status, note }){
+    const emp=await lookupEmployee(reviewerId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const today=bangkokDate(); const curShift=await _empShiftToday(emp);
+    const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',emp.branch_id||'').eq('shift_id',curShift).maybeSingle()).data;
+    if(!lead||lead.emp_id!==emp.emp_id) throw new Error('เฉพาะหัวหน้าผลัดเท่านั้นที่ตรวจได้');
+    const task=(await sb.from('task_assignments').select('shift_id,work_date,sent_back_count').eq('id',id).maybeSingle()).data; if(!task) throw new Error('ไม่พบงานนี้');
+    const pv=await _prevShift(curShift);
+    if(!pv.shift || task.shift_id!==pv.shift.shift_id || String(task.work_date)!==pv.date) throw new Error('ตรวจได้เฉพาะงานของผลัดก่อนหน้าเท่านั้น');
+    const upd={ status: status==='approved'?'approved':'sent_back', reviewer: emp.nickname||emp.name, review_note:note||null, reviewed_at:new Date().toISOString() };
+    if(status!=='approved') upd.sent_back_count=(task.sent_back_count||0)+1;
+    const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
+    return { ok:true };
+  }
+
+  // รายงานรับส่งผลัด (พนักงานดูสาขาตัวเอง)
+  async function getHandoverReport({ empId, date }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const d=date||bangkokDate();
+    const [asgR, shR] = await Promise.all([
+      sb.from('task_assignments').select('*').eq('branch_id',emp.branch_id||'').eq('work_date',d).order('shift_id').order('id'),
+      sb.from('shifts').select('shift_id,name,start_time').order('start_time'),
+    ]);
+    return { emp, date:d, shifts: shR.data||[], rows: asgR.data||[] };
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport };
 })();

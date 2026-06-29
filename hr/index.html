@@ -565,7 +565,7 @@
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>งาน</th><th>กะ</th><th>ต้องแนบรูป</th><th>ลำดับ</th><th>เปิดใช้</th><th></th></tr></thead>
+    <thead><tr><th>งาน</th><th>กะ</th><th>รูปขั้นต่ำ</th><th>ลำดับ</th><th>เปิดใช้</th><th></th></tr></thead>
     <tbody id="tdRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">รายการนี้ใช้ตอน "มอบหมายงาน" ในแท็บ ส่ง/รับผลัด · ติ๊ก "ต้องแนบรูป" = พนักงานต้องถ่ายรูปก่อนส่งงานนั้น</div>
@@ -2144,14 +2144,14 @@ async function loadTaskDefs(){
   $('tdRows').innerHTML=r.rows.length ? r.rows.map(d=>`<tr>
     <td><input type="text" value="${esc(d.title)}" id="td_t_${d.id}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td><select id="td_sh_${d.id}" style="padding:6px;border:1.5px solid var(--line2);border-radius:7px">${shOpt(d.shift_id||'')}</select></td>
-    <td style="text-align:center"><input type="checkbox" ${d.require_photo?'checked':''} id="td_p_${d.id}"></td>
+    <td style="text-align:center"><input type="number" min="0" max="9" value="${d.min_photos!=null?d.min_photos:(d.require_photo?1:0)}" id="td_mp_${d.id}" style="width:56px;padding:6px;border:1.5px solid var(--line2);border-radius:7px;text-align:center"></td>
     <td><input type="number" value="${d.sort||0}" id="td_s_${d.id}" style="width:60px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td style="text-align:center"><input type="checkbox" ${d.active!==false?'checked':''} id="td_a_${d.id}"></td>
     <td style="white-space:nowrap"><button class="btn btn-pri btn-sm" data-tdsave="${d.id}">บันทึก</button> <button class="btn btn-danger btn-sm" data-tddel="${d.id}">ลบ</button></td>
   </tr>`).join('') : '<tr><td colspan="6" style="padding:14px;color:var(--muted)">ยังไม่มีรายการงาน</td></tr>';
   document.querySelectorAll('[data-tdsave]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.tdsave);
-    const data={ id, title:$('td_t_'+id).value, require_photo:$('td_p_'+id).checked, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked, shift_id:$('td_sh_'+id).value };
+    const data={ id, title:$('td_t_'+id).value, min_photos:$('td_mp_'+id).value, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked, shift_id:$('td_sh_'+id).value };
     const r=await post({ action:'hr_task_def_save', password:pwd, data });
     if(r.ok) toast('ok','บันทึกแล้ว'); else toast('err', r.error||'ไม่สำเร็จ');
   });

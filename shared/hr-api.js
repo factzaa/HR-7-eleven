@@ -1013,7 +1013,8 @@
   }
   async function hrTaskDefSave(d) {
     if (!d || !d.title) return { ok: false, error: 'ต้องมีชื่องาน' };
-    const row = { title: String(d.title).trim(), require_photo: !!d.require_photo, active: d.active !== false, sort: Number(d.sort) || 0, shift_id: d.shift_id || null };
+    const mp = (Number(d.min_photos) >= 0) ? Number(d.min_photos) : 0;
+    const row = { title: String(d.title).trim(), require_photo: mp > 0, min_photos: mp, active: d.active !== false, sort: Number(d.sort) || 0, shift_id: d.shift_id || null };
     if (d.id) { const { error } = await sb().from('task_defs').update(row).eq('id', d.id); if (error) throw error; }
     else { const { error } = await sb().from('task_defs').insert(row); if (error) throw error; }
     return { ok: true };
