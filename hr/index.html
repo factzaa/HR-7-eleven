@@ -2203,7 +2203,7 @@ async function loadTaskList(){
       <td>${esc(t.emp_name||t.emp_id)}</td><td>${esc(t.branch_name)}</td>
       <td>${esc(t.title)}${t.require_photo?' 📷':''}${t.review_note?('<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>'):''}</td>
       <td>${stP(t.status)}</td>
-      <td>${t.photo_url?('<a href="'+esc(t.photo_url)+'" target="_blank">ดู</a>'):'—'}</td>
+      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this.src)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
       <td style="white-space:nowrap">${t.status==='submitted'?('<button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>'):''}</td>
     </tr>`).join('')+'</tbody></table></div></div>';
   document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
@@ -2212,6 +2212,18 @@ async function loadTaskList(){
 async function taskReview(id,status,note){
   const r=await post({ action:'hr_task_review', password:pwd, id, status, note });
   if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadTaskList(); } else toast('err', r.error||'ไม่สำเร็จ');
+}
+// กล่องขยายรูป (lightbox) — สร้างครั้งเดียว คลิกที่ใดก็ได้เพื่อปิด
+function lightbox(src){
+  let o=document.getElementById('lightbox');
+  if(!o){
+    o=document.createElement('div'); o.id='lightbox';
+    o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
+    o.innerHTML='<img id="lightboxImg" style="max-width:96%;max-height:96%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">';
+    o.onclick=()=>{ o.style.display='none'; };
+    document.body.appendChild(o);
+  }
+  o.querySelector('#lightboxImg').src=src; o.style.display='flex';
 }
 $('tk_refresh').onclick=loadTaskList;
 $('tk_date').addEventListener('change', loadTaskList);
@@ -2242,7 +2254,7 @@ async function loadTaskLog(){
       <td>${stP(t.status)}</td>
       <td>${esc(t.reviewer||'—')}</td>
       <td class="mono" style="white-space:nowrap;font-size:12px">${t.submitted_at?esc(fmt(t.submitted_at)):'—'}</td>
-      <td>${t.photo_url?('<a href="'+esc(t.photo_url)+'" target="_blank">ดู</a>'):'—'}</td>
+      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this.src)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
     </tr>`).join('')+'</tbody></table></div></div>';
 }
 $('tl_go').onclick=loadTaskLog;
