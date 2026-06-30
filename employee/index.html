@@ -135,6 +135,8 @@
       <div id="clock">--:--:--</div>
     </header>
 
+    <div id="annBanner" style="display:none; flex:none;"></div>
+
     <div class="cam">
       <video id="video" autoplay muted playsinline></video>
       <div class="ring" id="ring"></div>
@@ -236,10 +238,26 @@ setInterval(() => { $('clock').textContent = new Date().toLocaleTimeString('th-T
 init();
 async function init(){
   await loadConfig();
+  loadAnnouncements();
   await startCamera();
   await loadModels();
   startGeo();
   detectLoop();
+}
+
+// ====== ประกาศจาก HR (แบนเนอร์ + ใช้ในป๊อปอัพ) ======
+let ANNOUNCE = [];
+function annStyle(level){
+  if(level==='urgent') return {bg:'var(--red-soft)', bd:'var(--red)', fg:'var(--red)', ic:'🚨'};
+  if(level==='warn')   return {bg:'#fff7ed', bd:'var(--orange)', fg:'#c2410c', ic:'⚠️'};
+  return {bg:'var(--green-soft)', bd:'var(--green)', fg:'var(--green-d)', ic:'📢'};
+}
+async function loadAnnouncements(){
+  try{ ANNOUNCE = await HR.getAnnouncements(); }catch(e){ ANNOUNCE=[]; }
+  const b=$('annBanner');
+  if(!ANNOUNCE.length){ b.style.display='none'; b.innerHTML=''; return; }
+  b.style.display='flex'; b.style.flexDirection='column'; b.style.gap='6px';
+  b.innerHTML = ANNOUNCE.map(a=>{ const s=annStyle(a.level); return `<div style="background:${s.bg};border:1.5px solid ${s.bd};border-radius:12px;padding:9px 12px;font-size:13px;color:${s.fg};font-weight:500;display:flex;gap:7px"><span>${s.ic}</span><span>${escH(a.message)}</span></div>`; }).join('');
 }
 
 async function loadConfig(){
@@ -595,6 +613,9 @@ async function showAckPopup(action, info){
 function ackRow(label,val,color){ return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px"><span style="color:var(--muted)">'+label+'</span><span style="font-weight:700;color:'+(color||'var(--txt)')+'">'+val+'</span></div>'; }
 function renderAck(action, info, s){
   let html='';
+  if(ANNOUNCE.length){
+    html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px">'+ANNOUNCE.map(a=>{const st=annStyle(a.level);return `<div style="background:${st.bg};border:1.5px solid ${st.bd};border-radius:10px;padding:8px 10px;font-size:12.5px;color:${st.fg};font-weight:500">${st.ic} ${escH(a.message)}</div>`;}).join('')+'</div>';
+  }
   if(action==='checkin'){
     html += '<div style="text-align:center">'
       + '<div style="font-size:12.5px;color:var(--muted)">กะ '+escH(info.shift_name)+(info.branch_name?' · '+escH(info.branch_name):'')+' · '+escH(info.time)+'</div>'

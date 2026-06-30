@@ -167,6 +167,9 @@
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications();
+        case 'hr_notify_history': return await hrNotifyHistory();
+        case 'hr_announce_save':  return await hrAnnounceSave(p.data);
+        case 'hr_announce_delete':return await hrAnnounceDelete(p.id);
         case 'hr_submission_list':    return await hrSubmissionList();
         case 'hr_submission_approve': return await hrSubmissionApprove(p.id);
         case 'hr_submission_reject':  return await hrSubmissionReject(p.id);
@@ -203,7 +206,7 @@
     const cyc = cycleRange('current');
     const [empsR, shR, brR, todayR, d30R, cycR, schR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,active').eq('active', true),
-      sb().from('shifts').select('shift_id,name'),
+      sb().from('shifts').select('shift_id,name,start_time,end_time'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,late_min,status').eq('work_date', today),
       sb().from('attendance').select('work_date,late_min,ot_hours').gte('work_date', addDays(today, -29)).lte('work_date', today),
@@ -215,12 +218,22 @@
     const empName = {}, empPhoto = {}, brName = {};
     emps.forEach(e => { empName[e.emp_id] = e.name; empPhoto[e.emp_id] = e.photo_url; });
     (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    // "ลืมกดออก" = เลยเวลาเลิกกะแล้วยังไม่เช็กเอาต์ (ไม่นับคนที่ยังทำงานอยู่)
+    const nowHM = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 16);
+    const shEnd = {}, shStart = {};
+    (shR.data || []).forEach(s => { shStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shEnd[s.shift_id] = String(s.end_time || '').slice(0, 5); });
+    const stillOpen = todayA.filter(a => {
+      if (!a.check_in || a.check_out) return false;
+      const st = shStart[a.shift_id], en = shEnd[a.shift_id];
+      if (!en || (st && en <= st)) return false;   // ไม่รู้เวลาเลิก/กะข้ามคืน = ยังไม่นับ
+      return nowHM >= en;
+    }).length;
 
     const cards = {
       total_emp: emps.length,
       checked_in: todayA.filter(a => a.check_in).length,
       late_today: todayA.filter(a => a.late_min > 0).length,
-      still_open: todayA.filter(a => String(a.status).toUpperCase() === 'OPEN').length,
+      still_open: stillOpen,
       cycle_start: cyc.start, cycle_end: cyc.end,
     };
 
@@ -850,12 +863,12 @@
     const today = bkkToday();
     const [lvR, todayR, schR, empR, lvApprR, subR, shR] = await Promise.all([
       sb().from('leaves').select('*, employees(name)').eq('status', 'pending').order('created_at', { ascending: false }),
-      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id').eq('work_date', today),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id').eq('work_date', today),
       sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today),
       sb().from('employees').select('emp_id,name,branch_id').eq('active', true),
       sb().from('leaves').select('emp_id,start_date,end_date').eq('status', 'approved').lte('start_date', today),
       sb().from('profile_submissions').select('id,emp_id,name,submitted_at').eq('status', 'pending').order('submitted_at', { ascending: false }),
-      sb().from('shifts').select('shift_id,name,start_time'),
+      sb().from('shifts').select('shift_id,name,start_time,end_time'),
     ]);
     const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; });
     const att = todayR.data || [];
@@ -867,14 +880,21 @@
       start_date: l.start_date, end_date: l.end_date, type: l.type, reason: l.reason,
       days: daysBetween(l.start_date, l.end_date || l.start_date),
     }));
-    const not_checked_out = att.filter(a => a.check_in && !a.check_out)
-      .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, check_in: fmtTime(a.check_in) }));
+    // เวลาปัจจุบัน (Asia/Bangkok) + ตารางเวลากะ
+    const nowHM = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 16);
+    const shiftStart = {}, shiftEnd = {}, shiftName = {};
+    (shR.data || []).forEach(s => { shiftStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shiftEnd[s.shift_id] = String(s.end_time || '').slice(0, 5); shiftName[s.shift_id] = s.name; });
+    // เตือน "ยังไม่กดออก" เฉพาะคนที่เลยเวลาเลิกกะแล้ว (ไม่ใช่ทันทีหลังเช็กอิน)
+    const not_checked_out = att.filter(a => {
+      if (!a.check_in || a.check_out) return false;
+      const st = shiftStart[a.shift_id], en = shiftEnd[a.shift_id];
+      if (!en) return false;               // ไม่รู้เวลาเลิกกะ = ยังไม่เตือน
+      if (st && en <= st) return false;     // กะข้ามคืน = ยังไม่เตือนในวันเดียวกัน
+      return nowHM >= en;                    // เลยเวลาเลิกกะแล้ว
+    }).map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, check_in: fmtTime(a.check_in), shift_name: shiftName[a.shift_id] || '', end_time: shiftEnd[a.shift_id] || '' }));
     const late_today = att.filter(a => a.late_min > 0)
       .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, late_min: a.late_min }));
     // เตือน "ขาด/ยังไม่มา" เฉพาะกะที่ถึงเวลาเข้างานแล้วเท่านั้น (ไม่ใช่ตอนเพิ่งจัดเวร)
-    const nowHM = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 16);
-    const shiftStart = {}, shiftName = {};
-    (shR.data || []).forEach(s => { shiftStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shiftName[s.shift_id] = s.name; });
     const absent_roster = (schR.data || []).filter(s => {
       if (checkedIn.has(s.emp_id) || onleave.has(s.emp_id)) return false;
       const st = shiftStart[s.shift_id];
@@ -887,6 +907,55 @@
       ok: true, pending_leaves, not_checked_out, late_today, absent_roster, pending_profiles,
       counts: { pending_leaves: pending_leaves.length, not_checked_out: not_checked_out.length, late_today: late_today.length, absent_roster: absent_roster.length, pending_profiles: pending_profiles.length },
     };
+  }
+
+  // ---------- ประวัติแจ้งเตือน (push ที่ส่งแล้ว + ประกาศที่ HR เขียนเอง) ----------
+  async function hrNotifyHistory() {
+    const [sentR, annR, empR] = await Promise.all([
+      sb().from('notify_sent').select('*').order('sent_at', { ascending: false }).limit(200),
+      sb().from('announcements').select('*').order('created_at', { ascending: false }).limit(100),
+      sb().from('employees').select('emp_id,name,nickname'),
+    ]);
+    const nm = {}; (empR.data || []).forEach(e => { nm[e.emp_id] = e.nickname || e.name; });
+    const TYPES = {
+      nocheckout: { label: 'ลืมกดออก', color: '#0ea5e9' },
+      late: { label: 'มาสาย', color: '#ea580c' },
+      absent: { label: 'ขาด/ยังไม่มา', color: '#b91c1c' },
+      leave: { label: 'ใบลาใหม่', color: '#16a34a' },
+      profile: { label: 'ข้อมูลรอตรวจ', color: '#7c3aed' },
+      ho: { label: 'ส่ง/รับผลัด', color: '#0891b2' },
+    };
+    const events = (sentR.data || []).map(s => {
+      const parts = String(s.event_key || '').split(':');
+      const t = TYPES[parts[0]] || { label: parts[0] || 'แจ้งเตือน', color: '#64748b' };
+      // นามคน: รูปแบบ type:emp:date(:shift) → parts[1] เป็น emp_id
+      const empId = (['nocheckout', 'late', 'absent'].includes(parts[0])) ? parts[1] : '';
+      return {
+        kind: 'push', type: parts[0], label: t.label, color: t.color,
+        who: empId ? (nm[empId] || empId) : '', at: s.sent_at, key: s.event_key,
+      };
+    });
+    const announces = (annR.data || []).map(a => ({
+      kind: 'announce', id: a.id, label: 'ประกาศถึงพนักงาน',
+      color: a.level === 'urgent' ? '#dc2626' : (a.level === 'warn' ? '#d97706' : '#2563eb'),
+      level: a.level, message: a.message, active: a.active, expire_date: a.expire_date,
+      at: a.created_at, created_by: a.created_by,
+    }));
+    const all = events.concat(announces).sort((x, y) => (y.at || '') < (x.at || '') ? -1 : 1);
+    return { ok: true, items: all, announcements: announces };
+  }
+
+  async function hrAnnounceSave(d) {
+    if (!d || !d.message || !d.message.trim()) return { ok: false, error: 'ต้องมีข้อความ' };
+    const row = { message: d.message.trim(), level: d.level || 'info', expire_date: d.expire_date || null, active: true, created_by: 'HR' };
+    const { error } = await sb().from('announcements').insert(row);
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrAnnounceDelete(id) {
+    const { error } = await sb().from('announcements').delete().eq('id', id);
+    if (error) throw error;
+    return { ok: true };
   }
 
   // ---------- PROFILE SUBMISSIONS (ข้อมูลพนักงานกรอกเอง — รอตรวจ) ----------

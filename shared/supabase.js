@@ -183,6 +183,15 @@
     return { emp: empR.data, cycle: cyc, today: todayStatus, stats: { late_count, late_total, absent, leave_days }, discipline, score };
   }
 
+  // ประกาศที่ HR เขียนถึงพนักงาน (active + ยังไม่หมดอายุ)
+  async function getAnnouncements() {
+    const today = bangkokDate();
+    const { data } = await sb.from('announcements').select('id,message,level,created_at')
+      .eq('active', true).or(`expire_date.is.null,expire_date.gte.${today}`)
+      .order('created_at', { ascending: false });
+    return data || [];
+  }
+
   // บันทึก log ว่าพนักงานรับทราบสถานะแล้ว (หลักฐานตอนออกใบเตือน)
   async function acknowledgeStatus(empId, detail, name) {
     try {
@@ -713,5 +722,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements };
 })();

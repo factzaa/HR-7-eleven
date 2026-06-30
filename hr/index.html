@@ -328,6 +328,7 @@
   <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
   <button class="tab" id="tab_submissions"><span class="tabicon">📥</span>ข้อมูลรอตรวจ</button>
   <button class="tab" id="tab_activity"><span class="tabicon">🕘</span>บันทึกกิจกรรม</button>
+  <button class="tab" id="tab_notifylog"><span class="tabicon">🔔</span>ประวัติแจ้งเตือน</button>
 </div>
 
 <div class="login" id="loginView">
@@ -528,6 +529,25 @@
 <div id="view_activity" class="container" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">บันทึกกิจกรรมล่าสุด</h3><button class="btn btn-sec btn-sm" id="ac_refresh">รีเฟรช</button></div>
   <div id="ac_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- Notify log + ประกาศถึงพนักงาน -->
+<div id="view_notifylog" class="container" style="display:none">
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-h"><h3>📢 เขียนประกาศถึงพนักงาน</h3></div>
+    <div class="card-b" style="display:flex;flex-direction:column;gap:10px">
+      <textarea id="an_msg" rows="3" placeholder="ข้อความประกาศ เช่น พรุ่งนี้ประชุมพนักงาน 9 โมงเช้า ห้ามขาด" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px;resize:vertical"></textarea>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <div class="field-mini"><label>ระดับ</label><select id="an_level"><option value="info">ทั่วไป</option><option value="warn">สำคัญ</option><option value="urgent">ด่วน</option></select></div>
+        <div class="field-mini"><label>แสดงถึงวันที่ (เว้นว่าง = ไม่หมดอายุ)</label><input id="an_expire" type="date"></div>
+        <button class="btn btn-pri" id="an_send" style="margin-left:auto">📢 ประกาศ + ส่งแจ้งเตือน</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">พนักงานจะเห็นเป็นแบนเนอร์บนหน้าลงเวลา + เด้งในป๊อปอัพหลังเช็กอิน และส่ง Web Push ไปยังอุปกรณ์ที่เปิดแจ้งเตือน</div>
+    </div>
+  </div>
+  <div id="an_active"></div>
+  <div class="toolbar" style="margin-top:6px"><h3 style="flex:1; font-size:15px; font-weight:600">ประวัติการแจ้งเตือน</h3><button class="btn btn-sec btn-sm" id="nl_refresh">รีเฟรช</button></div>
+  <div id="nl_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Submissions: ข้อมูลพนักงานรอตรวจ -->
@@ -1582,7 +1602,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','leaves','schedule','branches','settings','submissions','activity'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
@@ -1598,6 +1618,7 @@ showTab = function(name){
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
+  else if(name==='notifylog') loadNotifyLog();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
 
@@ -2280,6 +2301,50 @@ $('td_new') && ($('td_new').onclick=async()=>{
   const r=await post({ action:'hr_task_def_save', password:pwd, data:{ title, require_photo:false, active:true, sort:0 } });
   if(r.ok){ toast('ok','เพิ่มงานแล้ว'); loadTaskDefs(); } else toast('err', r.error||'ไม่สำเร็จ');
 });
+
+// ========== ประวัติแจ้งเตือน + ประกาศถึงพนักงาน ==========
+async function loadNotifyLog(){
+  $('nl_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_notify_history', password:pwd });
+  if(!r.ok){ $('nl_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  renderNotifyLog(r);
+}
+function renderNotifyLog(r){
+  const act=(r.announcements||[]).filter(a=>a.active);
+  $('an_active').innerHTML = act.length ? `<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>ประกาศที่กำลังแสดง (${act.length})</h3></div><div class="card-b" style="display:flex;flex-direction:column;gap:8px">`+
+    act.map(a=>`<div style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+      <span style="font-size:18px">${a.level==='urgent'?'🚨':a.level==='warn'?'⚠️':'📢'}</span>
+      <div style="flex:1"><div style="font-size:13.5px">${esc(a.message)}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(String(a.at).slice(0,16).replace('T',' '))}${a.expire_date?' · ถึง '+esc(a.expire_date):''}</div></div>
+      <button class="btn btn-danger btn-sm" onclick="delAnnounce(${a.id})">ลบ</button>
+    </div>`).join('')+`</div></div>` : '';
+  if(!r.items.length){ $('nl_body').innerHTML='<div class="empty">ยังไม่มีประวัติแจ้งเตือน</div>'; return; }
+  $('nl_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>เวลา</th><th>ประเภท</th><th>รายละเอียด</th></tr></thead><tbody>'+
+    r.items.map(it=>`<tr>
+      <td class="mono" style="white-space:nowrap">${esc(String(it.at||'').slice(0,16).replace('T',' '))}</td>
+      <td><span class="pill" style="background:${it.color}22;color:${it.color};font-weight:600">${esc(it.label)}</span></td>
+      <td>${it.kind==='announce'?esc(it.message||''):(it.who?esc(it.who):'')}</td>
+    </tr>`).join('')+'</tbody></table></div></div>';
+}
+async function delAnnounce(id){
+  if(!confirm('ลบประกาศนี้?')) return;
+  const r=await post({ action:'hr_announce_delete', password:pwd, id });
+  if(r.ok){ toast('ok','ลบแล้ว'); loadNotifyLog(); } else toast('err', r.error||'ไม่สำเร็จ');
+}
+$('an_send') && ($('an_send').onclick = async ()=>{
+  const msg=$('an_msg').value.trim();
+  if(!msg){ toast('err','ใส่ข้อความก่อน'); return; }
+  $('an_send').disabled=true; $('an_send').textContent='กำลังส่ง…';
+  const r=await post({ action:'hr_announce_save', password:pwd, data:{ message:msg, level:$('an_level').value, expire_date:$('an_expire').value||null } });
+  if(r.ok){
+    // ยิง Web Push ทันที (เรียก Edge Function) — ถ้าพลาด cron จะตามส่งให้ภายหลัง
+    try{ await fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){}
+    toast('ok','ประกาศแล้ว + ส่งแจ้งเตือน');
+    $('an_msg').value=''; $('an_expire').value='';
+    loadNotifyLog();
+  } else toast('err', r.error||'ส่งไม่สำเร็จ');
+  $('an_send').disabled=false; $('an_send').textContent='📢 ประกาศ + ส่งแจ้งเตือน';
+});
+$('nl_refresh') && ($('nl_refresh').onclick = loadNotifyLog);
 
 // ========== สถานะการรับทราบระเบียบ ==========
 async function loadRuleStatus(){
