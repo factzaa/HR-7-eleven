@@ -200,13 +200,14 @@
   async function hrDashboard() {
     const today = bkkToday();
     const cyc = cycleRange('current');
-    const [empsR, shR, brR, todayR, d30R, cycR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,photo_url,default_shift,active').eq('active', true),
+    const [empsR, shR, brR, todayR, d30R, cycR, schR] = await Promise.all([
+      sb().from('employees').select('emp_id,name,photo_url,active').eq('active', true),
       sb().from('shifts').select('shift_id,name'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,late_min,status').eq('work_date', today),
       sb().from('attendance').select('work_date,late_min,ot_hours').gte('work_date', addDays(today, -29)).lte('work_date', today),
       sb().from('attendance').select('emp_id,late_min').gte('work_date', cyc.start).lte('work_date', cyc.end),
+      sb().from('schedules').select('emp_id,shift_id').eq('work_date', today),  // กะวันนี้จากตารางเวร (แทน default_shift เดิม)
     ]);
     if (empsR.error) throw empsR.error;
     const emps = empsR.data || [], todayA = todayR.data || [];
@@ -222,10 +223,10 @@
       cycle_start: cyc.start, cycle_end: cyc.end,
     };
 
-    // กะวันนี้
+    // กะวันนี้ — total นับจากตารางเวรวันนี้ (ไม่ใช่กะประจำแล้ว)
     const shifts = {};
     (shR.data || []).forEach(s => { shifts[s.shift_id] = { total: 0, checkedIn: 0, late: 0 }; });
-    emps.forEach(e => { if (e.default_shift && shifts[e.default_shift]) shifts[e.default_shift].total++; });
+    (schR.data || []).forEach(s => { if (s.shift_id && shifts[s.shift_id]) shifts[s.shift_id].total++; });
     todayA.forEach(a => { if (a.shift_id && shifts[a.shift_id]) { if (a.check_in) shifts[a.shift_id].checkedIn++; if (a.late_min > 0) shifts[a.shift_id].late++; } });
 
     // trend 30 วัน
@@ -252,7 +253,7 @@
   async function hrSave(d) {
     const row = {
       emp_id: d.emp_id, name: d.name, nickname: d.nickname || null,
-      start_date: d.start_date || null, default_shift: d.default_shift || null,
+      start_date: d.start_date || null,
       branch_id: d.branch_id || null, weekly_off: d.weekly_off || null,
       phone: d.phone || null, line_user_id: d.line_user_id || null, address: d.address || null,
       emergency_name: d.emergency_name || null, emergency_phone: d.emergency_phone || null,
