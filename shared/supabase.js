@@ -78,29 +78,36 @@
   // ---------- เช็กเอาท์ ----------
   async function checkOut({ empId, shiftId }) {
     const today = bangkokDate();
-    const { data: row } = await sb.from('attendance')
-      .select('check_in,shift_id').eq('emp_id', empId).eq('work_date', today).maybeSingle();
+    // หาแถวที่ "ยังเปิดอยู่ล่าสุด" (เช็กอินแล้ว ยังไม่เช็กเอาต์) ภายใน 2 วัน — รองรับกะข้ามคืน (เข้าเมื่อวาน ออกวันนี้)
+    let { data: row } = await sb.from('attendance')
+      .select('work_date,check_in,shift_id')
+      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+      .gte('work_date', _addDays(today, -2))
+      .order('check_in', { ascending: false }).limit(1).maybeSingle();
+    if (!row || !row.check_in) return { ot_hours: 0, none: true };   // ไม่มีแถวที่ค้างเปิดอยู่
     const nowIso = new Date().toISOString();
-    let ot = 0;
-    if (row?.check_in) {
-      // ใช้กะที่บันทึกตอนเช็กอิน (จากตารางเวร) เป็นหลัก แล้ว fallback ค่าที่ส่งมา
-      const effShift = (row && row.shift_id) || shiftId;
-      const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', effShift).maybeSingle();
-      ot = computeOt(nowIso, sh?.end_time);
-    }
+    const effShift = row.shift_id || shiftId;
+    const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', effShift).maybeSingle();
+    const ot = computeOt(nowIso, sh?.end_time);
     const { error } = await sb.from('attendance')
       .update({ check_out: nowIso, ot_hours: ot, status: 'CLOSED' })
-      .eq('emp_id', empId).eq('work_date', today);
+      .eq('emp_id', empId).eq('work_date', row.work_date);
     if (error) throw error;
-    return { ot_hours: ot };
+    return { ot_hours: ot, work_date: row.work_date };
   }
 
   // ---------- สถานะการลงเวลาวันนี้ (ไว้สลับปุ่มเข้า/ออก) ----------
   async function todayAttendance(empId) {
     if (!empId) return null;
-    const { data } = await sb.from('attendance').select('check_in,check_out,status,late_min')
-      .eq('emp_id', empId).eq('work_date', bangkokDate()).maybeSingle();
-    return data || null;
+    const today = bangkokDate();
+    const { data } = await sb.from('attendance').select('check_in,check_out,status,late_min,work_date')
+      .eq('emp_id', empId).eq('work_date', today).maybeSingle();
+    if (data && data.check_in) return data;   // มีแถววันนี้ + เช็กอินแล้ว → ใช้เลย
+    // เผื่อกะข้ามคืน: ถ้ายังมีแถวที่ค้างเปิดอยู่ (เข้าเมื่อวานยังไม่ออก) ให้ปุ่มยังเป็น "ออกงาน"
+    const { data: open } = await sb.from('attendance').select('check_in,check_out,status,late_min,work_date')
+      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+    return open || data || null;
   }
 
   // ---------- สถานะของฉัน (พนักงานตรวจวินัยตนเอง — ไม่แสดง OT) ----------

@@ -520,8 +520,9 @@ async function submit(action){
         shift_name: shiftName(r.shift_id||shiftId), branch_name: gps.branch?gps.branch.name:'',
         late_min: r.late_min||0, faceMatch });
     } else {
-      await HR.checkOut({ empId:empMatch.emp_id, shiftId });
-      await showAckPopup('checkout', { name:empMatch.name, time:timeStr });
+      const co = await HR.checkOut({ empId:empMatch.emp_id, shiftId });
+      if(co && co.none){ showToast('err','ไม่พบการเข้างานที่ค้างอยู่ — อาจเช็กเอาต์ไปแล้ว'); }
+      else await showAckPopup('checkout', { name:empMatch.name, time:timeStr });
     }
   }catch(e){ console.error(e); showToast('err','ส่งข้อมูลไม่สำเร็จ\n'+(e.message||'ตรวจการเชื่อมต่อ')); }
   finally{ busy=false; setBtnBusy(false); updateUI(); }

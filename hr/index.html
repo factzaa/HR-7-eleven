@@ -2855,11 +2855,14 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     const sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64ToU8(window.VAPID_PUBLIC) });
     const j = sub.toJSON();
     const label = prompt('ตั้งชื่ออุปกรณ์นี้ (เช่น โทรศัพท์ร้าน A / มือถือ HR)', 'อุปกรณ์ HR') || 'อุปกรณ์ HR';
+    const brList=(DATA.branches||[]).map(b=>b.branch_id+' = '+b.name).join('\n');
+    const branch_id=(prompt('เครื่องนี้รับแจ้งเตือนของสาขาไหน? พิมพ์ "รหัสสาขา"\n(เว้นว่าง = ส่วนกลาง รับทุกสาขา)\n\n'+brList, ($('dash_branch')?$('dash_branch').value:'')||'')||'').trim();
+    if(branch_id && !(DATA.branches||[]).some(b=>b.branch_id===branch_id)){ toast('err','ไม่พบรหัสสาขา '+branch_id+' — ลองใหม่'); return; }
     const { error } = await window.HR.sb.from('push_subscriptions').upsert({
-      endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, label
+      endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, label, branch_id: branch_id||null
     }, { onConflict:'endpoint' });
     if(error){ toast('err','บันทึกไม่สำเร็จ: '+error.message); return; }
-    setLabel(true); toast('ok','เปิดแจ้งเตือนอุปกรณ์นี้แล้ว');
+    setLabel(true); toast('ok','เปิดแจ้งเตือนแล้ว'+(branch_id?(' · เฉพาะสาขา '+branch_id):' · ทุกสาขา (ส่วนกลาง)'));
   }
   async function disable(){
     const sub = await currentSub();
