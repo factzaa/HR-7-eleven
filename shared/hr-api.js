@@ -204,7 +204,7 @@
   async function hrDashboard() {
     const today = bkkToday();
     const cyc = cycleRange('current');
-    const [empsR, shR, brR, todayR, d30R, cycR, schR] = await Promise.all([
+    const [empsR, shR, brR, todayR, d30R, cycR, schR, upLvR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,active').eq('active', true),
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
       sb().from('branches').select('branch_id,name'),
@@ -212,6 +212,7 @@
       sb().from('attendance').select('work_date,late_min,ot_hours').gte('work_date', addDays(today, -29)).lte('work_date', today),
       sb().from('attendance').select('emp_id,late_min').gte('work_date', cyc.start).lte('work_date', cyc.end),
       sb().from('schedules').select('emp_id,shift_id').eq('work_date', today),  // กะวันนี้จากตารางเวร (แทน default_shift เดิม)
+      sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').gte('end_date', today).lte('start_date', addDays(today, 14)),  // ลาที่จะถึงใน 14 วัน
     ]);
     if (empsR.error) throw empsR.error;
     const emps = empsR.data || [], todayA = todayR.data || [];
@@ -264,7 +265,14 @@
     todayA.forEach(a => { if (!a.branch_id) return; const m = bmap[a.branch_id] || (bmap[a.branch_id] = { count: 0, late: 0 }); m.count++; if (a.late_min > 0) m.late++; });
     const branches = Object.keys(bmap).map(b => ({ name: brName[b] || b, count: bmap[b].count, late: bmap[b].late }));
 
-    return { ok: true, cards, lists, shifts, trend, top_late, branches };
+    // การลาที่อนุมัติแล้วและจะถึงใน 14 วันข้างหน้า
+    const upcoming_leaves = (upLvR.data || []).map(l => {
+      const e = l.end_date || l.start_date;
+      return { emp_name: empName[l.emp_id] || l.emp_id, type: l.type || 'ลา', start_date: l.start_date, end_date: e,
+        days: Math.round((new Date(e) - new Date(l.start_date)) / 86400000) + 1 };
+    }).sort((a, b) => a.start_date < b.start_date ? -1 : 1);
+
+    return { ok: true, cards, lists, shifts, trend, top_late, branches, upcoming_leaves };
   }
 
   // ---------- BOARD: บอร์ดวันนี้ (สาขา × กะ × คน + สถานะ) ----------

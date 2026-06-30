@@ -951,7 +951,10 @@ function dashList(key){
 $('dashListOverlay') && $('dashListOverlay').addEventListener('click', e=>{ if(e.target.id==='dashListOverlay') $('dashListOverlay').classList.remove('show'); });
 async function loadDashboard(){
   $('dash_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
-  const r = await post({ action:'hr_dashboard', password:pwd });
+  const [r, dr] = await Promise.all([
+    post({ action:'hr_dashboard', password:pwd }),
+    post({ action:'hr_discipline', password:pwd, cycle:'current' }),
+  ]);
   if(!r.ok){ $('dash_body').innerHTML = '<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
   DASH = r;
   const c = r.cards;
@@ -964,17 +967,53 @@ async function loadDashboard(){
     </div>`;
   }).join('') || '<div class="empty">ไม่มีข้อมูล</div>';
 
-  const maxLate = Math.max(1, ...r.trend.map(x=>x.late));
-  const maxOT = Math.max(1, ...r.trend.map(x=>x.ot));
-  const bars = r.trend.map(d=>{
-    const lh = (d.late/maxLate)*100;
-    const oh = (d.ot/maxOT)*40;
-    return `<div class="bar" title="${d.date}">
-      <div class="ot" style="height:${oh}%"></div>
-      <div class="bb" style="height:${lh}%"></div>
-      <div class="tip">${d.date}<br>สาย ${d.late} · OT ${d.ot}ชม</div>
+  // ---- แนวโน้มรายสัปดาห์ (รวม trend รายวันเป็นสัปดาห์) ----
+  const wk = [];
+  for(let i=0;i<r.trend.length;i+=7){ const ch=r.trend.slice(i,i+7); if(!ch.length) continue;
+    wk.push({ label: ch[0].date+'–'+ch[ch.length-1].date, late: ch.reduce((s,x)=>s+x.late,0), ot: Math.round(ch.reduce((s,x)=>s+x.ot,0)*10)/10 }); }
+  const mWL = Math.max(1,...wk.map(w=>w.late)), mWO = Math.max(1,...wk.map(w=>w.ot));
+  const wbars = wk.map(w=>`<div class="bar" title="${w.label}">
+      <div class="ot" style="height:${(w.ot/mWO)*40}%"></div>
+      <div class="bb" style="height:${(w.late/mWL)*100}%"></div>
+      <div class="tip">${w.label}<br>สาย ${w.late} · OT ${w.ot}ชม</div>
+    </div>`).join('') || '<div class="empty">ยังไม่มีข้อมูล</div>';
+
+  // ---- Scorecard + Watchlist (จากวินัยรอบนี้) ----
+  const demps = (dr && dr.ok && dr.employees) ? dr.employees : [];
+  const sLateC = demps.reduce((s,e)=>s+(e.late_count||0),0);
+  const sLateM = demps.reduce((s,e)=>s+(e.late_total||0),0);
+  const sAbsent= demps.reduce((s,e)=>s+(e.absent||0),0);
+  const sOT    = Math.round(demps.reduce((s,e)=>s+(e.ot_hours||0),0)*10)/10;
+  const sWork  = demps.reduce((s,e)=>s+(e.days_worked||0),0);
+  const punc   = sWork>0 ? Math.round((sWork-sLateC)/sWork*100) : 100;
+  const scorecard = `<div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi ${punc<90?'warn':'ok'}"><div class="lbl">มาตรงเวลา (รอบนี้)</div><div class="val">${punc}<span class="sm">%</span></div><div class="delta">${sWork} วัน-คน ที่ลงเวลา</div></div>
+      <div class="kpi ${sLateC?'bad':''}"><div class="lbl">มาสายรวม</div><div class="val">${sLateC}<span class="sm"> ครั้ง</span></div><div class="delta">${sLateM} นาที</div></div>
+      <div class="kpi ${sAbsent?'warn':''}"><div class="lbl">ขาด (ไม่มา/ไม่ลา)</div><div class="val">${sAbsent}<span class="sm"> วัน-คน</span></div></div>
+      <div class="kpi"><div class="lbl">OT รวมรอบนี้</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>
     </div>`;
-  }).join('');
+
+  const risk = demps.filter(e=>e.level>=1).slice(0,6);
+  const watch = !dr.ok ? '<div class="empty" style="padding:24px">โหลดข้อมูลวินัยไม่ได้</div>'
+    : (risk.length ? risk.map(e=>`
+      <div class="shift-row">
+        <div class="name-cell" style="flex:1">
+          ${e.photo_url ? `<div class="thumb"><img src="${esc(e.photo_url)}"></div>` : `<div class="thumb">${esc(pickInitial(e.emp_name))}</div>`}
+          <div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <span class="pill" style="background:${esc(e.level_color||'#999')}1f;color:${esc(e.level_color||'#666')};font-weight:600">${esc(e.level_name||('ระดับ '+e.level))}</span>
+          <span class="stats">สาย ${e.late_count} · ขาด ${e.absent}</span>
+        </div>
+      </div>`).join('') : '<div class="empty" style="padding:24px">ยังไม่มีใครเข้าเกณฑ์ใบเตือนในรอบนี้ 🎉</div>');
+
+  // ---- การลาที่จะถึง (14 วัน) ----
+  const ul = r.upcoming_leaves || [];
+  const leavesHtml = ul.length ? ul.map(l=>`
+    <div class="shift-row">
+      <div class="nm">${esc(l.emp_name)} <span style="color:var(--muted);font-weight:400;font-size:12px">${esc(l.type)}</span></div>
+      <div class="stats">${esc(l.start_date)}${l.days>1?' – '+esc(l.end_date)+' ('+l.days+' วัน)':''}</div>
+    </div>`).join('') : '<div class="empty" style="padding:24px">ไม่มีการลาที่อนุมัติแล้วใน 14 วันข้างหน้า</div>';
 
   const top = r.top_late.length ? r.top_late.map(e=>`
     <div class="shift-row">
@@ -998,16 +1037,27 @@ async function loadDashboard(){
       <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
       <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${c.cycle_start}<br>ถึง ${c.cycle_end}</div></div>
     </div>
+    ${scorecard}
     <div class="dash-grid">
       <div class="card">
-        <div class="card-h"><h3>แนวโน้ม 30 วันย้อนหลัง</h3>
-          <div class="chart-legend"><span><i style="background:var(--green)"></i>คนสาย</span><span><i style="background:var(--orange)"></i>OT รวม (ชม.)</span></div>
-        </div>
-        <div class="card-b"><div class="chart">${bars}</div></div>
+        <div class="card-h"><h3>⚠️ กลุ่มเสี่ยงวินัย (รอบนี้)</h3><span style="font-size:12px;color:var(--muted)">เรียงตามระดับ</span></div>
+        <div class="card-b">${watch}</div>
       </div>
       <div class="card">
         <div class="card-h"><h3>กะวันนี้</h3></div>
         <div class="card-b">${shiftRows}</div>
+      </div>
+    </div>
+    <div class="dash-grid-2" style="margin-top:12px">
+      <div class="card">
+        <div class="card-h"><h3>แนวโน้มรายสัปดาห์</h3>
+          <div class="chart-legend"><span><i style="background:var(--green)"></i>คนสาย</span><span><i style="background:var(--orange)"></i>OT รวม (ชม.)</span></div>
+        </div>
+        <div class="card-b"><div class="chart">${wbars}</div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>📅 การลาที่จะถึง (14 วัน)</h3></div>
+        <div class="card-b">${leavesHtml}</div>
       </div>
     </div>
     <div class="dash-grid-2" style="margin-top:12px">
