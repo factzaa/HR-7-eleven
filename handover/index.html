@@ -124,7 +124,43 @@ function fmt(t){try{return new Date(t).toLocaleString('th-TH',{dateStyle:'short'
 function ST(s){return s==='approved'?['ผ่านแล้ว','ok']:s==='submitted'?['รอตรวจ','warn']:s==='sent_back'?['ตีกลับ','bad']:['มอบหมายแล้ว','muted2'];}
 function resizeFile(file){return new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{const max=1000,sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=img.width*sc;c.height=img.height*sc;c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',0.85));};img.src=ev.target.result;};r.readAsDataURL(file);});}
 async function filesToData(files){const out=[];for(const f of files){out.push(await resizeFile(f));}return out;}
-function thumbsHtml(photos){if(!photos||!photos.length)return '';return '<div class="thumbs">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="window.open(\''+esc(u)+'\',\'_blank\')">').join('')+'</div>';}
+function thumbsHtml(photos){if(!photos||!photos.length)return '';return '<div class="thumbs">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)">').join('')+'</div>';}
+// กล่องขยายรูป (lightbox) แบบ gallery — เลื่อนซ้าย-ขวา / ปัดนิ้ว / ลูกศร / ตัวนับ
+let LB={imgs:[],idx:0};
+function ensureLightbox(){
+  if(document.getElementById('lightbox')) return;
+  const o=document.createElement('div'); o.id='lightbox';
+  o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:none;align-items:center;justify-content:center;touch-action:pan-y';
+  o.innerHTML='<button id="lbClose" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:50%;width:40px;height:40px;font-size:22px;cursor:pointer">×</button>'
+    +'<button id="lbPrev" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">‹</button>'
+    +'<img id="lightboxImg" style="max-width:92%;max-height:88%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">'
+    +'<button id="lbNext" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">›</button>'
+    +'<div id="lbCount" style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:5px 14px;border-radius:999px;font-size:13px"></div>';
+  document.body.appendChild(o);
+  o.addEventListener('click',e=>{ if(e.target===o) o.style.display='none'; });
+  document.getElementById('lbClose').onclick=()=>{ o.style.display='none'; };
+  document.getElementById('lbPrev').onclick=e=>{ e.stopPropagation(); lbStep(-1); };
+  document.getElementById('lbNext').onclick=e=>{ e.stopPropagation(); lbStep(1); };
+  document.addEventListener('keydown',e=>{ if(o.style.display!=='flex') return; if(e.key==='ArrowLeft') lbStep(-1); else if(e.key==='ArrowRight') lbStep(1); else if(e.key==='Escape') o.style.display='none'; });
+  let sx=0; o.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; },{passive:true});
+  o.addEventListener('touchend',e=>{ const dx=e.changedTouches[0].clientX-sx; if(Math.abs(dx)>40) lbStep(dx<0?1:-1); });
+}
+function lbStep(d){ if(!LB.imgs.length) return; LB.idx=(LB.idx+d+LB.imgs.length)%LB.imgs.length; showLB(); }
+function showLB(){
+  document.getElementById('lightboxImg').src=LB.imgs[LB.idx];
+  const multi=LB.imgs.length>1;
+  document.getElementById('lbPrev').style.display=multi?'':'none';
+  document.getElementById('lbNext').style.display=multi?'':'none';
+  const c=document.getElementById('lbCount'); c.style.display=multi?'':'none'; c.textContent=(LB.idx+1)+' / '+LB.imgs.length;
+}
+function lightbox(imgEl){
+  ensureLightbox();
+  const cont=imgEl.parentElement;
+  LB.imgs=[...cont.querySelectorAll('img')].map(i=>i.src);
+  LB.idx=Math.max(0, LB.imgs.indexOf(imgEl.src));
+  showLB();
+  document.getElementById('lightbox').style.display='flex';
+}
 // ===== แนบรูปงานแบบหลายรูป (ถ่ายทีละรูปสะสม / เลือกหลายรูปได้) =====
 let TASK_PHOTOS={};
 function renderTaskThumbs(id){
