@@ -2345,15 +2345,38 @@ async function loadTaskList(){
   const c=r.counts||{};
   $('tk_counts').innerHTML=(c.submitted?'<span class="pill warn">รอตรวจ '+c.submitted+'</span>':'')+(c.sent_back?'<span class="pill bad">ตีกลับ '+c.sent_back+'</span>':'')+(c.todo?'<span class="pill muted">ยังไม่ทำ '+c.todo+'</span>':'')+(c.approved?'<span class="pill ok">ผ่าน '+c.approved+'</span>':'');
   if(!r.rows.length){ $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
+  const fmtDT=t=>{ if(!t) return '—'; try{ return new Date(t).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return '—'; } };
   const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
-  $('tk_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>งาน</th><th>สถานะ</th><th>รูป</th><th></th></tr></thead><tbody>'
-    +r.rows.map(t=>`<tr>
-      <td>${esc(t.emp_name||t.emp_id)}</td><td>${esc(t.branch_name)}</td>
-      <td>${esc(t.title)}${t.require_photo?' 📷':''}${t.review_note?('<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>'):''}</td>
-      <td>${stP(t.status)}</td>
-      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
-      <td style="white-space:nowrap">${t.status==='submitted'?('<button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>'):''}</td>
-    </tr>`).join('')+'</tbody></table></div></div>';
+  // จัดกลุ่มตามกะ + เรียงตามเวลาเริ่มกะ
+  const ord={}; (DATA.shifts||[]).forEach((s,i)=>{ ord[s.shift_id]=i; });
+  const groups={}; r.rows.forEach(t=>{ const k=t.shift_id||'_'; (groups[k]=groups[k]||[]).push(t); });
+  const keys=Object.keys(groups).sort((a,b)=>(ord[a]==null?99:ord[a])-(ord[b]==null?99:ord[b]));
+  $('tk_body').innerHTML=keys.map(k=>{
+    const ts=groups[k];
+    const g={ approved:ts.filter(x=>x.status==='approved').length, submitted:ts.filter(x=>x.status==='submitted').length, sent_back:ts.filter(x=>x.status==='sent_back').length, todo:ts.filter(x=>x.status==='todo').length };
+    const done=g.approved, pct=ts.length?Math.round(done/ts.length*100):0;
+    const shName=k==='_'?'ไม่ระบุกะ':(shiftName(k)||k);
+    const head='<div class="card-h" style="flex-wrap:wrap;gap:6px"><h3>🕘 กะ '+esc(shName)+'</h3>'
+      +'<span style="font-size:12px;color:var(--muted)">ทั้งหมด '+ts.length+' · ✅ ผ่าน '+g.approved+' ('+pct+'%)'
+      +(g.submitted?' · ⏳ รอตรวจ '+g.submitted:'')+(g.sent_back?' · ⤴ ตีกลับ '+g.sent_back:'')+(g.todo?' · ⬜ ยังไม่ทำ '+g.todo:'')+'</span></div>';
+    const body=ts.map(t=>{
+      const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+      const imgs=ph.length?'<div style="display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
+      const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
+      return '<div style="padding:12px 2px;border-bottom:1px solid var(--line)">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+'</div>'
+        +'<div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.8">'
+          +'👤 ผู้ทำ: <b style="color:var(--txt)">'+esc(t.emp_name||t.emp_id||'—')+'</b> · 🏪 '+esc(t.branch_name)+'<br>'
+          +'📤 ส่งงาน: '+fmtDT(t.submitted_at)+'<br>'
+          +'🔍 ตรวจโดย: '+esc(t.reviewer||'— (ยังไม่ตรวจ)')+(t.reviewed_at?(' · เวลา '+fmtDT(t.reviewed_at)):'')
+          +(t.sent_back_count>0?(' · ⤴ เคยตีกลับ '+t.sent_back_count+' ครั้ง'):'')
+        +'</div>'
+        +(t.review_note?'<div style="font-size:12.5px;color:#b45309;margin-top:4px">↳ หมายเหตุผู้ตรวจ: '+esc(t.review_note)+'</div>':'')
+        +imgs
+      +'</div>';
+    }).join('');
+    return '<div class="card" style="margin-bottom:14px">'+head+'<div class="card-b" style="padding-top:0">'+body+'</div></div>';
+  }).join('');
   document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
   document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>{ const note=prompt('ระบุสิ่งที่ต้องแก้ (ส่งกลับให้พนักงาน):'); if(note===null) return; taskReview(Number(b.dataset.trb),'sent_back',note); });
 }
