@@ -2203,7 +2203,7 @@ async function loadTaskList(){
       <td>${esc(t.emp_name||t.emp_id)}</td><td>${esc(t.branch_name)}</td>
       <td>${esc(t.title)}${t.require_photo?' 📷':''}${t.review_note?('<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>'):''}</td>
       <td>${stP(t.status)}</td>
-      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this.src)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
+      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
       <td style="white-space:nowrap">${t.status==='submitted'?('<button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>'):''}</td>
     </tr>`).join('')+'</tbody></table></div></div>';
   document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
@@ -2213,17 +2213,41 @@ async function taskReview(id,status,note){
   const r=await post({ action:'hr_task_review', password:pwd, id, status, note });
   if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadTaskList(); } else toast('err', r.error||'ไม่สำเร็จ');
 }
-// กล่องขยายรูป (lightbox) — สร้างครั้งเดียว คลิกที่ใดก็ได้เพื่อปิด
-function lightbox(src){
-  let o=document.getElementById('lightbox');
-  if(!o){
-    o=document.createElement('div'); o.id='lightbox';
-    o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
-    o.innerHTML='<img id="lightboxImg" style="max-width:96%;max-height:96%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">';
-    o.onclick=()=>{ o.style.display='none'; };
-    document.body.appendChild(o);
-  }
-  o.querySelector('#lightboxImg').src=src; o.style.display='flex';
+// กล่องขยายรูป (lightbox) แบบ gallery — เลื่อนซ้าย-ขวา / ปัดนิ้ว / ลูกศร / ตัวนับ
+let LB={imgs:[],idx:0};
+function ensureLightbox(){
+  if(document.getElementById('lightbox')) return;
+  const o=document.createElement('div'); o.id='lightbox';
+  o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:none;align-items:center;justify-content:center;touch-action:pan-y';
+  o.innerHTML='<button id="lbClose" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:50%;width:40px;height:40px;font-size:22px;cursor:pointer">×</button>'
+    +'<button id="lbPrev" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">‹</button>'
+    +'<img id="lightboxImg" style="max-width:92%;max-height:88%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">'
+    +'<button id="lbNext" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">›</button>'
+    +'<div id="lbCount" style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:5px 14px;border-radius:999px;font-size:13px"></div>';
+  document.body.appendChild(o);
+  o.addEventListener('click',e=>{ if(e.target===o) o.style.display='none'; });
+  document.getElementById('lbClose').onclick=()=>{ o.style.display='none'; };
+  document.getElementById('lbPrev').onclick=e=>{ e.stopPropagation(); lbStep(-1); };
+  document.getElementById('lbNext').onclick=e=>{ e.stopPropagation(); lbStep(1); };
+  document.addEventListener('keydown',e=>{ if(o.style.display!=='flex') return; if(e.key==='ArrowLeft') lbStep(-1); else if(e.key==='ArrowRight') lbStep(1); else if(e.key==='Escape') o.style.display='none'; });
+  let sx=0; o.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; },{passive:true});
+  o.addEventListener('touchend',e=>{ const dx=e.changedTouches[0].clientX-sx; if(Math.abs(dx)>40) lbStep(dx<0?1:-1); });
+}
+function lbStep(d){ if(!LB.imgs.length) return; LB.idx=(LB.idx+d+LB.imgs.length)%LB.imgs.length; showLB(); }
+function showLB(){
+  document.getElementById('lightboxImg').src=LB.imgs[LB.idx];
+  const multi=LB.imgs.length>1;
+  document.getElementById('lbPrev').style.display=multi?'':'none';
+  document.getElementById('lbNext').style.display=multi?'':'none';
+  const c=document.getElementById('lbCount'); c.style.display=multi?'':'none'; c.textContent=(LB.idx+1)+' / '+LB.imgs.length;
+}
+function lightbox(imgEl){
+  ensureLightbox();
+  const cont=imgEl.parentElement;
+  LB.imgs=[...cont.querySelectorAll('img')].map(i=>i.src);   // รูปทั้งหมดในช่องเดียวกัน = แกลเลอรี
+  LB.idx=Math.max(0, LB.imgs.indexOf(imgEl.src));
+  showLB();
+  document.getElementById('lightbox').style.display='flex';
 }
 $('tk_refresh').onclick=loadTaskList;
 $('tk_date').addEventListener('change', loadTaskList);
@@ -2254,7 +2278,7 @@ async function loadTaskLog(){
       <td>${stP(t.status)}</td>
       <td>${esc(t.reviewer||'—')}</td>
       <td class="mono" style="white-space:nowrap;font-size:12px">${t.submitted_at?esc(fmt(t.submitted_at)):'—'}</td>
-      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this.src)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
+      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
     </tr>`).join('')+'</tbody></table></div></div>';
 }
 $('tl_go').onclick=loadTaskLog;
