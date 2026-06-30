@@ -395,13 +395,27 @@
     if (f.emp_id) q = q.eq('emp_id', f.emp_id);
     if (f.branch_id) q = q.eq('branch_id', f.branch_id);
     if (f.shift_id) q = q.eq('shift_id', f.shift_id);
-    const [{ data, error }, brR] = await Promise.all([
+    const today = bkkToday();
+    // ตารางเวร + ใบลา ในช่วง (ใช้คำนวณ "ขาดงาน" และ "ลา" สำหรับ payroll)
+    let sq = sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', f.start).lte('work_date', f.end);
+    if (f.emp_id) sq = sq.eq('emp_id', f.emp_id);
+    let lq = sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', f.end).gte('end_date', f.start);
+    if (f.emp_id) lq = lq.eq('emp_id', f.emp_id);
+    // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงานให้ถูก แม้ไปทำแทนสาขาอื่น
+    let wq = sb().from('attendance').select('emp_id,work_date').not('check_in', 'is', null).gte('work_date', f.start).lte('work_date', f.end);
+    if (f.emp_id) wq = wq.eq('emp_id', f.emp_id);
+    const [{ data, error }, brR, schR, lvR, empR, wR] = await Promise.all([
       q,
       sb().from('branches').select('branch_id,name'),
+      sq, lq,
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id'),
+      wq,
     ]);
     if (error) throw error;
     const brName = {};
     (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const empById = {};
+    (empR.data || []).forEach(e => { empById[e.emp_id] = e; });
 
     let rows = (data || []).map(r => {
       const home = (r.employees && r.employees.branch_id) || null;
@@ -425,13 +439,56 @@
     if (f.only_cover) rows = rows.filter(r => r.is_cover);
 
     const map = {};
+    function ensureM(empId) {
+      if (map[empId]) return map[empId];
+      const e = empById[empId] || {};
+      return (map[empId] = {
+        emp_id: empId, emp_name: e.name || empId, nickname: e.nickname || '', photo_url: e.photo_url || '',
+        days: 0, days_home: 0, days_cover: 0, late_count: 0, late_total: 0,
+        ot: 0, ot_days: 0, absent: 0, leave_days: 0, scheduled: 0, cover_by: {},
+      });
+    }
+    // นับจากแถวลงเวลา (ตามฟิลเตอร์ที่เลือก)
     rows.forEach(r => {
-      const m = map[r.emp_id] || (map[r.emp_id] = { emp_id: r.emp_id, emp_name: r.emp_name, photo_url: r.emp_photo, days: 0, days_home: 0, days_cover: 0, late_count: 0, late_total: 0, ot: 0, cover_by: {} });
-      m.days++;
-      if (r.is_cover) { m.days_cover++; m.cover_by[r.branch_name] = (m.cover_by[r.branch_name] || 0) + 1; }
-      else m.days_home++;
+      const m = ensureM(r.emp_id);
+      if (r.check_in) {
+        m.days++;
+        if (r.is_cover) { m.days_cover++; m.cover_by[r.branch_name] = (m.cover_by[r.branch_name] || 0) + 1; }
+        else m.days_home++;
+      }
       if (r.late_min > 0) { m.late_count++; m.late_total += r.late_min; }
-      m.ot += Number(r.ot_hours) || 0;
+      if (Number(r.ot_hours) > 0) { m.ot += Number(r.ot_hours); m.ot_days++; }
+    });
+    // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงาน
+    const workedByEmp = {};
+    (wR.data || []).forEach(r => { (workedByEmp[r.emp_id] || (workedByEmp[r.emp_id] = new Set())).add(r.work_date); });
+    const lvByEmp = {};
+    (lvR.data || []).forEach(l => { (lvByEmp[l.emp_id] || (lvByEmp[l.emp_id] = [])).push(l); });
+    const onLeave = (emp, d) => (lvByEmp[emp] || []).some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+    const inBranch = emp => !f.branch_id || (empById[emp] || {}).branch_id === f.branch_id;
+    // ตารางเวร -> วันที่จัดเวร + ขาดงาน (วันที่จัดเวร ผ่านไปแล้ว ไม่มา ไม่ลา)
+    const schByEmp = {};
+    (schR.data || []).forEach(s => { if (s.shift_id) (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = new Set())).add(s.work_date); });
+    Object.keys(schByEmp).forEach(emp => {
+      if (!inBranch(emp)) return;
+      const m = ensureM(emp);
+      const sched = [...schByEmp[emp]];
+      m.scheduled = sched.length;
+      const worked = workedByEmp[emp] || new Set();
+      m.absent = sched.filter(d => d < today && !worked.has(d) && !onLeave(emp, d)).length;
+    });
+    // ลา (วัน) ในช่วง
+    Object.keys(lvByEmp).forEach(emp => {
+      if (f.emp_id && emp !== f.emp_id) return;
+      if (!inBranch(emp)) return;
+      const m = ensureM(emp);
+      let ld = 0;
+      lvByEmp[emp].forEach(l => {
+        const s = l.start_date < f.start ? f.start : l.start_date;
+        const e = (l.end_date || l.start_date) > f.end ? f.end : (l.end_date || l.start_date);
+        if (s <= e) ld += daysBetween(s, e);
+      });
+      m.leave_days = ld;
     });
     const summary = Object.values(map).map(m => ({
       ...m, ot: Math.round(m.ot * 100) / 100,

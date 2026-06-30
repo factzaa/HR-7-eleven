@@ -1292,19 +1292,22 @@ function renderReportDetail(){
 }
 function renderReportSummary(){
   if(!REPORT.summary.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; $('r_count').textContent='0 คน'; return; }
+  const sumRows = REPORT.summary.slice().sort((a,b)=> String(a.emp_id).localeCompare(String(b.emp_id), undefined, {numeric:true}));
   $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>พนักงาน</th><th>มาทำงาน</th><th>สาขาประจำ</th><th>ไปแทน</th><th>รายละเอียดไปแทน</th><th>สาย (ครั้ง)</th><th>สาย (นาที)</th><th>OT (ชม.)</th></tr></thead>
-    <tbody>${REPORT.summary.sort((a,b)=>b.late_total-a.late_total).map(e=>`
+    <thead><tr><th>พนักงาน</th><th>วันทำงาน</th><th>สาย (วัน)</th><th>สาย (นาที)</th><th>ขาด (วัน)</th><th>ลา (วัน)</th><th>OT (วัน)</th><th>OT (ชม.)</th><th>ไปแทน (วัน)</th></tr></thead>
+    <tbody>${sumRows.map(e=>`
       <tr>
-        <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
-        <td class="mono">${e.days} วัน</td>
-        <td class="mono">${e.days_home||0}</td>
-        <td class="mono">${e.days_cover>0?'<span style="color:#c2410c;font-weight:600">'+e.days_cover+'</span>':'0'}</td>
-        <td style="font-size:12.5px;color:var(--muted)">${esc(e.cover_detail||'—')}</td>
+        <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}${e.nickname?' ('+esc(e.nickname)+')':''}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
+        <td class="mono">${e.days}</td>
         <td class="mono">${e.late_count>0?'<span style="color:var(--red)">'+e.late_count+'</span>':'0'}</td>
         <td class="mono">${e.late_total}</td>
+        <td class="mono">${e.absent>0?'<span style="color:var(--red);font-weight:700">'+e.absent+'</span>':'0'}</td>
+        <td class="mono">${e.leave_days||0}</td>
+        <td class="mono">${e.ot_days||0}</td>
         <td class="mono">${e.ot}</td>
-      </tr>`).join('')}</tbody></table></div></div>`;
+        <td class="mono">${e.days_cover>0?'<span style="color:#c2410c;font-weight:600" title="'+esc(e.cover_detail||'')+'">'+e.days_cover+'</span>':'0'}</td>
+      </tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* ขาด = วันที่จัดเวรไว้และผ่านไปแล้ว แต่ไม่มา/ไม่ลา · วันทำงาน &amp; OT อิงการลงเวลาจริง · สาย(วัน) = จำนวนวันที่มาสาย</div></div>`;
   $('r_count').textContent = REPORT.summary.length + ' คน';
 }
 function renderCoverage(){
