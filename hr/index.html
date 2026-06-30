@@ -439,15 +439,16 @@
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">มอบหมายงานในกะ</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">สาขา</label><select id="ta_branch" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">กะ</label><select id="ta_shift" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
-      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">พนักงาน (ในกะ)</label><select id="ta_emp" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:200px"></select></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">พนักงาน (ในสาขา+กะ)</label><select id="ta_emp" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:200px"></select></div>
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">วันที่</label><input id="ta_date" type="date" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
       <button class="btn btn-pri btn-sm" id="ta_assign">มอบหมายงานที่เลือก</button>
     </div>
     <div id="ta_defs" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px"></div>
   </div>
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><select id="tk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
   <div id="tk_body"><div class="empty">กำลังโหลด…</div></div>
 
   <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">ส่ง / รับผลัด (สภาพร้าน)</h3><div id="ho_counts" style="display:flex; gap:8px; flex-wrap:wrap"></div><button class="btn btn-sec btn-sm" id="ho_refresh">รีเฟรช</button></div>
@@ -2312,6 +2313,9 @@ async function loadTaskTab(){
   if(!$('ta_date').value) $('ta_date').value=bkkTodayStr();
   if(!$('tk_date').value) $('tk_date').value=bkkTodayStr();
   $('ta_shift').innerHTML=groupShifts().map(s=>`<option value="${esc(s.shift_id)}">${esc(s.name)}${s.main_shift?'':' (พิเศษ)'}</option>`).join('')||'<option value="">(ไม่มีกะ)</option>';
+  const brOpts=(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+  if($('ta_branch')) $('ta_branch').innerHTML = brOpts||'<option value="">(ไม่มีสาขา)</option>';
+  if($('tk_branch')) $('tk_branch').innerHTML = '<option value="">ทุกสาขา</option>'+brOpts;
   const r=await post({ action:'hr_task_defs_get', password:pwd });
   TASKDEFS=(r.ok?r.rows:[]).filter(d=>d.active!==false);
   renderAssign();
@@ -2322,15 +2326,17 @@ async function loadTaskTab(){
 }
 function renderAssign(){
   const shift=$('ta_shift').value;
-  let emps=(DATA.rows||[]).filter(e=>grpOf(e.default_shift)===shift);
-  if(!emps.length) emps=(DATA.rows||[]);
-  $('ta_emp').innerHTML=emps.map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('');
+  const br=$('ta_branch')?$('ta_branch').value:'';
+  let emps=(DATA.rows||[]).filter(e=>(!br||e.branch_id===br) && grpOf(e.default_shift)===shift);
+  if(!emps.length) emps=(DATA.rows||[]).filter(e=>!br||e.branch_id===br);   // ถ้าไม่มีใครตรงกะ แสดงทุกคนในสาขานั้น
+  $('ta_emp').innerHTML=emps.map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('')||'<option value="">(ไม่มีพนักงานในสาขา/กะนี้)</option>';
   const defs=TASKDEFS.filter(d=>!d.shift_id||d.shift_id===shift);
   $('ta_defs').innerHTML=defs.length
     ? defs.map(d=>`<label class="check"><input type="checkbox" value="${d.id}" class="tadef">${esc(d.title)}${d.require_photo?' 📷':''}</label>`).join('')
     : '<span style="color:var(--muted);font-size:13px">กะนี้ยังไม่มีงาน — เพิ่ม/ตั้งกะที่แท็บ "ตั้งค่ากะ"</span>';
 }
 $('ta_shift') && ($('ta_shift').onchange=renderAssign);
+$('ta_branch') && ($('ta_branch').onchange=renderAssign);
 $('ta_assign').onclick=async()=>{
   const def_ids=[...document.querySelectorAll('.tadef:checked')].map(c=>Number(c.value));
   if(!def_ids.length){ toast('err','เลือกงานอย่างน้อย 1 รายการ'); return; }
@@ -2347,35 +2353,47 @@ async function loadTaskList(){
   if(!r.rows.length){ $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
   const fmtDT=t=>{ if(!t) return '—'; try{ return new Date(t).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return '—'; } };
   const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
-  // จัดกลุ่มตามกะ + เรียงตามเวลาเริ่มกะ
+  // กรองสาขา (ถ้าเลือก) แล้วจัดกลุ่ม สาขา → กะ
+  const selBr=$('tk_branch')?$('tk_branch').value:'';
+  const rows=selBr?r.rows.filter(t=>t.branch_id===selBr):r.rows;
+  if(!rows.length){ $('tk_body').innerHTML='<div class="empty">ไม่มีงานในสาขา/วันที่เลือก</div>'; return; }
   const ord={}; (DATA.shifts||[]).forEach((s,i)=>{ ord[s.shift_id]=i; });
-  const groups={}; r.rows.forEach(t=>{ const k=t.shift_id||'_'; (groups[k]=groups[k]||[]).push(t); });
-  const keys=Object.keys(groups).sort((a,b)=>(ord[a]==null?99:ord[a])-(ord[b]==null?99:ord[b]));
-  $('tk_body').innerHTML=keys.map(k=>{
-    const ts=groups[k];
-    const g={ approved:ts.filter(x=>x.status==='approved').length, submitted:ts.filter(x=>x.status==='submitted').length, sent_back:ts.filter(x=>x.status==='sent_back').length, todo:ts.filter(x=>x.status==='todo').length };
-    const done=g.approved, pct=ts.length?Math.round(done/ts.length*100):0;
-    const shName=k==='_'?'ไม่ระบุกะ':(shiftName(k)||k);
-    const head='<div class="card-h" style="flex-wrap:wrap;gap:6px"><h3>🕘 กะ '+esc(shName)+'</h3>'
-      +'<span style="font-size:12px;color:var(--muted)">ทั้งหมด '+ts.length+' · ✅ ผ่าน '+g.approved+' ('+pct+'%)'
-      +(g.submitted?' · ⏳ รอตรวจ '+g.submitted:'')+(g.sent_back?' · ⤴ ตีกลับ '+g.sent_back:'')+(g.todo?' · ⬜ ยังไม่ทำ '+g.todo:'')+'</span></div>';
-    const body=ts.map(t=>{
-      const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-      const imgs=ph.length?'<div style="display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
-      const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
-      return '<div style="padding:12px 2px;border-bottom:1px solid var(--line)">'
-        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+'</div>'
-        +'<div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.8">'
-          +'👤 ผู้ทำ: <b style="color:var(--txt)">'+esc(t.emp_name||t.emp_id||'—')+'</b> · 🏪 '+esc(t.branch_name)+'<br>'
-          +'📤 ส่งงาน: '+fmtDT(t.submitted_at)+'<br>'
-          +'🔍 ตรวจโดย: '+esc(t.reviewer||'— (ยังไม่ตรวจ)')+(t.reviewed_at?(' · เวลา '+fmtDT(t.reviewed_at)):'')
-          +(t.sent_back_count>0?(' · ⤴ เคยตีกลับ '+t.sent_back_count+' ครั้ง'):'')
-        +'</div>'
-        +(t.review_note?'<div style="font-size:12.5px;color:#b45309;margin-top:4px">↳ หมายเหตุผู้ตรวจ: '+esc(t.review_note)+'</div>':'')
-        +imgs
-      +'</div>';
+  const oneTask=t=>{
+    const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+    const imgs=ph.length?'<div style="display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
+    const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
+    return '<div style="padding:12px 2px;border-bottom:1px solid var(--line)">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+'</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.8">'
+        +'👤 ผู้ทำ: <b style="color:var(--txt)">'+esc(t.emp_name||t.emp_id||'—')+'</b><br>'
+        +'📤 ส่งงาน: '+fmtDT(t.submitted_at)+'<br>'
+        +'🔍 ตรวจโดย: '+esc(t.reviewer||'— (ยังไม่ตรวจ)')+(t.reviewed_at?(' · เวลา '+fmtDT(t.reviewed_at)):'')
+        +(t.sent_back_count>0?(' · ⤴ เคยตีกลับ '+t.sent_back_count+' ครั้ง'):'')
+      +'</div>'
+      +(t.review_note?'<div style="font-size:12.5px;color:#b45309;margin-top:4px">↳ หมายเหตุผู้ตรวจ: '+esc(t.review_note)+'</div>':'')
+      +imgs+'</div>';
+  };
+  const shiftGroups=ts=>{
+    const groups={}; ts.forEach(t=>{ const k=t.shift_id||'_'; (groups[k]=groups[k]||[]).push(t); });
+    const keys=Object.keys(groups).sort((a,b)=>(ord[a]==null?99:ord[a])-(ord[b]==null?99:ord[b]));
+    return keys.map(k=>{
+      const g2=groups[k];
+      const cc={ approved:g2.filter(x=>x.status==='approved').length, submitted:g2.filter(x=>x.status==='submitted').length, sent_back:g2.filter(x=>x.status==='sent_back').length, todo:g2.filter(x=>x.status==='todo').length };
+      const pct=g2.length?Math.round(cc.approved/g2.length*100):0;
+      const shName=k==='_'?'ไม่ระบุกะ':(shiftName(k)||k);
+      const head='<div class="card-h" style="flex-wrap:wrap;gap:6px"><h3>🕘 กะ '+esc(shName)+'</h3>'
+        +'<span style="font-size:12px;color:var(--muted)">ทั้งหมด '+g2.length+' · ✅ ผ่าน '+cc.approved+' ('+pct+'%)'
+        +(cc.submitted?' · ⏳ รอตรวจ '+cc.submitted:'')+(cc.sent_back?' · ⤴ ตีกลับ '+cc.sent_back:'')+(cc.todo?' · ⬜ ยังไม่ทำ '+cc.todo:'')+'</span></div>';
+      return '<div class="card" style="margin-bottom:14px">'+head+'<div class="card-b" style="padding-top:0">'+g2.map(oneTask).join('')+'</div></div>';
     }).join('');
-    return '<div class="card" style="margin-bottom:14px">'+head+'<div class="card-b" style="padding-top:0">'+body+'</div></div>';
+  };
+  const byBr={}; rows.forEach(t=>{ const b=t.branch_id||'_'; (byBr[b]=byBr[b]||[]).push(t); });
+  const brKeys=Object.keys(byBr).sort((a,b)=>String((byBr[a][0]||{}).branch_name||a).localeCompare(String((byBr[b][0]||{}).branch_name||b),'th'));
+  const multiBr=brKeys.length>1;
+  $('tk_body').innerHTML=brKeys.map(bk=>{
+    const brName=(byBr[bk][0]||{}).branch_name||bk;
+    const hdr=multiBr?'<div style="font-weight:700;font-size:15px;margin:10px 2px 8px;padding:9px 13px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:9px">🏪 '+esc(brName)+' <span style="font-weight:400;color:var(--muted);font-size:12px">· '+byBr[bk].length+' งาน</span></div>':'';
+    return hdr+shiftGroups(byBr[bk]);
   }).join('');
   document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
   document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>{ const note=prompt('ระบุสิ่งที่ต้องแก้ (ส่งกลับให้พนักงาน):'); if(note===null) return; taskReview(Number(b.dataset.trb),'sent_back',note); });
@@ -2422,6 +2440,7 @@ function lightbox(imgEl){
 }
 $('tk_refresh').onclick=loadTaskList;
 $('tk_date').addEventListener('change', loadTaskList);
+$('tk_branch') && $('tk_branch').addEventListener('change', loadTaskList);
 
 // Log งาน (ย้อนหลัง)
 function fillTlBranch(){ if($('tl_branch')&&!$('tl_branch').innerHTML){ $('tl_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); } }

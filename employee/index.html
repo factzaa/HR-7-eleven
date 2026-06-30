@@ -322,14 +322,20 @@ function startGeo(){
 }
 
 function evaluateZone(){
+  if(gps.lat==null||gps.lng==null){ gps.branch=null; gps.within=false; return; }
   let best=null, bestD=Infinity;
   (CFG.branches||[]).forEach(b=>{
     const d=haversine(gps.lat,gps.lng,b.lat,b.lng);
     if(d<bestD){ bestD=d; best=b; }
   });
+  // กันจับผิดสาขาเมื่อสาขาอยู่ใกล้กัน: ถ้าอยู่ในรัศมี "สาขาประจำ" ของพนักงานที่กรอกรหัส ให้ยึดสาขาประจำก่อน
+  const bonus=Math.min(gps.accuracy||0,50);
+  if(empMatch && empMatch.branch_id){
+    const home=(CFG.branches||[]).find(b=>b.branch_id===empMatch.branch_id);
+    if(home){ const dh=haversine(gps.lat,gps.lng,home.lat,home.lng); if(dh<=home.radius_m+bonus){ best=home; bestD=dh; } }
+  }
   gps.branch=best; gps.distance=best?bestD:null;
-  if(best){ const bonus=Math.min(gps.accuracy||0,50); gps.within=bestD<=best.radius_m+bonus; }
-  else gps.within=false;
+  gps.within = best ? (bestD<=best.radius_m+bonus) : false;
 }
 function haversine(lat1,lng1,lat2,lng2){
   const R=6371000, toRad=x=>x*Math.PI/180;
@@ -490,6 +496,10 @@ function matchFace(descriptor, emp){
 async function submit(action){
   if(busy || !empMatch) return;
   if(!(await ensureRulesAccepted(empMatch.emp_id))) return;   // ต้องยอมรับระเบียบก่อน
+  // กันลงเวลาผิดสาขา: ถ้าระบบจับได้คนละสาขากับสาขาประจำ ให้ยืนยันว่า "ไปแทนสาขา"
+  if(action==='checkin' && gps.branch && empMatch.branch_id && gps.branch.branch_id!==empMatch.branch_id){
+    if(!confirm('⚠️ คุณอยู่นอกสาขาประจำ ('+branchNm(empMatch.branch_id)+')\nระบบจับได้ว่าคุณอยู่ในพื้นที่สาขา "'+gps.branch.name+'"\n\nยืนยันลงเวลาที่สาขา '+gps.branch.name+' (ไปแทนสาขา) ใช่หรือไม่?')) return;
+  }
   busy=true; updateUI(); $('lockMsg').textContent='';
   setBtnBusy(true);
   try{
@@ -531,6 +541,7 @@ $('toast').onclick = ()=>$('toast').classList.remove('show');
 $('empId').addEventListener('input', e=>{
   e.target.value = e.target.value.replace(/\D/g,'');
   empMatch = lookupEmp(e.target.value);
+  evaluateZone();   // ประเมินสาขาใหม่ โดยยึดสาขาประจำของพนักงานคนนี้
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();
 });
