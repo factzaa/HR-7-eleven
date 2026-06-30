@@ -133,6 +133,16 @@ function renderTaskThumbs(id){
   if(c) c.textContent = arr.length ? ('แนบแล้ว '+arr.length+' รูป') : 'ยังไม่ได้แนบรูป';
 }
 function rmTaskPhoto(id,i){ if(TASK_PHOTOS[id]){ TASK_PHOTOS[id].splice(i,1); renderTaskThumbs(id); } }
+function wireTaskInput(inpId, taskId){
+  const inp=$(inpId); if(!inp) return;
+  inp.addEventListener('change',async()=>{
+    if(!inp.files||!inp.files.length) return;
+    const added=await filesToData(inp.files);
+    TASK_PHOTOS[taskId]=(TASK_PHOTOS[taskId]||[]).concat(added);
+    inp.value='';            // เคลียร์เพื่อให้ถ่าย/เลือกเพิ่มได้อีก
+    renderTaskThumbs(taskId);
+  });
+}
 
 let EMP=null, BRANCHES={};
 async function loadBranches(){ try{ const c=await window.HR.loadConfig(); (c.branches||[]).forEach(b=>BRANCHES[b.branch_id]=b.name); }catch(e){} }
@@ -223,9 +233,12 @@ async function openM2(){
     if(!canDo) c+=thumbsHtml(a.photos);
     if(!canDo&&a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุ: '+esc(a.emp_note)+'</div>';
     if(canDo){
-      c+='<label class="btn btn-sec" style="display:inline-block;margin-bottom:6px;font-size:13px;cursor:pointer">📷 ถ่าย / เพิ่มรูป<input type="file" accept="image/*" multiple id="mf_'+a.id+'" style="display:none"></label>'
+      c+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="mfc_'+a.id+'" style="display:none"></label>'
+        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">🖼️ แกลเลอรี<input type="file" accept="image/*" multiple id="mfg_'+a.id+'" style="display:none"></label>'
+        +'</div>'
         +'<div class="thumbs" id="mt_'+a.id+'" style="margin:2px 0 4px"></div>'
-        +'<div class="muted" id="mc_'+a.id+'" style="margin-bottom:8px">'+(a.require_photo?'ต้องแนบรูป — กดเพิ่มได้หลายรูป':'แนบรูปได้ตามต้องการ')+'</div>'
+        +'<div class="muted" id="mc_'+a.id+'" style="margin-bottom:8px">'+(a.require_photo?'ต้องแนบรูป — ถ่าย/เลือกได้หลายรูป':'แนบรูปได้ตามต้องการ')+'</div>'
         +'<input type="text" id="mn_'+a.id+'" placeholder="หมายเหตุ (ถ้ามี)" style="margin-bottom:8px">'
         +'<button class="btn btn-pri" data-sub="'+a.id+'">ส่งงาน</button>';
     }
@@ -244,14 +257,8 @@ async function openM2(){
   TASK_PHOTOS={};
   r.mine.forEach(a=>{ if(a.status==='todo'||a.status==='sent_back'){
     TASK_PHOTOS[a.id]=[];
-    const inp=$('mf_'+a.id);
-    if(inp) inp.addEventListener('change',async()=>{
-      if(!inp.files||!inp.files.length) return;
-      const added=await filesToData(inp.files);
-      TASK_PHOTOS[a.id]=(TASK_PHOTOS[a.id]||[]).concat(added);
-      inp.value='';            // เคลียร์เพื่อให้ถ่าย/เลือกเพิ่มได้อีก
-      renderTaskThumbs(a.id);
-    });
+    wireTaskInput('mfc_'+a.id, a.id);   // กล้อง
+    wireTaskInput('mfg_'+a.id, a.id);   // แกลเลอรี
   }});
   document.querySelectorAll('[data-sub]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.sub); const note=($('mn_'+id)||{}).value||'';
