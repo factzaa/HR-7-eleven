@@ -114,6 +114,7 @@
         case 'hr_login':          return await hrLogin(p.password);
         case 'hr_list':           return await hrList();
         case 'hr_dashboard':      return await hrDashboard();
+        case 'hr_board':          return await hrBoard(p.date);
         case 'hr_save':           return await hrSave(p.data);
         case 'hr_toggle':         return await hrToggle(p.emp_id);
         case 'hr_emp_delete':     return await hrEmpDelete(p.emp_id);
@@ -247,6 +248,96 @@
     const branches = Object.keys(bmap).map(b => ({ name: brName[b] || b, count: bmap[b].count, late: bmap[b].late }));
 
     return { ok: true, cards, shifts, trend, top_late, branches };
+  }
+
+  // ---------- BOARD: บอร์ดวันนี้ (สาขา × กะ × คน + สถานะ) ----------
+  async function hrBoard(date) {
+    const d = date || bkkToday();
+    const [schR, empsR, shR, brR, attR, lvR] = await Promise.all([
+      sb().from('schedules').select('emp_id,shift_id,branch_id,is_cover,note').eq('work_date', d),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url'),
+      sb().from('shifts').select('shift_id,name,code,start_time').order('start_time'),
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('attendance').select('emp_id,check_in,late_min,status,branch_id,shift_id').eq('work_date', d),
+      sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').lte('start_date', d).gte('end_date', d),
+    ]);
+    if (schR.error) throw schR.error;
+    const empById = {}, brName = {}, shById = {};
+    (empsR.data || []).forEach(e => { empById[e.emp_id] = e; });
+    (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    (shR.data || []).forEach(s => { shById[s.shift_id] = s; });
+    const attBy = {}; (attR.data || []).forEach(a => { attBy[a.emp_id] = a; });
+    const onLeave = {}; (lvR.data || []).forEach(l => { onLeave[l.emp_id] = l.type || 'ลา'; });
+
+    // สถานะของแต่ละคน
+    function statusOf(empId) {
+      if (onLeave[empId]) return { status: 'leave', leave_type: onLeave[empId] };
+      const a = attBy[empId];
+      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), late_min: a.late_min || 0, att_branch: a.branch_id };
+      return { status: 'absent' };
+    }
+
+    // โครง: branch -> shift -> people[]
+    const board = {};
+    function ensure(brId, shId) {
+      board[brId] = board[brId] || {};
+      board[brId][shId] = board[brId][shId] || [];
+      return board[brId][shId];
+    }
+    const scheduledEmp = new Set();
+    (schR.data || []).forEach(s => {
+      if (!s.shift_id) return;
+      scheduledEmp.add(s.emp_id);
+      const emp = empById[s.emp_id] || { emp_id: s.emp_id, name: s.emp_id };
+      const brId = s.branch_id || emp.branch_id || '—';
+      const home = emp.branch_id || null;
+      const st = statusOf(s.emp_id);
+      ensure(brId, s.shift_id).push({
+        emp_id: s.emp_id, name: emp.nickname || emp.name, full_name: emp.name, photo_url: emp.photo_url || '',
+        is_cover: !!(s.is_cover || (home && brId !== home)),
+        cover_from: (home && brId !== home) ? (brName[home] || home) : '',
+        note: s.note || '', ...st,
+      });
+    });
+    // คนที่เช็กอินแต่ไม่มีในตารางเวร (นอกตาราง)
+    (attR.data || []).forEach(a => {
+      if (scheduledEmp.has(a.emp_id) || !a.check_in) return;
+      const emp = empById[a.emp_id] || { emp_id: a.emp_id, name: a.emp_id };
+      const brId = a.branch_id || emp.branch_id || '—';
+      ensure(brId, a.shift_id || '_none').push({
+        emp_id: a.emp_id, name: emp.nickname || emp.name, full_name: emp.name, photo_url: emp.photo_url || '',
+        is_cover: false, cover_from: '', off_schedule: true,
+        status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), late_min: a.late_min || 0,
+      });
+    });
+
+    // จัดรูปแบบผลลัพธ์ + สรุปนับ
+    const sum = { scheduled: 0, present: 0, late: 0, absent: 0, leave: 0 };
+    const branches = Object.keys(board).map(brId => {
+      const shiftIds = Object.keys(board[brId]).sort((x, y) => {
+        const sx = shById[x] ? shById[x].start_time : 'zzz', sy = shById[y] ? shById[y].start_time : 'zzz';
+        return sx < sy ? -1 : 1;
+      });
+      const shifts = shiftIds.map(shId => {
+        const people = board[brId][shId].sort((p, q) => (p.name || '').localeCompare(q.name || '', 'th'));
+        const c = { present: 0, late: 0, absent: 0, leave: 0 };
+        people.forEach(p => {
+          if (p.off_schedule) return;            // คนนอกตารางไม่นับในสรุป
+          if (c[p.status] !== undefined) c[p.status]++;
+          if (sum[p.status] !== undefined) sum[p.status]++;
+          sum.scheduled++;
+        });
+        const sh = shById[shId];
+        return {
+          shift_id: shId, shift_name: sh ? sh.name : (shId === '_none' ? 'นอกตาราง' : shId),
+          code: sh ? (sh.code || '') : '', start_time: sh ? (sh.start_time || '') : '',
+          counts: c, people,
+        };
+      });
+      return { branch_id: brId, name: brName[brId] || brId, shifts };
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
+
+    return { ok: true, date: d, summary: sum, branches };
   }
 
   // ---------- SAVE EMPLOYEE ----------

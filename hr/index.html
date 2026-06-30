@@ -316,6 +316,7 @@
 
 <div class="tabs" id="tabbar" style="display:none">
   <button class="tab active" id="tab_dashboard"><span class="tabicon">📊</span>Dashboard</button>
+  <button class="tab" id="tab_board"><span class="tabicon">🗒️</span>บอร์ดวันนี้</button>
   <button class="tab" id="tab_employees"><span class="tabicon">👥</span>พนักงาน</button>
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
@@ -344,6 +345,18 @@
 <div id="view_dashboard" class="container" style="display:none">
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- Board: บอร์ดวันนี้ -->
+<div id="view_board" class="container" style="display:none">
+  <div class="toolbar">
+    <h3 style="flex:1; font-size:15px; font-weight:600">บอร์ดเข้าเวร — สาขา × กะ</h3>
+    <input type="date" id="bd_date" style="padding:8px 10px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px;">
+    <button class="btn btn-sec" id="bd_today">วันนี้</button>
+    <button class="btn btn-pri" id="bd_refresh">↻ รีเฟรช</button>
+  </div>
+  <div id="bd_summary"></div>
+  <div id="bd_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Employees -->
@@ -1566,10 +1579,11 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','employees','report','discipline','score','handover','leaves','schedule','branches','settings','submissions','activity'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','leaves','schedule','branches','settings','submissions','activity'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
+  else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
@@ -1583,6 +1597,61 @@ showTab = function(name){
   else if(name==='activity') loadActivity();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
+
+// ========== บอร์ดวันนี้ (สาขา × กะ × คน) ==========
+function loadBoard(){
+  if(!$('bd_date').value) $('bd_date').value = bkkTodayStr();
+  $('bd_summary').innerHTML=''; $('bd_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  postBoard();
+}
+async function postBoard(){
+  const r = await post({ action:'hr_board', password:pwd, date:$('bd_date').value });
+  if(!r.ok){ $('bd_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  renderBoard(r);
+}
+function bdChip(p){
+  if(p.status==='present') return '<span class="pill ok">✓ '+esc(p.check_in)+'</span>';
+  if(p.status==='late')    return '<span class="pill bad">สาย '+p.late_min+' น. · '+esc(p.check_in)+'</span>';
+  if(p.status==='leave')   return '<span class="pill" style="background:#dbeafe;color:#1d4ed8">ลา'+(p.leave_type?' ('+esc(p.leave_type)+')':'')+'</span>';
+  return '<span class="pill" style="background:#f1f5f9;color:#64748b">ยังไม่มา</span>';
+}
+function renderBoard(r){
+  const s=r.summary;
+  $('bd_summary').innerHTML = `<div class="kpi-grid" style="margin-bottom:12px">
+    <div class="kpi"><div class="lbl">จัดเวร</div><div class="val">${s.scheduled}<span class="sm"> คน</span></div></div>
+    <div class="kpi"><div class="lbl">มาแล้ว</div><div class="val" style="color:#16a34a">${s.present+s.late}</div></div>
+    <div class="kpi ${s.late?'bad':''}"><div class="lbl">สาย</div><div class="val">${s.late}</div></div>
+    <div class="kpi ${s.absent?'warn':''}"><div class="lbl">ยังไม่มา</div><div class="val">${s.absent}</div></div>
+    <div class="kpi"><div class="lbl">ลา/หยุด</div><div class="val">${s.leave}</div></div>
+  </div>`;
+  if(!r.branches.length){ $('bd_body').innerHTML='<div class="empty">ยังไม่มีการจัดเวรในวันนี้ — ไปจัดที่แท็บ "ตารางงาน"</div>'; return; }
+  $('bd_body').innerHTML = r.branches.map(b=>`
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><h3>🏪 ${esc(b.name)}</h3></div>
+      <div class="card-b">
+        ${b.shifts.map(sh=>`
+          <div style="margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+              <span style="font-weight:700;font-size:14px">${sh.code?'['+esc(sh.code)+'] ':''}${esc(sh.shift_name)}</span>
+              ${sh.start_time?`<span style="font-size:12px;color:var(--muted)">เข้า ${esc(String(sh.start_time).slice(0,5))}</span>`:''}
+              <span style="font-size:12px;color:var(--muted)">· มา ${sh.counts.present+sh.counts.late}/${sh.counts.present+sh.counts.late+sh.counts.absent}${sh.counts.late?' · สาย '+sh.counts.late:''}${sh.counts.leave?' · ลา '+sh.counts.leave:''}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              ${sh.people.map(p=>`
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fafbf9;border:1px solid var(--line);border-radius:9px;flex-wrap:wrap">
+                  <span style="font-weight:600;font-size:13.5px">${esc(p.name)}</span>
+                  ${p.is_cover?`<span class="pill" style="background:#fff7ed;color:#ea580c">↔ ไปแทน${p.cover_from?' (จาก '+esc(p.cover_from)+')':''}</span>`:''}
+                  ${p.off_schedule?'<span class="pill" style="background:#fef9c3;color:#854d0e">นอกตาราง</span>':''}
+                  <span style="margin-left:auto">${bdChip(p)}</span>
+                </div>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+$('bd_refresh') && ($('bd_refresh').onclick = loadBoard);
+$('bd_date') && ($('bd_date').onchange = loadBoard);
+$('bd_today') && ($('bd_today').onclick = ()=>{ $('bd_date').value = bkkTodayStr(); loadBoard(); });
 
 // ========== จัดการสาขา ==========
 let BR = null, brEditing = null;
