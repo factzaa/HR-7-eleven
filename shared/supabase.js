@@ -146,6 +146,51 @@
     };
   }
 
+  // ---------- สถานะเต็มสำหรับป๊อปอัพหลังเช็กอิน (วินัย + คะแนน + ระยะถึงบทลงโทษ) ----------
+  async function myStatus(empId) {
+    const today = bangkokDate();
+    const cyc = cycleRange21();
+    const endEff = cyc.end < today ? cyc.end : today;
+    const [empR, attR, schR, lvR, drR, scfgR, srR, sbR, seR] = await Promise.all([
+      sb.from('employees').select('emp_id,name,nickname,branch_id,photo_url').eq('emp_id', empId).maybeSingle(),
+      sb.from('attendance').select('work_date,check_in,late_min,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('leaves').select('start_date,end_date,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
+      sb.from('discipline_rules').select('*'),
+      sb.from('score_config').select('*').eq('id', 1).maybeSingle(),
+      sb.from('score_rules').select('*'),
+      sb.from('score_bands').select('*'),
+      sb.from('score_events').select('*').eq('emp_id', empId).gte('event_date', cyc.start).lte('event_date', cyc.end),
+    ]);
+    if (empR.error) throw empR.error;
+    if (!empR.data) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const att = attR.data || [];
+    const worked = new Set(att.filter(a => a.check_in).map(a => a.work_date));
+    const myLeaves = lvR.data || [];
+    const onLeave = d => myLeaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+    const late = att.filter(a => a.late_min > 0);
+    const late_count = late.length, late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
+    const mySched = [...new Set((schR.data || []).filter(s => s.shift_id).map(s => s.work_date))].filter(d => d < today);
+    const absent = mySched.filter(d => !worked.has(d) && !onLeave(d)).length;
+    let leave_days = 0;
+    myLeaves.forEach(l => { const s = l.start_date < cyc.start ? cyc.start : l.start_date; const e = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date); if (s <= e) leave_days += _daysBetween(s, e); });
+    const todayRow = att.find(a => a.work_date === today);
+    const todayStatus = { checked_in: !!(todayRow && todayRow.check_in), check_in_time: (todayRow && todayRow.check_in) ? _fmtTime(todayRow.check_in) : null, late_min: todayRow ? (todayRow.late_min || 0) : 0 };
+
+    const discipline = _disciplineFromRules(drR.data, late_count, absent);
+    const score = _computeScore({ cfg: scfgR.data, rules: srR.data, bands: sbR.data, events: seR.data, att, mySched, worked, onLeave });
+
+    return { emp: empR.data, cycle: cyc, today: todayStatus, stats: { late_count, late_total, absent, leave_days }, discipline, score };
+  }
+
+  // บันทึก log ว่าพนักงานรับทราบสถานะแล้ว (หลักฐานตอนออกใบเตือน)
+  async function acknowledgeStatus(empId, detail, name) {
+    try {
+      await sb.from('activity_log').insert({ action: 'รับทราบสถานะ', emp_id: empId, detail: detail || '', actor: name || empId });
+      return true;
+    } catch (e) { console.error('ack log', e); return false; }
+  }
+
   // ---------- helper ----------
   function bangkokDate() {
     const d = new Date(Date.now() + 7 * 3600 * 1000);
@@ -175,6 +220,61 @@
     if (lateCount >= 5  || absent >= 1) return { level: 2, name: 'ตักเตือนลายลักษณ์อักษร', color: '#d97706', message: 'โปรดระวัง หากสะสมเพิ่มอาจเข้าข่ายใบเตือน' };
     if (lateCount >= 3)                 return { level: 1, name: 'ตักเตือนด้วยวาจา', color: '#ca8a04', message: 'เริ่มมาสายบ่อย ควรปรับปรุงให้ตรงเวลา' };
     return { level: 0, name: 'ดีเยี่ยม', color: '#16a34a', message: 'รักษาวินัยได้ดีมาก ขอให้รักษามาตรฐานนี้ไว้ 👍' };
+  }
+
+  // ระดับวินัยจากเกณฑ์ที่ HR ตั้งไว้ (ตาราง discipline_rules) + ระยะถึงระดับถัดไป
+  function _disciplineFromRules(rulesRaw, lateCount, absent) {
+    const rules = (rulesRaw || []).filter(r => r.enabled !== false).sort((a, b) => a.level - b.level);
+    if (!rules.length) { const d = _disciplineLevel(lateCount, absent); return { level: d.level, name: d.name, color: d.color, message: d.message, next: null }; }
+    const meets = r => ((r.late_min != null && lateCount >= r.late_min) || (r.absent_min != null && absent >= r.absent_min));
+    let cur = null;
+    rules.forEach(r => { if (meets(r)) cur = r; });
+    const curLevel = cur ? cur.level : 0;
+    const next = rules.find(r => r.level > curLevel && !meets(r)) || rules.find(r => r.level > curLevel) || null;
+    let nextInfo = null;
+    if (next) {
+      nextInfo = {
+        name: next.level_name,
+        need_late: (next.late_min != null) ? Math.max(0, next.late_min - lateCount) : null,
+        need_absent: (next.absent_min != null) ? Math.max(0, next.absent_min - absent) : null,
+      };
+    }
+    return {
+      level: curLevel,
+      name: cur ? cur.level_name : 'ปกติ',
+      color: cur ? cur.level_color : '#16a34a',
+      message: cur ? ('เข้าข่าย "' + cur.level_name + '" แล้ว โปรดปรับปรุงด่วน') : 'ยังไม่เข้าข่ายใบเตือน รักษาวินัยให้ดีต่อไป',
+      next: nextInfo,
+    };
+  }
+
+  // คะแนนวินัยเดือนนี้ (จำลองสูตรเดียวกับฝั่ง HR hrScoreGet) + ระยะถึงโซนใบเตือน
+  function _computeScore({ cfg, rules, bands, events, att, mySched, worked, onLeave }) {
+    bands = bands || [];
+    if (!bands.length) return { enabled: false };           // ยังไม่ได้ตั้งระบบคะแนน
+    const start = (cfg && cfg.start_score) || 100;
+    const byKind = {}; (rules || []).filter(r => r.enabled !== false).forEach(r => { byKind[r.kind] = r; });
+    const myAtt = att.filter(a => a.check_in);
+    let autoDeduct = 0;
+    [['auto_late_1_10', m => m >= 1 && m <= 10], ['auto_late_11_30', m => m >= 11 && m <= 30], ['auto_late_30plus', m => m > 30]]
+      .forEach(([k, test]) => { const r = byKind[k]; if (!r) return; const hits = myAtt.filter(a => test(a.late_min || 0)).length; if (hits) autoDeduct += r.points * hits; });
+    const ra = byKind['auto_absent_no_notify'];
+    if (ra) { const absDays = mySched.filter(d => !worked.has(d) && !onLeave(d)).length; autoDeduct += ra.points * absDays; }
+    let manualDeduct = 0; (events || []).forEach(ev => { manualDeduct += ev.points; });
+    let score = start + autoDeduct + manualDeduct; if (score < 0) score = 0;
+    const sorted = bands.slice().sort((a, b) => b.min_score - a.min_score);
+    const band = sorted.find(b => score >= b.min_score && score <= b.max_score) || null;
+    // โซนใบเตือนที่ใกล้สุดซึ่งอยู่ "ใต้" คะแนนปัจจุบัน
+    const warnBelow = sorted.filter(b => b.warn_level != null && score > b.max_score).sort((a, b) => b.max_score - a.max_score)[0];
+    let to_warn = null;
+    if (band && band.warn_level != null) to_warn = { already: true, warn_name: band.warn_name || band.label };
+    else if (warnBelow) to_warn = { gap: score - warnBelow.max_score, warn_name: warnBelow.warn_name || warnBelow.label, at_or_below: warnBelow.max_score };
+    return {
+      enabled: true, start, score,
+      band_label: band ? band.label : '', band_color: band ? band.color : '#475569',
+      bonus: band && band.bonus_amount ? band.bonus_amount : 0,
+      to_warn,
+    };
   }
   function computeOt(checkOutIso, endTime) {
     if (!endTime) return 0;
@@ -613,5 +713,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus };
 })();
