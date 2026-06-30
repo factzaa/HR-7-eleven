@@ -941,7 +941,7 @@ async function loadDashboard(){
     <div class="kpi-grid">
       <div class="kpi"><div class="lbl">วันนี้ลงเวลาแล้ว</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
       <div class="kpi ${c.late_today>0?'bad':''}"><div class="lbl">สายวันนี้</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
-      <div class="kpi ${c.still_open>0?'warn':''}"><div class="lbl">ยังไม่กดออก</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
+      <div class="kpi ${c.still_open>0?'warn':''}"><div class="lbl">ลืมกดออก (เลยเวลาเลิก)</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
       <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${c.cycle_start}<br>ถึง ${c.cycle_end}</div></div>
     </div>
     <div class="dash-grid">
@@ -2329,12 +2329,12 @@ async function loadNotifications(){
       ${chip(c.pending_profiles||0,'ข้อมูลรอตรวจ','#7c3aed')}
       ${chip(c.absent_roster,'ขาด/ยังไม่มา','#b91c1c')}
       ${chip(c.late_today,'มาสายวันนี้','#ea580c')}
-      ${chip(c.not_checked_out,'ยังไม่กดออก','#0ea5e9')}
+      ${chip(c.not_checked_out,'ลืมกดออก (เลยเวลาเลิก)','#0ea5e9')}
     </div>
     ${list('ข้อมูล/เอกสารพนักงานรอตรวจ (ไปแท็บ "ข้อมูลรอตรวจ")', r.pending_profiles||[], p=>`<div style="font-size:13px;padding:2px 0">• ${esc(p.name)} (${esc(p.emp_id)})</div>`)}
     ${list('ใบลารออนุมัติ (ไปแท็บ "ลา & วันหยุด" เพื่ออนุมัติ)', r.pending_leaves, l=>`<div style="font-size:13px;padding:2px 0">• ${esc(l.emp_name)} · ${esc(l.type||'')} ${esc(l.start_date)}${l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):''} (${l.days} วัน)</div>`)}
     ${list('ขาด/ยังไม่มาตามตารางวันนี้', r.absent_roster, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · กะ ${esc(shiftName(a.shift_id))}</div>`)}
-    ${list('ยังไม่กดออกงาน', r.not_checked_out, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · เข้า ${esc(a.check_in)}</div>`)}
+    ${list('ลืมกดออกงาน (เลยเวลาเลิกกะแล้ว)', r.not_checked_out, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · เข้า ${esc(a.check_in)}${a.end_time?' · เลิก '+esc(a.end_time):''}</div>`)}
   </div>`;
 }
 
