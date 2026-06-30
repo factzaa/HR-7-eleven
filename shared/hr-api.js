@@ -113,7 +113,7 @@
       switch (p.action) {
         case 'hr_login':          return await hrLogin(p.password);
         case 'hr_list':           return await hrList();
-        case 'hr_dashboard':      return await hrDashboard();
+        case 'hr_dashboard':      return await hrDashboard(p.branch);
         case 'hr_board':          return await hrBoard(p.date);
         case 'hr_save':           return await hrSave(p.data);
         case 'hr_toggle':         return await hrToggle(p.emp_id);
@@ -169,7 +169,7 @@
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_activity':       return await hrActivity();
-        case 'hr_notifications':  return await hrNotifications();
+        case 'hr_notifications':  return await hrNotifications(p.branch);
         case 'hr_notify_history': return await hrNotifyHistory();
         case 'hr_announce_save':  return await hrAnnounceSave(p.data);
         case 'hr_announce_delete':return await hrAnnounceDelete(p.id);
@@ -226,21 +226,25 @@
     return { ok: true };
   }
 
-  async function hrDashboard() {
+  async function hrDashboard(branch) {
     const today = bkkToday();
     const cyc = cycleRange('current');
+    let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id').eq('active', true);
+    let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status').eq('work_date', today);
+    let qD30 = sb().from('attendance').select('work_date,late_min,ot_hours,branch_id').gte('work_date', addDays(today, -29)).lte('work_date', today);
+    let qCyc = sb().from('attendance').select('emp_id,late_min,branch_id').gte('work_date', cyc.start).lte('work_date', cyc.end);
+    let qSch = sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today);
+    if (branch) { qEmp = qEmp.eq('branch_id', branch); qToday = qToday.eq('branch_id', branch); qD30 = qD30.eq('branch_id', branch); qCyc = qCyc.eq('branch_id', branch); qSch = qSch.eq('branch_id', branch); }
     const [empsR, shR, brR, todayR, d30R, cycR, schR, upLvR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,photo_url,active').eq('active', true),
+      qEmp,
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status').eq('work_date', today),
-      sb().from('attendance').select('work_date,late_min,ot_hours').gte('work_date', addDays(today, -29)).lte('work_date', today),
-      sb().from('attendance').select('emp_id,late_min').gte('work_date', cyc.start).lte('work_date', cyc.end),
-      sb().from('schedules').select('emp_id,shift_id').eq('work_date', today),  // กะวันนี้จากตารางเวร (แทน default_shift เดิม)
+      qToday, qD30, qCyc, qSch,
       sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').gte('end_date', today).lte('start_date', addDays(today, 14)),  // ลาที่จะถึงใน 14 วัน
     ]);
     if (empsR.error) throw empsR.error;
     const emps = empsR.data || [], todayA = todayR.data || [];
+    const empSet = new Set(emps.map(e => e.emp_id));
     const empName = {}, empPhoto = {}, brName = {};
     emps.forEach(e => { empName[e.emp_id] = e.name; empPhoto[e.emp_id] = e.photo_url; });
     (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
@@ -294,7 +298,7 @@
     const branches = Object.keys(bmap).map(b => ({ name: brName[b] || b, count: bmap[b].count, late: bmap[b].late }));
 
     // การลาที่อนุมัติแล้วและจะถึงใน 14 วันข้างหน้า
-    const upcoming_leaves = (upLvR.data || []).map(l => {
+    const upcoming_leaves = (upLvR.data || []).filter(l => !branch || empSet.has(l.emp_id)).map(l => {
       const e = l.end_date || l.start_date;
       return { emp_name: empName[l.emp_id] || l.emp_id, type: l.type || 'ลา', start_date: l.start_date, end_date: e,
         days: Math.round((new Date(e) - new Date(l.start_date)) / 86400000) + 1 };
@@ -566,7 +570,7 @@
     const endEff = cyc.end < today ? cyc.end : today;
     const discRules = await loadDisciplineRules();
     const [empsR, attR, holR, lvR, schR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date').eq('active', true),
+      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,branch_id').eq('active', true),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -600,7 +604,7 @@
       pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent++; });
       const lv = disciplineLevel(late_count, absent, discRules);
       return {
-        emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '',
+        emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '', branch_id: e.branch_id || '',
         late_count, late_total, ot_hours, absent,
         days_should, days_worked, basis,
         level: lv.level, level_name: lv.level_name, level_color: lv.level_color,
@@ -908,7 +912,7 @@
   }
 
   // ---------- NOTIFICATIONS (แจ้งเตือนแอดมิน) ----------
-  async function hrNotifications() {
+  async function hrNotifications(branch) {
     const today = bkkToday();
     const [lvR, todayR, schR, empR, lvApprR, subR, shR] = await Promise.all([
       sb().from('leaves').select('*, employees(name)').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -919,12 +923,13 @@
       sb().from('profile_submissions').select('id,emp_id,name,submitted_at').eq('status', 'pending').order('submitted_at', { ascending: false }),
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
     ]);
-    const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; });
-    const att = todayR.data || [];
+    const empName = {}, empBranch = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; empBranch[e.emp_id] = e.branch_id; });
+    const att = (todayR.data || []).filter(a => !branch || a.branch_id === branch);
+    const schRows = (schR.data || []).filter(s => !branch || s.branch_id === branch);
     const checkedIn = new Set(att.filter(a => a.check_in).map(a => a.emp_id));
     const onleave = new Set((lvApprR.data || []).filter(l => today <= (l.end_date || l.start_date)).map(l => l.emp_id));
 
-    const pending_leaves = (lvR.data || []).map(l => ({
+    const pending_leaves = (lvR.data || []).filter(l => !branch || empBranch[l.emp_id] === branch).map(l => ({
       leave_id: l.leave_id, emp_id: l.emp_id, emp_name: (l.employees && l.employees.name) || l.emp_id,
       start_date: l.start_date, end_date: l.end_date, type: l.type, reason: l.reason,
       days: daysBetween(l.start_date, l.end_date || l.start_date),
@@ -947,14 +952,14 @@
     const late_today = att.filter(a => a.late_min > 0)
       .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, late_min: a.late_min }));
     // เตือน "ขาด/ยังไม่มา" เฉพาะกะที่ถึงเวลาเข้างานแล้วเท่านั้น (ไม่ใช่ตอนเพิ่งจัดเวร)
-    const absent_roster = (schR.data || []).filter(s => {
+    const absent_roster = (schRows).filter(s => {
       if (checkedIn.has(s.emp_id) || onleave.has(s.emp_id)) return false;
       const st = shiftStart[s.shift_id];
       if (!st) return false;            // ไม่มีเวลากะ = ยังไม่เตือน
       return nowHM >= st;               // ถึงเวลาเข้ากะแล้วเท่านั้น
     }).map(s => ({ emp_id: s.emp_id, emp_name: empName[s.emp_id] || s.emp_id, shift_id: s.shift_id, shift_name: shiftName[s.shift_id] || s.shift_id, start_time: shiftStart[s.shift_id] }));
 
-    const pending_profiles = (subR.data || []).map(s => ({ id: s.id, emp_id: s.emp_id, name: s.name || s.emp_id }));
+    const pending_profiles = (subR.data || []).filter(s => !branch || empBranch[s.emp_id] === branch).map(s => ({ id: s.id, emp_id: s.emp_id, name: s.name || s.emp_id }));
     return {
       ok: true, pending_leaves, not_checked_out, late_today, absent_roster, pending_profiles,
       counts: { pending_leaves: pending_leaves.length, not_checked_out: not_checked_out.length, late_today: late_today.length, absent_roster: absent_roster.length, pending_profiles: pending_profiles.length },

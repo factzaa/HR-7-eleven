@@ -344,6 +344,7 @@
 
 <!-- Dashboard -->
 <div id="view_dashboard" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
@@ -955,9 +956,14 @@ function dashList(key){
 ['dlClose','dlCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('dashListOverlay').classList.remove('show'); });
 $('dashListOverlay') && $('dashListOverlay').addEventListener('click', e=>{ if(e.target.id==='dashListOverlay') $('dashListOverlay').classList.remove('show'); });
 async function loadDashboard(){
+  if($('dash_branch') && !$('dash_branch').dataset.filled){
+    $('dash_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+    $('dash_branch').dataset.filled='1'; $('dash_branch').onchange=()=>{ loadDashboard(); loadNotifications(); };
+  }
+  const dbr=$('dash_branch')?$('dash_branch').value:'';
   $('dash_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
   const [r, dr] = await Promise.all([
-    post({ action:'hr_dashboard', password:pwd }),
+    post({ action:'hr_dashboard', password:pwd, branch:dbr }),
     post({ action:'hr_discipline', password:pwd, cycle:'current' }),
   ]);
   if(!r.ok){ $('dash_body').innerHTML = '<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
@@ -984,7 +990,7 @@ async function loadDashboard(){
     </div>`).join('') || '<div class="empty">ยังไม่มีข้อมูล</div>';
 
   // ---- Scorecard + Watchlist (จากวินัยรอบนี้) ----
-  const demps = (dr && dr.ok && dr.employees) ? dr.employees : [];
+  const demps = (dr && dr.ok && dr.employees) ? (dbr ? dr.employees.filter(e=>e.branch_id===dbr) : dr.employees) : [];
   const sLateC = demps.reduce((s,e)=>s+(e.late_count||0),0);
   const sLateM = demps.reduce((s,e)=>s+(e.late_total||0),0);
   const sAbsent= demps.reduce((s,e)=>s+(e.absent||0),0);
@@ -2606,7 +2612,8 @@ async function loadActivity(){
 
 // ========== แจ้งเตือนแอดมิน ==========
 async function loadNotifications(){
-  const r = await post({ action:'hr_notifications', password:pwd });
+  const dbr=$('dash_branch')?$('dash_branch').value:'';
+  const r = await post({ action:'hr_notifications', password:pwd, branch:dbr });
   if(!r.ok) return;
   const c = r.counts;
   const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster + (c.pending_profiles||0);
