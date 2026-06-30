@@ -478,7 +478,7 @@ async function submit(action){
         lat:gps.lat, lng:gps.lng, accuracy:gps.accuracy,
         photoDataUrl: capturePhoto(), faceMatch
       });
-      let m='✅ บันทึกเข้างานแล้ว\n'+empMatch.name+' · กะ'+(shiftName(shiftId))+'\n'+(gps.branch?gps.branch.name:'')+' · '+timeStr;
+      let m='✅ บันทึกเข้างานแล้ว\n'+empMatch.name+' · กะ'+(shiftName(r.shift_id||shiftId))+'\n'+(gps.branch?gps.branch.name:'')+' · '+timeStr;
       if(r.late_min>0) m+='\n⚠️ สาย '+r.late_min+' นาที';
       if(faceMatch===false) m+='\n⚠️ ใบหน้าไม่ตรงกับที่ลงทะเบียน (HR จะตรวจสอบ)';
       showToast('ok', m);

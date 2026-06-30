@@ -51,33 +51,41 @@
     if (ex && ex.check_in) {
       throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + (ex.check_out ? ' (และเช็กเอาต์แล้ว)' : '') + ' — หากต้องแก้ไข ติดต่อ HR');
     }
+    // หา "กะวันนี้" จากตารางเวรก่อน (authoritative) แล้วค่อย fallback กะประจำที่ส่งมา
+    // กันบั๊ก: ถ้าใช้ default_shift อย่างเดียว คนที่จัดกะผ่านตารางเวร (default_shift ว่าง) จะคำนวณสายไม่ได้
+    let useShift = shiftId || null;
+    const sched = (await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', today).maybeSingle()).data;
+    if (sched && sched.shift_id) useShift = sched.shift_id;
+
     let photo_url = null;
     if (photoDataUrl) {
       photo_url = await uploadPhoto('attendance-photos', `${empId}/${today}.jpg`, photoDataUrl);
     }
-    // คำนวณสายผ่าน RPC
+    // คำนวณสายผ่าน RPC (อิงกะที่ใช้จริง)
     const nowIso = new Date().toISOString();
-    const { data: lateMin } = await sb.rpc('calc_late_min', { p_shift_id: shiftId, p_check_in: nowIso });
+    const { data: lateMin } = await sb.rpc('calc_late_min', { p_shift_id: useShift, p_check_in: nowIso });
 
     const { error } = await sb.from('attendance').upsert({
-      emp_id: empId, work_date: today, shift_id: shiftId, branch_id: branchId,
+      emp_id: empId, work_date: today, shift_id: useShift, branch_id: branchId,
       check_in: nowIso, late_min: lateMin || 0,
       photo_url, gps_lat: lat, gps_lng: lng, gps_accuracy: accuracy,
       face_match: faceMatch, status: 'OPEN',
     }, { onConflict: 'emp_id,work_date' });
     if (error) throw error;
-    return { late_min: lateMin || 0 };
+    return { late_min: lateMin || 0, shift_id: useShift };
   }
 
   // ---------- เช็กเอาท์ ----------
   async function checkOut({ empId, shiftId }) {
     const today = bangkokDate();
     const { data: row } = await sb.from('attendance')
-      .select('check_in').eq('emp_id', empId).eq('work_date', today).maybeSingle();
+      .select('check_in,shift_id').eq('emp_id', empId).eq('work_date', today).maybeSingle();
     const nowIso = new Date().toISOString();
     let ot = 0;
     if (row?.check_in) {
-      const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', shiftId).maybeSingle();
+      // ใช้กะที่บันทึกตอนเช็กอิน (จากตารางเวร) เป็นหลัก แล้ว fallback ค่าที่ส่งมา
+      const effShift = (row && row.shift_id) || shiftId;
+      const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', effShift).maybeSingle();
       ot = computeOt(nowIso, sh?.end_time);
     }
     const { error } = await sb.from('attendance')
