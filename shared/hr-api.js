@@ -120,6 +120,8 @@
         case 'hr_emp_delete':     return await hrEmpDelete(p.emp_id);
         case 'hr_report':         return await hrReport(p.filter);
         case 'hr_discipline':     return await hrDiscipline(p.cycle);
+        case 'hr_settings_get':   return await hrSettingsGet();
+        case 'hr_settings_save':  return await hrSettingsSave(p.key, p.value);
         case 'hr_warnings_list':  return await hrWarningsList();
         case 'hr_warning_issue':  return await hrWarningIssue(p.data);
         case 'hr_warning_get':    return await hrWarningGet(p.warning_id);
@@ -201,6 +203,28 @@
   }
 
   // ---------- DASHBOARD ----------
+  // ---------- ค่าตั้งระบบ (app_settings) ----------
+  let _settings = null;
+  async function loadAppSettings() {
+    if (_settings) return _settings;
+    try { const { data } = await sb().from('app_settings').select('key,value'); _settings = {}; (data || []).forEach(r => { _settings[r.key] = r.value; }); }
+    catch (e) { _settings = {}; }
+    return _settings;
+  }
+  async function getSettingNum(key, def) {
+    const s = await loadAppSettings(); const v = s[key];
+    return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? def : Number(v);
+  }
+  function hmToMin(hm) { const p = String(hm || '').split(':'); return (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0); }
+  async function hrSettingsGet() { return { ok: true, settings: await loadAppSettings() }; }
+  async function hrSettingsSave(key, value) {
+    if (!key) return { ok: false, error: 'ไม่มี key' };
+    const { error } = await sb().from('app_settings').upsert({ key: String(key), value: String(value) }, { onConflict: 'key' });
+    if (error) throw error;
+    _settings = null;
+    return { ok: true };
+  }
+
   async function hrDashboard() {
     const today = bkkToday();
     const cyc = cycleRange('current');
@@ -224,11 +248,14 @@
     const shEnd = {}, shStart = {}, shNm = {};
     (shR.data || []).forEach(s => { shStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shEnd[s.shift_id] = String(s.end_time || '').slice(0, 5); shNm[s.shift_id] = s.name; });
     const mkRow = a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, shift: shNm[a.shift_id] || a.shift_id || '', branch: brName[a.branch_id] || '', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, end_time: shEnd[a.shift_id] || '' });
+    const coGrace = await getSettingNum('checkout_grace_min', 15);   // ผ่อนผันก่อนเตือนลืมกดออก
+    const nowMin = hmToMin(nowHM);
     const stillOpenList = todayA.filter(a => {
       if (!a.check_in || a.check_out) return false;
       const st = shStart[a.shift_id], en = shEnd[a.shift_id];
       if (!en || (st && en <= st)) return false;   // ไม่รู้เวลาเลิก/กะข้ามคืน = ยังไม่นับ
-      return nowHM >= en;
+      const thr = hmToMin(en) + coGrace;            // เลยเวลาเลิกกะ + ผ่อนผัน
+      return thr < 1440 && nowMin >= thr;
     }).map(mkRow);
     const lateList = todayA.filter(a => a.late_min > 0).map(mkRow);
     const checkedInList = todayA.filter(a => a.check_in).map(mkRow);
@@ -896,13 +923,16 @@
     const nowHM = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 16);
     const shiftStart = {}, shiftEnd = {}, shiftName = {};
     (shR.data || []).forEach(s => { shiftStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shiftEnd[s.shift_id] = String(s.end_time || '').slice(0, 5); shiftName[s.shift_id] = s.name; });
-    // เตือน "ยังไม่กดออก" เฉพาะคนที่เลยเวลาเลิกกะแล้ว (ไม่ใช่ทันทีหลังเช็กอิน)
+    // เตือน "ยังไม่กดออก" เฉพาะคนที่เลยเวลาเลิกกะ + ผ่อนผันแล้ว (ไม่ใช่ทันทีหลังเช็กอิน)
+    const coGrace = await getSettingNum('checkout_grace_min', 15);
+    const nowMin = hmToMin(nowHM);
     const not_checked_out = att.filter(a => {
       if (!a.check_in || a.check_out) return false;
       const st = shiftStart[a.shift_id], en = shiftEnd[a.shift_id];
       if (!en) return false;               // ไม่รู้เวลาเลิกกะ = ยังไม่เตือน
       if (st && en <= st) return false;     // กะข้ามคืน = ยังไม่เตือนในวันเดียวกัน
-      return nowHM >= en;                    // เลยเวลาเลิกกะแล้ว
+      const thr = hmToMin(en) + coGrace;     // เลยเวลาเลิกกะ + ผ่อนผัน
+      return thr < 1440 && nowMin >= thr;
     }).map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, check_in: fmtTime(a.check_in), shift_name: shiftName[a.shift_id] || '', end_time: shiftEnd[a.shift_id] || '' }));
     const late_today = att.filter(a => a.late_min > 0)
       .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, late_min: a.late_min }));

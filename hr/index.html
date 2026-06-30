@@ -588,6 +588,10 @@
     การนับขาดงานอ้างอิงเฉพาะวันที่จัดเวรไว้และผ่านไปแล้ว · แก้แล้วกด "บันทึกเกณฑ์" จากนั้นไปแท็บ "วินัย &amp; ใบเตือน" กดรีเฟรช
   </div>
 
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">แจ้งเตือน "ลืมกดออก"</h3><button class="btn btn-pri btn-sm" id="coGrace_save">บันทึก</button></div>
+  <div class="card" style="padding:16px"><div class="field" style="max-width:340px"><label>ผ่อนผันก่อนเตือน (นาที) — นับจากเวลาเลิกกะ</label><input id="coGrace" type="number" min="0" value="15"></div>
+    <div style="font-size:12.5px;color:var(--muted);margin-top:8px">เช่น ตั้ง <b>15</b> = จะเตือน/นับว่า "ลืมกดออก" ก็ต่อเมื่อเลยเวลาเลิกกะไปแล้ว 15 นาที และยังไม่กดออก · มีผลทั้ง Dashboard, บอร์ดวันนี้, แผงแจ้งเตือน และ Push (ต้อง redeploy Edge Function hr-notify ให้ค่าเดียวกัน)</div></div>
+
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">ระบบคะแนนวินัย — คะแนนเริ่มต้น/เดือน</h3><button class="btn btn-pri btn-sm" id="scCfg_save">บันทึก</button></div>
   <div class="card" style="padding:16px"><div class="field" style="max-width:240px"><label>คะแนนเริ่มต้นต่อเดือน</label><input id="scCfg_start" type="number" min="1" value="100"></div></div>
 
@@ -1699,7 +1703,7 @@ showTab = function(name){
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
   else if(name==='notifylog') loadNotifyLog();
@@ -2121,6 +2125,20 @@ async function saveDiscRules(){
   else toast('err', r.error||'บันทึกไม่สำเร็จ');
 }
 
+// ========== ผ่อนผันก่อนเตือน "ลืมกดออก" ==========
+async function loadCheckoutGrace(){
+  const r = await post({ action:'hr_settings_get', password:pwd });
+  if(r.ok && r.settings && r.settings.checkout_grace_min!=null) $('coGrace').value = r.settings.checkout_grace_min;
+}
+async function saveCheckoutGrace(){
+  const v = Math.max(0, parseInt($('coGrace').value)||0);
+  $('coGrace_save').disabled = true;
+  const r = await post({ action:'hr_settings_save', password:pwd, key:'checkout_grace_min', value:String(v) });
+  $('coGrace_save').disabled = false;
+  if(r.ok){ toast('ok','บันทึกแล้ว · จะเตือนเมื่อเลยเวลาเลิกกะ '+v+' นาที'); }
+  else toast('err', r.error||'บันทึกไม่สำเร็จ');
+}
+
 // ========== คะแนนวินัยรายเดือน ==========
 let SCORE=null, SCORE_SETTINGS=null;
 async function loadScore(){
@@ -2238,6 +2256,7 @@ $('scEvSave').onclick = async()=>{
 };
 $('scDetailClose').onclick = $('scDetailCloseBtn').onclick = ()=>$('scDetailOverlay').classList.remove('show');
 $('scCfg_save').onclick = saveScoreConfig;
+$('coGrace_save') && ($('coGrace_save').onclick = saveCheckoutGrace);
 $('scRules_save').onclick = saveScoreRules;
 $('scBands_save').onclick = saveScoreBands;
 
