@@ -118,6 +118,7 @@
         case 'hr_save':           return await hrSave(p.data);
         case 'hr_toggle':         return await hrToggle(p.emp_id);
         case 'hr_emp_delete':     return await hrEmpDelete(p.emp_id);
+        case 'hr_change_emp_id':  return await hrChangeEmpId(p.old_id, p.new_id);
         case 'hr_report':         return await hrReport(p.filter);
         case 'hr_discipline':     return await hrDiscipline(p.cycle);
         case 'hr_settings_get':   return await hrSettingsGet();
@@ -436,6 +437,15 @@
     const { error } = await sb().from('employees').delete().eq('emp_id', empId);
     if (error) throw error;
     return { ok: true };
+  }
+
+  // เปลี่ยนรหัสพนักงาน (ย้ายข้อมูลทุกตารางผ่านฟังก์ชัน change_emp_id แบบ atomic)
+  async function hrChangeEmpId(oldId, newId) {
+    if (!oldId || !newId) return { ok: false, error: 'ต้องระบุรหัสเดิมและรหัสใหม่' };
+    const { data, error } = await sb().rpc('change_emp_id', { p_old: String(oldId).trim(), p_new: String(newId).trim() });
+    if (error) return { ok: false, error: error.message || 'เปลี่ยนรหัสไม่สำเร็จ (รัน change_emp_id.sql แล้วหรือยัง?)' };
+    if (data && data.ok) await logAct('เปลี่ยนรหัสพนักงาน ' + oldId + ' → ' + newId, newId);
+    return data || { ok: false, error: 'ไม่มีผลลัพธ์' };
   }
 
   // ---------- REPORT ----------

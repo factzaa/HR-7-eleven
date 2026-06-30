@@ -742,7 +742,7 @@
       </div>
       <div class="section"><h3>ข้อมูลพื้นฐาน</h3>
         <div class="grid">
-          <div class="field"><label>รหัสพนักงาน<span class="req">*</span></label><input id="f_emp_id" type="text" inputmode="numeric"></div>
+          <div class="field"><label>รหัสพนักงาน<span class="req">*</span></label><input id="f_emp_id" type="text" inputmode="numeric"><button type="button" class="btn btn-sec btn-sm" id="f_changeId" style="display:none;margin-top:6px">🔁 เปลี่ยนรหัส</button></div>
           <div class="field"><label>วันที่เริ่มงาน</label><input id="f_start_date" type="date"></div>
           <div class="field span2"><label>ชื่อ-นามสกุล<span class="req">*</span></label><input id="f_name" type="text"></div>
           <div class="field"><label>ชื่อเล่น</label><input id="f_nickname" type="text"></div>
@@ -1246,6 +1246,7 @@ function openNew(){
   editing = null; $('formTitle').textContent = 'เพิ่มพนักงาน';
   FIELDS.forEach(k=>{ const el=$('f_'+k); if(el) el.value=''; });
   $('f_emp_id').readOnly = false; $('f_active').checked = true; $('faceHint').textContent='';
+  if($('f_changeId')) $('f_changeId').style.display='none';
   photoState = { url:'', newBase64:'' }; setPhotoPreview();
   $('formOverlay').classList.add('show');
   setTimeout(()=>$('f_emp_id').focus(), 50);
@@ -1256,6 +1257,7 @@ function openEdit(empId){
   $('formTitle').textContent = 'แก้ไข: ' + (r.name || empId);
   FIELDS.forEach(k=>{ const el=$('f_'+k); if(el) el.value = r[k]==null?'':r[k]; });
   $('f_emp_id').readOnly = true;
+  if($('f_changeId')) $('f_changeId').style.display='inline-block';
   $('f_active').checked = isActive(r.active);
   $('faceHint').textContent = r.face_descriptor==='registered' ? '✓ ลงทะเบียนใบหน้าแล้ว' : '○ ยังไม่ลงทะเบียนใบหน้า';
   photoState = { url: r.photo_url||'', newBase64:'' }; setPhotoPreview();
@@ -1265,6 +1267,19 @@ function closeForm(){ $('formOverlay').classList.remove('show'); }
 $('formClose').onclick = closeForm;
 $('cancelBtn').onclick = closeForm;
 $('formOverlay').addEventListener('click', e=>{ if(e.target===$('formOverlay')) closeForm(); });
+$('f_changeId') && ($('f_changeId').onclick = async ()=>{
+  if(!editing) return; const cur = editing;
+  const nv = prompt('เปลี่ยนรหัสพนักงานจาก '+cur+' เป็นรหัสใหม่:\n(ระบบจะย้ายประวัติทั้งหมดให้อัตโนมัติ — ลงเวลา/ลา/ใบเตือน/ตารางเวร/งาน ฯลฯ)', cur);
+  if(nv===null) return;
+  const newId = String(nv).trim();
+  if(!newId || newId===cur){ return; }
+  if(!confirm('ยืนยันเปลี่ยนรหัส '+cur+' → '+newId+' ?\nจะมีผลกับข้อมูลทั้งหมดของพนักงานคนนี้')) return;
+  $('f_changeId').disabled = true; const _t=$('f_changeId').textContent; $('f_changeId').textContent='กำลังเปลี่ยน…';
+  const r = await post({ action:'hr_change_emp_id', password:pwd, old_id:cur, new_id:newId });
+  $('f_changeId').disabled = false; $('f_changeId').textContent=_t;
+  if(r && r.ok){ toast('ok','เปลี่ยนรหัสเป็น '+newId+' แล้ว'); closeForm(); await loadAll(); renderEmployees(); }
+  else toast('err', (r&&r.error)||'เปลี่ยนรหัสไม่สำเร็จ');
+});
 
 $('saveBtn').onclick = async ()=>{
   const data = {}; FIELDS.forEach(k=>{ data[k] = $('f_'+k).value.trim(); });
