@@ -27,16 +27,17 @@ Deno.serve(async () => {
     const today = isoDate(bkk());
     const nowHM = bkk().toISOString().slice(11, 16);
 
-    const [subsR, empR, leavesR, attR, schR, shR, lvApprR, profR, hoR] = await Promise.all([
+    const [subsR, empR, leavesR, attR, schR, shR, lvApprR, profR, hoR, annR] = await Promise.all([
       sb.from("push_subscriptions").select("*"),
       sb.from("employees").select("emp_id,name").eq("active", true),
       sb.from("leaves").select("leave_id,emp_id,type,start_date,end_date").eq("status", "pending"),
-      sb.from("attendance").select("emp_id,check_in,check_out,late_min").eq("work_date", today),
+      sb.from("attendance").select("emp_id,check_in,check_out,late_min,shift_id").eq("work_date", today),
       sb.from("schedules").select("emp_id,shift_id").eq("work_date", today),
-      sb.from("shifts").select("shift_id,name,start_time"),
+      sb.from("shifts").select("shift_id,name,start_time,end_time"),
       sb.from("leaves").select("emp_id,start_date,end_date").eq("status", "approved").lte("start_date", today),
       sb.from("profile_submissions").select("id,emp_id,name").eq("status", "pending"),
       sb.from("handovers").select("id,branch_id,from_name,to_name,status,receiver_note").eq("work_date", today).in("status", ["no_handover", "rejected"]),
+      sb.from("announcements").select("id,message,active,expire_date").eq("active", true),
     ]);
 
     const subs = subsR.data ?? [];
@@ -47,8 +48,8 @@ Deno.serve(async () => {
     const att = attR.data ?? [];
     const checkedIn = new Set(att.filter((a: any) => a.check_in).map((a: any) => a.emp_id));
     const onleave = new Set((lvApprR.data ?? []).filter((l: any) => today <= (l.end_date || l.start_date)).map((l: any) => l.emp_id));
-    const shiftStart: Record<string, string> = {}, shiftName: Record<string, string> = {};
-    (shR.data ?? []).forEach((s: any) => { shiftStart[s.shift_id] = String(s.start_time || "").slice(0, 5); shiftName[s.shift_id] = s.name; });
+    const shiftStart: Record<string, string> = {}, shiftEnd: Record<string, string> = {}, shiftName: Record<string, string> = {};
+    (shR.data ?? []).forEach((s: any) => { shiftStart[s.shift_id] = String(s.start_time || "").slice(0, 5); shiftEnd[s.shift_id] = String(s.end_time || "").slice(0, 5); shiftName[s.shift_id] = s.name; });
 
     const events: { key: string; text: string }[] = [];
     (leavesR.data ?? []).forEach((l: any) => events.push({ key: `leave:${l.leave_id}`, text: `ใบลาใหม่: ${empName[l.emp_id] || l.emp_id} (${l.type || "ลา"})` }));
@@ -57,7 +58,14 @@ Deno.serve(async () => {
       if (h.status === "no_handover") events.push({ key: `ho:${h.id}`, text: `ไม่มีการส่งผลัด สาขา ${h.branch_id || "?"} (แจ้งโดย ${h.to_name || "-"})` });
       else if (h.status === "rejected") events.push({ key: `ho:${h.id}`, text: `รับผลัดไม่เรียบร้อย สาขา ${h.branch_id || "?"}: ${h.receiver_note || ""}` });
     });
-    att.filter((a: any) => a.check_in && !a.check_out).forEach((a: any) => events.push({ key: `nocheckout:${a.emp_id}:${today}`, text: `ยังไม่เช็กเอาต์: ${empName[a.emp_id] || a.emp_id}` }));
+    // เตือน "ยังไม่เช็กเอาต์" เฉพาะคนที่เลยเวลาเลิกกะแล้ว (ไม่ใช่ทันทีหลังเช็กอิน)
+    att.filter((a: any) => {
+      if (!a.check_in || a.check_out) return false;
+      const st = shiftStart[a.shift_id], en = shiftEnd[a.shift_id];
+      if (!en) return false;                 // ไม่รู้เวลาเลิกกะ = ยังไม่เตือน
+      if (st && en <= st) return false;       // กะข้ามคืน = ยังไม่เตือนในวันเดียวกัน
+      return nowHM >= en;                      // เลยเวลาเลิกกะแล้ว
+    }).forEach((a: any) => events.push({ key: `nocheckout:${a.emp_id}:${today}`, text: `ลืมเช็กเอาต์ (เลยเวลาเลิกกะ): ${empName[a.emp_id] || a.emp_id}` }));
     att.filter((a: any) => a.late_min > 0).forEach((a: any) => events.push({ key: `late:${a.emp_id}:${today}`, text: `มาสาย ${a.late_min} นาที: ${empName[a.emp_id] || a.emp_id}` }));
     (schR.data ?? []).forEach((s: any) => {
       if (checkedIn.has(s.emp_id) || onleave.has(s.emp_id)) return;
@@ -65,6 +73,9 @@ Deno.serve(async () => {
       if (!st || nowHM < st) return;                 // เตือนเฉพาะกะที่ถึงเวลาเข้างานแล้ว
       events.push({ key: `absent:${s.emp_id}:${today}:${s.shift_id}`, text: `ขาด/ยังไม่มา: ${empName[s.emp_id] || s.emp_id} (${shiftName[s.shift_id] || s.shift_id})` });
     });
+    // ประกาศที่ HR เขียนเอง (ยัง active + ไม่หมดอายุ) → ส่ง push ครั้งเดียวต่อประกาศ
+    (annR?.data ?? []).filter((a: any) => !a.expire_date || a.expire_date >= today)
+      .forEach((a: any) => events.push({ key: `announce:${a.id}`, text: `📢 ประกาศ: ${a.message}` }));
 
     if (!events.length) return json({ ok: true, new: 0 });
 

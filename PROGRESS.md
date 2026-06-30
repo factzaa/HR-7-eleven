@@ -178,6 +178,60 @@ HR-7-eleven-main/
 11. `push_cron.sql` — ตั้ง cron เรียก Edge Function (หลัง deploy function + เปิด pg_cron/pg_net)
 12. `handover.sql` — ส่ง/รับผลัด (เช็กลิสต์สภาพร้าน)
 13. `task_system.sql` — ระบบงานในกะ (รายการงานตั้งค่าได้ + มอบหมาย + ส่งงาน/ตรวจ)
+14. `shift_leads.sql` — ⚠️ ตารางหัวหน้าผลัด (เพิ่งพบว่าขาด ดูรอบตรวจระบบ 30 มิ.ย.)
+
+## รอบ 30 มิ.ย. 2026 — ตรวจระบบหาบั๊ก (code review)
+ตรวจ syntax ทุกไฟล์ JS, cross-check ตาราง/action/rpc/RLS ที่เรียก vs ที่มีจริง
+- ✅ Syntax ผ่านหมด (shared/*.js + inline script ทั้ง 7 หน้า)
+- ✅ ทุก action ที่หน้า HR เรียก มี handler ครบใน hr-api.js
+- ✅ rpc (calc_late_min, hr_check_password) มีฟังก์ชันครบ
+- ✅ ตารางใหม่ทุกตัวมี RLS policy ครบ
+- 🔴 **พบบั๊ก: ตาราง `shift_leads` ขาดหายทั้งหมด** (ไม่มี CREATE TABLE / ไม่มี policy / ไม่มีไฟล์ SQL)
+  แต่โค้ดเรียกใช้ 7 จุด (หัวหน้าผลัด, ส่ง/รับผลัด, ตรวจงานกะก่อน)
+  → ไม่กระทบเช็กอินปกติ แต่ฟีเจอร์หัวหน้าผลัด/ส่งผลัดจะพัง
+  → **แก้แล้ว: สร้าง `supabase/shift_leads.sql`** (ต้องรันบน Supabase)
+- ⚠️ ข้อควรตรวจ: SQL 14 ไฟล์ในรายการด้านบน ต้องยืนยันว่ารันบน Supabase ครบแล้ว
+  (ฟีเจอร์ที่อิงตารางซึ่งยังไม่ได้รัน จะ "อ่านได้ว่าง" แบบเงียบ ๆ ไม่ขึ้น error)
+
+## รอบ 30 มิ.ย. 2026 (2) — แก้คำนวณสาย + เลิกใช้กะประจำ + บอร์ดวันนี้
+- 🔴 แก้บั๊กคำนวณสาย: เดิม checkIn ใช้ default_shift (ว่าง) → ไม่บันทึกกะ → ไม่คิดสาย
+  ✅ checkIn/checkOut ดึง "กะวันนี้" จาก `schedules` ก่อน (fallback กะประจำ) · ไฟล์ `shared/supabase.js`, `employee/index.html`
+  ✅ SQL ย้อนหลัง `supabase/fix_attendance_shift_late.sql` — เติมกะ+คำนวณสายใหม่ให้แถวที่ลงไปแล้ว (ต้องรัน)
+- ✅ เลิกใช้ "กะประจำ" (default_shift) ตามที่ใช้ตารางเวรวนทุกสัปดาห์: เอาช่องออกจากฟอร์มพนักงาน,
+  ไม่เขียนทับคอลัมน์ตอน save, Dashboard "กะวันนี้" นับจากตารางเวรแทน (คอลัมน์ DB คงไว้ ไม่ลบ)
+  ไฟล์ `hr/index.html`, `shared/hr-api.js` (ไม่มี SQL)
+- ✅ แท็บใหม่ "🗒️ บอร์ดวันนี้" — เลือกวันได้, จัดกลุ่ม สาขา × กะ × คน + สถานะ (มาแล้ว/สาย/ยังไม่มา/ลา/ไปแทนสาขา/นอกตาราง) + สรุปนับด้านบน
+  API `hr_board(date)` · ไฟล์ `shared/hr-api.js`, `hr/index.html` (ไม่มี SQL ใหม่)
+  ⚠️ ต้องอัป `shared/supabase.js`, `shared/hr-api.js`, `hr/index.html`, `employee/index.html` ขึ้น GitHub + รัน `shift_leads.sql` และ `fix_attendance_shift_late.sql`
+
+## รอบ 30 มิ.ย. 2026 (3) — ป๊อปอัพรับทราบสถานะหลังเช็กอิน (push)
+- แนวคิด: เปลี่ยนจากให้พนักงานกดดูสถานะเอง (pull) → เด้งป๊อปอัพบังคับเห็น + กดรับทราบ (push)
+- ✅ backend `HR.myStatus(empId)` (supabase.js): รวมสาย/ขาดรอบนี้ + ระดับวินัย (อ่านจากตาราง `discipline_rules` จริง) + ระยะถึงใบเตือนถัดไป + คะแนนเดือน (สูตรเดียวกับ hrScoreGet) + ระยะถึงโซนใบเตือน · resilient: ถ้าตารางวินัย/คะแนนยังไม่มี จะ fallback ไม่พัง
+- ✅ `HR.acknowledgeStatus()` เก็บ log ลง `activity_log` (action 'รับทราบสถานะ') = หลักฐานว่าพนักงานเห็น/รับทราบทุกวัน
+- ✅ หน้า employee: หลังเช็กอิน/ออกเด้ง modal `#ackOverlay` แสดงผลวันนี้ (ตรงเวลา/สาย) + สะสมรอบ + ระดับวินัย + คะแนน + "อีก N ครั้ง/คะแนน ถึงบทลงโทษ" · ปุ่ม "รับทราบ" หน่วง 2 วิ · หัวป๊อปอัพเปลี่ยนสีตามความรุนแรง
+- ไฟล์แก้: `shared/supabase.js`, `employee/index.html` (ไม่มี SQL ใหม่ ใช้ discipline_rules/score_*/activity_log เดิม)
+  ⚠️ อัป 2 ไฟล์นี้ขึ้น GitHub · ตาราง discipline_rules + score_system + activity_log ต้องรันไปแล้วถึงจะโชว์ครบ
+  หมายเหตุ: ปุ่ม "สถานะของฉัน" เดิม (selfStatus) ยังใช้เกณฑ์วินัย hardcode — ถ้าอยากให้ตรงกับป๊อปอัพ (อ่าน discipline_rules) บอกได้ เดี๋ยวปรับให้
+
+## รอบ 30 มิ.ย. 2026 (4) — แก้แจ้งเตือน "ยังไม่กดออก" เด้งเร็วเกินไป
+- 🔴 บั๊ก: แจ้งเตือน "ยังไม่กดออก/ยังไม่เช็กเอาต์" เด้งทันทีหลังพนักงานเช็กอิน (ไม่ดูเวลาเลิกกะ) → สับสน
+- ✅ แก้ให้เตือนเฉพาะ "เลยเวลาเลิกกะแล้วยังไม่เช็กเอาต์" (ใช้ pattern เดียวกับ absent ที่เช็กเวลาเข้ากะ) + กันกะข้ามคืนเตือนผิดวัน
+- ✅ แก้ 3 ที่: `hr_notifications` (แผงแจ้งเตือน Dashboard), KPI "ลืมกดออก" บน Dashboard, Edge Function push `hr-notify`
+- ✅ เปลี่ยนคำเป็น "ลืมกดออก (เลยเวลาเลิกกะแล้ว)" + แสดงเวลาเลิกกะ
+- การเตือน "มาสาย" และป๊อปอัพหลังเช็กอินถูกต้องอยู่แล้ว (แจ้งเข้างาน+สายเท่านั้น)
+- ไฟล์แก้: `shared/hr-api.js`, `hr/index.html`, `supabase/functions/hr-notify/index.ts`
+  ⚠️ ต้องทำ: (1) อัป hr-api.js + hr/index.html ขึ้น GitHub (2) **Redeploy Edge Function `hr-notify`** บน Supabase (เพราะแก้ index.ts)
+  ⚠️ เงื่อนไข: กะทุกตัวต้องตั้ง "เวลาออก (end_time)" ที่แท็บตั้งค่ากะ ไม่งั้นจะไม่เตือนลืมกดออกของกะนั้น (ปลอดภัย ไม่เตือนมั่ว)
+
+## รอบ 30 มิ.ย. 2026 (5) — ประวัติแจ้งเตือน + ประกาศถึงพนักงาน + ล้างแถวค้าง
+- ✅ แท็บใหม่ "🔔 ประวัติแจ้งเตือน" — รวม push ที่ส่งแล้ว (notify_sent แปลงเป็นไทย) + ประกาศที่ HR เขียน · API `hr_notify_history`
+- ✅ ปุ่มเขียนประกาศถึงพนักงาน (ระดับ ทั่วไป/สำคัญ/ด่วน + วันหมดอายุ) · ตาราง `announcements` · API `hr_announce_save`/`hr_announce_delete`
+- ✅ พนักงานเห็นประกาศ: แบนเนอร์บนหน้าลงเวลา + เด้งในป๊อปอัพหลังเช็กอิน (`HR.getAnnouncements`)
+- ✅ ส่ง Web Push เมื่อกดประกาศ: เพิ่ม event `announce:<id>` ใน Edge Function hr-notify + หน้า HR ยิง invoke ทันทีหลังบันทึก (cron ตามส่งถ้าพลาด)
+- ✅ SQL `fix_stuck_open.sql` — ปิดงานให้คน "ลืมกดออก" แบบปลอดภัย (ตั้ง check_out=เวลาเลิกกะ เฉพาะคนเลยเวลาเลิกแล้ว) ไม่ลบข้อมูลจริง · ห้ามใช้ DELETE
+- ไฟล์: ใหม่ `supabase/announcements.sql`, `supabase/fix_stuck_open.sql` · แก้ `shared/hr-api.js`, `shared/supabase.js`, `hr/index.html`, `employee/index.html`, `supabase/functions/hr-notify/index.ts`
+  ⚠️ ต้องทำ: (1) รัน `announcements.sql` + `fix_stuck_open.sql` (2) อัปไฟล์เว็บขึ้น GitHub (3) **Redeploy Edge Function hr-notify**
+  ⚠️ ข้อจำกัด: Web Push ปัจจุบันส่งถึง "อุปกรณ์ที่สมัครไว้" = เครื่อง HR เท่านั้น (ปุ่ม 🔔 อยู่หน้า HR) · พนักงานเห็นประกาศผ่านแบนเนอร์+ป๊อปอัพได้เลย แต่ถ้าอยากให้ push เด้งบนมือถือพนักงานด้วย ต้องเพิ่มปุ่มสมัครแจ้งเตือนในแอปพนักงาน (ยังไม่ได้ทำ)
 
 ## ค้างไว้ / จะทำต่อ
 **Phase 3 — เก็บรายละเอียดให้สมจริง**
