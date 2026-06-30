@@ -208,7 +208,7 @@
       sb().from('employees').select('emp_id,name,photo_url,active').eq('active', true),
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,late_min,status').eq('work_date', today),
+      sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status').eq('work_date', today),
       sb().from('attendance').select('work_date,late_min,ot_hours').gte('work_date', addDays(today, -29)).lte('work_date', today),
       sb().from('attendance').select('emp_id,late_min').gte('work_date', cyc.start).lte('work_date', cyc.end),
       sb().from('schedules').select('emp_id,shift_id').eq('work_date', today),  // กะวันนี้จากตารางเวร (แทน default_shift เดิม)
@@ -220,22 +220,26 @@
     (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     // "ลืมกดออก" = เลยเวลาเลิกกะแล้วยังไม่เช็กเอาต์ (ไม่นับคนที่ยังทำงานอยู่)
     const nowHM = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 16);
-    const shEnd = {}, shStart = {};
-    (shR.data || []).forEach(s => { shStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shEnd[s.shift_id] = String(s.end_time || '').slice(0, 5); });
-    const stillOpen = todayA.filter(a => {
+    const shEnd = {}, shStart = {}, shNm = {};
+    (shR.data || []).forEach(s => { shStart[s.shift_id] = String(s.start_time || '').slice(0, 5); shEnd[s.shift_id] = String(s.end_time || '').slice(0, 5); shNm[s.shift_id] = s.name; });
+    const mkRow = a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, shift: shNm[a.shift_id] || a.shift_id || '', branch: brName[a.branch_id] || '', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, end_time: shEnd[a.shift_id] || '' });
+    const stillOpenList = todayA.filter(a => {
       if (!a.check_in || a.check_out) return false;
       const st = shStart[a.shift_id], en = shEnd[a.shift_id];
       if (!en || (st && en <= st)) return false;   // ไม่รู้เวลาเลิก/กะข้ามคืน = ยังไม่นับ
       return nowHM >= en;
-    }).length;
+    }).map(mkRow);
+    const lateList = todayA.filter(a => a.late_min > 0).map(mkRow);
+    const checkedInList = todayA.filter(a => a.check_in).map(mkRow);
 
     const cards = {
       total_emp: emps.length,
-      checked_in: todayA.filter(a => a.check_in).length,
-      late_today: todayA.filter(a => a.late_min > 0).length,
-      still_open: stillOpen,
+      checked_in: checkedInList.length,
+      late_today: lateList.length,
+      still_open: stillOpenList.length,
       cycle_start: cyc.start, cycle_end: cyc.end,
     };
+    const lists = { checked_in: checkedInList, late: lateList, still_open: stillOpenList };
 
     // กะวันนี้ — total นับจากตารางเวรวันนี้ (ไม่ใช่กะประจำแล้ว)
     const shifts = {};
@@ -260,7 +264,7 @@
     todayA.forEach(a => { if (!a.branch_id) return; const m = bmap[a.branch_id] || (bmap[a.branch_id] = { count: 0, late: 0 }); m.count++; if (a.late_min > 0) m.late++; });
     const branches = Object.keys(bmap).map(b => ({ name: brName[b] || b, count: bmap[b].count, late: bmap[b].late }));
 
-    return { ok: true, cards, shifts, trend, top_late, branches };
+    return { ok: true, cards, lists, shifts, trend, top_late, branches };
   }
 
   // ---------- BOARD: บอร์ดวันนี้ (สาขา × กะ × คน + สถานะ) ----------
@@ -271,7 +275,7 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url'),
       sb().from('shifts').select('shift_id,name,code,start_time').order('start_time'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
-      sb().from('attendance').select('emp_id,check_in,late_min,status,branch_id,shift_id').eq('work_date', d),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id').eq('work_date', d),
       sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').lte('start_date', d).gte('end_date', d),
     ]);
     if (schR.error) throw schR.error;
@@ -286,7 +290,7 @@
     function statusOf(empId) {
       if (onLeave[empId]) return { status: 'leave', leave_type: onLeave[empId] };
       const a = attBy[empId];
-      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), late_min: a.late_min || 0, att_branch: a.branch_id };
+      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id };
       return { status: 'absent' };
     }
 
@@ -320,7 +324,7 @@
       ensure(brId, a.shift_id || '_none').push({
         emp_id: a.emp_id, name: emp.nickname || emp.name, full_name: emp.name, nickname: emp.nickname || '', photo_url: emp.photo_url || '',
         is_cover: false, cover_from: '', off_schedule: true,
-        status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), late_min: a.late_min || 0,
+        status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0,
       });
     });
 

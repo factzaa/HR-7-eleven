@@ -810,6 +810,15 @@
   </div>
 </div>
 
+<!-- Modal: Dashboard list detail -->
+<div class="overlay" id="dashListOverlay">
+  <div class="modal">
+    <div class="modal-h"><h2 id="dl_title">รายละเอียด</h2><button class="close" id="dlClose">×</button></div>
+    <div class="modal-b" id="dl_body"></div>
+    <div class="modal-f"><button class="btn btn-sec" id="dlCloseBtn">ปิด</button></div>
+  </div>
+</div>
+
 <!-- Modal: Leave -->
 <div class="overlay" id="leaveOverlay">
   <div class="modal">
@@ -916,10 +925,35 @@ function fillSelect(sel, pairs, emptyLabel){
 }
 
 // ========== DASHBOARD ==========
+let DASH = null;
+function dashList(key){
+  if(!DASH || !DASH.lists) return;
+  const meta = ({
+    checked_in: { t:'พนักงานที่ลงเวลาแล้ววันนี้', icon:'✅' },
+    late:       { t:'พนักงานที่มาสายวันนี้', icon:'⏰' },
+    still_open: { t:'ลืมกดออก (เลยเวลาเลิกกะแล้ว)', icon:'🚪' },
+  })[key] || { t:'รายละเอียด', icon:'' };
+  const rows = DASH.lists[key] || [];
+  $('dl_title').textContent = meta.icon+' '+meta.t+' ('+rows.length+')';
+  $('dl_body').innerHTML = rows.length ? rows.map(p=>{
+    let right;
+    if(key==='late') right = '<span class="pill bad">สาย '+p.late_min+' น. · '+esc(p.check_in)+'</span>';
+    else if(key==='still_open') right = '<span class="pill warn">เข้า '+esc(p.check_in)+(p.end_time?' · เลิก '+esc(p.end_time):'')+'</span>';
+    else right = '<span class="pill '+(p.check_out?'ok':'warn')+'">เข้า '+esc(p.check_in)+(p.check_out?' · ออก '+esc(p.check_out):' · ยังไม่ออก')+'</span>';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:140px"><div style="font-weight:600;font-size:14px">'+esc(p.emp_name)+'</div>'
+      +'<div style="font-size:12px;color:var(--muted)">รหัส '+esc(p.emp_id)+(p.shift?' · กะ '+esc(p.shift):'')+(p.branch?' · '+esc(p.branch):'')+'</div></div>'
+      +right+'</div>';
+  }).join('') : '<div class="empty" style="padding:24px">— ไม่มีรายชื่อ —</div>';
+  $('dashListOverlay').classList.add('show');
+}
+['dlClose','dlCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('dashListOverlay').classList.remove('show'); });
+$('dashListOverlay') && $('dashListOverlay').addEventListener('click', e=>{ if(e.target.id==='dashListOverlay') $('dashListOverlay').classList.remove('show'); });
 async function loadDashboard(){
   $('dash_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
   const r = await post({ action:'hr_dashboard', password:pwd });
   if(!r.ok){ $('dash_body').innerHTML = '<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
+  DASH = r;
   const c = r.cards;
   const shiftRows = Object.keys(r.shifts).map(sid=>{
     const s = r.shifts[sid]; const pct = s.total ? Math.round(s.checkedIn/s.total*100) : 0;
@@ -959,9 +993,9 @@ async function loadDashboard(){
 
   $('dash_body').innerHTML = `
     <div class="kpi-grid">
-      <div class="kpi"><div class="lbl">วันนี้ลงเวลาแล้ว</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
-      <div class="kpi ${c.late_today>0?'bad':''}"><div class="lbl">สายวันนี้</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
-      <div class="kpi ${c.still_open>0?'warn':''}"><div class="lbl">ลืมกดออก (เลยเวลาเลิก)</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
+      <div class="kpi" style="cursor:pointer" onclick="dashList('checked_in')"><div class="lbl">วันนี้ลงเวลาแล้ว ›</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
+      <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="lbl">สายวันนี้ ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
+      <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
       <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${c.cycle_start}<br>ถึง ${c.cycle_end}</div></div>
     </div>
     <div class="dash-grid">
@@ -1634,8 +1668,9 @@ async function postBoard(){
   renderBoard(r);
 }
 function bdChip(p){
-  if(p.status==='present') return '<span class="pill ok">✓ '+esc(p.check_in)+'</span>';
-  if(p.status==='late')    return '<span class="pill bad">สาย '+p.late_min+' น. · '+esc(p.check_in)+'</span>';
+  const out = p.check_out ? ' <span style="opacity:.85">→ ออก '+esc(p.check_out)+'</span>' : ' <span style="opacity:.6">· ยังไม่ออก</span>';
+  if(p.status==='present') return '<span class="pill ok">✓ '+esc(p.check_in)+out+'</span>';
+  if(p.status==='late')    return '<span class="pill bad">สาย '+p.late_min+' น. · '+esc(p.check_in)+out+'</span>';
   if(p.status==='leave')   return '<span class="pill" style="background:#dbeafe;color:#1d4ed8">ลา'+(p.leave_type?' ('+esc(p.leave_type)+')':'')+'</span>';
   return '<span class="pill" style="background:#f1f5f9;color:#64748b">ยังไม่มา</span>';
 }
