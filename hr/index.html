@@ -1667,6 +1667,34 @@ async function postBoard(){
   if(!r.ok){ $('bd_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   renderBoard(r);
 }
+let BOARD = null;
+function boardList(key){
+  if(!BOARD || !BOARD.branches) return;
+  const ppl=[];
+  (BOARD.branches||[]).forEach(b=> (b.shifts||[]).forEach(sh=> (sh.people||[]).forEach(p=>{
+    ppl.push(Object.assign({ _shift: sh.shift_name||'' }, p));
+  })));
+  let rows, title;
+  if(key==='scheduled'){ rows=ppl.filter(p=>!p.off_schedule); title='👥 จัดเวรวันนี้'; }
+  else if(key==='present'){ rows=ppl.filter(p=>!p.off_schedule && (p.status==='present'||p.status==='late')); title='✅ มาแล้ว'; }
+  else if(key==='late'){ rows=ppl.filter(p=>!p.off_schedule && p.status==='late'); title='⏰ มาสาย'; }
+  else if(key==='absent'){ rows=ppl.filter(p=>p.status==='absent'); title='🚫 ยังไม่มา'; }
+  else if(key==='leave'){ rows=ppl.filter(p=>p.status==='leave'); title='🌴 ลา/หยุด'; }
+  else { rows=ppl; title='รายชื่อ'; }
+  $('dl_title').textContent = title+' ('+rows.length+')';
+  $('dl_body').innerHTML = rows.length ? rows.map(p=>{
+    let right;
+    if(p.status==='late') right='<span class="pill bad">สาย '+(p.late_min||0)+' น. · '+esc(p.check_in||'')+(p.check_out?' · ออก '+esc(p.check_out):' · ยังไม่ออก')+'</span>';
+    else if(p.status==='present') right='<span class="pill '+(p.check_out?'ok':'warn')+'">เข้า '+esc(p.check_in||'')+(p.check_out?' · ออก '+esc(p.check_out):' · ยังไม่ออก')+'</span>';
+    else if(p.status==='leave') right='<span class="pill" style="background:#dbeafe;color:#1d4ed8">ลา'+(p.leave_type?' ('+esc(p.leave_type)+')':'')+'</span>';
+    else right='<span class="pill" style="background:#f1f5f9;color:#64748b">ยังไม่มา</span>';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:140px"><div style="font-weight:600;font-size:14px">'+esc(p.full_name||p.name)+(p.nickname?' ('+esc(p.nickname)+')':'')+'</div>'
+      +'<div style="font-size:12px;color:var(--muted)">รหัส '+esc(p.emp_id)+(p._shift?' · '+esc(p._shift):'')+(p.is_cover?' · ↔ ไปแทน':'')+(p.off_schedule?' · นอกตาราง':'')+'</div></div>'
+      +right+'</div>';
+  }).join('') : '<div class="empty" style="padding:24px">— ไม่มีรายชื่อ —</div>';
+  $('dashListOverlay').classList.add('show');
+}
 function bdChip(p){
   const out = p.check_out ? ' <span style="opacity:.85">→ ออก '+esc(p.check_out)+'</span>' : ' <span style="opacity:.6">· ยังไม่ออก</span>';
   if(p.status==='present') return '<span class="pill ok">✓ '+esc(p.check_in)+out+'</span>';
@@ -1675,13 +1703,14 @@ function bdChip(p){
   return '<span class="pill" style="background:#f1f5f9;color:#64748b">ยังไม่มา</span>';
 }
 function renderBoard(r){
+  BOARD = r;
   const s=r.summary;
   $('bd_summary').innerHTML = `<div class="kpi-grid" style="margin-bottom:12px">
-    <div class="kpi"><div class="lbl">จัดเวร</div><div class="val">${s.scheduled}<span class="sm"> คน</span></div></div>
-    <div class="kpi"><div class="lbl">มาแล้ว</div><div class="val" style="color:#16a34a">${s.present+s.late}</div></div>
-    <div class="kpi ${s.late?'bad':''}"><div class="lbl">สาย</div><div class="val">${s.late}</div></div>
-    <div class="kpi ${s.absent?'warn':''}"><div class="lbl">ยังไม่มา</div><div class="val">${s.absent}</div></div>
-    <div class="kpi"><div class="lbl">ลา/หยุด</div><div class="val">${s.leave}</div></div>
+    <div class="kpi" style="cursor:pointer" onclick="boardList('scheduled')"><div class="lbl">จัดเวร ›</div><div class="val">${s.scheduled}<span class="sm"> คน</span></div></div>
+    <div class="kpi" style="cursor:pointer" onclick="boardList('present')"><div class="lbl">มาแล้ว ›</div><div class="val" style="color:#16a34a">${s.present+s.late}</div></div>
+    <div class="kpi ${s.late?'bad':''}" style="cursor:pointer" onclick="boardList('late')"><div class="lbl">สาย ›</div><div class="val">${s.late}</div></div>
+    <div class="kpi ${s.absent?'warn':''}" style="cursor:pointer" onclick="boardList('absent')"><div class="lbl">ยังไม่มา ›</div><div class="val">${s.absent}</div></div>
+    <div class="kpi" style="cursor:pointer" onclick="boardList('leave')"><div class="lbl">ลา/หยุด ›</div><div class="val">${s.leave}</div></div>
   </div>`;
   if(!r.branches.length){ $('bd_body').innerHTML='<div class="empty">ยังไม่มีการจัดเวรในวันนี้ — ไปจัดที่แท็บ "ตารางงาน"</div>'; return; }
   $('bd_body').innerHTML = r.branches.map(b=>`
