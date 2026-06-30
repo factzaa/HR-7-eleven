@@ -293,7 +293,7 @@
       const home = emp.branch_id || null;
       const st = statusOf(s.emp_id);
       ensure(brId, s.shift_id).push({
-        emp_id: s.emp_id, name: emp.nickname || emp.name, full_name: emp.name, photo_url: emp.photo_url || '',
+        emp_id: s.emp_id, name: emp.nickname || emp.name, full_name: emp.name, nickname: emp.nickname || '', photo_url: emp.photo_url || '',
         is_cover: !!(s.is_cover || (home && brId !== home)),
         cover_from: (home && brId !== home) ? (brName[home] || home) : '',
         note: s.note || '', ...st,
@@ -305,7 +305,7 @@
       const emp = empById[a.emp_id] || { emp_id: a.emp_id, name: a.emp_id };
       const brId = a.branch_id || emp.branch_id || '—';
       ensure(brId, a.shift_id || '_none').push({
-        emp_id: a.emp_id, name: emp.nickname || emp.name, full_name: emp.name, photo_url: emp.photo_url || '',
+        emp_id: a.emp_id, name: emp.nickname || emp.name, full_name: emp.name, nickname: emp.nickname || '', photo_url: emp.photo_url || '',
         is_cover: false, cover_from: '', off_schedule: true,
         status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), late_min: a.late_min || 0,
       });

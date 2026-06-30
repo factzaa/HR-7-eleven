@@ -1638,8 +1638,12 @@ function renderBoard(r){
             </div>
             <div style="display:flex;flex-direction:column;gap:6px">
               ${sh.people.map(p=>`
-                <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fafbf9;border:1px solid var(--line);border-radius:9px;flex-wrap:wrap">
-                  <span style="font-weight:600;font-size:13.5px">${esc(p.name)}</span>
+                <div style="display:flex;align-items:center;gap:9px;padding:7px 9px;background:#fafbf9;border:1px solid var(--line);border-radius:9px;flex-wrap:wrap">
+                  <div class="thumb" style="width:36px;height:36px;flex:none;border-radius:50%;overflow:hidden">${p.photo_url?`<img src="${esc(p.photo_url)}" style="width:100%;height:100%;object-fit:cover">`:esc(pickInitial(p.nickname||p.full_name))}</div>
+                  <div style="line-height:1.25;min-width:0">
+                    <div style="font-weight:600;font-size:13.5px">${esc(p.full_name||p.name)}${p.nickname?` <span style="color:var(--muted);font-weight:400">(${esc(p.nickname)})</span>`:''}</div>
+                    <div style="font-size:11px;color:var(--muted)">รหัส ${esc(p.emp_id)}</div>
+                  </div>
                   ${p.is_cover?`<span class="pill" style="background:#fff7ed;color:#ea580c">↔ ไปแทน${p.cover_from?' (จาก '+esc(p.cover_from)+')':''}</span>`:''}
                   ${p.off_schedule?'<span class="pill" style="background:#fef9c3;color:#854d0e">นอกตาราง</span>':''}
                   <span style="margin-left:auto">${bdChip(p)}</span>
