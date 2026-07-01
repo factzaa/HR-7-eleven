@@ -310,11 +310,11 @@
     const { data } = await sb.from('leave_types').select('*').eq('active', true).order('sort');
     return data || [];
   }
-  async function getLeaveUsage(empId) {
-    const yr = bangkokDate().slice(0, 4);
+  async function getLeaveUsage(empId, ym) {
+    ym = ym || bangkokDate().slice(0, 7);   // YYYY-MM — โควตานับเป็น "รายเดือน"
     const { data } = await sb.from('leaves').select('type,start_date,end_date,status')
       .eq('emp_id', empId).in('status', ['approved', 'pending'])
-      .gte('start_date', yr + '-01-01').lte('start_date', yr + '-12-31');
+      .gte('start_date', ym + '-01').lte('start_date', ym + '-31');
     const used = {};
     (data || []).forEach(l => { used[l.type] = (used[l.type] || 0) + _inclusiveDays(l.start_date, l.end_date || l.start_date); });
     return used;
@@ -335,12 +335,12 @@
         throw new Error('ประเภท "' + type + '" ลาย้อนหลังไม่ได้');
       if (!rule.allow_backdate && rule.advance_days > 0 && _diffDays(today, start_date) < rule.advance_days)
         throw new Error('ประเภท "' + type + '" ต้องลาล่วงหน้าอย่างน้อย ' + rule.advance_days + ' วัน');
-      if (rule.quota_per_year != null) {
-        const usage = await getLeaveUsage(empId);
+      if (rule.quota_per_year != null) {   // quota_per_year = โควตาต่อเดือน (คงชื่อคอลัมน์เดิม)
+        const usage = await getLeaveUsage(empId, String(start_date).slice(0, 7));   // นับเฉพาะเดือนของวันที่ลา
         const used = usage[type] || 0;
         const reqDays = _inclusiveDays(start_date, end);
         if (used + reqDays > rule.quota_per_year)
-          throw new Error('เกินโควตา "' + type + '" (' + rule.quota_per_year + ' วัน/ปี) — ใช้ไปแล้ว ' + used + ' วัน ขอเพิ่ม ' + reqDays + ' วัน');
+          throw new Error('เกินโควตา "' + type + '" (' + rule.quota_per_year + ' วัน/เดือน) — เดือนนี้ใช้ไปแล้ว ' + used + ' วัน ขอเพิ่ม ' + reqDays + ' วัน');
       }
       if (rule.require_doc && !doc)
         throw new Error('ประเภท "' + type + '" ต้องแนบเอกสาร (เช่น ใบรับรองแพทย์)');

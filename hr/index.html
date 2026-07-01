@@ -572,7 +572,7 @@
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">เงื่อนไขการลา</h3></div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>ประเภท</th><th>ลาล่วงหน้าขั้นต่ำ (วัน)</th><th>โควตา/ปี<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่จำกัด</span></th><th>ลาย้อนหลังได้</th><th>ต้องแนบเอกสาร</th><th></th></tr></thead>
+    <thead><tr><th>ประเภท</th><th>ลาล่วงหน้าขั้นต่ำ (วัน)</th><th>โควตา/เดือน<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่จำกัด</span></th><th>ลาย้อนหลังได้</th><th>ต้องแนบเอกสาร</th><th></th></tr></thead>
     <tbody id="ltRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">เช่น ลากิจ ต้องลาล่วงหน้า ≥ 2 วัน · ลาป่วย แนบใบรับรองแพทย์ ลาย้อนหลังได้</div>
@@ -602,9 +602,9 @@
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">ระบบคะแนนวินัย — คะแนนเริ่มต้น/เดือน</h3><button class="btn btn-pri btn-sm" id="scCfg_save">บันทึก</button></div>
   <div class="card" style="padding:16px"><div class="field" style="max-width:240px"><label>คะแนนเริ่มต้นต่อเดือน</label><input id="scCfg_start" type="number" min="1" value="100"></div></div>
 
-  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">กฎการตัดคะแนน</h3><button class="btn btn-pri btn-sm" id="scRules_save">บันทึกกฎ</button></div>
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">กฎการตัดคะแนน</h3><button class="btn btn-sec btn-sm" id="scRules_add">+ เพิ่มกฎ</button><button class="btn btn-pri btn-sm" id="scRules_save">บันทึกกฎ</button></div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>พฤติกรรม</th><th>ประเภท</th><th>คะแนนที่หัก</th><th>ถึง (ช่วง)<br><span style="font-weight:400;color:var(--muted)">ว่าง=ค่าเดียว</span></th><th>เปิดใช้</th></tr></thead>
+    <thead><tr><th>พฤติกรรม</th><th>ประเภท</th><th>คะแนนที่หัก</th><th>ถึง (ช่วง)<br><span style="font-weight:400;color:var(--muted)">ว่าง=ค่าเดียว</span></th><th>เปิดใช้</th><th></th></tr></thead>
     <tbody id="scRulesRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px"><b>auto</b> = ระบบหักให้เองจากข้อมูลลงเวลา/ตารางเวร · <b>manual</b> = HR กดเพิ่มในแท็บคะแนนวินัย · คะแนนเป็นค่าลบ เช่น -3</div>
@@ -2246,13 +2246,7 @@ async function loadScoreSettings(silent){
   if(!r.ok){ if(!silent && $('scRulesRows')) $('scRulesRows').innerHTML=''; return; }
   SCORE_SETTINGS=r;
   if($('scCfg_start')) $('scCfg_start').value=r.start_score;
-  if($('scRulesRows')) $('scRulesRows').innerHTML=(r.rules||[]).map((x,i)=>`<tr>
-    <td style="font-weight:600">${esc(x.label)}</td>
-    <td><span class="pill" style="background:${x.kind==='manual'?'#fee2e2':'#e0f2fe'};color:${x.kind==='manual'?'#b91c1c':'#0369a1'}">${x.kind==='manual'?'manual':'auto'}</span></td>
-    <td><input type="number" max="0" value="${x.points}" id="scr_p_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><input type="number" max="0" value="${x.range_min==null?'':x.range_min}" placeholder="—" id="scr_r_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td style="text-align:center"><input type="checkbox" ${x.enabled!==false?'checked':''} id="scr_e_${i}"></td>
-  </tr>`).join('');
+  renderScoreRulesRows();
   if($('scBandsRows')) $('scBandsRows').innerHTML=(r.bands||[]).map((b,i)=>`<tr>
     <td><input type="number" value="${b.min_score}" id="scb_min_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"> – <input type="number" value="${b.max_score}" id="scb_max_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td><input type="text" value="${esc(b.label)}" id="scb_l_${i}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
@@ -2264,9 +2258,38 @@ async function saveScoreConfig(){
   const r=await post({ action:'hr_score_config_save', password:pwd, data:{ start_score:$('scCfg_start').value } });
   if(r.ok){ toast('ok','บันทึกคะแนนเริ่มต้นแล้ว'); SCORE_SETTINGS=null; } else toast('err',r.error||'ไม่สำเร็จ');
 }
+function renderScoreRulesRows(){
+  if(!$('scRulesRows')||!SCORE_SETTINGS) return;
+  $('scRulesRows').innerHTML=(SCORE_SETTINGS.rules||[]).map((x,i)=>`<tr>
+    <td>${x.kind==='manual'
+      ? '<input type="text" value="'+esc(x.label)+'" id="scr_l_'+i+'" style="width:260px;padding:6px;border:1.5px solid var(--line2);border-radius:7px">'
+      : '<span style="font-weight:600">'+esc(x.label)+'</span>'}</td>
+    <td><span class="pill" style="background:${x.kind==='manual'?'#fee2e2':'#e0f2fe'};color:${x.kind==='manual'?'#b91c1c':'#0369a1'}">${x.kind==='manual'?'manual':'auto'}</span></td>
+    <td><input type="number" max="0" value="${x.points}" id="scr_p_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><input type="number" max="0" value="${x.range_min==null?'':x.range_min}" placeholder="—" id="scr_r_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td style="text-align:center"><input type="checkbox" ${x.enabled!==false?'checked':''} id="scr_e_${i}"></td>
+    <td style="text-align:center">${x.kind==='manual'?('<button class="btn btn-danger btn-sm" data-scdel="'+esc(x.rule_key)+'" title="ลบกฎนี้">🗑</button>'):''}</td>
+  </tr>`).join('');
+  document.querySelectorAll('[data-scdel]').forEach(b=>b.onclick=()=>delScoreRule(b.dataset.scdel));
+}
+function addScoreRule(){
+  if(!SCORE_SETTINGS){ toast('err','ยังโหลดข้อมูลไม่เสร็จ ลองใหม่'); return; }
+  const label=prompt('ชื่อพฤติกรรม (กฎใหม่ · ประเภท manual = HR กดหักเอง):','');
+  if(label===null) return;
+  const lb=(label||'').trim(); if(!lb){ toast('err','กรุณากรอกชื่อพฤติกรรม'); return; }
+  const maxSort=Math.max(0,...(SCORE_SETTINGS.rules||[]).map(r=>r.sort||0));
+  (SCORE_SETTINGS.rules=SCORE_SETTINGS.rules||[]).push({ rule_key:'custom_'+Date.now(), label:lb, kind:'manual', points:-5, range_min:null, enabled:true, sort:maxSort+10 });
+  renderScoreRulesRows();
+  toast('ok','เพิ่มกฎแล้ว — ปรับคะแนนที่หักแล้วกด "บันทึกกฎ"');
+}
+async function delScoreRule(rule_key){
+  if(!confirm('ลบกฎนี้ออกจากระบบ?')) return;
+  const r=await post({ action:'hr_score_rule_delete', password:pwd, rule_key });
+  if(r.ok){ toast('ok','ลบกฎแล้ว'); SCORE_SETTINGS=null; loadScoreSettings(); } else toast('err',r.error||'ลบไม่สำเร็จ');
+}
 async function saveScoreRules(){
   if(!SCORE_SETTINGS) return;
-  const data=(SCORE_SETTINGS.rules||[]).map((x,i)=>({ rule_key:x.rule_key, label:x.label, kind:x.kind, points:$('scr_p_'+i).value, range_min:$('scr_r_'+i).value, enabled:$('scr_e_'+i).checked, sort:x.sort }));
+  const data=(SCORE_SETTINGS.rules||[]).map((x,i)=>({ rule_key:x.rule_key, label:(x.kind==='manual'&&$('scr_l_'+i))?($('scr_l_'+i).value.trim()||x.label):x.label, kind:x.kind, points:$('scr_p_'+i).value, range_min:$('scr_r_'+i).value, enabled:$('scr_e_'+i).checked, sort:x.sort }));
   const r=await post({ action:'hr_score_rules_save', password:pwd, data });
   if(r.ok){ toast('ok','บันทึกกฎแล้ว'); loadScoreSettings(true); } else toast('err',r.error||'ไม่สำเร็จ');
 }
@@ -2298,6 +2321,7 @@ $('scDetailClose').onclick = $('scDetailCloseBtn').onclick = ()=>$('scDetailOver
 $('scCfg_save').onclick = saveScoreConfig;
 $('coGrace_save') && ($('coGrace_save').onclick = saveCheckoutGrace);
 $('scRules_save').onclick = saveScoreRules;
+$('scRules_add') && ($('scRules_add').onclick = addScoreRule);
 $('scBands_save').onclick = saveScoreBands;
 
 // ========== ส่ง/รับผลัด ==========

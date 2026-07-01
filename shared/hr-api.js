@@ -155,6 +155,7 @@
         case 'hr_score_config_get':  return await hrScoreConfigGet();
         case 'hr_score_config_save': return await hrScoreConfigSave(p.data);
         case 'hr_score_rules_save':  return await hrScoreRulesSave(p.data);
+        case 'hr_score_rule_delete': return await hrScoreRuleDelete(p.rule_key);
         case 'hr_score_bands_save':  return await hrScoreBandsSave(p.data);
         case 'hr_score_event_add':   return await hrScoreEventAdd(p.data);
         case 'hr_score_event_list':  return await hrScoreEventList(p.emp_id, p.cycle);
@@ -1200,6 +1201,16 @@
     const { error } = await sb().from('score_rules').upsert(rows, { onConflict: 'rule_key' });
     if (error) throw error;
     await logAct('แก้ไขกฎคะแนนวินัย', null, 'อัปเดต ' + rows.length + ' กฎ');
+    return { ok: true };
+  }
+  async function hrScoreRuleDelete(rule_key) {
+    if (!rule_key) return { ok: false, error: 'ไม่ระบุกฎ' };
+    const { data: r } = await sb().from('score_rules').select('kind,label').eq('rule_key', rule_key).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบกฎนี้' };
+    if (r.kind !== 'manual') return { ok: false, error: 'ลบได้เฉพาะกฎ manual (กฎ auto ระบบต้องใช้)' };
+    const { error } = await sb().from('score_rules').delete().eq('rule_key', rule_key);
+    if (error) throw error;
+    await logAct('ลบกฎคะแนนวินัย', null, r.label || rule_key);
     return { ok: true };
   }
   async function hrScoreBandsSave(data) {
