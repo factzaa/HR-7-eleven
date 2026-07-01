@@ -1970,7 +1970,7 @@ function buildScheduleCanvas(){
   const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
   const emps=scFilteredEmps();
   const nameW=190, colW=82, rowH=48, headTop=70, padX=16;
-  const W=padX*2+nameW+colW*7, H=headTop+rowH*Math.max(1,emps.length)+64;
+  const W=padX*2+nameW+colW*7, H=headTop+rowH*Math.max(1,emps.length)+30;
   const c=document.createElement('canvas'); c.width=W; c.height=H;
   const x=c.getContext('2d');
   x.fillStyle='#fff'; x.fillRect(0,0,W,H);
@@ -2001,10 +2001,7 @@ function buildScheduleCanvas(){
   x.strokeStyle='#e5e7eb'; x.lineWidth=1;
   for(let i=0;i<=7;i++){ const gx=padX+nameW+colW*i; x.beginPath(); x.moveTo(gx,top-2); x.lineTo(gx,top+rowH*emps.length); x.stroke(); }
   for(let r=0;r<=emps.length;r++){ const gy=top+rowH*r; x.beginPath(); x.moveTo(padX,gy); x.lineTo(padX+nameW+colW*7,gy); x.stroke(); }
-  // คำอธิบายโค้ดกะ (รวมผลัดที่เพิ่มใหม่ในระบบ)
-  const legend=(DATA.shifts||[]).map(s=>(s.code||s.shift_id)+'='+s.name).join('    ·    ');
-  x.fillStyle='#374151'; x.font='600 11px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('โค้ดกะ:  '+legend, padX, H-38);
-  x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('ระบบ HR 7-Eleven · ช่องสีส้ม = ไปแทนสาขา', padX, H-16);
+  x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('ระบบ HR 7-Eleven · ช่องสีส้ม = ไปแทนสาขา', padX, H-14);
   return c;
 }
 let _scImgBlob=null;
