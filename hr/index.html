@@ -322,6 +322,7 @@
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
+  <button class="tab" id="tab_special"><span class="tabicon">⭐</span>งานพิเศษ</button>
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
@@ -470,6 +471,46 @@
     <button class="btn btn-pri btn-sm" id="rr_go">ดูรายงาน</button>
   </div>
   <div id="rr_body"><div class="empty">เลือกช่วงวันที่แล้วกด "ดูรายงาน"</div></div>
+</div>
+
+<!-- Special tasks (งานพิเศษ มอบหมายรายบุคคล) -->
+<div id="view_special" class="container" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">⭐ มอบหมายงานพิเศษ (รายบุคคล)</h3></div>
+  <div class="card" style="padding:14px">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ชื่องาน *</label>
+        <input id="sp_title" type="text" placeholder="เช่น ทำความสะอาดตู้แช่" style="width:100%;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">รายละเอียดงาน</label>
+        <textarea id="sp_detail" rows="3" placeholder="อธิบายสิ่งที่ต้องทำ" style="width:100%;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">กำหนดเดดไลน์</label>
+          <input id="sp_deadline" type="datetime-local" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+        <div style="flex:1;min-width:220px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">หมายเหตุถึงพนักงาน</label>
+          <input id="sp_note" type="text" placeholder="ข้อความ/คำแนะนำเพิ่มเติม" style="width:100%;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      </div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">รูปตัวอย่าง/อ้างอิง (แนบได้หลายรูป)</label>
+        <label class="btn btn-sec btn-sm" style="cursor:pointer">📎 เลือกรูป<input id="sp_photos" type="file" accept="image/*" multiple style="display:none"></label>
+        <div id="sp_photo_preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div></div>
+      <div>
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">เลือกผู้รับผิดชอบ (ได้มากกว่า 1 คน) *</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+          <select id="sp_branchfilter" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+          <input id="sp_empsearch" type="text" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+          <button class="btn btn-sec btn-sm" id="sp_selall" type="button">เลือกทั้งหมดที่แสดง</button>
+          <button class="btn btn-sec btn-sm" id="sp_selnone" type="button">ล้าง</button>
+          <span id="sp_selcount" style="font-size:13px;color:var(--muted)">เลือกแล้ว 0 คน</span>
+        </div>
+        <div id="sp_emplist" style="max-height:230px;overflow:auto;border:1.5px solid var(--line2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+      <div style="text-align:right"><button class="btn btn-pri" id="sp_create">มอบหมายงานพิเศษ</button></div>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานพิเศษที่มอบหมายไว้</h3>
+    <select id="sp_listbranch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-sec btn-sm" id="sp_refresh">รีเฟรช</button>
+  </div>
+  <div id="sp_list"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Leaves -->
@@ -1719,7 +1760,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','special','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
@@ -1729,6 +1770,7 @@ showTab = function(name){
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
   else if(name==='handover'){ loadTaskTab(); }
+  else if(name==='special'){ loadSpecialTab(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
@@ -1738,6 +1780,109 @@ showTab = function(name){
   else if(name==='notifylog') loadNotifyLog();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
+
+// ========== งานพิเศษ (มอบหมายรายบุคคล) ==========
+let SP_PHOTOS=[];            // dataURLs รูปตัวอย่างจาก HR
+let SP_SEL=new Set();        // emp_id ที่เลือกเป็นผู้รับผิดชอบ
+function spReadImg(file){ return new Promise(res=>{ const r=new FileReader(); r.onload=ev=>{ const img=new Image(); img.onload=()=>{ const max=1200,sc=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=img.width*sc; c.height=img.height*sc; c.getContext('2d').drawImage(img,0,0,c.width,c.height); res(c.toDataURL('image/jpeg',0.85)); }; img.src=ev.target.result; }; r.readAsDataURL(file); }); }
+function spFmt(dt){ if(!dt) return '—'; try{ return new Date(dt).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return String(dt); } }
+function loadSpecialTab(){
+  fillSelect($('sp_branchfilter'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  fillSelect($('sp_listbranch'),   (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  if(!$('sp_emplist').dataset.wired){
+    $('sp_photos').addEventListener('change', async ()=>{ for(const f of $('sp_photos').files){ try{ SP_PHOTOS.push(await spReadImg(f)); }catch(e){} } $('sp_photos').value=''; renderSpPhotoPreview(); });
+    $('sp_branchfilter').addEventListener('change', renderSpEmpList);
+    $('sp_empsearch').addEventListener('input', renderSpEmpList);
+    $('sp_selall').onclick=()=>{ spVisibleEmps().forEach(e=>SP_SEL.add(e.emp_id)); renderSpEmpList(); };
+    $('sp_selnone').onclick=()=>{ SP_SEL.clear(); renderSpEmpList(); };
+    $('sp_create').onclick=spCreate;
+    $('sp_refresh').onclick=loadSpecialList;
+    $('sp_listbranch').addEventListener('change', loadSpecialList);
+    $('sp_emplist').dataset.wired='1';
+  }
+  renderSpEmpList();
+  loadSpecialList();
+}
+function renderSpPhotoPreview(){
+  $('sp_photo_preview').innerHTML=SP_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:60px;height:60px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="spRmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
+}
+function spRmPhoto(i){ SP_PHOTOS.splice(i,1); renderSpPhotoPreview(); }
+function spVisibleEmps(){
+  const bf=$('sp_branchfilter').value; const q=($('sp_empsearch').value||'').trim().toLowerCase();
+  return (DATA.rows||[]).filter(e=>e.active!==false)
+    .filter(e=>!bf || e.branch_id===bf)
+    .filter(e=>!q || (e.emp_id+' '+(e.name||'')+' '+(e.nickname||'')).toLowerCase().includes(q));
+}
+function renderSpEmpList(){
+  const brName={}; (DATA.branches||[]).forEach(b=>brName[b.branch_id]=b.name);
+  const list=spVisibleEmps();
+  $('sp_selcount').textContent='เลือกแล้ว '+SP_SEL.size+' คน';
+  if(!list.length){ $('sp_emplist').innerHTML='<div class="empty" style="padding:10px">ไม่พบพนักงาน</div>'; return; }
+  $('sp_emplist').innerHTML=list.map(e=>{
+    const ck=SP_SEL.has(e.emp_id)?'checked':'';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:14px"><input type="checkbox" data-spemp="'+esc(e.emp_id)+'" '+ck+'><span style="flex:1">'+esc(e.name||e.emp_id)+(e.nickname?' <span style="color:var(--muted)">('+esc(e.nickname)+')</span>':'')+'</span><span style="color:var(--muted);font-size:12px">'+esc(brName[e.branch_id]||e.branch_id||'—')+'</span></label>';
+  }).join('');
+  $('sp_emplist').querySelectorAll('[data-spemp]').forEach(cb=>cb.onchange=()=>{ const id=cb.dataset.spemp; if(cb.checked)SP_SEL.add(id); else SP_SEL.delete(id); $('sp_selcount').textContent='เลือกแล้ว '+SP_SEL.size+' คน'; });
+}
+async function spCreate(){
+  const title=($('sp_title').value||'').trim();
+  if(!title){ toast('err','กรอกชื่องาน'); return; }
+  if(!SP_SEL.size){ toast('err','เลือกผู้รับผิดชอบอย่างน้อย 1 คน'); return; }
+  const dl=$('sp_deadline').value;
+  const btn=$('sp_create'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังบันทึก…';
+  const r=await post({ action:'hr_special_create', password:pwd, data:{
+    title, detail:$('sp_detail').value, deadline: dl? new Date(dl).toISOString() : null,
+    hr_note:$('sp_note').value, hr_photos:SP_PHOTOS, emp_ids:[...SP_SEL]
+  }});
+  btn.disabled=false; btn.textContent=old;
+  if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
+  toast('ok','มอบหมายงานพิเศษให้ '+r.assigned+' คนแล้ว');
+  $('sp_title').value=''; $('sp_detail').value=''; $('sp_deadline').value=''; $('sp_note').value='';
+  SP_PHOTOS=[]; SP_SEL.clear(); renderSpPhotoPreview(); renderSpEmpList();
+  loadSpecialList();
+}
+function spStatusPill(s){
+  const m={ todo:['ยังไม่ทำ','#6b7280'], submitted:['รอตรวจ','#d97706'], approved:['ผ่านแล้ว','#16a34a'], sent_back:['ตีกลับ','#dc2626'] };
+  const v=m[s]||['—','#6b7280'];
+  return '<span style="display:inline-block;background:'+v[1]+'1a;color:'+v[1]+';border:1px solid '+v[1]+';border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600">'+v[0]+'</span>';
+}
+async function loadSpecialList(){
+  $('sp_list').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_special_list', password:pwd, branch: $('sp_listbranch').value||'' });
+  if(!r.ok){ $('sp_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  if(!r.rows.length){ $('sp_list').innerHTML='<div class="empty">ยังไม่มีงานพิเศษ</div>'; return; }
+  $('sp_list').innerHTML=r.rows.map(t=>{
+    let h='<div class="card" style="padding:14px;margin-bottom:12px">';
+    h+='<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-weight:700;font-size:15px">'+esc(t.title)+'</div>';
+    if(t.detail) h+='<div style="font-size:13px;color:var(--muted);margin-top:2px;white-space:pre-wrap">'+esc(t.detail)+'</div>';
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-top:4px">⏰ เดดไลน์: '+spFmt(t.deadline)+' · มอบหมาย '+t.n+' คน · ผ่าน '+t.done+'/'+t.n+(t.waiting?(' · รอตรวจ '+t.waiting):'')+'</div>';
+    if(t.hr_note) h+='<div style="font-size:12.5px;margin-top:3px">📝 '+esc(t.hr_note)+'</div>';
+    h+='</div><button class="btn btn-sec btn-sm" data-spdel="'+t.id+'">🗑 ลบ</button></div>';
+    if(t.hr_photos&&t.hr_photos.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
+    h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:10px">';
+    h+=t.people.map(p=>{
+      let c='<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-size:14px;font-weight:600">'+esc(p.emp_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(p.branch_name)+'</span> '+spStatusPill(p.status)+'</div>';
+      if(p.submitted_at) c+='<div style="font-size:12px;color:var(--muted)">ส่งเมื่อ '+spFmt(p.submitted_at)+'</div>';
+      if(p.emp_note) c+='<div style="font-size:12.5px;margin-top:2px">หมายเหตุพนักงาน: '+esc(p.emp_note)+'</div>';
+      if(p.review_note) c+='<div style="font-size:12.5px;color:#b45309;margin-top:2px">↳ '+esc(p.review_note)+'</div>';
+      if(p.photos&&p.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+p.photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:60px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
+      c+='</div>';
+      if(p.status==='submitted') c+='<div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-spap="'+p.id+'">✅ ผ่าน</button><button class="btn btn-sec btn-sm" data-sprb="'+p.id+'">⤴ ตีกลับ</button></div>';
+      return c+'</div>';
+    }).join('');
+    h+='</div>';
+    return h+'</div>';
+  }).join('');
+  $('sp_list').querySelectorAll('[data-spap]').forEach(b=>b.onclick=()=>spReview(Number(b.dataset.spap),'approved'));
+  $('sp_list').querySelectorAll('[data-sprb]').forEach(b=>b.onclick=()=>{ const note=prompt('เหตุผลที่ตีกลับ (พนักงานจะเห็น):'); if(note===null)return; spReview(Number(b.dataset.sprb),'sent_back',note); });
+  $('sp_list').querySelectorAll('[data-spdel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบงานพิเศษนี้ทั้งหมด? (รวมของทุกคน)'))return; const rr=await post({action:'hr_special_delete',password:pwd,id:Number(b.dataset.spdel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadSpecialList(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
+}
+async function spReview(id,status,note){
+  const r=await post({ action:'hr_special_review', password:pwd, assignee_id:id, status, note:note||'' });
+  if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadSpecialList(); }
+  else toast('err', r.error||'ไม่สำเร็จ');
+}
+function spLightbox(img){ const o=document.createElement('div'); o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out'; o.innerHTML='<img src="'+img.src+'" style="max-width:92%;max-height:90%;border-radius:8px">'; o.onclick=()=>o.remove(); document.body.appendChild(o); }
 
 // ========== บอร์ดวันนี้ (สาขา × กะ × คน) ==========
 function loadBoard(){

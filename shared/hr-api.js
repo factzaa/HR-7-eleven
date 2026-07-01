@@ -170,6 +170,10 @@
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note);
         case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
+        case 'hr_special_create':    return await hrSpecialCreate(p.data);
+        case 'hr_special_list':      return await hrSpecialList(p.branch);
+        case 'hr_special_review':    return await hrSpecialReview(p.assignee_id, p.status, p.note);
+        case 'hr_special_delete':    return await hrSpecialDelete(p.id);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications(p.branch);
         case 'hr_notify_history': return await hrNotifyHistory();
@@ -1395,6 +1399,90 @@
     const rows = (tR.data || []).map(t => ({ ...t, branch_name: brName[t.branch_id] || t.branch_id || '—' }));
     const leaders = (lR.data || []).map(l => ({ ...l, branch_name: brName[l.branch_id] || l.branch_id || '—' }));
     return { ok: true, start, end, rows, leaders };
+  }
+
+  // ---------- SPECIAL TASKS (งานพิเศษ มอบหมายรายบุคคล) ----------
+  async function hrSpecialCreate(d) {
+    d = d || {};
+    if (!d.title || !String(d.title).trim()) return { ok: false, error: 'ต้องระบุชื่องาน' };
+    if (!Array.isArray(d.emp_ids) || !d.emp_ids.length) return { ok: false, error: 'เลือกผู้รับผิดชอบอย่างน้อย 1 คน' };
+    // อัปโหลดรูปตัวอย่างจาก HR (ถ้ามี)
+    const hr_photos = [];
+    for (const p of (d.hr_photos || [])) {
+      if (p) { try { hr_photos.push(await window.HR.uploadPhoto('employee-docs', 'special/hr_' + Date.now() + '_' + hr_photos.length + '.jpg', p)); } catch (e) { console.warn('hr photo', e); } }
+    }
+    const ins = {
+      title: String(d.title).trim(),
+      detail: (d.detail || '').trim() || null,
+      deadline: d.deadline || null,
+      hr_photos,
+      hr_note: (d.hr_note || '').trim() || null,
+      created_by: d.created_by || 'HR',
+      active: true,
+    };
+    const { data: task, error } = await sb().from('special_tasks').insert(ins).select('id').single();
+    if (error) throw error;
+    // ดึงสาขาประจำของพนักงาน เพื่อ snapshot ไว้กรอง/แจ้ง HR
+    const { data: emps } = await sb().from('employees').select('emp_id,branch_id,name,nickname').in('emp_id', d.emp_ids);
+    const brOf = {}; (emps || []).forEach(e => { brOf[e.emp_id] = e.branch_id; });
+    const rows = d.emp_ids.map(id => ({ task_id: task.id, emp_id: id, branch_id: brOf[id] || null, status: 'todo' }));
+    const { error: e2 } = await sb().from('special_task_assignees').insert(rows);
+    if (e2) throw e2;
+    await logAct('มอบหมายงานพิเศษ', null, ins.title + ' · ' + rows.length + ' คน' + (ins.deadline ? (' · ครบกำหนด ' + ins.deadline) : ''));
+    return { ok: true, id: task.id, assigned: rows.length };
+  }
+
+  async function hrSpecialList(branch) {
+    const [tR, brR, empR] = await Promise.all([
+      sb().from('special_tasks').select('*').eq('active', true).order('created_at', { ascending: false }).limit(200),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('employees').select('emp_id,name,nickname'),
+    ]);
+    if (tR.error) throw tR.error;
+    const tasks = tR.data || [];
+    if (!tasks.length) return { ok: true, rows: [] };
+    const ids = tasks.map(t => t.id);
+    const { data: asg } = await sb().from('special_task_assignees').select('*').in('task_id', ids);
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.nickname || e.name; });
+    const byTask = {};
+    (asg || []).forEach(a => { (byTask[a.task_id] = byTask[a.task_id] || []).push(a); });
+    let rows = tasks.map(t => {
+      const people = (byTask[t.id] || []).map(a => ({
+        ...a, emp_name: empName[a.emp_id] || a.emp_id, branch_name: brName[a.branch_id] || a.branch_id || '—',
+      })).sort((x, y) => (x.emp_name > y.emp_name ? 1 : -1));
+      const done = people.filter(p => p.status === 'approved').length;
+      const waiting = people.filter(p => p.status === 'submitted').length;
+      return { ...t, people, n: people.length, done, waiting };
+    });
+    if (branch) rows = rows.filter(t => t.people.some(p => p.branch_id === branch));
+    return { ok: true, rows };
+  }
+
+  async function hrSpecialReview(assigneeId, status, note) {
+    if (!assigneeId) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const { data: a } = await sb().from('special_task_assignees').select('emp_id,task_id').eq('id', assigneeId).maybeSingle();
+    const upd = {
+      status: status === 'approved' ? 'approved' : 'sent_back',
+      reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString(),
+    };
+    // ตีกลับ = ให้ทำใหม่ + แจ้งพนักงานอีกครั้ง
+    if (upd.status === 'sent_back') upd.assigned_notified = false;
+    const { error } = await sb().from('special_task_assignees').update(upd).eq('id', assigneeId);
+    if (error) throw error;
+    let title = '';
+    if (a) { const { data: t } = await sb().from('special_tasks').select('title').eq('id', a.task_id).maybeSingle(); title = t ? t.title : ''; }
+    await logAct(upd.status === 'approved' ? 'อนุมัติงานพิเศษ' : 'ตีกลับงานพิเศษ', a ? a.emp_id : null, title + (note ? (' · ' + note) : ''));
+    return { ok: true };
+  }
+
+  async function hrSpecialDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const { data: t } = await sb().from('special_tasks').select('title').eq('id', id).maybeSingle();
+    const { error } = await sb().from('special_tasks').delete().eq('id', id);  // cascade ลบ assignees เอง
+    if (error) throw error;
+    await logAct('ลบงานพิเศษ', null, t ? t.title : ('#' + id));
+    return { ok: true };
   }
 
   window.HRAPI = { dispatch };

@@ -780,6 +780,38 @@
     return { emp, date:d, shifts: shR.data||[], rows: asgR.data||[] };
   }
 
+  // ---------- SPECIAL TASKS (งานพิเศษจาก HR — แสดงในหน้า "งานของฉัน") ----------
+  async function getSpecialTasks(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data: asg } = await sb.from('special_task_assignees').select('*').eq('emp_id', empId).order('id', { ascending:false });
+    if(!asg || !asg.length) return { emp, rows:[] };
+    const ids=[...new Set(asg.map(a=>a.task_id))];
+    const { data: tasks } = await sb.from('special_tasks').select('*').in('id', ids);
+    const tById={}; (tasks||[]).forEach(t=>{ tById[t.id]=t; });
+    const rows = asg.filter(a=>{ const t=tById[a.task_id]; return t && t.active!==false; }).map(a=>{
+      const t=tById[a.task_id];
+      return {
+        id:a.id, task_id:a.task_id, title:t.title, detail:t.detail, deadline:t.deadline,
+        hr_photos:t.hr_photos||[], hr_note:t.hr_note,
+        status:a.status, photos:a.photos||[], emp_note:a.emp_note,
+        review_note:a.review_note, reviewer:a.reviewer, submitted_at:a.submitted_at,
+      };
+    });
+    return { emp, rows };
+  }
+  async function submitSpecialTask({ assignee_id, empId, photos, note }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const a=(await sb.from('special_task_assignees').select('id,emp_id,task_id,status').eq('id',assignee_id).maybeSingle()).data;
+    if(!a) throw new Error('ไม่พบงานนี้');
+    if(a.emp_id!==empId) throw new Error('ไม่ใช่งานของคุณ');
+    const urls=[];
+    for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','special/'+(emp.branch_id||'x')+'_'+a.task_id+'_'+empId+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null, submit_notified:false };
+    if(urls.length){ upd.photos=urls; }
+    const {error}=await sb.from('special_task_assignees').update(upd).eq('id',assignee_id); if(error) throw error;
+    return { ok:true };
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask };
 })();
