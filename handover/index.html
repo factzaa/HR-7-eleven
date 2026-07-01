@@ -122,7 +122,24 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 function show(id){['step_id','step_menu','step_m1','step_m2','step_m3','step_report'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
 function fmt(t){try{return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'});}catch(e){return '';}}
 function ST(s){return s==='approved'?['ผ่านแล้ว','ok']:s==='submitted'?['รอตรวจ','warn']:s==='sent_back'?['ตีกลับ','bad']:['มอบหมายแล้ว','muted2'];}
-function resizeFile(file){return new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{const max=1000,sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=img.width*sc;c.height=img.height*sc;c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',0.85));};img.src=ev.target.result;};r.readAsDataURL(file);});}
+function resizeFile(file){return new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{
+  const max=1000,sc=Math.min(1,max/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');c.width=img.width*sc;c.height=img.height*sc;
+  const x=c.getContext('2d'); x.drawImage(img,0,0,c.width,c.height);
+  // ปั๊มวันเวลา + สาขา + ผู้ถ่าย ลงบนรูป (กันใช้รูปซ้ำ/รูปเก่า)
+  try{
+    const now=new Date();
+    const ts=now.toLocaleString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' น.';
+    const sub=(typeof EMP!=='undefined'&&EMP)?((EMP.nickname||EMP.name||'')+' · '+branchName(EMP.branch_id)):'';
+    const pad=Math.round(c.width*0.022), fs=Math.max(13,Math.round(c.width*0.033));
+    const bh=fs*2+pad*2.4;
+    x.fillStyle='rgba(0,0,0,.5)'; x.fillRect(0,c.height-bh,c.width,bh);
+    x.textBaseline='alphabetic'; x.fillStyle='#fff';
+    x.font='700 '+fs+'px Anuphan,Sarabun,sans-serif'; x.fillText(ts, pad, c.height-fs-pad*0.6);
+    if(sub){ x.font='400 '+Math.round(fs*0.8)+'px Anuphan,Sarabun,sans-serif'; x.fillText(sub, pad, c.height-pad*0.7); }
+  }catch(e){}
+  res(c.toDataURL('image/jpeg',0.85));
+};img.src=ev.target.result;};r.readAsDataURL(file);});}
 async function filesToData(files){const out=[];for(const f of files){out.push(await resizeFile(f));}return out;}
 function thumbsHtml(photos){if(!photos||!photos.length)return '';return '<div class="thumbs">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)">').join('')+'</div>';}
 // กล่องขยายรูป (lightbox) แบบ gallery — เลื่อนซ้าย-ขวา / ปัดนิ้ว / ลูกศร / ตัวนับ
@@ -272,10 +289,9 @@ async function openM2(){
     if(canDo){
       c+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
         +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="mfc_'+a.id+'" style="display:none"></label>'
-        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">🖼️ แกลเลอรี<input type="file" accept="image/*" multiple id="mfg_'+a.id+'" style="display:none"></label>'
         +'</div>'
         +'<div class="thumbs" id="mt_'+a.id+'" style="margin:2px 0 4px"></div>'
-        +'<div class="muted" id="mc_'+a.id+'" style="margin-bottom:8px">'+(a.require_photo?'ต้องแนบรูป — ถ่าย/เลือกได้หลายรูป':'แนบรูปได้ตามต้องการ')+'</div>'
+        +'<div class="muted" id="mc_'+a.id+'" style="margin-bottom:8px">'+(a.require_photo?'ต้องแนบรูป — ถ่ายได้หลายรูป (บังคับกล้อง กันใช้รูปเก่า)':'ถ่ายรูปได้ตามต้องการ (บังคับกล้อง)')+'</div>'
         +'<input type="text" id="mn_'+a.id+'" placeholder="หมายเหตุ (ถ้ามี)" style="margin-bottom:8px">'
         +'<button class="btn btn-pri" data-sub="'+a.id+'">ส่งงาน</button>';
     }
@@ -294,8 +310,7 @@ async function openM2(){
   TASK_PHOTOS={};
   r.mine.forEach(a=>{ if(a.status==='todo'||a.status==='sent_back'){
     TASK_PHOTOS[a.id]=[];
-    wireTaskInput('mfc_'+a.id, a.id);   // กล้อง
-    wireTaskInput('mfg_'+a.id, a.id);   // แกลเลอรี
+    wireTaskInput('mfc_'+a.id, a.id);   // กล้องอย่างเดียว (กันหยิบรูปเก่าจากแกลเลอรี)
   }});
   document.querySelectorAll('[data-sub]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.sub); const note=($('mn_'+id)||{}).value||'';
