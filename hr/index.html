@@ -452,9 +452,6 @@
   <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><select id="tk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
   <div id="tk_body"><div class="empty">กำลังโหลด…</div></div>
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">ส่ง / รับผลัด (สภาพร้าน)</h3><div id="ho_counts" style="display:flex; gap:8px; flex-wrap:wrap"></div><button class="btn btn-sec btn-sm" id="ho_refresh">รีเฟรช</button></div>
-  <div id="ho_body"><div class="empty">กำลังโหลด…</div></div>
-
   <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">Log งาน (ตรวจสอบย้อนหลัง)</h3>
     <input id="tl_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <span style="color:var(--muted);font-size:13px">ถึง</span>
@@ -1729,7 +1726,7 @@ showTab = function(name){
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
-  else if(name==='handover'){ loadTaskTab(); loadHandover(); }
+  else if(name==='handover'){ loadTaskTab(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
@@ -2329,7 +2326,7 @@ async function loadHandover(){
       <td>${h.photo_url?('<a href="'+esc(h.photo_url)+'" target="_blank">ดูรูป</a>'):'—'}</td>
     </tr>`).join('')+'</tbody></table></div></div>';
 }
-$('ho_refresh').onclick=loadHandover;
+$('ho_refresh') && ($('ho_refresh').onclick=loadHandover);
 
 // ========== งานในกะ (มอบหมาย/ตรวจ) ==========
 function bkkTodayStr(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
@@ -2388,7 +2385,7 @@ async function loadTaskList(){
     const imgs=ph.length?'<div style="display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
     const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
     return '<div style="padding:12px 2px;border-bottom:1px solid var(--line)">'
-      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+' <button class="btn btn-danger btn-sm" data-tdel="'+t.id+'" title="ลบงานนี้ (ลงผิด/ซ้ำ)">🗑</button></div>'
       +'<div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.8">'
         +'👤 ผู้ทำ: <b style="color:var(--txt)">'+esc(t.emp_name||t.emp_id||'—')+'</b><br>'
         +'📤 ส่งงาน: '+fmtDT(t.submitted_at)+'<br>'
@@ -2422,10 +2419,16 @@ async function loadTaskList(){
   }).join('');
   document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
   document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>{ const note=prompt('ระบุสิ่งที่ต้องแก้ (ส่งกลับให้พนักงาน):'); if(note===null) return; taskReview(Number(b.dataset.trb),'sent_back',note); });
+  document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>taskDelete(Number(b.dataset.tdel)));
 }
 async function taskReview(id,status,note){
   const r=await post({ action:'hr_task_review', password:pwd, id, status, note });
   if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadTaskList(); } else toast('err', r.error||'ไม่สำเร็จ');
+}
+async function taskDelete(id){
+  if(!confirm('ลบงานนี้ออกจากระบบถาวร?\n(ใช้กับงานที่ลงผิดวัน/ซ้ำ — ลบแล้วกู้คืนไม่ได้)')) return;
+  const r=await post({ action:'hr_task_delete', password:pwd, id });
+  if(r.ok){ toast('ok','ลบงานแล้ว'); loadTaskList(); } else toast('err', r.error||'ลบไม่สำเร็จ');
 }
 // กล่องขยายรูป (lightbox) แบบ gallery — เลื่อนซ้าย-ขวา / ปัดนิ้ว / ลูกศร / ตัวนับ
 let LB={imgs:[],idx:0};

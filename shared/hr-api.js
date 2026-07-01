@@ -167,6 +167,7 @@
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note);
+        case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications(p.branch);
@@ -1353,6 +1354,15 @@
     const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
     if (error) throw error;
     await logAct(status === 'approved' ? 'อนุมัติงาน' : 'ตีงานกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
+    return { ok: true };
+  }
+  // ลบงานในกะออกจากระบบ (ใช้กับงานที่ลงผิดวัน/ซ้ำ)
+  async function hrTaskDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const { data: t } = await sb().from('task_assignments').select('emp_id,title,work_date,shift_id').eq('id', id).maybeSingle();
+    const { error } = await sb().from('task_assignments').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ลบงานในกะ', t ? t.emp_id : null, t ? (t.title + ' · ' + (t.work_date || '') + ' · กะ ' + (t.shift_id || '')) : ('#' + id));
     return { ok: true };
   }
 
