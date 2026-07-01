@@ -115,10 +115,10 @@
     const today = bangkokDate();
     const cyc = cycleRange21();
     const endEff = cyc.end < today ? cyc.end : today;
-    const [empR, attR, holR, lvR] = await Promise.all([
+    const [empR, attR, schR, lvR] = await Promise.all([
       sb.from('employees').select('emp_id,name,nickname,default_shift,branch_id,weekly_off').eq('emp_id', empId).maybeSingle(),
       sb.from('attendance').select('work_date,check_in,late_min,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
-      sb.from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
+      sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('start_date,end_date,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
     ]);
     if (empR.error) throw empR.error;
@@ -127,18 +127,21 @@
     const todayRow = att.find(a => a.work_date === today);
     const late = att.filter(a => a.late_min > 0);
     const worked = new Set(att.filter(a => a.check_in).map(a => a.work_date));
-    const holidaySet = new Set((holR.data || []).map(h => h.date));
+    const myLeaves = lvR.data || [];
+    const onLeave = d => myLeaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
     let leave_days = 0;
-    (lvR.data || []).forEach(l => {
+    myLeaves.forEach(l => {
       const s = l.start_date < cyc.start ? cyc.start : l.start_date;
       const e = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date);
       if (s <= e) leave_days += _daysBetween(s, e);
     });
-    const days_should = _workingDays(cyc.start, endEff, empR.data.weekly_off, holidaySet);
-    const days_worked = worked.size;
+    // ขาดงาน = นับจากวัน "จัดกะจริง" (ตารางเวร) ที่ผ่านมาแล้ว แต่ไม่มาและไม่ได้ลา
+    const mySched = [...new Set((schR.data || []).filter(s => s.shift_id).map(s => s.work_date))].filter(d => d < today);
+    const days_should = mySched.length;
+    const days_worked = mySched.filter(d => worked.has(d)).length;
     const late_count = late.length;
     const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
-    const absent = Math.max(0, days_should - days_worked - leave_days);
+    const absent = mySched.filter(d => !worked.has(d) && !onLeave(d)).length;
     const level = _disciplineLevel(late_count, absent);
     return {
       emp: empR.data, cycle: cyc,
