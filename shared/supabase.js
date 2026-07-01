@@ -571,6 +571,8 @@
     const _ctx = await _shiftCtx(emp);   // รองรับกะข้ามคืน
     const shift = shiftId || _ctx.group || '';
     const today = _ctx.workDate;
+    await _assertShiftStarted(shift, today);
+    await _assertPrevShiftDone(emp.branch_id, shift, today);
     let photo_url = null;
     if (photo) photo_url = await uploadPhoto('employee-docs', 'task/' + (emp.branch_id || 'x') + '_' + task_def_id + '_' + Date.now() + '.jpg', photo);
     if (def.require_photo && !photo_url) throw new Error('งานนี้ต้องแนบรูปก่อนส่ง');
@@ -590,6 +592,8 @@
     const _ctx = await _shiftCtx(by);   // รองรับกะข้ามคืน
     const shift = shiftId || _ctx.group || '';
     const today = _ctx.workDate;
+    await _assertShiftStarted(shift, today);
+    await _assertPrevShiftDone(by.branch_id, shift, today);
     const base = { emp_id: to.emp_id, emp_name: to.nickname || to.name, status: 'todo', photo_url: null, emp_note: null, submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
     const existing = await _findAsg(by.branch_id, today, shift, task_def_id);
     if (existing) { const { error } = await sb.from('task_assignments').update(base).eq('id', existing.id); if (error) throw error; }
@@ -634,6 +638,31 @@
       return { workDate: open.work_date, group: (sh&&sh.main_shift)||open.shift_id };
     }
     return { workDate: today, group: await _empGroup(emp) };
+  }
+  // ---- ค่าตั้งระบบ + กฎกันทำงานผิดเวลา/ข้ามกะ ----
+  let _appSettings=null;
+  async function _loadSettings(){ if(_appSettings) return _appSettings; try{ const {data}=await sb.from('app_settings').select('key,value'); _appSettings={}; (data||[]).forEach(r=>{_appSettings[r.key]=r.value;}); }catch(e){ _appSettings={}; } return _appSettings; }
+  async function _guardOn(key){ const s=await _loadSettings(); const v=s[key]; return v===undefined||v===null||v===''||v==='1'||v==='true'; }  // ดีฟอลต์ = เปิด
+  function _hm2m(hm){ const p=String(hm||'').split(':'); return (parseInt(p[0])||0)*60+(parseInt(p[1])||0); }
+  function _nowBkkMin(){ const hm=new Date(Date.now()+7*3600*1000).toISOString().slice(11,16); return _hm2m(hm); }
+  // กฎ 2: ถึงเวลาเข้ากะหรือยัง (ห้ามทำ/แจกงานก่อนเวลาเข้ากะ)
+  async function _assertShiftStarted(group, workDate){
+    if(!(await _guardOn('guard_shift_start'))) return;
+    const sh=(await sb.from('shifts').select('start_time,name').eq('shift_id',group).maybeSingle()).data;
+    if(!sh || !sh.start_time) return;                 // ไม่รู้เวลาเข้ากะ = ไม่บล็อก
+    const today=bangkokDate();
+    if(today > workDate) return;                       // เลยวันเข้ากะมาแล้ว = กำลังทำอยู่
+    if(today === workDate && _nowBkkMin() >= _hm2m(sh.start_time)) return;
+    throw new Error('ยังไม่ถึงเวลาเข้ากะ'+(sh.name?(' '+sh.name):'')+' (เริ่ม '+String(sh.start_time).slice(0,5)+' น.) — ยังทำงานไม่ได้');
+  }
+  // กฎ 1: งานของ "กะเดียวกันในวันก่อนหน้า" (สาขาเดียวกัน) ต้อง "ผ่าน" ครบก่อน
+  //       เช่น ดึกวันที่ 2 จะทำได้ต่อเมื่อ ดึกวันที่ 1 ผ่านครบ · ไม่เกี่ยวกับผลัดอื่น (เช้า/บ่ายทำได้ปกติ)
+  async function _assertPrevShiftDone(branch, group, workDate){
+    if(!(await _guardOn('guard_prev_shift'))) return;
+    const prev=_addDays(workDate,-1);
+    const rows=(await sb.from('task_assignments').select('status').eq('branch_id',branch||'').eq('shift_id',group).eq('work_date',prev)).data||[];
+    const pending=rows.filter(r=>r.status!=='approved').length;
+    if(pending>0) throw new Error('งานกะนี้ของวันก่อนหน้ายังไม่ผ่านครบ ('+pending+' รายการ) — ต้องทำ/ให้ตรวจให้เสร็จก่อน จึงจะเริ่มกะนี้ของวันนี้ได้');
   }
   // ผลัดหลักก่อนหน้า (วนเฉพาะกะที่เป็นผลัดหลัก main_shift===shift_id เรียงตามเวลาเริ่ม)
   async function _prevMainGroup(group){
@@ -690,6 +719,8 @@
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const def=(await sb.from('task_defs').select('*').eq('id',task_def_id).maybeSingle()).data; if(!def) throw new Error('ไม่พบงานนี้');
     const {workDate:today,group:shift}=await _shiftCtx(emp);
+    await _assertShiftStarted(shift, today);
+    await _assertPrevShiftDone(emp.branch_id, shift, today);
     const existing=await _findAsg(emp.branch_id,today,shift,task_def_id);
     const base={ emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, status:'todo', photos:null, photo_url:null, emp_note:null, submitted_at:null, reviewer:null, review_note:null, reviewed_at:null };
     if(existing){ const {error}=await sb.from('task_assignments').update(base).eq('id',existing.id); if(error) throw error; }
@@ -697,7 +728,8 @@
     return { ok:true };
   }
   async function submitTaskMulti({ id, empId, photos, note }){
-    const row=(await sb.from('task_assignments').select('branch_id,task_def_id').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
+    const row=(await sb.from('task_assignments').select('branch_id,task_def_id,shift_id,work_date').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
+    await _assertShiftStarted(row.shift_id, row.work_date);
     const def=(await sb.from('task_defs').select('min_photos').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
     const urls=[];
