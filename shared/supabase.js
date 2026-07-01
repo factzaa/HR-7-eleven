@@ -812,6 +812,50 @@
     return { ok:true };
   }
 
+  // ---------- QA สินค้าใกล้หมดอายุ (พนักงานบันทึก/ดู + ระบบจำบาร์โค้ด) ----------
+  function _addDaysStr(s, n){ return new Date(new Date(s+'T00:00:00Z').getTime()+n*86400000).toISOString().slice(0,10); }
+  async function getQaFolders(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data: asg } = await sb.from('qa_folder_assignees').select('folder_id').eq('emp_id', empId);
+    const ids=[...new Set((asg||[]).map(a=>a.folder_id))];
+    if(!ids.length) return { emp, rows:[] };
+    const [fR, itR] = await Promise.all([
+      sb.from('qa_folders').select('*').in('id', ids).eq('active', true).order('created_at', { ascending:false }),
+      sb.from('qa_items').select('folder_id,status,expiry_date').in('folder_id', ids),
+    ]);
+    const today=bangkokDate(); const soon=_addDaysStr(today, 30);
+    const cnt={};
+    (itR.data||[]).forEach(i=>{ const o=cnt[i.folder_id]=cnt[i.folder_id]||{ total:0, on_shelf:0, expiring:0 }; o.total++; if(i.status==='on_shelf'){ o.on_shelf++; if(i.expiry_date&&i.expiry_date>=today&&i.expiry_date<=soon) o.expiring++; } });
+    const rows=(fR.data||[]).map(f=>({ ...f, stats: cnt[f.id]||{ total:0, on_shelf:0, expiring:0 } }));
+    return { emp, rows };
+  }
+  async function getQaItems(folderId){
+    const { data } = await sb.from('qa_items').select('*').eq('folder_id', folderId).order('expiry_date', { ascending:true });
+    return { rows: data||[] };
+  }
+  async function qaLookupProduct(barcode){
+    if(!barcode) return null;
+    const { data } = await sb.from('qa_products').select('name,size').eq('barcode', String(barcode).trim()).maybeSingle();
+    return data||null;
+  }
+  async function qaAddItem({ folder_id, empId, barcode, name, size, qty, expiry_date, zone, photos }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if(!name||!String(name).trim()) throw new Error('กรอกชื่อสินค้า');
+    if(!expiry_date) throw new Error('เลือกวันหมดอายุ');
+    const urls=[];
+    for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','qa/'+(emp.branch_id||'x')+'_'+folder_id+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    const bc=(barcode||'').trim()||null;
+    const row={ folder_id, barcode:bc, name:String(name).trim(), size:(size||'').trim()||null, qty: parseInt(qty)>0?parseInt(qty):1, expiry_date, zone:(zone||'').trim()||null, photos:urls, status:'on_shelf', branch_id:emp.branch_id||null, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name };
+    const { error }=await sb.from('qa_items').insert(row); if(error) throw error;
+    if(bc){ try{ await sb.from('qa_products').upsert({ barcode:bc, name:row.name, size:row.size, updated_at:new Date().toISOString() }, { onConflict:'barcode' }); }catch(e){} }
+    return { ok:true };
+  }
+  async function qaUpdateItemStatus({ item_id, empId, status }){
+    if(!['on_shelf','sold','removed'].includes(status)) throw new Error('สถานะไม่ถูกต้อง');
+    const { error }=await sb.from('qa_items').update({ status, updated_at:new Date().toISOString() }).eq('id', item_id);
+    if(error) throw error; return { ok:true };
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus };
 })();

@@ -174,6 +174,11 @@
         case 'hr_special_list':      return await hrSpecialList(p.branch);
         case 'hr_special_review':    return await hrSpecialReview(p.assignee_id, p.status, p.note);
         case 'hr_special_delete':    return await hrSpecialDelete(p.id);
+        case 'hr_qa_folder_create':  return await hrQaFolderCreate(p.data);
+        case 'hr_qa_folder_list':    return await hrQaFolderList();
+        case 'hr_qa_folder_delete':  return await hrQaFolderDelete(p.id);
+        case 'hr_qa_items':          return await hrQaItems(p.folder_id, p.status);
+        case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications(p.branch);
         case 'hr_notify_history': return await hrNotifyHistory();
@@ -1482,6 +1487,87 @@
     const { error } = await sb().from('special_tasks').delete().eq('id', id);  // cascade ลบ assignees เอง
     if (error) throw error;
     await logAct('ลบงานพิเศษ', null, t ? t.title : ('#' + id));
+    return { ok: true };
+  }
+
+  // ---------- QA สินค้าใกล้หมดอายุ (โฟลเดอร์ + สินค้า) ----------
+  async function hrQaFolderCreate(d) {
+    d = d || {};
+    if (!d.title || !String(d.title).trim()) return { ok: false, error: 'ต้องระบุชื่อหัวข้อ/โฟลเดอร์' };
+    if (!Array.isArray(d.emp_ids) || !d.emp_ids.length) return { ok: false, error: 'เลือกผู้รับผิดชอบอย่างน้อย 1 คน' };
+    const ins = {
+      title: String(d.title).trim(),
+      target_month: (d.target_month || '').trim() || null,
+      note: (d.note || '').trim() || null,
+      created_by: d.created_by || 'HR',
+      active: true,
+    };
+    const { data: folder, error } = await sb().from('qa_folders').insert(ins).select('id').single();
+    if (error) throw error;
+    const { data: emps } = await sb().from('employees').select('emp_id,branch_id').in('emp_id', d.emp_ids);
+    const brOf = {}; (emps || []).forEach(e => { brOf[e.emp_id] = e.branch_id; });
+    const rows = d.emp_ids.map(id => ({ folder_id: folder.id, emp_id: id, branch_id: brOf[id] || null }));
+    const { error: e2 } = await sb().from('qa_folder_assignees').insert(rows);
+    if (e2) throw e2;
+    await logAct('สร้างโฟลเดอร์ QA', null, ins.title + ' · ' + rows.length + ' คน');
+    return { ok: true, id: folder.id, assigned: rows.length };
+  }
+
+  async function hrQaFolderList() {
+    const [fR, empR] = await Promise.all([
+      sb().from('qa_folders').select('*').eq('active', true).order('created_at', { ascending: false }).limit(200),
+      sb().from('employees').select('emp_id,name,nickname'),
+    ]);
+    if (fR.error) throw fR.error;
+    const folders = fR.data || [];
+    if (!folders.length) return { ok: true, rows: [] };
+    const ids = folders.map(f => f.id);
+    const [asgR, itR] = await Promise.all([
+      sb().from('qa_folder_assignees').select('folder_id,emp_id').in('folder_id', ids),
+      sb().from('qa_items').select('folder_id,status,expiry_date').in('folder_id', ids),
+    ]);
+    const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.nickname || e.name; });
+    const asgByF = {}; (asgR.data || []).forEach(a => { (asgByF[a.folder_id] = asgByF[a.folder_id] || []).push(empName[a.emp_id] || a.emp_id); });
+    const today = bkkToday();
+    const itByF = {};
+    (itR.data || []).forEach(i => {
+      const o = itByF[i.folder_id] = itByF[i.folder_id] || { total: 0, on_shelf: 0, sold: 0, removed: 0, expiring: 0 };
+      o.total++; o[i.status] = (o[i.status] || 0) + 1;
+      if (i.status === 'on_shelf' && i.expiry_date && i.expiry_date <= addDays(today, 30) && i.expiry_date >= today) o.expiring++;
+    });
+    const rows = folders.map(f => ({ ...f, assignees: asgByF[f.id] || [], stats: itByF[f.id] || { total: 0, on_shelf: 0, sold: 0, removed: 0, expiring: 0 } }));
+    return { ok: true, rows };
+  }
+
+  async function hrQaFolderDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุโฟลเดอร์' };
+    const { data: f } = await sb().from('qa_folders').select('title').eq('id', id).maybeSingle();
+    const { error } = await sb().from('qa_folders').delete().eq('id', id);  // cascade
+    if (error) throw error;
+    await logAct('ลบโฟลเดอร์ QA', null, f ? f.title : ('#' + id));
+    return { ok: true };
+  }
+
+  async function hrQaItems(folderId, status) {
+    if (!folderId) return { ok: false, error: 'ไม่ระบุโฟลเดอร์' };
+    let q = sb().from('qa_items').select('*').eq('folder_id', folderId);
+    if (status) q = q.eq('status', status);
+    const [itR, brR, fR] = await Promise.all([
+      q.order('expiry_date', { ascending: true }),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('qa_folders').select('*').eq('id', folderId).maybeSingle(),
+    ]);
+    if (itR.error) throw itR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (itR.data || []).map(i => ({ ...i, branch_name: brName[i.branch_id] || i.branch_id || '—' }));
+    return { ok: true, folder: fR.data || null, rows };
+  }
+
+  async function hrQaItemDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const { error } = await sb().from('qa_items').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ลบสินค้า QA', null, '#' + id);
     return { ok: true };
   }
 
