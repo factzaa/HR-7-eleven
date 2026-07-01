@@ -323,6 +323,7 @@
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_special"><span class="tabicon">⭐</span>งานพิเศษ</button>
+  <button class="tab" id="tab_qa"><span class="tabicon">🗓️</span>QA สินค้า</button>
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
@@ -511,6 +512,39 @@
     <button class="btn btn-sec btn-sm" id="sp_refresh">รีเฟรช</button>
   </div>
   <div id="sp_list"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- QA สินค้า (ตรวจนับสินค้าใกล้หมดอายุ) -->
+<div id="view_qa" class="container" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">🗓️ สร้างโฟลเดอร์ตรวจวันหมดอายุ</h3></div>
+  <div class="card" style="padding:14px">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ชื่อหัวข้อ/โฟลเดอร์ *</label>
+          <input id="qa_title" type="text" placeholder="เช่น สินค้าหมดอายุเดือน 8" style="width:100%;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">เดือนเป้าหมาย</label>
+          <input id="qa_month" type="month" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      </div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">คำสั่ง/หมายเหตุถึงพนักงาน</label>
+        <input id="qa_note" type="text" placeholder="เช่น เก็บข้อมูลสินค้าที่จะหมดอายุเดือน 8-10" style="width:100%;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div>
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">มอบหมายให้ (ได้หลายคน) *</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+          <select id="qa_branchfilter" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+          <input id="qa_empsearch" type="text" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+          <button class="btn btn-sec btn-sm" id="qa_selall" type="button">เลือกทั้งหมดที่แสดง</button>
+          <button class="btn btn-sec btn-sm" id="qa_selnone" type="button">ล้าง</button>
+          <span id="qa_selcount" style="font-size:13px;color:var(--muted)">เลือกแล้ว 0 คน</span>
+        </div>
+        <div id="qa_emplist" style="max-height:220px;overflow:auto;border:1.5px solid var(--line2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+      <div style="text-align:right"><button class="btn btn-pri" id="qa_create">สร้างโฟลเดอร์ + มอบหมาย</button></div>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">โฟลเดอร์ทั้งหมด</h3><button class="btn btn-sec btn-sm" id="qa_refresh">รีเฟรช</button></div>
+  <div id="qa_list"><div class="empty">กำลังโหลด…</div></div>
+  <div id="qa_items_wrap" style="margin-top:16px"></div>
 </div>
 
 <!-- Leaves -->
@@ -1760,7 +1794,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','special','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
@@ -1771,6 +1805,7 @@ showTab = function(name){
   else if(name==='score') loadScore();
   else if(name==='handover'){ loadTaskTab(); }
   else if(name==='special'){ loadSpecialTab(); }
+  else if(name==='qa'){ loadQaTab(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
@@ -1883,6 +1918,95 @@ async function spReview(id,status,note){
   else toast('err', r.error||'ไม่สำเร็จ');
 }
 function spLightbox(img){ const o=document.createElement('div'); o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out'; o.innerHTML='<img src="'+img.src+'" style="max-width:92%;max-height:90%;border-radius:8px">'; o.onclick=()=>o.remove(); document.body.appendChild(o); }
+
+// ========== QA สินค้าใกล้หมดอายุ ==========
+let QA_SEL=new Set();
+function qaFmtDate(d){ if(!d) return '—'; try{ return new Date(d+'T00:00:00').toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'}); }catch(e){ return String(d); } }
+function qaDaysLeft(d){ const x=new Date(d+'T00:00:00'); const n=new Date(); n.setHours(0,0,0,0); return Math.round((x-n)/86400000); }
+function loadQaTab(){
+  fillSelect($('qa_branchfilter'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  if(!$('qa_emplist').dataset.wired){
+    $('qa_branchfilter').addEventListener('change', renderQaEmpList);
+    $('qa_empsearch').addEventListener('input', renderQaEmpList);
+    $('qa_selall').onclick=()=>{ qaVisibleEmps().forEach(e=>QA_SEL.add(e.emp_id)); renderQaEmpList(); };
+    $('qa_selnone').onclick=()=>{ QA_SEL.clear(); renderQaEmpList(); };
+    $('qa_create').onclick=qaCreate;
+    $('qa_refresh').onclick=loadQaFolders;
+    $('qa_emplist').dataset.wired='1';
+  }
+  renderQaEmpList();
+  loadQaFolders();
+}
+function qaVisibleEmps(){
+  const bf=$('qa_branchfilter').value; const q=($('qa_empsearch').value||'').trim().toLowerCase();
+  return (DATA.rows||[]).filter(e=>e.active!==false).filter(e=>!bf||e.branch_id===bf).filter(e=>!q||(e.emp_id+' '+(e.name||'')+' '+(e.nickname||'')).toLowerCase().includes(q));
+}
+function renderQaEmpList(){
+  const brName={}; (DATA.branches||[]).forEach(b=>brName[b.branch_id]=b.name);
+  const list=qaVisibleEmps();
+  $('qa_selcount').textContent='เลือกแล้ว '+QA_SEL.size+' คน';
+  if(!list.length){ $('qa_emplist').innerHTML='<div class="empty" style="padding:10px">ไม่พบพนักงาน</div>'; return; }
+  $('qa_emplist').innerHTML=list.map(e=>{
+    const ck=QA_SEL.has(e.emp_id)?'checked':'';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:14px"><input type="checkbox" data-qaemp="'+esc(e.emp_id)+'" '+ck+'><span style="flex:1">'+esc(e.name||e.emp_id)+(e.nickname?' <span style="color:var(--muted)">('+esc(e.nickname)+')</span>':'')+'</span><span style="color:var(--muted);font-size:12px">'+esc(brName[e.branch_id]||e.branch_id||'—')+'</span></label>';
+  }).join('');
+  $('qa_emplist').querySelectorAll('[data-qaemp]').forEach(cb=>cb.onchange=()=>{ const id=cb.dataset.qaemp; if(cb.checked)QA_SEL.add(id); else QA_SEL.delete(id); $('qa_selcount').textContent='เลือกแล้ว '+QA_SEL.size+' คน'; });
+}
+async function qaCreate(){
+  const title=($('qa_title').value||'').trim();
+  if(!title){ toast('err','กรอกชื่อหัวข้อ/โฟลเดอร์'); return; }
+  if(!QA_SEL.size){ toast('err','เลือกผู้รับผิดชอบอย่างน้อย 1 คน'); return; }
+  const btn=$('qa_create'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังบันทึก…';
+  const r=await post({ action:'hr_qa_folder_create', password:pwd, data:{ title, target_month:$('qa_month').value, note:$('qa_note').value, emp_ids:[...QA_SEL] }});
+  btn.disabled=false; btn.textContent=old;
+  if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
+  toast('ok','สร้างโฟลเดอร์ + มอบหมาย '+r.assigned+' คนแล้ว');
+  $('qa_title').value=''; $('qa_month').value=''; $('qa_note').value=''; QA_SEL.clear(); renderQaEmpList();
+  loadQaFolders();
+}
+async function loadQaFolders(){
+  $('qa_list').innerHTML='<div class="empty">กำลังโหลด…</div>'; $('qa_items_wrap').innerHTML='';
+  const r=await post({ action:'hr_qa_folder_list', password:pwd });
+  if(!r.ok){ $('qa_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  if(!r.rows.length){ $('qa_list').innerHTML='<div class="empty">ยังไม่มีโฟลเดอร์</div>'; return; }
+  $('qa_list').innerHTML=r.rows.map(f=>{
+    const s=f.stats||{total:0,on_shelf:0,sold:0,removed:0,expiring:0};
+    return '<div class="card" style="padding:14px;margin-bottom:10px"><div style="display:flex;gap:10px;align-items:flex-start">'
+      +'<div style="flex:1"><div style="font-weight:700;font-size:15px">📁 '+esc(f.title)+(s.expiring>0?' <span style="background:#dc2626;color:#fff;font-size:12px;border-radius:999px;padding:1px 8px">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
+      +(f.target_month?'<div style="font-size:12.5px;color:var(--muted)">เดือนเป้าหมาย: '+esc(f.target_month)+'</div>':'')
+      +(f.note?'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">📝 '+esc(f.note)+'</div>':'')
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:3px">ผู้รับผิดชอบ: '+esc((f.assignees||[]).join(', ')||'—')+'</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">สินค้า '+s.total+' รายการ · ยังอยู่ '+s.on_shelf+' · ขายแล้ว '+(s.sold||0)+' · เก็บออก '+(s.removed||0)+'</div>'
+      +'</div><div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-qaview="'+f.id+'">ดูสินค้า</button><button class="btn btn-sec btn-sm" data-qadel="'+f.id+'">🗑 ลบ</button></div>'
+      +'</div></div>';
+  }).join('');
+  $('qa_list').querySelectorAll('[data-qaview]').forEach(b=>b.onclick=()=>qaViewItems(Number(b.dataset.qaview)));
+  $('qa_list').querySelectorAll('[data-qadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบโฟลเดอร์นี้ทั้งหมด? (รวมสินค้าที่บันทึกไว้)'))return; const rr=await post({action:'hr_qa_folder_delete',password:pwd,id:Number(b.dataset.qadel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
+}
+async function qaViewItems(folderId){
+  const wrap=$('qa_items_wrap'); wrap.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_qa_items', password:pwd, folder_id:folderId });
+  if(!r.ok){ wrap.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const title=r.folder?r.folder.title:'';
+  let h='<div class="toolbar"><h3 style="flex:1;font-size:15px;font-weight:600">📁 สินค้าใน: '+esc(title)+'</h3></div>';
+  if(!r.rows.length){ wrap.innerHTML=h+'<div class="empty">ยังไม่มีสินค้าในโฟลเดอร์นี้</div>'; return; }
+  h+=r.rows.map(it=>{
+    const dl=it.expiry_date?qaDaysLeft(it.expiry_date):null;
+    const stTxt=it.status==='sold'?'ขายแล้ว':it.status==='removed'?'เก็บออกแล้ว':'ยังอยู่บนเชลฟ์';
+    const stCol=it.status==='sold'?'#16a34a':it.status==='removed'?'#6b7280':'#d97706';
+    let col='#6b7280'; if(dl!=null){ if(dl<0||dl<=3)col='#dc2626'; else if(dl<=7)col='#b45309'; else if(dl<=30)col='#a06515'; }
+    let c='<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1">';
+    c+='<div style="font-weight:700">'+esc(it.name)+' <span style="color:'+stCol+';font-size:12px;font-weight:600">· '+stTxt+'</span></div>';
+    c+='<div style="font-size:12.5px;color:var(--muted);margin-top:2px">'+(it.barcode?('รหัส '+esc(it.barcode)+' · '):'')+(it.size?('ขนาด '+esc(it.size)+' · '):'')+'จำนวน '+(it.qty||1)+' ชิ้น'+(it.zone?(' · โซน '+esc(it.zone)):'')+'</div>';
+    c+='<div style="font-size:13px;color:'+col+';font-weight:600;margin-top:3px">📅 หมดอายุ '+qaFmtDate(it.expiry_date)+(dl!=null?(dl<0?(' · หมดอายุแล้ว '+(-dl)+' วัน'):(' · เหลือ '+dl+' วัน')):'')+'</div>';
+    c+='<div style="font-size:12px;color:var(--muted);margin-top:2px">บันทึกโดย '+esc(it.emp_name||it.emp_id||'—')+' · '+esc(it.branch_name)+'</div>';
+    c+='</div><button class="btn btn-sec btn-sm" data-qaidel="'+it.id+'">🗑</button></div>';
+    if(it.photos&&it.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+it.photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
+    return c+'</div>';
+  }).join('');
+  wrap.innerHTML=h;
+  wrap.querySelectorAll('[data-qaidel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบสินค้ารายการนี้?'))return; const rr=await post({action:'hr_qa_item_delete',password:pwd,id:Number(b.dataset.qaidel)}); if(rr.ok){ toast('ok','ลบแล้ว'); qaViewItems(folderId); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
+}
 
 // ========== บอร์ดวันนี้ (สาขา × กะ × คน) ==========
 function loadBoard(){
