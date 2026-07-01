@@ -6,7 +6,7 @@
 create table if not exists public.leave_types (
   type            text primary key,           -- ชื่อประเภท เช่น ลาป่วย
   advance_days    int  not null default 0,     -- ต้องลาล่วงหน้าอย่างน้อยกี่วัน
-  quota_per_year  int,                         -- โควตาวัน/ปี (null = ไม่จำกัด)
+  quota_per_year  int,                         -- โควตาวัน/เดือน (null = ไม่จำกัด) [คงชื่อคอลัมน์เดิมไว้ ความหมายเปลี่ยนเป็นรายเดือน]
   allow_backdate  boolean not null default false, -- ลาย้อนหลังได้ (เช่น ลาป่วย)
   require_doc     boolean not null default false, -- ต้องแนบเอกสาร (เช่น ใบรับรองแพทย์)
   active          boolean not null default true,
