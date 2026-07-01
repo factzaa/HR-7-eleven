@@ -883,6 +883,8 @@ function toast(kind, msg){ const t=$('toast'); t.className='toast show '+kind; t
 function shiftName(id){ const s = DATA.shifts.find(x=>x.shift_id===id); return s?s.name:(id||'—'); }
 function branchName(id){ const b = DATA.branches.find(x=>x.branch_id===id); return b?b.name:(id||'—'); }
 function grpOf(shiftId){ const s=(DATA.shifts||[]).find(x=>x.shift_id===shiftId); return (s&&s.main_shift)||shiftId; }
+// แปลง OT (ชั่วโมงทศนิยม) → "X ชม Y นาที" ให้อ่านง่าย
+function fmtOT(h){ h=Number(h)||0; if(h<=0) return '—'; const m=Math.round(h*60); const hh=Math.floor(m/60), mm=m%60; return hh?((hh+' ชม'+(mm?' '+mm+' นาที':''))):(mm+' นาที'); }
 function groupShifts(){ return (DATA.shifts||[]).filter(s=> (s.main_shift&&s.main_shift===s.shift_id) || !s.main_shift ); }
 function pickInitial(s){ s=String(s||'').trim(); return s ? s.charAt(0).toUpperCase() : '?'; }
 
@@ -1418,7 +1420,7 @@ function renderReportDetail(){
         <td class="mono">${esc(r.check_in||'—')}</td>
         <td class="mono">${esc(r.check_out||'—')}</td>
         <td class="mono">${r.late_min>0?'<span style="color:var(--red)">'+r.late_min+'</span>':'—'}</td>
-        <td class="mono">${r.ot_hours>0?r.ot_hours:'—'}</td>
+        <td class="mono">${fmtOT(r.ot_hours)}</td>
         <td>${r.photo_url?`<a href="${esc(r.photo_url)}" target="_blank">ดู</a>`:'—'}</td>
         <td>${r.gps_lat?`<a href="https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}" target="_blank">แผนที่</a>`:'—'}</td>
         <td>${String(r.status).toUpperCase()==='OPEN'?'<span class="pill warn">ค้าง</span>':'<span class="pill ok">ปิดแล้ว</span>'}</td>
@@ -1439,7 +1441,7 @@ function renderReportSummary(){
         <td class="mono">${e.absent>0?'<span style="color:var(--red);font-weight:700">'+e.absent+'</span>':'0'}</td>
         <td class="mono">${e.leave_days||0}</td>
         <td class="mono">${e.ot_days||0}</td>
-        <td class="mono">${e.ot}</td>
+        <td class="mono">${fmtOT(e.ot)}</td>
         <td class="mono">${e.days_cover>0?'<span style="color:#c2410c;font-weight:600" title="'+esc(e.cover_detail||'')+'">'+e.days_cover+'</span>':'0'}</td>
       </tr>`).join('')}</tbody></table></div>
     <div style="font-size:12px;color:var(--muted);padding:8px 12px">* ขาด = วันที่จัดเวรไว้และผ่านไปแล้ว แต่ไม่มา/ไม่ลา · วันทำงาน &amp; OT อิงการลงเวลาจริง · สาย(วัน) = จำนวนวันที่มาสาย</div></div>`;
@@ -1513,7 +1515,7 @@ function renderDiscipline(){
           <td class="mono">${x.late_total}</td>
           <td class="mono">${x.absent>0?'<span style="color:var(--red)">'+x.absent+'</span>':'0'}/${x.days_should}</td>
           <td class="mono">${x.days_worked}</td>
-          <td class="mono">${x.ot_hours}</td>
+          <td class="mono">${fmtOT(x.ot_hours)}</td>
           <td class="rowact">${x.level>=3?`<button class="btn btn-warn btn-sm" data-warn="${esc(x.emp_id)}">ออกใบเตือน</button>`:'<span style="color:var(--muted); font-size:12.5px">—</span>'}</td>
         </tr>`).join('')}</tbody></table></div></div>`;
   document.querySelectorAll('[data-warn]').forEach(b=>b.onclick=()=>openIssueWarning(b.dataset.warn));
@@ -1557,7 +1559,7 @@ function openIssueWarning(empId){
   const x = DISC.employees.find(e=>String(e.emp_id)===String(empId)); if(!x) return;
   $('w_emp_id').value = empId;
   $('w_target').innerHTML = `<div class="name-cell">${x.photo_url?`<div class="thumb"><img src="${esc(x.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(x.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(x.emp_name)}</span><span class="nick">รหัส ${esc(x.emp_id)}</span></div></div>`;
-  $('w_summary').innerHTML = `<div class="stats">รอบ <b>${esc(DISC.cycle.startStr)} ถึง ${esc(DISC.cycle.endStr)}</b><br>สาย ${x.late_count} ครั้ง รวม ${x.late_total} นาที · ขาดงาน ${x.absent} วัน · OT ${x.ot_hours} ชม.</div>`;
+  $('w_summary').innerHTML = `<div class="stats">รอบ <b>${esc(DISC.cycle.startStr)} ถึง ${esc(DISC.cycle.endStr)}</b><br>สาย ${x.late_count} ครั้ง รวม ${x.late_total} นาที · ขาดงาน ${x.absent} วัน · OT ${fmtOT(x.ot_hours)}</div>`;
   $('w_level_name').value = x.level_name;
   $('w_level').value = x.level;
   $('w_reason').value = 'มาทำงานสาย '+x.late_count+' ครั้ง รวม '+x.late_total+' นาทีในรอบ' + (x.absent>0?(' และขาดงาน '+x.absent+' วัน'):'') + ' ซึ่งเข้าข่ายระดับ "'+x.level_name+'" ตามระเบียบบริษัท';
