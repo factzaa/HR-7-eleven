@@ -91,13 +91,6 @@
         <label>ชื่อสินค้า *</label>
         <input id="ai_name" type="text" placeholder="ชื่อสินค้า" style="margin-bottom:10px">
 
-        <button class="btn btn-sec btn-sm" id="ai_ocr" style="width:100%;margin-bottom:6px">🔍 สแกนรูปช่วยกรอกชื่อ (OCR)</button>
-        <div id="ai_ocrbox" class="hide" style="background:#f7faf8;border:1px dashed var(--line);border-radius:10px;padding:10px;margin-bottom:10px">
-          <div class="muted" style="margin-bottom:6px">ข้อความที่อ่านได้ (แตะปุ่มเพื่อนำไปใช้ แล้วแก้ให้ถูกต้อง):</div>
-          <div id="ai_ocrtext" style="font-size:14px;white-space:pre-wrap;max-height:120px;overflow:auto;margin-bottom:8px"></div>
-          <div class="row2"><button class="btn btn-sec btn-sm" id="ai_useName">ใส่ในช่องชื่อ</button><button class="btn btn-sec btn-sm" id="ai_useSize">ใส่ในช่องขนาด</button></div>
-        </div>
-
         <div class="row2" style="margin-bottom:10px">
           <div><label>ขนาด</label><input id="ai_size" type="text" placeholder="เช่น 200ml"></div>
           <div><label>จำนวน (ชิ้น) *</label><input id="ai_qty" type="number" inputmode="numeric" min="1" value="1"></div>
@@ -245,7 +238,7 @@ $('add_back').onclick=()=>{ show('step_items'); };
 function openAdd(){
   ADD_PHOTOS=[];
   $('ai_barcode').value=''; $('ai_name').value=''; $('ai_size').value=''; $('ai_qty').value='1'; $('ai_expiry').value=''; $('ai_zone').value='';
-  $('ai_found').textContent=''; $('ai_ocrbox').classList.add('hide'); $('ai_ocrtext').textContent='';
+  $('ai_found').textContent='';
   renderAddThumbs();
   $('add_sub').textContent=CUR_FOLDER?CUR_FOLDER.title:'';
   show('step_add');
@@ -297,29 +290,6 @@ function onBarcode(code){
   lookupBarcode(code);
   toast('ok','อ่านบาร์โค้ด: '+code);
 }
-
-// ===== OCR ช่วยกรอก (Tesseract) =====
-let ocrInput=null;
-$('ai_ocr').onclick=()=>{
-  if(!ocrInput){ ocrInput=document.createElement('input'); ocrInput.type='file'; ocrInput.accept='image/*'; ocrInput.capture='environment'; ocrInput.style.display='none'; document.body.appendChild(ocrInput);
-    ocrInput.addEventListener('change',runOcr); }
-  ocrInput.value=''; ocrInput.click();
-};
-async function runOcr(){
-  if(!ocrInput.files||!ocrInput.files.length) return;
-  const btn=$('ai_ocr'); const old=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังอ่าน…';
-  try{
-    const img=await plainResize(ocrInput.files[0]);
-    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-    const { data }=await Tesseract.recognize(img,'tha+eng');
-    const text=(data&&data.text?data.text:'').trim();
-    $('ai_ocrtext').textContent=text||'(อ่านข้อความไม่ได้ — ลองถ่ายให้ชัด/ตรง)';
-    $('ai_ocrbox').classList.remove('hide');
-  }catch(e){ toast('err','สแกนข้อความไม่สำเร็จ'); }
-  btn.disabled=false; btn.textContent=old;
-}
-$('ai_useName').onclick=()=>{ const t=$('ai_ocrtext').textContent.trim(); if(t) $('ai_name').value=t.split('\n')[0]; };
-$('ai_useSize').onclick=()=>{ const t=$('ai_ocrtext').textContent.trim(); if(t) $('ai_size').value=t.replace(/\n/g,' ').trim(); };
 
 // ===== บันทึกสินค้า =====
 $('ai_save').onclick=async()=>{
