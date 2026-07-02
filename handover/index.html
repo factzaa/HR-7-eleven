@@ -69,6 +69,7 @@
     <!-- step_menu -->
     <div id="step_menu" class="hide">
       <div class="who"><div><div class="nm" id="m_nm">—</div><div class="sub" id="m_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
+      <div id="hoCoCard" style="margin-bottom:12px"></div>
       <button class="imgbtn" id="bMenu1"><img src="../01_shift_leader_assign.png?v=1" alt="หัวหน้าผลัด · มอบหมายงาน"></button>
       <button class="imgbtn" id="bMenu2" style="position:relative"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"><span id="spBadge" style="display:none;position:absolute;top:8px;right:10px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;min-width:24px;height:24px;line-height:24px;border-radius:999px;padding:0 7px;box-shadow:0 2px 6px rgba(0,0,0,.3)">0</span></button>
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
@@ -214,6 +215,7 @@ $('goBtn').onclick=async()=>{
     $('m_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
     show('step_menu');
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"
+    refreshCoCard();         // การ์ดเตือนกดออก/ควบกะ
     if(window.refreshNotifyBtn) window.refreshNotifyBtn();
   }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
   $('goBtn').textContent='เริ่ม';
@@ -469,6 +471,72 @@ async function loadReport(){
 }
 
 loadBranches();
+
+// ===== การ์ดเตือนกดออก / ควบกะต่อ / ยื่นแก้ไขเวลาออก (แสดงในหน้ารับส่งผลัดด้วย) =====
+const CO_GRACE_MIN=15;
+function coEffEnd(row, shift){
+  if(!shift || !shift.end_time) return null;
+  const st=(shift.start_time||'').slice(0,5), en=shift.end_time.slice(0,5);
+  const overnight = st && en <= st;
+  const base=new Date(row.work_date+'T00:00:00');
+  if(overnight) base.setDate(base.getDate()+1);
+  const [h,m]=en.split(':').map(Number); base.setHours(h,m,0,0);
+  return base;
+}
+async function refreshCoCard(){
+  const box=$('hoCoCard'); if(!box) return;
+  if(!EMP){ box.innerHTML=''; return; }
+  let s; try{ s=await window.HR.getCheckoutState(EMP.emp_id); }catch(e){ box.innerHTML=''; return; }
+  if(!s || s.none || !s.row){ box.innerHTML=''; return; }
+  const row=s.row;
+  if(row.check_out && row.auto_closed){
+    box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'
+      +'<div style="font-weight:600">ระบบบันทึกเวลาออกให้แล้ว</div>'
+      +'<div style="margin-top:2px">ถ้าคุณออกจริงหลังเวลาเลิกกะ กดยื่นแก้ไขเวลาออกเพื่อให้หัวหน้า/HR ตรวจสอบ</div>'
+      +'<button class="btn btn-sec btn-sm" id="hoCorrBtn" style="margin-top:8px">ยื่นแก้ไขเวลาออกจริง</button></div>';
+    $('hoCorrBtn').onclick=()=>openCorrForm(row);
+    return;
+  }
+  if(!row.check_out){
+    const eff=coEffEnd(row, s.shift);
+    if(eff && Date.now() >= eff.getTime()+CO_GRACE_MIN*60000){
+      const endTxt=s.shift?s.shift.end_time.slice(0,5):'';
+      box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'
+        +'<div style="font-weight:600">⏰ อย่าลืมกดออกงาน</div>'
+        +'<div style="margin-top:2px">กะเลิก '+esc(endTxt)+' แล้ว — ถ้าเลิกแล้วไปกด "ออกงาน" ที่หน้าลงเวลา หรือถ้ายังทำต่อ (ควบกะ) เลือกด้านล่าง</div>'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
+        +'<button class="btn btn-sec btn-sm" data-ext="2">ควบกะต่อ +2 ชม.</button>'
+        +'<button class="btn btn-sec btn-sm" data-ext="4">+4 ชม.</button>'
+        +'<button class="btn btn-sec btn-sm" data-ext="12">จนกว่าจะกดออกเอง</button>'
+        +'</div></div>';
+      box.querySelectorAll('[data-ext]').forEach(b=>b.onclick=async()=>{
+        const hrs=Number(b.dataset.ext); const until=new Date(Date.now()+hrs*3600000).toISOString();
+        try{ await window.HR.extendShift({ empId:EMP.emp_id, untilIso:until }); toast('ok','บันทึกควบกะต่อแล้ว — อย่าลืมกดออกงานเมื่อเลิกจริง'); refreshCoCard(); }
+        catch(e){ toast('err', e.message||'ไม่สำเร็จ'); }
+      });
+      return;
+    }
+  }
+  box.innerHTML='';
+}
+function openCorrForm(row){
+  const box=$('hoCoCard');
+  const def=new Date(); def.setSeconds(0,0);
+  const local=new Date(def.getTime()-def.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  box.innerHTML='<div class="card" style="padding:12px">'
+    +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px">ยื่นแก้ไขเวลาออกจริง</div>'
+    +'<label style="font-size:12px;color:var(--muted)">เวลาออกจริง</label>'
+    +'<input type="datetime-local" id="hoCorrTime" value="'+local+'" style="width:100%;margin:4px 0 8px;font:inherit;font-size:15px;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px">'
+    +'<label style="font-size:12px;color:var(--muted)">เหตุผล</label>'
+    +'<input type="text" id="hoCorrReason" placeholder="เช่น ควบกะบ่ายฉุกเฉิน ลืมกดออก" style="width:100%;margin:4px 0 10px;font:inherit;font-size:15px;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px">'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-pri btn-sm" id="hoCorrSend">ส่งคำขอ</button><button class="btn btn-sec btn-sm" id="hoCorrCancel">ยกเลิก</button></div></div>';
+  $('hoCorrCancel').onclick=refreshCoCard;
+  $('hoCorrSend').onclick=async()=>{
+    const v=$('hoCorrTime').value; if(!v){ toast('err','เลือกเวลาออกจริง'); return; }
+    try{ await window.HR.requestCheckoutCorrection({ empId:EMP.emp_id, actualIso:new Date(v).toISOString(), reason:$('hoCorrReason').value }); toast('ok','ส่งคำขอแล้ว รอหัวหน้า/HR อนุมัติ'); box.innerHTML=''; }
+    catch(e){ toast('err', e.message||'ไม่สำเร็จ'); }
+  };
+}
 
 // ===== แจ้งเตือนงานบนมือถือพนักงาน (Web Push) =====
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('../sw.js').catch(function(){}); }); }
