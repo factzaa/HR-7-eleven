@@ -92,9 +92,30 @@
       return { needReason: true, checkinBranch, checkoutBranch: checkoutBranchId };
     }
     const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
     const effShift = row.shift_id || shiftId;
-    const { data: sh } = await sb.from('shifts').select('end_time,no_ot').eq('shift_id', effShift).maybeSingle();
-    const ot = (sh && sh.no_ot) ? 0 : computeOt(nowIso, sh?.end_time, await _otFreeHours());
+    // ควบกะ: OT คิดจากเวลาเลิก "กะสุดท้าย" ที่จัดเวรไว้วันนั้น (รองรับข้ามคืน) ไม่ใช่กะที่เช็กอิน
+    const { data: daySched } = await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', row.work_date);
+    const schIds = [...new Set((daySched || []).map(s => s.shift_id).filter(Boolean))];
+    const consider = schIds.length ? schIds : (effShift ? [effShift] : []);
+    let ot = 0;
+    if (consider.length) {
+      const { data: shs } = await sb.from('shifts').select('shift_id,start_time,end_time,no_ot').in('shift_id', consider);
+      const shById = {}; (shs || []).forEach(s => { shById[s.shift_id] = s; });
+      let lastEndMs = -Infinity, lastShift = null;
+      consider.forEach(sid => {
+        const s = shById[sid]; if (!s || !s.end_time) return;
+        const st = String(s.start_time || '').slice(0, 5), en = String(s.end_time).slice(0, 5);
+        const overnight = st && en <= st;                       // กะข้ามคืน: เลิกเช้าวันถัดไป
+        const endDate = overnight ? _addDays(row.work_date, 1) : row.work_date;
+        const ms = new Date(endDate + 'T' + en + ':00+07:00').getTime();
+        if (ms > lastEndMs) { lastEndMs = ms; lastShift = s; }
+      });
+      if (lastShift && !lastShift.no_ot && lastEndMs > -Infinity) {
+        const diff = (nowMs - lastEndMs) / 3600000 - (await _otFreeHours());
+        ot = diff > 0 ? Math.round(diff * 100) / 100 : 0;
+      }
+    }
     const upd = { check_out: nowIso, ot_hours: ot, status: 'CLOSED', auto_closed: false, extend_until: null };
     if (checkoutBranchId) upd.checkout_branch_id = checkoutBranchId;
     if (crossBranch) upd.checkout_note = String(reason).trim();
