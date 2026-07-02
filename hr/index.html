@@ -550,6 +550,17 @@
 
 <!-- Leaves -->
 <div id="view_leaves" class="container" style="display:none">
+  <div class="card" style="padding:14px;margin-bottom:14px">
+    <div style="font-weight:600;font-size:14px;margin-bottom:10px">🎓 บันทึกวันอบรม / ปฏิบัติงานนอกสถานที่ (นับเป็นวันทำงาน ไม่ต้องสแกน)</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">พนักงาน</label><select id="duty_emp" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:200px"></select></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ตั้งแต่</label><input id="duty_from" type="date" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ถึง</label><input id="duty_to" type="date" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div style="flex:1;min-width:180px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">หัวข้อ/เหตุผล</label><input id="duty_note" type="text" placeholder="เช่น อบรมความปลอดภัย ที่สำนักงานใหญ่" style="width:100%;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <button class="btn btn-pri btn-sm" id="duty_save">บันทึกวันอบรม</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">ระบบจะบันทึกให้ทุกวันในช่วงที่เลือกเป็น "อบรม" (นับเป็นวันทำงาน ไม่นับขาด · OT=0) — เว้นวันหยุด/วันที่ไม่ได้จัดเวรได้ตามจริง</div>
+  </div>
   <div class="dash-grid-2">
     <div>
       <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">ใบลา</h3><button class="btn btn-pri btn-sm" id="lv_new">+ เพิ่มใบลา</button></div>
@@ -1809,7 +1820,7 @@ showTab = function(name){
   else if(name==='handover'){ loadTaskTab(); }
   else if(name==='special'){ loadSpecialTab(); }
   else if(name==='qa'){ loadQaTab(); }
-  else if(name==='leaves'){ loadLeaves(); loadHolidays(); }
+  else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); }
@@ -2955,6 +2966,29 @@ async function loadCheckoutCorr(){
       +'</div>').join('')+'</div>';
   box.querySelectorAll('[data-coap]').forEach(b=>b.onclick=async()=>{ const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.coap),status:'approved'}); if(r2.ok){ toast('ok','อนุมัติแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
   box.querySelectorAll('[data-corj]').forEach(b=>b.onclick=async()=>{ const note=prompt('เหตุผลที่ปฏิเสธ (ถ้ามี):')||''; const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.corj),status:'rejected',note}); if(r2.ok){ toast('ok','ปฏิเสธแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
+}
+
+// ========== วันอบรม / ปฏิบัติงานนอกสถานที่ ==========
+function dutyYmd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+function initDuty(){
+  if($('duty_emp') && !$('duty_emp').dataset.filled){
+    fillSelect($('duty_emp'), (DATA.rows||[]).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
+    $('duty_emp').dataset.filled='1';
+    $('duty_save').onclick=saveDuty;
+  }
+}
+async function saveDuty(){
+  const emp=$('duty_emp').value, from=$('duty_from').value, to=$('duty_to').value||from;
+  if(!emp){ toast('err','เลือกพนักงาน'); return; }
+  if(!from){ toast('err','เลือกวันที่'); return; }
+  const dates=[]; let d=new Date(from+'T00:00:00'); const end=new Date(to+'T00:00:00');
+  if(end<d){ toast('err','ช่วงวันที่ไม่ถูกต้อง'); return; }
+  while(d<=end && dates.length<62){ dates.push(dutyYmd(d)); d.setDate(d.getDate()+1); }
+  const btn=$('duty_save'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังบันทึก…';
+  const r=await post({ action:'hr_mark_duty', password:pwd, data:{ emp_id:emp, dates, note:$('duty_note').value } });
+  btn.disabled=false; btn.textContent=old;
+  if(r.ok){ toast('ok','บันทึกวันอบรม '+r.count+' วันแล้ว'); $('duty_note').value=''; }
+  else toast('err', r.error||'ไม่สำเร็จ');
 }
 
 // ========== แจ้งเตือนแอดมิน ==========

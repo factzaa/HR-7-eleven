@@ -181,6 +181,7 @@
         case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
         case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
         case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note);
+        case 'hr_mark_duty':            return await hrMarkDuty(p.data);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications(p.branch);
         case 'hr_notify_history': return await hrNotifyHistory();
@@ -1626,6 +1627,39 @@
       await logAct('ปฏิเสธแก้ไขเวลาออก', c.emp_id, (c.emp_name || c.emp_id) + ' · ' + c.work_date + (note ? (' · ' + note) : ''));
     }
     return { ok: true };
+  }
+
+  // ---------- วันอบรม / ปฏิบัติงานนอกสถานที่ (นับเป็นวันทำงาน ไม่ต้องสแกน) ----------
+  async function hrMarkDuty(d) {
+    d = d || {};
+    if (!d.emp_id || !Array.isArray(d.dates) || !d.dates.length) return { ok: false, error: 'เลือกพนักงานและวันที่' };
+    const { data: emp } = await sb().from('employees').select('emp_id,name,branch_id,default_shift').eq('emp_id', d.emp_id).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบพนักงาน' };
+    const [schR, shR] = await Promise.all([
+      sb().from('schedules').select('work_date,shift_id,branch_id').eq('emp_id', d.emp_id).in('work_date', d.dates),
+      sb().from('shifts').select('shift_id,start_time,end_time'),
+    ]);
+    const schBy = {}; (schR.data || []).forEach(s => { schBy[s.work_date] = s; });
+    const shBy = {}; (shR.data || []).forEach(s => { shBy[s.shift_id] = s; });
+    const note = (d.note || '').trim() || null;
+    const rows = d.dates.map(wd => {
+      const sc = schBy[wd];
+      const shiftId = (sc && sc.shift_id) || emp.default_shift || null;
+      const sh = shiftId ? shBy[shiftId] : null;
+      const st = (sh && sh.start_time) ? String(sh.start_time).slice(0, 5) : '09:00';
+      const en = (sh && sh.end_time) ? String(sh.end_time).slice(0, 5) : '18:00';
+      const branch = (sc && sc.branch_id) || emp.branch_id || null;
+      return {
+        emp_id: emp.emp_id, work_date: wd, shift_id: shiftId, branch_id: branch,
+        check_in: new Date(wd + 'T' + st + ':00+07:00').toISOString(),
+        check_out: new Date(wd + 'T' + en + ':00+07:00').toISOString(),
+        late_min: 0, ot_hours: 0, status: 'TRAINING', duty_note: note,
+      };
+    });
+    const { error } = await sb().from('attendance').upsert(rows, { onConflict: 'emp_id,work_date' });
+    if (error) throw error;
+    await logAct('บันทึกวันอบรม/ปฏิบัติงานนอกสถานที่', emp.emp_id, rows.length + ' วัน' + (note ? (' · ' + note) : ''));
+    return { ok: true, count: rows.length };
   }
 
   window.HRAPI = { dispatch };
