@@ -2365,6 +2365,7 @@ function shOpen(shift){
   if(shift && !mains.some(s=>s.shift_id===shift.shift_id)) opts+='<option value="'+esc(shift.shift_id)+'">— ตั้งกะนี้เป็นผลัดหลักเอง</option>';
   $('sh_main').innerHTML=opts;
   $('sh_main').value = shift ? (shift.main_shift||'') : '';
+  if($('sh_no_ot')) $('sh_no_ot').checked = shift ? (shift.no_ot===true) : false;
   $('shOverlay').classList.add('show');
 }
 function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
@@ -3073,6 +3074,7 @@ async function loadSubmissions(){
       </div>
       <div class="field"><label>ผ่อนผันก่อนนับสาย (นาที)</label><input id="sh_grace" type="number" value="5"></div>
       <div class="field"><label>ผลัดหลัก (ระบบงานผลัด) — กะนี้นับเป็น เช้า/บ่าย/ดึก หรือพิเศษ</label><select id="sh_main"></select></div>
+      <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_no_ot" style="width:18px;height:18px"> ไม่คิด OT สำหรับกะนี้ (เช่น กะ ผจก.)</label></div>
     </div>
     <div class="modal-f"><button class="btn btn-pri" id="shSave">บันทึก</button></div>
   </div>`;
@@ -3082,7 +3084,7 @@ async function loadSubmissions(){
   $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
   $('dr_save') && ($('dr_save').onclick = saveDiscRules);
   $('shSave').onclick = async ()=>{
-    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value };
+    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked };
     if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
     $('shSave').innerHTML='<span class="spin"></span>';
     const r = await post({ action:'hr_shift_save', password:pwd, data });

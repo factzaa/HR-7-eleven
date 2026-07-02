@@ -501,6 +501,8 @@ async function submit(action){
   if(action==='checkin' && gps.branch && empMatch.branch_id && gps.branch.branch_id!==empMatch.branch_id){
     if(!confirm('⚠️ คุณอยู่นอกสาขาประจำ ('+branchNm(empMatch.branch_id)+')\nระบบจับได้ว่าคุณอยู่ในพื้นที่สาขา "'+gps.branch.name+'"\n\nยืนยันลงเวลาที่สาขา '+gps.branch.name+' (ไปแทนสาขา) ใช่หรือไม่?')) return;
   }
+  // กดออกงาน: ต้องอยู่ในเขตสาขา (นอกเขตทุกสาขา = บล็อก)
+  if(action==='checkout' && !gps.branch){ showToast('err','ต้องอยู่ในเขตสาขาก่อนกดออกงาน'); return; }
   busy=true; updateUI(); $('lockMsg').textContent='';
   setBtnBusy(true);
   try{
@@ -521,9 +523,17 @@ async function submit(action){
         shift_name: shiftName(r.shift_id||shiftId), branch_name: gps.branch?gps.branch.name:'',
         late_min: r.late_min||0, faceMatch });
     } else {
-      const co = await HR.checkOut({ empId:empMatch.emp_id, shiftId });
+      const curBranch = gps.branch ? gps.branch.branch_id : null;
+      let co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch });
+      // ข้ามสาขา → เด้งป๊อปอัพให้ใส่เหตุผล (จำเป็น) แล้วกดออกอีกครั้ง
+      if(co && co.needReason){
+        const reason = prompt('⚠️ คุณกำลังกดออกงานที่สาขา "'+(gps.branch?gps.branch.name:'')+'"\nซึ่งต่างจากสาขาที่เข้างาน ('+branchNm(co.checkinBranch)+')\n\nกรุณาระบุเหตุผล (จำเป็น เช่น ถูกเรียกไปช่วยอีกสาขา):');
+        if(reason===null || !reason.trim()){ showToast('err','ต้องระบุเหตุผลการกดออกข้ามสาขา'); return; }
+        co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, reason:reason.trim() });
+      }
       if(co && co.none){ showToast('err','ไม่พบการเข้างานที่ค้างอยู่ — อาจเช็กเอาต์ไปแล้ว'); }
-      else await showAckPopup('checkout', { name:empMatch.name, time:timeStr });
+      else if(co && co.needReason){ showToast('err','ต้องระบุเหตุผลก่อนกดออก'); }
+      else await showAckPopup('checkout', { name:empMatch.name, time:timeStr, cross:!!(co&&co.crossBranch), branch_name:gps.branch?gps.branch.name:'' });
     }
   }catch(e){ console.error(e); showToast('err','ส่งข้อมูลไม่สำเร็จ\n'+(e.message||'ตรวจการเชื่อมต่อ')); }
   finally{ busy=false; setBtnBusy(false); updateUI(); refreshCoCard(); }
@@ -708,6 +718,7 @@ function renderAck(action, info, s){
       + '</div>';
   } else {
     html += '<div style="text-align:center;font-size:14px">ออกงานเวลา '+escH(info.time)+' · ขอบคุณที่ทำงานวันนี้ 🙏</div>';
+    if(info.cross) html += '<div style="text-align:center;font-size:12.5px;color:#a06515;margin-top:4px">📍 บันทึกกดออกข้ามสาขาที่ '+escH(info.branch_name||'')+' แล้ว</div>';
   }
   if(!s){ html += '<div style="font-size:12px;color:var(--muted);text-align:center">(โหลดสถานะสะสมไม่สำเร็จ)</div>'; return html; }
   const st=s.stats, d=s.discipline, sc=s.score;

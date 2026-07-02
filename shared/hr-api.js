@@ -520,6 +520,9 @@
         is_cover,
         check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
         late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,
+        checkout_branch: r.checkout_branch_id ? (brName[r.checkout_branch_id] || r.checkout_branch_id) : '',
+        checkout_note: r.checkout_note || '',
+        cross_out: !!(r.checkout_branch_id && r.branch_id && r.checkout_branch_id !== r.branch_id),
         photo_url: r.photo_url || '', gps_lat: r.gps_lat, gps_lng: r.gps_lng, status: r.status,
       };
     });
@@ -879,7 +882,9 @@
       start_time: d.start_time || '00:00', end_time: d.end_time || '00:00',
       grace_min: parseInt(d.grace_min) >= 0 ? parseInt(d.grace_min) : 5,
       main_shift: (d.main_shift === undefined) ? undefined : (d.main_shift || null),  // ผลัดหลักที่สังกัด (ว่าง=พิเศษ)
+      no_ot: (d.no_ot === undefined) ? undefined : !!d.no_ot,   // กะนี้ไม่คิด OT (เช่น กะ ผจก.)
     };
+    if (row.no_ot === undefined) delete row.no_ot;
     if (row.main_shift === undefined) delete row.main_shift;
     const { error } = await sb().from('shifts').upsert(row, { onConflict: 'shift_id' });
     if (error) throw error;
@@ -1594,13 +1599,14 @@
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     // คำนวณ OT ที่จะได้ ถ้าอนุมัติ (โชว์เฉพาะ HR)
     const shifts = {};
-    const shR = await sb().from('shifts').select('shift_id,end_time');
-    (shR.data || []).forEach(s => { shifts[s.shift_id] = s.end_time; });
+    const shR = await sb().from('shifts').select('shift_id,end_time,no_ot');
+    (shR.data || []).forEach(s => { shifts[s.shift_id] = s; });
     const free = await _otFree();
-    const rows = (cR.data || []).map(c => ({
-      ...c, branch_name: brName[c.branch_id] || c.branch_id || '—',
-      ot_if_approved: _otHours(c.actual_checkout, shifts[c.shift_id], free),
-    }));
+    const rows = (cR.data || []).map(c => {
+      const sh = shifts[c.shift_id];
+      return { ...c, branch_name: brName[c.branch_id] || c.branch_id || '—',
+        ot_if_approved: (sh && sh.no_ot) ? 0 : _otHours(c.actual_checkout, sh ? sh.end_time : null, free) };
+    });
     return { ok: true, rows, pending: rows.filter(r => r.status === 'pending').length };
   }
   async function hrCheckoutCorrReview(id, status, note) {
@@ -1611,8 +1617,8 @@
     const { error } = await sb().from('checkout_corrections').update(upd).eq('id', id);
     if (error) throw error;
     if (upd.status === 'approved') {
-      const { data: sh } = await sb().from('shifts').select('end_time').eq('shift_id', c.shift_id).maybeSingle();
-      const ot = _otHours(c.actual_checkout, sh ? sh.end_time : null, await _otFree());
+      const { data: sh } = await sb().from('shifts').select('end_time,no_ot').eq('shift_id', c.shift_id).maybeSingle();
+      const ot = (sh && sh.no_ot) ? 0 : _otHours(c.actual_checkout, sh ? sh.end_time : null, await _otFree());
       await sb().from('attendance').update({ check_out: c.actual_checkout, ot_hours: ot, status: 'CLOSED', auto_closed: false })
         .eq('emp_id', c.emp_id).eq('work_date', c.work_date);
       await logAct('อนุมัติแก้ไขเวลาออก', c.emp_id, (c.emp_name || c.emp_id) + ' · ' + c.work_date + ' · OT ' + ot + ' ชม.');

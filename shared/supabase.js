@@ -76,24 +76,33 @@
   }
 
   // ---------- เช็กเอาท์ ----------
-  async function checkOut({ empId, shiftId }) {
+  async function checkOut({ empId, shiftId, checkoutBranchId, reason }) {
     const today = bangkokDate();
     // หาแถวที่ "ยังเปิดอยู่ล่าสุด" (เช็กอินแล้ว ยังไม่เช็กเอาต์) ภายใน 2 วัน — รองรับกะข้ามคืน (เข้าเมื่อวาน ออกวันนี้)
     let { data: row } = await sb.from('attendance')
-      .select('work_date,check_in,shift_id')
+      .select('work_date,check_in,shift_id,branch_id')
       .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
       .gte('work_date', _addDays(today, -2))
       .order('check_in', { ascending: false }).limit(1).maybeSingle();
     if (!row || !row.check_in) return { ot_hours: 0, none: true };   // ไม่มีแถวที่ค้างเปิดอยู่
+    const checkinBranch = row.branch_id || null;
+    const crossBranch = !!(checkoutBranchId && checkinBranch && checkoutBranchId !== checkinBranch);
+    // ข้ามสาขา แต่ยังไม่ได้ใส่เหตุผล → ขอเหตุผลก่อน (ยังไม่ปิดงาน)
+    if (crossBranch && !(reason && String(reason).trim())) {
+      return { needReason: true, checkinBranch, checkoutBranch: checkoutBranchId };
+    }
     const nowIso = new Date().toISOString();
     const effShift = row.shift_id || shiftId;
-    const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', effShift).maybeSingle();
-    const ot = computeOt(nowIso, sh?.end_time, await _otFreeHours());
+    const { data: sh } = await sb.from('shifts').select('end_time,no_ot').eq('shift_id', effShift).maybeSingle();
+    const ot = (sh && sh.no_ot) ? 0 : computeOt(nowIso, sh?.end_time, await _otFreeHours());
+    const upd = { check_out: nowIso, ot_hours: ot, status: 'CLOSED', auto_closed: false, extend_until: null };
+    if (checkoutBranchId) upd.checkout_branch_id = checkoutBranchId;
+    if (crossBranch) upd.checkout_note = String(reason).trim();
     const { error } = await sb.from('attendance')
-      .update({ check_out: nowIso, ot_hours: ot, status: 'CLOSED', auto_closed: false, extend_until: null })
+      .update(upd)
       .eq('emp_id', empId).eq('work_date', row.work_date);
     if (error) throw error;
-    return { ot_hours: ot, work_date: row.work_date };
+    return { ot_hours: ot, work_date: row.work_date, crossBranch };
   }
 
   // ---------- ควบกะต่อ: เลื่อนเวลาที่ระบบจะปิดงานอัตโนมัติ ----------
