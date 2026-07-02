@@ -2187,27 +2187,33 @@ function renderSchedule(){
   const emps = ((SC&&SC.employees)||[]).filter(e=>!bf || e.branch_id===bf);
   if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; if($('sc_summary'))$('sc_summary').innerHTML=''; return; }
   $('scEmpty').style.display='none';
-  const _optShift = (val)=>'<option value="">—</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}"${s.shift_id===val?' selected':''}>${esc(s.code||s.shift_id)} · ${esc(s.name)}</option>`).join('');
-  const _optAdd = '<option value="">+ กะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc(s.code||s.shift_id)} · ${esc(s.name)}</option>`).join('');
+  const _optShift = (val)=>'<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}"${s.shift_id===val?' selected':''} title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
+  const _optAdd = '<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}" title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
   const _optBr = (val)=>'<option value="">สาขาประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''}>${esc(b.name)}</option>`).join(''));
-  const _selCss='height:27px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:12px;background:#fff';
+  const _selCss='height:26px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:12.5px;background:#fff';
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
       const arr = SC.schedules[e.emp_id+'|'+d] || [];
-      let inner = arr.map(c=>{
-        const cover = !!c.is_cover;
-        const brCtl = cover
-          ? `<select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" title="ไปแทนสาขา" style="${_selCss};width:100%;height:22px;font-size:11px;margin-top:2px;color:#ea580c">${_optBr(c.branch_id)}</select>`
-          : `<span onclick="this.style.display='none';this.nextElementSibling.style.display='block'" style="font-size:10px;color:#b8c0cc;cursor:pointer">＋ ไปสาขาอื่น</span><select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:100%;height:22px;font-size:11px;margin-top:2px;display:none">${_optBr('')}</select>`;
-        return `<div style="margin-bottom:4px;${cover?'background:#fff7ed;border-radius:6px;padding:2px 3px':''}">
-          <div style="display:flex;gap:2px;align-items:center">
-            <select onchange="scEditShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};flex:1;font-weight:600">${_optShift(c.shift_id)}</select>
-            <span onclick="scDelShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}')" style="cursor:pointer;color:#cbd5e1;font-weight:700;padding:0 3px" title="ลบกะนี้">×</span>
-          </div>${brCtl}
-        </div>`;
-      }).join('');
-      if(arr.length<2) inner += `<select onchange="if(this.value){scAddShift('${esc(e.emp_id)}','${d}',this.value)}" style="${_selCss};width:100%;color:#9aa4b2">${_optAdd}</select>`;
-      return `<td style="padding:4px 4px;vertical-align:top;min-width:104px">${inner}</td>`;
+      let inner;
+      if(!arr.length){
+        // ยังไม่มีกะ → โชว์ช่องเลือกกะหลักช่องเดียว (โค้ดสั้น)
+        inner = `<select onchange="if(this.value)scAddShift('${esc(e.emp_id)}','${d}',this.value)" style="${_selCss};width:54px;font-weight:700;text-align:center">${_optShift('')}</select>`;
+      } else {
+        inner = arr.map(c=>{
+          const cover = !!c.is_cover;
+          return `<div style="margin-bottom:2px;${cover?'background:#fff7ed;border-radius:6px':''}">
+            <div style="display:flex;gap:1px;align-items:center;justify-content:center">
+              <select onchange="scEditShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:54px;font-weight:700;text-align:center">${_optShift(c.shift_id)}</select>
+              <span onclick="scDelShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}')" style="cursor:pointer;color:#d1d5db;font-weight:700;font-size:13px;padding:0 1px" title="ลบกะนี้">×</span>
+              ${cover?'':`<span onclick="this.parentElement.nextElementSibling.style.display='block';this.style.visibility='hidden'" style="cursor:pointer;font-size:11px;opacity:.5" title="ไปแทนสาขา">🏪</span>`}
+            </div>
+            <select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:100%;height:20px;font-size:10.5px;margin-top:1px;color:#ea580c;${cover?'':'display:none'}">${_optBr(cover?c.branch_id:'')}</select>
+          </div>`;
+        }).join('');
+        // มี 1 กะ → ปุ่ม + เขียวมุมขวาบน สำหรับเพิ่มกะที่ 2 (ควบกะ)
+        if(arr.length===1) inner += `<button onclick="this.nextElementSibling.style.display='block';this.style.display='none'" title="เพิ่มกะ (ควบกะ)" style="position:absolute;top:1px;right:2px;width:17px;height:17px;border-radius:50%;background:#16a34a;color:#fff;border:0;font-size:13px;line-height:15px;cursor:pointer;padding:0">+</button><select onchange="if(this.value){scAddShift('${esc(e.emp_id)}','${d}',this.value)}" style="${_selCss};width:100%;margin-top:2px;display:none">${_optAdd}</select>`;
+      }
+      return `<td style="position:relative;padding:5px 5px;vertical-align:top;text-align:center;min-width:72px">${inner}</td>`;
     }).join('');
     return `<tr><td style="text-align:left">
       <div style="font-weight:700;font-size:14px">${esc(e.nickname||e.name)}</div>
