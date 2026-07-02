@@ -179,6 +179,8 @@
         case 'hr_qa_folder_delete':  return await hrQaFolderDelete(p.id);
         case 'hr_qa_items':          return await hrQaItems(p.folder_id, p.status);
         case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
+        case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
+        case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications(p.branch);
         case 'hr_notify_history': return await hrNotifyHistory();
@@ -1568,6 +1570,52 @@
     const { error } = await sb().from('qa_items').delete().eq('id', id);
     if (error) throw error;
     await logAct('ลบสินค้า QA', null, '#' + id);
+    return { ok: true };
+  }
+
+  // ---------- คำขอแก้ไขเวลาออก (ลืมกดออก/ระบบปิดให้) ----------
+  function _otHours(actualIso, endTime) {
+    if (!endTime || !actualIso) return 0;
+    const out = new Date(actualIso);
+    const [h, m] = String(endTime).split(':').map(Number);
+    const endLocal = new Date(out); endLocal.setHours(h, m, 0, 0);
+    let diff = (out - endLocal) / 3600000;
+    if (diff < 0) diff = 0;
+    return Math.round(diff * 100) / 100;
+  }
+  async function hrCheckoutCorrList() {
+    const [cR, brR] = await Promise.all([
+      sb().from('checkout_corrections').select('*').order('created_at', { ascending: false }).limit(200),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    if (cR.error) throw cR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    // คำนวณ OT ที่จะได้ ถ้าอนุมัติ (โชว์เฉพาะ HR)
+    const shifts = {};
+    const shR = await sb().from('shifts').select('shift_id,end_time');
+    (shR.data || []).forEach(s => { shifts[s.shift_id] = s.end_time; });
+    const rows = (cR.data || []).map(c => ({
+      ...c, branch_name: brName[c.branch_id] || c.branch_id || '—',
+      ot_if_approved: _otHours(c.actual_checkout, shifts[c.shift_id]),
+    }));
+    return { ok: true, rows, pending: rows.filter(r => r.status === 'pending').length };
+  }
+  async function hrCheckoutCorrReview(id, status, note) {
+    if (!id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const { data: c } = await sb().from('checkout_corrections').select('*').eq('id', id).maybeSingle();
+    if (!c) return { ok: false, error: 'ไม่พบคำขอ' };
+    const upd = { status: status === 'approved' ? 'approved' : 'rejected', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    const { error } = await sb().from('checkout_corrections').update(upd).eq('id', id);
+    if (error) throw error;
+    if (upd.status === 'approved') {
+      const { data: sh } = await sb().from('shifts').select('end_time').eq('shift_id', c.shift_id).maybeSingle();
+      const ot = _otHours(c.actual_checkout, sh ? sh.end_time : null);
+      await sb().from('attendance').update({ check_out: c.actual_checkout, ot_hours: ot, status: 'CLOSED', auto_closed: false })
+        .eq('emp_id', c.emp_id).eq('work_date', c.work_date);
+      await logAct('อนุมัติแก้ไขเวลาออก', c.emp_id, (c.emp_name || c.emp_id) + ' · ' + c.work_date + ' · OT ' + ot + ' ชม.');
+    } else {
+      await logAct('ปฏิเสธแก้ไขเวลาออก', c.emp_id, (c.emp_name || c.emp_id) + ' · ' + c.work_date + (note ? (' · ' + note) : ''));
+    }
     return { ok: true };
   }
 

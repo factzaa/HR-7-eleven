@@ -347,6 +347,7 @@
 <!-- Dashboard -->
 <div id="view_dashboard" class="container" style="display:none">
   <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
+  <div id="coCorrPanel"></div>
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
@@ -666,6 +667,7 @@
   <div class="card" style="padding:16px">
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <div class="field" style="max-width:300px"><label>ผ่อนผันก่อนเตือน "ลืมกดออก" (นาที)</label><input id="coGrace" type="number" min="0" value="15"></div>
+      <div class="field" style="max-width:300px"><label>ปิดงานอัตโนมัติหลังเลิกกะ (นาที) — OT=0</label><input id="coAutoClose" type="number" min="0" value="60"></div>
       <div class="field" style="max-width:300px"><label>เตือน "งานค้างก่อนหมดกะ" ล่วงหน้า (นาที)</label><input id="taskWarn" type="number" min="0" value="30"></div>
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px">
@@ -1797,7 +1799,7 @@ function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' 
 const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
-  if(name==='dashboard'){ loadDashboard(); loadNotifications(); }
+  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='report') loadReport();
@@ -2426,6 +2428,7 @@ async function loadCheckoutGrace(){
   if(r.ok && r.settings){
     const s=r.settings;
     if(s.checkout_grace_min!=null) $('coGrace').value = s.checkout_grace_min;
+    if(s.checkout_autoclose_min!=null && $('coAutoClose')) $('coAutoClose').value = s.checkout_autoclose_min;
     if(s.task_warn_before_min!=null && $('taskWarn')) $('taskWarn').value = s.task_warn_before_min;
     if($('guardShiftStart')) $('guardShiftStart').checked = (s.guard_shift_start==null || s.guard_shift_start==='1');
     if($('guardPrevShift'))  $('guardPrevShift').checked  = (s.guard_prev_shift==null  || s.guard_prev_shift==='1');
@@ -2433,12 +2436,14 @@ async function loadCheckoutGrace(){
 }
 async function saveCheckoutGrace(){
   const v = Math.max(0, parseInt($('coGrace').value)||0);
+  const ac = Math.max(0, parseInt(($('coAutoClose')||{}).value)||60);
   const w = Math.max(0, parseInt(($('taskWarn')||{}).value)||30);
   const g1 = ($('guardShiftStart')&&$('guardShiftStart').checked) ? '1':'0';
   const g2 = ($('guardPrevShift')&&$('guardPrevShift').checked) ? '1':'0';
   $('coGrace_save').disabled = true;
   const rs = await Promise.all([
     post({ action:'hr_settings_save', password:pwd, key:'checkout_grace_min', value:String(v) }),
+    post({ action:'hr_settings_save', password:pwd, key:'checkout_autoclose_min', value:String(ac) }),
     post({ action:'hr_settings_save', password:pwd, key:'task_warn_before_min', value:String(w) }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_shift_start', value:g1 }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_prev_shift', value:g2 }),
@@ -2925,6 +2930,26 @@ async function loadActivity(){
       <td>${esc(ev.emp)} <span style="color:var(--muted);font-size:11.5px">(${esc(ev.emp_id)})</span></td>
       <td>${esc(ev.detail)}</td>
     </tr>`).join('')+'</tbody></table></div></div>';
+}
+
+// ========== คำขอแก้ไขเวลาออก (ลืมกดออก/ควบกะ) ==========
+function coFmtDT(iso){ if(!iso) return '—'; try{ return new Date(iso).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return String(iso); } }
+async function loadCheckoutCorr(){
+  const box=$('coCorrPanel'); if(!box) return;
+  const r=await post({ action:'hr_checkout_corr_list', password:pwd });
+  if(!r.ok){ box.innerHTML=''; return; }
+  const pend=r.rows.filter(x=>x.status==='pending');
+  if(!pend.length){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="card" style="margin-bottom:14px;padding:14px 16px">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:8px">🕒 คำขอแก้ไขเวลาออก รออนุมัติ ('+pend.length+')</div>'
+    +pend.map(c=>'<div style="border-top:1px solid var(--line);padding:10px 0">'
+      +'<div style="font-size:14px;font-weight:600">'+esc(c.emp_name||c.emp_id)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(c.branch_name)+' · '+esc(String(c.work_date))+'</span></div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">ระบบบันทึกให้ '+coFmtDT(c.system_checkout)+' → แจ้งออกจริง <b style="color:#00582f">'+coFmtDT(c.actual_checkout)+'</b></div>'
+      +'<div style="font-size:12.5px;margin-top:2px">OT ถ้าอนุมัติ: <b>'+(c.ot_if_approved||0)+' ชม.</b>'+(c.reason?(' · เหตุผล: '+esc(c.reason)):'')+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-pri btn-sm" data-coap="'+c.id+'">อนุมัติ</button><button class="btn btn-sec btn-sm" data-corj="'+c.id+'">ปฏิเสธ</button></div>'
+      +'</div>').join('')+'</div>';
+  box.querySelectorAll('[data-coap]').forEach(b=>b.onclick=async()=>{ const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.coap),status:'approved'}); if(r2.ok){ toast('ok','อนุมัติแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
+  box.querySelectorAll('[data-corj]').forEach(b=>b.onclick=async()=>{ const note=prompt('เหตุผลที่ปฏิเสธ (ถ้ามี):')||''; const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.corj),status:'rejected',note}); if(r2.ok){ toast('ok','ปฏิเสธแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
 }
 
 // ========== แจ้งเตือนแอดมิน ==========

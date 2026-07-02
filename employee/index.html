@@ -169,6 +169,7 @@
         <button class="act out" id="btnOut" disabled>ออกงาน</button>
       </div>
       <div class="lockmsg" id="lockMsg"></div>
+      <div id="coCard" style="margin-top:10px"></div>
     </div>
   </div>
 </div>
@@ -525,7 +526,7 @@ async function submit(action){
       else await showAckPopup('checkout', { name:empMatch.name, time:timeStr });
     }
   }catch(e){ console.error(e); showToast('err','ส่งข้อมูลไม่สำเร็จ\n'+(e.message||'ตรวจการเชื่อมต่อ')); }
-  finally{ busy=false; setBtnBusy(false); updateUI(); }
+  finally{ busy=false; setBtnBusy(false); updateUI(); refreshCoCard(); }
 }
 function shiftName(id){ const s=(CFG.shifts||[]).find(x=>x.shift_id===id); return s?s.name:(id||'—'); }
 function setBtnBusy(on){
@@ -545,9 +546,78 @@ $('empId').addEventListener('input', e=>{
   evaluateZone();   // ประเมินสาขาใหม่ โดยยึดสาขาประจำของพนักงานคนนี้
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();
+  refreshCoCard();
 });
 $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');
+
+// ====== การ์ดเตือนกดออก / ควบกะต่อ / ยื่นแก้ไขเวลาออก ======
+const CO_GRACE_MIN = 15;
+function coEffEnd(row, shift){
+  if(!shift || !shift.end_time) return null;
+  const st=(shift.start_time||'').slice(0,5), en=shift.end_time.slice(0,5);
+  const overnight = st && en <= st;
+  const base=new Date(row.work_date+'T00:00:00');
+  if(overnight) base.setDate(base.getDate()+1);
+  const [h,m]=en.split(':').map(Number); base.setHours(h,m,0,0);
+  return base;
+}
+async function refreshCoCard(){
+  const box=$('coCard'); if(!box) return;
+  if(!empMatch || empMatch.unknown){ box.innerHTML=''; return; }
+  let s; try{ s=await HR.getCheckoutState(empMatch.emp_id); }catch(e){ box.innerHTML=''; return; }
+  if(!s || s.none || !s.row){ box.innerHTML=''; return; }
+  const row=s.row;
+  // ระบบปิดงานให้แล้ว → เสนอยื่นแก้ไข
+  if(row.check_out && row.auto_closed){
+    box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'
+      +'<div style="font-weight:600">ระบบบันทึกเวลาออกให้แล้ว</div>'
+      +'<div style="margin-top:2px">ถ้าคุณออกจริงหลังเวลาเลิกกะ กดยื่นแก้ไขเวลาออกเพื่อให้หัวหน้า/HR ตรวจสอบ</div>'
+      +'<button class="minibtn primary" id="coCorrBtn" style="margin-top:8px">ยื่นแก้ไขเวลาออกจริง</button></div>';
+    $('coCorrBtn').onclick=()=>openCorrForm(row);
+    return;
+  }
+  // ยังเปิดค้าง + เลยเวลาเลิกกะ+ผ่อนผัน → เตือนให้กดออก/ควบกะ
+  if(!row.check_out){
+    const eff=coEffEnd(row, s.shift);
+    if(eff && Date.now() >= eff.getTime()+CO_GRACE_MIN*60000){
+      const endTxt=s.shift?s.shift.end_time.slice(0,5):'';
+      box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'
+        +'<div style="font-weight:600">อย่าลืมกดออกงาน</div>'
+        +'<div style="margin-top:2px">กะเลิก '+endTxt+' แล้ว — ถ้าเลิกแล้วกด "ออกงาน" ด้านบน หรือถ้ายังทำต่อ (ควบกะ) เลือกด้านล่าง</div>'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
+        +'<button class="minibtn" data-ext="2">ควบกะต่อ +2 ชม.</button>'
+        +'<button class="minibtn" data-ext="4">+4 ชม.</button>'
+        +'<button class="minibtn" data-ext="12">จนกว่าจะกดออกเอง</button>'
+        +'</div></div>';
+      box.querySelectorAll('[data-ext]').forEach(b=>b.onclick=async()=>{
+        const hrs=Number(b.dataset.ext); const until=new Date(Date.now()+hrs*3600000).toISOString();
+        try{ await HR.extendShift({ empId:empMatch.emp_id, untilIso:until }); showToast('ok','บันทึกควบกะต่อแล้ว — อย่าลืมกดออกงานเมื่อเลิกจริง'); refreshCoCard(); }
+        catch(e){ showToast('err', e.message||'ไม่สำเร็จ'); }
+      });
+      return;
+    }
+  }
+  box.innerHTML='';
+}
+function openCorrForm(row){
+  const box=$('coCard');
+  const def=new Date(); def.setSeconds(0,0);
+  const local=new Date(def.getTime()-def.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  box.innerHTML='<div style="background:#fff;border:1.5px solid var(--line2);border-radius:12px;padding:12px">'
+    +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px">ยื่นแก้ไขเวลาออกจริง</div>'
+    +'<label style="font-size:12px;color:var(--muted)">เวลาออกจริง</label>'
+    +'<input type="datetime-local" id="corrTime" value="'+local+'" style="width:100%;margin:4px 0 8px;font:inherit;font-size:15px;border:1.5px solid var(--line2);border-radius:10px;padding:9px 11px">'
+    +'<label style="font-size:12px;color:var(--muted)">เหตุผล</label>'
+    +'<input type="text" id="corrReason" placeholder="เช่น ควบกะบ่ายฉุกเฉิน ลืมกดออก" style="width:100%;margin:4px 0 10px;font:inherit;font-size:15px;border:1.5px solid var(--line2);border-radius:10px;padding:9px 11px">'
+    +'<div style="display:flex;gap:8px"><button class="minibtn primary" id="corrSend">ส่งคำขอ</button><button class="minibtn" id="corrCancel">ยกเลิก</button></div></div>';
+  $('corrCancel').onclick=refreshCoCard;
+  $('corrSend').onclick=async()=>{
+    const v=$('corrTime').value; if(!v){ showToast('err','เลือกเวลาออกจริง'); return; }
+    try{ await HR.requestCheckoutCorrection({ empId:empMatch.emp_id, actualIso:new Date(v).toISOString(), reason:$('corrReason').value }); showToast('ok','ส่งคำขอแล้ว รอหัวหน้า/HR อนุมัติ'); box.innerHTML=''; }
+    catch(e){ showToast('err', e.message||'ไม่สำเร็จ'); }
+  };
+}
 
 // ---------- บังคับยอมรับระเบียบก่อนเช็กอินครั้งแรก ----------
 const acceptedRules = new Set();

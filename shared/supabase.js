@@ -90,10 +90,55 @@
     const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', effShift).maybeSingle();
     const ot = computeOt(nowIso, sh?.end_time);
     const { error } = await sb.from('attendance')
-      .update({ check_out: nowIso, ot_hours: ot, status: 'CLOSED' })
+      .update({ check_out: nowIso, ot_hours: ot, status: 'CLOSED', auto_closed: false, extend_until: null })
       .eq('emp_id', empId).eq('work_date', row.work_date);
     if (error) throw error;
     return { ot_hours: ot, work_date: row.work_date };
+  }
+
+  // ---------- ควบกะต่อ: เลื่อนเวลาที่ระบบจะปิดงานอัตโนมัติ ----------
+  async function extendShift({ empId, untilIso }) {
+    const today = bangkokDate();
+    const { data: row } = await sb.from('attendance').select('work_date,check_in')
+      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+    if (!row || !row.check_in) return { none: true };
+    const { error } = await sb.from('attendance').update({ extend_until: untilIso, auto_closed: false })
+      .eq('emp_id', empId).eq('work_date', row.work_date);
+    if (error) throw error;
+    return { ok: true, work_date: row.work_date };
+  }
+
+  // ---------- สถานะการกดออก (ไว้โชว์การ์ดเตือน/ควบกะ/ยื่นแก้ไข) ----------
+  async function getCheckoutState(empId) {
+    if (!empId) return { none: true };
+    const today = bangkokDate();
+    const { data: row } = await sb.from('attendance').select('work_date,check_in,check_out,shift_id,auto_closed,extend_until')
+      .eq('emp_id', empId).not('check_in', 'is', null)
+      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+    if (!row) return { none: true };
+    let shift = null;
+    if (row.shift_id) { const { data: sh } = await sb.from('shifts').select('shift_id,name,start_time,end_time').eq('shift_id', row.shift_id).maybeSingle(); shift = sh || null; }
+    return { row, shift };
+  }
+
+  // ---------- ยื่นแก้ไขเวลาออกจริง (กรณีระบบปิดให้/ลืมกด) ----------
+  async function requestCheckoutCorrection({ empId, actualIso, reason }) {
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const today = bangkokDate();
+    // หาแถวที่เกี่ยวข้อง: ปิดโดยระบบ หรือ เปิดค้าง ภายใน 2 วัน
+    const { data: row } = await sb.from('attendance').select('work_date,check_in,check_out,shift_id,branch_id,auto_closed')
+      .eq('emp_id', empId).not('check_in', 'is', null)
+      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+    if (!row) throw new Error('ไม่พบรายการลงเวลาที่จะแก้ไข');
+    if (!actualIso) throw new Error('ระบุเวลาออกจริง');
+    const { error } = await sb.from('checkout_corrections').insert({
+      emp_id: emp.emp_id, emp_name: emp.nickname || emp.name, work_date: row.work_date,
+      branch_id: row.branch_id || emp.branch_id || null, shift_id: row.shift_id || null,
+      system_checkout: row.check_out || null, actual_checkout: actualIso, reason: (reason || '').trim() || null, status: 'pending',
+    });
+    if (error) throw error;
+    return { ok: true, work_date: row.work_date };
   }
 
   // ---------- สถานะการลงเวลาวันนี้ (ไว้สลับปุ่มเข้า/ออก) ----------
@@ -857,5 +902,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, extendShift, requestCheckoutCorrection, getCheckoutState };
 })();
