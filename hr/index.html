@@ -2187,18 +2187,23 @@ function renderSchedule(){
   const emps = ((SC&&SC.employees)||[]).filter(e=>!bf || e.branch_id===bf);
   if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; if($('sc_summary'))$('sc_summary').innerHTML=''; return; }
   $('scEmpty').style.display='none';
+  const _optShift = (val)=>'<option value="">—</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}"${s.shift_id===val?' selected':''}>${esc(s.code||s.shift_id)} · ${esc(s.name)}</option>`).join('');
+  const _optAdd = '<option value="">+ กะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc(s.code||s.shift_id)} · ${esc(s.name)}</option>`).join('');
+  const _optBr = (val)=>'<option value="">สาขาประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''}>${esc(b.name)}</option>`).join(''));
+  const _selCss='height:27px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:12px;background:#fff';
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
-      const c = SC.schedules[e.emp_id+'|'+d];
-      const cover = c && c.is_cover;
-      const codeVal = c ? shiftCodeOf(c.shift_id) : '';
-      const brLabel = (c && c.branch_id) ? branchName(c.branch_id) : '';
-      const sub = cover ? (esc(brLabel)+' (แทน)') : '✎ ไปแทน';
-      return `<td style="text-align:center;padding:5px 4px;${cover?'background:#fff7ed;':''}">
-        <input value="${esc(codeVal)}" maxlength="3" onchange="scKey(this,'${esc(e.emp_id)}','${d}')" onkeydown="if(event.key==='Enter')this.blur()"
-          style="width:46px;height:30px;text-align:center;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-weight:600;text-transform:uppercase">
-        <div onclick="scCell('${esc(e.emp_id)}','${d}')" style="cursor:pointer;font-size:10.5px;margin-top:3px;color:${cover?'#ea580c':'#94a3b8'}">${sub}</div>
-      </td>`;
+      const arr = SC.schedules[e.emp_id+'|'+d] || [];
+      let inner = arr.map(c=>{
+        const cover = !!c.is_cover;
+        return `<div style="display:flex;gap:2px;margin-bottom:3px;align-items:center;${cover?'background:#fff7ed;border-radius:6px;padding:1px 1px':''}">
+          <select onchange="scEditShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:50px;font-weight:600">${_optShift(c.shift_id)}</select>
+          <select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" title="สาขาที่ให้ไปทำ" style="${_selCss};width:62px;${cover?'color:#ea580c':''}">${_optBr(cover?c.branch_id:'')}</select>
+          <span onclick="scDelShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}')" style="cursor:pointer;color:#cbd5e1;font-weight:700;padding:0 2px" title="ลบกะนี้">×</span>
+        </div>`;
+      }).join('');
+      if(arr.length<2) inner += `<select onchange="if(this.value){scAddShift('${esc(e.emp_id)}','${d}',this.value)}" style="${_selCss};width:118px;color:#94a3b8">${_optAdd}</select>`;
+      return `<td style="padding:4px 3px;vertical-align:top;text-align:center">${inner}</td>`;
     }).join('');
     return `<tr><td style="text-align:left">
       <div style="font-weight:700;font-size:14px">${esc(e.nickname||e.name)}</div>
@@ -2207,7 +2212,7 @@ function renderSchedule(){
   }).join('');
   // สรุปจำนวนคน/กะ แยกรายวัน
   const dayShift=days.map(()=>({})); const dayCover=days.map(()=>0);
-  emps.forEach(e=>days.forEach((d,di)=>{ const c=SC.schedules[e.emp_id+'|'+d]; if(c&&c.shift_id){ dayShift[di][c.shift_id]=(dayShift[di][c.shift_id]||0)+1; if(c.is_cover) dayCover[di]++; } }));
+  emps.forEach(e=>days.forEach((d,di)=>{ (SC.schedules[e.emp_id+'|'+d]||[]).forEach(c=>{ if(c.shift_id){ dayShift[di][c.shift_id]=(dayShift[di][c.shift_id]||0)+1; if(c.is_cover) dayCover[di]++; } }); }));
   const usedShifts=(DATA.shifts||[]);   // แสดงครบทุกผลัด แม้บางวันจะ 0
   const dash='<span style="color:#d1d5db">-</span>';
   if($('sc_summary')){
@@ -2221,14 +2226,32 @@ function renderSchedule(){
     }
   }
 }
-async function scKey(inp, emp, date){
-  const v = inp.value.trim();
-  if(!v){ await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date }); loadSchedule(); return; }
-  const sid = codeToShift(v);
-  if(sid===undefined){ toast('err','ไม่รู้จักโค้ด "'+v+'" — ดู/ตั้งโค้ดที่แท็บ "ตั้งค่ากะ"'); loadSchedule(); return; }
-  const prev = SC.schedules[emp+'|'+date] || {};
-  const r = await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:sid, branch_id:prev.branch_id||'', note:prev.note||'' } });
+function scWeekEmpty(emp){ for(let i=0;i<7;i++){ const a=SC.schedules[emp+'|'+addDaysStr(scWeek,i)]; if(a&&a.length) return false; } return true; }
+async function scAddShift(emp, date, shiftId){
+  if(!shiftId) return;
+  // ถ้าทั้งสัปดาห์ยังว่าง → จัด 1 วัน = เติมทั้งสัปดาห์ (แก้รายวันได้ทีหลัง)
+  if(scWeekEmpty(emp)){
+    const r=await post({ action:'hr_sched_fill_week', password:pwd, data:{ emp_id:emp, start:scWeek, shift_id:shiftId } });
+    if(!r.ok) toast('err', r.error||'ไม่สำเร็จ'); else toast('ok','จัดกะทั้งสัปดาห์ให้แล้ว — แก้รายวันได้');
+  } else {
+    const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'' } });
+    if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
+  }
+  loadSchedule();
+}
+async function scEditShift(emp, date, oldShift, newShift){
+  if(newShift===oldShift) return;
+  await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date, shift_id:oldShift });
+  if(newShift){ const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'' } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
+  loadSchedule();
+}
+async function scEditBranch(emp, date, shiftId, branchId){
+  const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:branchId, note:'' } });
   if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
+  loadSchedule();
+}
+async function scDelShift(emp, date, shiftId){
+  await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date, shift_id:shiftId });
   loadSchedule();
 }
 // ---------- สรุปตาราง → ข้อความ / รูป (สำหรับส่ง Line) ----------
@@ -2240,7 +2263,7 @@ function buildScheduleText(){
   let txt='📅 ตารางงาน '+fmtThaiShort(days[0])+' - '+fmtThaiShort(days[6]);
   if(bf) txt+=' ('+branchName(bf)+')';
   emps.forEach(e=>{
-    const cells=days.map(d=>{ const c=SC.schedules[e.emp_id+'|'+d]; if(!c||!c.shift_id) return '-'; let s=shiftCodeOf(c.shift_id); if(c.is_cover) s+='→'+branchName(c.branch_id); return s; });
+    const cells=days.map(d=>{ const arr=SC.schedules[e.emp_id+'|'+d]||[]; if(!arr.length) return '-'; return arr.map(c=>{ let s=shiftCodeOf(c.shift_id); if(c.is_cover) s+='→'+branchName(c.branch_id); return s; }).join('+'); });
     txt+='\n• '+e.name+': '+days.map((d,i)=>TH_DOW_S[new Date(d+'T00:00:00').getDay()]+cells[i]).join('  ');
   });
   txt+='\n\n(→ = ไปแทนสาขา)';
@@ -2276,11 +2299,11 @@ function buildScheduleCanvas(){
     x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText((e.nickname?e.name:('รหัส '+e.emp_id)), padX+8, y+rowH/2+10);
     x.textAlign='center';
     days.forEach((d,i)=>{
-      const cx=padX+nameW+colW*i, cell=SC.schedules[e.emp_id+'|'+d], cover=cell&&cell.is_cover;
+      const cx=padX+nameW+colW*i, arr=SC.schedules[e.emp_id+'|'+d]||[], cover=arr.some(cc=>cc.is_cover);
       if(cover){ x.fillStyle='#fff7ed'; x.fillRect(cx,y,colW,rowH); }
-      if(cell&&cell.shift_id){
-        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 16px Anuphan,sans-serif'; x.fillText(shiftCodeOf(cell.shift_id), cx+colW/2, y+rowH/2 - (cover?6:0));
-        if(cover){ x.fillStyle='#ea580c'; x.font='400 10px Anuphan,sans-serif'; x.fillText('แทน '+(cell.branch_id||''), cx+colW/2, y+rowH/2+12); }
+      if(arr.length){
+        const txt=arr.map(cc=>{ let s=shiftCodeOf(cc.shift_id); if(cc.is_cover) s+='→'+(cc.branch_id||''); return s; }).join('+');
+        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(txt, cx+colW/2, y+rowH/2);
       } else { x.fillStyle='#d1d5db'; x.font='400 13px Anuphan,sans-serif'; x.fillText('-', cx+colW/2, y+rowH/2); }
     });
   });

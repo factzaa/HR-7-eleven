@@ -139,7 +139,8 @@
         case 'hr_branch_delete':  return await hrBranchDelete(p.branch_id);
         case 'hr_sched_week':     return await hrSchedWeek(p.start, p.end);
         case 'hr_sched_save':     return await hrSchedSave(p.data);
-        case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date);
+        case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id);
+        case 'hr_sched_fill_week':return await hrSchedFillWeek(p.data);
         case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start);
         case 'hr_coverage':       return await hrCoverage(p.filter);
         case 'hr_shift_list':     return await hrShiftList();
@@ -785,9 +786,9 @@
     ]);
     if (empsR.error) throw empsR.error;
     if (schR.error) throw schR.error;
-    // index ตารางเวร: key = emp_id|work_date
+    // index ตารางเวร: key = emp_id|work_date → array ของกะ (รองรับควบกะหลายกะ/วัน)
     const cells = {};
-    (schR.data || []).forEach(s => { cells[s.emp_id + '|' + s.work_date] = s; });
+    (schR.data || []).forEach(s => { const k = s.emp_id + '|' + s.work_date; (cells[k] = cells[k] || []).push(s); });
     return {
       ok: true,
       employees: empsR.data || [],
@@ -808,14 +809,27 @@
       shift_id: d.shift_id || null, branch_id,
       is_cover, note: d.note || null,
     };
-    const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date' });
+    const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
     return { ok: true, is_cover };
   }
-  async function hrSchedDelete(empId, workDate) {
-    const { error } = await sb().from('schedules').delete().eq('emp_id', empId).eq('work_date', workDate);
+  async function hrSchedDelete(empId, workDate, shiftId) {
+    let q = sb().from('schedules').delete().eq('emp_id', empId).eq('work_date', workDate);
+    if (shiftId) q = q.eq('shift_id', shiftId);   // ลบเฉพาะกะที่ระบุ (ควบกะ) · ไม่ระบุ = ลบทุกกะของวันนั้น
+    const { error } = await q;
     if (error) throw error;
     return { ok: true };
+  }
+  // จัด 1 วัน → เติมกะเดียวกันทั้งสัปดาห์ (เฉพาะวันที่ยังว่าง) แล้วแก้ทีหลังได้
+  async function hrSchedFillWeek(d) {
+    if (!d || !d.emp_id || !d.start || !d.shift_id) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    const { data: emp } = await sb().from('employees').select('branch_id').eq('emp_id', d.emp_id).maybeSingle();
+    const home = emp ? emp.branch_id : null;
+    const rows = [];
+    for (let i = 0; i < 7; i++) rows.push({ emp_id: d.emp_id, work_date: addDays(d.start, i), shift_id: d.shift_id, branch_id: home, is_cover: false, note: null });
+    const { error } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date,shift_id' });
+    if (error) throw error;
+    return { ok: true, count: rows.length };
   }
   // คัดลอกตารางทั้งสัปดาห์ (7 วันจาก from_start) ไปยังสัปดาห์ใหม่ (to_start)
   async function hrSchedCopy(fromStart, toStart) {
@@ -828,7 +842,7 @@
       shift_id: s.shift_id, branch_id: s.branch_id, is_cover: s.is_cover, note: s.note,
     }));
     if (!rows.length) return { ok: true, copied: 0 };
-    const { error: e2 } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date' });
+    const { error: e2 } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date,shift_id' });
     if (e2) throw e2;
     return { ok: true, copied: rows.length };
   }
