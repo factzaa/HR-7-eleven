@@ -88,7 +88,7 @@
     const nowIso = new Date().toISOString();
     const effShift = row.shift_id || shiftId;
     const { data: sh } = await sb.from('shifts').select('end_time').eq('shift_id', effShift).maybeSingle();
-    const ot = computeOt(nowIso, sh?.end_time);
+    const ot = computeOt(nowIso, sh?.end_time, await _otFreeHours());
     const { error } = await sb.from('attendance')
       .update({ check_out: nowIso, ot_hours: ot, status: 'CLOSED', auto_closed: false, extend_until: null })
       .eq('emp_id', empId).eq('work_date', row.work_date);
@@ -340,15 +340,22 @@
       to_warn,
     };
   }
-  function computeOt(checkOutIso, endTime) {
+  // OT = ชั่วโมงหลังเลิกกะ หักชั่วโมงที่ยังไม่คิด (freeHours) — เริ่มคิด OT ที่ชั่วโมงที่ (freeHours+1)
+  function computeOt(checkOutIso, endTime, freeHours) {
     if (!endTime) return 0;
     const out = new Date(checkOutIso);
     const [h, m] = endTime.split(':').map(Number);
     const endLocal = new Date(out);
     endLocal.setHours(h, m, 0, 0);
-    let diff = (out - endLocal) / 3600000;       // ชั่วโมง
+    let diff = (out - endLocal) / 3600000;       // ชั่วโมงหลังเลิกกะ
+    diff -= (freeHours || 0);                     // หักชั่วโมงแรกที่ไม่คิด OT
     if (diff < 0) diff = 0;
     return Math.round(diff * 100) / 100;
+  }
+  async function _otFreeHours() {
+    const s = await _loadSettings();
+    const start = parseInt(s['ot_start_hour']);   // เริ่มคิด OT ที่ชั่วโมงที่ N (ดีฟอลต์ 2)
+    return Math.max(0, (isNaN(start) ? 2 : start) - 1);
   }
 
   // ---------- เงื่อนไขการลา ----------

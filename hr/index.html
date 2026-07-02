@@ -668,6 +668,7 @@
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <div class="field" style="max-width:300px"><label>ผ่อนผันก่อนเตือน "ลืมกดออก" (นาที)</label><input id="coGrace" type="number" min="0" value="15"></div>
       <div class="field" style="max-width:300px"><label>ปิดงานอัตโนมัติหลังเลิกกะ (นาที) — OT=0</label><input id="coAutoClose" type="number" min="0" value="60"></div>
+      <div class="field" style="max-width:300px"><label>เริ่มคิด OT ที่ชั่วโมงที่ (หลังเลิกกะ)</label><input id="otStartHour" type="number" min="1" value="2"></div>
       <div class="field" style="max-width:300px"><label>เตือน "งานค้างก่อนหมดกะ" ล่วงหน้า (นาที)</label><input id="taskWarn" type="number" min="0" value="30"></div>
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px">
@@ -2429,6 +2430,7 @@ async function loadCheckoutGrace(){
     const s=r.settings;
     if(s.checkout_grace_min!=null) $('coGrace').value = s.checkout_grace_min;
     if(s.checkout_autoclose_min!=null && $('coAutoClose')) $('coAutoClose').value = s.checkout_autoclose_min;
+    if(s.ot_start_hour!=null && $('otStartHour')) $('otStartHour').value = s.ot_start_hour;
     if(s.task_warn_before_min!=null && $('taskWarn')) $('taskWarn').value = s.task_warn_before_min;
     if($('guardShiftStart')) $('guardShiftStart').checked = (s.guard_shift_start==null || s.guard_shift_start==='1');
     if($('guardPrevShift'))  $('guardPrevShift').checked  = (s.guard_prev_shift==null  || s.guard_prev_shift==='1');
@@ -2437,6 +2439,7 @@ async function loadCheckoutGrace(){
 async function saveCheckoutGrace(){
   const v = Math.max(0, parseInt($('coGrace').value)||0);
   const ac = Math.max(0, parseInt(($('coAutoClose')||{}).value)||60);
+  const oh = Math.max(1, parseInt(($('otStartHour')||{}).value)||2);
   const w = Math.max(0, parseInt(($('taskWarn')||{}).value)||30);
   const g1 = ($('guardShiftStart')&&$('guardShiftStart').checked) ? '1':'0';
   const g2 = ($('guardPrevShift')&&$('guardPrevShift').checked) ? '1':'0';
@@ -2444,6 +2447,7 @@ async function saveCheckoutGrace(){
   const rs = await Promise.all([
     post({ action:'hr_settings_save', password:pwd, key:'checkout_grace_min', value:String(v) }),
     post({ action:'hr_settings_save', password:pwd, key:'checkout_autoclose_min', value:String(ac) }),
+    post({ action:'hr_settings_save', password:pwd, key:'ot_start_hour', value:String(oh) }),
     post({ action:'hr_settings_save', password:pwd, key:'task_warn_before_min', value:String(w) }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_shift_start', value:g1 }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_prev_shift', value:g2 }),

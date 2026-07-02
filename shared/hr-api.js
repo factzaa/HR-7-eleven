@@ -1574,15 +1574,17 @@
   }
 
   // ---------- คำขอแก้ไขเวลาออก (ลืมกดออก/ระบบปิดให้) ----------
-  function _otHours(actualIso, endTime) {
+  function _otHours(actualIso, endTime, freeHours) {
     if (!endTime || !actualIso) return 0;
     const out = new Date(actualIso);
     const [h, m] = String(endTime).split(':').map(Number);
     const endLocal = new Date(out); endLocal.setHours(h, m, 0, 0);
     let diff = (out - endLocal) / 3600000;
+    diff -= (freeHours || 0);                    // เริ่มคิด OT ที่ชั่วโมงที่ (freeHours+1)
     if (diff < 0) diff = 0;
     return Math.round(diff * 100) / 100;
   }
+  async function _otFree() { const n = await getSettingNum('ot_start_hour', 2); return Math.max(0, n - 1); }
   async function hrCheckoutCorrList() {
     const [cR, brR] = await Promise.all([
       sb().from('checkout_corrections').select('*').order('created_at', { ascending: false }).limit(200),
@@ -1594,9 +1596,10 @@
     const shifts = {};
     const shR = await sb().from('shifts').select('shift_id,end_time');
     (shR.data || []).forEach(s => { shifts[s.shift_id] = s.end_time; });
+    const free = await _otFree();
     const rows = (cR.data || []).map(c => ({
       ...c, branch_name: brName[c.branch_id] || c.branch_id || '—',
-      ot_if_approved: _otHours(c.actual_checkout, shifts[c.shift_id]),
+      ot_if_approved: _otHours(c.actual_checkout, shifts[c.shift_id], free),
     }));
     return { ok: true, rows, pending: rows.filter(r => r.status === 'pending').length };
   }
@@ -1609,7 +1612,7 @@
     if (error) throw error;
     if (upd.status === 'approved') {
       const { data: sh } = await sb().from('shifts').select('end_time').eq('shift_id', c.shift_id).maybeSingle();
-      const ot = _otHours(c.actual_checkout, sh ? sh.end_time : null);
+      const ot = _otHours(c.actual_checkout, sh ? sh.end_time : null, await _otFree());
       await sb().from('attendance').update({ check_out: c.actual_checkout, ot_hours: ot, status: 'CLOSED', auto_closed: false })
         .eq('emp_id', c.emp_id).eq('work_date', c.work_date);
       await logAct('อนุมัติแก้ไขเวลาออก', c.emp_id, (c.emp_name || c.emp_id) + ' · ' + c.work_date + ' · OT ' + ot + ' ชม.');
