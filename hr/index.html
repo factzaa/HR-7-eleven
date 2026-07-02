@@ -2189,7 +2189,7 @@ function renderSchedule(){
   $('scEmpty').style.display='none';
   const _optShift = (val)=>'<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}"${s.shift_id===val?' selected':''} title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
   const _optAdd = '<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}" title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
-  const _optBr = (val)=>'<option value="">สาขาประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''}>${esc(b.name)}</option>`).join(''));
+  const _optBr = (val)=>'<option value="">ประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''}>${esc(b.name)}</option>`).join(''));
   const _selCss='height:26px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:12.5px;background:#fff';
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
@@ -2201,17 +2201,16 @@ function renderSchedule(){
       } else {
         inner = arr.map(c=>{
           const cover = !!c.is_cover;
-          return `<div style="margin-bottom:2px;${cover?'background:#fff7ed;border-radius:6px':''}">
+          return `<div style="margin-bottom:3px;${cover?'background:#fff7ed;border-radius:6px;padding-bottom:1px':''}">
             <div style="display:flex;gap:1px;align-items:center;justify-content:center">
               <select onchange="scEditShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:54px;font-weight:700;text-align:center">${_optShift(c.shift_id)}</select>
               <span onclick="scDelShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}')" style="cursor:pointer;color:#d1d5db;font-weight:700;font-size:13px;padding:0 1px" title="ลบกะนี้">×</span>
-              ${cover?'':`<span onclick="this.parentElement.nextElementSibling.style.display='block';this.style.visibility='hidden'" style="cursor:pointer;font-size:11px;opacity:.5" title="ไปแทนสาขา">🏪</span>`}
             </div>
-            <select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:100%;height:20px;font-size:10.5px;margin-top:1px;color:#ea580c;${cover?'':'display:none'}">${_optBr(cover?c.branch_id:'')}</select>
+            <select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" title="เลือกสาขาที่ให้ไปทำ (เว้น = สาขาประจำ)" style="width:100%;border:0;background:transparent;font:inherit;font-size:10px;height:15px;margin-top:1px;color:#9aa4b2;cursor:pointer;text-align:center;-webkit-appearance:none;appearance:none">${_optBr(cover?c.branch_id:'')}</select>
           </div>`;
         }).join('');
         // มี 1 กะ → ปุ่ม + เขียวมุมขวาบน สำหรับเพิ่มกะที่ 2 (ควบกะ)
-        if(arr.length===1) inner += `<button onclick="this.nextElementSibling.style.display='block';this.style.display='none'" title="เพิ่มกะ (ควบกะ)" style="position:absolute;top:1px;right:2px;width:17px;height:17px;border-radius:50%;background:#16a34a;color:#fff;border:0;font-size:13px;line-height:15px;cursor:pointer;padding:0">+</button><select onchange="if(this.value){scAddShift('${esc(e.emp_id)}','${d}',this.value)}" style="${_selCss};width:100%;margin-top:2px;display:none">${_optAdd}</select>`;
+        if(arr.length===1) inner += `<button onclick="this.nextElementSibling.style.display='block';this.style.display='none'" title="เพิ่มกะ (ควบกะ)" style="position:absolute;top:-3px;right:-3px;width:15px;height:15px;border-radius:50%;background:#eef0f2;color:#aeb6c0;border:0;font-size:11px;line-height:13px;cursor:pointer;padding:0">+</button><select onchange="if(this.value){scAddShift('${esc(e.emp_id)}','${d}',this.value)}" style="${_selCss};width:100%;margin-top:2px;display:none">${_optAdd}</select>`;
       }
       return `<td style="position:relative;padding:5px 5px;vertical-align:top;text-align:center;min-width:72px">${inner}</td>`;
     }).join('');
@@ -2312,8 +2311,10 @@ function buildScheduleCanvas(){
       const cx=padX+nameW+colW*i, arr=SC.schedules[e.emp_id+'|'+d]||[], cover=arr.some(cc=>cc.is_cover);
       if(cover){ x.fillStyle='#fff7ed'; x.fillRect(cx,y,colW,rowH); }
       if(arr.length){
-        const txt=arr.map(cc=>{ let s=shiftCodeOf(cc.shift_id); if(cc.is_cover) s+='→'+(cc.branch_id||''); return s; }).join('+');
-        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(txt, cx+colW/2, y+rowH/2);
+        const codes=arr.map(cc=>shiftCodeOf(cc.shift_id)).join('+');
+        const covers=arr.filter(cc=>cc.is_cover).map(cc=>branchName(cc.branch_id));
+        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(codes, cx+colW/2, y+rowH/2 - (covers.length?7:0));
+        if(covers.length){ x.fillStyle='#ea580c'; x.font='400 9px Anuphan,sans-serif'; x.fillText('→'+covers.join(','), cx+colW/2, y+rowH/2+11); }
       } else { x.fillStyle='#d1d5db'; x.font='400 13px Anuphan,sans-serif'; x.fillText('-', cx+colW/2, y+rowH/2); }
     });
   });
