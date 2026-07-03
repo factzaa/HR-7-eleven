@@ -354,6 +354,7 @@ async function detectLoop(){
   setTimeout(detectLoop, 700);
 }
 
+let openShift=false;   // ยังมีงานค้างที่ยังไม่กดออก → ปิดปุ่ม "เข้างาน" กันกดผิด
 function updateUI(){
   $('ring').className = 'ring ' + (faceDetected?'on':'');
   $('facedot').className = 'dot ' + (faceDetected?'on':'');
@@ -374,8 +375,9 @@ function updateUI(){
   if(!faceDetected) reasons.push('ให้เห็นใบหน้า');
   if(!gps.within) reasons.push('เข้าใกล้พื้นที่');
   const ready = reasons.length===0 && !busy;
-  $('btnIn').disabled=!ready; $('btnOut').disabled=!ready;
-  $('lockMsg').textContent = busy ? '' : (reasons.length ? 'ต้อง: '+reasons.join(' · ') : '');
+  $('btnIn').disabled=!ready || openShift;   // มีงานค้าง → กดเข้างานไม่ได้ ให้กดออกงานก่อน
+  $('btnOut').disabled=!ready;
+  $('lockMsg').textContent = busy ? '' : (openShift ? 'คุณยังไม่ได้กดออกงาน — ถ้าเลิกงานแล้วกด "ออกงาน"' : (reasons.length ? 'ต้อง: '+reasons.join(' · ') : ''));
 }
 
 async function getDescriptor(){
@@ -516,7 +518,10 @@ async function submit(action){
     if(action==='checkin'){
       // การ์ดกันกดเข้างานผิด: เพิ่งออกงาน/ถูกปิดงานไม่นาน หรือ อยู่นอกกะตามตารางเวร
       const adv = await HR.checkInAdvisory(empMatch.emp_id).catch(()=>null);
-      if(adv && adv.recentCheckout){
+      if(adv && adv.openRecord){
+        const o=adv.openRecord;
+        if(!confirm('⚠️ คุณยังมีงานที่ "ยังไม่ได้กดออก" (เข้างานวันที่ '+o.workDate+' เวลา '+o.checkinTime+')\n\nถ้าต้องการเลิกงาน กรุณากดปุ่ม "ออกงาน" แทน\n\nยืนยันว่าต้องการ "เข้างานใหม่" ใช่หรือไม่?')) return;
+      } else if(adv && adv.recentCheckout){
         const rc=adv.recentCheckout;
         const when = rc.hoursAgo < 1 ? Math.round(rc.hoursAgo*60)+' นาที' : rc.hoursAgo+' ชม.';
         const msg = (rc.autoClosed
@@ -587,10 +592,12 @@ function coEffEnd(row, shift){
 }
 async function refreshCoCard(){
   const box=$('coCard'); if(!box) return;
-  if(!empMatch || empMatch.unknown){ box.innerHTML=''; return; }
-  let s; try{ s=await HR.getCheckoutState(empMatch.emp_id); }catch(e){ box.innerHTML=''; return; }
-  if(!s || s.none || !s.row){ box.innerHTML=''; return; }
+  if(!empMatch || empMatch.unknown){ box.innerHTML=''; openShift=false; updateUI(); return; }
+  let s; try{ s=await HR.getCheckoutState(empMatch.emp_id); }catch(e){ box.innerHTML=''; openShift=false; updateUI(); return; }
+  if(!s || s.none || !s.row){ box.innerHTML=''; openShift=false; updateUI(); return; }
   const row=s.row;
+  openShift = !!(row.check_in && !row.check_out);   // ยังไม่กดออก → ปิดปุ่มเข้างาน
+  updateUI();
   // ระบบปิดงานให้แล้ว → เสนอยื่นแก้ไข
   if(row.check_out && row.auto_closed){
     box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'

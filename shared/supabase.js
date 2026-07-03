@@ -77,7 +77,7 @@
 
   // ---------- คำแนะนำก่อนเช็กอิน: กันกดเข้างานผิด (นอกกะ / เพิ่งออกงาน) ----------
   async function checkInAdvisory(empId) {
-    const out = { offSchedule: false, recentCheckout: null };
+    const out = { offSchedule: false, recentCheckout: null, openRecord: null };
     if (!empId) return out;
     try {
       const today = bangkokDate();
@@ -109,7 +109,13 @@
         out.offSchedule = !inWindow;                                     // มีกะให้เทียบ แต่เวลานี้ไม่อยู่ในกรอบกะใด
       }
 
-      // 2) เพิ่งออกงาน/ถูกปิดงานอัตโนมัติภายใน N ชม.
+      // 2) ยังมีงานที่ "ยังไม่กดออก" ค้างอยู่ (เช่น เพิ่งจบกะดึกแต่ยังไม่ปิด) → น่าจะตั้งใจกดออก ไม่ใช่เข้าใหม่
+      const { data: op } = await sb.from('attendance').select('work_date,check_in,shift_id')
+        .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+        .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+      if (op && op.check_in) out.openRecord = { workDate: op.work_date, checkinTime: _fmtTime(op.check_in) };
+
+      // 3) เพิ่งออกงาน/ถูกปิดงานอัตโนมัติภายใน N ชม.
       const { data: rc } = await sb.from('attendance').select('work_date,check_out,auto_closed,status')
         .eq('emp_id', empId).not('check_out', 'is', null)
         .gte('work_date', _addDays(today, -2)).order('check_out', { ascending: false }).limit(1).maybeSingle();

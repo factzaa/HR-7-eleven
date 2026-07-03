@@ -171,6 +171,8 @@
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note);
         case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
+        case 'hr_open_tasks':        return await hrOpenTasks();
+        case 'hr_task_close_group':  return await hrTaskCloseGroup(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
         case 'hr_special_list':      return await hrSpecialList(p.branch);
         case 'hr_special_review':    return await hrSpecialReview(p.assignee_id, p.status, p.note);
@@ -1406,6 +1408,41 @@
     if (error) throw error;
     await logAct('ลบงานในกะ', t ? t.emp_id : null, t ? (t.title + ' · ' + (t.work_date || '') + ' · กะ ' + (t.shift_id || '')) : ('#' + id));
     return { ok: true };
+  }
+
+  // ---------- งานค้างข้ามวัน (work_date < วันนี้ ยังไม่ approved) — ไว้แสดงการ์ดใน Dashboard ----------
+  async function hrOpenTasks() {
+    const today = bkkToday();
+    const [tR, brR, shR] = await Promise.all([
+      sb().from('task_assignments').select('*').lt('work_date', today).neq('status', 'approved').order('work_date').order('shift_id'),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('shifts').select('shift_id,name'),
+    ]);
+    if (tR.error) throw tR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const shName = {}; (shR.data || []).forEach(s => { shName[s.shift_id] = s.name; });
+    const groups = {};
+    (tR.data || []).forEach(t => {
+      const k = (t.work_date || '') + '|' + (t.branch_id || '') + '|' + (t.shift_id || '');
+      if (!groups[k]) groups[k] = { work_date: t.work_date, branch_id: t.branch_id, branch_name: brName[t.branch_id] || t.branch_id || '—', shift_id: t.shift_id, shift_name: shName[t.shift_id] || t.shift_id || '—', todo: 0, submitted: 0, sent_back: 0, tasks: [] };
+      const g = groups[k];
+      if (t.status === 'submitted') g.submitted++; else if (t.status === 'sent_back') g.sent_back++; else g.todo++;
+      g.tasks.push({ id: t.id, title: t.title, emp_name: t.emp_name, status: t.status, emp_note: t.emp_note || null });
+    });
+    const list = Object.values(groups).sort((a, b) => (a.work_date < b.work_date ? -1 : a.work_date > b.work_date ? 1 : 0));
+    return { ok: true, today, groups: list, total: (tR.data || []).length };
+  }
+  // ปิด (อนุมัติ) งานค้างทั้งกลุ่มในครั้งเดียว — ใช้แก้ deadlock งานข้ามวัน
+  async function hrTaskCloseGroup(d) {
+    if (!d || !d.work_date) return { ok: false, error: 'ไม่ระบุกลุ่มงาน' };
+    let q = sb().from('task_assignments').update({ status: 'approved', reviewer: 'HR', review_note: (d.note || 'ปิดโดย HR (งานค้างข้ามวัน)'), reviewed_at: new Date().toISOString() })
+      .eq('work_date', d.work_date).neq('status', 'approved');
+    if (d.branch_id != null) q = q.eq('branch_id', d.branch_id);
+    if (d.shift_id != null) q = q.eq('shift_id', d.shift_id);
+    const { data, error } = await q.select('id');
+    if (error) throw error;
+    await logAct('ปิดงานค้างข้ามวัน', null, (d.work_date || '') + ' · สาขา ' + (d.branch_id || '-') + ' · กะ ' + (d.shift_id || '-') + ' · ' + ((data || []).length) + ' งาน');
+    return { ok: true, closed: (data || []).length };
   }
 
   // ---------- TASK LOG (ตรวจสอบงานย้อนหลัง) ----------

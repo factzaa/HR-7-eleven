@@ -348,6 +348,7 @@
 <div id="view_dashboard" class="container" style="display:none">
   <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
   <div id="coCorrPanel"></div>
+  <div id="openTasksPanel"></div>
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
@@ -1811,7 +1812,7 @@ function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' 
 const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
-  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); }
+  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='report') loadReport();
@@ -3000,6 +3001,28 @@ async function loadCheckoutCorr(){
       +'</div>').join('')+'</div>';
   box.querySelectorAll('[data-coap]').forEach(b=>b.onclick=async()=>{ const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.coap),status:'approved'}); if(r2.ok){ toast('ok','อนุมัติแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
   box.querySelectorAll('[data-corj]').forEach(b=>b.onclick=async()=>{ const note=prompt('เหตุผลที่ปฏิเสธ (ถ้ามี):')||''; const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.corj),status:'rejected',note}); if(r2.ok){ toast('ok','ปฏิเสธแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
+}
+
+// ========== การ์ดงานค้างข้ามวัน (Dashboard) ==========
+async function loadOpenTasks(){
+  const box=$('openTasksPanel'); if(!box) return;
+  let r; try{ r=await post({ action:'hr_open_tasks', password:pwd }); }catch(e){ box.innerHTML=''; return; }
+  if(!r || !r.ok || !r.groups || !r.groups.length){ box.innerHTML=''; return; }
+  const g=r.groups;
+  box.innerHTML='<div class="card" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #e0803a">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:8px">⚠️ งานค้างข้ามวัน ('+g.length+' กลุ่ม · '+r.total+' งาน)</div>'
+    +g.map((x,i)=>'<div style="border-top:1px solid var(--line);padding:10px 0">'
+      +'<div style="font-size:14px;font-weight:600">'+esc(x.branch_name)+' · กะ '+esc(x.shift_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(String(x.work_date))+'</span></div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">ยังไม่ทำ '+x.todo+' · ตีกลับ '+x.sent_back+' · <b style="color:#c2410c">รอตรวจ '+x.submitted+'</b></div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:4px">'+x.tasks.slice(0,6).map(t=>esc(t.title)+' ('+esc(t.emp_name||'-')+' · '+esc(t.status)+')').join(', ')+(x.tasks.length>6?(' …+'+(x.tasks.length-6)):'')+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-pri btn-sm" data-closeg="'+i+'">ปิดทั้งกลุ่ม (อนุมัติ)</button></div>'
+      +'</div>').join('')+'</div>';
+  box.querySelectorAll('[data-closeg]').forEach(b=>b.onclick=async()=>{
+    const x=g[Number(b.dataset.closeg)];
+    if(!confirm('ยืนยันปิด (อนุมัติ) งานค้างทั้งกลุ่ม '+x.branch_name+' กะ '+x.shift_name+' วันที่ '+x.work_date+' ?')) return;
+    const r2=await post({ action:'hr_task_close_group', password:pwd, data:{ work_date:x.work_date, branch_id:x.branch_id, shift_id:x.shift_id } });
+    if(r2.ok){ toast('ok','ปิดงานค้างแล้ว '+(r2.closed||0)+' งาน'); loadOpenTasks(); } else toast('err',r2.error||'ไม่สำเร็จ');
+  });
 }
 
 // ========== วันอบรม / ปฏิบัติงานนอกสถานที่ ==========
