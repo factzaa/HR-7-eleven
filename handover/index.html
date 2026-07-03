@@ -117,6 +117,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',3000);}
@@ -211,6 +212,7 @@ $('goBtn').onclick=async()=>{
     if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); $('goBtn').textContent='เริ่ม'; return; }
     if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); $('goBtn').textContent='เริ่ม'; return; }
     EMP=emp;
+    try{ HRSession.setEmp(emp.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
     $('m_nm').textContent=emp.nickname||emp.name;
     $('m_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
     show('step_menu');
@@ -220,7 +222,7 @@ $('goBtn').onclick=async()=>{
   }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
   $('goBtn').textContent='เริ่ม';
 };
-$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; show('step_id'); };
+$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
 
 // ============ เมนู 1: หัวหน้าผลัด ============
 $('bMenu1').onclick=openM1;

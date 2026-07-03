@@ -431,14 +431,15 @@
   // OT = ชั่วโมงหลังเลิกกะ หักชั่วโมงที่ยังไม่คิด (freeHours) — เริ่มคิด OT ที่ชั่วโมงที่ (freeHours+1)
   function computeOt(checkOutIso, endTime, freeHours) {
     if (!endTime) return 0;
-    const out = new Date(checkOutIso);
+    const outMs = new Date(checkOutIso).getTime();
     const [h, m] = endTime.split(':').map(Number);
-    const endLocal = new Date(out);
-    endLocal.setHours(h, m, 0, 0);
-    let diff = (out - endLocal) / 3600000;       // ชั่วโมงหลังเลิกกะ
-    diff -= (freeHours || 0);                     // หักชั่วโมงแรกที่ไม่คิด OT
-    if (diff < 0) diff = 0;
-    return Math.round(diff * 100) / 100;
+    // อ้างอิงเวลาไทย (+07:00) เสมอ — ไม่ขึ้นกับเขตเวลาของเครื่อง
+    const bkk = new Date(outMs + 7 * 3600 * 1000);
+    const day = bkk.getUTCFullYear() + '-' + String(bkk.getUTCMonth() + 1).padStart(2, '0') + '-' + String(bkk.getUTCDate()).padStart(2, '0');
+    let endMs = new Date(day + 'T' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00+07:00').getTime();
+    if ((outMs - endMs) / 3600000 < -12) endMs -= 86400000;   // กะข้ามคืน
+    const diff = (outMs - endMs) / 3600000 - (freeHours || 0);
+    return diff > 0 ? Math.round(diff * 100) / 100 : 0;
   }
   async function _otFreeHours() {
     const s = await _loadSettings();
@@ -697,7 +698,7 @@
     const e = await lookupEmployee(empId);
     if (!e) throw new Error('ไม่พบรหัสพนักงานที่จะเพิ่ม');
     const today = workDate || bangkokDate();   // อิงวันทำงานของกะ (รองรับกะข้ามคืน)
-    const { error } = await sb.from('schedules').upsert({ emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: branchId || e.branch_id || null, is_cover: false, note: 'เพิ่มเข้ากะเฉพาะกิจ' }, { onConflict: 'emp_id,work_date' });
+    const { error } = await sb.from('schedules').upsert({ emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: branchId || e.branch_id || null, is_cover: false, note: 'เพิ่มเข้ากะเฉพาะกิจ' }, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
     return { ok: true, name: e.nickname || e.name };
   }

@@ -343,7 +343,7 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url'),
       sb().from('shifts').select('shift_id,name,code,start_time').order('start_time'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
-      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id').eq('work_date', d),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,face_match,gps_accuracy').eq('work_date', d),
       sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').lte('start_date', d).gte('end_date', d),
     ]);
     if (schR.error) throw schR.error;
@@ -358,7 +358,7 @@
     function statusOf(empId) {
       if (onLeave[empId]) return { status: 'leave', leave_type: onLeave[empId] };
       const a = attBy[empId];
-      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id };
+      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id, face_match: a.face_match, gps_accuracy: a.gps_accuracy };
       return { status: 'absent' };
     }
 
@@ -466,8 +466,16 @@
     await sb().from('schedules').delete().eq('emp_id', empId);
     await sb().from('rule_acks').delete().eq('emp_id', empId);
     await sb().from('profile_submissions').delete().eq('emp_id', empId);
+    // ลบข้อมูลผูกเพิ่มเติม กันข้อมูลค้าง (ไม่เช็ก error รายตาราง เผื่อบางดีพลอยยังไม่มีตารางนั้น)
+    await sb().from('task_assignments').delete().eq('emp_id', empId);
+    await sb().from('special_task_assignees').delete().eq('emp_id', empId);
+    await sb().from('qa_folder_assignees').delete().eq('emp_id', empId);
+    await sb().from('shift_leads').delete().eq('emp_id', empId);
+    await sb().from('checkout_corrections').delete().eq('emp_id', empId);
+    await sb().from('score_events').delete().eq('emp_id', empId);
     const { error } = await sb().from('employees').delete().eq('emp_id', empId);
     if (error) throw error;
+    await logAct('ลบพนักงาน', empId, 'รหัส ' + empId + ' และข้อมูลที่ผูกอยู่');
     return { ok: true };
   }
 
@@ -716,6 +724,7 @@
     const row = { emp_id: d.emp_id, start_date: d.start_date, end_date: d.end_date || d.start_date, type: d.type || null, reason: d.reason || null, status: d.status || 'approved' };
     const { error } = await sb().from('leaves').insert(row);
     if (error) throw error;
+    await logAct('HR บันทึกใบลา', d.emp_id, (d.type || 'ลา') + ' ' + row.start_date + (row.end_date !== row.start_date ? (' ถึง ' + row.end_date) : '') + ' · สถานะ ' + row.status);
     return { ok: true };
   }
   async function hrLeavesDelete(leaveId) {
@@ -1715,13 +1724,15 @@
   // ---------- คำขอแก้ไขเวลาออก (ลืมกดออก/ระบบปิดให้) ----------
   function _otHours(actualIso, endTime, freeHours) {
     if (!endTime || !actualIso) return 0;
-    const out = new Date(actualIso);
+    const outMs = new Date(actualIso).getTime();
     const [h, m] = String(endTime).split(':').map(Number);
-    const endLocal = new Date(out); endLocal.setHours(h, m, 0, 0);
-    let diff = (out - endLocal) / 3600000;
-    diff -= (freeHours || 0);                    // เริ่มคิด OT ที่ชั่วโมงที่ (freeHours+1)
-    if (diff < 0) diff = 0;
-    return Math.round(diff * 100) / 100;
+    // อ้างอิงเวลาไทย (+07:00) เสมอ — ไม่ขึ้นกับเขตเวลาของเครื่อง HR
+    const bkk = new Date(outMs + 7 * 3600 * 1000);
+    const day = bkk.getUTCFullYear() + '-' + String(bkk.getUTCMonth() + 1).padStart(2, '0') + '-' + String(bkk.getUTCDate()).padStart(2, '0');
+    let endMs = new Date(day + 'T' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00+07:00').getTime();
+    if ((outMs - endMs) / 3600000 < -12) endMs -= 86400000;   // กะข้ามคืน: เลิกกะตกวันก่อนหน้า
+    const diff = (outMs - endMs) / 3600000 - (freeHours || 0); // เริ่มคิด OT ที่ชั่วโมงที่ (freeHours+1)
+    return diff > 0 ? Math.round(diff * 100) / 100 : 0;
   }
   async function _otFree() { const n = await getSettingNum('ot_start_hour', 2); return Math.max(0, n - 1); }
   async function hrCheckoutCorrList() {

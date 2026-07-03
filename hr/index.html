@@ -742,6 +742,10 @@
       <div class="field" style="max-width:300px"><label>ปิดงานอัตโนมัติหลังเลิกกะ (นาที) — OT=0</label><input id="coAutoClose" type="number" min="0" value="60"></div>
       <div class="field" style="max-width:300px"><label>เริ่มคิด OT ที่ชั่วโมงที่ (หลังเลิกกะ)</label><input id="otStartHour" type="number" min="1" value="2"></div>
       <div class="field" style="max-width:300px"><label>เตือน "งานค้างก่อนหมดกะ" ล่วงหน้า (นาที)</label><input id="taskWarn" type="number" min="0" value="30"></div>
+      <div class="field" style="max-width:300px"><label>เข้างานก่อนกะได้ไม่เกิน (นาที) — เกินนี้เตือน "นอกกะ"</label><input id="checkinEarly" type="number" min="0" value="180"></div>
+      <div class="field" style="max-width:300px"><label>เตือนถ้าเพิ่งออกงานภายใน (ชม.) ตอนกดเข้างานใหม่</label><input id="recentCoHrs" type="number" min="0" value="8"></div>
+      <div class="field" style="max-width:300px"><label>ผ่อนผันก่อนเตือน "งานผลัดก่อนยังไม่ตรวจ" (นาที)</label><input id="taskReviewGrace" type="number" min="0" value="30"></div>
+      <div class="field" style="max-width:300px"><label>ส่งสรุป "งานค้างสิ้นวัน" ให้ HR ตอนกี่โมง (0–23)</label><input id="taskEodHour" type="number" min="0" max="23" value="22"></div>
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px">
       <label style="display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer"><input type="checkbox" id="guardShiftStart" checked> ⛔ ห้ามทำ/แจกงาน <b>ก่อนถึงเวลาเข้ากะ</b></label>
@@ -2229,6 +2233,8 @@ function renderBoard(r){
                   </div>
                   ${p.is_cover?`<span class="pill" style="background:#fff7ed;color:#ea580c">↔ ไปแทน${p.cover_from?' (จาก '+esc(p.cover_from)+')':''}</span>`:''}
                   ${p.off_schedule?'<span class="pill" style="background:#fef9c3;color:#854d0e">นอกตาราง</span>':''}
+                  ${(p.face_match===false)?'<span class="pill" style="background:#fee2e2;color:#b91c1c" title="ใบหน้าไม่ตรงกับที่ลงทะเบียน">⚠ ใบหน้า</span>':''}
+                  ${(p.gps_accuracy!=null && p.gps_accuracy>50)?`<span class="pill" style="background:#fef3c7;color:#92400e" title="ความแม่นยำ GPS ต่ำ">⚠ GPS ±${Math.round(p.gps_accuracy)}ม.</span>`:''}
                   <span style="margin-left:auto">${bdChip(p)}</span>
                 </div>`).join('')}
             </div>
@@ -2607,6 +2613,10 @@ async function loadCheckoutGrace(){
     if(s.checkout_autoclose_min!=null && $('coAutoClose')) $('coAutoClose').value = s.checkout_autoclose_min;
     if(s.ot_start_hour!=null && $('otStartHour')) $('otStartHour').value = s.ot_start_hour;
     if(s.task_warn_before_min!=null && $('taskWarn')) $('taskWarn').value = s.task_warn_before_min;
+    if(s.checkin_early_min!=null && $('checkinEarly')) $('checkinEarly').value = s.checkin_early_min;
+    if(s.recent_checkout_hours!=null && $('recentCoHrs')) $('recentCoHrs').value = s.recent_checkout_hours;
+    if(s.task_review_grace_min!=null && $('taskReviewGrace')) $('taskReviewGrace').value = s.task_review_grace_min;
+    if(s.task_eod_hour!=null && $('taskEodHour')) $('taskEodHour').value = s.task_eod_hour;
     if($('guardShiftStart')) $('guardShiftStart').checked = (s.guard_shift_start==null || s.guard_shift_start==='1');
     if($('guardPrevShift'))  $('guardPrevShift').checked  = (s.guard_prev_shift==null  || s.guard_prev_shift==='1');
   }
@@ -2616,6 +2626,10 @@ async function saveCheckoutGrace(){
   const ac = Math.max(0, parseInt(($('coAutoClose')||{}).value)||60);
   const oh = Math.max(1, parseInt(($('otStartHour')||{}).value)||2);
   const w = Math.max(0, parseInt(($('taskWarn')||{}).value)||30);
+  const ce = Math.max(0, parseInt(($('checkinEarly')||{}).value)||180);
+  const rc = Math.max(0, parseInt(($('recentCoHrs')||{}).value)||8);
+  const trg = Math.max(0, parseInt(($('taskReviewGrace')||{}).value)||30);
+  const eod = Math.min(23, Math.max(0, parseInt(($('taskEodHour')||{}).value)||22));
   const g1 = ($('guardShiftStart')&&$('guardShiftStart').checked) ? '1':'0';
   const g2 = ($('guardPrevShift')&&$('guardPrevShift').checked) ? '1':'0';
   $('coGrace_save').disabled = true;
@@ -2624,6 +2638,10 @@ async function saveCheckoutGrace(){
     post({ action:'hr_settings_save', password:pwd, key:'checkout_autoclose_min', value:String(ac) }),
     post({ action:'hr_settings_save', password:pwd, key:'ot_start_hour', value:String(oh) }),
     post({ action:'hr_settings_save', password:pwd, key:'task_warn_before_min', value:String(w) }),
+    post({ action:'hr_settings_save', password:pwd, key:'checkin_early_min', value:String(ce) }),
+    post({ action:'hr_settings_save', password:pwd, key:'recent_checkout_hours', value:String(rc) }),
+    post({ action:'hr_settings_save', password:pwd, key:'task_review_grace_min', value:String(trg) }),
+    post({ action:'hr_settings_save', password:pwd, key:'task_eod_hour', value:String(eod) }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_shift_start', value:g1 }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_prev_shift', value:g2 }),
   ]);

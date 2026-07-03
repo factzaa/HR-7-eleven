@@ -106,6 +106,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
 <script>
 const RULES_VERSION = window.RULES_VERSION || '2026-06-28';
 const $ = id => document.getElementById(id);
@@ -127,6 +128,7 @@ $('acceptBtn').onclick = async ()=>{
   $('acceptBtn').disabled=true; $('acceptBtn').textContent='กำลังบันทึก…';
   try{
     const r=await HR.acceptRules(id, RULES_VERSION);
+    try{ HRSession.setEmp(id); }catch(_e){}   // จำรหัสข้ามหน้า
     $('status').innerHTML='<span style="color:#16a34a">✓ บันทึกการรับทราบเรียบร้อย — ขอบคุณ '+(r.name||'')+'</span>';
     toast('ok','บันทึกการยอมรับแล้ว');
   }catch(e){ toast('err', e.message||'บันทึกไม่สำเร็จ'); $('status').innerHTML=''; }

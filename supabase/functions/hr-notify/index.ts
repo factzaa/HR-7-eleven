@@ -21,6 +21,8 @@ const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: fal
 
 const bkk = () => new Date(Date.now() + 7 * 3600 * 1000);          // เวลาไทย
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+const fmtThai = (dt: string) => { try { return new Date(dt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " น."; } catch { return String(dt); } };
+const fmtThaiDate = (d: string) => { try { return new Date(d + "T00:00:00Z").toLocaleDateString("th-TH", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" }); } catch { return String(d); } };
 
 Deno.serve(async () => {
   try {
@@ -114,33 +116,251 @@ Deno.serve(async () => {
     (annR?.data ?? []).filter((a: any) => !a.expire_date || a.expire_date >= today)
       .forEach((a: any) => events.push({ key: `announce:${a.id}`, text: `📢 ประกาศ: ${a.message}` }));
 
-    if (!events.length) return json({ ok: true, new: 0 });
-
-    // กรองเหตุการณ์ที่เคยส่งแล้ว
-    const keys = events.map((e) => e.key);
-    const sentR = await sb.from("notify_sent").select("event_key").in("event_key", keys);
-    const sent = new Set((sentR.data ?? []).map((r: any) => r.event_key));
-    const fresh = events.filter((e) => !sent.has(e.key));
-    if (!fresh.length) return json({ ok: true, new: 0 });
-
     let okCount = 0; const gone: string[] = [];
-    await Promise.all(subs.map(async (s: any) => {
-      // เครื่องส่วนกลาง (branch_id ว่าง) รับทุกสาขา · เครื่องของสาขา รับเฉพาะ event ของสาขาตัวเอง + event ที่ไม่ผูกสาขา (ประกาศ/ใบลา/โปรไฟล์)
-      const my = fresh.filter((e) => !s.branch_id || !e.branch || e.branch === s.branch_id);
-      if (!my.length) return;
-      const top = my.slice(0, 6).map((e) => "• " + e.text).join("\n");
-      const more = my.length > 6 ? `\n…และอีก ${my.length - 6} รายการ` : "";
-      const payload = JSON.stringify({ title: `แจ้งเตือน HR (${my.length})`, body: top + more, url: "./hr/", tag: "hr-notify" });
-      try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload); okCount++; }
-      catch (err: any) { const c = err?.statusCode; if (c === 404 || c === 410) gone.push(s.endpoint); }
-    }));
-    if (gone.length) await sb.from("push_subscriptions").delete().in("endpoint", gone);
 
-    await sb.from("notify_sent").upsert(fresh.map((e) => ({ event_key: e.key })), { onConflict: "event_key" });
+    // แยกเครื่อง HR (ไม่มี emp_id) กับเครื่องพนักงาน (มี emp_id)
+    const hrSubs  = subs.filter((s: any) => !s.emp_id);
+    const empSubs = subs.filter((s: any) => s.emp_id);
+    const subsByEmp: Record<string, any[]> = {};
+    empSubs.forEach((s: any) => { (subsByEmp[s.emp_id] = subsByEmp[s.emp_id] || []).push(s); });
+    // ส่ง push ไปเครื่องพนักงานคนหนึ่ง (ใช้ร่วมกันหลายฟีเจอร์)
+    const sendToEmp = async (empId: string, title: string, body: string, tag: string, url = "./handover/") => {
+      const list = subsByEmp[empId]; if (!list || !list.length) return;
+      const payload = JSON.stringify({ title, body, url, tag });
+      await Promise.all(list.map(async (s: any) => {
+        try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload); okCount++; }
+        catch (err: any) { const c = err?.statusCode; if (c === 404 || c === 410) gone.push(s.endpoint); }
+      }));
+    };
+
+    // ===== HR events → เครื่อง HR (กันส่งซ้ำด้วย notify_sent) =====
+    if (events.length && hrSubs.length) {
+      const keys = events.map((e) => e.key);
+      const sentR = await sb.from("notify_sent").select("event_key").in("event_key", keys);
+      const sent = new Set((sentR.data ?? []).map((r: any) => r.event_key));
+      const fresh = events.filter((e) => !sent.has(e.key));
+      if (fresh.length) {
+        await Promise.all(hrSubs.map(async (s: any) => {
+          const my = fresh.filter((e) => !s.branch_id || !e.branch || e.branch === s.branch_id);
+          if (!my.length) return;
+          const top = my.slice(0, 6).map((e) => "• " + e.text).join("\n");
+          const more = my.length > 6 ? `\n…และอีก ${my.length - 6} รายการ` : "";
+          const payload = JSON.stringify({ title: `แจ้งเตือน HR (${my.length})`, body: top + more, url: "./hr/", tag: "hr-notify" });
+          try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload); okCount++; }
+          catch (err: any) { const c = err?.statusCode; if (c === 404 || c === 410) gone.push(s.endpoint); }
+        }));
+        await sb.from("notify_sent").upsert(fresh.map((e) => ({ event_key: e.key })), { onConflict: "event_key" });
+      }
+    }
+
+    // ===== งานพิเศษ: แจ้งพนักงาน (งานใหม่/ตีกลับ/ใกล้เดดไลน์) + แจ้ง HR (พนักงานส่งงาน) =====
+    try {
+      const { data: staAll } = await sb.from("special_task_assignees").select("*");
+      const asg = staAll ?? [];
+      if (asg.length) {
+        const taskIds = [...new Set(asg.map((a: any) => a.task_id))];
+        const { data: tasksData } = await sb.from("special_tasks").select("id,title,deadline,active").in("id", taskIds);
+        const taskById: Record<string, any> = {}; (tasksData ?? []).forEach((t: any) => { taskById[t.id] = t; });
+        const nowMs = Date.now(); const dueSoonMs = 24 * 3600 * 1000;
+        for (const a of asg) {
+          const t = taskById[a.task_id]; if (!t || t.active === false) continue;
+          // (1) งานใหม่ / ถูกตีกลับ → แจ้งพนักงาน
+          if (!a.assigned_notified && (a.status === "todo" || a.status === "sent_back")) {
+            const redo = a.status === "sent_back";
+            await sendToEmp(a.emp_id, redo ? "⤴ งานพิเศษถูกตีกลับ ต้องแก้ไข" : "⭐ มีงานพิเศษใหม่",
+              t.title + (t.deadline ? ("\nครบกำหนด: " + fmtThai(t.deadline)) : ""), "sp-new-" + a.id + (redo ? "-r" : "-n"));
+            await sb.from("special_task_assignees").update({ assigned_notified: true }).eq("id", a.id);
+          }
+          // (2) ใกล้ครบกำหนด (ภายใน 24 ชม.) → แจ้งพนักงาน
+          if (!a.deadline_notified && t.deadline && (a.status === "todo" || a.status === "sent_back")) {
+            const dlMs = new Date(t.deadline).getTime();
+            if (dlMs - nowMs <= dueSoonMs && dlMs - nowMs > -6 * 3600 * 1000) {
+              await sendToEmp(a.emp_id, "⏰ ใกล้ครบกำหนดงานพิเศษ", t.title + "\nครบกำหนด: " + fmtThai(t.deadline), "sp-dl-" + a.id);
+              await sb.from("special_task_assignees").update({ deadline_notified: true }).eq("id", a.id);
+            }
+          }
+          // (3) พนักงานส่งงาน → แจ้ง HR (ตามสาขา)
+          if (!a.submit_notified && a.status === "submitted") {
+            const my = hrSubs.filter((s: any) => !s.branch_id || !a.branch_id || s.branch_id === a.branch_id);
+            const payload = JSON.stringify({ title: "⭐ พนักงานส่งงานพิเศษ", body: (empName[a.emp_id] || a.emp_id) + ": " + t.title, url: "./hr/", tag: "sp-submit-" + a.id });
+            await Promise.all(my.map(async (s: any) => {
+              try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload); okCount++; }
+              catch (err: any) { const c = err?.statusCode; if (c === 404 || c === 410) gone.push(s.endpoint); }
+            }));
+            await sb.from("special_task_assignees").update({ submit_notified: true }).eq("id", a.id);
+          }
+        }
+      }
+    } catch (spErr) { console.error("special notify", spErr); }
+
+    // ===== QA สินค้าใกล้หมดอายุ → แจ้งพนักงานที่รับผิดชอบโฟลเดอร์ (30/14/7/3 วัน) =====
+    try {
+      const { data: qaData } = await sb.from("qa_items")
+        .select("id,folder_id,name,expiry_date,status,notified_30,notified_14,notified_7,notified_3")
+        .eq("status", "on_shelf").not("expiry_date", "is", null);
+      const items = qaData ?? [];
+      if (items.length) {
+        const folderIds = [...new Set(items.map((i: any) => i.folder_id))];
+        const { data: faData } = await sb.from("qa_folder_assignees").select("folder_id,emp_id").in("folder_id", folderIds);
+        const empsByFolder: Record<string, string[]> = {};
+        (faData ?? []).forEach((a: any) => { (empsByFolder[a.folder_id] = empsByFolder[a.folder_id] || []).push(a.emp_id); });
+        const todayMs = new Date(today + "T00:00:00Z").getTime();
+        // เรียงจากช่วงเล็กไปใหญ่ → เลือกชั้นที่ครอบคลุมวันคงเหลือปัจจุบัน
+        const tiers = [{ d: 3, col: "notified_3" }, { d: 7, col: "notified_7" }, { d: 14, col: "notified_14" }, { d: 30, col: "notified_30" }];
+        for (const it of items) {
+          const dl = Math.round((new Date(it.expiry_date + "T00:00:00Z").getTime() - todayMs) / 86400000);
+          let tier: any = null;
+          for (const t of tiers) { if (dl <= t.d) { tier = t; break; } }
+          if (!tier) continue;              // ยังเกิน 30 วัน
+          if (it[tier.col]) continue;       // ชั้นนี้แจ้งไปแล้ว
+          const emps = empsByFolder[it.folder_id] || [];
+          const body = it.name + "\nหมดอายุ " + fmtThaiDate(it.expiry_date) + (dl < 0 ? ` (เลยมาแล้ว ${-dl} วัน)` : ` (เหลือ ${dl} วัน)`);
+          for (const empId of emps) { await sendToEmp(empId, "🗓️ สินค้าใกล้หมดอายุ", body, "qa-" + it.id + "-" + tier.d, "./qa/"); }
+          await sb.from("qa_items").update({ [tier.col]: true }).eq("id", it.id);
+        }
+      }
+    } catch (qaErr) { console.error("qa notify", qaErr); }
+
+    // ===== งานรับส่งผลัด: เตือน "ส่งแล้วยังไม่ถูกตรวจ" (→ หัวหน้าผลัดถัดไป + HR) + สรุปงานค้างสิ้นวัน (→ HR) =====
+    try {
+      const reviewGraceMin = isNaN(Number(settings["task_review_grace_min"])) ? 30 : Number(settings["task_review_grace_min"]);
+      const eodHour = isNaN(Number(settings["task_eod_hour"])) ? 22 : Number(settings["task_eod_hour"]);
+      const nowMs = Date.now();
+      // ส่ง push ตรงไปเครื่อง HR (block HR events ด้านบนรันไปแล้ว) — กันซ้ำด้วย notify_sent
+      const hrPush = async (title: string, body: string, tag: string, branch?: string) => {
+        const my = hrSubs.filter((s: any) => !s.branch_id || !branch || s.branch_id === branch);
+        const payload = JSON.stringify({ title, body, url: "./hr/", tag });
+        await Promise.all(my.map(async (s: any) => {
+          try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload); okCount++; }
+          catch (err: any) { const c = err?.statusCode; if (c === 404 || c === 410) gone.push(s.endpoint); }
+        }));
+      };
+      const { data: openTasks } = await sb.from("task_assignments")
+        .select("branch_id,shift_id,work_date,status").in("work_date", [today, addDaysStr(today, -1)]).neq("status", "approved");
+      const groups: Record<string, { branch: string; shift: string; wd: string; todo: number; submitted: number; sentback: number }> = {};
+      (openTasks ?? []).forEach((t: any) => {
+        const k = `${t.branch_id}|${t.shift_id}|${t.work_date}`;
+        if (!groups[k]) groups[k] = { branch: t.branch_id, shift: t.shift_id, wd: t.work_date, todo: 0, submitted: 0, sentback: 0 };
+        if (t.status === "submitted") groups[k].submitted++;
+        else if (t.status === "sent_back") groups[k].sentback++;
+        else groups[k].todo++;
+      });
+      // เชนผลัดหลัก + หัวหน้าผลัดวันนี้ (ไว้หาผลัดถัดไปที่ควรตรวจ)
+      const { data: shiftsAll } = await sb.from("shifts").select("shift_id,main_shift,start_time").order("start_time");
+      const chain = (shiftsAll ?? []).filter((s: any) => s.main_shift && s.main_shift === s.shift_id).map((s: any) => s.shift_id);
+      const { data: leadsToday } = await sb.from("shift_leads").select("branch_id,shift_id,emp_id").eq("work_date", today);
+      const nextMainOf = (shift: string, wd: string) => {
+        const idx = chain.indexOf(shift); if (idx < 0) return null;
+        if (idx === chain.length - 1) return { shift: chain[0], date: addDaysStr(wd, 1) };
+        return { shift: chain[idx + 1], date: wd };
+      };
+      const eodLines: string[] = [];
+      for (const k in groups) {
+        const g = groups[k]; const st = shiftStart[g.shift], en = shiftEnd[g.shift];
+        if (!en) continue;
+        const overnight = !!st && en <= st;
+        const endMs = new Date((overnight ? addDaysStr(g.wd, 1) : g.wd) + "T" + en + ":00+07:00").getTime();
+        const ended = nowMs >= endMs + reviewGraceMin * 60000;
+        const total = g.todo + g.submitted + g.sentback;
+        // (A) กะจบแล้ว + มีงานส่งแล้วรอตรวจ → เตือนหัวหน้าผลัดถัดไป + HR (ครั้งเดียว)
+        if (ended && g.submitted > 0) {
+          const key = `taskunrev:${g.branch}:${g.shift}:${g.wd}`;
+          const seen = await sb.from("notify_sent").select("event_key").eq("event_key", key).maybeSingle();
+          if (!seen.data) {
+            const nm = nextMainOf(g.shift, g.wd);
+            if (nm && String(nm.date) === today) {
+              const ld = (leadsToday ?? []).find((l: any) => (l.branch_id || "") === (g.branch || "") && l.shift_id === nm.shift);
+              if (ld) await sendToEmp(ld.emp_id, "🧾 มีงานผลัดก่อนรอตรวจ", `กะ${shiftName[g.shift] ? " " + shiftName[g.shift] : ""} สาขา ${g.branch || "?"} ส่งงานแล้ว ${g.submitted} รายการ — ตรวจในเมนู "ตรวจผลัดก่อนหน้า"`, "taskunrev-" + g.branch + "-" + g.shift + "-" + g.wd);
+            }
+            await hrPush("🧾 งานรอตรวจค้าง", `กะ${shiftName[g.shift] ? " " + shiftName[g.shift] : ""} สาขา ${g.branch || "?"}: ส่งแล้ว ${g.submitted} รายการ ยังไม่ถูกตรวจ`, "taskunrev-hr-" + g.branch + "-" + g.shift + "-" + g.wd, g.branch);
+            await sb.from("notify_sent").upsert({ event_key: key });
+          }
+        }
+        // เก็บบรรทัดสำหรับสรุปสิ้นวัน (ทุกกลุ่มที่ยังค้าง)
+        if (total > 0) eodLines.push(`สาขา ${g.branch || "?"} กะ${shiftName[g.shift] ? " " + shiftName[g.shift] : ""} (${g.wd}): ค้าง ${total}${g.submitted ? ` · รอตรวจ ${g.submitted}` : ""}`);
+      }
+      // (B) สรุปงานค้างสิ้นวัน → HR ครั้งเดียวต่อวัน (เมื่อถึงชั่วโมงที่ตั้ง)
+      if (eodLines.length && nowMin >= eodHour * 60) {
+        const key = `taskeod:${today}`;
+        const seen = await sb.from("notify_sent").select("event_key").eq("event_key", key).maybeSingle();
+        if (!seen.data) {
+          const body = eodLines.slice(0, 8).join("\n") + (eodLines.length > 8 ? `\n…และอีก ${eodLines.length - 8} กลุ่ม` : "");
+          await hrPush(`📋 สรุปงานค้างสิ้นวัน (${eodLines.length} กลุ่ม)`, body, "taskeod-" + today);
+          await sb.from("notify_sent").upsert({ event_key: key });
+        }
+      }
+    } catch (hoTaskErr) { console.error("handover task notify", hoTaskErr); }
+
+    // ===== งานในกะถูกตีกลับ → แจ้งพนักงานเจ้าของงาน + หัวหน้าผลัด (ยิงใหม่ทุกครั้งที่ตีกลับรอบใหม่) =====
+    try {
+      const { data: rbTasks } = await sb.from("task_assignments")
+        .select("id,emp_id,title,shift_id,branch_id,work_date,review_note,reviewer,sent_back_count")
+        .eq("status", "sent_back").gte("work_date", addDaysStr(today, -3));
+      if ((rbTasks ?? []).length) {
+        const wds = [...new Set((rbTasks ?? []).map((t: any) => t.work_date))];
+        const { data: leadRows } = await sb.from("shift_leads").select("work_date,branch_id,shift_id,emp_id").in("work_date", wds);
+        const leadMap: Record<string, string> = {};
+        (leadRows ?? []).forEach((l: any) => { leadMap[`${l.work_date}|${l.branch_id || ""}|${l.shift_id}`] = l.emp_id; });
+        for (const t of (rbTasks ?? [])) {
+          const key = `taskrb:${t.id}:${t.sent_back_count || 0}`;
+          const seen = await sb.from("notify_sent").select("event_key").eq("event_key", key).maybeSingle();
+          if (seen.data) continue;
+          const body = `${t.title}${t.review_note ? `\nสิ่งที่ต้องแก้: ${t.review_note}` : ""}${t.reviewer ? `\n(โดย ${t.reviewer})` : ""}`;
+          if (t.emp_id) await sendToEmp(t.emp_id, "⤴ งานถูกตีกลับ ต้องแก้ไข", body, "taskrb-" + t.id + "-" + (t.sent_back_count || 0));
+          const leadId = leadMap[`${t.work_date}|${t.branch_id || ""}|${t.shift_id}`];
+          if (leadId && leadId !== t.emp_id) await sendToEmp(leadId, "⤴ งานในผลัดถูกตีกลับ", `${empName[t.emp_id] || t.emp_id}: ${t.title}${t.review_note ? `\n${t.review_note}` : ""}`, "taskrb-lead-" + t.id + "-" + (t.sent_back_count || 0));
+          await sb.from("notify_sent").upsert({ event_key: key });
+        }
+      }
+    } catch (rbErr) { console.error("task sent-back notify", rbErr); }
+
+    // ===== ปิดงานอัตโนมัติเมื่อลืมกดออก (OT=0) + เตือนพนักงานให้กดออก/ควบกะ =====
+    try {
+      const autoCloseMin = isNaN(Number(settings["checkout_autoclose_min"])) ? 60 : Number(settings["checkout_autoclose_min"]);
+      const nowMs = Date.now();
+      // ตารางเวรวันนี้+เมื่อวาน → รองรับควบกะ (ปิดที่เวลาเลิก "กะสุดท้าย")
+      const { data: schBoth } = await sb.from("schedules").select("emp_id,shift_id,work_date").in("work_date", [today, addDaysStr(today, -1)]);
+      const schByEmpDate: Record<string, string[]> = {};
+      (schBoth ?? []).forEach((s: any) => { if (s.shift_id) { (schByEmpDate[s.emp_id + "|" + s.work_date] = schByEmpDate[s.emp_id + "|" + s.work_date] || []).push(s.shift_id); } });
+      const effEndOf = (wd: string, sid: string) => {
+        const st = shiftStart[sid], en = shiftEnd[sid]; if (!en) return null;
+        const overnight = !!st && en <= st;
+        const endDate = overnight ? addDaysStr(wd, 1) : wd;
+        return { iso: `${endDate}T${en}:00+07:00`, en };
+      };
+      const openRows = (att as any[]).filter((a) => a.check_in && !a.check_out).map((a) => ({ ...a, _wd: today }))
+        .concat(((yestOpenData ?? []) as any[]).map((a) => ({ ...a, _wd: addDaysStr(today, -1) })));
+      for (const a of openRows) {
+        // หา "กะสุดท้าย" ของวันจากตารางเวร (ถ้าไม่มีใช้กะที่เช็กอิน)
+        const sids = (schByEmpDate[a.emp_id + "|" + a._wd] && schByEmpDate[a.emp_id + "|" + a._wd].length) ? schByEmpDate[a.emp_id + "|" + a._wd] : [a.shift_id];
+        let effEndIso: string | null = null, effEndMs = -Infinity, en = "";
+        for (const sid of sids) { const r = effEndOf(a._wd, sid); if (!r) continue; const ms = new Date(r.iso).getTime(); if (ms > effEndMs) { effEndMs = ms; effEndIso = r.iso; en = r.en; } }
+        if (!effEndIso) continue;
+        if (a.extend_until && new Date(a.extend_until).getTime() > nowMs) continue;   // ประกาศควบกะต่อ → ยังไม่ปิด
+        const graceMs = effEndMs + coGrace * 60000;
+        const closeMs = effEndMs + autoCloseMin * 60000;
+        // เตือนพนักงาน (หลังผ่อนผัน แต่ยังไม่ถึงเวลาปิด) — กันซ้ำด้วย notify_sent
+        if (nowMs >= graceMs && nowMs < closeMs) {
+          const key = `coremind:${a.emp_id}:${a._wd}`;
+          const seen = await sb.from("notify_sent").select("event_key").eq("event_key", key).maybeSingle();
+          if (!seen.data) {
+            await sendToEmp(a.emp_id, "⏰ อย่าลืมกดออกงาน", `กะ${shiftName[a.shift_id] ? " " + shiftName[a.shift_id] : ""} เลิก ${en} แล้ว — กดออกงาน หรือกดควบกะต่อในแอป`, "coremind-" + a.emp_id + "-" + a._wd, "./employee/");
+            await sb.from("notify_sent").upsert({ event_key: key });
+          }
+        }
+        // ถึงเวลาปิด → ปิดงานให้ที่เวลาเลิกกะ, OT=0
+        if (nowMs >= closeMs) {
+          await sb.from("attendance").update({ check_out: new Date(effEndIso).toISOString(), ot_hours: 0, status: "AUTO_CLOSED", auto_closed: true })
+            .eq("emp_id", a.emp_id).eq("work_date", a._wd);
+        }
+      }
+    } catch (acErr) { console.error("auto-checkout", acErr); }
+
+    if (gone.length) await sb.from("push_subscriptions").delete().in("endpoint", gone);
     const cutoff = new Date(Date.now() - 7 * 86400 * 1000).toISOString();
     await sb.from("notify_sent").delete().lt("sent_at", cutoff);   // ล้างของเก่า > 7 วัน
 
-    return json({ ok: true, new: fresh.length, sent: okCount, removed: gone.length });
+    return json({ ok: true, sent: okCount, removed: gone.length });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }

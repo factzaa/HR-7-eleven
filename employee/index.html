@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
 <style>
   :root{
     --green:#00703c; --green-d:#00582f; --green-soft:#e7f3ec;
@@ -571,6 +572,7 @@ $('toast').onclick = ()=>$('toast').classList.remove('show');
 $('empId').addEventListener('input', e=>{
   e.target.value = e.target.value.replace(/\D/g,'');
   empMatch = lookupEmp(e.target.value);
+  try{ if(empMatch) HRSession.setEmp(empMatch.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
   evaluateZone();   // ประเมินสาขาใหม่ โดยยึดสาขาประจำของพนักงานคนนี้
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();

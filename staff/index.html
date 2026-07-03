@@ -110,6 +110,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const docs = { photo:null, idcard:null, bankbook:null, house:null, edu:null };
@@ -123,6 +124,7 @@ $('checkBtn').onclick = async ()=>{
     const emp = await HR.lookupEmployee(id);
     if(!emp){ toast('err','ไม่พบรหัสนี้ — ให้ HR สร้างรหัสก่อน'); return; }
     if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); return; }
+    try{ HRSession.setEmp(emp.emp_id||id); }catch(_e){}   // จำรหัสข้ามหน้า
     $('who').textContent = 'พนักงาน: '+emp.name+' ('+id+')';
     $('f_name').value = emp.name||''; $('f_nickname').value = emp.nickname||'';
     $('step1').style.display='none'; $('step2').style.display='block';
