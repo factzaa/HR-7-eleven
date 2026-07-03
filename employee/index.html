@@ -787,9 +787,27 @@ async function showSelf(){
   if(!empMatch || empMatch.unknown){ body.innerHTML='<p style="color:var(--red)">กรอกรหัสพนักงานให้ถูกต้องก่อน</p>'; return; }
   body.innerHTML='<p>กำลังโหลด…</p>';
   try{
-    const s = await HR.selfStatus(empMatch.emp_id);
-    body.innerHTML = renderSelf(s);
+    const [s, leaves] = await Promise.all([
+      HR.selfStatus(empMatch.emp_id),
+      HR.myLeaves(empMatch.emp_id).catch(()=>[])
+    ]);
+    body.innerHTML = renderSelf(s) + renderMyLeaves(leaves);
   }catch(e){ console.error(e); body.innerHTML='<p style="color:var(--red)">โหลดไม่สำเร็จ: '+escH(e.message||'')+'</p>'; }
+}
+function renderMyLeaves(rows){
+  const head='<div style="font-weight:700;margin-top:14px;margin-bottom:6px">สถานะใบลาของฉัน</div>';
+  if(!rows || !rows.length) return head+'<div style="font-size:12.5px;color:var(--muted)">ยังไม่มีคำขอลา</div>';
+  return head+rows.map(r=>{
+    const badge=r.status==='approved'?'<span style="background:#dcfce7;color:#166534;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✓ อนุมัติแล้ว</span>'
+      :r.status==='rejected'?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✗ ไม่อนุมัติ</span>'
+      :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
+    const range=(r.end_date&&r.end_date!==r.start_date)?(r.start_date+' – '+r.end_date):r.start_date;
+    const reason=r.reason?('<div style="color:var(--muted);margin-top:2px">เหตุผล: '+escH(r.reason)+'</div>'):'';
+    const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+escH(r.hr_note)+'</div>'):'';
+    return '<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+escH(range)+'</b>'+badge+'</div>'
+      +'<div style="color:var(--txt);margin-top:2px">ประเภท: '+escH(r.type||'-')+'</div>'+reason+note+'</div>';
+  }).join('');
 }
 function renderSelf(s){
   const e=s.emp, st=s.stats, lv=s.level, t=s.today;
