@@ -173,6 +173,7 @@
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_open_tasks':        return await hrOpenTasks();
         case 'hr_task_close_group':  return await hrTaskCloseGroup(p.data);
+        case 'hr_emp_summary':       return await hrEmpSummary(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
         case 'hr_special_list':      return await hrSpecialList(p.branch);
         case 'hr_special_review':    return await hrSpecialReview(p.assignee_id, p.status, p.note);
@@ -1393,8 +1394,9 @@
     return { ok: true, date: d, rows, counts };
   }
   async function hrTaskReview(id, status, note) {
-    const { data: t } = await sb().from('task_assignments').select('emp_id,title').eq('id', id).maybeSingle();
+    const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count').eq('id', id).maybeSingle();
     const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    if (status !== 'approved') upd.sent_back_count = ((t && t.sent_back_count) || 0) + 1;
     const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
     if (error) throw error;
     await logAct(status === 'approved' ? 'อนุมัติงาน' : 'ตีงานกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
@@ -1443,6 +1445,86 @@
     if (error) throw error;
     await logAct('ปิดงานค้างข้ามวัน', null, (d.work_date || '') + ' · สาขา ' + (d.branch_id || '-') + ' · กะ ' + (d.shift_id || '-') + ' · ' + ((data || []).length) + ' งาน');
     return { ok: true, closed: (data || []).length };
+  }
+
+  // ---------- สรุปผลการทำงาน + วินัย รายบุคคล (สำหรับพิมพ์เอกสาร) ----------
+  async function hrEmpSummary(p) {
+    p = p || {};
+    if (!p.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const today = bkkToday();
+    let start, end, rangeLabel;
+    if (p.cycle === 'current' || p.cycle === 'previous') {
+      const c = cycleRange(p.cycle); start = c.start; end = c.end;
+      rangeLabel = (p.cycle === 'previous' ? 'รอบก่อนหน้า' : 'รอบปัจจุบัน') + ' (' + start + ' ถึง ' + end + ')';
+    } else {
+      start = p.start || cycleRange('current').start;
+      end = p.end || today;
+      rangeLabel = start + ' ถึง ' + end;
+    }
+    const endEff = end < today ? end : today;
+    const [empR, brR, shR, attR, schR, lvR, taR, staR, stR] = await Promise.all([
+      sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,default_shift').eq('emp_id', p.emp_id).maybeSingle(),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('shifts').select('shift_id,name'),
+      sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
+      sb().from('schedules').select('work_date,shift_id').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
+      sb().from('leaves').select('start_date,end_date,type,status').eq('emp_id', p.emp_id).eq('status', 'approved').lte('start_date', end).gte('end_date', start),
+      sb().from('task_assignments').select('work_date,shift_id,title,status,sent_back_count,review_note,reviewer').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end),
+      sb().from('special_task_assignees').select('task_id,status').eq('emp_id', p.emp_id),
+      sb().from('special_tasks').select('*'),
+    ]);
+    if (empR.error) throw empR.error;
+    if (!empR.data) return { ok: false, error: 'ไม่พบพนักงาน' };
+    const emp = empR.data;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const shName = {}; (shR.data || []).forEach(s => { shName[s.shift_id] = s.name; });
+    const att = attR.data || [], leaves = lvR.data || [];
+    const onLeave = d => leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+    const workedSet = new Set(att.filter(a => a.check_in).map(a => a.work_date));
+    const late = att.filter(a => a.late_min > 0);
+    const late_count = late.length, late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
+    const ot_hours = Math.round(att.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
+    const mySched = [...new Set((schR.data || []).filter(s => s.shift_id).map(s => s.work_date))];
+    const pastSched = mySched.filter(d => d < today);
+    const days_should = pastSched.length;
+    const days_worked = pastSched.filter(d => workedSet.has(d)).length;
+    const absentDays = pastSched.filter(d => !workedSet.has(d) && !onLeave(d)).sort();
+    const absent = absentDays.length;
+    let leave_days = 0;
+    leaves.forEach(l => { const s = l.start_date < start ? start : l.start_date; const e = (l.end_date || l.start_date) > end ? end : (l.end_date || l.start_date); if (s <= e) leave_days += Math.round((new Date(e + 'T00:00:00') - new Date(s + 'T00:00:00')) / 86400000) + 1; });
+    const rules = await loadDisciplineRules();
+    const lv = disciplineLevel(late_count, absent, rules);
+    // งานที่ได้รับมอบหมาย (task_assignments)
+    const tasks = taR.data || [];
+    const tCount = st => tasks.filter(t => t.status === st).length;
+    const t_total = tasks.length, t_approved = tCount('approved'), t_submitted = tCount('submitted'), t_todo = tCount('todo'), t_sentback = tCount('sent_back');
+    const sent_back_total = tasks.reduce((s, t) => s + (t.sent_back_count || 0), 0);
+    const pass_rate = t_total ? Math.round(t_approved / t_total * 100) : 0;
+    // งานพิเศษ (กรองตามวันที่สร้างงานในช่วง; ถ้าไม่มีวันที่ = รวมไว้)
+    const stById = {}; (stR.data || []).forEach(t => { stById[t.id] = t; });
+    const spRows = (staR.data || []).map(a => ({ status: a.status, task: stById[a.task_id] })).filter(a => {
+      if (!a.task) return false; const cd = String(a.task.created_at || '').slice(0, 10);
+      return !cd || (cd >= start && cd <= end);
+    });
+    const sp_total = spRows.length, sp_approved = spRows.filter(a => a.status === 'approved').length,
+      sp_submitted = spRows.filter(a => a.status === 'submitted').length, sp_open = spRows.filter(a => a.status === 'todo' || a.status === 'sent_back').length;
+    const sentBackTasks = tasks.filter(t => (t.sent_back_count || 0) > 0 || t.status === 'sent_back')
+      .map(t => ({ date: t.work_date, shift: shName[t.shift_id] || t.shift_id || '-', title: t.title, note: t.review_note || '', count: t.sent_back_count || 0, status: t.status, reviewer: t.reviewer || '' }))
+      .sort((a, b) => a.date < b.date ? -1 : 1);
+    return {
+      ok: true,
+      emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '' },
+      range: { start, end, label: rangeLabel, generated: new Date().toISOString() },
+      attendance: { days_should, days_worked, absent, late_count, late_total, leave_days, ot_hours },
+      discipline: { level: lv.level, level_name: lv.level_name, level_color: lv.level_color },
+      tasks: { total: t_total, approved: t_approved, submitted: t_submitted, todo: t_todo, sent_back: t_sentback, sent_back_total, pass_rate },
+      special: { total: sp_total, approved: sp_approved, submitted: sp_submitted, open: sp_open },
+      details: {
+        late: late.map(a => ({ date: a.work_date, min: a.late_min })).sort((x, y) => x.date < y.date ? -1 : 1),
+        absent: absentDays,
+        sent_back_tasks: sentBackTasks,
+      },
+    };
   }
 
   // ---------- TASK LOG (ตรวจสอบงานย้อนหลัง) ----------

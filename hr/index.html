@@ -321,6 +321,7 @@
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
+  <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_special"><span class="tabicon">⭐</span>งานพิเศษ</button>
   <button class="tab" id="tab_qa"><span class="tabicon">🗓️</span>QA สินค้า</button>
@@ -438,6 +439,56 @@
   <div id="sc_legend" style="display:flex; flex-wrap:wrap; gap:8px; margin:0 4px 14px"></div>
   <div id="sc_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
+
+<!-- สรุปผลการทำงาน + วินัย รายบุคคล (พิมพ์เป็นเอกสารได้) -->
+<div id="view_empsum" class="container" style="display:none">
+  <div class="toolbar es-controls" style="flex-wrap:wrap; gap:10px; align-items:flex-end">
+    <div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">พนักงาน</label>
+      <select id="es_emp" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:220px"></select></div>
+    <div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">ช่วงเวลา</label>
+      <select id="es_mode" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <option value="current">รอบปัจจุบัน (21–20)</option>
+        <option value="previous">รอบก่อนหน้า (21–20)</option>
+        <option value="custom">เลือกช่วงเอง</option>
+      </select></div>
+    <div id="es_range" style="display:none">
+      <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">ตั้งแต่ – ถึง</label>
+      <span style="display:flex;gap:6px"><input id="es_start" type="date" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"><input id="es_end" type="date" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></span></div>
+    <button class="btn btn-pri" id="es_gen">สร้างสรุป</button>
+    <button class="btn btn-sec" id="es_print" style="display:none">🖨️ พิมพ์เอกสาร</button>
+  </div>
+  <div id="es_body"><div class="empty">เลือกพนักงานและช่วงเวลา แล้วกด “สร้างสรุป”</div></div>
+</div>
+<style>
+.es-report{background:#fff;color:#111;max-width:820px;margin:8px auto;padding:10px 6px;font-size:13px}
+.es-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #00582f;padding-bottom:8px;margin-bottom:10px}
+.es-title{font-size:18px;font-weight:700;color:#00582f}
+.es-sub{font-size:12px;color:#555;margin-top:2px}
+.es-org{font-weight:700;color:#e0803a}
+.es-info{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12.5px}
+.es-info td{border:1px solid #ddd;padding:5px 8px}
+.es-info td:nth-child(odd){background:#f6f7f8;color:#555;width:108px;white-space:nowrap}
+.es-sec{font-weight:700;color:#00582f;border-left:4px solid #00582f;padding-left:8px;margin:14px 0 8px;font-size:14px}
+.es-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:6px}
+.es-stat{border:1px solid #e3e6e8;border-radius:8px;padding:8px 6px;text-align:center;background:#fafbfc}
+.es-stat-v{font-size:20px;font-weight:700;color:#111}
+.es-stat-l{font-size:11px;color:#666;margin-top:2px}
+.es-stat-s{font-size:10px;color:#999;margin-top:1px}
+.es-level{margin-top:8px;border:1.5px solid;border-radius:8px;padding:8px 12px;font-size:13.5px;display:inline-block}
+.es-detail{font-size:12.5px;margin:6px 0;line-height:1.6}
+.es-tbl{width:100%;border-collapse:collapse;margin-top:6px;font-size:12px}
+.es-tbl th,.es-tbl td{border:1px solid #ddd;padding:4px 6px;text-align:left;vertical-align:top}
+.es-tbl th{background:#f0f2f4}
+.es-foot{margin-top:24px;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:8px}
+@media (max-width:700px){ .es-grid{grid-template-columns:repeat(3,1fr)} }
+@media print{
+  body *{visibility:hidden!important}
+  #es_body, #es_body *{visibility:visible!important}
+  #es_body{position:absolute;left:0;top:0;width:100%}
+  .es-controls{display:none!important}
+  .es-grid{grid-template-columns:repeat(6,1fr)!important}
+}
+</style>
 
 <!-- Handover + Tasks (ส่ง/รับผลัด + งานในกะ) -->
 <div id="view_handover" class="container" style="display:none">
@@ -1809,7 +1860,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); }
@@ -1818,6 +1869,7 @@ showTab = function(name){
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
+  else if(name==='empsum') initEmpSum();
   else if(name==='handover'){ loadTaskTab(); }
   else if(name==='special'){ loadSpecialTab(); }
   else if(name==='qa'){ loadQaTab(); }
@@ -1830,6 +1882,64 @@ showTab = function(name){
   else if(name==='notifylog') loadNotifyLog();
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
+
+// ========== สรุปผลการทำงาน + วินัย รายบุคคล (พิมพ์เอกสาร) ==========
+let ES_DATA=null;
+function esDate(s){ if(!s) return '-'; const d=new Date(s+'T00:00:00'); if(isNaN(d)) return s; const M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return d.getDate()+' '+M[d.getMonth()]+' '+(d.getFullYear()+543); }
+function initEmpSum(){
+  if(DATA && DATA.rows && $('es_emp') && !$('es_emp').dataset.filled){
+    fillSelect($('es_emp'), DATA.rows.map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
+    $('es_emp').dataset.filled='1';
+  }
+  const mode=$('es_mode');
+  if(mode && !mode.dataset.wired){ mode.dataset.wired='1';
+    mode.onchange=()=>{ $('es_range').style.display = mode.value==='custom'?'block':'none'; };
+    $('es_gen').onclick=genEmpSum;
+    $('es_print').onclick=()=>window.print();
+  }
+}
+async function genEmpSum(){
+  const emp=$('es_emp').value; if(!emp){ toast('err','เลือกพนักงานก่อน'); return; }
+  const mode=$('es_mode').value;
+  const req={ action:'hr_emp_summary', password:pwd, data:{ emp_id:emp } };
+  if(mode==='custom'){ const s=$('es_start').value, e=$('es_end').value; if(!s||!e){ toast('err','เลือกช่วงวันที่ให้ครบ'); return; } req.data.start=s; req.data.end=e; }
+  else req.data.cycle=mode;
+  $('es_body').innerHTML='<div class="empty">กำลังสร้างสรุป…</div>'; $('es_print').style.display='none';
+  let r; try{ r=await post(req); }catch(e){ $('es_body').innerHTML='<div class="empty">เกิดข้อผิดพลาด</div>'; return; }
+  if(!r.ok){ $('es_body').innerHTML='<div class="empty">'+esc(r.error||'ไม่สำเร็จ')+'</div>'; return; }
+  ES_DATA=r; renderEmpSum(r); $('es_print').style.display='';
+}
+function esStat(label,val,sub){ return '<div class="es-stat"><div class="es-stat-v">'+val+'</div><div class="es-stat-l">'+label+'</div>'+(sub?('<div class="es-stat-s">'+sub+'</div>'):'')+'</div>'; }
+function renderEmpSum(r){
+  const e=r.emp, a=r.attendance, d=r.discipline, t=r.tasks, sp=r.special, det=r.details;
+  const g=new Date(r.range.generated); const genTxt=g.toLocaleDateString('th-TH')+' '+g.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+  let h='<div class="es-report">';
+  h+='<div class="es-head"><div><div class="es-title">สรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
+    +'<div class="es-sub">ช่วง: '+esc(r.range.label)+'</div></div><div class="es-org">HR 7-Eleven</div></div>';
+  h+='<table class="es-info"><tr><td>ชื่อ-สกุล</td><td><b>'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</b></td>'
+    +'<td>รหัสพนักงาน</td><td>'+esc(e.emp_id)+'</td></tr>'
+    +'<tr><td>สาขา</td><td>'+esc(e.branch_name)+'</td><td>กะประจำ</td><td>'+esc(e.shift_name||'-')+'</td></tr>'
+    +'<tr><td>เริ่มงาน</td><td>'+esDate(e.start_date)+'</td><td>ออกเอกสาร</td><td>'+esc(genTxt)+'</td></tr></table>';
+  h+='<div class="es-sec">1) สรุปวินัย / การมาทำงาน</div><div class="es-grid">'
+    +esStat('วันที่ต้องมา', a.days_should)+esStat('มาทำงาน', a.days_worked)+esStat('ขาดงาน', a.absent)
+    +esStat('ลา (วัน)', a.leave_days)+esStat('มาสาย (ครั้ง)', a.late_count, 'รวม '+a.late_total+' นาที')+esStat('OT (ชม.)', a.ot_hours)+'</div>';
+  h+='<div class="es-level" style="border-color:'+d.level_color+';color:'+d.level_color+'">ระดับวินัยปัจจุบัน: <b>'+esc(d.level_name)+'</b> (ระดับ '+d.level+')</div>';
+  h+='<div class="es-sec">2) ผลงานที่ได้รับมอบหมาย (งานในกะ)</div><div class="es-grid">'
+    +esStat('งานทั้งหมด', t.total)+esStat('ผ่าน', t.approved)+esStat('รอตรวจ', t.submitted)
+    +esStat('ยังไม่ทำ', t.todo)+esStat('ถูกตีกลับ', t.sent_back, 'รวมโดนตีกลับ '+t.sent_back_total+' ครั้ง')+esStat('อัตราผ่าน', t.pass_rate+'%')+'</div>';
+  if(sp.total>0){ h+='<div class="es-sec">3) งานพิเศษ</div><div class="es-grid">'
+    +esStat('ทั้งหมด', sp.total)+esStat('ผ่าน', sp.approved)+esStat('รอตรวจ', sp.submitted)+esStat('ค้าง', sp.open)+'</div>'; }
+  h+='<div class="es-sec">รายละเอียด</div>';
+  h+='<div class="es-detail"><b>วันมาสาย:</b> '+(det.late.length? det.late.map(x=>esDate(x.date)+' ('+x.min+' น.)').join(', ') : '— ไม่มี —')+'</div>';
+  h+='<div class="es-detail"><b>วันขาดงาน:</b> '+(det.absent.length? det.absent.map(x=>esDate(x)).join(', ') : '— ไม่มี —')+'</div>';
+  if(det.sent_back_tasks.length){
+    h+='<div class="es-detail"><b>งานที่ถูกตีกลับ:</b><table class="es-tbl"><tr><th>วันที่</th><th>กะ</th><th>งาน</th><th>ครั้ง</th><th>สถานะ</th><th>หมายเหตุ</th></tr>'
+      +det.sent_back_tasks.map(x=>'<tr><td>'+esDate(x.date)+'</td><td>'+esc(x.shift)+'</td><td>'+esc(x.title)+'</td><td style="text-align:center">'+x.count+'</td><td>'+(x.status==='approved'?'ผ่านแล้ว':x.status==='sent_back'?'ตีกลับ':esc(x.status))+'</td><td>'+esc(x.note||'-')+'</td></tr>').join('')+'</table></div>';
+  } else h+='<div class="es-detail"><b>งานที่ถูกตีกลับ:</b> — ไม่มี —</div>';
+  h+='<div class="es-foot">เอกสารนี้สร้างจากระบบ HR 7-Eleven · '+esc(genTxt)+' &nbsp;&nbsp; ลงชื่อผู้ประเมิน __________________ / ผู้รับทราบ __________________</div>';
+  h+='</div>';
+  $('es_body').innerHTML=h;
+}
 
 // ========== งานพิเศษ (มอบหมายรายบุคคล) ==========
 let SP_PHOTOS=[];            // dataURLs รูปตัวอย่างจาก HR
