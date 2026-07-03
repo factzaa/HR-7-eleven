@@ -111,6 +111,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./shared/config.js"></script>
 <script src="./shared/supabase.js"></script>
+<script src="./shared/session.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 function toast(kind,msg){const t=$('toast');t.className='toast show '+kind;t.textContent=msg;setTimeout(()=>t.classList.remove('show'),3500);}
@@ -133,22 +134,29 @@ $('lvDoc').addEventListener('change', e=>{
   const f=e.target.files[0]; if(!f){ LDOC=null; return; }
   const rd=new FileReader(); rd.onload=()=>{ LDOC=rd.result; const p=$('lvDocPrev'); p.src=rd.result; p.style.display='block'; }; rd.readAsDataURL(f);
 });
-$('leaveBtn').onclick=async()=>{ if(!$('lvStart').value)$('lvStart').value=HR.bangkokDate(); if(!$('lvEnd').value)$('lvEnd').value=HR.bangkokDate(); ovl.classList.add('show'); await ensureRules(); myLeaves(); };
+$('leaveBtn').onclick=async()=>{ if(!$('lvStart').value)$('lvStart').value=HR.bangkokDate(); if(!$('lvEnd').value)$('lvEnd').value=HR.bangkokDate(); try{ if(!$('lvEmp').value && window.HRSession){ const s=HRSession.getEmp(); if(s) $('lvEmp').value=s; } }catch(e){} ovl.classList.add('show'); await ensureRules(); myLeaves(); };
 $('lvClose').onclick=()=>ovl.classList.remove('show');
 ovl.addEventListener('click',e=>{ if(e.target===ovl) ovl.classList.remove('show'); });
 $('lvEmp').addEventListener('change', myLeaves);
 $('lvType').addEventListener('change', updateRule);
+function lvEsc(s){ return String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
 async function myLeaves(){
   const id=$('lvEmp').value.trim(); if(!id){ $('lvMine').innerHTML=''; LUSAGE={}; updateRule(); return; }
+  try{ if(window.HRSession) HRSession.setEmp(id); }catch(e){}   // จำรหัสข้ามหน้า
   try{ LUSAGE = await HR.getLeaveUsage(id); }catch(e){ LUSAGE={}; }
   updateRule();
   try{ const rows=await HR.myLeaves(id);
-    $('lvMine').innerHTML = rows.length ? '<b>คำขอล่าสุด</b>'+rows.map(r=>{
-      const st=r.status==='approved'?'<span style="color:#16a34a">✓ อนุมัติ</span>':r.status==='rejected'?'<span style="color:#dc2626">✗ ปฏิเสธ</span>':'<span style="color:#d97706">⏳ รออนุมัติ</span>';
+    $('lvMine').innerHTML = rows.length ? '<div style="font-weight:700;margin:4px 0 6px">สถานะใบลาของฉัน</div>'+rows.map(r=>{
+      const badge=r.status==='approved'?'<span style="background:#dcfce7;color:#166534;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✓ อนุมัติแล้ว</span>'
+        :r.status==='rejected'?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✗ ไม่อนุมัติ</span>'
+        :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
       const range=(r.end_date&&r.end_date!==r.start_date)?(r.start_date+' – '+r.end_date):r.start_date;
-      const why=(r.status==='rejected'&&r.hr_note)?(' <span style="color:#dc2626">('+r.hr_note+')</span>'):'';
-      return `<div style="padding:2px 0">• ${range} · ${r.type||''} — ${st}${why}</div>`;
-    }).join('') : '<span style="color:#9ca3af">ยังไม่มีคำขอ</span>';
+      const reason=r.reason?('<div style="color:#6b7280;margin-top:2px">เหตุผล: '+lvEsc(r.reason)+'</div>'):'';
+      const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+lvEsc(r.hr_note)+'</div>'):'';
+      return '<div style="border:1px solid #eceef1;border-radius:11px;padding:9px 11px;margin-bottom:7px">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+range+'</b>'+badge+'</div>'
+        +'<div style="color:#374151;margin-top:2px">ประเภท: '+lvEsc(r.type||'-')+'</div>'+reason+note+'</div>';
+    }).join('') : '<span style="color:#9ca3af">ยังไม่มีคำขอลา</span>';
   }catch(e){ $('lvMine').innerHTML=''; }
 }
 $('lvSubmit').onclick=async()=>{
