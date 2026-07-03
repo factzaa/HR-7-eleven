@@ -54,6 +54,12 @@
   <div class="top"><span class="ic">🗓️</span><h1>QA สินค้า · ตรวจวันหมดอายุ</h1><a class="home" href="../">🏠 หน้าแรก</a></div>
   <div class="body">
 
+    <!-- แถบกลับหน้าเชลฟ์ (เมื่อเปิดมาจากงานดูแลเชลฟ์) -->
+    <div id="shelfBar" class="hide" style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <button id="shelfBack" class="btn btn-sm" style="width:auto;background:#fff;border:1.5px solid #fed7aa;color:#9a3412">‹ กลับหน้าเชลฟ์</button>
+      <div id="shelfCtx" style="font-size:12.5px;color:#9a3412;line-height:1.35"></div>
+    </div>
+
     <!-- step_id -->
     <div id="step_id">
       <div class="card">
@@ -70,6 +76,7 @@
       <div class="who"><div><div class="nm" id="f_nm">—</div><div class="sub" id="f_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
       <button class="btn btn-sec" id="bNotify" style="margin-bottom:12px;display:none">🔔 เปิดแจ้งเตือนงานบนมือถือนี้</button>
       <h3 class="sec">โฟลเดอร์ที่ได้รับมอบหมาย</h3>
+      <button class="btn btn-sec btn-sm" id="mkFolder" style="margin-bottom:10px;width:auto">＋ สร้างโฟลเดอร์เดือนนี้</button>
       <div id="folders_body"><div class="card muted">กำลังโหลด…</div></div>
     </div>
 
@@ -135,6 +142,10 @@ function show(id){['step_id','step_folders','step_items','step_add'].forEach(s=>
 function loadScript(src){ return new Promise((res,rej)=>{ if(document.querySelector('script[data-lib="'+src+'"]')){ res(); return; } const s=document.createElement('script'); s.src=src; s.dataset.lib=src; s.onload=res; s.onerror=()=>rej(new Error('load fail')); document.head.appendChild(s); }); }
 
 let EMP=null, BRANCHES={}, CUR_FOLDER=null, ADD_PHOTOS=[];
+// บริบทเมื่อเปิดมาจากงานดูแลเชลฟ์: mode = removed(เก็บออก) / watch(เฝ้าระวัง)
+const QP=new URLSearchParams(location.search);
+const SHELF_MODE=QP.get('mode')||'', SHELF_NAME=QP.get('shelf')||'', SHELF_BACK=QP.get('back')||'';
+function curMonthStr(){ try{ return window.HR.bangkokDate().slice(0,7); }catch(e){ return new Date().toISOString().slice(0,7); } }
 async function loadBranches(){ try{ const c=await window.HR.loadConfig(); (c.branches||[]).forEach(b=>BRANCHES[b.branch_id]=b.name); }catch(e){} }
 function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขาประจำ)'; }
 
@@ -234,6 +245,17 @@ async function openFolder(f){
 }
 $('it_back').onclick=()=>{ show('step_folders'); loadFolders(); };
 
+// ===== สร้างโฟลเดอร์เอง (พนักงานที่ได้รับมอบหมายเชลฟ์) =====
+$('mkFolder').onclick=async()=>{
+  if(!EMP){ toast('err','กรอกรหัสพนักงานก่อน'); return; }
+  const m=curMonthStr();
+  const title=prompt('ชื่อโฟลเดอร์ QA','QA เชลฟ์ '+m); if(title===null) return;
+  const btn=$('mkFolder'); btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spin"></span>';
+  try{ await window.HR.qaCreateFolder({ empId:EMP.emp_id, title:(title||'').trim()||('QA เชลฟ์ '+m), target_month:m }); toast('ok','สร้างโฟลเดอร์แล้ว'); loadFolders(); }
+  catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+  btn.disabled=false; btn.textContent=old;
+};
+
 // ===== เพิ่มสินค้า =====
 $('addItemBtn').onclick=()=>openAdd();
 $('add_back').onclick=()=>{ show('step_items'); };
@@ -241,8 +263,13 @@ function openAdd(){
   ADD_PHOTOS=[];
   $('ai_barcode').value=''; $('ai_name').value=''; $('ai_size').value=''; $('ai_qty').value='1'; $('ai_expiry').value=''; $('ai_zone').value='';
   $('ai_found').textContent='';
+  // เติมบริบทเชลฟ์ให้อัตโนมัติ
+  if(SHELF_NAME) $('ai_zone').value=SHELF_NAME;
+  const sub=$('add_sub'); const btn=$('ai_save');
+  if(SHELF_MODE==='removed'){ sub.innerHTML='<span style="color:var(--red);font-weight:700">โหมด: เก็บออก</span> · ต้องถ่ายรูปหลักฐาน + จำนวน'; btn.textContent='บันทึกเก็บออก'; }
+  else if(SHELF_MODE==='watch'){ sub.innerHTML='<span style="color:#a06515;font-weight:700">โหมด: เฝ้าระวัง</span> · สินค้าใกล้หมดอายุ ~4 เดือน'; btn.textContent='บันทึกเฝ้าระวัง'; }
+  else { sub.textContent=CUR_FOLDER?CUR_FOLDER.title:''; btn.textContent='บันทึกสินค้า'; }
   renderAddThumbs();
-  $('add_sub').textContent=CUR_FOLDER?CUR_FOLDER.title:'';
   show('step_add');
 }
 function renderAddThumbs(){
@@ -298,19 +325,31 @@ $('ai_save').onclick=async()=>{
   const name=$('ai_name').value.trim(); const expiry=$('ai_expiry').value;
   if(!name){ toast('err','กรอกชื่อสินค้า'); return; }
   if(!expiry){ toast('err','เลือกวันหมดอายุ'); return; }
+  const st=SHELF_MODE==='removed'?'removed':'on_shelf';
+  if(st==='removed'&&!ADD_PHOTOS.length){ toast('err','การเก็บออกต้องถ่ายรูปหลักฐานก่อน'); return; }
+  const label=SHELF_MODE==='removed'?'บันทึกเก็บออก':(SHELF_MODE==='watch'?'บันทึกเฝ้าระวัง':'บันทึกสินค้า');
   const btn=$('ai_save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังบันทึก…';
   try{
-    await window.HR.qaAddItem({ folder_id:CUR_FOLDER.id, empId:EMP.emp_id, barcode:$('ai_barcode').value, name, size:$('ai_size').value, qty:$('ai_qty').value, expiry_date:expiry, zone:$('ai_zone').value, photos:ADD_PHOTOS });
-    toast('ok','บันทึกสินค้าแล้ว');
+    await window.HR.qaAddItem({ folder_id:CUR_FOLDER.id, empId:EMP.emp_id, barcode:$('ai_barcode').value, name, size:$('ai_size').value, qty:$('ai_qty').value, expiry_date:expiry, zone:$('ai_zone').value, photos:ADD_PHOTOS, status:st });
+    toast('ok',st==='removed'?'บันทึกเก็บออกแล้ว':'บันทึกสินค้าแล้ว');
     openFolder(CUR_FOLDER);
-  }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); btn.disabled=false; btn.textContent='บันทึกสินค้า'; return; }
-  btn.disabled=false; btn.textContent='บันทึกสินค้า';
+  }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); btn.disabled=false; btn.textContent=label; return; }
+  btn.disabled=false; btn.textContent=label;
 };
 
 // ===== lightbox =====
 function lightbox(src){ const o=document.createElement('div'); o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:120;display:flex;align-items:center;justify-content:center;cursor:zoom-out'; o.innerHTML='<img src="'+src+'" style="max-width:92%;max-height:90%;border-radius:8px">'; o.onclick=()=>o.remove(); document.body.appendChild(o); }
 
-loadBranches();
+// ===== แถบกลับหน้าเชลฟ์ + เปิดมาจากงานดูแลเชลฟ์ =====
+if(SHELF_BACK){
+  const bar=$('shelfBar'); bar.classList.remove('hide');
+  $('shelfCtx').innerHTML=(SHELF_NAME?('เชลฟ์: '+esc(SHELF_NAME)+'<br>'):'')+(SHELF_MODE==='removed'?'บันทึกสินค้าที่ <b>เก็บออก</b>':(SHELF_MODE==='watch'?'บันทึกสินค้า <b>เฝ้าระวัง ~4 เดือน</b>':''));
+  $('shelfBack').onclick=()=>{ location.href=SHELF_BACK; };
+}
+loadBranches().then(()=>{
+  const pre=QP.get('emp')||(function(){ try{return HRSession.getEmp();}catch(_e){return '';} })();
+  if(pre){ $('empId').value=pre; $('goBtn').click(); }
+});
 
 // ===== แจ้งเตือนบนมือถือ (Web Push) =====
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('../sw.js').catch(function(){}); }); }

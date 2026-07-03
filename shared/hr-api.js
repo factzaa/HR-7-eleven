@@ -183,6 +183,13 @@
         case 'hr_qa_folder_delete':  return await hrQaFolderDelete(p.id);
         case 'hr_qa_items':          return await hrQaItems(p.folder_id, p.status);
         case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
+        case 'hr_shelf_list':        return await hrShelfList(p.branch);
+        case 'hr_shelf_save':        return await hrShelfSave(p.data);
+        case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
+        case 'hr_shelf_assign':      return await hrShelfAssign(p.data);
+        case 'hr_shelf_assignments': return await hrShelfAssignments(p.month, p.branch);
+        case 'hr_shelf_assign_delete': return await hrShelfAssignDelete(p.id);
+        case 'hr_shelf_checks':      return await hrShelfChecks(p.shelf_id, p.month);
         case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
         case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note);
         case 'hr_mark_duty':            return await hrMarkDuty(p.data);
@@ -1719,6 +1726,113 @@
     if (error) throw error;
     await logAct('ลบสินค้า QA', null, '#' + id);
     return { ok: true };
+  }
+
+  // ---------- งานพิเศษ: ดูแลเชลฟ์ประจำเดือน (Shelf Care) ----------
+  function curMonth() { return bkkToday().slice(0, 7); }
+  function monthBounds(m) { const [y, mo] = m.split('-').map(Number); const s = m + '-01'; const nx = new Date(y, mo, 1); const e = nx.getFullYear() + '-' + String(nx.getMonth() + 1).padStart(2, '0') + '-01'; return { s, e }; }
+
+  async function hrShelfList(branch) {
+    const [shR, brR] = await Promise.all([
+      sb().from('shelves').select('*').order('branch_id', { ascending: true }).order('shelf_code', { ascending: true }),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    if (shR.error) throw shR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    let rows = (shR.data || []).map(s => ({ ...s, branch_name: brName[s.branch_id] || s.branch_id || '—' }));
+    if (branch) rows = rows.filter(s => s.branch_id === branch);
+    return { ok: true, rows };
+  }
+
+  async function hrShelfSave(d) {
+    d = d || {};
+    if (!d.shelf_code || !String(d.shelf_code).trim()) return { ok: false, error: 'ระบุรหัสเชลฟ์' };
+    if (!d.name || !String(d.name).trim()) return { ok: false, error: 'ระบุชื่อเชลฟ์' };
+    if (!d.branch_id) return { ok: false, error: 'เลือกสาขา' };
+    const row = { shelf_code: String(d.shelf_code).trim(), name: String(d.name).trim(), branch_id: d.branch_id, active: d.active !== false };
+    if (Array.isArray(d.checklist)) {
+      const cl = d.checklist.map(x => String(x || '').trim()).filter(Boolean).slice(0, 20);
+      row.checklist = cl.length ? cl : ['ทำความสะอาดเชลฟ์เรียบร้อย', 'จัดเรียงสินค้าหน้าตรง เต็มชั้น', 'FIFO — สินค้าตรงป้ายราคา', 'ตรวจวันหมดอายุครบทุกแถว'];
+    }
+    let error;
+    if (d.id) { ({ error } = await sb().from('shelves').update(row).eq('id', d.id)); }
+    else { ({ error } = await sb().from('shelves').insert(row)); }
+    if (error) { if (String(error.message || '').includes('duplicate')) return { ok: false, error: 'รหัสเชลฟ์นี้มีอยู่แล้วในสาขานี้' }; throw error; }
+    await logAct(d.id ? 'แก้ไขเชลฟ์' : 'เพิ่มเชลฟ์', null, row.shelf_code + ' · ' + row.name);
+    return { ok: true };
+  }
+
+  async function hrShelfDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุเชลฟ์' };
+    const { data: s } = await sb().from('shelves').select('name,shelf_code').eq('id', id).maybeSingle();
+    const { error } = await sb().from('shelves').delete().eq('id', id);  // cascade มอบหมาย/เช็ก
+    if (error) throw error;
+    await logAct('ลบเชลฟ์', null, s ? (s.shelf_code + ' · ' + s.name) : ('#' + id));
+    return { ok: true };
+  }
+
+  async function hrShelfAssign(d) {
+    d = d || {};
+    if (!d.shelf_id) return { ok: false, error: 'เลือกเชลฟ์' };
+    if (!Array.isArray(d.emp_ids) || !d.emp_ids.length) return { ok: false, error: 'เลือกผู้รับผิดชอบอย่างน้อย 1 คน' };
+    const month = (d.month || curMonth());
+    const { data: sh } = await sb().from('shelves').select('branch_id,name,shelf_code').eq('id', d.shelf_id).maybeSingle();
+    if (!sh) return { ok: false, error: 'ไม่พบเชลฟ์' };
+    const detail = (d.detail || '').trim() || null;
+    const rows = d.emp_ids.map(id => ({ shelf_id: d.shelf_id, emp_id: id, branch_id: sh.branch_id || null, month, detail, created_by: d.created_by || 'HR' }));
+    const { error } = await sb().from('shelf_assignments').upsert(rows, { onConflict: 'shelf_id,emp_id,month' });
+    if (error) throw error;
+    await logAct('มอบหมายเชลฟ์', null, sh.shelf_code + ' · ' + sh.name + ' · เดือน ' + month + ' · ' + rows.length + ' คน');
+    return { ok: true, assigned: rows.length };
+  }
+
+  async function hrShelfAssignments(month, branch) {
+    month = month || curMonth();
+    const { data: asg, error } = await sb().from('shelf_assignments').select('*').eq('month', month);
+    if (error) throw error;
+    const rowsA = asg || [];
+    if (!rowsA.length) return { ok: true, month, rows: [] };
+    const shIds = [...new Set(rowsA.map(a => a.shelf_id))];
+    const { s, e } = monthBounds(month);
+    const [shR, empR, brR, ckR] = await Promise.all([
+      sb().from('shelves').select('*').in('id', shIds),
+      sb().from('employees').select('emp_id,name,nickname'),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('shelf_checks').select('shelf_id,emp_id,check_date').in('shelf_id', shIds).gte('check_date', s).lt('check_date', e),
+    ]);
+    const shBy = {}; (shR.data || []).forEach(x => { shBy[x.id] = x; });
+    const empName = {}; (empR.data || []).forEach(x => { empName[x.emp_id] = x.nickname || x.name; });
+    const brName = {}; (brR.data || []).forEach(x => { brName[x.branch_id] = x.name; });
+    const ckCnt = {}; (ckR.data || []).forEach(c => { const k = c.shelf_id + '|' + c.emp_id; (ckCnt[k] = ckCnt[k] || new Set()).add(c.check_date); });
+    let rows = rowsA.map(a => {
+      const sh = shBy[a.shelf_id] || {};
+      const days = (ckCnt[a.shelf_id + '|' + a.emp_id] || new Set()).size;
+      return { ...a, shelf_code: sh.shelf_code || '', shelf_name: sh.name || ('#' + a.shelf_id), branch_id: a.branch_id || sh.branch_id || null, branch_name: brName[a.branch_id || sh.branch_id] || '—', emp_name: empName[a.emp_id] || a.emp_id, checked_days: days };
+    }).sort((x, y) => (x.shelf_name + x.emp_name > y.shelf_name + y.emp_name ? 1 : -1));
+    if (branch) rows = rows.filter(r => r.branch_id === branch);
+    return { ok: true, month, rows };
+  }
+
+  async function hrShelfAssignDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const { error } = await sb().from('shelf_assignments').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ยกเลิกมอบหมายเชลฟ์', null, '#' + id);
+    return { ok: true };
+  }
+
+  async function hrShelfChecks(shelfId, month) {
+    if (!shelfId) return { ok: false, error: 'ไม่ระบุเชลฟ์' };
+    month = month || curMonth();
+    const { s, e } = monthBounds(month);
+    const [ckR, empR] = await Promise.all([
+      sb().from('shelf_checks').select('*').eq('shelf_id', shelfId).gte('check_date', s).lt('check_date', e).order('check_date', { ascending: false }),
+      sb().from('employees').select('emp_id,name,nickname'),
+    ]);
+    if (ckR.error) throw ckR.error;
+    const empName = {}; (empR.data || []).forEach(x => { empName[x.emp_id] = x.nickname || x.name; });
+    const rows = (ckR.data || []).map(c => ({ ...c, emp_name: empName[c.emp_id] || c.emp_id }));
+    return { ok: true, month, rows };
   }
 
   // ---------- คำขอแก้ไขเวลาออก (ลืมกดออก/ระบบปิดให้) ----------

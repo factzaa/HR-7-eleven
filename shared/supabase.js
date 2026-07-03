@@ -979,14 +979,16 @@
     const { data } = await sb.from('qa_products').select('name,size').eq('barcode', String(barcode).trim()).maybeSingle();
     return data||null;
   }
-  async function qaAddItem({ folder_id, empId, barcode, name, size, qty, expiry_date, zone, photos }){
+  async function qaAddItem({ folder_id, empId, barcode, name, size, qty, expiry_date, zone, photos, status }){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     if(!name||!String(name).trim()) throw new Error('กรอกชื่อสินค้า');
     if(!expiry_date) throw new Error('เลือกวันหมดอายุ');
+    const st=['on_shelf','sold','removed'].includes(status)?status:'on_shelf';
+    if(st==='removed'&&!(photos&&photos.length)) throw new Error('การเก็บออกต้องแนบรูปหลักฐานอย่างน้อย 1 รูป');
     const urls=[];
     for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','qa/'+(emp.branch_id||'x')+'_'+folder_id+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
     const bc=(barcode||'').trim()||null;
-    const row={ folder_id, barcode:bc, name:String(name).trim(), size:(size||'').trim()||null, qty: parseInt(qty)>0?parseInt(qty):1, expiry_date, zone:(zone||'').trim()||null, photos:urls, status:'on_shelf', branch_id:emp.branch_id||null, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name };
+    const row={ folder_id, barcode:bc, name:String(name).trim(), size:(size||'').trim()||null, qty: parseInt(qty)>0?parseInt(qty):1, expiry_date, zone:(zone||'').trim()||null, photos:urls, status:st, branch_id:emp.branch_id||null, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name };
     const { error }=await sb.from('qa_items').insert(row); if(error) throw error;
     if(bc){ try{ await sb.from('qa_products').upsert({ barcode:bc, name:row.name, size:row.size, updated_at:new Date().toISOString() }, { onConflict:'barcode' }); }catch(e){} }
     return { ok:true };
@@ -996,7 +998,58 @@
     const { error }=await sb.from('qa_items').update({ status, updated_at:new Date().toISOString() }).eq('id', item_id);
     if(error) throw error; return { ok:true };
   }
+  // พนักงานที่ได้รับมอบหมายเชลฟ์ สร้างโฟลเดอร์ QA เองได้ (เดือนปัจจุบัน)
+  async function qaCreateFolder({ empId, title, target_month, note }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const month=(target_month||bangkokDate().slice(0,7));
+    // ต้องมีสิทธิ์: ได้รับมอบหมายเชลฟ์อย่างน้อย 1 รายการในเดือนนี้
+    const { data: asg }=await sb.from('shelf_assignments').select('id').eq('emp_id', empId).eq('month', month).limit(1);
+    if(!asg||!asg.length) throw new Error('ยังไม่ได้รับมอบหมายเชลฟ์ในเดือนนี้ จึงยังสร้างโฟลเดอร์ไม่ได้');
+    const t=(title||('QA เชลฟ์ '+month)).trim();
+    const { data: folder, error }=await sb.from('qa_folders').insert({ title:t, target_month:month, note:(note||'').trim()||null, created_by:(emp.nickname||emp.name||'พนักงาน'), active:true }).select('id').single();
+    if(error) throw error;
+    const { error:e2 }=await sb.from('qa_folder_assignees').insert({ folder_id:folder.id, emp_id:emp.emp_id, branch_id:emp.branch_id||null });
+    if(e2) throw e2;
+    return { ok:true, id:folder.id };
+  }
+
+  // ---------- งานพิเศษ: ดูแลเชลฟ์ประจำเดือน (พนักงาน) ----------
+  async function getMyShelves(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const month=bangkokDate().slice(0,7); const today=bangkokDate();
+    const { data: asg }=await sb.from('shelf_assignments').select('*').eq('emp_id', empId).eq('month', month);
+    const rowsA=asg||[]; if(!rowsA.length) return { emp, month, rows:[] };
+    const ids=[...new Set(rowsA.map(a=>a.shelf_id))];
+    const [shR, ckR]=await Promise.all([
+      sb.from('shelves').select('*').in('id', ids),
+      sb.from('shelf_checks').select('*').eq('emp_id', empId).eq('check_date', today).in('shelf_id', ids),
+    ]);
+    const shBy={}; (shR.data||[]).forEach(s=>{ shBy[s.id]=s; });
+    const ckBy={}; (ckR.data||[]).forEach(c=>{ ckBy[c.shelf_id]=c; });
+    const DEF_CL=['ทำความสะอาดเชลฟ์เรียบร้อย','จัดเรียงสินค้าหน้าตรง เต็มชั้น','FIFO — สินค้าตรงป้ายราคา','ตรวจวันหมดอายุครบทุกแถว'];
+    const rows=rowsA.map(a=>{ const s=shBy[a.shelf_id]||{}; const cl=(Array.isArray(s.checklist)&&s.checklist.length)?s.checklist:DEF_CL; return {
+      assignment_id:a.id, shelf_id:a.shelf_id, shelf_code:s.shelf_code||'', name:s.name||('#'+a.shelf_id),
+      branch_id:a.branch_id||s.branch_id||null, detail:a.detail||'', checklist:cl, today_check:ckBy[a.shelf_id]||null };
+    }).sort((x,y)=>(x.name>y.name?1:-1));
+    return { emp, month, today, rows };
+  }
+  async function submitShelfCheck({ empId, shelf_id, items, note, photos }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if(!shelf_id) throw new Error('ไม่ระบุเชลฟ์');
+    const month=bangkokDate().slice(0,7); const today=bangkokDate();
+    const { data: asg }=await sb.from('shelf_assignments').select('id').eq('emp_id', empId).eq('shelf_id', shelf_id).eq('month', month).limit(1);
+    if(!asg||!asg.length) throw new Error('เชลฟ์นี้ไม่ได้อยู่ในความรับผิดชอบของคุณเดือนนี้');
+    if(!(photos&&photos.length)) throw new Error('กรุณาแนบรูปถ่ายอย่างน้อย 1 รูป');
+    const items2=(Array.isArray(items)?items:[]).map(it=>({ label:String(it.label||'').slice(0,120), done:!!it.done }));
+    const urls=[];
+    for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','shelf/'+(emp.branch_id||'x')+'_'+shelf_id+'_'+today+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    const row={ shelf_id, emp_id:emp.emp_id, branch_id:emp.branch_id||null, check_date:today,
+      items:items2, note:(note||'').trim()||null, photos:urls, updated_at:new Date().toISOString() };
+    const { error }=await sb.from('shelf_checks').upsert(row, { onConflict:'shelf_id,emp_id,check_date' });
+    if(error) throw error;
+    return { ok:true };
+  }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, extendShift, requestCheckoutCorrection, getCheckoutState };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState };
 })();

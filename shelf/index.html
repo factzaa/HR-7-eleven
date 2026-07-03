@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00703c">
+<title>ดูแลเชลฟ์ประจำเดือน · 7-Eleven</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#00703c;--green-d:#00582f;--green-soft:#e7f3ec;--orange:#f5821f;--red:#e11f26;--bg:#eef1ec;--line:#dbe2dc;--muted:#6b756d;--txt:#1b2a20;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:'Anuphan',sans-serif;background:var(--bg);color:var(--txt);min-height:100dvh;}
+  .wrap{max-width:480px;margin:0 auto;min-height:100dvh;background:#fff;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.06);}
+  .top{background:linear-gradient(135deg,var(--green),var(--green-d));color:#fff;padding:18px;display:flex;align-items:center;gap:12px;}
+  .top .ic{font-size:24px;} .top h1{font-size:18px;font-weight:600;flex:1;}
+  .home{color:#fff;text-decoration:none;font-size:13px;background:rgba(255,255,255,.15);padding:6px 11px;border-radius:9px;}
+  .body{padding:18px;flex:1;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px 2px;font-weight:500;}
+  input[type=text],textarea{width:100%;font:inherit;font-size:16px;border:1.5px solid var(--line);border-radius:11px;padding:12px 13px;background:#fff;color:var(--txt);}
+  input:focus,textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px var(--green-soft);}
+  textarea{resize:vertical;min-height:48px;}
+  .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-size:16px;font-weight:600;cursor:pointer;transition:transform .08s;}
+  .btn:active{transform:scale(.98);}
+  .btn-pri{background:var(--green);color:#fff;} .btn-sec{background:#fff;color:var(--txt);border:1.5px solid var(--line);}
+  .btn-warn{background:#fff7ed;color:#9a3412;border:1.5px solid #fed7aa;} .btn-danger{background:#fff;color:var(--red);border:1.5px solid #f1bcbe;}
+  .btn-sm{padding:10px 12px;font-size:14px;}
+  .row2{display:flex;gap:8px;} .row2>*{flex:1;}
+  .who{display:flex;align-items:center;gap:12px;background:var(--green-soft);border-radius:12px;padding:12px 14px;margin-bottom:14px;}
+  .who .nm{font-weight:600;font-size:16px;} .who .sub{font-size:12.5px;color:var(--green-d);}
+  .who .ch{margin-left:auto;font-size:12.5px;color:var(--green-d);background:#fff;border:1px solid var(--green-soft);padding:5px 10px;border-radius:8px;cursor:pointer;}
+  h3.sec{font-size:13px;color:var(--green-d);font-weight:700;margin:16px 2px 8px;}
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;}
+  .ok{background:var(--green-soft);color:var(--green-d);} .warn{background:#fff4e0;color:#a06515;}
+  .muted{color:var(--muted);font-size:13.5px;}
+  .scard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;cursor:pointer;border-left:3px solid var(--green);}
+  .chk{display:flex;align-items:center;gap:11px;padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:15px;}
+  .chk:last-child{border-bottom:0;}
+  .box{width:24px;height:24px;border:2px solid var(--line);border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;transition:all .12s;}
+  .chk.on .box{background:var(--green);border-color:var(--green);}
+  .thumbs{display:flex;gap:6px;overflow-x:auto;padding:2px 0;margin-top:6px;-webkit-overflow-scrolling:touch;}
+  .thumbs img{height:66px;border-radius:8px;flex:none;border:1px solid var(--line);}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);padding:12px 18px;border-radius:11px;color:#fff;font-weight:500;font-size:14.5px;display:none;z-index:90;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.18);text-align:center;}
+  .toast.ok{background:var(--green);} .toast.err{background:var(--red);} .toast.show{display:block;}
+  .hide{display:none;} .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-2px;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><span class="ic">🗄️</span><h1>ดูแลเชลฟ์ประจำเดือน</h1><a class="home" href="../">🏠 หน้าแรก</a></div>
+  <div class="body">
+
+    <!-- step_id -->
+    <div id="step_id">
+      <div class="card">
+        <label>รหัสพนักงาน</label>
+        <input id="empId" type="text" inputmode="numeric" placeholder="กรอกรหัสพนักงาน">
+        <div style="height:12px"></div>
+        <button class="btn btn-pri" id="goBtn">เริ่ม</button>
+        <div class="muted" style="text-align:center;margin-top:10px">ใช้รหัสเดียวกับลงเวลาเข้า-ออกงาน</div>
+      </div>
+    </div>
+
+    <!-- step_shelves -->
+    <div id="step_shelves" class="hide">
+      <div class="who"><div><div class="nm" id="s_nm">—</div><div class="sub" id="s_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
+      <h3 class="sec" id="s_month">เชลฟ์ที่ฉันดูแลเดือนนี้</h3>
+      <div id="shelves_body"><div class="card muted">กำลังโหลด…</div></div>
+    </div>
+
+    <!-- step_check -->
+    <div id="step_check" class="hide">
+      <div class="who"><div><div class="nm" id="c_title">—</div><div class="sub" id="c_sub"></div></div><span class="ch" id="c_back">‹ เชลฟ์</span></div>
+
+      <div class="card" id="c_detail_card" style="display:none">
+        <div style="font-weight:600;font-size:13px;color:var(--green-d);margin-bottom:4px">📋 รายละเอียดงานที่ได้รับมอบหมาย</div>
+        <div class="muted" id="c_detail" style="white-space:pre-wrap"></div>
+      </div>
+
+      <h3 class="sec">เช็กลิสต์การดูแลวันนี้</h3>
+      <div class="card" style="padding:4px 14px" id="c_checks"></div>
+
+      <label style="margin-top:6px">หมายเหตุ (ถ้ามี)</label>
+      <textarea id="c_note" placeholder="เช่น พบสินค้าใกล้หมดอายุ 3 รายการ"></textarea>
+
+      <label style="margin-top:12px">รูปถ่ายหลักฐาน * (ถ่ายได้หลายรูป)</label>
+      <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block;width:auto">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="c_photo" style="display:none"></label>
+      <div class="thumbs" id="c_thumbs" style="margin:8px 0"></div>
+
+      <div style="height:4px"></div>
+      <button class="btn btn-pri" id="c_save">บันทึกการดูแลวันนี้</button>
+
+      <h3 class="sec">พบสินค้าใกล้หมดอายุ — บันทึกเข้าระบบ QA</h3>
+      <button class="btn btn-danger btn-sm" id="c_qa_removed" style="margin-bottom:8px">🗑️ ใกล้หมดอายุ 1–2 เดือน · เก็บออก (ต้องถ่ายรูป+จำนวน)</button>
+      <button class="btn btn-warn btn-sm" id="c_qa_watch">👀 ใกล้หมดอายุ ~4 เดือน · เฝ้าระวัง</button>
+      <div class="muted" style="margin-top:8px">ปุ่มจะเปิดหน้า QA พร้อมข้อมูลเชลฟ์นี้ให้อัตโนมัติ และมีปุ่มกลับมาหน้านี้</div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',3000);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function show(id){['step_id','step_shelves','step_check'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
+
+let EMP=null, BRANCHES={}, CUR=null, PHOTOS=[], STATE=[];  // STATE = [{label, done}]
+async function loadBranches(){ try{ const c=await window.HR.loadConfig(); (c.branches||[]).forEach(b=>BRANCHES[b.branch_id]=b.name); }catch(e){} }
+function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขาประจำ)'; }
+function backUrl(){ return location.origin+location.pathname+'?emp='+encodeURIComponent(EMP?EMP.emp_id:''); }
+
+// รูป: ปั๊มวันเวลา + สาขา + ผู้ถ่าย
+function resizeFile(file){return new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{
+  const max=1100,sc=Math.min(1,max/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');c.width=img.width*sc;c.height=img.height*sc;
+  const x=c.getContext('2d'); x.drawImage(img,0,0,c.width,c.height);
+  try{
+    const now=new Date();
+    const ts=now.toLocaleString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' น.';
+    const sub=(EMP)?((EMP.nickname||EMP.name||'')+' · '+branchName(EMP.branch_id)):'';
+    const pad=Math.round(c.width*0.022), fs=Math.max(13,Math.round(c.width*0.033));
+    const bh=fs*2+pad*2.4;
+    x.fillStyle='rgba(0,0,0,.5)'; x.fillRect(0,c.height-bh,c.width,bh);
+    x.textBaseline='alphabetic'; x.fillStyle='#fff';
+    x.font='700 '+fs+'px Anuphan,sans-serif'; x.fillText(ts, pad, c.height-fs-pad*0.6);
+    if(sub){ x.font='400 '+Math.round(fs*0.8)+'px Anuphan,sans-serif'; x.fillText(sub, pad, c.height-pad*0.7); }
+  }catch(e){}
+  res(c.toDataURL('image/jpeg',0.85));
+};img.src=ev.target.result;};r.readAsDataURL(file);});}
+
+// ===== เข้าสู่ระบบ =====
+async function doLogin(id){
+  id=String(id||'').trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  $('goBtn').innerHTML='<span class="spin"></span>';
+  try{
+    const emp=await window.HR.lookupEmployee(id);
+    if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); $('goBtn').textContent='เริ่ม'; return; }
+    if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); $('goBtn').textContent='เริ่ม'; return; }
+    EMP=emp;
+    try{ HRSession.setEmp(emp.emp_id); }catch(_e){}
+    $('s_nm').textContent=emp.nickname||emp.name;
+    $('s_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
+    show('step_shelves'); loadShelves();
+  }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
+  $('goBtn').textContent='เริ่ม';
+}
+$('goBtn').onclick=()=>doLogin($('empId').value);
+$('empId').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin($('empId').value); });
+$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
+
+// ===== รายการเชลฟ์ =====
+async function loadShelves(){
+  $('shelves_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  let r; try{ r=await window.HR.getMyShelves(EMP.emp_id); }catch(e){ $('shelves_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
+  $('s_month').textContent='เชลฟ์ที่ฉันดูแล · เดือน '+r.month;
+  if(!r.rows.length){ $('shelves_body').innerHTML='<div class="card muted">ยังไม่ได้รับมอบหมายเชลฟ์ในเดือนนี้</div>'; return; }
+  $('shelves_body').innerHTML=r.rows.map(s=>{
+    const done=!!s.today_check;
+    return '<div class="scard" data-sid="'+s.shelf_id+'">'
+      +'<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-weight:700;font-size:15px">🗄️ '+esc(s.name)+(s.shelf_code?(' <span class="muted">['+esc(s.shelf_code)+']</span>'):'')+'</div>'
+      +'<span class="pill '+(done?'ok':'warn')+'">'+(done?'✓ ตรวจแล้ววันนี้':'ยังไม่ได้ตรวจ')+'</span></div>'
+      +'<div class="muted" style="margin-top:3px">สาขา '+esc(branchName(s.branch_id))+'</div>'
+      +(s.detail?'<div class="muted" style="margin-top:3px">📋 '+esc(s.detail)+'</div>':'')
+      +'</div>';
+  }).join('');
+  document.querySelectorAll('[data-sid]').forEach(el=>el.onclick=()=>openShelf(r.rows.find(x=>String(x.shelf_id)===el.dataset.sid)));
+}
+
+// ===== เช็กลิสต์รายวัน =====
+const DEF_CL=['ทำความสะอาดเชลฟ์เรียบร้อย','จัดเรียงสินค้าหน้าตรง เต็มชั้น','FIFO — สินค้าตรงป้ายราคา','ตรวจวันหมดอายุครบทุกแถว'];
+function openShelf(s){
+  if(!s) return; CUR=s; PHOTOS=[];
+  const labels=(Array.isArray(s.checklist)&&s.checklist.length)?s.checklist:DEF_CL;
+  const tc=s.today_check;
+  const prev={}; if(tc&&Array.isArray(tc.items)) tc.items.forEach(it=>{ prev[it.label]=!!it.done; });
+  STATE=labels.map(l=>({ label:l, done:!!prev[l] }));
+  $('c_note').value=tc?(tc.note||''):'';
+  $('c_title').textContent='🗄️ '+s.name;
+  $('c_sub').textContent=(s.shelf_code?('['+s.shelf_code+'] · '):'')+'สาขา '+branchName(s.branch_id);
+  $('c_detail_card').style.display=s.detail?'':'none'; $('c_detail').textContent=s.detail||'';
+  renderChecks(); renderThumbs();
+  show('step_check');
+}
+function renderChecks(){
+  $('c_checks').innerHTML=STATE.map((it,i)=>'<div class="chk'+(it.done?' on':'')+'" data-ci="'+i+'"><div class="box">✓</div><div>'+esc(it.label)+'</div></div>').join('')
+    || '<div class="muted" style="padding:12px 0">เชลฟ์นี้ยังไม่มีหัวข้อเช็กลิสต์</div>';
+  $('c_checks').querySelectorAll('[data-ci]').forEach(el=>el.onclick=()=>{ const i=Number(el.dataset.ci); STATE[i].done=!STATE[i].done; renderChecks(); });
+}
+$('c_back').onclick=()=>{ show('step_shelves'); loadShelves(); };
+
+function renderThumbs(){ $('c_thumbs').innerHTML=PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="height:66px;border-radius:8px"><button type="button" onclick="rmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join(''); }
+function rmPhoto(i){ PHOTOS.splice(i,1); renderThumbs(); }
+$('c_photo').addEventListener('change',async()=>{ const f=$('c_photo'); if(!f.files||!f.files.length) return; for(const file of f.files){ PHOTOS.push(await resizeFile(file)); } f.value=''; renderThumbs(); });
+
+$('c_save').onclick=async()=>{
+  if(!PHOTOS.length){ toast('err','กรุณาถ่ายรูปหลักฐานอย่างน้อย 1 รูป'); return; }
+  const btn=$('c_save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังบันทึก…';
+  try{
+    await window.HR.submitShelfCheck({ empId:EMP.emp_id, shelf_id:CUR.shelf_id, items:STATE, note:$('c_note').value, photos:PHOTOS });
+    toast('ok','บันทึกการดูแลวันนี้แล้ว');
+    setTimeout(()=>{ show('step_shelves'); loadShelves(); }, 700);
+  }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+  btn.disabled=false; btn.textContent='บันทึกการดูแลวันนี้';
+};
+
+// ===== ปุ่มไป QA (prefill + back) =====
+function gotoQa(mode){
+  const q='../qa/?emp='+encodeURIComponent(EMP.emp_id)+'&mode='+mode+'&shelf='+encodeURIComponent((CUR.shelf_code?('['+CUR.shelf_code+'] '):'')+CUR.name)+'&back='+encodeURIComponent(backUrl());
+  location.href=q;
+}
+$('c_qa_removed').onclick=()=>gotoQa('removed');
+$('c_qa_watch').onclick=()=>gotoQa('watch');
+
+// ===== init =====
+loadBranches().then(()=>{
+  const qp=new URLSearchParams(location.search);
+  const pre=qp.get('emp')||(function(){ try{return HRSession.getEmp();}catch(_e){return '';} })();
+  if(pre){ $('empId').value=pre; doLogin(pre); }
+});
+if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('../sw.js').catch(function(){}); }); }
+</script>
+</body>
+</html>

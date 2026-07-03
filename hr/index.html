@@ -334,6 +334,7 @@
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_special"><span class="tabicon">⭐</span>งานพิเศษ</button>
   <button class="tab" id="tab_qa"><span class="tabicon">🗓️</span>QA สินค้า</button>
+  <button class="tab" id="tab_shelf"><span class="tabicon">🗄️</span>เชลฟ์ประจำเดือน</button>
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
@@ -531,6 +532,7 @@
     <span style="color:var(--muted);font-size:13px">ถึง</span>
     <input id="rr_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <select id="rr_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <select id="rr_shift" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-pri btn-sm" id="rr_go">ดูรายงาน</button>
   </div>
   <div id="rr_body"><div class="empty">เลือกช่วงวันที่แล้วกด "ดูรายงาน"</div></div>
@@ -607,6 +609,67 @@
   <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">โฟลเดอร์ทั้งหมด</h3><button class="btn btn-sec btn-sm" id="qa_refresh">รีเฟรช</button></div>
   <div id="qa_list"><div class="empty">กำลังโหลด…</div></div>
   <div id="qa_items_wrap" style="margin-top:16px"></div>
+</div>
+
+<!-- เชลฟ์ประจำเดือน (Shelf Care) -->
+<div id="view_shelf" class="container" style="display:none">
+  <!-- A: ทะเบียนเชลฟ์ -->
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">🗄️ ทะเบียนเชลฟ์</h3></div>
+  <div class="card" style="padding:14px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">รหัสเชลฟ์ *</label>
+        <input id="sh_code" type="text" placeholder="เช่น A01" style="width:120px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div style="flex:1;min-width:180px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ชื่อเชลฟ์ *</label>
+        <input id="sh_name" type="text" placeholder="เช่น เครื่องดื่มตู้แช่ 1" style="width:100%;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">สาขา *</label>
+        <select id="sh_branch" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
+      <button class="btn btn-pri btn-sm" id="sh_add" type="button">＋ เพิ่มเชลฟ์</button>
+      <button class="btn btn-sec btn-sm" id="sh_cancel" type="button" style="display:none">ยกเลิกแก้ไข</button>
+    </div>
+    <div style="margin-top:12px">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">หัวข้อเช็กลิสต์รายวัน (บรรทัดละ 1 ข้อ — พนักงานจะติ๊กตามนี้)</label>
+      <textarea id="sh_checklist" style="width:100%;min-height:96px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:3px">เว้นว่าง = ใช้ค่ามาตรฐาน (ความสะอาด · จัดเรียง · FIFO · ตรวจวันหมดอายุ) · เพิ่มได้สูงสุด 20 ข้อ</div>
+    </div>
+  </div>
+  <div class="toolbar" style="margin-top:12px"><span style="flex:1;font-size:13px;color:var(--muted)">กรอง:</span>
+    <select id="sh_listbranch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-sec btn-sm" id="sh_refresh">รีเฟรช</button></div>
+  <div id="sh_list"><div class="empty">กำลังโหลด…</div></div>
+
+  <!-- B: มอบหมายรายเดือน -->
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">🗓️ มอบหมายดูแลเชลฟ์รายเดือน</h3></div>
+  <div class="card" style="padding:14px">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:220px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">เลือกเชลฟ์ *</label>
+          <select id="sh_asg_shelf" style="width:100%;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">เดือน *</label>
+          <input id="sh_asg_month" type="month" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      </div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">รายละเอียดงาน/คำสั่งถึงพนักงาน</label>
+        <textarea id="sh_asg_detail" placeholder="เช่น ดูแลความสะอาด จัดเรียงหน้าตรง FIFO ตรวจวันหมดอายุทุกวัน" style="width:100%;min-height:52px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea></div>
+      <div>
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ผู้รับผิดชอบ (ได้หลายคน) *</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+          <select id="sh_branchfilter" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+          <input id="sh_empsearch" type="text" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+          <button class="btn btn-sec btn-sm" id="sh_selall" type="button">เลือกทั้งหมดที่แสดง</button>
+          <button class="btn btn-sec btn-sm" id="sh_selnone" type="button">ล้าง</button>
+          <span id="sh_selcount" style="font-size:13px;color:var(--muted)">เลือกแล้ว 0 คน</span>
+        </div>
+        <div id="sh_emplist" style="max-height:200px;overflow:auto;border:1.5px solid var(--line2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+      <div style="text-align:right"><button class="btn btn-pri" id="sh_assign">มอบหมายเชลฟ์</button></div>
+    </div>
+  </div>
+
+  <!-- C: รายการมอบหมาย -->
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการมอบหมาย</h3>
+    <input id="sh_view_month" type="month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="sh_view_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-sec btn-sm" id="sh_view_refresh">แสดง</button></div>
+  <div id="sh_asg_list"><div class="empty">เลือกเดือนแล้วกด "แสดง"</div></div>
 </div>
 
 <!-- Leaves -->
@@ -1868,7 +1931,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); }
@@ -1881,6 +1944,7 @@ showTab = function(name){
   else if(name==='handover'){ loadTaskTab(); }
   else if(name==='special'){ loadSpecialTab(); }
   else if(name==='qa'){ loadQaTab(); }
+  else if(name==='shelf'){ loadShelfTab(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
@@ -2209,6 +2273,120 @@ async function qaViewItems(folderId){
   }).join('');
   wrap.innerHTML=h;
   wrap.querySelectorAll('[data-qaidel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบสินค้ารายการนี้?'))return; const rr=await post({action:'hr_qa_item_delete',password:pwd,id:Number(b.dataset.qaidel)}); if(rr.ok){ toast('ok','ลบแล้ว'); qaViewItems(folderId); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
+}
+
+// ========== เชลฟ์ประจำเดือน (Shelf Care) ==========
+let SH_SEL=new Set(), SH_EDIT=null, SH_SHELVES=[];
+function shCurMonth(){ return bkkTodayStr().slice(0,7); }
+function loadShelfTab(){
+  fillSelect($('sh_branch'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]));
+  fillSelect($('sh_listbranch'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  fillSelect($('sh_branchfilter'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  fillSelect($('sh_view_branch'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  if(!$('sh_emplist').dataset.wired){
+    $('sh_add').onclick=shSave;
+    $('sh_cancel').onclick=shCancelEdit;
+    $('sh_refresh').onclick=loadShelves;
+    $('sh_listbranch').addEventListener('change', loadShelves);
+    $('sh_branchfilter').addEventListener('change', renderShEmpList);
+    $('sh_empsearch').addEventListener('input', renderShEmpList);
+    $('sh_selall').onclick=()=>{ shVisibleEmps().forEach(e=>SH_SEL.add(e.emp_id)); renderShEmpList(); };
+    $('sh_selnone').onclick=()=>{ SH_SEL.clear(); renderShEmpList(); };
+    $('sh_assign').onclick=shAssign;
+    $('sh_view_refresh').onclick=loadShAssignments;
+    $('sh_emplist').dataset.wired='1';
+  }
+  if(!$('sh_asg_month').value) $('sh_asg_month').value=shCurMonth();
+  if(!$('sh_view_month').value) $('sh_view_month').value=shCurMonth();
+  renderShEmpList();
+  loadShelves();
+  loadShAssignments();
+}
+// --- ทะเบียนเชลฟ์ ---
+async function shSave(){
+  const code=($('sh_code').value||'').trim(), name=($('sh_name').value||'').trim(), branch=$('sh_branch').value;
+  if(!code){ toast('err','กรอกรหัสเชลฟ์'); return; }
+  if(!name){ toast('err','กรอกชื่อเชลฟ์'); return; }
+  if(!branch){ toast('err','เลือกสาขา'); return; }
+  const btn=$('sh_add'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังบันทึก…';
+  const checklist=($('sh_checklist').value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const data={ shelf_code:code, name, branch_id:branch, checklist }; if(SH_EDIT) data.id=SH_EDIT;
+  const r=await post({ action:'hr_shelf_save', password:pwd, data });
+  btn.disabled=false; btn.textContent=old;
+  if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
+  toast('ok', SH_EDIT?'บันทึกการแก้ไขแล้ว':'เพิ่มเชลฟ์แล้ว');
+  shCancelEdit(); loadShelves();
+}
+function shCancelEdit(){ SH_EDIT=null; $('sh_code').value=''; $('sh_name').value=''; $('sh_checklist').value=''; $('sh_add').textContent='＋ เพิ่มเชลฟ์'; $('sh_cancel').style.display='none'; }
+function shStartEdit(s){ SH_EDIT=s.id; $('sh_code').value=s.shelf_code||''; $('sh_name').value=s.name||''; $('sh_branch').value=s.branch_id||''; $('sh_checklist').value=(Array.isArray(s.checklist)?s.checklist:[]).join('\n'); $('sh_add').textContent='บันทึกการแก้ไข'; $('sh_cancel').style.display=''; window.scrollTo({top:0,behavior:'smooth'}); }
+async function loadShelves(){
+  $('sh_list').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_shelf_list', password:pwd, branch:$('sh_listbranch').value||'' });
+  if(!r.ok){ $('sh_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  SH_SHELVES=r.rows||[];
+  // เติมดรอปดาวน์เลือกเชลฟ์ในส่วนมอบหมาย
+  fillSelect($('sh_asg_shelf'), SH_SHELVES.filter(s=>s.active!==false).map(s=>[s.id, '['+s.shelf_code+'] '+s.name+' · '+s.branch_name]), '— เลือกเชลฟ์ —');
+  if(!SH_SHELVES.length){ $('sh_list').innerHTML='<div class="empty">ยังไม่มีเชลฟ์ กดเพิ่มด้านบน</div>'; return; }
+  $('sh_list').innerHTML=SH_SHELVES.map(s=>
+    '<div class="card" style="padding:12px;margin-bottom:8px;display:flex;gap:10px;align-items:center">'
+    +'<div style="flex:1"><div style="font-weight:700">🗄️ '+esc(s.name)+' <span style="color:var(--muted);font-weight:500">['+esc(s.shelf_code)+']</span></div>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">สาขา '+esc(s.branch_name)+(s.active===false?' · <span style="color:#dc2626">ปิดใช้งาน</span>':'')+'</div></div>'
+    +'<button class="btn btn-sec btn-sm" data-shedit="'+s.id+'">✏️ แก้ไข</button>'
+    +'<button class="btn btn-sec btn-sm" data-shdel="'+s.id+'">🗑 ลบ</button></div>'
+  ).join('');
+  $('sh_list').querySelectorAll('[data-shedit]').forEach(b=>b.onclick=()=>shStartEdit(SH_SHELVES.find(x=>String(x.id)===b.dataset.shedit)));
+  $('sh_list').querySelectorAll('[data-shdel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบเชลฟ์นี้? (จะลบการมอบหมายและประวัติการตรวจของเชลฟ์นี้ด้วย)'))return; const rr=await post({action:'hr_shelf_delete',password:pwd,id:Number(b.dataset.shdel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadShelves(); loadShAssignments(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
+}
+// --- ผู้รับผิดชอบ (ตัวเลือกพนักงาน) ---
+function shVisibleEmps(){
+  const bf=$('sh_branchfilter').value; const q=($('sh_empsearch').value||'').trim().toLowerCase();
+  return (DATA.rows||[]).filter(e=>e.active!==false).filter(e=>!bf||e.branch_id===bf).filter(e=>!q||(e.emp_id+' '+(e.name||'')+' '+(e.nickname||'')).toLowerCase().includes(q));
+}
+function renderShEmpList(){
+  const brName={}; (DATA.branches||[]).forEach(b=>brName[b.branch_id]=b.name);
+  const list=shVisibleEmps();
+  $('sh_selcount').textContent='เลือกแล้ว '+SH_SEL.size+' คน';
+  if(!list.length){ $('sh_emplist').innerHTML='<div class="empty" style="padding:10px">ไม่พบพนักงาน</div>'; return; }
+  $('sh_emplist').innerHTML=list.map(e=>{
+    const ck=SH_SEL.has(e.emp_id)?'checked':'';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:14px"><input type="checkbox" data-shemp="'+esc(e.emp_id)+'" '+ck+'><span style="flex:1">'+esc(e.name||e.emp_id)+(e.nickname?' <span style="color:var(--muted)">('+esc(e.nickname)+')</span>':'')+'</span><span style="color:var(--muted);font-size:12px">'+esc(brName[e.branch_id]||e.branch_id||'—')+'</span></label>';
+  }).join('');
+  $('sh_emplist').querySelectorAll('[data-shemp]').forEach(cb=>cb.onchange=()=>{ const id=cb.dataset.shemp; if(cb.checked)SH_SEL.add(id); else SH_SEL.delete(id); $('sh_selcount').textContent='เลือกแล้ว '+SH_SEL.size+' คน'; });
+}
+async function shAssign(){
+  const shelf_id=$('sh_asg_shelf').value; const month=$('sh_asg_month').value;
+  if(!shelf_id){ toast('err','เลือกเชลฟ์'); return; }
+  if(!month){ toast('err','เลือกเดือน'); return; }
+  if(!SH_SEL.size){ toast('err','เลือกผู้รับผิดชอบอย่างน้อย 1 คน'); return; }
+  const btn=$('sh_assign'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังบันทึก…';
+  const r=await post({ action:'hr_shelf_assign', password:pwd, data:{ shelf_id:Number(shelf_id), month, detail:$('sh_asg_detail').value, emp_ids:[...SH_SEL] } });
+  btn.disabled=false; btn.textContent=old;
+  if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
+  toast('ok','มอบหมาย '+r.assigned+' คนแล้ว');
+  SH_SEL.clear(); $('sh_asg_detail').value=''; renderShEmpList();
+  $('sh_view_month').value=month; loadShAssignments();
+}
+// --- รายการมอบหมาย ---
+async function loadShAssignments(){
+  $('sh_asg_list').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_shelf_assignments', password:pwd, month:$('sh_view_month').value||'', branch:$('sh_view_branch').value||'' });
+  if(!r.ok){ $('sh_asg_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  if(!r.rows.length){ $('sh_asg_list').innerHTML='<div class="empty">ยังไม่มีการมอบหมายในเดือนนี้</div>'; return; }
+  // จัดกลุ่มตามเชลฟ์
+  const byShelf={};
+  r.rows.forEach(a=>{ (byShelf[a.shelf_id]=byShelf[a.shelf_id]||{ name:a.shelf_name, code:a.shelf_code, branch:a.branch_name, people:[] }).people.push(a); });
+  $('sh_asg_list').innerHTML=Object.keys(byShelf).map(k=>{
+    const g=byShelf[k];
+    return '<div class="card" style="padding:14px;margin-bottom:10px">'
+      +'<div style="font-weight:700;font-size:15px">🗄️ '+esc(g.name)+' <span style="color:var(--muted);font-weight:500">['+esc(g.code)+']</span></div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin:2px 0 8px">สาขา '+esc(g.branch)+' · เดือน '+esc(r.month)+'</div>'
+      +g.people.map(p=>'<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line2)">'
+        +'<div style="flex:1">👤 '+esc(p.emp_name)+'</div>'
+        +'<span style="font-size:12px;color:var(--muted)">ตรวจแล้ว '+(p.checked_days||0)+' วัน</span>'
+        +'<button class="btn btn-sec btn-sm" data-shadel="'+p.id+'">ยกเลิก</button></div>').join('')
+      +'</div>';
+  }).join('');
+  $('sh_asg_list').querySelectorAll('[data-shadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ยกเลิกการมอบหมายรายการนี้?'))return; const rr=await post({action:'hr_shelf_assign_delete',password:pwd,id:Number(b.dataset.shadel)}); if(rr.ok){ toast('ok','ยกเลิกแล้ว'); loadShAssignments(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
 }
 
 // ========== บอร์ดวันนี้ (สาขา × กะ × คน) ==========
@@ -3058,15 +3236,17 @@ $('tl_go').onclick=loadTaskLog;
 function hThumbs(photos){ if(!photos||!photos.length) return ''; return '<div style="display:flex;gap:6px;overflow-x:auto;margin-top:6px">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="window.open(\''+esc(u)+'\',\'_blank\')" style="height:70px;border-radius:8px;border:1px solid var(--line);cursor:pointer;flex:none">').join('')+'</div>'; }
 async function loadImgReport(){
   if($('rr_branch')&&!$('rr_branch').innerHTML){ $('rr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); }
+  if($('rr_shift')&&!$('rr_shift').innerHTML){ $('rr_shift').innerHTML='<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join(''); }
   if(!$('rr_start').value) $('rr_start').value=bkkTodayStr();
   if(!$('rr_end').value) $('rr_end').value=bkkTodayStr();
   $('rr_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_task_log', password:pwd, filter:{ start:$('rr_start').value, end:$('rr_end').value, branch_id:$('rr_branch').value } });
   if(!r.ok){ $('rr_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  if(!r.rows.length){ $('rr_body').innerHTML='<div class="empty">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
+  let rows=r.rows||[]; const rsh=$('rr_shift')?$('rr_shift').value:''; if(rsh) rows=rows.filter(t=>String(t.shift_id||'')===rsh);
+  if(!rows.length){ $('rr_body').innerHTML='<div class="empty">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
   const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
   const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
-  $('rr_body').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">'+r.rows.map(t=>
+  $('rr_body').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">'+rows.map(t=>
     '<div class="card" style="padding:12px"><div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><div style="font-weight:600;flex:1;font-size:14px">'+esc(t.title)+'</div>'+stP(t.status)+'</div>'
     +'<div style="font-size:12px;color:var(--muted)">'+esc(String(t.work_date))+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_id||'-')+'</div>'
     +'<div style="font-size:12.5px;margin-top:2px">ผู้ทำ: '+esc(t.emp_name||t.emp_id||'—')+(t.submitted_at?(' · ส่ง '+esc(fmt(t.submitted_at))):'')+'</div>'
