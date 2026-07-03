@@ -514,6 +514,19 @@ async function submit(action){
     const timeStr  = new Date().toLocaleTimeString('th-TH',{hour12:false});
 
     if(action==='checkin'){
+      // การ์ดกันกดเข้างานผิด: เพิ่งออกงาน/ถูกปิดงานไม่นาน หรือ อยู่นอกกะตามตารางเวร
+      const adv = await HR.checkInAdvisory(empMatch.emp_id).catch(()=>null);
+      if(adv && adv.recentCheckout){
+        const rc=adv.recentCheckout;
+        const when = rc.hoursAgo < 1 ? Math.round(rc.hoursAgo*60)+' นาที' : rc.hoursAgo+' ชม.';
+        const msg = (rc.autoClosed
+            ? '⚠️ ระบบเพิ่งปิดงาน (ออกงานอัตโนมัติ) ให้เมื่อ '+when+'ที่แล้ว เวลา '+rc.checkoutTime
+            : '⚠️ คุณเพิ่งกดออกงานเมื่อ '+when+'ที่แล้ว เวลา '+rc.checkoutTime)
+          + '\n\nถ้าคุณตั้งใจจะ "ออกงานกะดึก" กรุณากดปุ่ม "ออกงาน" แทน\n\nยืนยันว่าต้องการ "เข้างานใหม่" ใช่หรือไม่?';
+        if(!confirm(msg)) return;
+      } else if(adv && adv.offSchedule){
+        if(!confirm('⚠️ ช่วงเวลานี้คุณไม่มีกะตามตารางเวร\n\nยืนยันว่าต้องการเข้างานใช่หรือไม่?')) return;
+      }
       const r = await HR.checkIn({
         empId:empMatch.emp_id, shiftId, branchId,
         lat:gps.lat, lng:gps.lng, accuracy:gps.accuracy,

@@ -75,6 +75,58 @@
     return { late_min: lateMin || 0, shift_id: useShift };
   }
 
+  // ---------- คำแนะนำก่อนเช็กอิน: กันกดเข้างานผิด (นอกกะ / เพิ่งออกงาน) ----------
+  async function checkInAdvisory(empId) {
+    const out = { offSchedule: false, recentCheckout: null };
+    if (!empId) return out;
+    try {
+      const today = bangkokDate();
+      const yday = _addDays(today, -1);
+      const nowMs = Date.now();
+      const st = await _loadSettings();
+      const earlyMin = Number(st.checkin_early_min || 180);      // เข้างานก่อนกะได้ไม่เกิน N นาที
+      const recentHrs = Number(st.recent_checkout_hours || 8);   // เพิ่งออกงานภายใน N ชม. → เตือน
+
+      // 1) นอกกะ: หา "กะที่คาดหวัง" จากตารางเวรวันนี้/เมื่อวาน (รองรับข้ามคืน) ถ้าไม่มีใช้กะประจำ
+      const { data: emp } = await sb.from('employees').select('default_shift').eq('emp_id', empId).maybeSingle();
+      const { data: sch } = await sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).in('work_date', [today, yday]);
+      const cand = [];
+      (sch || []).forEach(s => { if (s.shift_id) cand.push({ d: s.work_date, sid: s.shift_id }); });
+      if (!cand.length && emp && emp.default_shift) { cand.push({ d: today, sid: emp.default_shift }); cand.push({ d: yday, sid: emp.default_shift }); }
+      if (cand.length) {
+        const ids = [...new Set(cand.map(c => c.sid))];
+        const { data: shs } = await sb.from('shifts').select('shift_id,start_time,end_time').in('shift_id', ids);
+        const shBy = {}; (shs || []).forEach(s => { shBy[s.shift_id] = s; });
+        let inWindow = false;
+        for (const c of cand) {
+          const s = shBy[c.sid]; if (!s || !s.start_time || !s.end_time) continue;
+          const stt = String(s.start_time).slice(0, 5), en = String(s.end_time).slice(0, 5);
+          const overnight = en <= stt;                                   // กะข้ามคืน: เลิกเช้าวันถัดไป
+          const startMs = new Date(c.d + 'T' + stt + ':00+07:00').getTime() - earlyMin * 60000;
+          const endMs = new Date((overnight ? _addDays(c.d, 1) : c.d) + 'T' + en + ':00+07:00').getTime();
+          if (nowMs >= startMs && nowMs <= endMs) { inWindow = true; break; }
+        }
+        out.offSchedule = !inWindow;                                     // มีกะให้เทียบ แต่เวลานี้ไม่อยู่ในกรอบกะใด
+      }
+
+      // 2) เพิ่งออกงาน/ถูกปิดงานอัตโนมัติภายใน N ชม.
+      const { data: rc } = await sb.from('attendance').select('work_date,check_out,auto_closed,status')
+        .eq('emp_id', empId).not('check_out', 'is', null)
+        .gte('work_date', _addDays(today, -2)).order('check_out', { ascending: false }).limit(1).maybeSingle();
+      if (rc && rc.check_out) {
+        const hoursAgo = (nowMs - new Date(rc.check_out).getTime()) / 3600000;
+        if (hoursAgo >= 0 && hoursAgo <= recentHrs) {
+          out.recentCheckout = {
+            hoursAgo: Math.round(hoursAgo * 10) / 10,
+            autoClosed: rc.auto_closed === true || rc.status === 'AUTO_CLOSED',
+            checkoutTime: _fmtTime(rc.check_out), workDate: rc.work_date,
+          };
+        }
+      }
+    } catch (e) { /* เงียบไว้: advisory ล้มไม่ควรบล็อกการเช็กอิน */ }
+    return out;
+  }
+
   // ---------- เช็กเอาท์ ----------
   async function checkOut({ empId, shiftId, checkoutBranchId, reason }) {
     const today = bangkokDate();
@@ -939,5 +991,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, extendShift, requestCheckoutCorrection, getCheckoutState };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, extendShift, requestCheckoutCorrection, getCheckoutState };
 })();
