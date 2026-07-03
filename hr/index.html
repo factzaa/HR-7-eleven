@@ -331,7 +331,6 @@
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
   <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
-  <button class="tab" id="tab_assistant"><span class="tabicon">🤖</span>ผู้ช่วย AI</button>
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_special"><span class="tabicon">⭐</span>งานพิเศษ</button>
   <button class="tab" id="tab_qa"><span class="tabicon">🗓️</span>QA สินค้า</button>
@@ -499,18 +498,6 @@
   .es-grid{grid-template-columns:repeat(6,1fr)!important}
 }
 </style>
-
-<!-- ผู้ช่วย AI (ฝ่ายบุคคล) -->
-<div id="view_assistant" class="container" style="display:none">
-  <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">🤖 ผู้ช่วย AI · ฝ่ายบุคคล</h3><button class="btn btn-sec btn-sm" id="asst_clear">ล้างแชท</button></div>
-  <div id="asst_chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
-  <div id="asst_log" style="min-height:320px;max-height:58vh;overflow-y:auto;background:#fbfcfb;border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px"></div>
-  <div style="display:flex;gap:8px;margin-top:10px">
-    <input id="asst_in" placeholder="พิมพ์คำถาม เช่น ใครมาสายมากสุดรอบนี้" style="flex:1;padding:12px;border:1.5px solid var(--line2);border-radius:11px;font:inherit;font-size:15px">
-    <button class="btn btn-pri" id="asst_send" style="white-space:nowrap">ส่ง</button>
-  </div>
-  <div style="font-size:11.5px;color:var(--muted);margin-top:6px">ผู้ช่วยอ่านข้อมูลอย่างเดียว ตอบจากข้อมูลจริงในระบบ · ต้องตั้งค่า GEMINI_API_KEY และ deploy ฟังก์ชัน hr-assistant ก่อนใช้งาน (ดู supabase/AI-ASSISTANT-SETUP.md)</div>
-</div>
 
 <!-- Handover + Tasks (ส่ง/รับผลัด + งานในกะ) -->
 <div id="view_handover" class="container" style="display:none">
@@ -1881,7 +1868,7 @@ function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','assistant','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','handover','special','qa','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); }
@@ -1891,7 +1878,6 @@ showTab = function(name){
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
   else if(name==='empsum') initEmpSum();
-  else if(name==='assistant') initAssistant();
   else if(name==='handover'){ loadTaskTab(); }
   else if(name==='special'){ loadSpecialTab(); }
   else if(name==='qa'){ loadQaTab(); }
@@ -3515,6 +3501,54 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   const obs=new MutationObserver(()=>{ const t=document.getElementById('topact'); if(t && t.style.display!=='none'){ refresh(); } });
   const topact=document.getElementById('topact'); if(topact) obs.observe(topact,{attributes:true,attributeFilter:['style']});
   refresh();
+})();
+</script>
+
+<!-- ===== ปุ่มลอยผู้ช่วย AI (น้องนิดา) ===== -->
+<style>
+#asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 8px 16px rgba(0,0,0,.28));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
+body.is-logged #asstFab{display:block}
+#asstFab img{width:100%;height:100%;object-fit:contain;pointer-events:none}
+#asstFab .fbadge{position:absolute;top:2px;right:0;background:#ea580c;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
+#asstFab.dragging{animation:none;cursor:grabbing}
+@keyframes asstBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+#asstPop{position:fixed;right:22px;bottom:118px;width:380px;max-width:92vw;height:70vh;max-height:560px;z-index:61;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.28);display:none;flex-direction:column;overflow:hidden}
+#asstPop.open{display:flex;animation:asstPopIn .18s ease-out}
+@keyframes asstPopIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+#asstPop .ph{background:linear-gradient(135deg,#00582f,#0a7a43);color:#fff;padding:11px 12px;display:flex;align-items:center;gap:10px}
+#asstPop .ph img{width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover;flex:none}
+#asstPop .ph .nm{flex:1;font-weight:700;font-size:15px;line-height:1.15}
+#asstPop .ph .nm small{display:block;font-weight:400;font-size:11px;opacity:.85}
+#asstPop .ph button{background:rgba(255,255,255,.18);border:0;color:#fff;width:32px;height:32px;border-radius:8px;font-size:15px;cursor:pointer;flex:none}
+#asstPop .pb{flex:1;display:flex;flex-direction:column;min-height:0;padding:12px}
+#asstPop #asst_chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+#asstPop #asst_chips .btn{font-size:12px;padding:6px 9px}
+#asstPop #asst_log{flex:1;overflow-y:auto;background:#fbfcfb;border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:9px}
+#asstPop .prow{display:flex;gap:7px;margin-top:9px}
+#asstPop .prow input{flex:1;padding:11px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14.5px}
+#asstPop .prow .btn{white-space:nowrap}
+@media(max-width:640px){#asstPop{right:8px;left:8px;width:auto;bottom:104px;height:74vh}#asstFab{width:74px;height:74px;right:14px;bottom:14px}}
+</style>
+<button id="asstFab" aria-label="ผู้ช่วย AI น้องนิดา"><img src="./assistant-mascot.png" alt="ผู้ช่วย AI"><span class="fbadge">AI</span></button>
+<div id="asstPop">
+  <div class="ph"><img src="./assistant-mascot.png" alt=""><div class="nm">น้องนิดา<small>ผู้ช่วย AI · ฝ่ายบุคคล</small></div><button id="asst_clear" title="ล้างแชท">🗑</button><button id="asstClose" title="ปิด">✕</button></div>
+  <div class="pb">
+    <div id="asst_chips"></div>
+    <div id="asst_log"></div>
+    <div class="prow"><input id="asst_in" placeholder="พิมพ์คำถาม เช่น ใครมาสายมากสุดรอบนี้"><button class="btn btn-pri" id="asst_send">ส่ง</button></div>
+  </div>
+</div>
+<script>
+(function initAsstFab(){
+  const fab=document.getElementById('asstFab'), pop=document.getElementById('asstPop'); if(!fab||!pop) return;
+  const g=id=>document.getElementById(id);
+  let sx,sy,ox,oy,moved=false,dragging=false;
+  function openPop(){ pop.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); setTimeout(()=>{ const i=g('asst_in'); if(i) i.focus(); },60); }
+  function closePop(){ pop.classList.remove('open'); }
+  fab.addEventListener('pointerdown',e=>{ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; const r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
+  fab.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; fab.classList.add('dragging'); } if(moved){ let nx=ox+dx, ny=oy+dy; nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4,nx)); ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4,ny)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; } });
+  fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ pop.classList.contains('open')?closePop():openPop(); } });
+  const cl=g('asstClose'); if(cl) cl.onclick=closePop;
 })();
 </script>
 </body>
