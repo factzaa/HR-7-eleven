@@ -1907,7 +1907,7 @@ function toggleDrawer(open){
 
 // ---------- ผู้ช่วย AI (ฝ่ายบุคคล) ----------
 let ASST_MSGS=[];
-const ASST_CHIPS=["ใครมาสายมากสุดรอบนี้","ใบลาที่รออนุมัติมีใครบ้าง","งานค้างข้ามวันมีอะไรบ้าง","สินค้าจะหมดอายุใน 7 วัน","สรุปการมาทำงานเดือนนี้"];
+const ASST_CHIPS=["ใครใกล้โดนใบเตือน","ใครมาสายมากสุดรอบนี้","เทียบสาขามาสาย/ขาด","ใบลารออนุมัติ","งานค้างข้ามวัน","สินค้าใกล้หมดอายุ 7 วัน"];
 function initAssistant(){
   const chips=$('asst_chips'); if(!chips) return;
   if(!chips.dataset.f){ chips.dataset.f='1';
@@ -1921,23 +1921,42 @@ function initAssistant(){
 }
 function asstRender(){
   const box=$('asst_log'); if(!box) return;
-  if(!ASST_MSGS.length){ box.innerHTML='<div style="color:var(--muted);text-align:center;padding:34px 10px;font-size:14px">ถามข้อมูลพนักงาน / เวลา / งาน / ลา / สินค้า ได้เลย<br>เลือกคำถามด้านบน หรือพิมพ์เอง</div>'; return; }
-  box.innerHTML=ASST_MSGS.map(m=>{ const me=m.role==='user';
-    return '<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:82%;background:'+(me?'#00582f':'#eef1ef')+';color:'+(me?'#fff':'#1f2937')+';padding:10px 13px;border-radius:13px;font-size:14.5px;white-space:pre-wrap;line-height:1.55">'+esc(m.text)+'</div>';
-  }).join('');
+  if(!ASST_MSGS.length){ box.innerHTML='<div style="color:var(--muted);text-align:center;padding:30px 10px;font-size:14px">สวัสดีค่ะ น้องนิดา ผู้ช่วย HR พร้อมช่วยแล้ว 👋<br>ถามข้อมูลพนักงาน/เวลา/งาน/ลา/สินค้า หรือให้ช่วยวิเคราะห์-ร่างเอกสารได้เลยค่ะ</div>'; return; }
+  let html='';
+  ASST_MSGS.forEach((m,idx)=>{ const me=m.role==='user';
+    let txt=m.text, imgs=[];
+    if(!me){ const found=(m.text.match(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi)||[]); imgs=Array.from(new Set(found)); imgs.forEach(u=>{ txt=txt.split(u).join(''); }); txt=txt.replace(/[ \t]*\n{3,}/g,'\n\n').trim(); }
+    html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:82%;background:'+(me?'#00582f':'#eef1ef')+';color:'+(me?'#fff':'#1f2937')+';padding:10px 13px;border-radius:13px;font-size:14.5px;white-space:pre-wrap;line-height:1.55">'+esc(txt||(imgs.length?'📷 รูปงาน':' '))+'</div>';
+    if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<a href="'+esc(u)+'" target="_blank" rel="noopener"><img src="'+esc(u)+'" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"></a>').join('')+'</div>'; }
+    if(m.pending){ html+='<div style="align-self:flex-start;display:flex;gap:8px"><button class="btn btn-pri btn-sm" data-cfm="'+idx+'">✅ ยืนยัน</button><button class="btn btn-sec btn-sm" data-ccl="'+idx+'">ยกเลิก</button></div>'; }
+  });
+  box.innerHTML=html;
+  box.querySelectorAll('[data-cfm]').forEach(b=>b.onclick=()=>asstConfirm(+b.dataset.cfm));
+  box.querySelectorAll('[data-ccl]').forEach(b=>b.onclick=()=>asstCancel(+b.dataset.ccl));
   box.scrollTop=box.scrollHeight;
 }
+function asstApiBase(){ return {base:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey||''}; }
+async function asstConfirm(idx){
+  const m=ASST_MSGS[idx]; if(!m||!m.pending) return; const p=m.pending; m.pending=null;
+  ASST_MSGS.push({role:'assistant',text:'กำลังดำเนินการ…'}); asstRender();
+  const {base,key}=asstApiBase();
+  try{ const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,confirm:p})});
+    const j=await r.json(); ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'});
+  }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'ทำรายการไม่สำเร็จ: '+(e.message||'')}); }
+  asstRender();
+}
+function asstCancel(idx){ const m=ASST_MSGS[idx]; if(m) m.pending=null; ASST_MSGS.push({role:'assistant',text:'ยกเลิกแล้วค่ะ ไม่ได้ทำรายการ'}); asstRender(); }
 async function asstSend(){
   const inp=$('asst_in'); const t=(inp.value||'').trim(); if(!t) return;
   inp.value=''; ASST_MSGS.push({role:'user',text:t});
   ASST_MSGS.push({role:'assistant',text:'กำลังคิด…'}); asstRender();
-  const base=(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,'');
-  const key=window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey||'';
+  const {base,key}=asstApiBase();
   try{
-    const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…');
+    const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…').map(m=>({role:m.role,text:m.text}));
     const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:send})});
     const j=await r.json(); ASST_MSGS.pop();
-    ASST_MSGS.push({role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'});
+    const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.pendingAction) msg.pending=j.pendingAction;
+    ASST_MSGS.push(msg);
   }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'เชื่อมต่อไม่สำเร็จ: '+(e.message||'')}); }
   asstRender();
 }
