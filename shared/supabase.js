@@ -841,14 +841,16 @@
     if(pending>0) throw new Error('งานกะนี้ของวันก่อนหน้ายังไม่ผ่านครบ ('+pending+' รายการ) — ต้องทำ/ให้ตรวจให้เสร็จก่อน จึงจะเริ่มกะนี้ของวันนี้ได้');
   }
   // ผลัดหลักก่อนหน้า (วนเฉพาะกะที่เป็นผลัดหลัก main_shift===shift_id เรียงตามเวลาเริ่ม)
-  async function _prevMainGroup(group){
-    const today=bangkokDate();
+  // baseDate = "วันทำงานของกะที่กำลังทำ" (work_date จาก _shiftCtx) — สำคัญมากกับกะดึกข้ามคืน
+  // ถ้าไม่ส่งมา ใช้วันปฏิทินจริง (fallback)
+  async function _prevMainGroup(group, baseDate){
+    const today=baseDate||bangkokDate();
     const list=(await sb.from('shifts').select('shift_id,main_shift,start_time').order('start_time')).data||[];
     const chain=list.filter(s=>s.main_shift && s.main_shift===s.shift_id).map(s=>s.shift_id);
     const idx=chain.indexOf(group);
     if(idx<0) return { group:null, date:today, isMain:false };
-    if(idx===0) return { group: chain[chain.length-1]||null, date:_addDays(today,-1), isMain:true };  // ผลัดหลักแรก → ก่อนหน้า = ผลัดหลักสุดท้ายเมื่อวาน
-    return { group: chain[idx-1], date:today, isMain:true };
+    if(idx===0) return { group: chain[chain.length-1]||null, date:_addDays(today,-1), isMain:true };  // ผลัดหลักแรก(เช้า) → ก่อนหน้า = ผลัดหลักสุดท้ายของวันก่อนหน้า
+    return { group: chain[idx-1], date:today, isMain:true };   // เช่น ดึก(ข้ามคืน) → บ่ายของ work_date เดียวกัน (ซึ่งอาจเป็น "เมื่อวาน" ตามปฏิทิน)
   }
   async function _shiftName(group){
     if(!group) return '';
@@ -924,7 +926,7 @@
   async function getPrevShiftReview(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const {workDate:today,group:curGroup,branch}=await _shiftCtx(emp);
-    const pv=await _prevMainGroup(curGroup);
+    const pv=await _prevMainGroup(curGroup, today);   // อิง work_date ของกะที่ทำ (รองรับกะดึกข้ามคืน)
     const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',branch||'').eq('shift_id',curGroup).maybeSingle()).data;
     const canReview=!!(lead&&lead.emp_id===emp.emp_id)&&pv.isMain;   // ตรวจได้เฉพาะหัวหน้าผลัดของผลัดหลัก
     let tasks=[];
@@ -937,7 +939,7 @@
     const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',branch||'').eq('shift_id',curGroup).maybeSingle()).data;
     if(!lead||lead.emp_id!==emp.emp_id) throw new Error('เฉพาะหัวหน้าผลัดเท่านั้นที่ตรวจได้');
     const task=(await sb.from('task_assignments').select('shift_id,work_date,sent_back_count').eq('id',id).maybeSingle()).data; if(!task) throw new Error('ไม่พบงานนี้');
-    const pv=await _prevMainGroup(curGroup);
+    const pv=await _prevMainGroup(curGroup, today);   // อิง work_date ของกะที่ทำ (รองรับกะดึกข้ามคืน)
     if(!pv.group || task.shift_id!==pv.group || String(task.work_date)!==pv.date) throw new Error('ตรวจได้เฉพาะงานของผลัดก่อนหน้าเท่านั้น');
     const upd={ status: status==='approved'?'approved':'sent_back', reviewer: emp.nickname||emp.name, review_note:note||null, reviewed_at:new Date().toISOString() };
     if(status!=='approved') upd.sent_back_count=(task.sent_back_count||0)+1;
