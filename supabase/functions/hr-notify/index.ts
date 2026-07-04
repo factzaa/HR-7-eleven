@@ -356,6 +356,41 @@ Deno.serve(async () => {
       }
     } catch (acErr) { console.error("auto-checkout", acErr); }
 
+    // ===== งานดูแลเชลฟ์ประจำเดือน: เตือนผู้รับผิดชอบทุกวันที่มีกะ (ถ้ายังไม่ตรวจวันนี้) =====
+    try {
+      const month = today.slice(0, 7);
+      const { data: saData } = await sb.from("shelf_assignments").select("emp_id,shelf_id").eq("month", month);
+      const asg = saData ?? [];
+      if (asg.length) {
+        const shIds = [...new Set(asg.map((a: any) => a.shelf_id))];
+        const [shR2, ckR2] = await Promise.all([
+          sb.from("shelves").select("id,name").in("id", shIds),
+          sb.from("shelf_checks").select("shelf_id,emp_id").eq("check_date", today),
+        ]);
+        const shName: Record<string, string> = {}; (shR2.data ?? []).forEach((s: any) => { shName[s.id] = s.name || ("#" + s.id); });
+        const doneToday = new Set((ckR2.data ?? []).map((c: any) => c.shelf_id + "|" + c.emp_id));
+        // พนักงานที่ "มีกะวันนี้" + เวลาเข้ากะที่เร็วที่สุด
+        const shiftStartOfEmp: Record<string, string> = {};
+        (schR.data ?? []).forEach((s: any) => { const st = shiftStart[s.shift_id]; if (st && (!shiftStartOfEmp[s.emp_id] || st < shiftStartOfEmp[s.emp_id])) shiftStartOfEmp[s.emp_id] = st; });
+        // รวมเชลฟ์ที่ยังไม่ตรวจวันนี้ ต่อพนักงาน
+        const byEmp: Record<string, string[]> = {};
+        asg.forEach((a: any) => { if (doneToday.has(a.shelf_id + "|" + a.emp_id)) return; (byEmp[a.emp_id] = byEmp[a.emp_id] || []).push(shName[a.shelf_id] || ("#" + a.shelf_id)); });
+        for (const empId in byEmp) {
+          const st = shiftStartOfEmp[empId];
+          if (!st) continue;                 // ไม่มีกะวันนี้ → ไม่เตือน
+          if (onleave.has(empId)) continue;   // ลา → ไม่เตือน
+          if (nowHM < st) continue;           // ยังไม่ถึงเวลาเข้ากะ
+          const key = `shelfremind:${empId}:${today}`;
+          const seen = await sb.from("notify_sent").select("event_key").eq("event_key", key).maybeSingle();
+          if (seen.data) continue;
+          const shelves = byEmp[empId];
+          const body = "เชลฟ์ที่ต้องดูแลวันนี้: " + shelves.slice(0, 5).join(", ") + (shelves.length > 5 ? ` และอีก ${shelves.length - 5}` : "") + "\nอย่าลืมทำเช็กลิสต์ + ถ่ายรูปในแอป";
+          await sendToEmp(empId, "🗄️ ดูแลเชลฟ์ประจำเดือน", body, "shelfremind-" + empId + "-" + today, "./shelf/");
+          await sb.from("notify_sent").upsert({ event_key: key });
+        }
+      }
+    } catch (shErr) { console.error("shelf remind", shErr); }
+
     if (gone.length) await sb.from("push_subscriptions").delete().in("endpoint", gone);
     const cutoff = new Date(Date.now() - 7 * 86400 * 1000).toISOString();
     await sb.from("notify_sent").delete().lt("sent_at", cutoff);   // ล้างของเก่า > 7 วัน

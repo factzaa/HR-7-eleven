@@ -167,7 +167,7 @@ async function schedule_on(a: any) {
 }
 
 // อ่านตารางใดก็ได้ (whitelist · อ่านอย่างเดียว · จำกัดแถว) — ครอบคลุมทุกมิติ เช่น activity_log
-const READ_TABLES = new Set(["employees","attendance","schedules","shifts","branches","leaves","leave_types","task_defs","task_assignments","special_tasks","special_task_assignees","handovers","shift_leads","warnings","discipline_rules","score_config","score_rules","score_bands","score_events","qa_folders","qa_folder_assignees","qa_items","qa_products","checkout_corrections","profile_submissions","rule_acks","announcements","activity_log","app_settings","holidays"]);
+const READ_TABLES = new Set(["employees","attendance","schedules","shifts","branches","leaves","leave_types","task_defs","task_assignments","special_tasks","special_task_assignees","handovers","shift_leads","warnings","discipline_rules","score_config","score_rules","score_bands","score_events","qa_folders","qa_folder_assignees","qa_items","qa_products","shelves","shelf_assignments","shelf_checks","checkout_corrections","profile_submissions","rule_acks","announcements","activity_log","app_settings","holidays"]);
 const OPS = new Set(["eq","neq","gt","gte","lt","lte","ilike","like"]);
 const safeCol = (s: string) => String(s || "").replace(/[^a-zA-Z0-9_]/g, "");
 async function query_table(a: any) {
@@ -198,6 +198,36 @@ async function task_history(a: any) {
   const { data, error } = await q.limit(Math.min(30, Math.max(1, Number(a.limit) || 15)));
   if (error) return { error: String(error.message || error) };
   return { count: (data ?? []).length, tasks: (data ?? []).map((t: any) => ({ date: t.work_date, branch: t.branch_id, shift: t.shift_id, emp: t.emp_name, title: t.title, status: t.status, sent_back_count: t.sent_back_count, review_note: t.review_note, reviewer: t.reviewer, images: t.photos || (t.photo_url ? [t.photo_url] : []) })) };
+}
+// สถานะงานดูแลเชลฟ์ประจำเดือน: ใครดูแลเชลฟ์ไหน + ตรวจครบกี่วัน + วันนี้ตรวจหรือยัง
+async function shelf_status(a: any) {
+  const month = String(a.month || bkkToday().slice(0, 7));
+  const today = bkkToday();
+  const [y, mo] = month.split("-").map(Number);
+  const mStart = month + "-01";
+  const mEnd = new Date(y, mo, 1); const mEndStr = mEnd.getFullYear() + "-" + String(mEnd.getMonth() + 1).padStart(2, "0") + "-01";
+  let aq: any = sb.from("shelf_assignments").select("*").eq("month", month);
+  if (a.branch_id) aq = aq.eq("branch_id", a.branch_id);
+  if (a.emp_id) aq = aq.eq("emp_id", a.emp_id);
+  const { data: asg, error } = await aq;
+  if (error) return { error: String(error.message || error) };
+  const rowsA = asg ?? [];
+  if (!rowsA.length) return { month, count: 0, shelves: [], note: "ยังไม่มีการมอบหมายเชลฟ์ในเดือนนี้" };
+  const shIds = [...new Set(rowsA.map((r: any) => r.shelf_id))];
+  const [shR, empR, ckR] = await Promise.all([
+    sb.from("shelves").select("id,shelf_code,name,branch_id").in("id", shIds),
+    sb.from("employees").select("emp_id,name,nickname"),
+    sb.from("shelf_checks").select("shelf_id,emp_id,check_date").in("shelf_id", shIds).gte("check_date", mStart).lt("check_date", mEndStr),
+  ]);
+  const shBy: any = {}; (shR.data ?? []).forEach((s: any) => shBy[s.id] = s);
+  const empBy: any = {}; (empR.data ?? []).forEach((e: any) => empBy[e.emp_id] = e.nickname || e.name);
+  const days: any = {}; const todayDone: any = {};
+  (ckR.data ?? []).forEach((c: any) => { const k = c.shelf_id + "|" + c.emp_id; (days[k] = days[k] || new Set()).add(c.check_date); if (c.check_date === today) todayDone[k] = true; });
+  const shelves = rowsA.map((r: any) => { const s = shBy[r.shelf_id] || {}; const k = r.shelf_id + "|" + r.emp_id; return {
+    shelf: s.name || ("#" + r.shelf_id), code: s.shelf_code || "", branch: s.branch_id || r.branch_id, responsible: empBy[r.emp_id] || r.emp_id, emp_id: r.emp_id,
+    checked_days: (days[k] || new Set()).size, today_done: !!todayDone[k], detail: r.detail || "" };
+  });
+  return { month, today, count: shelves.length, shelves };
 }
 // วิเคราะห์รูปภาพด้วย Gemini vision
 async function analyze_image(a: any) {
@@ -249,7 +279,7 @@ async function runAction(name: string, args: any): Promise<{ ok: boolean; messag
 }
 async function log(action: string, detail: string) { try { await sb.from("activity_log").insert({ action, detail: detail.slice(0, 200), actor: "นิดา (AI)" }); } catch (_) {} }
 
-const TOOLS: Record<string, (a: any) => Promise<any>> = { search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, analyze_image };
+const TOOLS: Record<string, (a: any) => Promise<any>> = { search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, shelf_status, analyze_image };
 
 const DECLS = [
   { name: "search_employees", description: "ค้นหาพนักงานจากชื่อ/ชื่อเล่น/รหัส เพื่อหา emp_id", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
@@ -265,6 +295,7 @@ const DECLS = [
   { name: "schedule_on", description: "ตารางเวร: ใครเข้ากะวันไหน (ระบุ date และ/หรือ branch_id)", parameters: { type: "object", properties: { date: { type: "string" }, branch_id: { type: "string" } } } },
   { name: "query_table", description: "อ่านข้อมูลจากตารางใดก็ได้ในระบบ (อ่านอย่างเดียว) เช่น activity_log (ประวัติ), warnings, score_events, checkout_corrections ฯลฯ · where=[{col,op,val}] op: eq/neq/gt/gte/lt/lte/ilike · order={col,asc} · limit", parameters: { type: "object", properties: { table: { type: "string" }, columns: { type: "string" }, where: { type: "array", items: { type: "object", properties: { col: { type: "string" }, op: { type: "string" }, val: { type: "string" } } } }, order: { type: "object", properties: { col: { type: "string" }, asc: { type: "boolean" } } }, limit: { type: "number" } }, required: ["table"] } },
   { name: "task_history", description: "ประวัติงานในกะ + งานที่ถูกตีกลับ พร้อม URL รูปหลักฐาน (images) และเหตุผลตีกลับ · กรอง emp_id/branch_id/status/only_sent_back/start/end", parameters: { type: "object", properties: { emp_id: { type: "string" }, branch_id: { type: "string" }, status: { type: "string" }, only_sent_back: { type: "boolean" }, start: { type: "string" }, end: { type: "string" }, limit: { type: "number" } } } },
+  { name: "shelf_status", description: "งานดูแลเชลฟ์ประจำเดือน: ใครรับผิดชอบเชลฟ์ไหน ตรวจครบกี่วัน วันนี้ตรวจหรือยัง (month ดีฟอลต์เดือนปัจจุบัน, กรอง branch_id/emp_id ได้)", parameters: { type: "object", properties: { month: { type: "string" }, branch_id: { type: "string" }, emp_id: { type: "string" } } } },
   { name: "analyze_image", description: "วิเคราะห์รูปภาพ (เช่น รูปงานที่พนักงานส่ง) ส่ง url ของรูป + คำถาม/สิ่งที่ต้องการให้ดู", parameters: { type: "object", properties: { url: { type: "string" }, question: { type: "string" } }, required: ["url"] } },
   // ---- การกระทำ (จะถูกกักไว้ให้ยืนยันก่อนเสมอ) ----
   { name: "approve_leave", description: "อนุมัติใบลา (ต้องมี leave_id จาก pending_leaves) — ระบบจะขอให้ผู้ใช้ยืนยันก่อนทำจริง", parameters: { type: "object", properties: { leave_id: { type: "string" } }, required: ["leave_id"] } },
@@ -279,7 +310,8 @@ const SYS = `คุณคือ "น้องนิดา" ผู้ช่วย
 - ถ้าอ้างชื่อพนักงาน ให้ search_employees หา emp_id ก่อน
 - วิเคราะห์+แนะนำ: เมื่อเห็นข้อมูล ให้สรุปประเด็นสำคัญ ชี้คน/สาขาที่ควรจับตา ใครใกล้โดนใบเตือน และเสนอแนวทางจัดการอย่างสร้างสรรค์ (เน้นเตือน/พัฒนา ก่อนลงโทษ)
 - ร่างเอกสาร: ช่วยร่างข้อความประกาศ/ตักเตือน/สรุปได้เมื่อถูกขอ (เป็นข้อความให้ HR ตรวจก่อนใช้)
-- ข้อมูลเชิงลึก/ประวัติ: ใช้ query_table อ่านตารางใดก็ได้ (เช่น activity_log ดูประวัติการกระทำ, warnings ดูใบเตือน, checkout_corrections) · ใช้ task_history ดูงานย้อนหลัง/งานที่ถูกตีกลับพร้อมรูป
+- ข้อมูลเชิงลึก/ประวัติ: ใช้ query_table อ่านตารางใดก็ได้ (เช่น activity_log ดูประวัติการกระทำ, warnings ดูใบเตือน, checkout_corrections, shelves/shelf_assignments/shelf_checks งานดูแลเชลฟ์) · ใช้ task_history ดูงานย้อนหลัง/งานที่ถูกตีกลับพร้อมรูป
+- งานดูแลเชลฟ์ประจำเดือน: ใช้ shelf_status ดูว่าใครรับผิดชอบเชลฟ์ไหน ตรวจครบกี่วัน วันนี้ตรวจหรือยัง (ชี้คนที่ยังไม่ตรวจได้)
 - รูปภาพ: เมื่อผู้ใช้ขอ "ดูรูปงาน" ให้แนบ URL รูป (จากช่อง images ในผลลัพธ์) มาในคำตอบให้ครบทั้ง URL — ระบบจะเรนเดอร์เป็นรูปให้เอง · ถ้าผู้ใช้ขอ "วิเคราะห์รูป" ให้เรียก analyze_image โดยส่ง url ของรูปนั้น แล้วสรุปผลให้
 - นำเสนอด้วยตาราง/รายการสั้น ๆ และระบุช่วงข้อมูลที่อ้างอิง
 - การกระทำที่เปลี่ยนข้อมูล (อนุมัติ/ปฏิเสธลา, เพิ่มประกาศ, บันทึกวันอบรม): เมื่อผู้ใช้ขอ ให้เรียกเครื่องมือการกระทำ แล้ว "สรุปสิ่งที่จะทำ + ถามยืนยัน" ระบบจะกักไว้จนผู้ใช้กดยืนยันเอง อย่าบอกว่าทำเสร็จแล้วจนกว่าจะยืนยัน
