@@ -174,5 +174,115 @@ $('lvSubmit').onclick=async()=>{
 };
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
 </script>
+
+<!-- ===== น้องนิดา (ผู้ช่วยพนักงาน · ระดับสาขา) ===== -->
+<script>
+(function(){
+  var LS_BRANCH='nida_emp_branch';
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var cfg=function(){return {url:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey)||''};};
+  var MSGS=[]; var BRANCH=localStorage.getItem(LS_BRANCH)||''; var BRANCHES=[];
+
+  // ---- styles ----
+  var st=document.createElement('style'); st.textContent=
+   '#nfab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:9998;width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#12402b);box-shadow:0 8px 22px rgba(0,80,40,.35);border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff}'
+  +'#nfab .nb{position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:11px;background:#dc2626;color:#fff;font-size:12px;font-weight:800;display:none;align-items:center;justify-content:center;font-family:Anuphan,sans-serif}'
+  +'#npop{position:fixed;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:9999;width:min(94vw,380px);height:min(70vh,560px);background:#fff;border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.28);display:none;flex-direction:column;overflow:hidden;font-family:Anuphan,system-ui,sans-serif}'
+  +'#npop .nh{background:linear-gradient(135deg,#16a34a,#12402b);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:9px}'
+  +'#npop .nh .t{flex:1;font-weight:700;font-size:15px;line-height:1.15}#npop .nh .t small{display:block;font-weight:400;font-size:11px;opacity:.85}'
+  +'#npop .nh button{background:rgba(255,255,255,.18);border:0;color:#fff;width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:15px}'
+  +'#nlog{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#f4f6f4}'
+  +'#nlog .b{max-width:86%;padding:9px 12px;border-radius:13px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}'
+  +'#nlog .me{align-self:flex-end;background:#00582f;color:#fff}#nlog .ai{align-self:flex-start;background:#fff;border:1px solid #e5e7eb;color:#1f2937}'
+  +'#nlog .card{align-self:flex-start;width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:9px 11px}'
+  +'#nlog .lk{align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap}#nlog .lk a{background:#e7f3ec;color:#12402b;text-decoration:none;font-weight:700;font-size:12.5px;padding:7px 11px;border-radius:10px}'
+  +'#nchips{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:#fff;border-top:1px solid #eee}#nchips button{white-space:nowrap;border:1px solid #d4ddd6;background:#fff;color:#12402b;font:inherit;font-size:12.5px;padding:6px 10px;border-radius:16px;cursor:pointer}'
+  +'#nbar{display:flex;gap:7px;padding:9px 10px;border-top:1px solid #eee;background:#fff}#nbar input{flex:1;border:1.5px solid #dbe2dc;border-radius:11px;padding:9px 11px;font:inherit;font-size:14px}#nbar button{background:#16a34a;color:#fff;border:0;border-radius:11px;padding:0 15px;font-weight:700;cursor:pointer}'
+  +'#nlog img.ph{width:60px;height:60px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;cursor:zoom-in;margin:2px}'
+  +'#nsetup{padding:16px;display:none;flex-direction:column;gap:10px;background:#f4f6f4;flex:1}#nsetup select{padding:11px;border:1.5px solid #dbe2dc;border-radius:11px;font:inherit;font-size:15px}#nsetup button{background:#16a34a;color:#fff;border:0;border-radius:11px;padding:12px;font-weight:700;cursor:pointer}'
+  +'#nlb{position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center}#nlb img{max-width:94%;max-height:88%;border-radius:8px}#nlb .c{position:absolute;top:14px;right:16px;color:#fff;font-size:26px;cursor:pointer}#nlb .n{position:absolute;bottom:16px;color:#fff;font-size:13px}';
+  document.head.appendChild(st);
+
+  // ---- DOM ----
+  var fab=document.createElement('button'); fab.id='nfab'; fab.innerHTML='🤖<span class="nb" id="nbadge"></span>'; document.body.appendChild(fab);
+  var pop=document.createElement('div'); pop.id='npop';
+  pop.innerHTML='<div class="nh"><span style="font-size:20px">🤖</span><div class="t">น้องนิดา<small id="nbranch">ผู้ช่วยพนักงาน</small></div><button id="nset" title="เปลี่ยนสาขา">⚙</button><button id="ncls">✕</button></div>'
+   +'<div id="nsetup"><div style="font-size:14px;color:#374151">เลือกสาขาของเครื่องนี้ (ตั้งครั้งเดียว)</div><select id="nbsel"></select><button id="nbsave">บันทึกสาขา</button></div>'
+   +'<div id="nlog"></div>'
+   +'<div id="nchips"></div>'
+   +'<div id="nbar"><input id="nin" placeholder="พิมพ์ถามงาน…" ><button id="nsend">ส่ง</button></div>';
+  document.body.appendChild(pop);
+  var lb=document.createElement('div'); lb.id='nlb'; lb.innerHTML='<span class="c">✕</span><img><div class="n"></div>'; document.body.appendChild(lb);
+  var $=function(id){return document.getElementById(id);};
+
+  // ---- lightbox (สไลด์ได้) ----
+  var LBI=[],LBX=0;
+  function lbShow(){ lb.querySelector('img').src=LBI[LBX]||''; lb.querySelector('.n').textContent=LBI.length>1?((LBX+1)+' / '+LBI.length):''; lb.style.display='flex'; }
+  window.__nidaLB=function(el){ var wrap=el.parentElement; LBI=[].slice.call(wrap.querySelectorAll('img')).map(function(i){return i.src;}); LBX=Math.max(0,LBI.indexOf(el.src)); lbShow(); };
+  lb.querySelector('.c').onclick=function(){lb.style.display='none';}; lb.onclick=function(e){if(e.target===lb)lb.style.display='none';};
+  var sx=0; lb.addEventListener('touchstart',function(e){sx=e.touches[0].clientX;},{passive:true});
+  lb.addEventListener('touchend',function(e){var dx=e.changedTouches[0].clientX-sx; if(Math.abs(dx)>40&&LBI.length>1){LBX=(LBX+(dx<0?1:-1)+LBI.length)%LBI.length; lbShow();}});
+
+  // ---- render ----
+  function stTxt(s){return s==='approved'?'ผ่านแล้ว':s==='submitted'?'รอตรวจ':s==='sent_back'?'ตีกลับ':s;}
+  function stCol(s){return s==='approved'?'#16a34a':s==='submitted'?'#d97706':s==='sent_back'?'#dc2626':'#6b7280';}
+  function cardsHtml(cards){
+    if(!cards||!cards.groups||!cards.groups.length) return '';
+    if(cards.type!=='tasks') return '';
+    return cards.groups.map(function(g){
+      var items=(g.items||[]).map(function(it){
+        var im=(it.images&&it.images.length)?'<div style="margin-top:4px">'+it.images.map(function(u){return '<img class="ph" src="'+esc(u)+'" onclick="__nidaLB(this)">';}).join('')+'</div>':'';
+        return '<div style="border-top:1px solid #eef1ef;padding:6px 0"><div style="display:flex;gap:6px"><span style="flex:1;font-weight:600;font-size:13px">'+esc(it.title||'-')+'</span><span style="font-size:11px;font-weight:700;color:'+stCol(it.status)+'">'+esc(stTxt(it.status))+'</span></div>'+(it.emp?'<div style="font-size:11.5px;color:#6b757d">โดย '+esc(it.emp)+'</div>':'')+(it.review_note?'<div style="font-size:11.5px;color:#dc2626">↳ '+esc(it.review_note)+'</div>':'')+im+'</div>';
+      }).join('');
+      return '<div class="card"><div style="font-weight:700;font-size:12.5px;color:#00582f">🧾 กะ '+esc(g.shift)+(g.date?(' · '+esc(g.date)):'')+'</div>'+items+'</div>';
+    }).join('');
+  }
+  function render(){
+    var box=$('nlog'); var h='';
+    if(!MSGS.length) h='<div style="color:#6b757d;text-align:center;padding:22px 8px;font-size:13.5px">สวัสดีค่ะ 👋 นิดาช่วยเตือนงานค้างของสาขาและบอกวิธีทำงานได้<br>ลองแตะปุ่มด้านล่างได้เลย</div>';
+    MSGS.forEach(function(m){
+      if(m.role==='user'){ h+='<div class="b me">'+esc(m.text)+'</div>'; return; }
+      var ch=m.cards?cardsHtml(m.cards):'';
+      h+='<div class="b ai">'+esc(m.text||(ch?'🧾 รายการงาน':' '))+'</div>';
+      if(ch) h+=ch;
+      if(m.links&&m.links.length) h+='<div class="lk">'+m.links.map(function(l){return '<a href="'+esc(l.url)+'">'+esc(l.label)+'</a>';}).join('')+'</div>';
+    });
+    box.innerHTML=h; box.scrollTop=box.scrollHeight;
+  }
+  var CHIPS=['งานค้างของสาขา','เชลฟ์ยังไม่ตรวจวันนี้','สินค้าใกล้หมดอายุ','สรุปงานค้างทั้งหมด','วิธีส่งงาน'];
+  $('nchips').innerHTML=CHIPS.map(function(c){return '<button>'+esc(c)+'</button>';}).join('');
+  $('nchips').querySelectorAll('button').forEach(function(b){ b.onclick=function(){ $('nin').value=b.textContent; send(); }; });
+
+  async function send(){
+    var t=($('nin').value||'').trim(); if(!t) return; if(!BRANCH){ openSetup(); return; }
+    $('nin').value=''; MSGS.push({role:'user',text:t}); MSGS.push({role:'assistant',text:'กำลังคิด…'}); render();
+    var c=cfg();
+    try{
+      var send2=MSGS.filter(function(m){return m.text!=='กำลังคิด…';}).map(function(m){return {role:m.role,text:m.text};});
+      var r=await fetch(c.url+'/functions/v1/emp-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':c.key,'Authorization':'Bearer '+c.key},body:JSON.stringify({branch:BRANCH,messages:send2})});
+      var j=await r.json(); MSGS.pop();
+      MSGS.push({role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ',cards:j&&j.cards,links:j&&j.links});
+    }catch(e){ MSGS.pop(); MSGS.push({role:'assistant',text:'เชื่อมต่อไม่ได้ค่ะ ลองใหม่นะคะ'}); }
+    render();
+  }
+  $('nsend').onclick=send; $('nin').addEventListener('keydown',function(e){if(e.key==='Enter')send();});
+
+  // ---- setup สาขา ----
+  async function loadBranches(){ if(BRANCHES.length) return; try{ var cf=await window.HR.loadConfig(); BRANCHES=cf.branches||[]; }catch(e){} }
+  async function openSetup(){ await loadBranches(); $('nbsel').innerHTML=BRANCHES.map(function(b){return '<option value="'+esc(b.branch_id)+'"'+(b.branch_id===BRANCH?' selected':'')+'>'+esc(b.name)+' ('+esc(b.branch_id)+')</option>';}).join(''); $('nsetup').style.display='flex'; $('nlog').style.display='none'; $('nchips').style.display='none'; $('nbar').style.display='none'; }
+  function closeSetup(){ $('nsetup').style.display='none'; $('nlog').style.display='flex'; $('nchips').style.display='flex'; $('nbar').style.display='flex'; }
+  $('nbsave').onclick=function(){ var v=$('nbsel').value; if(!v){return;} BRANCH=v; localStorage.setItem(LS_BRANCH,v); var b=BRANCHES.find(function(x){return x.branch_id===v;}); $('nbranch').textContent='สาขา '+((b&&b.name)||v); closeSetup(); };
+  $('nset').onclick=openSetup;
+
+  async function openPop(){ pop.style.display='flex'; $('nbadge').style.display='none'; await loadBranches(); if(!BRANCH){ openSetup(); } else { var b=BRANCHES.find(function(x){return x.branch_id===BRANCH;}); $('nbranch').textContent='สาขา '+((b&&b.name)||BRANCH); render(); } }
+  fab.onclick=function(){ if(pop.style.display==='flex'){pop.style.display='none';} else openPop(); };
+  $('ncls').onclick=function(){pop.style.display='none';};
+
+  // ---- badge: จำนวนงานค้างของสาขา (เช็คตอนโหลด) ----
+  async function refreshBadge(){ if(!BRANCH){return;} var c=cfg(); try{ var r=await fetch(c.url+'/functions/v1/emp-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':c.key,'Authorization':'Bearer '+c.key},body:JSON.stringify({branch:BRANCH,messages:[{role:'user',text:'สรุปงานค้างทั้งหมดกี่รายการ ตอบสั้น'}]})}); var j=await r.json(); }catch(e){} }
+  // (เฟส 2 จะผูก badge กับ push/สรุปจริง — เฟส 1 เว้นไว้ให้เบา)
+})();
+</script>
+
 </body>
 </html>
