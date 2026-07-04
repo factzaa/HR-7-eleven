@@ -142,7 +142,7 @@
   }
 
   // ---------- เช็กเอาท์ ----------
-  async function checkOut({ empId, shiftId, checkoutBranchId, reason }) {
+  async function checkOut({ empId, shiftId, checkoutBranchId, reason, photoDataUrl }) {
     const today = bangkokDate();
     // หาแถวที่ "ยังเปิดอยู่ล่าสุด" (เช็กอินแล้ว ยังไม่เช็กเอาต์) ภายใน 2 วัน — รองรับกะข้ามคืน (เข้าเมื่อวาน ออกวันนี้)
     let { data: row } = await sb.from('attendance')
@@ -185,6 +185,10 @@
       if (lastEndMs > -Infinity && nowMs < lastEndMs) earlyOutMin = Math.round((lastEndMs - nowMs) / 60000);
     }
     const upd = { check_out: nowIso, ot_hours: ot, early_out_min: earlyOutMin, status: 'CLOSED', auto_closed: false, extend_until: null };
+    // รูปถ่ายตอนออกงาน (เซลฟี) — เก็บแยกจากรูปตอนเข้า
+    if (photoDataUrl) {
+      try { upd.checkout_photo_url = await uploadPhoto('attendance-photos', `${empId}/${row.work_date}_out_${Date.now()}.jpg`, photoDataUrl); } catch (e) { /* ไม่ให้รูปพังการกดออก */ }
+    }
     if (checkoutBranchId) upd.checkout_branch_id = checkoutBranchId;
     if (crossBranch) upd.checkout_note = String(reason).trim();
     const { error } = await sb.from('attendance')

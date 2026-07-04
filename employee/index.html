@@ -543,12 +543,13 @@ async function submit(action){
         late_min: r.late_min||0, faceMatch });
     } else {
       const curBranch = gps.branch ? gps.branch.branch_id : null;
-      let co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch });
+      const outPhoto = capturePhoto();   // เซลฟีตอนออกงาน (บังคับ)
+      let co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, photoDataUrl: outPhoto });
       // ข้ามสาขา → เด้งป๊อปอัพให้ใส่เหตุผล (จำเป็น) แล้วกดออกอีกครั้ง
       if(co && co.needReason){
         const reason = prompt('⚠️ คุณกำลังกดออกงานที่สาขา "'+(gps.branch?gps.branch.name:'')+'"\nซึ่งต่างจากสาขาที่เข้างาน ('+branchNm(co.checkinBranch)+')\n\nกรุณาระบุเหตุผล (จำเป็น เช่น ถูกเรียกไปช่วยอีกสาขา):');
         if(reason===null || !reason.trim()){ showToast('err','ต้องระบุเหตุผลการกดออกข้ามสาขา'); return; }
-        co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, reason:reason.trim() });
+        co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, reason:reason.trim(), photoDataUrl: outPhoto });
       }
       if(co && co.none){ showToast('err','ไม่พบการเข้างานที่ค้างอยู่ — อาจเช็กเอาต์ไปแล้ว'); }
       else if(co && co.needReason){ showToast('err','ต้องระบุเหตุผลก่อนกดออก'); }

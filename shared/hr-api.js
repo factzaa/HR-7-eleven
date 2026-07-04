@@ -350,7 +350,7 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url'),
       sb().from('shifts').select('shift_id,name,code,start_time').order('start_time'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
-      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,face_match,gps_accuracy').eq('work_date', d),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,face_match,gps_accuracy,photo_url,checkout_photo_url').eq('work_date', d),
       sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').lte('start_date', d).gte('end_date', d),
     ]);
     if (schR.error) throw schR.error;
@@ -365,7 +365,7 @@
     function statusOf(empId) {
       if (onLeave[empId]) return { status: 'leave', leave_type: onLeave[empId] };
       const a = attBy[empId];
-      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id, face_match: a.face_match, gps_accuracy: a.gps_accuracy };
+      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id, face_match: a.face_match, gps_accuracy: a.gps_accuracy, att_photo_in: a.photo_url || '', att_photo_out: a.checkout_photo_url || '' };
       return { status: 'absent' };
     }
 
@@ -400,6 +400,7 @@
         emp_id: a.emp_id, name: emp.nickname || emp.name, full_name: emp.name, nickname: emp.nickname || '', photo_url: emp.photo_url || '',
         is_cover: false, cover_from: '', off_schedule: true,
         status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0,
+        att_photo_in: a.photo_url || '', att_photo_out: a.checkout_photo_url || '',
       });
     });
 
@@ -547,7 +548,7 @@
         checkout_branch: r.checkout_branch_id ? (brName[r.checkout_branch_id] || r.checkout_branch_id) : '',
         checkout_note: r.checkout_note || '',
         cross_out: !!(r.checkout_branch_id && r.branch_id && r.checkout_branch_id !== r.branch_id),
-        photo_url: r.photo_url || '', gps_lat: r.gps_lat, gps_lng: r.gps_lng, status: r.status,
+        photo_url: r.photo_url || '', checkout_photo_url: r.checkout_photo_url || '', gps_lat: r.gps_lat, gps_lng: r.gps_lng, status: r.status,
       };
     });
     if (f.only_late) rows = rows.filter(r => r.late_min > 0);

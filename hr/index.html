@@ -368,6 +368,8 @@
 <div id="view_board" class="container" style="display:none">
   <div class="toolbar">
     <h3 style="flex:1; font-size:15px; font-weight:600">บอร์ดเข้าเวร — สาขา × กะ</h3>
+    <select id="bd_branch" style="padding:8px 10px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px;"></select>
+    <select id="bd_shift" style="padding:8px 10px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px;"></select>
     <input type="date" id="bd_date" style="padding:8px 10px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px;">
     <button class="btn btn-sec" id="bd_today">วันนี้</button>
     <button class="btn btn-pri" id="bd_refresh">↻ รีเฟรช</button>
@@ -380,6 +382,7 @@
 <div id="view_employees" class="container" style="display:none">
   <div class="toolbar">
     <div class="search"><input id="q" type="text" placeholder="ค้นหาด้วยรหัส ชื่อ ชื่อเล่น เบอร์โทร..."></div>
+    <select id="q_branch" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px"></select>
     <span class="count" id="count">—</span>
     <button class="btn btn-pri" id="newBtn">+ เพิ่มพนักงาน</button>
   </div>
@@ -1307,9 +1310,17 @@ async function loadDashboard(){
 // ========== EMPLOYEES ==========
 const FIELDS = ['emp_id','start_date','name','nickname','branch_id','phone',
                 'emergency_phone','emergency_name','bank_name','bank_account','id_card','address','line_user_id','weekly_off'];
+function fillEmpBranchFilter(){
+  const sel=$('q_branch'); if(!sel) return; const cur=sel.value;
+  sel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+  if(cur) sel.value=cur;
+}
 function renderEmployees(){
+  fillEmpBranchFilter();
   const q = $('q').value.trim().toLowerCase();
+  const brf = $('q_branch') ? $('q_branch').value : '';
   const filtered = DATA.rows.filter(r=>{
+    if(brf && (r.branch_id||'')!==brf) return false;
     if(!q) return true;
     return ['emp_id','name','nickname','phone'].some(k => String(r[k]||'').toLowerCase().includes(q));
   });
@@ -1342,6 +1353,7 @@ function renderEmployees(){
   });
 }
 $('q').addEventListener('input', renderEmployees);
+$('q_branch') && $('q_branch').addEventListener('change', renderEmployees);
 $('newBtn').onclick = ()=>openNew();
 
 function setPhotoPreview(){
@@ -1635,7 +1647,7 @@ function renderReportDetail(){
         <td class="mono">${esc(r.check_out||'—')}</td>
         <td class="mono">${r.late_min>0?'<span style="color:var(--red)">'+r.late_min+'</span>':'—'}</td>
         <td class="mono">${fmtOT(r.ot_hours)}</td>
-        <td>${r.photo_url?`<a href="${esc(r.photo_url)}" target="_blank">ดู</a>`:'—'}</td>
+        <td>${(()=>{const a=[];if(r.photo_url)a.push('<a href="'+esc(r.photo_url)+'" target="_blank" title="รูปตอนเข้างาน">📷 เข้า</a>');if(r.checkout_photo_url)a.push('<a href="'+esc(r.checkout_photo_url)+'" target="_blank" title="รูปตอนออกงาน">📷 ออก</a>');return a.length?a.join('<br>'):'—';})()}</td>
         <td>${r.gps_lat?`<a href="https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}" target="_blank">แผนที่</a>`:'—'}</td>
         <td>${String(r.status).toUpperCase()==='OPEN'?'<span class="pill warn">ค้าง</span>':'<span class="pill ok">ปิดแล้ว</span>'}</td>
       </tr>`).join('')}</tbody></table></div></div>`;
@@ -2471,8 +2483,22 @@ function bdChip(p){
   if(p.status==='leave')   return '<span class="pill" style="background:#dbeafe;color:#1d4ed8">ลา'+(p.leave_type?' ('+esc(p.leave_type)+')':'')+'</span>';
   return '<span class="pill" style="background:#f1f5f9;color:#64748b">ยังไม่มา</span>';
 }
+function fillBoardFilters(){
+  const sb=$('bd_branch'), ss=$('bd_shift'); if(!sb||!ss) return;
+  if(!sb.dataset.filled){ sb.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); sb.dataset.filled='1'; }
+  if(!ss.dataset.filled){ ss.innerHTML='<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join(''); ss.dataset.filled='1'; }
+}
+function bdPhotos(p){
+  const t=[];
+  if(p.att_photo_in) t.push('<img src="'+esc(p.att_photo_in)+'" onclick="lightbox(this)" title="รูปตอนเข้างาน" style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #cbd5e1">');
+  if(p.att_photo_out) t.push('<img src="'+esc(p.att_photo_out)+'" onclick="lightbox(this)" title="รูปตอนออกงาน" style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #16a34a">');
+  return t.length?'<span style="display:flex;gap:3px" title="เข้า(เทา)/ออก(เขียว)">'+t.join('')+'</span>':'';
+}
 function renderBoard(r){
   BOARD = r;
+  fillBoardFilters();
+  const fBr=$('bd_branch')?$('bd_branch').value:''; const fSh=$('bd_shift')?$('bd_shift').value:'';
+  const bShow=(r.branches||[]).map(b=>({...b, shifts:(b.shifts||[]).filter(sh=> !fSh || sh.shift_id===fSh)})).filter(b=> (!fBr||b.branch_id===fBr) && b.shifts.length);
   const s=r.summary;
   $('bd_summary').innerHTML = `<div class="kpi-grid" style="margin-bottom:12px">
     <div class="kpi" style="cursor:pointer" onclick="boardList('scheduled')"><div class="lbl">จัดเวร ›</div><div class="val">${s.scheduled}<span class="sm"> คน</span></div></div>
@@ -2482,7 +2508,8 @@ function renderBoard(r){
     <div class="kpi" style="cursor:pointer" onclick="boardList('leave')"><div class="lbl">ลา/หยุด ›</div><div class="val">${s.leave}</div></div>
   </div>`;
   if(!r.branches.length){ $('bd_body').innerHTML='<div class="empty">ยังไม่มีการจัดเวรในวันนี้ — ไปจัดที่แท็บ "ตารางงาน"</div>'; return; }
-  $('bd_body').innerHTML = r.branches.map(b=>`
+  if(!bShow.length){ $('bd_body').innerHTML='<div class="empty">ไม่มีข้อมูลตามตัวกรอง (สาขา/กะ) ที่เลือก</div>'; return; }
+  $('bd_body').innerHTML = bShow.map(b=>`
     <div class="card" style="margin-bottom:14px">
       <div class="card-h"><h3>🏪 ${esc(b.name)}</h3></div>
       <div class="card-b">
@@ -2505,6 +2532,7 @@ function renderBoard(r){
                   ${p.off_schedule?'<span class="pill" style="background:#fef9c3;color:#854d0e">นอกตาราง</span>':''}
                   ${(p.face_match===false)?'<span class="pill" style="background:#fee2e2;color:#b91c1c" title="ใบหน้าไม่ตรงกับที่ลงทะเบียน">⚠ ใบหน้า</span>':''}
                   ${(p.gps_accuracy!=null && p.gps_accuracy>50)?`<span class="pill" style="background:#fef3c7;color:#92400e" title="ความแม่นยำ GPS ต่ำ">⚠ GPS ±${Math.round(p.gps_accuracy)}ม.</span>`:''}
+                  ${bdPhotos(p)}
                   <span style="margin-left:auto">${bdChip(p)}</span>
                 </div>`).join('')}
             </div>
@@ -2514,6 +2542,8 @@ function renderBoard(r){
 }
 $('bd_refresh') && ($('bd_refresh').onclick = loadBoard);
 $('bd_date') && ($('bd_date').onchange = loadBoard);
+$('bd_branch') && ($('bd_branch').onchange = ()=>{ if(BOARD) renderBoard(BOARD); });
+$('bd_shift') && ($('bd_shift').onchange = ()=>{ if(BOARD) renderBoard(BOARD); });
 $('bd_today') && ($('bd_today').onclick = ()=>{ $('bd_date').value = bkkTodayStr(); loadBoard(); });
 
 // ========== จัดการสาขา ==========
