@@ -669,13 +669,15 @@
     const today = _ctx.workDate;
     const branch = _ctx.branch;                       // สาขาที่ทำงานจริงวันนี้ (อาจเป็นสาขาที่ไปแทน)
     const group = shiftId || _ctx.group;             // ผลัดหลัก (เช้า/บ่าย/ดึก หรือ กะพิเศษ)
-    const [defsR, asgR, schR, empsR, shR] = await Promise.all([
+    const [defsR, asgR, schR, empsR, shR, brR] = await Promise.all([
       sb.from('task_defs').select('*').eq('active', true).order('sort'),
       sb.from('task_assignments').select('*').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', group),
       sb.from('schedules').select('emp_id,shift_id').eq('branch_id', branch || '').eq('work_date', today),
       sb.from('employees').select('emp_id,name,nickname,branch_id').eq('active', true),   // ทั้งหมด → resolve ชื่อคนทำแทนจากสาขาอื่นได้
       sb.from('shifts').select('shift_id,name,main_shift').order('start_time'),
+      sb.from('branches').select('branch_id,name'),
     ]);
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const nameOf = {}; (empsR.data || []).forEach(e => { nameOf[e.emp_id] = e.nickname || e.name; });
     const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
     const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group).map(r => r.emp_id))];
@@ -685,6 +687,7 @@
       emp, shift: group, work_date: today, branch, shifts: shR.data || [],
       members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id })),       // คนในกะวันนี้ (จากตารางเวรจริง)
       colleagues: (empsR.data || []).filter(e => (e.branch_id || '') === (branch || '')).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })), // ทุกคนในสาขา (ไว้เพิ่มเข้ากะ)
+      all_staff: (empsR.data || []).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '', same_branch: (e.branch_id || '') === (branch || '') })), // ทุกคนทุกสาขา (ไว้เพิ่มคนข้ามสาขามาช่วย)
       scheduled: memberIds.includes(emp.emp_id),
       defs: defs.map(d => ({ id: d.id, title: d.title, require_photo: !!d.require_photo, assignment: byDef[d.id] || null })),
     };
@@ -727,6 +730,7 @@
     const shift = shiftId || _ctx.group || '';
     const today = _ctx.workDate;
     const branch = _ctx.branch;
+    _assertHasShift(shift);
     await _assertShiftStarted(shift, today);
     await _assertPrevShiftDone(branch, shift, today);
     let photo_url = null;
@@ -749,6 +753,7 @@
     const shift = shiftId || _ctx.group || '';
     const today = _ctx.workDate;
     const branch = _ctx.branch;
+    _assertHasShift(shift);
     await _assertShiftStarted(shift, today);
     await _assertPrevShiftDone(branch, shift, today);
     const base = { emp_id: to.emp_id, emp_name: to.nickname || to.name, status: 'todo', photo_url: null, emp_note: null, submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
@@ -807,6 +812,11 @@
   async function _guardOn(key){ const s=await _loadSettings(); const v=s[key]; return v===undefined||v===null||v===''||v==='1'||v==='true'; }  // ดีฟอลต์ = เปิด
   function _hm2m(hm){ const p=String(hm||'').split(':'); return (parseInt(p[0])||0)*60+(parseInt(p[1])||0); }
   function _nowBkkMin(){ const hm=new Date(Date.now()+7*3600*1000).toISOString().slice(11,16); return _hm2m(hm); }
+  // กฎ 0: ต้องมี "กะ" ก่อนจึงบันทึกงานได้ (งานไม่มีกะจะหลุดระบบตรวจรับผลัด → คนตรวจมองไม่เห็น)
+  function _assertHasShift(shift){
+    if(!shift || !String(shift).trim())
+      throw new Error('ยังไม่มีกะของวันนี้ — ให้ HR จัดตารางเวร หรือหัวหน้าผลัดใช้ "เพิ่มเข้ากะ" ก่อน จึงจะบันทึกงานได้ (งานที่ไม่มีกะจะไม่เข้าระบบตรวจรับผลัด ทำให้คนตรวจมองไม่เห็น)');
+  }
   // กฎ 2: ถึงเวลาเข้ากะหรือยัง (ห้ามทำ/แจกงานก่อนเวลาเข้ากะ)
   async function _assertShiftStarted(group, workDate){
     if(!(await _guardOn('guard_shift_start'))) return;
@@ -883,6 +893,7 @@
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const def=(await sb.from('task_defs').select('*').eq('id',task_def_id).maybeSingle()).data; if(!def) throw new Error('ไม่พบงานนี้');
     const {workDate:today,group:shift,branch}=await _shiftCtx(emp);
+    _assertHasShift(shift);
     await _assertShiftStarted(shift, today);
     await _assertPrevShiftDone(branch, shift, today);
     const existing=await _findAsg(branch,today,shift,task_def_id);

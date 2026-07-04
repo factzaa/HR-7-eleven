@@ -85,6 +85,7 @@
         <div class="card" style="padding:12px">
           <label>เพิ่มคนเข้ากะ (กรณียังไม่จัดเวร)</label>
           <div class="row2"><select id="l_addemp"></select><button class="btn btn-sec btn-sm" id="l_addbtn" style="flex:none">เพิ่ม</button></div>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-weight:400;font-size:13px;cursor:pointer"><input type="checkbox" id="l_addx" style="width:auto"> เพิ่มคนข้ามสาขา (มาช่วยจากสาขาอื่น)</label>
         </div>
         <h3 class="sec">แจกงานให้คนในผลัด</h3>
         <div id="l_board"></div>
@@ -251,8 +252,7 @@ async function openLeaderPanel(){
   $('l_board').innerHTML='<div class="card muted">กำลังโหลด…</div>';
   let b; try{ b=await window.HR.getShiftBoard(EMP.emp_id, null); LBOARD=b; }catch(e){ $('l_board').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   const inShift=new Set((b.members||[]).map(m=>m.emp_id));
-  const addable=(b.colleagues||[]).filter(c=>!inShift.has(c.emp_id));
-  $('l_addemp').innerHTML=addable.length?addable.map(c=>'<option value="'+esc(c.emp_id)+'">'+esc(c.name)+'</option>').join(''):'<option value="">(ทุกคนอยู่ในกะแล้ว)</option>';
+  populateAddList();
   const memOpts=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'">'+esc(m.name)+'</option>').join('');
   if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (HR ตั้งที่ "ตั้งค่ากะ")</div>'; return; }
   $('l_board').innerHTML=b.defs.map(d=>{
@@ -268,9 +268,19 @@ async function openLeaderPanel(){
     catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
   });
 }
+function populateAddList(){
+  const b=LBOARD||{}; const inShift=new Set((b.members||[]).map(m=>m.emp_id));
+  const cross=$('l_addx')&&$('l_addx').checked;
+  let list;
+  if(cross){ list=(b.all_staff||[]).filter(c=>!inShift.has(c.emp_id)&&!c.same_branch).map(c=>({emp_id:c.emp_id,name:c.name+' · '+(c.branch_name||c.branch_id||'')})); }
+  else { list=(b.colleagues||[]).filter(c=>!inShift.has(c.emp_id)); }
+  $('l_addemp').innerHTML=list.length?list.map(c=>'<option value="'+esc(c.emp_id)+'">'+esc(c.name)+'</option>').join(''):'<option value="">'+(cross?'(ไม่มีคนสาขาอื่น)':'(ทุกคนอยู่ในกะแล้ว)')+'</option>';
+}
+if($('l_addx')) $('l_addx').onchange=populateAddList;
 $('l_addbtn').onclick=async()=>{
   const emp=($('l_addemp')||{}).value; if(!emp){ toast('err','ไม่มีคนให้เพิ่ม'); return; }
-  try{ await window.HR.addShiftMember({ branchId:EMP.branch_id, shiftId:(LBOARD&&LBOARD.shift)||null, empId:emp, workDate:(LBOARD&&LBOARD.work_date)||null }); toast('ok','เพิ่มเข้ากะแล้ว'); openLeaderPanel(); }
+  const br=(LBOARD&&LBOARD.branch)||EMP.branch_id;   // เพิ่มเข้ากะที่สาขา "ที่กำลังทำงานจริง" (คนข้ามสาขาจะถูกจัดเวรที่สาขานี้)
+  try{ await window.HR.addShiftMember({ branchId:br, shiftId:(LBOARD&&LBOARD.shift)||null, empId:emp, workDate:(LBOARD&&LBOARD.work_date)||null }); toast('ok','เพิ่มเข้ากะแล้ว'); openLeaderPanel(); }
   catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
 };
 
