@@ -446,16 +446,80 @@ async function openM3(){
     const s=ST(a.status); let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     c+='<div class="muted">ผู้ทำ: '+esc(a.emp_name||a.emp_id||'—')+(a.submitted_at?(' · ส่ง '+fmt(a.submitted_at)):'')+'</div>';
     if(a.review_note) c+='<div style="color:#b45309;font-size:13px;margin-top:4px">↳ '+esc(a.review_note)+'</div>';
+    if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12px;font-weight:700;margin-top:6px">📍 จุดที่สั่งแก้</div>'+thumbsHtml(a.review_markup);
     c+=thumbsHtml(a.photos);
     if(r.canReview && a.status==='submitted') c+='<div class="row2" style="margin-top:10px"><button class="btn btn-pri btn-sm" data-ap="'+a.id+'">✅ ผ่าน</button><button class="btn btn-warn btn-sm" data-rb="'+a.id+'">⤴ ตีกลับ</button></div>';
     return c+'</div>';
   }).join('');
+  PVTASKS={}; r.tasks.forEach(a=>{ PVTASKS[a.id]=a; });
   document.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>doPrevReview(Number(b.dataset.ap),'approved'));
-  document.querySelectorAll('[data-rb]').forEach(b=>b.onclick=()=>{ const note=prompt('ระบุสิ่งที่ต้องแก้ (ส่งกลับให้ผลัดก่อนหน้า):'); if(note===null) return; doPrevReview(Number(b.dataset.rb),'sent_back',note); });
+  document.querySelectorAll('[data-rb]').forEach(b=>b.onclick=()=>openMarkupEditor(PVTASKS[Number(b.dataset.rb)]));
 }
-async function doPrevReview(id,status,note){
-  try{ await window.HR.reviewPrevTask({ reviewerId:EMP.emp_id, id, status, note }); toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); openM3(); }
+async function doPrevReview(id,status,note,markup){
+  try{ await window.HR.reviewPrevTask({ reviewerId:EMP.emp_id, id, status, note, markup }); toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); openM3(); }
   catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+}
+
+// ============ เครื่องมือวาดชี้จุดบนรูป (หัวหน้าผลัดตีงานกลับ) ============
+let PVTASKS={}, MK=null;
+async function mkLoadBlob(url){
+  try{ const m=url.match(/\/object\/(?:public|sign|authenticated)\/([^/]+)\/([^?]+)/); if(m&&window.HR&&window.HR.sb){ const {data,error}=await window.HR.sb.storage.from(decodeURIComponent(m[1])).download(decodeURIComponent(m[2])); if(!error&&data) return URL.createObjectURL(data); } }catch(e){}
+  try{ const r=await fetch(url,{mode:'cors'}); if(r.ok) return URL.createObjectURL(await r.blob()); }catch(e){}
+  return url;
+}
+function mkEnsureUI(){
+  if(document.getElementById('mkOverlay')) return;
+  const o=document.createElement('div'); o.id='mkOverlay';
+  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.95);z-index:100000;display:none;flex-direction:column;padding:10px;gap:8px';
+  o.innerHTML='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#fff">'
+    +'<b style="font-size:14px;margin-right:4px">✏️ วาดชี้จุดที่ต้องแก้</b>'
+    +'<button class="mkt on" data-tool="circle">⭕ วงกลม</button><button class="mkt" data-tool="rect">▭ กรอบ</button><button class="mkt" data-tool="pen">✎ ปากกา</button>'
+    +'<button id="mkUndo" class="mkt">↶ ย้อน</button><button id="mkClear" class="mkt">🗑 ล้าง</button>'
+    +'<span style="flex:1"></span><button id="mkPrev" class="mkt">‹</button><span id="mkNav" style="color:#e2e8f0;font-size:13px">1/1</span><button id="mkNext" class="mkt">›</button></div>'
+    +'<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:auto"><canvas id="mkCanvas" style="max-width:100%;max-height:100%;background:#000;border-radius:8px;touch-action:none"></canvas></div>'
+    +'<textarea id="mkNote" placeholder="ระบุสิ่งที่ต้องแก้…" style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:9px;border:0;font:inherit;font-size:14px;min-height:48px"></textarea>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end"><button id="mkCancel" class="btn btn-sec btn-sm">ยกเลิก</button><button id="mkSend" class="btn btn-warn btn-sm">⤴ ส่งกลับให้แก้</button></div>';
+  document.body.appendChild(o);
+  const st=document.createElement('style'); st.textContent='.mkt{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer}.mkt.on{background:#ef4444}'; document.head.appendChild(st);
+  o.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{ MK.tool=b.dataset.tool; o.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('on',x===b)); });
+  document.getElementById('mkUndo').onclick=()=>{ MK.imgs[MK.cur].shapes.pop(); mkRedraw(); };
+  document.getElementById('mkClear').onclick=()=>{ MK.imgs[MK.cur].shapes=[]; mkRedraw(); };
+  document.getElementById('mkPrev').onclick=()=>{ if(MK.cur>0){ MK.cur--; mkLoadCur(); } };
+  document.getElementById('mkNext').onclick=()=>{ if(MK.cur<MK.imgs.length-1){ MK.cur++; mkLoadCur(); } };
+  document.getElementById('mkCancel').onclick=()=>{ o.style.display='none'; MK=null; };
+  document.getElementById('mkSend').onclick=mkSend;
+  const cv=document.getElementById('mkCanvas');
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const p=e.touches?e.touches[0]:e; return {x:(p.clientX-r.left)/r.width,y:(p.clientY-r.top)/r.height}; };
+  let drawing=false,cur=null;
+  const down=e=>{ if(!MK)return; drawing=true; const p=pos(e); cur=MK.tool==='pen'?{t:'pen',pts:[p]}:{t:MK.tool,x:p.x,y:p.y,x2:p.x,y2:p.y}; MK.imgs[MK.cur].shapes.push(cur); e.preventDefault(); };
+  const move=e=>{ if(!drawing||!MK)return; const p=pos(e); if(cur.t==='pen')cur.pts.push(p); else{cur.x2=p.x;cur.y2=p.y;} mkRedraw(); e.preventDefault(); };
+  const up=()=>{ drawing=false;cur=null; };
+  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',up);
+}
+function mkShapes(ctx,shapes,W,H){ ctx.strokeStyle='#ef4444'; ctx.lineWidth=Math.max(3,Math.round(W*0.006)); ctx.lineJoin='round'; ctx.lineCap='round';
+  shapes.forEach(s=>{ if(s.t==='rect') ctx.strokeRect(s.x*W,s.y*H,(s.x2-s.x)*W,(s.y2-s.y)*H);
+    else if(s.t==='circle'){ ctx.beginPath(); ctx.ellipse((s.x+s.x2)/2*W,(s.y+s.y2)/2*H,Math.abs(s.x2-s.x)/2*W,Math.abs(s.y2-s.y)/2*H,0,0,Math.PI*2); ctx.stroke(); }
+    else if(s.t==='pen'){ ctx.beginPath(); s.pts.forEach((p,i)=>i?ctx.lineTo(p.x*W,p.y*H):ctx.moveTo(p.x*W,p.y*H)); ctx.stroke(); } }); }
+function mkRedraw(){ const im=MK.imgs[MK.cur]; if(!im||!im.el)return; const cv=document.getElementById('mkCanvas'); const maxW=Math.min(720,window.innerWidth-24),maxH=window.innerHeight-210; let W=im.el.naturalWidth,H=im.el.naturalHeight; const sc=Math.min(maxW/W,maxH/H,1); cv.width=Math.round(W*sc); cv.height=Math.round(H*sc); const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(im.el,0,0,cv.width,cv.height); mkShapes(ctx,im.shapes,cv.width,cv.height); document.getElementById('mkNav').textContent=(MK.cur+1)+'/'+MK.imgs.length; }
+async function mkLoadCur(){ const im=MK.imgs[MK.cur]; if(!im.el){ const src=/^https?:/i.test(im.src)?await mkLoadBlob(im.src):im.src; await new Promise(res=>{ const g=new Image(); g.onload=()=>{im.el=g;res();}; g.onerror=()=>res(); g.src=src; }); } mkRedraw(); }
+async function openMarkupEditor(t){
+  if(!t){ toast('err','ไม่พบงาน'); return; }
+  const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+  if(!photos.length){ const note=prompt('งานนี้ไม่มีรูป — ระบุสิ่งที่ต้องแก้ (ส่งกลับ):'); if(note===null)return; doPrevReview(t.id,'sent_back',note); return; }
+  mkEnsureUI(); MK={ task:t, tool:'circle', cur:0, imgs:photos.map(u=>({src:u,el:null,shapes:[]})) };
+  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
+  document.getElementById('mkNote').value=''; document.getElementById('mkOverlay').style.display='flex'; await mkLoadCur();
+}
+async function mkSend(){
+  if(!MK)return; const note=document.getElementById('mkNote').value.trim();
+  const marked=MK.imgs.filter(im=>im.shapes.length&&im.el);
+  if(!marked.length&&!note){ toast('err','วาดชี้จุด หรือพิมพ์สิ่งที่ต้องแก้ อย่างน้อยอย่างใดอย่างหนึ่ง'); return; }
+  document.getElementById('mkSend').disabled=true;
+  const out=[];
+  for(const im of marked){ const W=Math.min(im.el.naturalWidth,1280),H=Math.round(im.el.naturalHeight*(W/im.el.naturalWidth)); const c=document.createElement('canvas'); c.width=W;c.height=H; const ctx=c.getContext('2d'); ctx.drawImage(im.el,0,0,W,H); mkShapes(ctx,im.shapes,W,H); out.push(c.toDataURL('image/jpeg',0.9)); }
+  await doPrevReview(MK.task.id,'sent_back',note,out);
+  document.getElementById('mkSend').disabled=false; document.getElementById('mkOverlay').style.display='none'; MK=null;
 }
 
 // ============ รายงานรับส่งผลัด ============

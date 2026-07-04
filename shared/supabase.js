@@ -933,7 +933,7 @@
     if(pv.group) tasks=(await sb.from('task_assignments').select('*').eq('branch_id',branch||'').eq('work_date',pv.date).eq('shift_id',pv.group).order('id')).data||[];
     return { emp, curShift:curGroup, cur_name:await _shiftName(curGroup), prev_shift: pv.group, prev_name: pv.group?(await _shiftName(pv.group)):'-', prev_date: pv.date, isMain:pv.isMain, canReview, tasks };
   }
-  async function reviewPrevTask({ reviewerId, id, status, note }){
+  async function reviewPrevTask({ reviewerId, id, status, note, markup }){
     const emp=await lookupEmployee(reviewerId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const {workDate:today,group:curGroup,branch}=await _shiftCtx(emp);
     const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',branch||'').eq('shift_id',curGroup).maybeSingle()).data;
@@ -943,6 +943,12 @@
     if(!pv.group || task.shift_id!==pv.group || String(task.work_date)!==pv.date) throw new Error('ตรวจได้เฉพาะงานของผลัดก่อนหน้าเท่านั้น');
     const upd={ status: status==='approved'?'approved':'sent_back', reviewer: emp.nickname||emp.name, review_note:note||null, reviewed_at:new Date().toISOString() };
     if(status!=='approved') upd.sent_back_count=(task.sent_back_count||0)+1;
+    // รูปที่หัวหน้าผลัดวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
+    if(status!=='approved' && Array.isArray(markup) && markup.length){
+      const urls=[];
+      for(const m of markup){ if(typeof m==='string'&&m.startsWith('data:')){ try{ urls.push(await uploadPhoto('employee-docs','markup/'+id+'_'+Date.now()+'_'+urls.length+'.jpg', m)); }catch(e){} } else if(typeof m==='string'&&m){ urls.push(m); } }
+      upd.review_markup=urls.length?urls:null;
+    }
     const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
     return { ok:true };
   }
