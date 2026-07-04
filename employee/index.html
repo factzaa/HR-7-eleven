@@ -787,11 +787,12 @@ async function showSelf(){
   if(!empMatch || empMatch.unknown){ body.innerHTML='<p style="color:var(--red)">กรอกรหัสพนักงานให้ถูกต้องก่อน</p>'; return; }
   body.innerHTML='<p>กำลังโหลด…</p>';
   try{
-    const [s, leaves] = await Promise.all([
+    const [s, ms, leaves] = await Promise.all([
       HR.selfStatus(empMatch.emp_id),
+      HR.myStatus(empMatch.emp_id).catch(()=>null),   // คะแนนจริง (สูตรเดียวกับ HR)
       HR.myLeaves(empMatch.emp_id).catch(()=>[])
     ]);
-    body.innerHTML = renderSelf(s) + renderMyLeaves(leaves);
+    body.innerHTML = renderSelf(s, ms&&ms.score) + renderMyLeaves(leaves);
   }catch(e){ console.error(e); body.innerHTML='<p style="color:var(--red)">โหลดไม่สำเร็จ: '+escH(e.message||'')+'</p>'; }
 }
 function renderMyLeaves(rows){
@@ -809,7 +810,7 @@ function renderMyLeaves(rows){
       +'<div style="color:var(--txt);margin-top:2px">ประเภท: '+escH(r.type||'-')+'</div>'+reason+note+'</div>';
   }).join('');
 }
-function renderSelf(s){
+function renderSelf(s, sc){
   const e=s.emp, st=s.stats, lv=s.level, t=s.today;
   const cell=(label,val,color)=>`<div style="background:#fafbf9;border:1px solid var(--line);border-radius:12px;padding:12px 10px;text-align:center;">
      <div style="font-size:22px;font-weight:700;color:${color||'var(--txt)'};font-variant-numeric:tabular-nums">${val}</div>
@@ -831,7 +832,18 @@ function renderSelf(s){
      ${cell('ขาดงาน (วัน)', st.absent, st.absent>0?'var(--red)':'var(--green)')}
    </div>
    <div style="font-size:12.5px;color:var(--muted);margin-top:8px">ลาที่อนุมัติในรอบ: ${st.leave_days} วัน</div>
-   ${(()=>{ const arr=[100,80,60,40,20]; const pct=arr[lv.level]!=null?arr[lv.level]:100; return `
+   ${(()=>{
+     if(sc && sc.enabled){   // คะแนนจริงจากระบบคะแนน (ตรงกับหน้า "คะแนนวินัย" ของ HR)
+       const pct=Math.max(0,Math.min(100,Math.round(sc.score/(sc.start||100)*100)));
+       const col=sc.band_color||lv.color;
+       return `
+   <div style="margin-top:10px">
+     <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span style="color:var(--muted)">คะแนนวินัย</span><span style="font-weight:700;color:${col}">${sc.score}/${sc.start||100}${sc.band_label?(' · '+escH(sc.band_label)):''}</span></div>
+     <div style="height:13px;background:#eceef1;border-radius:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col};border-radius:8px;transition:width .5s"></div></div>
+     <div style="font-size:11px;color:var(--muted);margin-top:3px">แถบเต็ม = คะแนนดีเยี่ยม · ลดลงเมื่อถูกตัดคะแนน (มาสาย/ขาดงาน)</div>
+   </div>`;
+     }
+     const arr=[100,80,60,40,20]; const pct=arr[lv.level]!=null?arr[lv.level]:100; return `
    <div style="margin-top:10px">
      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span style="color:var(--muted)">คะแนนวินัย</span><span style="font-weight:700;color:${lv.color}">${pct}/100</span></div>
      <div style="height:13px;background:#eceef1;border-radius:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${lv.color};border-radius:8px;transition:width .5s"></div></div>

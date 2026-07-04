@@ -1841,7 +1841,7 @@ async function loadLeaves(){
   if(!r.ok){ $('lv_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
   if(!r.rows.length){ $('lv_body').innerHTML='<div class="empty">ยังไม่มีใบลา</div>'; return; }
   $('lv_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>ตั้งแต่</th><th>ถึง</th><th>วัน</th><th>ประเภท</th><th>สถานะ</th><th></th></tr></thead>
+    <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>ตั้งแต่</th><th>ถึง</th><th>วัน</th><th>ประเภท</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead>
     <tbody>${r.rows.slice().sort((a,b)=>(b.status==='pending')-(a.status==='pending')).map(l=>`
       <tr${l.status==='pending'?' style="background:#fffbeb"':''}>
         <td class="mono">${esc(l.leave_id)}</td>
@@ -1850,6 +1850,7 @@ async function loadLeaves(){
         <td class="mono">${esc(l.end_date)}</td>
         <td class="mono">${l.days}</td>
         <td>${esc(l.type||'—')}${l.doc_url?` <a href="${esc(l.doc_url)}" target="_blank" title="เอกสารแนบ">📎</a>`:''}</td>
+        <td style="max-width:240px;white-space:normal;font-size:13px;color:#374151">${l.reason?esc(l.reason):'<span style="color:#9ca3af">—</span>'}</td>
         <td>${l.status==='approved'?'<span class="pill ok">อนุมัติ</span>':l.status==='rejected'?'<span class="pill bad">ปฏิเสธ</span>':'<span class="pill warn">รอ</span>'}${l.status==='rejected'&&l.hr_note?`<div style="font-size:11px;color:#dc2626">${esc(l.hr_note)}</div>`:''}</td>
         <td class="rowact">${l.status==='pending'?`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> `:''}<button class="icobtn" data-ldel="${esc(l.leave_id)}">ลบ</button></td>
       </tr>`).join('')}</tbody></table></div></div>`;
@@ -1987,15 +1988,46 @@ function initAssistant(){
   }
   asstRender();
 }
+function asstCardsHtml(cards){
+  if(!cards||!Array.isArray(cards.groups)||!cards.groups.length) return '';
+  const wrap=(inner)=>'<div style="align-self:flex-start;max-width:96%;display:flex;flex-direction:column;gap:8px;width:100%">'+inner+'</div>';
+  if(cards.type==='tasks'){
+    return wrap(cards.groups.map(g=>{
+      const head='กะ '+esc(shiftName(g.shift))+' · สาขา '+esc(branchName(g.branch))+(g.date?(' · '+esc(g.date)):'');
+      const items=(g.items||[]).map(it=>{
+        const stC=it.status==='approved'?'#16a34a':it.status==='submitted'?'#d97706':it.status==='sent_back'?'#dc2626':'#6b7280';
+        const stT=it.status==='approved'?'ผ่านแล้ว':it.status==='submitted'?'รอตรวจ':it.status==='sent_back'?'ตีกลับ':esc(it.status||'');
+        const im=(Array.isArray(it.images)&&it.images.length)?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">'+it.images.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:62px;height:62px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>':'';
+        return '<div style="border-top:1px solid #e8ebe8;padding:7px 0">'
+          +'<div style="display:flex;gap:6px;align-items:center"><span style="font-weight:600;font-size:13.5px;flex:1">'+esc(it.title||'-')+'</span><span style="font-size:11.5px;font-weight:700;color:'+stC+'">'+stT+(it.sent_back_count?(' ×'+it.sent_back_count):'')+'</span></div>'
+          +(it.emp?'<div style="font-size:12px;color:var(--muted)">โดย '+esc(it.emp)+'</div>':'')
+          +(it.review_note?'<div style="font-size:12px;color:#dc2626">↳ '+esc(it.review_note)+'</div>':'')
+          +im+'</div>';
+      }).join('');
+      return '<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px">'
+        +'<div style="font-weight:700;font-size:13px;color:#00582f">🧾 '+head+' <span style="color:var(--muted);font-weight:500">('+(g.items||[]).length+')</span></div>'+items+'</div>';
+    }).join(''));
+  }
+  if(cards.type==='open_tasks'){
+    return wrap(cards.groups.map(g=>
+      '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 11px;font-size:13px">'
+      +'<b>กะ '+esc(shiftName(g.shift))+' · สาขา '+esc(branchName(g.branch))+'</b> <span style="color:var(--muted)">'+esc(g.work_date||'')+'</span><br>'
+      +'<span style="color:#d97706">รอตรวจ '+(g.submitted||0)+'</span> · <span style="color:#dc2626">ตีกลับ '+(g.sent_back||0)+'</span> · ค้าง '+(g.todo||0)+'</div>'
+    ).join(''));
+  }
+  return '';
+}
 function asstRender(){
   const box=$('asst_log'); if(!box) return;
   if(!ASST_MSGS.length){ box.innerHTML='<div style="color:var(--muted);text-align:center;padding:30px 10px;font-size:14px">สวัสดีค่ะ น้องนิดา ผู้ช่วย HR พร้อมช่วยแล้ว 👋<br>ถามข้อมูลพนักงาน/เวลา/งาน/ลา/สินค้า หรือให้ช่วยวิเคราะห์-ร่างเอกสารได้เลยค่ะ</div>'; return; }
   let html='';
   ASST_MSGS.forEach((m,idx)=>{ const me=m.role==='user';
     let txt=m.text, imgs=[];
-    if(!me){ const found=(m.text.match(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi)||[]); imgs=Array.from(new Set(found)); imgs.forEach(u=>{ txt=txt.split(u).join(''); }); txt=txt.replace(/[ \t]*\n{3,}/g,'\n\n').trim(); }
-    html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:82%;background:'+(me?'#00582f':'#eef1ef')+';color:'+(me?'#fff':'#1f2937')+';padding:10px 13px;border-radius:13px;font-size:14.5px;white-space:pre-wrap;line-height:1.55">'+esc(txt||(imgs.length?'📷 รูปงาน':' '))+'</div>';
-    if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<a href="'+esc(u)+'" target="_blank" rel="noopener"><img src="'+esc(u)+'" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"></a>').join('')+'</div>'; }
+    const cardsHtml=(!me&&m.cards)?asstCardsHtml(m.cards):'';
+    if(!me){ const found=(m.text.match(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi)||[]); imgs=Array.from(new Set(found)); imgs.forEach(u=>{ txt=txt.split(u).join(''); }); txt=txt.replace(/[ \t]*\n{3,}/g,'\n\n').trim(); if(cardsHtml) imgs=[]; }
+    html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:82%;background:'+(me?'#00582f':'#eef1ef')+';color:'+(me?'#fff':'#1f2937')+';padding:10px 13px;border-radius:13px;font-size:14.5px;white-space:pre-wrap;line-height:1.55">'+esc(txt||(cardsHtml?'🧾 รายการงาน':(imgs.length?'📷 รูปงาน':' ')))+'</div>';
+    if(cardsHtml) html+=cardsHtml;
+    if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'; }
     if(m.pending){ html+='<div style="align-self:flex-start;display:flex;gap:8px"><button class="btn btn-pri btn-sm" data-cfm="'+idx+'">✅ ยืนยัน</button><button class="btn btn-sec btn-sm" data-ccl="'+idx+'">ยกเลิก</button></div>'; }
   });
   box.innerHTML=html;
@@ -2023,7 +2055,7 @@ async function asstSend(){
     const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…').map(m=>({role:m.role,text:m.text}));
     const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:send})});
     const j=await r.json(); ASST_MSGS.pop();
-    const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.pendingAction) msg.pending=j.pendingAction;
+    const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.pendingAction) msg.pending=j.pendingAction; if(j&&j.cards) msg.cards=j.cards;
     ASST_MSGS.push(msg);
   }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'เชื่อมต่อไม่สำเร็จ: '+(e.message||'')}); }
   asstRender();
@@ -2562,7 +2594,7 @@ function renderSchedule(){
   $('scEmpty').style.display='none';
   const _optShift = (val)=>'<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}"${s.shift_id===val?' selected':''} title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
   const _optAdd = '<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}" title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
-  const _optBr = (val)=>'<option value="">ประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''}>${esc(b.name)}</option>`).join(''));
+  const _optBr = (val)=>'<option value="" title="สาขาประจำ">ประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''} title="${esc(b.name)}">${esc(b.branch_id)}</option>`).join(''));
   const _selCss='height:26px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:12.5px;background:#fff';
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
@@ -2645,7 +2677,7 @@ function buildScheduleText(){
   let txt='📅 ตารางงาน '+fmtThaiShort(days[0])+' - '+fmtThaiShort(days[6]);
   if(bf) txt+=' ('+branchName(bf)+')';
   emps.forEach(e=>{
-    const cells=days.map(d=>{ const arr=SC.schedules[e.emp_id+'|'+d]||[]; if(!arr.length) return '-'; return arr.map(c=>{ let s=shiftCodeOf(c.shift_id); if(c.is_cover) s+='→'+branchName(c.branch_id); return s; }).join('+'); });
+    const cells=days.map(d=>{ const arr=SC.schedules[e.emp_id+'|'+d]||[]; if(!arr.length) return '-'; return arr.map(c=>{ let s=shiftCodeOf(c.shift_id); if(c.is_cover) s+='→'+c.branch_id; return s; }).join('+'); });
     txt+='\n• '+e.name+': '+days.map((d,i)=>TH_DOW_S[new Date(d+'T00:00:00').getDay()]+cells[i]).join('  ');
   });
   txt+='\n\n(→ = ไปแทนสาขา)';
@@ -2685,7 +2717,7 @@ function buildScheduleCanvas(){
       if(cover){ x.fillStyle='#fff7ed'; x.fillRect(cx,y,colW,rowH); }
       if(arr.length){
         const codes=arr.map(cc=>shiftCodeOf(cc.shift_id)).join('+');
-        const covers=arr.filter(cc=>cc.is_cover).map(cc=>branchName(cc.branch_id));
+        const covers=arr.filter(cc=>cc.is_cover).map(cc=>cc.branch_id);
         x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(codes, cx+colW/2, y+rowH/2 - (covers.length?7:0));
         if(covers.length){ x.fillStyle='#ea580c'; x.font='400 9px Anuphan,sans-serif'; x.fillText('→'+covers.join(','), cx+colW/2, y+rowH/2+11); }
       } else { x.fillStyle='#d1d5db'; x.font='400 13px Anuphan,sans-serif'; x.fillText('-', cx+colW/2, y+rowH/2); }
