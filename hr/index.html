@@ -3196,7 +3196,8 @@ async function loadTaskList(){
   const ord={}; (DATA.shifts||[]).forEach((s,i)=>{ ord[s.shift_id]=i; });
   const oneTask=t=>{
     const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-    const imgs=ph.length?'<div style="display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
+    const imgs=ph.length?'<div style="font-size:11px;color:var(--muted);margin-top:6px">🖼 รูปที่พนักงานส่ง'+(Array.isArray(t.review_markup)&&t.review_markup.length?' (แก้แล้ว)':'')+'</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
+    const mk=(Array.isArray(t.review_markup)&&t.review_markup.length)?'<div style="font-size:11px;color:#dc2626;margin-top:6px;font-weight:600">📍 จุดที่ผู้ตรวจสั่งแก้</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px">'+t.review_markup.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:2px solid #ef4444">').join('')+'</div>':'';
     const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
     return '<div style="padding:12px 2px;border-bottom:1px solid var(--line)">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+' <button class="btn btn-danger btn-sm" data-tdel="'+t.id+'" title="ลบงานนี้ (ลงผิด/ซ้ำ)">🗑</button></div>'
@@ -3207,7 +3208,7 @@ async function loadTaskList(){
         +(t.sent_back_count>0?(' · ⤴ เคยตีกลับ '+t.sent_back_count+' ครั้ง'):'')
       +'</div>'
       +(t.review_note?'<div style="font-size:12.5px;color:#b45309;margin-top:4px">↳ หมายเหตุผู้ตรวจ: '+esc(t.review_note)+'</div>':'')
-      +imgs+'</div>';
+      +mk+imgs+'</div>';
   };
   const shiftGroups=ts=>{
     const groups={}; ts.forEach(t=>{ const k=t.shift_id||'_'; (groups[k]=groups[k]||[]).push(t); });
@@ -3231,18 +3232,116 @@ async function loadTaskList(){
     const hdr=multiBr?'<div style="font-weight:700;font-size:15px;margin:10px 2px 8px;padding:9px 13px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:9px">🏪 '+esc(brName)+' <span style="font-weight:400;color:var(--muted);font-size:12px">· '+byBr[bk].length+' งาน</span></div>':'';
     return hdr+shiftGroups(byBr[bk]);
   }).join('');
+  const tkmap={}; rows.forEach(t=>{ tkmap[t.id]=t; });
   document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
-  document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>{ const note=prompt('ระบุสิ่งที่ต้องแก้ (ส่งกลับให้พนักงาน):'); if(note===null) return; taskReview(Number(b.dataset.trb),'sent_back',note); });
+  document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>openMarkupEditor(tkmap[Number(b.dataset.trb)]));
   document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>taskDelete(Number(b.dataset.tdel)));
 }
-async function taskReview(id,status,note){
-  const r=await post({ action:'hr_task_review', password:pwd, id, status, note });
+async function taskReview(id,status,note,markup){
+  const r=await post({ action:'hr_task_review', password:pwd, id, status, note, markup });
   if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadTaskList(); } else toast('err', r.error||'ไม่สำเร็จ');
 }
 async function taskDelete(id){
   if(!confirm('ลบงานนี้ออกจากระบบถาวร?\n(ใช้กับงานที่ลงผิดวัน/ซ้ำ — ลบแล้วกู้คืนไม่ได้)')) return;
   const r=await post({ action:'hr_task_delete', password:pwd, id });
   if(r.ok){ toast('ok','ลบงานแล้ว'); loadTaskList(); } else toast('err', r.error||'ลบไม่สำเร็จ');
+}
+
+// ================= เครื่องมือวาดชี้จุดบนรูป (ตอนตีงานกลับ) =================
+let MK=null;
+function ensureMarkupUI(){
+  if(document.getElementById('mkOverlay')) return;
+  const o=document.createElement('div'); o.id='mkOverlay';
+  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.94);z-index:100000;display:none;flex-direction:column;padding:10px;gap:8px;font-family:inherit';
+  o.innerHTML=
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#fff">'
+    +'<b style="font-size:14px;margin-right:4px">✏️ วาดชี้จุดที่ต้องแก้</b>'
+    +'<button class="mkt" data-tool="circle">⭕ วงกลม</button>'
+    +'<button class="mkt" data-tool="rect">▭ กรอบ</button>'
+    +'<button class="mkt" data-tool="pen">✎ ปากกา</button>'
+    +'<button id="mkUndo" class="mkt">↶ ย้อน</button>'
+    +'<button id="mkClear" class="mkt">🗑 ล้าง</button>'
+    +'<span style="flex:1"></span>'
+    +'<button id="mkPrev" class="mkt">‹</button><span id="mkNav" style="color:#e2e8f0;font-size:13px">1/1</span><button id="mkNext" class="mkt">›</button>'
+    +'</div>'
+    +'<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:auto"><canvas id="mkCanvas" style="max-width:100%;max-height:100%;background:#000;border-radius:8px;touch-action:none;cursor:crosshair"></canvas></div>'
+    +'<textarea id="mkNote" placeholder="ระบุสิ่งที่ต้องแก้ (พิมพ์อธิบายเพิ่มได้)…" style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:9px;border:0;font:inherit;font-size:14px;min-height:52px;resize:vertical"></textarea>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+    +'<button id="mkCancel" class="btn btn-sec">ยกเลิก</button>'
+    +'<button id="mkSend" class="btn btn-warn">⤴ ส่งกลับให้แก้</button></div>';
+  document.body.appendChild(o);
+  const st=document.createElement('style');
+  st.textContent='.mkt{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer}.mkt.on{background:#ef4444}';
+  document.head.appendChild(st);
+  // events
+  o.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{ MK.tool=b.dataset.tool; o.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('on',x===b)); });
+  document.getElementById('mkUndo').onclick=()=>{ const im=MK.imgs[MK.cur]; im.shapes.pop(); mkRedraw(); };
+  document.getElementById('mkClear').onclick=()=>{ MK.imgs[MK.cur].shapes=[]; mkRedraw(); };
+  document.getElementById('mkPrev').onclick=()=>{ if(MK.cur>0){ MK.cur--; mkLoadCur(); } };
+  document.getElementById('mkNext').onclick=()=>{ if(MK.cur<MK.imgs.length-1){ MK.cur++; mkLoadCur(); } };
+  document.getElementById('mkCancel').onclick=()=>{ o.style.display='none'; MK=null; };
+  document.getElementById('mkSend').onclick=mkSend;
+  const cv=document.getElementById('mkCanvas');
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const p=e.touches?e.touches[0]:e; return { x:(p.clientX-r.left)/r.width, y:(p.clientY-r.top)/r.height }; };
+  let drawing=false, cur=null;
+  const down=e=>{ if(!MK) return; drawing=true; const p=pos(e); if(MK.tool==='pen'){ cur={t:'pen',pts:[p]}; } else { cur={t:MK.tool,x:p.x,y:p.y,x2:p.x,y2:p.y}; } MK.imgs[MK.cur].shapes.push(cur); e.preventDefault(); };
+  const move=e=>{ if(!drawing||!MK) return; const p=pos(e); if(cur.t==='pen') cur.pts.push(p); else { cur.x2=p.x; cur.y2=p.y; } mkRedraw(); e.preventDefault(); };
+  const up=()=>{ drawing=false; cur=null; };
+  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',up);
+}
+function mkDrawShapes(ctx,shapes,W,H){
+  ctx.strokeStyle='#ef4444'; ctx.lineWidth=Math.max(3,Math.round(W*0.006)); ctx.lineJoin='round'; ctx.lineCap='round';
+  shapes.forEach(s=>{
+    if(s.t==='rect'){ ctx.strokeRect(s.x*W, s.y*H, (s.x2-s.x)*W, (s.y2-s.y)*H); }
+    else if(s.t==='circle'){ ctx.beginPath(); ctx.ellipse((s.x+s.x2)/2*W, (s.y+s.y2)/2*H, Math.abs(s.x2-s.x)/2*W, Math.abs(s.y2-s.y)/2*H, 0, 0, Math.PI*2); ctx.stroke(); }
+    else if(s.t==='pen'){ ctx.beginPath(); s.pts.forEach((p,i)=> i?ctx.lineTo(p.x*W,p.y*H):ctx.moveTo(p.x*W,p.y*H)); ctx.stroke(); }
+  });
+}
+function mkRedraw(){
+  const im=MK.imgs[MK.cur]; if(!im||!im.el) return;
+  const cv=document.getElementById('mkCanvas'); const maxW=Math.min(720, window.innerWidth-24), maxH=window.innerHeight-220;
+  let W=im.el.naturalWidth, H=im.el.naturalHeight; const sc=Math.min(maxW/W, maxH/H, 1); cv.width=Math.round(W*sc); cv.height=Math.round(H*sc);
+  const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(im.el,0,0,cv.width,cv.height);
+  mkDrawShapes(ctx, im.shapes, cv.width, cv.height);
+  document.getElementById('mkNav').textContent=(MK.cur+1)+'/'+MK.imgs.length;
+}
+async function mkLoadCur(){
+  const im=MK.imgs[MK.cur];
+  if(!im.el){
+    const src=/^https?:/i.test(im.src) ? (await loadRemoteBlobUrl(im.src))||im.src : im.src;
+    await new Promise(res=>{ const g=new Image(); g.onload=()=>{ im.el=g; res(); }; g.onerror=()=>res(); g.src=src; });
+  }
+  mkRedraw();
+}
+async function openMarkupEditor(t){
+  if(!t){ toast('err','ไม่พบงาน'); return; }
+  const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+  if(!photos.length){ const note=prompt('งานนี้ไม่มีรูปให้วาด — ระบุสิ่งที่ต้องแก้ (ส่งกลับ):'); if(note===null) return; taskReview(t.id,'sent_back',note); return; }
+  ensureMarkupUI();
+  MK={ task:t, tool:'circle', cur:0, imgs:photos.map(u=>({src:u, el:null, shapes:[]})) };
+  document.querySelector('#mkOverlay [data-tool="circle"]').classList.add('on');
+  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
+  document.getElementById('mkNote').value='';
+  document.getElementById('mkOverlay').style.display='flex';
+  await mkLoadCur();
+}
+async function mkSend(){
+  if(!MK) return;
+  const note=document.getElementById('mkNote').value.trim();
+  const marked=MK.imgs.filter(im=>im.shapes.length && im.el);
+  if(!marked.length && !note){ toast('err','วาดชี้จุด หรือพิมพ์สิ่งที่ต้องแก้ อย่างน้อยอย่างใดอย่างหนึ่ง'); return; }
+  document.getElementById('mkSend').disabled=true;
+  const out=[];
+  for(const im of marked){
+    const W=Math.min(im.el.naturalWidth,1280), H=Math.round(im.el.naturalHeight*(W/im.el.naturalWidth));
+    const c=document.createElement('canvas'); c.width=W; c.height=H; const ctx=c.getContext('2d');
+    ctx.drawImage(im.el,0,0,W,H); mkDrawShapes(ctx, im.shapes, W, H);
+    out.push(c.toDataURL('image/jpeg',0.9));
+  }
+  await taskReview(MK.task.id,'sent_back',note,out);
+  document.getElementById('mkSend').disabled=false;
+  document.getElementById('mkOverlay').style.display='none'; MK=null;
 }
 // กล่องขยายรูป (lightbox) แบบ gallery — เลื่อนซ้าย-ขวา / ปัดนิ้ว / ลูกศร / ตัวนับ
 let LB={imgs:[],idx:0};
@@ -3311,7 +3410,7 @@ async function loadTaskLog(){
       <td>${stP(t.status)}</td>
       <td>${esc(t.reviewer||'—')}</td>
       <td class="mono" style="white-space:nowrap;font-size:12px">${t.submitted_at?esc(fmt(t.submitted_at)):'—'}</td>
-      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);return ph.length?'<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'—';})()}</td>
+      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);const mk=Array.isArray(t.review_markup)?t.review_markup:[];let h='';if(mk.length)h+='<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px" title="จุดที่สั่งแก้">'+mk.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #ef4444">').join('')+'</div>';if(ph.length)h+='<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px" title="รูปที่ส่ง/แก้แล้ว">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>';return h||'—';})()}</td>
     </tr>`).join('')+'</tbody></table></div></div>';
 }
 $('tl_go').onclick=loadTaskLog;

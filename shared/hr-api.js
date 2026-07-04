@@ -168,7 +168,7 @@
         case 'hr_task_def_delete':   return await hrTaskDefDelete(p.id);
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
-        case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note);
+        case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
         case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_open_tasks':        return await hrOpenTasks();
@@ -1440,10 +1440,21 @@
     };
     return { ok: true, date: d, rows, counts };
   }
-  async function hrTaskReview(id, status, note) {
+  async function hrTaskReview(id, status, note, markup) {
     const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count').eq('id', id).maybeSingle();
     const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
     if (status !== 'approved') upd.sent_back_count = ((t && t.sent_back_count) || 0) + 1;
+    // รูปที่ผู้ตรวจวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
+    if (status !== 'approved' && Array.isArray(markup) && markup.length) {
+      const urls = [];
+      for (const m of markup) {
+        if (typeof m === 'string' && m.startsWith('data:')) {
+          try { urls.push(await window.HR.uploadPhoto('employee-docs', 'markup/' + id + '_' + Date.now() + '_' + urls.length + '.jpg', m)); } catch (e) { console.warn('markup upload', e); }
+        } else if (typeof m === 'string' && m) { urls.push(m); }
+      }
+      upd.review_markup = urls.length ? urls : null;
+    }
+    // หมายเหตุ: อนุมัติแล้วไม่ลบ review_markup — เก็บไว้ให้ดูในรายงานว่าเคยสั่งแก้อะไร (คู่กับรูปที่แก้แล้ว)
     const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
     if (error) throw error;
     await logAct(status === 'approved' ? 'อนุมัติงาน' : 'ตีงานกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
