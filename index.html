@@ -191,6 +191,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   +'@keyframes nBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}@keyframes nRing{0%{transform:scale(.55);opacity:.7}100%{transform:scale(1.5);opacity:0}}'
   +'#nfab .nb{position:absolute;top:2px;right:0;z-index:3;min-width:20px;height:20px;padding:0 5px;border-radius:11px;background:#ea580c;color:#fff;font-size:12px;font-weight:800;display:none;align-items:center;justify-content:center;font-family:Anuphan,sans-serif;box-shadow:0 2px 5px rgba(0,0,0,.25)}'
   +'#npop{position:fixed;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:9999;width:min(94vw,380px);height:min(70vh,560px);background:#fff;border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.28);display:none;flex-direction:column;overflow:hidden;font-family:Anuphan,system-ui,sans-serif}'
+  +'#npop.full{right:0!important;left:0!important;top:0!important;bottom:0!important;width:100%!important;height:100%!important;max-width:100%!important;border-radius:0;box-shadow:none;padding-top:env(safe-area-inset-top)}'
   +'#npop .nh{background:linear-gradient(135deg,#16a34a,#12402b);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:9px}'
   +'#npop .nh .t{flex:1;font-weight:700;font-size:15px;line-height:1.15}#npop .nh .t small{display:block;font-weight:400;font-size:11px;opacity:.85}'
   +'#npop .nh button{background:rgba(255,255,255,.18);border:0;color:#fff;width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:15px}'
@@ -278,8 +279,17 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   $('nset').onclick=openSetup;
   $('nnotif').onclick=toggleNotif;
 
-  async function openPop(){ pop.style.display='flex'; $('nbadge').style.display='none'; await loadBranches(); if(!BRANCH){ openSetup(); } else { var b=BRANCHES.find(function(x){return x.branch_id===BRANCH;}); $('nbranch').textContent='สาขา '+((b&&b.name)||BRANCH); render(); } }
-  fab.onclick=function(){ if(pop.style.display==='flex'){pop.style.display='none';} else openPop(); };
+  var KIOSK = !!window.Capacitor;   // ในแอป APK → เปิดแชตแบบเต็มจอ (เห็นเฉพาะหน้าแชท)
+  async function openPop(){ if(KIOSK) pop.classList.add('full'); pop.style.display='flex'; $('nbadge').style.display='none'; await loadBranches(); if(!BRANCH){ openSetup(); } else { var b=BRANCHES.find(function(x){return x.branch_id===BRANCH;}); $('nbranch').textContent='สาขา '+((b&&b.name)||BRANCH); render(); } }
+  // ปุ่มลอย: ลากย้ายได้ (แตะ=เปิด/ปิด, ลาก=ย้ายตำแหน่ง)
+  (function(){
+    var dragging=false, moved=false, sx=0, sy=0, ox=0, oy=0, anim='';
+    function down(e){ var p=e.touches?e.touches[0]:e; dragging=true; moved=false; sx=p.clientX; sy=p.clientY; var r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; anim=fab.style.animation; fab.style.animation='none'; }
+    function move(e){ if(!dragging) return; var p=e.touches?e.touches[0]:e; var dx=p.clientX-sx, dy=p.clientY-sy; if(Math.abs(dx)>6||Math.abs(dy)>6) moved=true; var nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4, ox+dx)); var ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4, oy+dy)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; if(e.cancelable) e.preventDefault(); }
+    function up(){ if(!dragging) return; dragging=false; fab.style.animation=anim; if(!moved){ if(pop.style.display==='flex'){ pop.style.display='none'; } else openPop(); } }
+    fab.addEventListener('touchstart',down,{passive:true}); fab.addEventListener('touchmove',move,{passive:false}); fab.addEventListener('touchend',up);
+    fab.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  })();
   $('ncls').onclick=function(){pop.style.display='none';};
 
   // ---- badge: จำนวนงานค้างของสาขา (ดึงตรงจาก Supabase — ไม่กิน Gemini) ----
@@ -321,6 +331,11 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     }catch(e){}
     if(b) b.disabled=false; setNotifBtn();
   }
+
+  // ให้ native (ปุ่มลอย) สั่งเปิดแชตได้
+  window.__nidaOpen=function(){ try{ openPop(); }catch(e){} };
+  // ถ้าเปิดอยู่ในแอป (Capacitor) → เด้งแชตนิดาให้อัตโนมัติเมื่อเปิดแอป
+  if(window.Capacitor){ setTimeout(function(){ try{ openPop(); }catch(e){} }, 900); }
 
   // init: badge + refresh เป็นระยะ
   setTimeout(function(){ refreshBadge(); }, 1500);
