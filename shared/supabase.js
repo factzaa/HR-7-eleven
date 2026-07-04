@@ -51,6 +51,14 @@
     if (ex && ex.check_in) {
       throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + (ex.check_out ? ' (และเช็กเอาต์แล้ว)' : '') + ' — หากต้องแก้ไข ติดต่อ HR');
     }
+    // กันกดเข้างานทั้งที่ยังมีกะค้างไม่ได้กดออก (เช่น จบกะดึกเมื่อวาน แล้วเช้านี้กดเข้าแทนออก)
+    const { data: openRow } = await sb.from('attendance').select('work_date,check_in')
+      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+      .gte('work_date', _addDays(today, -2)).neq('work_date', today)
+      .order('check_in', { ascending: false }).limit(1).maybeSingle();
+    if (openRow && openRow.check_in) {
+      throw new Error('คุณยังมีกะที่ยังไม่ได้กดออกงาน (วันที่ ' + openRow.work_date + ' เข้างาน ' + _fmtTime(openRow.check_in) + ') — ถ้าจบกะแล้วให้กด "ออกงาน" ก่อน · หากกดผิดโปรดติดต่อ HR');
+    }
     // หา "กะวันนี้" จากตารางเวรก่อน (authoritative) แล้วค่อย fallback กะประจำที่ส่งมา
     // กันบั๊ก: ถ้าใช้ default_shift อย่างเดียว คนที่จัดกะผ่านตารางเวร (default_shift ว่าง) จะคำนวณสายไม่ได้
     let useShift = shiftId || null;
