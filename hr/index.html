@@ -809,6 +809,8 @@
       <div class="field" style="max-width:300px"><label>เตือนถ้าเพิ่งออกงานภายใน (ชม.) ตอนกดเข้างานใหม่</label><input id="recentCoHrs" type="number" min="0" value="8"></div>
       <div class="field" style="max-width:300px"><label>ผ่อนผันก่อนเตือน "งานผลัดก่อนยังไม่ตรวจ" (นาที)</label><input id="taskReviewGrace" type="number" min="0" value="30"></div>
       <div class="field" style="max-width:300px"><label>ส่งสรุป "งานค้างสิ้นวัน" ให้ HR ตอนกี่โมง (0–23)</label><input id="taskEodHour" type="number" min="0" max="23" value="22"></div>
+      <div class="field" style="max-width:300px"><label>ออกก่อนเวลา: ผ่อนผัน (นาที) — ออกก่อนไม่เกินนี้ ไม่นับว่าออกก่อน</label><input id="earlyOutGrace" type="number" min="0" value="10"></div>
+      <div class="field" style="max-width:300px"><label>ออกก่อนเวลา: เตือน (⚠) เมื่อออกก่อนเกิน (วัน/รอบ)</label><input id="earlyOutWarn" type="number" min="1" value="3"></div>
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px">
       <label style="display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer"><input type="checkbox" id="guardShiftStart" checked> ⛔ ห้ามทำ/แจกงาน <b>ก่อนถึงเวลาเข้ากะ</b></label>
@@ -1643,7 +1645,7 @@ function renderReportSummary(){
   if(!REPORT.summary.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; $('r_count').textContent='0 คน'; return; }
   const sumRows = REPORT.summary.slice().sort((a,b)=> String(a.emp_id).localeCompare(String(b.emp_id), undefined, {numeric:true}));
   $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>พนักงาน</th><th>วันทำงาน</th><th>สาย (วัน)</th><th>สาย (นาที)</th><th>ขาด (วัน)</th><th>ลา (วัน)</th><th>OT (วัน)</th><th>OT (ชม.)</th><th>ไปแทน (วัน)</th></tr></thead>
+    <thead><tr><th>พนักงาน</th><th>วันทำงาน</th><th>สาย (วัน)</th><th>สาย (นาที)</th><th>ขาด (วัน)</th><th>ลา (วัน)</th><th>OT (วัน)</th><th>OT (ชม.)</th><th>ไปแทน (วัน)</th><th>ออกก่อน (วัน/ชม.)</th></tr></thead>
     <tbody>${sumRows.map(e=>`
       <tr>
         <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}${e.nickname?' ('+esc(e.nickname)+')':''}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
@@ -1655,8 +1657,9 @@ function renderReportSummary(){
         <td class="mono">${e.ot_days||0}</td>
         <td class="mono">${fmtOT(e.ot)}</td>
         <td class="mono">${e.days_cover>0?'<span style="color:#c2410c;font-weight:600" title="'+esc(e.cover_detail||'')+'">'+e.days_cover+'</span>':'0'}</td>
+        <td class="mono">${e.early_out_days>0?'<span style="color:#b45309;font-weight:600">'+e.early_out_days+' วัน · '+(e.early_out_hours||0)+' ชม.</span>':'0'}</td>
       </tr>`).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* ขาด = วันที่จัดเวรไว้และผ่านไปแล้ว แต่ไม่มา/ไม่ลา · วันทำงาน &amp; OT อิงการลงเวลาจริง · สาย(วัน) = จำนวนวันที่มาสาย</div></div>`;
+    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* ขาด = วันที่จัดเวรไว้และผ่านไปแล้ว แต่ไม่มา/ไม่ลา · วันทำงาน &amp; OT อิงการลงเวลาจริง · สาย(วัน) = จำนวนวันที่มาสาย · กะครึ่งวันนับ 0.5 · ออกก่อน = ออกก่อนเวลาเลิกกะเกินผ่อนผัน</div></div>`;
   $('r_count').textContent = REPORT.summary.length + ' คน';
 }
 function renderCoverage(){
@@ -1718,7 +1721,7 @@ function renderDiscipline(){
   $('d_body').innerHTML = `
     <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap">${summary}</div>
     <div class="card"><div class="tablewrap"><table>
-      <thead><tr><th>ระดับ</th><th>พนักงาน</th><th>สาย</th><th>นาทีรวม</th><th>ขาด</th><th>มาทำงาน</th><th>OT</th><th></th></tr></thead>
+      <thead><tr><th>ระดับ</th><th>พนักงาน</th><th>สาย</th><th>นาทีรวม</th><th>ขาด</th><th>มาทำงาน</th><th>ออกก่อน</th><th>OT</th><th></th></tr></thead>
       <tbody>${e.map(x=>`
         <tr>
           <td><span class="lvl-pill" style="background:${esc(x.level_color)}"><span class="lvl-dot"></span> ${esc(x.level_name)}</span></td>
@@ -1727,6 +1730,7 @@ function renderDiscipline(){
           <td class="mono">${x.late_total}</td>
           <td class="mono">${x.absent>0?'<span style="color:var(--red)">'+x.absent+'</span>':'0'}/${x.days_should}</td>
           <td class="mono">${x.days_worked}</td>
+          <td class="mono">${x.early_out_count>0?'<span style="color:'+(x.early_out_warn?'var(--red);font-weight:700':'#b45309')+'" title="รวม '+(x.early_out_hours||0)+' ชม.">'+x.early_out_count+(x.early_out_warn?' ⚠':'')+'</span>':'0'}</td>
           <td class="mono">${fmtOT(x.ot_hours)}</td>
           <td class="rowact">${x.level>=3?`<button class="btn btn-warn btn-sm" data-warn="${esc(x.emp_id)}">ออกใบเตือน</button>`:'<span style="color:var(--muted); font-size:12.5px">—</span>'}</td>
         </tr>`).join('')}</tbody></table></div></div>`;
@@ -2752,7 +2756,7 @@ async function loadShifts(){
     <tr>
       <td><span class="pill" style="background:#dcfce7;color:#15803d;font-weight:700">${esc(s.code||'—')}</span></td>
       <td class="mono">${esc(s.shift_id)}</td>
-      <td>${esc(s.name)}</td>
+      <td>${esc(s.name)}${Number(s.day_value)===0.5?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ครึ่งวัน · 0.5</span>':''}${s.no_ot?' <span class="pill" style="background:#eef0ec;color:#6b7280">ไม่คิด OT</span>':''}</td>
       <td class="mono">${esc((s.start_time||'').slice(0,5))}</td>
       <td class="mono">${esc((s.end_time||'').slice(0,5))}</td>
       <td class="mono">${s.grace_min}</td>
@@ -2780,6 +2784,7 @@ function shOpen(shift){
   $('sh_main').innerHTML=opts;
   $('sh_main').value = shift ? (shift.main_shift||'') : '';
   if($('sh_no_ot')) $('sh_no_ot').checked = shift ? (shift.no_ot===true) : false;
+  if($('sh_half')) $('sh_half').checked = shift ? (Number(shift.day_value)===0.5) : false;
   $('shOverlay').classList.add('show');
 }
 function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
@@ -2851,6 +2856,8 @@ async function loadCheckoutGrace(){
     if(s.recent_checkout_hours!=null && $('recentCoHrs')) $('recentCoHrs').value = s.recent_checkout_hours;
     if(s.task_review_grace_min!=null && $('taskReviewGrace')) $('taskReviewGrace').value = s.task_review_grace_min;
     if(s.task_eod_hour!=null && $('taskEodHour')) $('taskEodHour').value = s.task_eod_hour;
+    if(s.early_out_grace_min!=null && $('earlyOutGrace')) $('earlyOutGrace').value = s.early_out_grace_min;
+    if(s.early_out_warn_days!=null && $('earlyOutWarn')) $('earlyOutWarn').value = s.early_out_warn_days;
     if($('guardShiftStart')) $('guardShiftStart').checked = (s.guard_shift_start==null || s.guard_shift_start==='1');
     if($('guardPrevShift'))  $('guardPrevShift').checked  = (s.guard_prev_shift==null  || s.guard_prev_shift==='1');
   }
@@ -2864,6 +2871,8 @@ async function saveCheckoutGrace(){
   const rc = Math.max(0, parseInt(($('recentCoHrs')||{}).value)||8);
   const trg = Math.max(0, parseInt(($('taskReviewGrace')||{}).value)||30);
   const eod = Math.min(23, Math.max(0, parseInt(($('taskEodHour')||{}).value)||22));
+  const eog = Math.max(0, parseInt(($('earlyOutGrace')||{}).value)||10);
+  const eow = Math.max(1, parseInt(($('earlyOutWarn')||{}).value)||3);
   const g1 = ($('guardShiftStart')&&$('guardShiftStart').checked) ? '1':'0';
   const g2 = ($('guardPrevShift')&&$('guardPrevShift').checked) ? '1':'0';
   $('coGrace_save').disabled = true;
@@ -2876,6 +2885,8 @@ async function saveCheckoutGrace(){
     post({ action:'hr_settings_save', password:pwd, key:'recent_checkout_hours', value:String(rc) }),
     post({ action:'hr_settings_save', password:pwd, key:'task_review_grace_min', value:String(trg) }),
     post({ action:'hr_settings_save', password:pwd, key:'task_eod_hour', value:String(eod) }),
+    post({ action:'hr_settings_save', password:pwd, key:'early_out_grace_min', value:String(eog) }),
+    post({ action:'hr_settings_save', password:pwd, key:'early_out_warn_days', value:String(eow) }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_shift_start', value:g1 }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_prev_shift', value:g2 }),
   ]);
@@ -3548,6 +3559,7 @@ async function loadSubmissions(){
       <div class="field"><label>ผ่อนผันก่อนนับสาย (นาที)</label><input id="sh_grace" type="number" value="5"></div>
       <div class="field"><label>ผลัดหลัก (ระบบงานผลัด) — กะนี้นับเป็น เช้า/บ่าย/ดึก หรือพิเศษ</label><select id="sh_main"></select></div>
       <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_no_ot" style="width:18px;height:18px"> ไม่คิด OT สำหรับกะนี้ (เช่น กะ ผจก.)</label></div>
+      <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_half" style="width:18px;height:18px"> <span>กะครึ่งวัน — นับเป็น <b>0.5 วัน</b> (มีผลกับรายงาน/ขาด/วินัย)</span></label></div>
     </div>
     <div class="modal-f"><button class="btn btn-pri" id="shSave">บันทึก</button></div>
   </div>`;
@@ -3557,7 +3569,7 @@ async function loadSubmissions(){
   $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
   $('dr_save') && ($('dr_save').onclick = saveDiscRules);
   $('shSave').onclick = async ()=>{
-    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked };
+    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked, day_value:($('sh_half')&&$('sh_half').checked)?0.5:1 };
     if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
     $('shSave').innerHTML='<span class="spin"></span>';
     const r = await post({ action:'hr_shift_save', password:pwd, data });

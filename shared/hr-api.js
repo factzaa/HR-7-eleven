@@ -498,7 +498,7 @@
   // ---------- REPORT ----------
   async function hrReport(f) {
     let q = sb().from('attendance')
-      .select('*, employees(name,photo_url,branch_id), shifts(name), branches(name)')
+      .select('*, employees(name,photo_url,branch_id), shifts(name,day_value), branches(name)')
       .gte('work_date', f.start).lte('work_date', f.end)
       .order('work_date', { ascending: false });
     if (f.emp_id) q = q.eq('emp_id', f.emp_id);
@@ -513,12 +513,13 @@
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงานให้ถูก แม้ไปทำแทนสาขาอื่น
     let wq = sb().from('attendance').select('emp_id,work_date').not('check_in', 'is', null).gte('work_date', f.start).lte('work_date', f.end);
     if (f.emp_id) wq = wq.eq('emp_id', f.emp_id);
-    const [{ data, error }, brR, schR, lvR, empR, wR] = await Promise.all([
+    const [{ data, error }, brR, schR, lvR, empR, wR, shR2] = await Promise.all([
       q,
       sb().from('branches').select('branch_id,name'),
       sq, lq,
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id'),
       wq,
+      sb().from('shifts').select('shift_id,day_value'),
     ]);
     if (error) throw error;
     const brName = {};
@@ -538,6 +539,9 @@
         branch_name: (r.branches && r.branches.name) || r.branch_id || '',
         home_branch: brName[home] || home || '',
         is_cover,
+        shift_id: r.shift_id || '',
+        day_value: (r.shifts && r.shifts.day_value != null) ? Number(r.shifts.day_value) : 1,
+        early_out_min: r.early_out_min != null ? Number(r.early_out_min) : null,
         check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
         late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,
         checkout_branch: r.checkout_branch_id ? (brName[r.checkout_branch_id] || r.checkout_branch_id) : '',
@@ -549,6 +553,10 @@
     if (f.only_late) rows = rows.filter(r => r.late_min > 0);
     if (f.only_ot) rows = rows.filter(r => r.ot_hours > 0);
     if (f.only_cover) rows = rows.filter(r => r.is_cover);
+    // แผนที่ day_value ต่อกะ (ใช้ถ่วงน้ำหนักวันจัดเวร/ขาด)
+    const shDVmap = {}; (shR2.data || []).forEach(s => { shDVmap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const dvOf = sid => (shDVmap[sid] != null ? shDVmap[sid] : 1);
+    const earlyGrace = await getSettingNum('early_out_grace_min', 10);
 
     const map = {};
     function ensureM(empId) {
@@ -558,15 +566,18 @@
         emp_id: empId, emp_name: e.name || empId, nickname: e.nickname || '', photo_url: e.photo_url || '',
         days: 0, days_home: 0, days_cover: 0, late_count: 0, late_total: 0,
         ot: 0, ot_days: 0, absent: 0, leave_days: 0, scheduled: 0, cover_by: {},
+        early_out_days: 0, early_out_min: 0,
       });
     }
-    // นับจากแถวลงเวลา (ตามฟิลเตอร์ที่เลือก)
+    // นับจากแถวลงเวลา (ตามฟิลเตอร์ที่เลือก) — ถ่วงน้ำหนักวันด้วย day_value ของกะ (ครึ่งวัน=0.5)
     rows.forEach(r => {
       const m = ensureM(r.emp_id);
       if (r.check_in) {
-        m.days++;
-        if (r.is_cover) { m.days_cover++; m.cover_by[r.branch_name] = (m.cover_by[r.branch_name] || 0) + 1; }
-        else m.days_home++;
+        const dv = r.day_value || 1;
+        m.days += dv;
+        if (r.is_cover) { m.days_cover += dv; m.cover_by[r.branch_name] = (m.cover_by[r.branch_name] || 0) + 1; }
+        else m.days_home += dv;
+        if (r.early_out_min != null && r.early_out_min > earlyGrace) { m.early_out_days++; m.early_out_min += r.early_out_min; }
       }
       if (r.late_min > 0) { m.late_count++; m.late_total += r.late_min; }
       if (Number(r.ot_hours) > 0) { m.ot += Number(r.ot_hours); m.ot_days++; }
@@ -580,14 +591,16 @@
     const inBranch = emp => !f.branch_id || (empById[emp] || {}).branch_id === f.branch_id;
     // ตารางเวร -> วันที่จัดเวร + ขาดงาน (วันที่จัดเวร ผ่านไปแล้ว ไม่มา ไม่ลา)
     const schByEmp = {};
-    (schR.data || []).forEach(s => { if (s.shift_id) (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = new Set())).add(s.work_date); });
+    (schR.data || []).forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
     Object.keys(schByEmp).forEach(emp => {
       if (!inBranch(emp)) return;
       const m = ensureM(emp);
-      const sched = [...schByEmp[emp]];
-      m.scheduled = sched.length;
+      const dates = Object.keys(schByEmp[emp]);
       const worked = workedByEmp[emp] || new Set();
-      m.absent = sched.filter(d => d < today && !worked.has(d) && !onLeave(emp, d)).length;
+      let sc = 0, ab = 0;
+      dates.forEach(d => { const dv = dvOf(schByEmp[emp][d]); sc += dv; if (d < today && !worked.has(d) && !onLeave(emp, d)) ab += dv; });
+      m.scheduled = Math.round(sc * 10) / 10;
+      m.absent = Math.round(ab * 10) / 10;
     });
     // ลา (วัน) ในช่วง
     Object.keys(lvByEmp).forEach(emp => {
@@ -604,6 +617,8 @@
     });
     const summary = Object.values(map).map(m => ({
       ...m, ot: Math.round(m.ot * 100) / 100,
+      days: Math.round(m.days * 10) / 10, days_home: Math.round(m.days_home * 10) / 10, days_cover: Math.round(m.days_cover * 10) / 10,
+      early_out_hours: Math.round((m.early_out_min / 60) * 10) / 10,
       cover_detail: Object.keys(m.cover_by).map(k => k + ' ' + m.cover_by[k] + ' วัน').join(' · '),
     }));
     return { ok: true, rows, summary };
@@ -615,19 +630,24 @@
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
     const discRules = await loadDisciplineRules();
-    const [empsR, attR, holR, lvR, schR] = await Promise.all([
+    const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,branch_id').eq('active', true),
-      sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
-      sb().from('schedules').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('shifts').select('shift_id,day_value'),
     ]);
     if (empsR.error) throw empsR.error;
     const holidaySet = new Set((holR.data || []).map(h => h.date));
     const att = attR.data || [], leaves = lvR.data || [];
-    // ตารางเวรต่อพนักงาน (เซ็ตของวันที่ถูกจัดเวร)
+    const dvMap = {}; (shDVR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const dvOf = sid => (dvMap[sid] != null ? dvMap[sid] : 1);
+    const earlyGrace = await getSettingNum('early_out_grace_min', 10);
+    const earlyWarnDays = await getSettingNum('early_out_warn_days', 3);
+    // ตารางเวรต่อพนักงาน (map วันที่ → กะ ไว้ถ่วงน้ำหนักครึ่งวัน)
     const schByEmp = {};
-    (schR.data || []).forEach(s => { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = new Set())).add(s.work_date); });
+    (schR.data || []).forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
 
     const employees = (empsR.data || []).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id);
@@ -639,19 +659,27 @@
       const myLeaves = leaves.filter(l => l.emp_id === e.emp_id);
       const onLeave = (dateStr) => myLeaves.some(l => dateStr >= l.start_date && dateStr <= (l.end_date || l.start_date));
 
-      const days_worked = workedSet.size;
-      // นับเฉพาะ "วันที่มีการจัดเวร (จัดจ๊อบ) ที่ผ่านไปแล้วจริง คือก่อนวันนี้" เท่านั้น
-      // ขาด = วันที่ถูกจัดเวรแต่ไม่มาทำงานและไม่ได้ลา · วันนี้ที่ยังไม่จบ/ไม่มีตารางเวร = ไม่นับ
+      // ถ่วงน้ำหนักวันด้วย day_value ของกะ (ครึ่งวัน=0.5) — มีผลกับ "วันทำงาน/ขาด/วินัย"
+      const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = dvOf(a.shift_id); });
+      const days_worked = Math.round([...workedSet].reduce((s, d) => s + (attDV[d] || 1), 0) * 10) / 10;
+      // ออกก่อนเวลา (เกินผ่อนผัน) — เก็บจำนวนครั้ง + รวมนาที
+      const earlyRows = myAtt.filter(a => a.early_out_min != null && a.early_out_min > earlyGrace);
+      const early_out_count = earlyRows.length;
+      const early_out_min = earlyRows.reduce((s, a) => s + (a.early_out_min || 0), 0);
+      // นับเฉพาะ "วันที่มีการจัดเวรที่ผ่านไปแล้ว (ก่อนวันนี้)" · ขาด = จัดเวรแต่ไม่มา+ไม่ลา (ถ่วง day_value)
       const basis = 'roster';
-      const mySched = schByEmp[e.emp_id] || new Set();
-      const pastSched = [...mySched].filter(d => d < today);   // เฉพาะวันก่อนวันนี้
-      const days_should = pastSched.length;
+      const mySchedMap = schByEmp[e.emp_id] || {};
+      const pastSched = Object.keys(mySchedMap).filter(d => d < today);
+      const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(mySchedMap[d]), 0) * 10) / 10;
       let absent = 0;
-      pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent++; });
+      pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent += dvOf(mySchedMap[d]); });
+      absent = Math.round(absent * 10) / 10;
       const lv = disciplineLevel(late_count, absent, discRules);
       return {
         emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '', branch_id: e.branch_id || '',
         late_count, late_total, ot_hours, absent,
+        early_out_count, early_out_hours: Math.round((early_out_min / 60) * 10) / 10,
+        early_out_warn: early_out_count >= earlyWarnDays,
         days_should, days_worked, basis,
         level: lv.level, level_name: lv.level_name, level_color: lv.level_color,
       };
@@ -917,9 +945,11 @@
       grace_min: parseInt(d.grace_min) >= 0 ? parseInt(d.grace_min) : 5,
       main_shift: (d.main_shift === undefined) ? undefined : (d.main_shift || null),  // ผลัดหลักที่สังกัด (ว่าง=พิเศษ)
       no_ot: (d.no_ot === undefined) ? undefined : !!d.no_ot,   // กะนี้ไม่คิด OT (เช่น กะ ผจก.)
+      day_value: (d.day_value === undefined) ? undefined : (Number(d.day_value) === 0.5 ? 0.5 : 1.0),  // 0.5 = กะครึ่งวัน
     };
     if (row.no_ot === undefined) delete row.no_ot;
     if (row.main_shift === undefined) delete row.main_shift;
+    if (row.day_value === undefined) delete row.day_value;
     const { error } = await sb().from('shifts').upsert(row, { onConflict: 'shift_id' });
     if (error) throw error;
     return { ok: true };
