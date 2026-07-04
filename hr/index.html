@@ -514,7 +514,7 @@
     <div id="ta_defs" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px"></div>
   </div>
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><select id="tk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><select id="tk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><select id="tk_shift" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
   <div id="tk_body"><div class="empty">กำลังโหลด…</div></div>
 
   <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">Log งาน (ตรวจสอบย้อนหลัง)</h3>
@@ -3105,6 +3105,7 @@ $('ho_refresh') && ($('ho_refresh').onclick=loadHandover);
 // ========== งานในกะ (มอบหมาย/ตรวจ) ==========
 function bkkTodayStr(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
 let TASKDEFS=[];
+let TK_STATUS='';   // ตัวกรองสถานะของ "งานในกะ" (ว่าง = ทุกสถานะ) — กดชิปเพื่อกรอง
 async function loadTaskTab(){
   if(!$('ta_date').value) $('ta_date').value=bkkTodayStr();
   if(!$('tk_date').value) $('tk_date').value=bkkTodayStr();
@@ -3112,6 +3113,7 @@ async function loadTaskTab(){
   const brOpts=(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
   if($('ta_branch')) $('ta_branch').innerHTML = brOpts||'<option value="">(ไม่มีสาขา)</option>';
   if($('tk_branch')) $('tk_branch').innerHTML = '<option value="">ทุกสาขา</option>'+brOpts;
+  if($('tk_shift')) $('tk_shift').innerHTML = '<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join('');
   const r=await post({ action:'hr_task_defs_get', password:pwd });
   TASKDEFS=(r.ok?r.rows:[]).filter(d=>d.active!==false);
   renderAssign();
@@ -3144,15 +3146,23 @@ async function loadTaskList(){
   $('tk_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_task_list', password:pwd, date:$('tk_date').value });
   if(!r.ok){ $('tk_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  const c=r.counts||{};
-  $('tk_counts').innerHTML=(c.submitted?'<span class="pill warn">รอตรวจ '+c.submitted+'</span>':'')+(c.sent_back?'<span class="pill bad">ตีกลับ '+c.sent_back+'</span>':'')+(c.todo?'<span class="pill muted">ยังไม่ทำ '+c.todo+'</span>':'')+(c.approved?'<span class="pill ok">ผ่าน '+c.approved+'</span>':'');
-  if(!r.rows.length){ $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
+  if(!r.rows.length){ $('tk_counts').innerHTML=''; $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
   const fmtDT=t=>{ if(!t) return '—'; try{ return new Date(t).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return '—'; } };
   const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
-  // กรองสาขา (ถ้าเลือก) แล้วจัดกลุ่ม สาขา → กะ
+  // ฐานข้อมูลหลังกรอง สาขา + กะ (ยังไม่กรองสถานะ) — ใช้ทั้งนับชิปและแสดงผล
   const selBr=$('tk_branch')?$('tk_branch').value:'';
-  const rows=selBr?r.rows.filter(t=>t.branch_id===selBr):r.rows;
-  if(!rows.length){ $('tk_body').innerHTML='<div class="empty">ไม่มีงานในสาขา/วันที่เลือก</div>'; return; }
+  const selSh=$('tk_shift')?$('tk_shift').value:'';
+  let base=r.rows;
+  if(selBr) base=base.filter(t=>t.branch_id===selBr);
+  if(selSh) base=base.filter(t=>String(t.shift_id||'')===selSh);
+  // ชิปสถานะ = ปุ่มกดกรองได้ (แตะซ้ำ = ยกเลิก) · แสดงครบทุกสถานะรวมถึง "ตีกลับ" · จำนวนอิงตัวกรองสาขา/กะ
+  const c={ submitted:base.filter(t=>t.status==='submitted').length, todo:base.filter(t=>(t.status||'todo')==='todo').length, sent_back:base.filter(t=>t.status==='sent_back').length, approved:base.filter(t=>t.status==='approved').length };
+  const chip=(key,label,cls,n)=>'<span class="pill '+cls+' tkchip" data-st="'+key+'" style="cursor:pointer;'+(TK_STATUS===key?'outline:2.5px solid #0f172a;outline-offset:1px':'opacity:.9')+'">'+label+' '+(n||0)+'</span>';
+  $('tk_counts').innerHTML=chip('submitted','รอตรวจ','warn',c.submitted)+chip('todo','ยังไม่ทำ','muted',c.todo)+chip('sent_back','ตีกลับ','bad',c.sent_back)+chip('approved','ผ่าน','ok',c.approved)+(TK_STATUS?'<span class="pill" data-st="" style="cursor:pointer;background:#e2e8f0;color:#0f172a" title="ล้างตัวกรองสถานะ">✕ ล้างกรอง</span>':'');
+  document.querySelectorAll('#tk_counts [data-st]').forEach(el=>el.onclick=()=>{ const v=el.getAttribute('data-st'); TK_STATUS=(v&&v===TK_STATUS)?'':v; loadTaskList(); });
+  // กรองสถานะ (ถ้าเลือกชิป) แล้วจัดกลุ่ม สาขา → กะ
+  let rows=TK_STATUS?base.filter(t=>(t.status||'todo')===TK_STATUS):base;
+  if(!rows.length){ $('tk_body').innerHTML='<div class="empty">ไม่มีงานตามตัวกรองที่เลือก</div>'; return; }
   const ord={}; (DATA.shifts||[]).forEach((s,i)=>{ ord[s.shift_id]=i; });
   const oneTask=t=>{
     const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
@@ -3243,6 +3253,7 @@ function lightbox(imgEl){
 $('tk_refresh').onclick=loadTaskList;
 $('tk_date').addEventListener('change', loadTaskList);
 $('tk_branch') && $('tk_branch').addEventListener('change', loadTaskList);
+$('tk_shift') && $('tk_shift').addEventListener('change', loadTaskList);
 
 // Log งาน (ย้อนหลัง)
 function fillTlBranch(){ if($('tl_branch')&&!$('tl_branch').innerHTML){ $('tl_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); } }
