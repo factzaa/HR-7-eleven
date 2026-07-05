@@ -1087,7 +1087,9 @@
     const urls=[];
     for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','shelf/'+(emp.branch_id||'x')+'_'+shelf_id+'_'+today+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
     const row={ shelf_id, emp_id:emp.emp_id, branch_id:emp.branch_id||null, check_date:today,
-      items:items2, note:(note||'').trim()||null, photos:urls, updated_at:new Date().toISOString() };
+      items:items2, note:(note||'').trim()||null, photos:urls, updated_at:new Date().toISOString(),
+      // ส่ง/ส่งใหม่ → กลับเข้าคิว "รอตรวจ" + ล้างผลรีวิวเดิม (คง sent_back_count ไว้เป็นสถิติ)
+      status:'submitted', reviewer:null, review_note:null, review_markup:null, reviewed_at:null };
     const { error }=await sb.from('shelf_checks').upsert(row, { onConflict:'shelf_id,emp_id,check_date' });
     if(error) throw error;
     return { ok:true };

@@ -2637,17 +2637,26 @@ async function loadShAssignments(){
   $('sh_asg_list').querySelectorAll('[data-shchk]').forEach(b=>b.onclick=()=>openShelfChecks(b.dataset.shchk, b.dataset.shchkname, r.month));
   $('sh_asg_list').querySelectorAll('[data-shadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ยกเลิกการมอบหมายรายการนี้?'))return; const rr=await post({action:'hr_shelf_assign_delete',password:pwd,id:Number(b.dataset.shadel)}); if(rr.ok){ toast('ok','ยกเลิกแล้ว'); loadShAssignments(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
 }
-// --- ดูการตรวจเชลฟ์รายวัน (ที่พนักงานส่งมา) ---
+// --- ดูการตรวจเชลฟ์รายวัน (ที่พนักงานส่งมา) + ผ่าน/ตีกลับ ---
+let SHCHK_CTX=null, SHCHK_MAP={};
+function shChkStatusPill(s){
+  return s==='approved'?'<span class="pill ok" style="font-size:12px">✓ ผ่าน</span>'
+    : s==='sent_back'?'<span class="pill bad" style="font-size:12px">✗ ตีกลับ</span>'
+    : '<span class="pill warn" style="font-size:12px">⏳ รอตรวจ</span>';
+}
 async function openShelfChecks(shelfId, shelfName, month){
+  SHCHK_CTX={ shelfId, shelfName, month };
   $('shchk_title').textContent='การตรวจเชลฟ์ · '+(shelfName||'');
   $('shchk_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   $('shChkOverlay').classList.add('show');
   const r=await post({ action:'hr_shelf_checks', password:pwd, shelf_id:Number(shelfId), month:month||'' });
   if(!r.ok){ $('shchk_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
-  const rows=r.rows||[];
+  const rows=r.rows||[]; SHCHK_MAP={}; rows.forEach(c=>{ SHCHK_MAP[c.id]=c; });
   if(!rows.length){ $('shchk_body').innerHTML='<div class="empty">ยังไม่มีการตรวจเชลฟ์นี้ในเดือน '+esc(r.month)+'</div>'; return; }
-  $('shchk_body').innerHTML='<div style="font-size:13px;color:var(--muted);margin-bottom:10px">เดือน '+esc(r.month)+' · ตรวจทั้งหมด '+rows.length+' ครั้ง</div>'
+  const pending=rows.filter(c=>(c.status||'submitted')==='submitted').length;
+  $('shchk_body').innerHTML='<div style="font-size:13px;color:var(--muted);margin-bottom:10px">เดือน '+esc(r.month)+' · ตรวจทั้งหมด '+rows.length+' ครั้ง'+(pending?' · <b style="color:#a06515">รอตรวจ '+pending+'</b>':'')+'</div>'
     +rows.map(c=>{
+      const st=c.status||'submitted';
       const items=Array.isArray(c.items)?c.items:[];
       const done=items.filter(it=>it&&it.done).length;
       const chips=items.map(it=>{
@@ -2655,20 +2664,50 @@ async function openShelfChecks(shelfId, shelfName, month){
         return '<span class="pill '+(ok?'ok':'muted')+'" style="font-size:12px;margin:2px 4px 2px 0">'+(ok?'✓':'○')+' '+esc((it&&it.label)||'')+'</span>';
       }).join('');
       const photos=Array.isArray(c.photos)?c.photos:[];
-      const pics=photos.length?('<div style="margin-top:8px;display:flex;flex-wrap:wrap">'+photos.map(u=>'<a href="'+esc(u)+'" target="_blank" rel="noopener"><img src="'+esc(u)+'" loading="lazy" style="width:70px;height:70px;object-fit:cover;border-radius:8px;margin:0 6px 6px 0;border:1px solid var(--line)"></a>').join('')+'</div>'):'';
+      const pics=photos.length?('<div style="margin-top:8px;display:flex;flex-wrap:wrap">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" loading="lazy" style="width:70px;height:70px;object-fit:cover;border-radius:8px;margin:0 6px 6px 0;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'):'';
+      const mk=(Array.isArray(c.review_markup)&&c.review_markup.length)
+        ?'<div style="font-size:12px;color:#dc2626;margin-top:8px;font-weight:600">📍 จุดที่สั่งแก้</div><div style="display:flex;flex-wrap:wrap">'+c.review_markup.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:70px;height:70px;object-fit:cover;border-radius:8px;margin:4px 6px 0 0;border:2px solid #ef4444;cursor:zoom-in">').join('')+'</div>':'';
+      const rvNote=(st==='sent_back'&&c.review_note)?'<div style="margin-top:6px;font-size:12.5px;color:#b45309">↳ สั่งแก้: '+esc(c.review_note)+'</div>':'';
+      const sbc=(c.sent_back_count||0)>0?' · <span style="color:#dc2626">ตีกลับมาแล้ว '+c.sent_back_count+' ครั้ง</span>':'';
       return '<div class="card" style="padding:12px;margin-bottom:8px">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
           +'<div style="flex:1;font-weight:600">📅 '+esc(shChkDate(c.check_date))+'</div>'
           +'<span style="font-size:12.5px;color:var(--muted)">👤 '+esc(c.emp_name||c.emp_id)+'</span>'
+          +shChkStatusPill(st)
           +'<span class="pill '+(items.length&&done===items.length?'ok':(done?'warn':'muted'))+'" style="font-size:12px">'+done+'/'+items.length+'</span>'
         +'</div>'
         +(chips?'<div style="margin-top:8px">'+chips+'</div>':'')
         +(c.note?'<div style="margin-top:8px;font-size:13px">📝 '+esc(c.note)+'</div>':'')
-        +pics
+        +pics + mk + rvNote
+        +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;border-top:1px solid var(--line);padding-top:10px">'
+          +(st!=='approved'?'<button class="btn btn-warn btn-sm" data-shrb="'+c.id+'">⤴ ตีกลับให้แก้</button>':'')
+          +(st!=='approved'?'<button class="btn btn-pri btn-sm" data-shap="'+c.id+'">✓ ผ่าน</button>':'<span style="font-size:12px;color:var(--muted)">ตรวจผ่านแล้ว'+(c.reviewer?(' · '+esc(c.reviewer)):'')+'</span>')
+        +'</div>'
         +'</div>';
     }).join('');
+  $('shchk_body').querySelectorAll('[data-shap]').forEach(b=>b.onclick=()=>shelfCheckReview(Number(b.dataset.shap),'approved'));
+  $('shchk_body').querySelectorAll('[data-shrb]').forEach(b=>b.onclick=()=>openShelfMarkup(SHCHK_MAP[Number(b.dataset.shrb)]));
 }
 function shChkDate(s){ if(!s) return '—'; try{ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][d.getMonth()]+' '+(d.getFullYear()+543); }catch(e){ return s; } }
+async function shelfCheckReview(id,status,note,markup){
+  const r=await post({ action:'hr_shelf_check_review', password:pwd, id, status, note, markup });
+  if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
+  toast('ok', status==='approved'?'ผ่านแล้ว':'ตีกลับแล้ว');
+  if(SHCHK_CTX) openShelfChecks(SHCHK_CTX.shelfId, SHCHK_CTX.shelfName, SHCHK_CTX.month);   // รีเฟรชโมดัล
+  loadShAssignments();   // อัปเดตตัวนับ "ตรวจแล้ว X วัน"
+}
+// ตีกลับ: ใช้เครื่องมือวาดชี้จุดเดียวกับงานในกะ (openMarkupEditor) โดยส่ง reviewFn ของเชลฟ์
+async function openShelfMarkup(c){
+  if(!c){ toast('err','ไม่พบรายการ'); return; }
+  const photos=(Array.isArray(c.photos)&&c.photos.length)?c.photos:[];
+  if(!photos.length){ const note=prompt('ระบุสิ่งที่ต้องแก้ (ตีกลับ):'); if(note===null) return; await shelfCheckReview(c.id,'sent_back',note); return; }
+  ensureMarkupUI();
+  MK={ task:c, tool:'circle', cur:0, imgs:photos.map(u=>({src:u, el:null, shapes:[]})), reviewFn:(note,out)=>shelfCheckReview(c.id,'sent_back',note,out) };
+  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
+  document.getElementById('mkNote').value='';
+  document.getElementById('mkOverlay').style.display='flex';
+  await mkLoadCur();
+}
 ['shchkClose','shchkCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('shChkOverlay').classList.remove('show'); });
 $('shChkOverlay') && $('shChkOverlay').addEventListener('click', e=>{ if(e.target.id==='shChkOverlay') $('shChkOverlay').classList.remove('show'); });
 
@@ -3574,7 +3613,8 @@ async function mkSend(){
     ctx.drawImage(im.el,0,0,W,H); mkDrawShapes(ctx, im.shapes, W, H);
     out.push(c.toDataURL('image/jpeg',0.9));
   }
-  await taskReview(MK.task.id,'sent_back',note,out);
+  if(MK.reviewFn) await MK.reviewFn(note,out);   // เชลฟ์ (หรือชนิดอื่น) ส่งผ่าน callback
+  else await taskReview(MK.task.id,'sent_back',note,out);
   document.getElementById('mkSend').disabled=false;
   document.getElementById('mkOverlay').style.display='none'; MK=null;
 }

@@ -164,12 +164,19 @@ async function loadShelves(){
   $('s_month').textContent='เชลฟ์ที่ฉันดูแล · เดือน '+r.month;
   if(!r.rows.length){ $('shelves_body').innerHTML='<div class="card muted">ยังไม่ได้รับมอบหมายเชลฟ์ในเดือนนี้</div>'; return; }
   $('shelves_body').innerHTML=r.rows.map(s=>{
-    const done=!!s.today_check;
-    return '<div class="scard" data-sid="'+s.shelf_id+'">'
+    const tc=s.today_check, st=tc?(tc.status||'submitted'):'';
+    let pill;
+    if(st==='sent_back') pill='<span class="pill bad">✗ ถูกตีกลับ — แก้ไข</span>';
+    else if(st==='approved') pill='<span class="pill ok">✓ ผ่านแล้ว</span>';
+    else if(tc) pill='<span class="pill warn">⏳ ส่งแล้ว รอตรวจ</span>';
+    else pill='<span class="pill warn">ยังไม่ได้ตรวจ</span>';
+    const sbNote=(st==='sent_back'&&tc.review_note)?'<div style="margin-top:4px;font-size:13px;color:#b91c1c">↳ สั่งแก้: '+esc(tc.review_note)+'</div>':'';
+    return '<div class="scard'+(st==='sent_back'?' sentback':'')+'" data-sid="'+s.shelf_id+'">'
       +'<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-weight:700;font-size:15px">🗄️ '+esc(s.name)+(s.shelf_code?(' <span class="muted">['+esc(s.shelf_code)+']</span>'):'')+'</div>'
-      +'<span class="pill '+(done?'ok':'warn')+'">'+(done?'✓ ตรวจแล้ววันนี้':'ยังไม่ได้ตรวจ')+'</span></div>'
+      +pill+'</div>'
       +'<div class="muted" style="margin-top:3px">สาขา '+esc(branchName(s.branch_id))+'</div>'
       +(s.detail?'<div class="muted" style="margin-top:3px">📋 '+esc(s.detail)+'</div>':'')
+      +sbNote
       +'</div>';
   }).join('');
   document.querySelectorAll('[data-sid]').forEach(el=>el.onclick=()=>openShelf(r.rows.find(x=>String(x.shelf_id)===el.dataset.sid)));
@@ -187,8 +194,25 @@ function openShelf(s){
   $('c_title').textContent='🗄️ '+s.name;
   $('c_sub').textContent=(s.shelf_code?('['+s.shelf_code+'] · '):'')+'สาขา '+branchName(s.branch_id);
   $('c_detail_card').style.display=s.detail?'':'none'; $('c_detail').textContent=s.detail||'';
+  renderSbBanner(tc);
   renderChecks(); renderThumbs();
   show('step_check');
+}
+// แถบแจ้ง "ถูกตีกลับ" — แสดงเหตุผล + รูปที่ผู้ตรวจวาดชี้จุด แล้วให้แก้+ถ่ายใหม่
+function renderSbBanner(tc){
+  const old=document.getElementById('sb_banner'); if(old) old.remove();
+  if(!tc || (tc.status||'')!=='sent_back') return;
+  const mk=(Array.isArray(tc.review_markup)&&tc.review_markup.length)
+    ? '<div style="display:flex;gap:6px;overflow-x:auto;margin-top:8px">'+tc.review_markup.map(u=>'<img src="'+esc(u)+'" onclick="window.open(this.src,\'_blank\')" style="height:96px;border-radius:8px;border:2px solid #ef4444;flex:none;cursor:zoom-in">').join('')+'</div>' : '';
+  const div=document.createElement('div');
+  div.id='sb_banner';
+  div.style.cssText='background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:12px 14px;margin-bottom:12px';
+  div.innerHTML='<div style="font-weight:700;color:#b91c1c">✗ งานนี้ถูกตีกลับ — กรุณาแก้ไขแล้วส่งใหม่</div>'
+    +(tc.review_note?'<div style="margin-top:5px;font-size:14px;color:#7f1d1d">📝 '+esc(tc.review_note)+'</div>':'')
+    +mk;
+  const anchor=document.getElementById('c_detail_card');
+  if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(div, anchor.nextSibling);
+  else { const cc=document.getElementById('c_checks'); if(cc&&cc.parentNode) cc.parentNode.insertBefore(div, cc); }
 }
 function renderChecks(){
   $('c_checks').innerHTML=STATE.map((it,i)=>'<div class="chk'+(it.done?' on':'')+'" data-ci="'+i+'"><div class="box">✓</div><div>'+esc(it.label)+'</div></div>').join('')

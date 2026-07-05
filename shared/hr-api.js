@@ -191,6 +191,7 @@
         case 'hr_shelf_assignments': return await hrShelfAssignments(p.month, p.branch);
         case 'hr_shelf_assign_delete': return await hrShelfAssignDelete(p.id);
         case 'hr_shelf_checks':      return await hrShelfChecks(p.shelf_id, p.month);
+        case 'hr_shelf_check_review':return await hrShelfCheckReview(p.id, p.status, p.note, p.markup);
         case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
         case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note);
         case 'hr_mark_duty':            return await hrMarkDuty(p.data);
@@ -2011,6 +2012,29 @@
     const empName = {}; (empR.data || []).forEach(x => { empName[x.emp_id] = x.nickname || x.name; });
     const rows = (ckR.data || []).map(c => ({ ...c, emp_name: empName[c.emp_id] || c.emp_id }));
     return { ok: true, month, rows };
+  }
+
+  // ตรวจการดูแลเชลฟ์รายวัน: ผ่าน / ตีกลับ (แบบเดียวกับงานในกะ)
+  //   status='approved' → ผ่าน · อื่น ๆ → sent_back + เก็บ review_note/review_markup + นับ sent_back_count
+  async function hrShelfCheckReview(id, status, note, markup) {
+    if (!id) return { ok: false, error: 'ไม่ระบุรายการตรวจ' };
+    const { data: c } = await sb().from('shelf_checks').select('emp_id,shelf_id,check_date,sent_back_count').eq('id', id).maybeSingle();
+    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    if (status !== 'approved') upd.sent_back_count = ((c && c.sent_back_count) || 0) + 1;
+    // รูปที่ผู้ตรวจวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
+    if (status !== 'approved' && Array.isArray(markup) && markup.length) {
+      const urls = [];
+      for (const m of markup) {
+        if (typeof m === 'string' && m.startsWith('data:')) {
+          try { urls.push(await window.HR.uploadPhoto('employee-docs', 'shelfmarkup/' + id + '_' + Date.now() + '_' + urls.length + '.jpg', m)); } catch (e) { console.warn('shelf markup upload', e); }
+        } else if (typeof m === 'string' && m) { urls.push(m); }
+      }
+      upd.review_markup = urls.length ? urls : null;
+    }
+    const { error } = await sb().from('shelf_checks').update(upd).eq('id', id);
+    if (error) throw error;
+    await logAct(status === 'approved' ? 'อนุมัติการตรวจเชลฟ์' : 'ตีกลับการตรวจเชลฟ์', c ? c.emp_id : null, 'เชลฟ์#' + (c ? c.shelf_id : '') + ' · ' + (c ? c.check_date : '') + (note ? (' · ' + note) : ''));
+    return { ok: true };
   }
 
   // ---------- คำขอแก้ไขเวลาออก (ลืมกดออก/ระบบปิดให้) ----------
