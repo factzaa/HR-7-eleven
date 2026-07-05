@@ -1101,6 +1101,15 @@
   </div>
 </div>
 
+<!-- Modal: ดูการตรวจเชลฟ์รายวัน -->
+<div class="overlay" id="shChkOverlay">
+  <div class="modal">
+    <div class="modal-h"><h2 id="shchk_title">การตรวจเชลฟ์</h2><button class="close" id="shchkClose">×</button></div>
+    <div class="modal-b" id="shchk_body"></div>
+    <div class="modal-f"><button class="btn btn-sec" id="shchkCloseBtn">ปิด</button></div>
+  </div>
+</div>
+
 <!-- Modal: Leave -->
 <div class="overlay" id="leaveOverlay">
   <div class="modal">
@@ -2614,16 +2623,54 @@ async function loadShAssignments(){
   $('sh_asg_list').innerHTML=Object.keys(byShelf).map(k=>{
     const g=byShelf[k];
     return '<div class="card" style="padding:14px;margin-bottom:10px">'
-      +'<div style="font-weight:700;font-size:15px">🗄️ '+esc(g.name)+' <span style="color:var(--muted);font-weight:500">['+esc(g.code)+']</span></div>'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+        +'<div style="flex:1;font-weight:700;font-size:15px">🗄️ '+esc(g.name)+' <span style="color:var(--muted);font-weight:500">['+esc(g.code)+']</span></div>'
+        +'<button class="btn btn-sec btn-sm" data-shchk="'+esc(k)+'" data-shchkname="'+esc(g.name)+' ['+esc(g.code)+']">📋 ดูการตรวจ</button>'
+      +'</div>'
       +'<div style="font-size:12.5px;color:var(--muted);margin:2px 0 8px">สาขา '+esc(g.branch)+' · เดือน '+esc(r.month)+'</div>'
       +g.people.map(p=>'<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line2)">'
         +'<div style="flex:1">👤 '+esc(p.emp_name)+'</div>'
-        +'<span style="font-size:12px;color:var(--muted)">ตรวจแล้ว '+(p.checked_days||0)+' วัน</span>'
+        +'<span class="pill '+((p.checked_days||0)>0?'ok':'muted')+'" style="font-size:12px">ตรวจแล้ว '+(p.checked_days||0)+' วัน</span>'
         +'<button class="btn btn-sec btn-sm" data-shadel="'+p.id+'">ยกเลิก</button></div>').join('')
       +'</div>';
   }).join('');
+  $('sh_asg_list').querySelectorAll('[data-shchk]').forEach(b=>b.onclick=()=>openShelfChecks(b.dataset.shchk, b.dataset.shchkname, r.month));
   $('sh_asg_list').querySelectorAll('[data-shadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ยกเลิกการมอบหมายรายการนี้?'))return; const rr=await post({action:'hr_shelf_assign_delete',password:pwd,id:Number(b.dataset.shadel)}); if(rr.ok){ toast('ok','ยกเลิกแล้ว'); loadShAssignments(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
 }
+// --- ดูการตรวจเชลฟ์รายวัน (ที่พนักงานส่งมา) ---
+async function openShelfChecks(shelfId, shelfName, month){
+  $('shchk_title').textContent='การตรวจเชลฟ์ · '+(shelfName||'');
+  $('shchk_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  $('shChkOverlay').classList.add('show');
+  const r=await post({ action:'hr_shelf_checks', password:pwd, shelf_id:Number(shelfId), month:month||'' });
+  if(!r.ok){ $('shchk_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const rows=r.rows||[];
+  if(!rows.length){ $('shchk_body').innerHTML='<div class="empty">ยังไม่มีการตรวจเชลฟ์นี้ในเดือน '+esc(r.month)+'</div>'; return; }
+  $('shchk_body').innerHTML='<div style="font-size:13px;color:var(--muted);margin-bottom:10px">เดือน '+esc(r.month)+' · ตรวจทั้งหมด '+rows.length+' ครั้ง</div>'
+    +rows.map(c=>{
+      const items=Array.isArray(c.items)?c.items:[];
+      const done=items.filter(it=>it&&it.done).length;
+      const chips=items.map(it=>{
+        const ok=it&&it.done;
+        return '<span class="pill '+(ok?'ok':'muted')+'" style="font-size:12px;margin:2px 4px 2px 0">'+(ok?'✓':'○')+' '+esc((it&&it.label)||'')+'</span>';
+      }).join('');
+      const photos=Array.isArray(c.photos)?c.photos:[];
+      const pics=photos.length?('<div style="margin-top:8px;display:flex;flex-wrap:wrap">'+photos.map(u=>'<a href="'+esc(u)+'" target="_blank" rel="noopener"><img src="'+esc(u)+'" loading="lazy" style="width:70px;height:70px;object-fit:cover;border-radius:8px;margin:0 6px 6px 0;border:1px solid var(--line)"></a>').join('')+'</div>'):'';
+      return '<div class="card" style="padding:12px;margin-bottom:8px">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          +'<div style="flex:1;font-weight:600">📅 '+esc(shChkDate(c.check_date))+'</div>'
+          +'<span style="font-size:12.5px;color:var(--muted)">👤 '+esc(c.emp_name||c.emp_id)+'</span>'
+          +'<span class="pill '+(items.length&&done===items.length?'ok':(done?'warn':'muted'))+'" style="font-size:12px">'+done+'/'+items.length+'</span>'
+        +'</div>'
+        +(chips?'<div style="margin-top:8px">'+chips+'</div>':'')
+        +(c.note?'<div style="margin-top:8px;font-size:13px">📝 '+esc(c.note)+'</div>':'')
+        +pics
+        +'</div>';
+    }).join('');
+}
+function shChkDate(s){ if(!s) return '—'; try{ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][d.getMonth()]+' '+(d.getFullYear()+543); }catch(e){ return s; } }
+['shchkClose','shchkCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('shChkOverlay').classList.remove('show'); });
+$('shChkOverlay') && $('shChkOverlay').addEventListener('click', e=>{ if(e.target.id==='shChkOverlay') $('shChkOverlay').classList.remove('show'); });
 
 // ========== บอร์ดวันนี้ (สาขา × กะ × คน) ==========
 function loadBoard(){
