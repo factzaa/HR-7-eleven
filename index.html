@@ -182,6 +182,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
   var cfg=function(){return {url:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey)||''};};
   var MSGS=[]; var BRANCH=localStorage.getItem(LS_BRANCH)||''; var BRANCHES=[];
+  var EMPID=''; var EMPNAME=''; try{ EMPID=(window.HRSession?(HRSession.getEmp()||''):''); }catch(e){}
 
   // ---- styles ----
   var st=document.createElement('style'); st.textContent=
@@ -212,6 +213,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   var pop=document.createElement('div'); pop.id='npop';
   pop.innerHTML='<div class="nh"><img src="./assistant-mascot.png" alt="" style="width:30px;height:30px;object-fit:contain;background:rgba(255,255,255,.15);border-radius:8px"><div class="t">น้องนิดา<small id="nbranch">ผู้ช่วยพนักงาน</small></div><button id="nset" title="เปลี่ยนสาขา">⚙</button><button id="ncls">✕</button></div>'
    +'<div id="nsetup"><div style="font-size:14px;color:#374151">เลือกสาขาของเครื่องนี้ (ตั้งครั้งเดียว)</div><select id="nbsel"></select><button id="nbsave">บันทึกสาขา</button><button id="nnotif" style="background:#fff;color:#12402b;border:1.5px solid #16a34a">🔔 เปิด/ปิดแจ้งเตือนงานค้าง</button></div>'
+   +'<div id="nemp"></div>'
    +'<div id="nlog"></div>'
    +'<div id="nchips"></div>'
    +'<div id="nbar"><input id="nin" placeholder="พิมพ์ถามงาน…" ><button id="nsend">ส่ง</button></div>';
@@ -253,6 +255,32 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     });
     box.innerHTML=h; box.scrollTop=box.scrollHeight;
   }
+  // แถบระบุตัวตน: กรอกรหัสพนักงานในแชทได้เลย (ตรวจชื่อ + จำไว้ข้ามหน้า)
+  function renderEmpBar(){
+    var el=$('nemp'); if(!el) return;
+    if(EMPID){
+      if(!EMPNAME){ try{ window.HR.lookupEmployee(EMPID).then(function(e){ if(e){ EMPNAME=e.nickname||e.name||''; renderEmpBar(); } }); }catch(e){} }
+      el.innerHTML='<div style="display:flex;align-items:center;gap:6px;padding:7px 11px;background:#eafaf0;border-bottom:1px solid #cdead7;font-size:12.5px;color:#12402b">👤 '+esc(EMPNAME||('รหัส '+EMPID))+' <span style="color:#6b757d">('+esc(EMPID)+')</span><span style="flex:1"></span><button id="nempchg" style="background:none;border:0;color:#0a7d3b;font:inherit;font-size:12.5px;cursor:pointer;text-decoration:underline">เปลี่ยนรหัส</button></div>';
+      var b=$('nempchg'); if(b) b.onclick=function(){ EMPID=''; EMPNAME=''; try{ if(window.HRSession) HRSession.clearEmp(); }catch(e){} renderEmpBar(); };
+    } else {
+      el.innerHTML='<div style="padding:8px 11px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:12.5px;color:#9a3412">👤 กรอกรหัสพนักงานเพื่อดูข้อมูลของคุณ (ลา/กะ/งาน/สถานะ)'
+        +'<div style="display:flex;gap:6px;margin-top:6px"><input id="nempin" inputmode="numeric" placeholder="รหัสพนักงาน" style="flex:1;padding:8px 10px;border:1.5px solid #fdba74;border-radius:9px;font:inherit;font-size:14px"><button id="nempok" style="background:#16a34a;color:#fff;border:0;border-radius:9px;padding:8px 15px;font-weight:700;cursor:pointer">ยืนยัน</button></div>'
+        +'<div id="nemperr" style="color:#dc2626;font-size:12px;margin-top:4px;display:none"></div></div>';
+      var inp=$('nempin'), ok=$('nempok');
+      var go=async function(){
+        var code=(inp.value||'').trim(); if(!code) return;
+        ok.disabled=true; var old=ok.textContent; ok.textContent='…';
+        try{
+          var emp=await window.HR.lookupEmployee(code);
+          if(emp){ EMPID=code; EMPNAME=emp.nickname||emp.name||''; try{ if(window.HRSession) HRSession.setEmp(code); }catch(e){} renderEmpBar(); MSGS.push({role:'assistant',text:'จำรหัสให้แล้วค่ะ สวัสดีคุณ '+(EMPNAME||code)+' 😊 ถามเรื่องลา/กะ/งาน/สถานะของคุณได้เลยค่ะ'}); render(); }
+          else { var e=$('nemperr'); if(e){ e.textContent='ไม่พบรหัสพนักงานนี้ค่ะ ลองตรวจอีกครั้ง'; e.style.display='block'; } }
+        }catch(err){ var e2=$('nemperr'); if(e2){ e2.textContent='ตรวจสอบไม่ได้ ลองใหม่นะคะ'; e2.style.display='block'; } }
+        ok.disabled=false; ok.textContent=old;
+      };
+      if(ok) ok.onclick=go;
+      if(inp) inp.addEventListener('keydown',function(e){ if(e.key==='Enter') go(); });
+    }
+  }
   var CHIPS=['โควตาลาของฉันเหลือเท่าไหร่','กะของฉันสัปดาห์นี้','งานของฉันที่ค้าง','สถานะของฉันเป็นยังไง','ขอลาต้องทำยังไง','งานค้างของสาขา','สินค้าใกล้หมดอายุ'];
   $('nchips').innerHTML=CHIPS.map(function(c){return '<button>'+esc(c)+'</button>';}).join('');
   $('nchips').querySelectorAll('button').forEach(function(b){ b.onclick=function(){ $('nin').value=b.textContent; send(); }; });
@@ -263,7 +291,6 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     var c=cfg();
     try{
       var send2=MSGS.filter(function(m){return m.text!=='กำลังคิด…';}).map(function(m){return {role:m.role,text:m.text};});
-      var EMPID=''; try{ EMPID=(window.HRSession?(HRSession.getEmp()||''):''); }catch(e){}
       var RVER=''; try{ RVER=(window.RULES_VERSION||''); }catch(e){}
       var r=await fetch(c.url+'/functions/v1/emp-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':c.key,'Authorization':'Bearer '+c.key},body:JSON.stringify({branch:BRANCH,emp_id:EMPID,rules_version:RVER,messages:send2})});
       var j=await r.json(); MSGS.pop();
@@ -275,14 +302,14 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
 
   // ---- setup สาขา ----
   async function loadBranches(){ if(BRANCHES.length) return; try{ var cf=await window.HR.loadConfig(); BRANCHES=cf.branches||[]; }catch(e){} }
-  async function openSetup(){ await loadBranches(); $('nbsel').innerHTML=BRANCHES.map(function(b){return '<option value="'+esc(b.branch_id)+'"'+(b.branch_id===BRANCH?' selected':'')+'>'+esc(b.name)+' ('+esc(b.branch_id)+')</option>';}).join(''); $('nsetup').style.display='flex'; $('nlog').style.display='none'; $('nchips').style.display='none'; $('nbar').style.display='none'; setNotifBtn(); }
-  function closeSetup(){ $('nsetup').style.display='none'; $('nlog').style.display='flex'; $('nchips').style.display='flex'; $('nbar').style.display='flex'; }
+  async function openSetup(){ await loadBranches(); $('nbsel').innerHTML=BRANCHES.map(function(b){return '<option value="'+esc(b.branch_id)+'"'+(b.branch_id===BRANCH?' selected':'')+'>'+esc(b.name)+' ('+esc(b.branch_id)+')</option>';}).join(''); $('nsetup').style.display='flex'; $('nemp').style.display='none'; $('nlog').style.display='none'; $('nchips').style.display='none'; $('nbar').style.display='none'; setNotifBtn(); }
+  function closeSetup(){ $('nsetup').style.display='none'; $('nemp').style.display='block'; $('nlog').style.display='flex'; $('nchips').style.display='flex'; $('nbar').style.display='flex'; renderEmpBar(); }
   $('nbsave').onclick=function(){ var v=$('nbsel').value; if(!v){return;} BRANCH=v; localStorage.setItem(LS_BRANCH,v); var b=BRANCHES.find(function(x){return x.branch_id===v;}); $('nbranch').textContent='สาขา '+((b&&b.name)||v); closeSetup(); };
   $('nset').onclick=openSetup;
   $('nnotif').onclick=toggleNotif;
 
   var KIOSK = !!window.Capacitor;   // ในแอป APK → เปิดแชตแบบเต็มจอ (เห็นเฉพาะหน้าแชท)
-  async function openPop(){ if(KIOSK) pop.classList.add('full'); pop.style.display='flex'; $('nbadge').style.display='none'; await loadBranches(); if(!BRANCH){ openSetup(); } else { var b=BRANCHES.find(function(x){return x.branch_id===BRANCH;}); $('nbranch').textContent='สาขา '+((b&&b.name)||BRANCH); render(); } }
+  async function openPop(){ if(KIOSK) pop.classList.add('full'); pop.style.display='flex'; $('nbadge').style.display='none'; await loadBranches(); if(!BRANCH){ openSetup(); } else { var b=BRANCHES.find(function(x){return x.branch_id===BRANCH;}); $('nbranch').textContent='สาขา '+((b&&b.name)||BRANCH); renderEmpBar(); render(); } }
   // ปุ่มลอย: ลากย้ายได้ (แตะ=เปิด/ปิด, ลาก=ย้ายตำแหน่ง)
   (function(){
     var dragging=false, moved=false, sx=0, sy=0, ox=0, oy=0, anim='', lastTouch=0;
