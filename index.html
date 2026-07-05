@@ -283,12 +283,20 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   async function openPop(){ if(KIOSK) pop.classList.add('full'); pop.style.display='flex'; $('nbadge').style.display='none'; await loadBranches(); if(!BRANCH){ openSetup(); } else { var b=BRANCHES.find(function(x){return x.branch_id===BRANCH;}); $('nbranch').textContent='สาขา '+((b&&b.name)||BRANCH); render(); } }
   // ปุ่มลอย: ลากย้ายได้ (แตะ=เปิด/ปิด, ลาก=ย้ายตำแหน่ง)
   (function(){
-    var dragging=false, moved=false, sx=0, sy=0, ox=0, oy=0, anim='';
+    var dragging=false, moved=false, sx=0, sy=0, ox=0, oy=0, anim='', lastTouch=0;
     function down(e){ var p=e.touches?e.touches[0]:e; dragging=true; moved=false; sx=p.clientX; sy=p.clientY; var r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; anim=fab.style.animation; fab.style.animation='none'; }
-    function move(e){ if(!dragging) return; var p=e.touches?e.touches[0]:e; var dx=p.clientX-sx, dy=p.clientY-sy; if(Math.abs(dx)>6||Math.abs(dy)>6) moved=true; var nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4, ox+dx)); var ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4, oy+dy)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; if(e.cancelable) e.preventDefault(); }
+    function move(e){ if(!dragging) return; var p=e.touches?e.touches[0]:e; var dx=p.clientX-sx, dy=p.clientY-sy; if(Math.abs(dx)>8||Math.abs(dy)>8) moved=true; var nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4, ox+dx)); var ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4, oy+dy)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; if(e.cancelable) e.preventDefault(); }
     function up(){ if(!dragging) return; dragging=false; fab.style.animation=anim; if(!moved){ if(pop.style.display==='flex'){ pop.style.display='none'; } else openPop(); } }
-    fab.addEventListener('touchstart',down,{passive:true}); fab.addEventListener('touchmove',move,{passive:false}); fab.addEventListener('touchend',up);
-    fab.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+    // ---- touch (มือถือ) ----
+    fab.addEventListener('touchstart',function(e){ lastTouch=Date.now(); down(e); },{passive:true});
+    fab.addEventListener('touchmove',move,{passive:false});
+    fab.addEventListener('touchend',function(e){ lastTouch=Date.now(); up(); if(e.cancelable) e.preventDefault(); },{passive:false});   // กัน event เมาส์จำลองยิงตาม (เปิดแล้วปิดทันที)
+    // ---- mouse (เดสก์ท็อป) — ข้ามถ้าเพิ่งแตะจากทัช ----
+    fab.addEventListener('mousedown',function(e){ if(Date.now()-lastTouch<800) return; down(e); });
+    window.addEventListener('mousemove',function(e){ if(Date.now()-lastTouch<800) return; move(e); });
+    window.addEventListener('mouseup',function(e){ if(Date.now()-lastTouch<800) return; up(e); });
+    // สำรอง: ถ้า tap ปกติ (บางเบราว์เซอร์ยิง click แต่ไม่ยิง touchend ตามคาด)
+    fab.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); });
   })();
   $('ncls').onclick=function(){pop.style.display='none';};
 
