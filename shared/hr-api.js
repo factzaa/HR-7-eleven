@@ -267,7 +267,7 @@
     const today = bkkToday();
     const cyc = cycleRange('current');
     let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id').eq('active', true);
-    let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status').eq('work_date', today);
+    let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status,extend_until').eq('work_date', today);
     let qD30 = sb().from('attendance').select('work_date,late_min,ot_hours,branch_id').gte('work_date', addDays(today, -29)).lte('work_date', today);
     let qCyc = sb().from('attendance').select('emp_id,late_min,branch_id').gte('work_date', cyc.start).lte('work_date', cyc.end);
     let qSch = sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today);
@@ -292,13 +292,41 @@
     const mkRow = a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, shift: shNm[a.shift_id] || a.shift_id || '', branch: brName[a.branch_id] || '', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, end_time: shEnd[a.shift_id] || '' });
     const coGrace = await getSettingNum('checkout_grace_min', 15);   // ผ่อนผันก่อนเตือนลืมกดออก
     const nowMin = hmToMin(nowHM);
+    // ยึด "กะปัจจุบันจากตารางเวร" (รองรับ HR เปลี่ยนกะหลังเช็กอิน + ควบกะ) — ไม่ใช้กะที่ค้างในแถวลงเวลา
+    let qSchOv = sb().from('schedules').select('emp_id,shift_id,work_date').gte('work_date', addDays(today, -1)).lte('work_date', today);
+    if (branch) qSchOv = qSchOv.eq('branch_id', branch);
+    const schOv = (await qSchOv).data || [];
+    const schByED = {};
+    schOv.forEach(s => { if (s.shift_id) (schByED[s.emp_id + '|' + s.work_date] = schByED[s.emp_id + '|' + s.work_date] || []).push(s.shift_id); });
+    // เวลาเลิก "กะสุดท้ายของวัน" (ตามตารางเวร; ถ้าไม่มีเวรใช้กะที่เช็กอิน) — คืน {en, endDate}
+    const effEnd = (empId, wd, snapShift) => {
+      const sids = (schByED[empId + '|' + wd] && schByED[empId + '|' + wd].length) ? schByED[empId + '|' + wd] : [snapShift];
+      let best = null, bestMs = -Infinity;
+      for (const sid of sids) {
+        const en = shEnd[sid]; if (!en) continue;
+        const st = shStart[sid]; const overnight = !!st && en <= st;
+        const endDate = overnight ? addDays(wd, 1) : wd;
+        const ms = new Date(endDate + 'T' + en + ':00+07:00').getTime();
+        if (ms > bestMs) { bestMs = ms; best = { en, endDate }; }
+      }
+      return best;
+    };
+    const isOverdue = (empId, wd, snapShift) => {
+      const e = effEnd(empId, wd, snapShift); if (!e) return false;
+      if (e.endDate < today) return true;
+      if (e.endDate === today) { const thr = hmToMin(e.en) + coGrace; return thr < 1440 && nowMin >= thr; }
+      return false;
+    };
     // รวมกะข้ามคืน: ดึงแถวที่ยังเปิดค้างจากเมื่อวานมาด้วย (กะดึกเลิกเช้าวันถัดไป)
-    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min').eq('work_date', addDays(today, -1)).not('check_in', 'is', null).is('check_out', null);
+    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,extend_until').eq('work_date', addDays(today, -1)).not('check_in', 'is', null).is('check_out', null);
     if (branch) qYestOpen = qYestOpen.eq('branch_id', branch);
     const yestOpen = (await qYestOpen).data || [];
     const openRows = todayA.filter(a => a.check_in && !a.check_out).map(a => ({ ...a, work_date: today }))
       .concat(yestOpen.map(a => ({ ...a, work_date: addDays(today, -1) })));
-    const stillOpenList = openRows.filter(a => coOverdue(a.work_date, shStart[a.shift_id], shEnd[a.shift_id], coGrace, today, nowMin)).map(mkRow);
+    const stillOpenList = openRows.filter(a => {
+      if (a.extend_until && new Date(a.extend_until).getTime() > Date.now()) return false;   // ประกาศควบกะต่อ → ยังไม่ถือว่าลืม
+      return isOverdue(a.emp_id, a.work_date, a.shift_id);
+    }).map(a => { const e = effEnd(a.emp_id, a.work_date, a.shift_id); const r = mkRow(a); if (e) r.end_time = e.en; return r; });
     const lateList = todayA.filter(a => a.late_min > 0).map(mkRow);
     const checkedInList = todayA.filter(a => a.check_in).map(mkRow);
 
@@ -1011,7 +1039,7 @@
     const today = bkkToday();
     const [lvR, todayR, schR, empR, lvApprR, subR, shR] = await Promise.all([
       sb().from('leaves').select('*, employees(name)').eq('status', 'pending').order('created_at', { ascending: false }),
-      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id').eq('work_date', today),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,extend_until').eq('work_date', today),
       sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today),
       sb().from('employees').select('emp_id,name,branch_id').eq('active', true),
       sb().from('leaves').select('emp_id,start_date,end_date').eq('status', 'approved').lte('start_date', today),
@@ -1036,14 +1064,39 @@
     // เตือน "ยังไม่กดออก" เฉพาะคนที่เลยเวลาเลิกกะ + ผ่อนผันแล้ว (ไม่ใช่ทันทีหลังเช็กอิน)
     const coGrace = await getSettingNum('checkout_grace_min', 15);
     const nowMin = hmToMin(nowHM);
+    // ยึด "กะปัจจุบันจากตารางเวร" (รองรับ HR เปลี่ยนกะหลังเช็กอิน + ควบกะ) — ไม่ใช้กะที่ค้างในแถวลงเวลา
+    let qSchOv = sb().from('schedules').select('emp_id,shift_id,work_date').gte('work_date', addDays(today, -1)).lte('work_date', today);
+    if (branch) qSchOv = qSchOv.eq('branch_id', branch);
+    const schByED = {};
+    ((await qSchOv).data || []).forEach(s => { if (s.shift_id) (schByED[s.emp_id + '|' + s.work_date] = schByED[s.emp_id + '|' + s.work_date] || []).push(s.shift_id); });
+    const effEndN = (empId, wd, snapShift) => {
+      const sids = (schByED[empId + '|' + wd] && schByED[empId + '|' + wd].length) ? schByED[empId + '|' + wd] : [snapShift];
+      let best = null, bestMs = -Infinity;
+      for (const sid of sids) {
+        const en = shiftEnd[sid]; if (!en) continue;
+        const st = shiftStart[sid]; const overnight = !!st && en <= st;
+        const endDate = overnight ? addDays(wd, 1) : wd;
+        const ms = new Date(endDate + 'T' + en + ':00+07:00').getTime();
+        if (ms > bestMs) { bestMs = ms; best = { en, endDate }; }
+      }
+      return best;
+    };
+    const isOverdueN = (empId, wd, snapShift) => {
+      const e = effEndN(empId, wd, snapShift); if (!e) return false;
+      if (e.endDate < today) return true;
+      if (e.endDate === today) { const thr = hmToMin(e.en) + coGrace; return thr < 1440 && nowMin >= thr; }
+      return false;
+    };
     // รวมกะข้ามคืน: ดึงแถวที่ยังเปิดค้างจากเมื่อวาน (กะดึกเลิกเช้าวันถัดไป)
-    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out').eq('work_date', addDays(today, -1)).not('check_in', 'is', null).is('check_out', null);
+    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,extend_until').eq('work_date', addDays(today, -1)).not('check_in', 'is', null).is('check_out', null);
     if (branch) qYestOpen = qYestOpen.eq('branch_id', branch);
     const yestOpen = (await qYestOpen).data || [];
     const ncoRows = att.filter(a => a.check_in && !a.check_out).map(a => ({ ...a, work_date: today }))
       .concat(yestOpen.map(a => ({ ...a, work_date: addDays(today, -1) })));
-    const not_checked_out = ncoRows.filter(a => coOverdue(a.work_date, shiftStart[a.shift_id], shiftEnd[a.shift_id], coGrace, today, nowMin))
-      .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, check_in: fmtTime(a.check_in), shift_name: shiftName[a.shift_id] || '', end_time: shiftEnd[a.shift_id] || '' }));
+    const not_checked_out = ncoRows.filter(a => {
+      if (a.extend_until && new Date(a.extend_until).getTime() > Date.now()) return false;   // ประกาศควบกะต่อ → ยังไม่ถือว่าลืม
+      return isOverdueN(a.emp_id, a.work_date, a.shift_id);
+    }).map(a => { const e = effEndN(a.emp_id, a.work_date, a.shift_id); return { emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, check_in: fmtTime(a.check_in), shift_name: shiftName[a.shift_id] || '', end_time: (e ? e.en : (shiftEnd[a.shift_id] || '')) }; });
     const late_today = att.filter(a => a.late_min > 0)
       .map(a => ({ emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, late_min: a.late_min }));
     // เตือน "ขาด/ยังไม่มา" เฉพาะกะที่ถึงเวลาเข้างานแล้วเท่านั้น (ไม่ใช่ตอนเพิ่งจัดเวร)
