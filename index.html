@@ -243,7 +243,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   }
   function render(){
     var box=$('nlog'); var h='';
-    if(!MSGS.length) h='<div style="color:#6b757d;text-align:center;padding:22px 8px;font-size:13.5px">สวัสดีค่ะ 👋 นิดาช่วยเตือนงานค้างของสาขาและบอกวิธีทำงานได้<br>ลองแตะปุ่มด้านล่างได้เลย</div>';
+    if(!MSGS.length) h='<div style="color:#6b757d;text-align:center;padding:22px 8px;font-size:13.5px">สวัสดีค่ะ 👋 นิดาเป็นเจ้าหน้าที่ส่วนกลาง ช่วยเรื่อง<b>การลา · โควตา · ตารางเวร · งานของคุณ · สถานะวินัย · ระเบียบ</b> และงานของสาขาได้<br>ลองแตะปุ่มด้านล่าง หรือพิมพ์ถามได้เลยค่ะ</div>';
     MSGS.forEach(function(m){
       if(m.role==='user'){ h+='<div class="b me">'+esc(m.text)+'</div>'; return; }
       var ch=m.cards?cardsHtml(m.cards):'';
@@ -253,7 +253,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     });
     box.innerHTML=h; box.scrollTop=box.scrollHeight;
   }
-  var CHIPS=['งานค้างของสาขา','เชลฟ์ยังไม่ตรวจวันนี้','สินค้าใกล้หมดอายุ','สรุปงานค้างทั้งหมด','วิธีส่งงาน'];
+  var CHIPS=['โควตาลาของฉันเหลือเท่าไหร่','กะของฉันสัปดาห์นี้','งานของฉันที่ค้าง','สถานะของฉันเป็นยังไง','ขอลาต้องทำยังไง','งานค้างของสาขา','สินค้าใกล้หมดอายุ'];
   $('nchips').innerHTML=CHIPS.map(function(c){return '<button>'+esc(c)+'</button>';}).join('');
   $('nchips').querySelectorAll('button').forEach(function(b){ b.onclick=function(){ $('nin').value=b.textContent; send(); }; });
 
@@ -263,7 +263,9 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     var c=cfg();
     try{
       var send2=MSGS.filter(function(m){return m.text!=='กำลังคิด…';}).map(function(m){return {role:m.role,text:m.text};});
-      var r=await fetch(c.url+'/functions/v1/emp-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':c.key,'Authorization':'Bearer '+c.key},body:JSON.stringify({branch:BRANCH,messages:send2})});
+      var EMPID=''; try{ EMPID=(window.HRSession?(HRSession.getEmp()||''):''); }catch(e){}
+      var RVER=''; try{ RVER=(window.RULES_VERSION||''); }catch(e){}
+      var r=await fetch(c.url+'/functions/v1/emp-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':c.key,'Authorization':'Bearer '+c.key},body:JSON.stringify({branch:BRANCH,emp_id:EMPID,rules_version:RVER,messages:send2})});
       var j=await r.json(); MSGS.pop();
       MSGS.push({role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ',cards:j&&j.cards,links:j&&j.links});
     }catch(e){ MSGS.pop(); MSGS.push({role:'assistant',text:'เชื่อมต่อไม่ได้ค่ะ ลองใหม่นะคะ'}); }
