@@ -412,6 +412,7 @@
       <label class="check"><input type="checkbox" id="r_late">เฉพาะที่สาย</label>
       <label class="check"><input type="checkbox" id="r_ot">เฉพาะที่มี OT</label>
       <label class="check"><input type="checkbox" id="r_cover">เฉพาะวันไปแทน</label>
+      <label class="check"><input type="checkbox" id="r_hidezero" checked>ซ่อนคนที่ไม่มีข้อมูล</label>
       <span class="count" id="r_count" style="flex:1; text-align:right">—</span>
       <button class="btn btn-sec" id="r_export">⬇ Export CSV</button>
       <button class="btn btn-pri" id="r_apply">ค้นหา</button>
@@ -1711,9 +1712,24 @@ function renderReportDetail(){
       </tr>`).join('')}</tbody></table></div></div>`;
   $('r_count').textContent = REPORT.rows.length + ' รายการ';
 }
+// คนที่ "มีข้อมูล" = มีค่าใดค่าหนึ่งไม่เป็นศูนย์ (ทำงาน/สาย/ขาด/ลา/OT/ไปแทน/ออกก่อน)
+function esHasData(e){
+  return (Number(e.days)||0)>0 || (e.late_count||0)>0 || (e.late_total||0)>0 || (e.absent||0)>0
+    || (e.leave_days||0)>0 || (e.ot_days||0)>0 || (Number(e.ot)||0)>0 || (e.days_cover||0)>0 || (e.early_out_days||0)>0;
+}
+function summaryDisplayRows(){
+  let rows = REPORT.summary.slice().sort((a,b)=> String(a.emp_id).localeCompare(String(b.emp_id), undefined, {numeric:true}));
+  if($('r_hidezero') && $('r_hidezero').checked) rows = rows.filter(esHasData);
+  return rows;
+}
 function renderReportSummary(){
-  if(!REPORT.summary.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; $('r_count').textContent='0 คน'; return; }
-  const sumRows = REPORT.summary.slice().sort((a,b)=> String(a.emp_id).localeCompare(String(b.emp_id), undefined, {numeric:true}));
+  const total = REPORT.summary.length;
+  const sumRows = summaryDisplayRows();
+  const hidden = total - sumRows.length;
+  if(!sumRows.length){
+    $('r_body').innerHTML='<div class="empty">'+(total? ('ไม่มีคนที่มีข้อมูลในช่วงนี้ ('+total+' คนเป็นศูนย์ทั้งหมด) — เอาเครื่องหมาย “ซ่อนคนที่ไม่มีข้อมูล” ออกเพื่อดูทั้งหมด') : 'ไม่พบข้อมูล')+'</div>';
+    $('r_count').textContent = '0 คน'+(hidden? ' (ซ่อน '+hidden+')' : ''); return;
+  }
   $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr><th>พนักงาน</th><th>วันทำงาน</th><th>สาย (วัน)</th><th>สาย (นาที)</th><th>ขาด (วัน)</th><th>ลา (วัน)</th><th>OT (วัน)</th><th>OT (ชม.)</th><th>ไปแทน (วัน)</th><th>ออกก่อน (วัน/ชม.)</th></tr></thead>
     <tbody>${sumRows.map(e=>`
@@ -1730,7 +1746,7 @@ function renderReportSummary(){
         <td class="mono">${e.early_out_days>0?'<span style="color:#b45309;font-weight:600">'+e.early_out_days+' วัน · '+(e.early_out_hours||0)+' ชม.</span>':'0'}</td>
       </tr>`).join('')}</tbody></table></div>
     <div style="font-size:12px;color:var(--muted);padding:8px 12px">* ขาด = วันที่จัดเวรไว้และผ่านไปแล้ว แต่ไม่มา/ไม่ลา · วันทำงาน &amp; OT อิงการลงเวลาจริง · สาย(วัน) = จำนวนวันที่มาสาย · กะครึ่งวันนับ 0.5 · ออกก่อน = ออกก่อนเวลาเลิกกะเกินผ่อนผัน</div></div>`;
-  $('r_count').textContent = REPORT.summary.length + ' คน';
+  $('r_count').textContent = sumRows.length + ' คน'+(hidden? ' (ซ่อน '+hidden+' ที่เป็นศูนย์)' : '');
 }
 function renderCoverage(){
   const rows = (COVER&&COVER.rows)||[];
@@ -1752,9 +1768,10 @@ function renderCoverage(){
 $('r_apply').onclick = loadReport;
 $('r_mode').addEventListener('change', loadReport);
 $('r_cover').addEventListener('change', loadReport);
+$('r_hidezero') && $('r_hidezero').addEventListener('change', renderReport);   // สลับซ่อน/แสดง = เรนเดอร์ใหม่ ไม่ต้องดึงข้อมูลซ้ำ
 $('r_export').onclick = ()=>{
   const mode = $('r_mode').value;
-  const data = mode==='detail' ? REPORT.rows : mode==='coverage' ? ((COVER&&COVER.rows)||[]) : REPORT.summary;
+  const data = mode==='detail' ? REPORT.rows : mode==='coverage' ? ((COVER&&COVER.rows)||[]) : summaryDisplayRows();
   if(!data.length){ toast('err','ไม่มีข้อมูลให้ export'); return; }
   const keys = Object.keys(data[0]).filter(k=>typeof data[0][k]!=='object');
   const csv = [keys.join(',')].concat(data.map(r=>keys.map(k=>{
