@@ -174,6 +174,7 @@
         case 'hr_open_tasks':        return await hrOpenTasks();
         case 'hr_task_close_group':  return await hrTaskCloseGroup(p.data);
         case 'hr_emp_summary':       return await hrEmpSummary(p.data);
+        case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
         case 'hr_special_list':      return await hrSpecialList(p.branch);
         case 'hr_special_review':    return await hrSpecialReview(p.assignee_id, p.status, p.note);
@@ -1583,6 +1584,141 @@
         sent_back_tasks: sentBackTasks,
       },
     };
+  }
+
+  // ============================================================
+  // ANALYTICS — วิเคราะห์เชิงลึก (รวมวินัย + ความรับผิดชอบงาน ทุกคน/ทุกสาขา)
+  //   คืน: kpis, series(รายวัน), branches(เทียบสาขา), rows(สกอร์บอร์ดรายคน)
+  //   f = { start, end, branch, cycle }
+  // ============================================================
+  async function hrAnalytics(f) {
+    f = f || {};
+    const today = bkkToday();
+    let start, end, label;
+    if (f.cycle === 'current' || f.cycle === 'previous') {
+      const c = cycleRange(f.cycle); start = c.start; end = c.end;
+      label = (f.cycle === 'previous' ? 'รอบก่อนหน้า' : 'รอบปัจจุบัน') + ' (' + start + ' – ' + end + ')';
+    } else {
+      start = f.start || cycleRange('current').start;
+      end   = f.end   || today;
+      label = start + ' – ' + end;
+    }
+    const endEff = end < today ? end : today;   // ตัดวันอนาคตออกจากการนับ ขาด/มา
+    const branch = f.branch || '';
+
+    let qEmp = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift').eq('active', true);
+    let qAtt = sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,branch_id').gte('work_date', start).lte('work_date', endEff);
+    let qSch = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id').gte('work_date', start).lte('work_date', endEff);
+    let qTask = sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id').gte('work_date', start).lte('work_date', end);
+    let qShelf = sb().from('shelf_checks').select('emp_id,check_date,branch_id').gte('check_date', start).lte('check_date', end);
+    let qHand = sb().from('handovers').select('from_emp_id,work_date,status,branch_id').gte('work_date', start).lte('work_date', end);
+    let qQa   = sb().from('qa_items').select('emp_id,branch_id,created_at').gte('created_at', start + 'T00:00:00').lte('created_at', end + 'T23:59:59');
+    if (branch) { qEmp = qEmp.eq('branch_id', branch); qAtt = qAtt.eq('branch_id', branch); qSch = qSch.eq('branch_id', branch); qTask = qTask.eq('branch_id', branch); qShelf = qShelf.eq('branch_id', branch); qHand = qHand.eq('branch_id', branch); qQa = qQa.eq('branch_id', branch); }
+
+    const [empR, brR, shR, hdR, attR, schR, lvR, taskR, shelfR, handR, qaR, rules] = await Promise.all([
+      qEmp, sb().from('branches').select('branch_id,name'), sb().from('shifts').select('shift_id,name'),
+      sb().from('holidays').select('date').eq('active', true).gte('date', start).lte('date', end),
+      qAtt, qSch,
+      sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', end).gte('end_date', start),
+      qTask, qShelf, qHand, qQa, loadDisciplineRules(),
+    ]);
+    if (empR.error) throw empR.error;
+
+    const emps = empR.data || [];
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const holidaySet = new Set((hdR.data || []).map(h => h.date));
+    const att = attR.data || [], sch = schR.data || [], leaves = lvR.data || [];
+    const tasks = taskR.data || [], shelfChk = shelfR.data || [], handovers = handR.data || [], qaItems = qaR.data || [];
+
+    // จัดกลุ่มตาม emp
+    const byEmp = {};
+    emps.forEach(e => { byEmp[e.emp_id] = { emp: e, att: [], sched: [], leaves: [], tasks: [], shelf: 0, qa: 0, handover: 0 }; });
+    const ensure = id => (byEmp[id] || (byEmp[id] = { emp: null, att: [], sched: [], leaves: [], tasks: [], shelf: 0, qa: 0, handover: 0 }));
+    att.forEach(a => { if (byEmp[a.emp_id]) byEmp[a.emp_id].att.push(a); });
+    sch.forEach(s => { if (s.shift_id && byEmp[s.emp_id]) byEmp[s.emp_id].sched.push(s); });
+    leaves.forEach(l => { if (byEmp[l.emp_id]) byEmp[l.emp_id].leaves.push(l); });
+    tasks.forEach(t => { if (byEmp[t.emp_id]) byEmp[t.emp_id].tasks.push(t); });
+    shelfChk.forEach(s => { if (byEmp[s.emp_id]) byEmp[s.emp_id].shelf++; });
+    qaItems.forEach(q => { if (q.emp_id && byEmp[q.emp_id]) byEmp[q.emp_id].qa++; });
+    handovers.forEach(h => { if (h.from_emp_id && byEmp[h.from_emp_id]) byEmp[h.from_emp_id].handover++; });
+
+    // ---- สกอร์บอร์ดรายคน (รวมวินัย + ความรับผิดชอบ) ----
+    const rows = emps.map(e => {
+      const g = byEmp[e.emp_id];
+      const workedSet = new Set(g.att.filter(a => a.check_in).map(a => a.work_date));
+      const onLeave = d => g.leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+      const lateRows = g.att.filter(a => (a.late_min || 0) > 0);
+      const late_count = lateRows.length;
+      const late_total = lateRows.reduce((s, a) => s + (a.late_min || 0), 0);
+      const ot_hours = Math.round(g.att.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
+      const schedDates = [...new Set(g.sched.map(s => s.work_date))];
+      const pastSched = schedDates.filter(d => d < today);
+      const days_should = pastSched.length;
+      const days_worked = pastSched.filter(d => workedSet.has(d)).length;
+      const absent = pastSched.filter(d => !workedSet.has(d) && !onLeave(d)).length;
+      const lv = disciplineLevel(late_count, absent, rules);
+      const t_total = g.tasks.length;
+      const t_approved = g.tasks.filter(t => t.status === 'approved').length;
+      const sent_back = g.tasks.reduce((s, t) => s + (t.sent_back_count || 0), 0)
+        + g.tasks.filter(t => t.status === 'sent_back').length;
+      const pass_rate = t_total ? Math.round(t_approved / t_total * 100) : null;
+      return {
+        emp_id: e.emp_id, name: e.name, nickname: e.nickname || '',
+        branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '—',
+        days_should, days_worked, late_count, late_total, absent, ot_hours,
+        level: lv.level, level_name: lv.level_name, level_color: lv.level_color,
+        task_total: t_total, task_approved: t_approved, pass_rate, sent_back,
+        qa: g.qa, shelf: g.shelf, handover: g.handover,
+      };
+    }).sort((a, b) => (b.late_total + b.absent * 480) - (a.late_total + a.absent * 480));
+
+    // ---- ซีรีส์รายวัน (มา/สาย/ขาด/OT) ----
+    const dayMap = {};
+    const eachDay = (s, e, fn) => { const d = new Date(s + 'T00:00:00'), z = new Date(e + 'T00:00:00'); for (; d <= z; d.setDate(d.getDate() + 1)) fn(iso(d)); };
+    eachDay(start, endEff, d => { dayMap[d] = { date: d, present: 0, late: 0, absent: 0, ot: 0 }; });
+    att.forEach(a => { const d = dayMap[a.work_date]; if (!d) return; if (a.check_in) d.present++; if ((a.late_min || 0) > 0) d.late++; d.ot += Number(a.ot_hours) || 0; });
+    // ขาดรายวัน: มีเวรวันนั้น(อดีต) แต่ไม่มาและไม่ลา
+    const empLeaves = {}; emps.forEach(e => { empLeaves[e.emp_id] = byEmp[e.emp_id].leaves; });
+    const workedByDay = {}; att.forEach(a => { if (a.check_in) (workedByDay[a.work_date] = workedByDay[a.work_date] || new Set()).add(a.emp_id); });
+    sch.forEach(s => {
+      if (s.work_date >= today) return;
+      const d = dayMap[s.work_date]; if (!d) return;
+      const worked = workedByDay[s.work_date] && workedByDay[s.work_date].has(s.emp_id);
+      const onLv = (empLeaves[s.emp_id] || []).some(l => s.work_date >= l.start_date && s.work_date <= (l.end_date || l.start_date));
+      if (!worked && !onLv) d.absent++;
+    });
+    const series = Object.values(dayMap).map(d => ({ ...d, ot: Math.round(d.ot * 10) / 10 }));
+
+    // ---- เทียบสาขา ----
+    const brAgg = {};
+    rows.forEach(r => {
+      const b = brAgg[r.branch_id] || (brAgg[r.branch_id] = { branch_id: r.branch_id, branch_name: r.branch_name, emp: 0, late_count: 0, late_total: 0, absent: 0, ot: 0, pass_sum: 0, pass_n: 0 });
+      b.emp++; b.late_count += r.late_count; b.late_total += r.late_total; b.absent += r.absent; b.ot += r.ot_hours;
+      if (r.pass_rate != null) { b.pass_sum += r.pass_rate; b.pass_n++; }
+    });
+    const branches = Object.values(brAgg).map(b => ({
+      branch_id: b.branch_id, branch_name: b.branch_name, emp: b.emp,
+      late_count: b.late_count, late_total: b.late_total, absent: b.absent,
+      ot: Math.round(b.ot * 10) / 10, pass_rate: b.pass_n ? Math.round(b.pass_sum / b.pass_n) : null,
+    })).sort((a, b) => b.late_total - a.late_total);
+
+    // ---- KPI รวม ----
+    const passVals = rows.filter(r => r.pass_rate != null).map(r => r.pass_rate);
+    const kpis = {
+      total_emp: rows.length,
+      worked_days: rows.reduce((s, r) => s + r.days_worked, 0),
+      late_count: rows.reduce((s, r) => s + r.late_count, 0),
+      late_total: rows.reduce((s, r) => s + r.late_total, 0),
+      absent: rows.reduce((s, r) => s + r.absent, 0),
+      ot_hours: Math.round(rows.reduce((s, r) => s + r.ot_hours, 0) * 10) / 10,
+      sent_back: rows.reduce((s, r) => s + r.sent_back, 0),
+      task_total: rows.reduce((s, r) => s + r.task_total, 0),
+      task_approved: rows.reduce((s, r) => s + r.task_approved, 0),
+      avg_pass_rate: passVals.length ? Math.round(passVals.reduce((a, b) => a + b, 0) / passVals.length) : null,
+      at_risk: rows.filter(r => r.level >= 3).length,
+    };
+
+    return { ok: true, range: { start, end, label }, kpis, series, branches, rows };
   }
 
   // ---------- TASK LOG (ตรวจสอบงานย้อนหลัง) ----------

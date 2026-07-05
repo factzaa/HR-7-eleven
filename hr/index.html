@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --green:#00703c; --green-d:#00582f; --green-soft:#e7f3ec;
@@ -331,6 +332,7 @@
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
   <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
+  <button class="tab" id="tab_analytics"><span class="tabicon">📈</span>วิเคราะห์</button>
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_special"><span class="tabicon">⭐</span>งานพิเศษ</button>
   <button class="tab" id="tab_qa"><span class="tabicon">🗓️</span>QA สินค้า</button>
@@ -501,6 +503,53 @@
   .es-controls{display:none!important}
   .es-grid{grid-template-columns:repeat(6,1fr)!important}
 }
+</style>
+
+<!-- Analytics: วิเคราะห์เชิงลึก (วินัย + ความรับผิดชอบ รวมกัน) -->
+<div id="view_analytics" class="container" style="display:none">
+  <div class="filterbar an-controls">
+    <div class="filters">
+      <div class="field-mini"><label>ช่วงเวลา</label>
+        <select id="an_mode">
+          <option value="current">รอบปัจจุบัน (21–20)</option>
+          <option value="previous">รอบก่อนหน้า (21–20)</option>
+          <option value="d30">30 วันล่าสุด</option>
+          <option value="custom">เลือกช่วงเอง</option>
+        </select></div>
+      <div class="field-mini an-range" style="display:none"><label>ตั้งแต่</label><input id="an_start" type="date"></div>
+      <div class="field-mini an-range" style="display:none"><label>ถึง</label><input id="an_end" type="date"></div>
+      <div class="field-mini"><label>สาขา</label><select id="an_branch"></select></div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:11px; align-items:center; flex-wrap:wrap">
+      <span class="count" id="an_rangelbl" style="flex:1">—</span>
+      <button class="btn btn-sec btn-sm" id="an_xlsx">⬇ Excel</button>
+      <button class="btn btn-sec btn-sm" id="an_pdf">🖨️ PDF</button>
+      <button class="btn btn-pri" id="an_apply">วิเคราะห์</button>
+    </div>
+  </div>
+  <div id="an_body"><div class="empty">เลือกช่วงเวลาแล้วกด “วิเคราะห์”</div></div>
+</div>
+<style>
+  .an-sec{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin:20px 4px 10px}
+  .an-brrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .an-brrow:last-child{border-bottom:0}
+  .an-brrow .nm{flex:1;font-size:14px;font-weight:500;min-width:90px}
+  .an-brrow .bar{flex:2;height:8px;background:#eef0ec;border-radius:4px;overflow:hidden;min-width:80px}
+  .an-brrow .bar i{display:block;height:100%;background:var(--red)}
+  .an-brrow .stat{font-family:var(--mono);font-size:12.5px;color:var(--muted);min-width:150px;text-align:right}
+  #an_scoretbl th{cursor:pointer;user-select:none;white-space:nowrap}
+  #an_scoretbl th.sorted::after{content:" ▾";color:var(--green)}
+  #an_scoretbl td.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+  #an_scoretbl td.bad{color:var(--red);font-weight:600}
+  #an_scoretbl td.good{color:var(--green-d);font-weight:600}
+  .an-lv{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+  @media print{
+    body *{visibility:hidden!important}
+    #an_body, #an_body *{visibility:visible!important}
+    #an_body{position:absolute;left:0;top:0;width:100%}
+    .an-controls, .topbar, .tabs{display:none!important}
+    .an-chartcard{page-break-inside:avoid}
+  }
 </style>
 
 <!-- Handover + Tasks (ส่ง/รับผลัด + งานในกะ) -->
@@ -1947,8 +1996,146 @@ function addDaysStr(s,n){ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()
 function mondayOf(s){ const d=new Date(s+'T00:00:00'); const wd=(d.getDay()+6)%7; d.setDate(d.getDate()-wd); return isoLocal(d); }
 function fmtThaiShort(s){ const d=new Date(s+'T00:00:00'); return d.getDate()+' '+TH_MON_S[d.getMonth()]; }
 
+// ========== ANALYTICS (วิเคราะห์เชิงลึก: วินัย + ความรับผิดชอบ) ==========
+let ANALYTICS = null;
+let AN_SORT = { key:'risk', dir:-1 };
+function anBkkToday(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
+function anAddDays(s,n){ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function loadAnalytics(){
+  if(!$('an_branch').dataset.filled){
+    $('an_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+    $('an_branch').dataset.filled='1';
+    const t=anBkkToday(); $('an_start').value=anAddDays(t,-29); $('an_end').value=t;
+    $('an_mode').onchange=()=>{ document.querySelectorAll('.an-range').forEach(el=>el.style.display=$('an_mode').value==='custom'?'':'none'); };
+    $('an_apply').onclick=runAnalytics;
+    $('an_xlsx').onclick=exportAnalyticsXlsx;
+    $('an_pdf').onclick=()=>{ if(!ANALYTICS){ toast('err','ยังไม่มีข้อมูล กด “วิเคราะห์” ก่อน'); return; } window.print(); };
+  }
+  runAnalytics();
+}
+async function runAnalytics(){
+  const mode=$('an_mode').value, branch=$('an_branch').value;
+  let data={ branch };
+  if(mode==='current'||mode==='previous') data.cycle=mode;
+  else if(mode==='d30'){ const t=anBkkToday(); data.start=anAddDays(t,-29); data.end=t; }
+  else { data.start=$('an_start').value; data.end=$('an_end').value; if(!data.start||!data.end){ toast('err','เลือกช่วงวันที่'); return; } }
+  $('an_body').innerHTML='<div class="empty">กำลังวิเคราะห์…</div>';
+  const r=await post({ action:'hr_analytics', password:pwd, data });
+  if(!r.ok){ $('an_body').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
+  ANALYTICS=r; $('an_rangelbl').textContent='ช่วง: '+esc(r.range.label);
+  renderAnalytics();
+}
+function renderAnalytics(){
+  const a=ANALYTICS, k=a.kpis;
+  const kpi=(lbl,val,cls,sub)=>`<div class="kpi ${cls||''}"><div class="lbl">${lbl}</div><div class="val">${val}</div>${sub?`<div class="delta">${sub}</div>`:''}</div>`;
+  let html='<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">'
+    +kpi('พนักงาน', k.total_emp)
+    +kpi('วันทำงานรวม', k.worked_days)
+    +kpi('มาสาย', k.late_count+'<span class="sm"> ครั้ง</span>', k.late_count?'warn':'', 'รวม '+k.late_total+' นาที')
+    +kpi('ขาดงาน', k.absent+'<span class="sm"> วัน</span>', k.absent?'bad':'ok')
+    +kpi('OT รวม', (k.ot_hours||0)+'<span class="sm"> ชม</span>')
+    +kpi('งานในกะ', k.task_approved+'/'+k.task_total, '', 'ตีกลับ '+k.sent_back+' ครั้ง')
+    +kpi('งานผ่านเฉลี่ย', (k.avg_pass_rate==null?'—':k.avg_pass_rate+'%'), (k.avg_pass_rate!=null&&k.avg_pass_rate>=90?'ok':(k.avg_pass_rate!=null&&k.avg_pass_rate<70?'bad':'')))
+    +kpi('เสี่ยงใบเตือน', k.at_risk+'<span class="sm"> คน</span>', k.at_risk?'bad':'ok')
+    +'</div>';
+
+  // ----- แนวโน้มรายวัน -----
+  const s=a.series||[]; const maxP=Math.max(1,...s.map(d=>d.present));
+  html+='<div class="card an-chartcard" style="margin-bottom:12px"><div class="card-h"><h3>แนวโน้มรายวัน — มาทำงาน / มาสาย / ขาด</h3></div><div class="card-b">';
+  if(s.length){
+    html+='<div class="chart">'+s.map(d=>{
+      const h=Math.round(d.present/maxP*150), lateH=d.present?Math.round(d.late/d.present*h):0;
+      const dd=d.date.slice(8)+'/'+d.date.slice(5,7);
+      return '<div class="bar"><div class="tip">'+esc(dd)+' · มา '+d.present+' · สาย '+d.late+' · ขาด '+d.absent+(d.ot?' · OT '+d.ot+'ชม':'')+'</div>'
+        +'<div class="bb" style="height:'+Math.max(0,h-lateH)+'px"></div>'
+        +'<div class="bb" style="height:'+lateH+'px;background:var(--red);border-radius:0"></div></div>';
+    }).join('')+'</div>'
+    +'<div class="chart-legend"><span><i style="background:var(--green)"></i>มาตรงเวลา</span><span><i style="background:var(--red)"></i>มาสาย</span></div>';
+  } else html+='<div class="empty">— ไม่มีข้อมูลในช่วงนี้ —</div>';
+  html+='</div></div>';
+
+  // ----- เทียบสาขา (ถ้ามีมากกว่า 1 สาขา) -----
+  const br=a.branches||[];
+  if(br.length>1){
+    const maxL=Math.max(1,...br.map(b=>b.late_total));
+    html+='<div class="card" style="margin-bottom:12px"><div class="card-h"><h3>เทียบสาขา (เรียงตามสายรวม)</h3></div><div class="card-b">'
+      +br.map(b=>'<div class="an-brrow"><div class="nm">'+esc(b.branch_name)+'</div>'
+        +'<div class="bar"><i style="width:'+Math.round(b.late_total/maxL*100)+'%"></i></div>'
+        +'<div class="stat">สาย '+b.late_total+'น · ขาด '+b.absent+' · OT '+b.ot+' · ผ่าน '+(b.pass_rate==null?'—':b.pass_rate+'%')+'</div></div>').join('')
+      +'</div></div>';
+  }
+
+  // ----- สกอร์บอร์ดรายคน -----
+  html+='<div class="an-sec">สกอร์บอร์ดรายบุคคล — วินัย + ความรับผิดชอบงาน</div>'
+    +'<div class="card"><div class="tablewrap"><table id="an_scoretbl"><thead><tr>'
+    +anTh('รหัส','emp_id')+anTh('ชื่อ','name')+anTh('สาขา','branch_name')
+    +anTh('ทำงาน','days_worked')+anTh('สาย','late_count')+anTh('นาทีสาย','late_total')+anTh('ขาด','absent')+anTh('OT','ot_hours')+anTh('วินัย','level')
+    +anTh('งาน','task_total')+anTh('ผ่าน%','pass_rate')+anTh('ตีกลับ','sent_back')+anTh('QA','qa')+anTh('เชลฟ์','shelf')+anTh('ผลัด','handover')
+    +'</tr></thead><tbody id="an_scorebody"></tbody></table></div></div>';
+  $('an_body').innerHTML=html;
+  document.querySelectorAll('#an_scoretbl th').forEach(th=>{ th.onclick=()=>anSortBy(th.dataset.key); });
+  anRenderScoreboard();
+}
+function anTh(label,key){ return '<th data-key="'+key+'"'+(AN_SORT.key===key?' class="sorted"':'')+'>'+label+'</th>'; }
+function anSortBy(key){ if(AN_SORT.key===key) AN_SORT.dir*=-1; else { AN_SORT={ key, dir:(key==='emp_id'||key==='name'||key==='branch_name')?1:-1 }; } renderAnalytics(); }
+function anRenderScoreboard(){
+  const rows=(ANALYTICS.rows||[]).slice();
+  const key=AN_SORT.key, dir=AN_SORT.dir;
+  const val=r=> key==='risk' ? (r.late_total+r.absent*480) : (key==='pass_rate' ? (r.pass_rate==null?-1:r.pass_rate) : r[key]);
+  rows.sort((x,y)=>{ let a=val(x),b=val(y); if(typeof a==='string'||typeof b==='string'){ a=String(a); b=String(b); return a<b?-dir:a>b?dir:0; } return (a-b)*dir; });
+  $('an_scorebody').innerHTML = rows.length ? rows.map(r=>{
+    const lv = r.level>0 ? '<span class="an-lv" style="background:'+esc(r.level_color)+'">'+esc(r.level_name)+'</span>' : '<span class="pill ok" style="padding:2px 8px">ปกติ</span>';
+    const pass = r.pass_rate==null?'—':r.pass_rate+'%';
+    const passCls = r.pass_rate==null?'':(r.pass_rate>=90?'good':(r.pass_rate<70?'bad':''));
+    return '<tr class="clickable" data-emp="'+esc(r.emp_id)+'">'
+      +'<td class="mono">'+esc(r.emp_id)+'</td>'
+      +'<td>'+esc(r.name)+(r.nickname?' <span style="color:var(--muted);font-size:12px">('+esc(r.nickname)+')</span>':'')+'</td>'
+      +'<td>'+esc(r.branch_name)+'</td>'
+      +'<td class="num">'+r.days_worked+'/'+r.days_should+'</td>'
+      +'<td class="num'+(r.late_count?' bad':'')+'">'+r.late_count+'</td>'
+      +'<td class="num">'+r.late_total+'</td>'
+      +'<td class="num'+(r.absent?' bad':'')+'">'+r.absent+'</td>'
+      +'<td class="num">'+(r.ot_hours||0)+'</td>'
+      +'<td>'+lv+'</td>'
+      +'<td class="num">'+r.task_approved+'/'+r.task_total+'</td>'
+      +'<td class="num'+(passCls?' '+passCls:'')+'">'+pass+'</td>'
+      +'<td class="num'+(r.sent_back?' bad':'')+'">'+r.sent_back+'</td>'
+      +'<td class="num">'+r.qa+'</td>'
+      +'<td class="num">'+r.shelf+'</td>'
+      +'<td class="num">'+r.handover+'</td></tr>';
+  }).join('') : '<tr><td colspan="15"><div class="empty">— ไม่มีข้อมูล —</div></td></tr>';
+  document.querySelectorAll('#an_scorebody tr.clickable').forEach(tr=>{ tr.onclick=()=>anOpenEmp(tr.dataset.emp); });
+}
+function anOpenEmp(empId){
+  showTab('empsum');
+  const sel=$('es_emp'); if(sel){ sel.value=empId; if(sel.value===empId && typeof genEmpSum==='function'){ setTimeout(genEmpSum,50); } }
+}
+function exportAnalyticsXlsx(){
+  if(!ANALYTICS){ toast('err','ยังไม่มีข้อมูล กด “วิเคราะห์” ก่อน'); return; }
+  if(typeof XLSX==='undefined'){ toast('err','โหลดตัวช่วย Excel ไม่สำเร็จ (ตรวจอินเทอร์เน็ต)'); return; }
+  const a=ANALYTICS;
+  const wb=XLSX.utils.book_new();
+  const head=['รหัส','ชื่อ','ชื่อเล่น','สาขา','วันที่ทำงาน','วันที่ต้องมา','สาย(ครั้ง)','สายรวม(นาที)','ขาด(วัน)','OT(ชม)','ระดับวินัย','งานทั้งหมด','งานผ่าน','ผ่าน(%)','ตีกลับ','QA','เชลฟ์','ส่งผลัด'];
+  const body=(a.rows||[]).map(r=>[r.emp_id,r.name,r.nickname,r.branch_name,r.days_worked,r.days_should,r.late_count,r.late_total,r.absent,r.ot_hours,(r.level>0?r.level_name:'ปกติ'),r.task_total,r.task_approved,(r.pass_rate==null?'':r.pass_rate),r.sent_back,r.qa,r.shelf,r.handover]);
+  const ws=XLSX.utils.aoa_to_sheet([['สกอร์บอร์ดรายบุคคล — ช่วง '+a.range.label],[],head,...body]);
+  ws['!cols']=head.map((h,i)=>({wch:i===1?18:(i===3?14:10)}));
+  XLSX.utils.book_append_sheet(wb,ws,'รายบุคคล');
+  if((a.branches||[]).length){
+    const bh=['สาขา','พนักงาน','สาย(ครั้ง)','สายรวม(นาที)','ขาด','OT(ชม)','ผ่าน(%)'];
+    const bb=a.branches.map(b=>[b.branch_name,b.emp,b.late_count,b.late_total,b.absent,b.ot,(b.pass_rate==null?'':b.pass_rate)]);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([bh,...bb]),'เทียบสาขา');
+  }
+  if((a.series||[]).length){
+    const sh=['วันที่','มาทำงาน','มาสาย','ขาด','OT(ชม)'];
+    const sb2=a.series.map(d=>[d.date,d.present,d.late,d.absent,d.ot]);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([sh,...sb2]),'รายวัน');
+  }
+  const fn='วิเคราะห์_'+(a.range.start||'')+'_'+(a.range.end||'')+'.xlsx';
+  XLSX.writeFile(wb,fn);
+}
+
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); }
@@ -1958,6 +2145,7 @@ showTab = function(name){
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
   else if(name==='empsum') initEmpSum();
+  else if(name==='analytics') loadAnalytics();
   else if(name==='handover'){ loadTaskTab(); }
   else if(name==='special'){ loadSpecialTab(); }
   else if(name==='qa'){ loadQaTab(); }
