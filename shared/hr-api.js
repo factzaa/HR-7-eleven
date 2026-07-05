@@ -889,6 +889,24 @@
     };
     const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
+    // ---- ซิงค์กะให้ "แถวลงเวลา" ตามตารางเวรที่เพิ่งจัด ----
+    // แก้ปัญหา: HR เปลี่ยนกะหลังพนักงานเช็กอินแล้ว → attendance.shift_id ยังค้างกะเดิม
+    // ทำให้รายงาน(กรองกะ)/แจ้งเตือน "เลยเวลาเลิกกะ" เพี้ยน
+    // เงื่อนไข: มีแถวลงเวลาที่เช็กอินแล้วในวันนั้น และกะที่ค้าง "ไม่ตรงกับตารางเวรปัจจุบัน" (กันแตะเคสควบกะที่กะเดิมยังอยู่)
+    try {
+      if (d.shift_id) {
+        const { data: att } = await sb().from('attendance')
+          .select('shift_id,check_in').eq('emp_id', d.emp_id).eq('work_date', d.work_date).maybeSingle();
+        if (att && att.check_in) {
+          const { data: daySched } = await sb().from('schedules').select('shift_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date);
+          const schSet = new Set((daySched || []).map(s => s.shift_id).filter(Boolean));
+          if (!schSet.has(att.shift_id)) {   // กะที่ค้างในแถวลงเวลาไม่อยู่ในตารางเวรแล้ว → ปรับตามกะที่จัดใหม่
+            await sb().from('attendance').update({ shift_id: d.shift_id }).eq('emp_id', d.emp_id).eq('work_date', d.work_date);
+            await logAct('ปรับกะแถวลงเวลาให้ตรงตารางเวร', d.emp_id, d.work_date + ' · ' + (att.shift_id || '—') + ' → ' + d.shift_id);
+          }
+        }
+      }
+    } catch (e) { console.warn('sync attendance shift', e); }
     return { ok: true, is_cover };
   }
   async function hrSchedDelete(empId, workDate, shiftId) {
