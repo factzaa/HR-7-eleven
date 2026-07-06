@@ -1127,6 +1127,19 @@
   </div>
 </div>
 
+<style>
+  /* แท็บลา: จอใหญ่ = ตาราง · จอเล็ก(มือถือ) = การ์ดต่อรายการ */
+  .lv-mobile{display:none;}
+  .lvcard{border:1px solid var(--line); border-radius:14px; padding:12px 13px; margin-bottom:10px;}
+  .lvcard-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .lvcard-info{font-size:13.5px; color:var(--txt); margin-top:8px;}
+  .lvcard-reason{font-size:12.5px; color:#374151; margin-top:5px;}
+  .lvcard-msg{font-size:12.5px; margin-top:6px; white-space:pre-wrap; line-height:1.45; background:#fff; border:1px solid var(--line); border-radius:9px; padding:7px 9px;}
+  .lvcard-act{display:flex; flex-wrap:wrap; gap:7px; margin-top:11px; border-top:1px solid var(--line); padding-top:10px;}
+  .lvcard-act .icobtn{border:1px solid var(--line2); border-radius:9px; padding:9px 13px; font-size:13.5px;}
+  @media (max-width:820px){ .lv-desktop{display:none;} .lv-mobile{display:block;} }
+</style>
+
 <!-- Modal: Leave -->
 <div class="overlay" id="leaveOverlay">
   <div class="modal">
@@ -1940,27 +1953,63 @@ $('wvPrint').onclick = ()=>window.print();
 
 // ========== LEAVES & HOLIDAYS ==========
 let LEAVES_ROWS=[];
+// บรรทัดตัวอย่างข้อความแบบสั้น (คลิปบรรทัดเดียว + tooltip) — กันคอลัมน์สถานะบวมจากข้อความยาว
+function lvMsgLine(icon, color, text){
+  const t=String(text||'').replace(/\s+/g,' ').trim(); if(!t) return '';
+  return `<div title="${esc(t)}" style="font-size:11px;color:${color};margin-top:2px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${icon} ${esc(t)}</div>`;
+}
 function lvStatusCell(l){
   if(l.status==='approved') return '<span class="pill ok">อนุมัติ</span>';
-  if(l.status==='rejected') return '<span class="pill bad">ปฏิเสธ</span>'+(l.hr_note?`<div style="font-size:11px;color:#dc2626">${esc(l.hr_note)}</div>`:'');
+  if(l.status==='rejected') return '<span class="pill bad">ปฏิเสธ</span>'+lvMsgLine('↳','#dc2626',l.hr_note);
   if(l.status==='proposed'){
     let h = l.response==='accepted' ? '<span class="pill ok">✓ พนักงานยอมรับ</span>'
           : l.response==='declined' ? '<span class="pill bad">✗ พนักงานปฏิเสธ</span>'
-          : '<span class="pill warn">ข้อเสนอแนะเพิ่มเติม · รอตอบ</span>';
-    if(l.proposal_msg) h+=`<div style="font-size:11px;color:#9a3412;margin-top:2px">📩 ${esc(l.proposal_msg)}</div>`;
-    if(l.response_msg) h+=`<div style="font-size:11px;color:#1d4ed8;margin-top:2px">↩ ${esc(l.response_msg)}</div>`;
+          : '<span class="pill warn">ข้อเสนอแนะฯ · รอตอบ</span>';
+    h += lvMsgLine('📩','#9a3412',l.proposal_msg);   // ข้อความที่ HR ส่ง (ดูเต็ม/แก้ได้ที่ปุ่ม "เสนอแนะอีกครั้ง")
+    h += lvMsgLine('↩','#1d4ed8',l.response_msg);     // ข้อความที่พนักงานตอบ
     return h;
   }
   return '<span class="pill warn">รอ</span>';
+}
+// ป้ายสถานะแบบสั้น (ใช้ในการ์ดมือถือ — ข้อความเต็มแสดงแยกด้านล่าง)
+function lvStatusPill(l){
+  if(l.status==='approved') return '<span class="pill ok">อนุมัติ</span>';
+  if(l.status==='rejected') return '<span class="pill bad">ปฏิเสธ</span>';
+  if(l.status==='proposed') return l.response==='accepted'?'<span class="pill ok">✓ ยอมรับ</span>':l.response==='declined'?'<span class="pill bad">✗ ปฏิเสธ</span>':'<span class="pill warn">รอตอบ</span>';
+  return '<span class="pill warn">รอ</span>';
+}
+function lvActionButtons(l){
+  const id=esc(l.leave_id); let b='';
+  if(l.status==='pending') b=`<button class="icobtn" style="color:#c2410c;font-weight:600" data-lprop="${id}">ข้อเสนอแนะเพิ่มเติม</button> <button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${id}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${id}">ปฏิเสธ</button> `;
+  else if(l.status==='proposed') b=`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${id}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${id}">ปฏิเสธ</button> <button class="icobtn" style="color:#c2410c" data-lprop="${id}">เสนอแนะอีกครั้ง</button> `;
+  return b+`<button class="icobtn" data-ldel="${id}">ลบ</button>`;
+}
+function lvCard(l){
+  const range=esc(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):'');
+  const bg=l.status==='pending'?'#fffbeb':l.status==='proposed'?'#fff7ed':'#fff';
+  const msgs=(l.status==='rejected'&&l.hr_note?`<div class="lvcard-msg" style="color:#b91c1c">↳ หมายเหตุ HR: ${esc(l.hr_note)}</div>`:'')
+    +(l.proposal_msg?`<div class="lvcard-msg" style="color:#9a3412">📩 HR: ${esc(l.proposal_msg)}</div>`:'')
+    +(l.response_msg?`<div class="lvcard-msg" style="color:#1d4ed8">↩ พนักงาน: ${esc(l.response_msg)}</div>`:'');
+  return `<div class="lvcard" style="background:${bg}">
+    <div class="lvcard-top">
+      <div class="name-cell"><div class="thumb">${esc(pickInitial(l.emp_name))}</div><div class="ntext"><span class="nm">${esc(l.emp_name)}</span><span class="nick">#${esc(l.leave_id)} · ${esc(l.emp_id)}</span></div></div>
+      ${lvStatusPill(l)}
+    </div>
+    <div class="lvcard-info">📅 ${range} · ${l.days} วัน · ${esc(l.type||'—')}${l.doc_url?` <a href="${esc(l.doc_url)}" target="_blank">📎</a>`:''}</div>
+    ${l.reason?`<div class="lvcard-reason">เหตุผล: ${esc(l.reason)}</div>`:''}
+    ${msgs}
+    <div class="lvcard-act">${lvActionButtons(l)}</div>
+  </div>`;
 }
 async function loadLeaves(){
   const r = await post({ action:'hr_leaves_list', password:pwd });
   if(!r.ok){ $('lv_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
   LEAVES_ROWS = r.rows;
   if(!r.rows.length){ $('lv_body').innerHTML='<div class="empty">ยังไม่มีใบลา</div>'; return; }
-  $('lv_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
+  const sorted = r.rows.slice().sort((a,b)=>((b.status==='pending'||b.status==='proposed')?1:0)-((a.status==='pending'||a.status==='proposed')?1:0));
+  const tableHtml = `<div class="card lv-desktop"><div class="tablewrap"><table>
     <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>ตั้งแต่</th><th>ถึง</th><th>วัน</th><th>ประเภท</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead>
-    <tbody>${r.rows.slice().sort((a,b)=>((b.status==='pending'||b.status==='proposed')?1:0)-((a.status==='pending'||a.status==='proposed')?1:0)).map(l=>`
+    <tbody>${sorted.map(l=>`
       <tr${l.status==='pending'?' style="background:#fffbeb"':l.status==='proposed'?' style="background:#fff7ed"':''}>
         <td class="mono">${esc(l.leave_id)}</td>
         <td><div class="ntext"><span class="nm">${esc(l.emp_name)}</span><span class="nick">${esc(l.emp_id)}</span></div></td>
@@ -1969,9 +2018,11 @@ async function loadLeaves(){
         <td class="mono">${l.days}</td>
         <td>${esc(l.type||'—')}${l.doc_url?` <a href="${esc(l.doc_url)}" target="_blank" title="เอกสารแนบ">📎</a>`:''}</td>
         <td style="max-width:240px;white-space:normal;font-size:13px;color:#374151">${l.reason?esc(l.reason):'<span style="color:#9ca3af">—</span>'}</td>
-        <td style="max-width:260px;white-space:normal">${lvStatusCell(l)}</td>
-        <td class="rowact">${l.status==='pending'?`<button class="icobtn" style="color:#c2410c;font-weight:600" data-lprop="${esc(l.leave_id)}">ข้อเสนอแนะเพิ่มเติม</button> <button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> `:l.status==='proposed'?`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> <button class="icobtn" style="color:#c2410c" data-lprop="${esc(l.leave_id)}">เสนอแนะอีกครั้ง</button> `:''}<button class="icobtn" data-ldel="${esc(l.leave_id)}">ลบ</button></td>
+        <td style="min-width:150px;max-width:220px">${lvStatusCell(l)}</td>
+        <td class="rowact">${lvActionButtons(l)}</td>
       </tr>`).join('')}</tbody></table></div></div>`;
+  const cardsHtml = `<div class="lv-mobile">${sorted.map(lvCard).join('')}</div>`;
+  $('lv_body').innerHTML = tableHtml + cardsHtml;
   document.querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{
     if(!confirm('ลบใบลานี้?')) return;
     const r = await post({ action:'hr_leaves_delete', password:pwd, leave_id:b.dataset.ldel });
