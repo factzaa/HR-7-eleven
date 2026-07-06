@@ -151,7 +151,7 @@ async function myLeaves(){
   try{
     const pr=await HR.getLeaveProposals(id); const pend=(pr&&pr.pending)||[];
     propHtml = pend.map(p=>{
-      const rg=(p.end_date&&p.end_date!==p.start_date)?(p.start_date+' – '+p.end_date):p.start_date;
+      const rg=(p.end_date&&p.end_date!==p.start_date)?(beDate(p.start_date)+' – '+beDate(p.end_date)):beDate(p.start_date);
       return '<div class="lvprop" data-lid="'+lvEsc(p.leave_id)+'" style="border:1.5px solid #fdba74;background:#fff7ed;border-radius:12px;padding:11px 13px;margin-bottom:9px">'
         +'<div style="font-weight:800;color:#9a3412">📩 ข้อเสนอจาก HR — รอคุณตอบ</div>'
         +'<div style="font-size:12.5px;color:#7c2d12;margin-top:1px">คำขอลา'+(p.type?(' ('+lvEsc(p.type)+')'):'')+' · '+lvEsc(rg)+'</div>'
@@ -168,7 +168,7 @@ async function myLeaves(){
         :r.status==='rejected'?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✗ ไม่อนุมัติ</span>'
         :r.status==='proposed'?'<span style="background:#ffedd5;color:#9a3412;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">📩 มีข้อเสนอ</span>'
         :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
-      const range=(r.end_date&&r.end_date!==r.start_date)?(r.start_date+' – '+r.end_date):r.start_date;
+      const range=(r.end_date&&r.end_date!==r.start_date)?(beDate(r.start_date)+' – '+beDate(r.end_date)):beDate(r.start_date);
       const reason=r.reason?('<div style="color:#6b7280;margin-top:2px">เหตุผล: '+lvEsc(r.reason)+'</div>'):'';
       const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+lvEsc(r.hr_note)+'</div>'):'';
       return '<div style="border:1px solid #eceef1;border-radius:11px;padding:9px 11px;margin-bottom:7px">'
@@ -274,7 +274,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
         var im=(it.images&&it.images.length)?'<div style="margin-top:4px">'+it.images.map(function(u){return '<img class="ph" src="'+esc(u)+'" onclick="__nidaLB(this)">';}).join('')+'</div>':'';
         return '<div style="border-top:1px solid #eef1ef;padding:6px 0"><div style="display:flex;gap:6px"><span style="flex:1;font-weight:600;font-size:13px">'+esc(it.title||'-')+'</span><span style="font-size:11px;font-weight:700;color:'+stCol(it.status)+'">'+esc(stTxt(it.status))+'</span></div>'+(it.emp?'<div style="font-size:11.5px;color:#6b757d">โดย '+esc(it.emp)+'</div>':'')+(it.review_note?'<div style="font-size:11.5px;color:#dc2626">↳ '+esc(it.review_note)+'</div>':'')+im+'</div>';
       }).join('');
-      return '<div class="card"><div style="font-weight:700;font-size:12.5px;color:#00582f">🧾 กะ '+esc(g.shift)+(g.date?(' · '+esc(g.date)):'')+'</div>'+items+'</div>';
+      return '<div class="card"><div style="font-weight:700;font-size:12.5px;color:#00582f">🧾 กะ '+esc(g.shift)+(g.date?(' · '+beDate(g.date)):'')+'</div>'+items+'</div>';
     }).join('');
   }
   function render(){

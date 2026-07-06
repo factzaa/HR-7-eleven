@@ -803,7 +803,7 @@ async function showLeaveProposals(empId){
 function showOneProposal(list, idx, empId){
   if(idx>=list.length){ $('propOverlay').classList.remove('show'); return; }
   const p=list[idx];
-  const range=p.start_date+(p.end_date && p.end_date!==p.start_date?(' – '+p.end_date):'');
+  const range=beDate(p.start_date)+(p.end_date && p.end_date!==p.start_date?(' – '+beDate(p.end_date)):'');
   $('propBody').innerHTML=
     '<div style="font-size:12.5px;color:var(--muted)">คำขอลา'+(p.type?(' ('+escH(p.type)+')'):'')+' · '+escH(range)+(list.length>1?(' · ('+(idx+1)+'/'+list.length+')'):'')+'</div>'
     +'<div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:11px;padding:11px 13px;font-size:14px;color:#7c2d12;white-space:pre-wrap">'+escH(p.proposal_msg||'')+'</div>'
@@ -849,7 +849,7 @@ function renderProposalHistory(rows){
   if(!list.length) return '';
   return '<div style="font-weight:700;margin-top:14px;margin-bottom:6px">ข้อเสนอ/การสื่อสารกับ HR</div>'
     + list.map(p=>{
-      const range=(p.end_date&&p.end_date!==p.start_date)?(p.start_date+' – '+p.end_date):p.start_date;
+      const range=(p.end_date&&p.end_date!==p.start_date)?(beDate(p.start_date)+' – '+beDate(p.end_date)):beDate(p.start_date);
       const rb=p.response==='accepted'?'<span class="pill ok">คุณยอมรับ</span>':p.response==='declined'?'<span class="pill bad">คุณไม่ยอมรับ</span>':(p.status==='proposed'?'<span class="pill idle">รอคุณตอบ</span>':'');
       return '<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+escH(range)+'</b>'+rb+'</div>'
@@ -865,7 +865,7 @@ function renderMyLeaves(rows){
     const badge=r.status==='approved'?'<span style="background:#dcfce7;color:#166534;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✓ อนุมัติแล้ว</span>'
       :r.status==='rejected'?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✗ ไม่อนุมัติ</span>'
       :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
-    const range=(r.end_date&&r.end_date!==r.start_date)?(r.start_date+' – '+r.end_date):r.start_date;
+    const range=(r.end_date&&r.end_date!==r.start_date)?(beDate(r.start_date)+' – '+beDate(r.end_date)):beDate(r.start_date);
     const reason=r.reason?('<div style="color:var(--muted);margin-top:2px">เหตุผล: '+escH(r.reason)+'</div>'):'';
     const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+escH(r.hr_note)+'</div>'):'';
     return '<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px">'

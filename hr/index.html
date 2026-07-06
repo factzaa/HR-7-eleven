@@ -1366,7 +1366,7 @@ async function loadDashboard(){
   const leavesHtml = ul.length ? ul.map(l=>`
     <div class="shift-row">
       <div class="nm">${esc(l.emp_name)} <span style="color:var(--muted);font-weight:400;font-size:12px">${esc(l.type)}</span></div>
-      <div class="stats">${esc(l.start_date)}${l.days>1?' – '+esc(l.end_date)+' ('+l.days+' วัน)':''}</div>
+      <div class="stats">${beDate(l.start_date)}${l.days>1?' – '+beDate(l.end_date)+' ('+l.days+' วัน)':''}</div>
     </div>`).join('') : '<div class="empty" style="padding:24px">ไม่มีการลาที่อนุมัติแล้วใน 14 วันข้างหน้า</div>';
 
   const top = r.top_late.length ? r.top_late.map(e=>`
@@ -1389,7 +1389,7 @@ async function loadDashboard(){
       <div class="kpi" style="cursor:pointer" onclick="dashList('checked_in')"><div class="lbl">วันนี้ลงเวลาแล้ว ›</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
       <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="lbl">สายวันนี้ ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
       <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
-      <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${c.cycle_start}<br>ถึง ${c.cycle_end}</div></div>
+      <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${beDate(c.cycle_start)}<br>ถึง ${beDate(c.cycle_end)}</div></div>
     </div>
     ${scorecard}
     <div class="dash-grid">
@@ -1765,7 +1765,7 @@ function renderReportDetail(){
     </tr></thead>
     <tbody>${REPORT.rows.map(r=>`
       <tr${r.is_cover?' style="background:#fff7ed"':''}>
-        <td class="mono">${esc(r.work_date)}</td>
+        <td class="mono">${beDate(r.work_date)}</td>
         <td><div class="ntext"><span class="nm">${esc(r.emp_name)}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
         <td>${esc(r.shift_name)}</td>
         <td>${esc(r.branch_name)}${r.is_cover?` <span class="pill" style="background:#ffedd5;color:#c2410c">ไปแทน · ประจำ ${esc(r.home_branch)}</span>`:''}</td>
@@ -1835,7 +1835,7 @@ function renderCoverage(){
   $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr><th>วันที่</th><th>พนักงาน</th><th>จากสาขา (ประจำ)</th><th>ไปทำที่</th><th>กะ</th><th>เข้า</th><th>สาย</th><th>เหตุผล</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
-      <td class="mono">${esc(r.work_date)}</td>
+      <td class="mono">${beDate(r.work_date)}</td>
       <td><div class="ntext"><span class="nm">${esc(r.emp_name)}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
       <td>${esc(r.from_branch)}</td>
       <td><b style="color:#ea580c">${esc(r.to_branch)}</b></td>
@@ -1878,7 +1878,7 @@ async function loadDiscipline(){
 }
 function renderDiscipline(){
   const e = DISC.employees;
-  $('d_cycleinfo').textContent = DISC.cycle.startStr + ' ถึง ' + DISC.cycle.endStr;
+  $('d_cycleinfo').textContent = beDate(DISC.cycle.startStr) + ' ถึง ' + beDate(DISC.cycle.endStr);
   // กลุ่มตาม level
   const groups = {};
   e.forEach(x=>{ if(!groups[x.level]) groups[x.level]=[]; groups[x.level].push(x); });
@@ -1916,7 +1916,7 @@ async function loadWarningsTable(){
     <tbody>${r.rows.map(w=>`
       <tr>
         <td class="mono">${esc(w.warning_id)}</td>
-        <td class="mono">${esc(w.issue_date)}</td>
+        <td class="mono">${beDate(w.issue_date)}</td>
         <td><div class="ntext"><span class="nm">${esc(w.emp_name)}</span><span class="nick">${esc(w.emp_id)}</span></div></td>
         <td>${esc(w.level_name)}</td>
         <td class="mono">${w.late_count} ครั้ง · ${w.late_total} นาที</td>
@@ -1943,7 +1943,7 @@ function openIssueWarning(empId){
   const x = DISC.employees.find(e=>String(e.emp_id)===String(empId)); if(!x) return;
   $('w_emp_id').value = empId;
   $('w_target').innerHTML = `<div class="name-cell">${x.photo_url?`<div class="thumb"><img src="${esc(x.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(x.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(x.emp_name)}</span><span class="nick">รหัส ${esc(x.emp_id)}</span></div></div>`;
-  $('w_summary').innerHTML = `<div class="stats">รอบ <b>${esc(DISC.cycle.startStr)} ถึง ${esc(DISC.cycle.endStr)}</b><br>สาย ${x.late_count} ครั้ง รวม ${x.late_total} นาที · ขาดงาน ${x.absent} วัน · OT ${fmtOT(x.ot_hours)}</div>`;
+  $('w_summary').innerHTML = `<div class="stats">รอบ <b>${beDate(DISC.cycle.startStr)} ถึง ${beDate(DISC.cycle.endStr)}</b><br>สาย ${x.late_count} ครั้ง รวม ${x.late_total} นาที · ขาดงาน ${x.absent} วัน · OT ${fmtOT(x.ot_hours)}</div>`;
   $('w_level_name').value = x.level_name;
   $('w_level').value = x.level;
   $('w_reason').value = 'มาทำงานสาย '+x.late_count+' ครั้ง รวม '+x.late_total+' นาทีในรอบ' + (x.absent>0?(' และขาดงาน '+x.absent+' วัน'):'') + ' ซึ่งเข้าข่ายระดับ "'+x.level_name+'" ตามระเบียบบริษัท';
@@ -1976,15 +1976,15 @@ async function openWarningView(wid){
       <div class="sub">7-Eleven · ฝ่ายบุคคล</div>
       <div class="meta">
         <span>เลขที่: <b>${esc(w.warning_id)}</b></span>
-        <span>วันที่ออก: <b>${esc(w.issue_date)}</b></span>
+        <span>วันที่ออก: <b>${beDate(w.issue_date)}</b></span>
       </div>
       <div class="row"><div class="lab">ถึง</div><div class="val">${esc(w.emp_name)} ${w.nickname?'("'+esc(w.nickname)+'")':''}</div></div>
       <div class="row"><div class="lab">รหัสพนักงาน</div><div class="val">${esc(w.emp_id)}</div></div>
       <div class="row"><div class="lab">กะประจำ</div><div class="val">${esc(shiftName(w.default_shift))}</div></div>
       <div class="row"><div class="lab">สาขา</div><div class="val">${esc(branchName(w.branch_id))}</div></div>
-      <div class="row"><div class="lab">วันที่เริ่มงาน</div><div class="val">${esc(w.start_date)||'—'}</div></div>
+      <div class="row"><div class="lab">วันที่เริ่มงาน</div><div class="val">${beDate(w.start_date)||'—'}</div></div>
       <div class="row"><div class="lab">ระดับใบเตือน</div><div class="val">${esc(w.level_name)} (ระดับ ${w.level})</div></div>
-      <div class="row"><div class="lab">รอบที่ประเมิน</div><div class="val">${esc(w.cycle_start)} ถึง ${esc(w.cycle_end)}</div></div>
+      <div class="row"><div class="lab">รอบที่ประเมิน</div><div class="val">${beDate(w.cycle_start)} ถึง ${beDate(w.cycle_end)}</div></div>
       <div class="stats">
         <b>สรุปการประเมิน</b><br>
         มาทำงานสาย ${w.late_count} ครั้ง · รวม ${w.late_total} นาที · ขาดงาน ${w.absent_count} วัน
@@ -2038,7 +2038,7 @@ function lvActionButtons(l){
   return b+`<button class="icobtn" data-ldel="${id}">ลบ</button>`;
 }
 function lvCard(l){
-  const range=esc(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):'');
+  const range=beDate(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+beDate(l.end_date)):'');
   const bg=l.status==='pending'?'#fffbeb':l.status==='proposed'?'#fff7ed':'#fff';
   const msgs=(l.status==='rejected'&&l.hr_note?`<div class="lvcard-msg" style="color:#b91c1c">↳ หมายเหตุ HR: ${esc(l.hr_note)}</div>`:'')
     +(l.proposal_msg?`<div class="lvcard-msg" style="color:#9a3412">📩 HR: ${esc(l.proposal_msg)}</div>`:'')
@@ -2066,8 +2066,8 @@ async function loadLeaves(){
       <tr${l.status==='pending'?' style="background:#fffbeb"':l.status==='proposed'?' style="background:#fff7ed"':''}>
         <td class="mono">${esc(l.leave_id)}</td>
         <td><div class="ntext"><span class="nm">${esc(l.emp_name)}</span><span class="nick">${esc(l.emp_id)}</span></div></td>
-        <td class="mono">${esc(l.start_date)}</td>
-        <td class="mono">${esc(l.end_date)}</td>
+        <td class="mono">${beDate(l.start_date)}</td>
+        <td class="mono">${beDate(l.end_date)}</td>
         <td class="mono">${l.days}</td>
         <td>${esc(l.type||'—')}${l.doc_url?` <a href="${esc(l.doc_url)}" target="_blank" title="เอกสารแนบ">📎</a>`:''}</td>
         <td style="max-width:240px;white-space:normal;font-size:13px;color:#374151">${l.reason?esc(l.reason):'<span style="color:#9ca3af">—</span>'}</td>
@@ -2099,7 +2099,7 @@ function lvFmtDT(s){ if(!s) return '—'; try{ return new Date(s).toLocaleString
 function openLeaveDetail(leaveId){
   const l=(LEAVES_ROWS||[]).find(x=>String(x.leave_id)===String(leaveId));
   if(!l){ toast('err','ไม่พบใบลา'); return; }
-  const range=esc(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):'');
+  const range=beDate(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+beDate(l.end_date)):'');
   const row=(lbl,val)=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="width:120px;color:var(--muted);flex:none;font-size:13px">${lbl}</div><div style="flex:1;font-size:13.5px;white-space:pre-wrap;word-break:break-word">${val}</div></div>`;
   let h='';
   h+=row('เลขที่', '#'+esc(l.leave_id));
@@ -2124,7 +2124,7 @@ function openLeavePropose(leaveId){
   const l=(LEAVES_ROWS||[]).find(x=>String(x.leave_id)===String(leaveId));
   if(!l){ toast('err','ไม่พบใบลา'); return; }
   LVP_LEAVE=l;
-  $('lvp_info').innerHTML='พนักงาน <b>'+esc(l.emp_name)+'</b> ('+esc(l.emp_id)+') · ลา '+esc(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):'')+' · '+esc(l.type||'ลา')+(l.reason?(' · เหตุผล: '+esc(l.reason)):'');
+  $('lvp_info').innerHTML='พนักงาน <b>'+esc(l.emp_name)+'</b> ('+esc(l.emp_id)+') · ลา '+beDate(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+beDate(l.end_date)):'')+' · '+esc(l.type||'ลา')+(l.reason?(' · เหตุผล: '+esc(l.reason)):'');
   $('lvp_msg').value = (l.status==='proposed'&&l.proposal_msg) ? l.proposal_msg : '';
   $('lvPropOverlay').classList.add('show');
 }
@@ -2140,7 +2140,7 @@ $('lvp_send') && ($('lvp_send').onclick=async()=>{
 $('lvp_draft') && ($('lvp_draft').onclick=async()=>{
   if(!LVP_LEAVE) return; const l=LVP_LEAVE;
   const btn=$('lvp_draft'); const old=btn.textContent; btn.disabled=true; btn.textContent='นิดากำลังร่าง…';
-  const ask='ช่วยร่างข้อความสุภาพจากฝ่ายบุคคลถึงพนักงาน "'+l.emp_name+'" เรื่องคำขอลา'+(l.type?(' '+l.type):'')+' วันที่ '+l.start_date+(l.end_date&&l.end_date!==l.start_date?(' ถึง '+l.end_date):'')+(l.reason?(' เหตุผลที่พนักงานแจ้ง: '+l.reason):'')+' โดยเสนอแนวทางที่เหมาะสม (เช่น สลับวันหยุดประจำสัปดาห์ หรืออนุมัติบางวัน) เพื่อไม่ให้กระทบกำลังคนของสาขา · ตอบกลับมาเฉพาะ "ตัวข้อความที่จะส่งให้พนักงาน" เท่านั้น ไม่ต้องมีคำอธิบาย/หัวข้ออื่น';
+  const ask='ช่วยร่างข้อความสุภาพจากฝ่ายบุคคลถึงพนักงาน "'+l.emp_name+'" เรื่องคำขอลา'+(l.type?(' '+l.type):'')+' วันที่ '+beDate(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' ถึง '+beDate(l.end_date)):'')+(l.reason?(' เหตุผลที่พนักงานแจ้ง: '+l.reason):'')+' โดยเสนอแนวทางที่เหมาะสม (เช่น สลับวันหยุดประจำสัปดาห์ หรืออนุมัติบางวัน) เพื่อไม่ให้กระทบกำลังคนของสาขา · ตอบกลับมาเฉพาะ "ตัวข้อความที่จะส่งให้พนักงาน" เท่านั้น ไม่ต้องมีคำอธิบาย/หัวข้ออื่น';
   try{
     const {base,key}=asstApiBase();
     const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:[{role:'user',text:ask}]})});
@@ -2241,7 +2241,7 @@ async function runAnalytics(){
   $('an_body').innerHTML='<div class="empty">กำลังวิเคราะห์…</div>';
   const r=await post({ action:'hr_analytics', password:pwd, data });
   if(!r.ok){ $('an_body').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
-  ANALYTICS=r; $('an_rangelbl').textContent='ช่วง: '+esc(r.range.label);
+  ANALYTICS=r; $('an_rangelbl').textContent='ช่วง: '+(beDate(r.range.start)+' – '+beDate(r.range.end));
   renderAnalytics();
 }
 function renderAnalytics(){
@@ -2430,7 +2430,7 @@ function asstCardsHtml(cards){
   if(cards.type==='open_tasks'){
     return wrap(cards.groups.map(g=>
       '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 11px;font-size:13px">'
-      +'<b>กะ '+esc(shiftName(g.shift))+' · สาขา '+esc(branchName(g.branch))+'</b> <span style="color:var(--muted)">'+esc(g.work_date||'')+'</span><br>'
+      +'<b>กะ '+esc(shiftName(g.shift))+' · สาขา '+esc(branchName(g.branch))+'</b> <span style="color:var(--muted)">'+beDate(g.work_date)+'</span><br>'
       +'<span style="color:#d97706">รอตรวจ '+(g.submitted||0)+'</span> · <span style="color:#dc2626">ตีกลับ '+(g.sent_back||0)+'</span> · ค้าง '+(g.todo||0)+'</div>'
     ).join(''));
   }
@@ -2512,7 +2512,7 @@ function renderEmpSum(r){
   const g=new Date(r.range.generated); const genTxt=g.toLocaleDateString('th-TH')+' '+g.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
   let h='<div class="es-report">';
   h+='<div class="es-head"><div><div class="es-title">สรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
-    +'<div class="es-sub">ช่วง: '+esc(r.range.label)+'</div></div><div class="es-org">HR 7-Eleven</div></div>';
+    +'<div class="es-sub">ช่วง: '+(beDate(r.range.start)+' – '+beDate(r.range.end))+'</div></div><div class="es-org">HR 7-Eleven</div></div>';
   h+='<table class="es-info"><tr><td>ชื่อ-สกุล</td><td><b>'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</b></td>'
     +'<td>รหัสพนักงาน</td><td>'+esc(e.emp_id)+'</td></tr>'
     +'<tr><td>สาขา</td><td>'+esc(e.branch_name)+'</td><td>กะประจำ</td><td>'+esc(e.shift_name||'-')+'</td></tr>'
@@ -3880,14 +3880,14 @@ async function loadTaskLog(){
   if(!r.ok){ $('tl_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
   $('tl_leaders').innerHTML = (r.leaders&&r.leaders.length)
     ? '<div class="card" style="padding:12px"><b style="font-size:13px">หัวหน้าผลัด/คุมผลัด</b><div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">'
-      + r.leaders.map(l=>`<div style="font-size:13px">${esc(String(l.work_date))} · ${esc(l.branch_name)} · กะ ${esc(l.shift_id||'-')} → <b>${esc(l.emp_name||l.emp_id)}</b></div>`).join('')
+      + r.leaders.map(l=>`<div style="font-size:13px">${esc(beDate(l.work_date))} · ${esc(l.branch_name)} · กะ ${esc(l.shift_id||'-')} → <b>${esc(l.emp_name||l.emp_id)}</b></div>`).join('')
       + '</div></div>' : '';
   const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
   const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
   if(!r.rows.length){ $('tl_body').innerHTML='<div class="empty">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
   $('tl_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>วันที่</th><th>สาขา</th><th>กะ</th><th>งาน</th><th>ผู้ทำ</th><th>สถานะ</th><th>ผู้ตรวจ</th><th>ส่งเมื่อ</th><th>รูป</th></tr></thead><tbody>'
     + r.rows.map(t=>`<tr>
-      <td class="mono">${esc(String(t.work_date))}</td>
+      <td class="mono">${esc(beDate(t.work_date))}</td>
       <td>${esc(t.branch_name)}</td>
       <td>${esc(t.shift_id||'-')}</td>
       <td>${esc(t.title)}${t.review_note?('<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>'):''}</td>
@@ -3916,7 +3916,7 @@ async function loadImgReport(){
   const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
   $('rr_body').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">'+rows.map(t=>
     '<div class="card" style="padding:12px"><div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><div style="font-weight:600;flex:1;font-size:14px">'+esc(t.title)+'</div>'+stP(t.status)+'</div>'
-    +'<div style="font-size:12px;color:var(--muted)">'+esc(String(t.work_date))+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_id||'-')+'</div>'
+    +'<div style="font-size:12px;color:var(--muted)">'+esc(beDate(t.work_date))+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_id||'-')+'</div>'
     +'<div style="font-size:12.5px;margin-top:2px">ผู้ทำ: '+esc(t.emp_name||t.emp_id||'—')+(t.submitted_at?(' · ส่ง '+esc(fmt(t.submitted_at))):'')+'</div>'
     +'<div style="font-size:12.5px">ตรวจ: '+esc(t.reviewer||'—')+(t.reviewed_at?(' · '+esc(fmt(t.reviewed_at))):'')+'</div>'
     +((t.sent_back_count>0)?'<div style="font-size:12px;color:#b45309">ส่งแก้ไข '+t.sent_back_count+' ครั้ง</div>':'')
@@ -4069,7 +4069,7 @@ async function loadOpenTasks(){
       +'</div>').join('')+'</div>';
   box.querySelectorAll('[data-closeg]').forEach(b=>b.onclick=async()=>{
     const x=g[Number(b.dataset.closeg)];
-    if(!confirm('ยืนยันปิด (อนุมัติ) งานค้างทั้งกลุ่ม '+x.branch_name+' กะ '+x.shift_name+' วันที่ '+x.work_date+' ?')) return;
+    if(!confirm('ยืนยันปิด (อนุมัติ) งานค้างทั้งกลุ่ม '+x.branch_name+' กะ '+x.shift_name+' วันที่ '+beDate(x.work_date)+' ?')) return;
     const r2=await post({ action:'hr_task_close_group', password:pwd, data:{ work_date:x.work_date, branch_id:x.branch_id, shift_id:x.shift_id } });
     if(r2.ok){ toast('ok','ปิดงานค้างแล้ว '+(r2.closed||0)+' งาน'); loadOpenTasks(); } else toast('err',r2.error||'ไม่สำเร็จ');
   });
@@ -4118,7 +4118,7 @@ async function loadNotifications(){
       ${chip(c.not_checked_out,'ลืมกดออก (เลยเวลาเลิก)','#0ea5e9')}
     </div>
     ${list('ข้อมูล/เอกสารพนักงานรอตรวจ (ไปแท็บ "ข้อมูลรอตรวจ")', r.pending_profiles||[], p=>`<div style="font-size:13px;padding:2px 0">• ${esc(p.name)} (${esc(p.emp_id)})</div>`)}
-    ${list('ใบลารออนุมัติ (ไปแท็บ "ลา & วันหยุด" เพื่ออนุมัติ)', r.pending_leaves, l=>`<div style="font-size:13px;padding:2px 0">• ${esc(l.emp_name)} · ${esc(l.type||'')} ${esc(l.start_date)}${l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):''} (${l.days} วัน)</div>`)}
+    ${list('ใบลารออนุมัติ (ไปแท็บ "ลา & วันหยุด" เพื่ออนุมัติ)', r.pending_leaves, l=>`<div style="font-size:13px;padding:2px 0">• ${esc(l.emp_name)} · ${esc(l.type||'')} ${beDate(l.start_date)}${l.end_date&&l.end_date!==l.start_date?(' – '+beDate(l.end_date)):''} (${l.days} วัน)</div>`)}
     ${list('ขาด/ยังไม่มาตามตารางวันนี้', r.absent_roster, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · กะ ${esc(shiftName(a.shift_id))}</div>`)}
     ${list('ลืมกดออกงาน (เลยเวลาเลิกกะแล้ว)', r.not_checked_out, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · เข้า ${esc(a.check_in)}${a.end_time?' · เลิก '+esc(a.end_time):''}</div>`)}
   </div>`;
