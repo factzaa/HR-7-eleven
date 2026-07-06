@@ -2830,8 +2830,9 @@ async function qaViewItems(folderId){
   let asg=r.assignees||[];
   if(MGR_MODE) asg=asg.filter(a=>String(a.branch_id)===String(MGR_BRANCH));
   QA_CUR={ folderId, assignees:asg, title, items:(r.rows||[]) };
+  const canAdd = !MGR_MODE || asg.length>0;   // ผจก.บันทึกได้เฉพาะโฟลเดอร์ที่มีผู้รับผิดชอบสาขาตัวเอง
   let h='<div class="toolbar"><h3 style="flex:1;font-size:15px;font-weight:600">📁 สินค้าใน: '+esc(title)+'</h3>'
-    +'<button class="btn btn-pri btn-sm" id="qa_additem_btn">+ บันทึกสินค้า</button></div>';
+    +(canAdd?'<button class="btn btn-pri btn-sm" id="qa_additem_btn">+ บันทึกสินค้า</button>':'<span style="font-size:12px;color:var(--muted)">🔒 สาขาอื่น · ดูอย่างเดียว</span>')+'</div>';
   h+='<div id="qa_addform"></div>';
   if(!r.rows.length){ h+='<div class="empty">ยังไม่มีสินค้าในโฟลเดอร์นี้ — กด "+ บันทึกสินค้า" เพื่อบันทึกแทนพนักงาน</div>'; }
   else h+=r.rows.map(it=>{
@@ -2844,16 +2845,19 @@ async function qaViewItems(folderId){
     c+='<div style="font-size:12.5px;color:var(--muted);margin-top:2px">'+(it.barcode?('รหัส '+esc(it.barcode)+' · '):'')+(it.size?('ขนาด <b style="color:#0f172a;font-size:14.5px">'+esc(it.size)+'</b> · '):'')+'จำนวน <b style="color:#0f172a;font-size:14.5px">'+(it.qty||1)+'</b> ชิ้น'+(it.zone?(' · โซน '+esc(it.zone)):'')+'</div>';
     c+='<div style="font-size:13px;color:'+col+';font-weight:600;margin-top:3px">📅 หมดอายุ '+qaFmtDate(it.expiry_date)+(dl!=null?(dl<0?(' · หมดอายุแล้ว '+(-dl)+' วัน'):(' · เหลือ '+dl+' วัน')):'')+'</div>';
     c+='<div style="font-size:12px;color:var(--muted);margin-top:2px">บันทึกโดย '+esc(it.emp_name||it.emp_id||'—')+' · '+esc(it.branch_name)+'</div>';
-    c+='</div><div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-sec btn-sm" data-qaiedit="'+it.id+'">✏️ แก้ไข</button><button class="btn btn-sec btn-sm" data-qaidel="'+it.id+'">🗑 ลบ</button></div></div>';
-    const stBtns = it.status==='on_shelf'
-      ? '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|sold">✓ ขายแล้ว</button><button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|removed">📦 เก็บออก</button>'
-      : '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|on_shelf">↩ คืนขึ้นเชลฟ์</button>';
-    c+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'+stBtns+'</div>';
+    const canEdit = !MGR_MODE || String(it.branch_id)===String(MGR_BRANCH);   // ผจก.แก้ได้เฉพาะสาขาตัวเอง
+    c+='</div>'+(canEdit?'<div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-sec btn-sm" data-qaiedit="'+it.id+'">✏️ แก้ไข</button><button class="btn btn-sec btn-sm" data-qaidel="'+it.id+'">🗑 ลบ</button></div>':'<span style="font-size:11px;color:var(--muted);align-self:flex-start">🔒 สาขาอื่น</span>')+'</div>';
+    if(canEdit){
+      const stBtns = it.status==='on_shelf'
+        ? '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|sold">✓ ขายแล้ว</button><button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|removed">📦 เก็บออก</button>'
+        : '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|on_shelf">↩ คืนขึ้นเชลฟ์</button>';
+      c+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'+stBtns+'</div>';
+    }
     if(it.photos&&it.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+it.photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
     return c+'</div>';
   }).join('');
   wrap.innerHTML=h;
-  $('qa_additem_btn').onclick=()=>qaToggleAddForm();
+  if($('qa_additem_btn')) $('qa_additem_btn').onclick=()=>qaToggleAddForm();
   wrap.querySelectorAll('[data-qaiedit]').forEach(b=>b.onclick=()=>{ const it=(QA_CUR.items||[]).find(x=>String(x.id)===String(b.dataset.qaiedit)); if(it) qaToggleAddForm(it); });
   wrap.querySelectorAll('[data-qaidel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบสินค้ารายการนี้?'))return; const rr=await post({action:'hr_qa_item_delete',password:pwd,id:Number(b.dataset.qaidel)}); if(rr.ok){ toast('ok','ลบแล้ว'); qaViewItems(folderId); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
   wrap.querySelectorAll('[data-qastatus]').forEach(b=>b.onclick=async()=>{
@@ -2881,18 +2885,25 @@ function qaToggleAddForm(editItem){
     +'<div style="font-weight:700;margin-bottom:8px">'+(QA_EDIT?'✏️ แก้ไขสินค้า':'📝 บันทึกสินค้าใหม่ (แทนพนักงาน)')+'</div>'
     +'<div class="grid">'
     +(QA_EDIT?'':'<div class="field"><label>บันทึกแทน (ผู้รับผิดชอบ)</label><select id="qai_emp">'+(empOpts||'<option value="">— ไม่มีผู้รับผิดชอบในโฟลเดอร์นี้ —</option>')+'</select></div>')
-    +'<div class="field"><label>บาร์โค้ด</label><div style="display:flex;gap:6px"><input id="qai_barcode" inputmode="numeric" style="flex:1" value="'+esc(ed.barcode||'')+'"><button class="btn btn-sec btn-sm" id="qai_lookup" type="button">ค้นหา</button></div></div>'
-    +'<div class="field"><label>ชื่อสินค้า *</label><input id="qai_name" value="'+esc(ed.name||'')+'"></div>'
-    +'<div class="field"><label>ขนาด</label><input id="qai_size" value="'+esc(ed.size||'')+'"></div>'
-    +'<div class="field"><label>จำนวน</label><input id="qai_qty" type="number" min="1" value="'+esc(ed.qty||1)+'"></div>'
-    +'<div class="field"><label>วันหมดอายุ *</label><input id="qai_expiry" type="date" value="'+esc(ed.expiry_date||'')+'"></div>'
-    +'<div class="field"><label>โซน</label><input id="qai_zone" value="'+esc(ed.zone||'')+'"></div>'
+    +'<div class="field"><label>บาร์โค้ด</label><div style="display:flex;gap:6px"><input id="qai_barcode" inputmode="numeric" style="flex:1"><button class="btn btn-sec btn-sm" id="qai_lookup" type="button">ค้นหา</button></div></div>'
+    +'<div class="field"><label>ชื่อสินค้า *</label><input id="qai_name" type="text"></div>'
+    +'<div class="field"><label>ขนาด</label><input id="qai_size" type="text"></div>'
+    +'<div class="field"><label>จำนวน</label><input id="qai_qty" type="number" min="1"></div>'
+    +'<div class="field"><label>วันหมดอายุ *</label><input id="qai_expiry" type="date"></div>'
+    +'<div class="field"><label>โซน</label><input id="qai_zone" type="text"></div>'
     +'<div class="field"><label>สถานะ</label><select id="qai_status">'+stOpt(ed.status||'on_shelf')+'</select></div>'
     +(QA_EDIT?'':'<div class="field span2"><label>รูป (จำเป็นเมื่อเก็บออก)</label><input id="qai_photos" type="file" accept="image/*" multiple></div>')
     +'</div>'
     +(QA_EDIT?'<div style="font-size:12px;color:var(--muted);margin-top:6px">แก้ไขได้เฉพาะรายละเอียด · รูปเดิมคงไว้ (ลบรายการเพื่อถ่ายใหม่)</div>':'')
     +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-pri btn-sm" id="qai_save">'+(QA_EDIT?'บันทึกการแก้ไข':'บันทึก')+'</button><button class="btn btn-sec btn-sm" id="qai_cancel" type="button">ยกเลิก</button></div>'
     +'</div>';
+  // เติมค่าเดิมผ่าน JS (กันอักขระพิเศษในชื่อสินค้าทำ attribute เพี้ยน)
+  $('qai_barcode').value = ed.barcode || '';
+  $('qai_name').value    = ed.name || '';
+  $('qai_size').value    = ed.size || '';
+  $('qai_qty').value     = ed.qty || 1;
+  $('qai_expiry').value  = ed.expiry_date || '';
+  $('qai_zone').value    = ed.zone || '';
   $('qai_lookup').onclick=async()=>{
     const bc=$('qai_barcode').value.trim(); if(!bc){ toast('err','กรอกบาร์โค้ด'); return; }
     try{ const p=await window.HR.qaLookupProduct(bc); if(p){ $('qai_name').value=p.name||''; $('qai_size').value=p.size||''; toast('ok','พบสินค้าในฐานข้อมูล'); } else toast('err','ไม่พบ — กรอกชื่อเอง'); }catch(e){ toast('err','ค้นหาไม่สำเร็จ'); }
