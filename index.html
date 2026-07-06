@@ -212,6 +212,10 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
 <!-- ===== น้องนิดา (ผู้ช่วยพนักงาน · ระดับสาขา) ===== -->
 <script>
 (function(){
+  // ===== สวิตช์เปิด/ปิด "นิดาพนักงาน" (ปุ่มลอย + แชท) =====
+  // ปิดชั่วคราวตามที่ขอ · เปิดกลับ = เปลี่ยนเป็น true (หรือใน config.js ตั้ง window.NIDA_EMP_ENABLED=true)
+  var NIDA_EMP_ON = (window.NIDA_EMP_ENABLED === true);
+  if(!NIDA_EMP_ON) return;   // ไม่สร้างปุ่มลอย/แผงแชทนิดาฝั่งพนักงาน
   var LS_BRANCH='nida_emp_branch';
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
   var cfg=function(){return {url:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey)||''};};
