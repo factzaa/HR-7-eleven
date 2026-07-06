@@ -186,6 +186,7 @@
         case 'hr_qa_folder_delete':  return await hrQaFolderDelete(p.id);
         case 'hr_qa_items':          return await hrQaItems(p.folder_id, p.status);
         case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
+        case 'hr_qa_item_update':    return await hrQaItemUpdate(p.id, p.data);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2052,6 +2053,30 @@
     const { error } = await sb().from('qa_items').delete().eq('id', id);
     if (error) throw error;
     await logAct('ลบสินค้า QA', null, '#' + id);
+    return { ok: true };
+  }
+
+  // แก้ไขรายละเอียดสินค้า QA (ชื่อ/บาร์โค้ด/ขนาด/จำนวน/หมดอายุ/โซน/สถานะ)
+  async function hrQaItemUpdate(id, d) {
+    if (!id) return { ok: false, error: 'ไม่ระบุรายการ' };
+    d = d || {};
+    if (!d.name || !String(d.name).trim()) return { ok: false, error: 'กรอกชื่อสินค้า' };
+    if (!d.expiry_date) return { ok: false, error: 'เลือกวันหมดอายุ' };
+    const bc = String(d.barcode || '').trim() || null;
+    const upd = {
+      name: String(d.name).trim(),
+      barcode: bc,
+      size: String(d.size || '').trim() || null,
+      qty: parseInt(d.qty) > 0 ? parseInt(d.qty) : 1,
+      expiry_date: d.expiry_date,
+      zone: String(d.zone || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (d.status && ['on_shelf', 'sold', 'removed'].includes(d.status)) upd.status = d.status;
+    const { error } = await sb().from('qa_items').update(upd).eq('id', id);
+    if (error) throw error;
+    if (bc) { try { await sb().from('qa_products').upsert({ barcode: bc, name: upd.name, size: upd.size, updated_at: new Date().toISOString() }, { onConflict: 'barcode' }); } catch (e) {} }
+    await logAct('แก้ไขสินค้า QA', null, '#' + id + ' · ' + upd.name);
     return { ok: true };
   }
 
