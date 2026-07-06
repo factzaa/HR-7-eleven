@@ -106,7 +106,9 @@
         display:none; align-items:center; justify-content:center; padding:20px; z-index:9;}
   .overlay.show{display:flex;}
   .sheet{background:#fff; border-radius:20px; padding:22px; width:100%; max-width:380px;
-        display:flex; flex-direction:column; gap:14px; border-top:6px solid var(--green);}
+        display:flex; flex-direction:column; gap:14px; border-top:6px solid var(--green);
+        max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px); overflow-y:auto;
+        -webkit-overflow-scrolling:touch;}
   .sheet h2{font-size:18px; font-weight:600;}
   .sheet p{font-size:13.5px; color:var(--muted); line-height:1.55;}
   .spin{width:15px; height:15px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff;
@@ -199,7 +201,7 @@
 </div>
 
 <div class="overlay" id="ackOverlay">
-  <div class="sheet" style="gap:0; padding:0; overflow:hidden;">
+  <div class="sheet" style="gap:0; padding:0; overflow-y:auto;">
     <div id="ackHead" style="padding:16px 18px; color:#fff; text-align:center;"></div>
     <div id="ackBody" style="padding:16px 18px; display:flex; flex-direction:column; gap:12px;"></div>
     <div style="padding:0 18px 18px;">
@@ -209,7 +211,7 @@
 </div>
 
 <div class="overlay" id="propOverlay">
-  <div class="sheet" style="gap:0; padding:0; overflow:hidden;">
+  <div class="sheet" style="gap:0; padding:0; overflow-y:auto;">
     <div style="padding:16px 18px; color:#fff; text-align:center; background:var(--orange)">📩 ข้อความจากฝ่ายบุคคล<div style="font-size:13px;opacity:.92;margin-top:2px;font-weight:400">เรื่องคำขอลาของคุณ</div></div>
     <div id="propBody" style="padding:16px 18px; display:flex; flex-direction:column; gap:11px;"></div>
   </div>

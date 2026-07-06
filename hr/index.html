@@ -1111,6 +1111,22 @@
   </div>
 </div>
 
+<!-- Modal: ข้อเสนอแนะเพิ่มเติม (การลา) + ให้นิดาร่าง -->
+<div class="overlay" id="lvPropOverlay">
+  <div class="modal">
+    <div class="modal-h"><h2>ข้อเสนอแนะเพิ่มเติม (การลา)</h2><button class="close" id="lvpClose">×</button></div>
+    <div class="modal-b">
+      <div id="lvp_info" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+      <textarea id="lvp_msg" rows="5" placeholder="พิมพ์ข้อเสนอแนะเพิ่มเติมถึงพนักงาน… หรือกด “ให้นิดาร่าง”" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:11px;font:inherit;font-size:14px;resize:vertical;box-sizing:border-box"></textarea>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:5px">พนักงานจะเห็นเป็นป๊อปอัพหลังสแกนหน้าเข้างาน + ในหน้าขอลา/สถานะของฉัน</div>
+    </div>
+    <div class="modal-f" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-sec" id="lvp_draft">✨ ให้นิดาร่าง</button>
+      <div style="display:flex;gap:8px"><button class="btn btn-sec" id="lvp_cancel">ยกเลิก</button><button class="btn btn-pri" id="lvp_send">ส่งข้อเสนอแนะ</button></div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Leave -->
 <div class="overlay" id="leaveOverlay">
   <div class="modal">
@@ -1923,6 +1939,7 @@ $('wvCloseBtn').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
 $('wvPrint').onclick = ()=>window.print();
 
 // ========== LEAVES & HOLIDAYS ==========
+let LEAVES_ROWS=[];
 function lvStatusCell(l){
   if(l.status==='approved') return '<span class="pill ok">อนุมัติ</span>';
   if(l.status==='rejected') return '<span class="pill bad">ปฏิเสธ</span>'+(l.hr_note?`<div style="font-size:11px;color:#dc2626">${esc(l.hr_note)}</div>`:'');
@@ -1939,6 +1956,7 @@ function lvStatusCell(l){
 async function loadLeaves(){
   const r = await post({ action:'hr_leaves_list', password:pwd });
   if(!r.ok){ $('lv_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  LEAVES_ROWS = r.rows;
   if(!r.rows.length){ $('lv_body').innerHTML='<div class="empty">ยังไม่มีใบลา</div>'; return; }
   $('lv_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>ตั้งแต่</th><th>ถึง</th><th>วัน</th><th>ประเภท</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead>
@@ -1969,13 +1987,40 @@ async function loadLeaves(){
     const r = await post({ action:'hr_leave_status', password:pwd, leave_id:b.dataset.lrej, status:'rejected', note });
     if(r.ok){ toast('ok','ปฏิเสธใบลาแล้ว'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
   });
-  document.querySelectorAll('[data-lprop]').forEach(b=>b.onclick=async()=>{
-    const msg = prompt('พิมพ์ข้อเสนอแนะเพิ่มเติมถึงพนักงาน\n(พนักงานจะเห็นเป็นป๊อปอัพหลังสแกนหน้าเข้างาน + ในหน้าขอลา/สถานะของฉัน)\nเช่น: ขอเปลี่ยนวันหยุดจาก 8 ก.ค. เป็น 10 ก.ค. และอนุมัติลาเฉพาะ 11 ก.ค.','');
-    if(msg===null || !msg.trim()) return;
-    const r = await post({ action:'hr_leave_propose', password:pwd, leave_id:b.dataset.lprop, message:msg.trim() });
-    if(r.ok){ toast('ok','ส่งข้อเสนอแนะเพิ่มเติมให้พนักงานแล้ว รอพนักงานตอบ'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
-  });
+  document.querySelectorAll('[data-lprop]').forEach(b=>b.onclick=()=>openLeavePropose(b.dataset.lprop));
 }
+// ---------- โมดัลข้อเสนอแนะเพิ่มเติม (มีปุ่ม "ให้นิดาร่าง") ----------
+let LVP_LEAVE=null;
+function openLeavePropose(leaveId){
+  const l=(LEAVES_ROWS||[]).find(x=>String(x.leave_id)===String(leaveId));
+  if(!l){ toast('err','ไม่พบใบลา'); return; }
+  LVP_LEAVE=l;
+  $('lvp_info').innerHTML='พนักงาน <b>'+esc(l.emp_name)+'</b> ('+esc(l.emp_id)+') · ลา '+esc(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):'')+' · '+esc(l.type||'ลา')+(l.reason?(' · เหตุผล: '+esc(l.reason)):'');
+  $('lvp_msg').value = (l.status==='proposed'&&l.proposal_msg) ? l.proposal_msg : '';
+  $('lvPropOverlay').classList.add('show');
+}
+['lvpClose','lvp_cancel'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('lvPropOverlay').classList.remove('show'); });
+$('lvPropOverlay') && $('lvPropOverlay').addEventListener('click', e=>{ if(e.target.id==='lvPropOverlay') $('lvPropOverlay').classList.remove('show'); });
+$('lvp_send') && ($('lvp_send').onclick=async()=>{
+  const msg=($('lvp_msg').value||'').trim(); if(!msg){ toast('err','พิมพ์ข้อความก่อน'); return; }
+  const btn=$('lvp_send'); btn.disabled=true;
+  const r=await post({ action:'hr_leave_propose', password:pwd, leave_id:LVP_LEAVE.leave_id, message:msg });
+  btn.disabled=false;
+  if(r.ok){ toast('ok','ส่งข้อเสนอแนะเพิ่มเติมให้พนักงานแล้ว รอพนักงานตอบ'); $('lvPropOverlay').classList.remove('show'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
+});
+$('lvp_draft') && ($('lvp_draft').onclick=async()=>{
+  if(!LVP_LEAVE) return; const l=LVP_LEAVE;
+  const btn=$('lvp_draft'); const old=btn.textContent; btn.disabled=true; btn.textContent='นิดากำลังร่าง…';
+  const ask='ช่วยร่างข้อความสุภาพจากฝ่ายบุคคลถึงพนักงาน "'+l.emp_name+'" เรื่องคำขอลา'+(l.type?(' '+l.type):'')+' วันที่ '+l.start_date+(l.end_date&&l.end_date!==l.start_date?(' ถึง '+l.end_date):'')+(l.reason?(' เหตุผลที่พนักงานแจ้ง: '+l.reason):'')+' โดยเสนอแนวทางที่เหมาะสม (เช่น สลับวันหยุดประจำสัปดาห์ หรืออนุมัติบางวัน) เพื่อไม่ให้กระทบกำลังคนของสาขา · ตอบกลับมาเฉพาะ "ตัวข้อความที่จะส่งให้พนักงาน" เท่านั้น ไม่ต้องมีคำอธิบาย/หัวข้ออื่น';
+  try{
+    const {base,key}=asstApiBase();
+    const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:[{role:'user',text:ask}]})});
+    const j=await r.json();
+    if(j&&j.reply){ $('lvp_msg').value=String(j.reply).trim(); toast('ok','นิดาร่างให้แล้ว ปรับแก้ได้ก่อนส่ง'); }
+    else toast('err',(j&&j.error)||'ร่างไม่สำเร็จ');
+  }catch(e){ toast('err','เชื่อมต่อนิดาไม่สำเร็จ'); }
+  btn.disabled=false; btn.textContent=old;
+});
 $('lv_new').onclick = ()=>{
   ['lv_emp','lv_start','lv_end','lv_type','lv_reason'].forEach(id=>$(id).value='');
   $('lv_status').value = 'approved';
