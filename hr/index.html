@@ -1224,7 +1224,7 @@
 <script>
 let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '';
-const MGR_TABS = ['dashboard','handover','special','qa','shelf'];
+const MGR_TABS = ['dashboard','handover','special','qa','shelf','schedule'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -2453,6 +2453,8 @@ function applyManagerMode(){
   const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
   const badge=$('mgrBadge');
   if(badge){ badge.textContent='🏪 ผจก. · '+(b?b.name:MGR_BRANCH); badge.style.display='inline-block'; }
+  // ซ่อนปุ่มแก้ไขตารางกะ (ผจก.ดูอย่างเดียว) — เหลือปุ่มแชร์รูป/คัดลอกข้อความ
+  ['sc_copy'].forEach(id=>{ const el=$(id); if(el) el.style.display='none'; });
   enforceMgrBranch();
 }
 // ล็อกทุก dropdown ที่เป็น "สาขา" ให้เป็นสาขาของ ผจก. เท่านั้น
@@ -2705,6 +2707,7 @@ async function loadSpecialList(){
   const r=await post({ action:'hr_special_list', password:pwd, branch: $('sp_listbranch').value||'' });
   if(!r.ok){ $('sp_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   if(!r.rows.length){ $('sp_list').innerHTML='<div class="empty">ยังไม่มีงานพิเศษ</div>'; return; }
+  const SP_MAP={};
   $('sp_list').innerHTML=r.rows.map(t=>{
     let h='<div class="card" style="padding:14px;margin-bottom:12px">';
     h+='<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-weight:700;font-size:15px">'+esc(t.title)+'</div>';
@@ -2715,11 +2718,13 @@ async function loadSpecialList(){
     if(t.hr_photos&&t.hr_photos.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
     h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:10px">';
     h+=t.people.map(p=>{
+      SP_MAP[p.id]=p;
       let c='<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-size:14px;font-weight:600">'+esc(p.emp_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(p.branch_name)+'</span> '+spStatusPill(p.status)+'</div>';
       if(p.submitted_at) c+='<div style="font-size:12px;color:var(--muted)">ส่งเมื่อ '+spFmt(p.submitted_at)+'</div>';
       if(p.emp_note) c+='<div style="font-size:12.5px;margin-top:2px">หมายเหตุพนักงาน: '+esc(p.emp_note)+'</div>';
       if(p.review_note) c+='<div style="font-size:12.5px;color:#b45309;margin-top:2px">↳ '+esc(p.review_note)+'</div>';
       if(p.photos&&p.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+p.photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:60px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
+      if(Array.isArray(p.review_markup)&&p.review_markup.length) c+='<div style="font-size:12px;color:#dc2626;margin-top:6px;font-weight:600">📍 จุดที่สั่งแก้</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+p.review_markup.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:2px solid #ef4444;cursor:zoom-in">').join('')+'</div>';
       c+='</div>';
       if(p.status==='submitted') c+='<div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-spap="'+p.id+'">✅ ผ่าน</button><button class="btn btn-sec btn-sm" data-sprb="'+p.id+'">⤴ ตีกลับ</button></div>';
       return c+'</div>';
@@ -2728,13 +2733,25 @@ async function loadSpecialList(){
     return h+'</div>';
   }).join('');
   $('sp_list').querySelectorAll('[data-spap]').forEach(b=>b.onclick=()=>spReview(Number(b.dataset.spap),'approved'));
-  $('sp_list').querySelectorAll('[data-sprb]').forEach(b=>b.onclick=()=>{ const note=prompt('เหตุผลที่ตีกลับ (พนักงานจะเห็น):'); if(note===null)return; spReview(Number(b.dataset.sprb),'sent_back',note); });
+  $('sp_list').querySelectorAll('[data-sprb]').forEach(b=>b.onclick=()=>openSpecialMarkup(SP_MAP[Number(b.dataset.sprb)]));
   $('sp_list').querySelectorAll('[data-spdel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบงานพิเศษนี้ทั้งหมด? (รวมของทุกคน)'))return; const rr=await post({action:'hr_special_delete',password:pwd,id:Number(b.dataset.spdel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadSpecialList(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
 }
-async function spReview(id,status,note){
-  const r=await post({ action:'hr_special_review', password:pwd, assignee_id:id, status, note:note||'' });
+async function spReview(id,status,note,markup){
+  const r=await post({ action:'hr_special_review', password:pwd, assignee_id:id, status, note:note||'', markup });
   if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadSpecialList(); }
   else toast('err', r.error||'ไม่สำเร็จ');
+}
+// ตีกลับงานพิเศษ: ใช้เครื่องมือวาดชี้จุดเดียวกับงานในกะ/เชลฟ์
+function openSpecialMarkup(p){
+  if(!p){ toast('err','ไม่พบรายการ'); return; }
+  const photos=(Array.isArray(p.photos)&&p.photos.length)?p.photos:[];
+  if(!photos.length){ const note=prompt('เหตุผลที่ตีกลับ (พนักงานจะเห็น):'); if(note===null) return; spReview(p.id,'sent_back',note); return; }
+  ensureMarkupUI();
+  MK={ task:p, tool:'circle', cur:0, imgs:photos.map(u=>({src:u, el:null, shapes:[]})), reviewFn:(note,out)=>spReview(p.id,'sent_back',note,out) };
+  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
+  document.getElementById('mkNote').value='';
+  document.getElementById('mkOverlay').style.display='flex';
+  mkLoadCur();
 }
 function spLightbox(img){ const o=document.createElement('div'); o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out'; o.innerHTML='<img src="'+img.src+'" style="max-width:92%;max-height:90%;border-radius:8px">'; o.onclick=()=>o.remove(); document.body.appendChild(o); }
 
@@ -2788,10 +2805,8 @@ async function loadQaFolders(){
   const r=await post({ action:'hr_qa_folder_list', password:pwd });
   if(!r.ok){ $('qa_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   if(!r.rows.length){ $('qa_list').innerHTML='<div class="empty">ยังไม่มีโฟลเดอร์</div>'; return; }
-  let qaRows = r.rows;
-  if(MGR_MODE) qaRows = qaRows.filter(f=>(f.branch_ids||[]).includes(MGR_BRANCH));
-  if(!qaRows.length){ $('qa_list').innerHTML='<div class="empty">ยังไม่มีโฟลเดอร์ของสาขานี้</div>'; return; }
-  $('qa_list').innerHTML=qaRows.map(f=>{
+  // QA เห็นได้ทุกสาขา (ใช้ตรวจของหมดอายุร่วมกัน) — แต่ "บันทึกแทน/มอบหมาย" จำกัดเฉพาะพนักงานสาขา ผจก.
+  $('qa_list').innerHTML=r.rows.map(f=>{
     const s=f.stats||{total:0,on_shelf:0,sold:0,removed:0,expiring:0};
     return '<div class="card" style="padding:14px;margin-bottom:10px"><div style="display:flex;gap:10px;align-items:flex-start">'
       +'<div style="flex:1"><div style="font-weight:700;font-size:15px">📁 '+esc(f.title)+(s.expiring>0?' <span style="background:#dc2626;color:#fff;font-size:12px;border-radius:999px;padding:1px 8px">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
@@ -3267,7 +3282,7 @@ function renderSchedule(){
     const dd=new Date(d+'T00:00:00');
     return `<th style="min-width:104px">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;
   }).join('')+'</tr>';
-  const bf = $('sc_branchfilter') ? $('sc_branchfilter').value : '';
+  const bf = MGR_MODE ? MGR_BRANCH : ($('sc_branchfilter') ? $('sc_branchfilter').value : '');
   const emps = ((SC&&SC.employees)||[]).filter(e=>!bf || e.branch_id===bf);
   if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; if($('sc_summary'))$('sc_summary').innerHTML=''; return; }
   $('scEmpty').style.display='none';
@@ -3280,7 +3295,11 @@ function renderSchedule(){
     const cells = days.map(d=>{
       const arr = SC.schedules[e.emp_id+'|'+d] || [];
       let inner;
-      if(!arr.length){
+      if(MGR_MODE){
+        // ผจก.: ดูอย่างเดียว แก้ไขไม่ได้
+        if(!arr.length) inner = '<span style="color:#e0803a;font-weight:700;font-size:13px">OFF</span>';
+        else inner = arr.map(c=>`<div style="font-weight:700;font-size:14px;${c.is_cover?'color:#ea580c':''}">${esc(shiftCodeOf(c.shift_id))}${c.is_cover?('<div style="font-size:10px;color:#ea580c;font-weight:600">→'+esc(c.branch_id)+'</div>'):''}</div>`).join('');
+      } else if(!arr.length){
         // ยังไม่มีกะ → แสดง "OFF" (ยังกดเลือกกะเพื่อจัดเวรได้)
         inner = `<select onchange="if(this.value)scAddShift('${esc(e.emp_id)}','${d}',this.value)" title="OFF — เลือกกะเพื่อจัดเวร" style="${_selCss};width:54px;font-weight:700;text-align:center;color:#e0803a">${_optOff}</select>`;
       } else {
@@ -3349,7 +3368,7 @@ async function scDelShift(emp, date, shiftId){
   loadSchedule();
 }
 // ---------- สรุปตาราง → ข้อความ / รูป (สำหรับส่ง Line) ----------
-function scFilteredEmps(){ const bf=$('sc_branchfilter')?$('sc_branchfilter').value:''; return ((SC&&SC.employees)||[]).filter(e=>!bf||e.branch_id===bf); }
+function scFilteredEmps(){ const bf=MGR_MODE?MGR_BRANCH:($('sc_branchfilter')?$('sc_branchfilter').value:''); return ((SC&&SC.employees)||[]).filter(e=>!bf||e.branch_id===bf); }
 function buildScheduleText(){
   const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
   const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
@@ -4593,6 +4612,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
 <style>
 #asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 8px 16px rgba(0,0,0,.28));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
 body.is-logged #asstFab{display:block}
+body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
 #asstFab img{width:100%;height:100%;object-fit:contain;pointer-events:none;position:relative;z-index:2}
 #asstFab .fbadge{position:absolute;top:2px;right:0;z-index:3;background:#ea580c;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
 #asstFab::before,#asstFab::after{content:"";position:absolute;left:50%;top:56%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;border:3px solid rgba(16,163,74,.6);z-index:0;pointer-events:none;animation:asstRing 2.4s ease-out infinite}

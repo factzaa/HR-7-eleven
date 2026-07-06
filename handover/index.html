@@ -380,6 +380,7 @@ function renderSpecialHTML(rows){
     if(a.hr_note) c+='<div class="muted" style="margin-top:4px">📝 หมายเหตุจาก HR: '+esc(a.hr_note)+'</div>';
     if(a.hr_photos&&a.hr_photos.length) c+='<div style="margin-top:6px"><div class="muted" style="font-size:12px">รูปตัวอย่าง/อ้างอิงจาก HR</div>'+thumbsHtml(a.hr_photos)+'</div>';
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-top:8px">⚠️ ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
+    if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:6px 0 4px">📍 จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
     if(!canDo){
       if(a.photos&&a.photos.length) c+='<div style="margin-top:8px"><div class="muted" style="font-size:12px">รูปที่คุณส่ง</div>'+thumbsHtml(a.photos)+'</div>';
       if(a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุของคุณ: '+esc(a.emp_note)+'</div>';

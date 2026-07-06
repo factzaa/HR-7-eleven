@@ -179,7 +179,7 @@
         case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
         case 'hr_special_list':      return await hrSpecialList(p.branch);
-        case 'hr_special_review':    return await hrSpecialReview(p.assignee_id, p.status, p.note);
+        case 'hr_special_review':    return await hrSpecialReview(p.assignee_id, p.status, p.note, p.markup);
         case 'hr_special_delete':    return await hrSpecialDelete(p.id);
         case 'hr_qa_folder_create':  return await hrQaFolderCreate(p.data);
         case 'hr_qa_folder_list':    return await hrQaFolderList();
@@ -1928,7 +1928,7 @@
     return { ok: true, rows };
   }
 
-  async function hrSpecialReview(assigneeId, status, note) {
+  async function hrSpecialReview(assigneeId, status, note, markup) {
     if (!assigneeId) return { ok: false, error: 'ไม่ระบุรายการ' };
     const { data: a } = await sb().from('special_task_assignees').select('emp_id,task_id').eq('id', assigneeId).maybeSingle();
     const upd = {
@@ -1937,6 +1937,16 @@
     };
     // ตีกลับ = ให้ทำใหม่ + แจ้งพนักงานอีกครั้ง
     if (upd.status === 'sent_back') upd.assigned_notified = false;
+    // รูปที่ผู้ตรวจวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
+    if (status !== 'approved' && Array.isArray(markup) && markup.length) {
+      const urls = [];
+      for (const m of markup) {
+        if (typeof m === 'string' && m.startsWith('data:')) {
+          try { urls.push(await window.HR.uploadPhoto('employee-docs', 'spmarkup/' + assigneeId + '_' + Date.now() + '_' + urls.length + '.jpg', m)); } catch (e) { console.warn('special markup upload', e); }
+        } else if (typeof m === 'string' && m) { urls.push(m); }
+      }
+      upd.review_markup = urls.length ? urls : null;
+    }
     const { error } = await sb().from('special_task_assignees').update(upd).eq('id', assigneeId);
     if (error) throw error;
     let title = '';
@@ -1980,7 +1990,7 @@
   async function hrQaFolderList() {
     const [fR, empR] = await Promise.all([
       sb().from('qa_folders').select('*').eq('active', true).order('created_at', { ascending: false }).limit(200),
-      sb().from('employees').select('emp_id,name,nickname'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id'),
     ]);
     if (fR.error) throw fR.error;
     const folders = fR.data || [];
@@ -1991,7 +2001,9 @@
       sb().from('qa_items').select('folder_id,status,expiry_date').in('folder_id', ids),
     ]);
     const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.nickname || e.name; });
+    const empBr = {}; (empR.data || []).forEach(e => { empBr[e.emp_id] = e.branch_id || null; });
     const asgByF = {}; (asgR.data || []).forEach(a => { (asgByF[a.folder_id] = asgByF[a.folder_id] || []).push(empName[a.emp_id] || a.emp_id); });
+    const asgBrByF = {}; (asgR.data || []).forEach(a => { const s = asgBrByF[a.folder_id] = asgBrByF[a.folder_id] || new Set(); if (empBr[a.emp_id]) s.add(empBr[a.emp_id]); });
     const today = bkkToday();
     const itByF = {};
     (itR.data || []).forEach(i => {
@@ -1999,7 +2011,7 @@
       o.total++; o[i.status] = (o[i.status] || 0) + 1;
       if (i.status === 'on_shelf' && i.expiry_date && i.expiry_date <= addDays(today, 30) && i.expiry_date >= today) o.expiring++;
     });
-    const rows = folders.map(f => ({ ...f, assignees: asgByF[f.id] || [], stats: itByF[f.id] || { total: 0, on_shelf: 0, sold: 0, removed: 0, expiring: 0 } }));
+    const rows = folders.map(f => ({ ...f, assignees: asgByF[f.id] || [], branch_ids: [...(asgBrByF[f.id] || [])], stats: itByF[f.id] || { total: 0, on_shelf: 0, sold: 0, removed: 0, expiring: 0 } }));
     return { ok: true, rows };
   }
 
@@ -2016,15 +2028,23 @@
     if (!folderId) return { ok: false, error: 'ไม่ระบุโฟลเดอร์' };
     let q = sb().from('qa_items').select('*').eq('folder_id', folderId);
     if (status) q = q.eq('status', status);
-    const [itR, brR, fR] = await Promise.all([
+    const [itR, brR, fR, asgR] = await Promise.all([
       q.order('expiry_date', { ascending: true }),
       sb().from('branches').select('branch_id,name'),
       sb().from('qa_folders').select('*').eq('id', folderId).maybeSingle(),
+      sb().from('qa_folder_assignees').select('emp_id').eq('folder_id', folderId),
     ]);
     if (itR.error) throw itR.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const rows = (itR.data || []).map(i => ({ ...i, branch_name: brName[i.branch_id] || i.branch_id || '—' }));
-    return { ok: true, folder: fR.data || null, rows };
+    // ผู้รับผิดชอบโฟลเดอร์ (สำหรับ HR/ผจก. บันทึกแทน)
+    const asgIds = (asgR.data || []).map(a => a.emp_id);
+    let assignees = [];
+    if (asgIds.length) {
+      const { data: emps } = await sb().from('employees').select('emp_id,name,nickname,branch_id').in('emp_id', asgIds);
+      assignees = (emps || []).map(e => ({ emp_id: e.emp_id, name: e.name, nickname: e.nickname || '', branch_id: e.branch_id || null }));
+    }
+    return { ok: true, folder: fR.data || null, assignees, rows };
   }
 
   async function hrQaItemDelete(id) {

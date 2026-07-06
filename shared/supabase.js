@@ -1021,7 +1021,7 @@
         id:a.id, task_id:a.task_id, title:t.title, detail:t.detail, deadline:t.deadline,
         hr_photos:t.hr_photos||[], hr_note:t.hr_note,
         status:a.status, photos:a.photos||[], emp_note:a.emp_note,
-        review_note:a.review_note, reviewer:a.reviewer, submitted_at:a.submitted_at,
+        review_note:a.review_note, review_markup:a.review_markup||null, reviewer:a.reviewer, submitted_at:a.submitted_at,
       };
     });
     return { emp, rows };
@@ -1033,7 +1033,7 @@
     if(a.emp_id!==empId) throw new Error('ไม่ใช่งานของคุณ');
     const urls=[];
     for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','special/'+(emp.branch_id||'x')+'_'+a.task_id+'_'+empId+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
-    const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null, submit_notified:false };
+    const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, review_markup:null, reviewed_at:null, submit_notified:false };
     if(urls.length){ upd.photos=urls; }
     const {error}=await sb.from('special_task_assignees').update(upd).eq('id',assignee_id); if(error) throw error;
     return { ok:true };
