@@ -343,7 +343,7 @@
     // กะวันนี้ — total นับจากตารางเวรวันนี้ (ไม่ใช่กะประจำแล้ว)
     const shifts = {};
     (shR.data || []).forEach(s => { shifts[s.shift_id] = { total: 0, checkedIn: 0, late: 0 }; });
-    (schR.data || []).forEach(s => { if (s.shift_id && shifts[s.shift_id]) shifts[s.shift_id].total++; });
+    (schR.data || []).forEach(s => { if (s.shift_id && shifts[s.shift_id] && empSet.has(s.emp_id)) shifts[s.shift_id].total++; });   // นับเฉพาะพนักงาน active
     todayA.forEach(a => { if (a.shift_id && shifts[a.shift_id]) { if (a.check_in) shifts[a.shift_id].checkedIn++; if (a.late_min > 0) shifts[a.shift_id].late++; } });
 
     // trend 30 วัน
@@ -1081,8 +1081,9 @@
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
     ]);
     const empName = {}, empBranch = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; empBranch[e.emp_id] = e.branch_id; });
+    const activeSet = new Set((empR.data || []).map(e => e.emp_id));   // เฉพาะพนักงานที่ยัง active
     const att = (todayR.data || []).filter(a => !branch || a.branch_id === branch);
-    const schRows = (schR.data || []).filter(s => !branch || s.branch_id === branch);
+    const schRows = (schR.data || []).filter(s => (!branch || s.branch_id === branch) && activeSet.has(s.emp_id));   // ตัดกะของพนักงานที่ปิดใช้งานออก
     const checkedIn = new Set(att.filter(a => a.check_in).map(a => a.emp_id));
     const onleave = new Set((lvApprR.data || []).filter(l => today <= (l.end_date || l.start_date)).map(l => l.emp_id));
 
