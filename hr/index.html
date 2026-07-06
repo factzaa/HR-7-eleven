@@ -4134,7 +4134,9 @@ async function loadCheckoutCorr(){
   const box=$('coCorrPanel'); if(!box) return;
   const r=await post({ action:'hr_checkout_corr_list', password:pwd });
   if(!r.ok){ box.innerHTML=''; return; }
-  const pend=r.rows.filter(x=>x.status==='pending');
+  const dbr=$('dash_branch')?$('dash_branch').value:'';
+  let pend=r.rows.filter(x=>x.status==='pending');
+  if(dbr) pend=pend.filter(x=>String(x.branch_id)===String(dbr));
   if(!pend.length){ box.innerHTML=''; return; }
   box.innerHTML='<div class="card" style="margin-bottom:14px;padding:14px 16px">'
     +'<div style="font-weight:600;font-size:14px;margin-bottom:8px">🕒 คำขอแก้ไขเวลาออก รออนุมัติ ('+pend.length+')</div>'
@@ -4153,9 +4155,12 @@ async function loadOpenTasks(){
   const box=$('openTasksPanel'); if(!box) return;
   let r; try{ r=await post({ action:'hr_open_tasks', password:pwd }); }catch(e){ box.innerHTML=''; return; }
   if(!r || !r.ok || !r.groups || !r.groups.length){ box.innerHTML=''; return; }
-  const g=r.groups;
+  const dbr=$('dash_branch')?$('dash_branch').value:'';
+  const g = dbr ? r.groups.filter(x=>String(x.branch_id)===String(dbr)) : r.groups;
+  if(!g.length){ box.innerHTML=''; return; }
+  const total = g.reduce((s,x)=>s+((x.tasks&&x.tasks.length)||0),0);
   box.innerHTML='<div class="card" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #e0803a">'
-    +'<div style="font-weight:600;font-size:14px;margin-bottom:8px">⚠️ งานค้างข้ามวัน ('+g.length+' กลุ่ม · '+r.total+' งาน)</div>'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:8px">⚠️ งานค้างข้ามวัน ('+g.length+' กลุ่ม · '+total+' งาน)</div>'
     +g.map((x,i)=>'<div style="border-top:1px solid var(--line);padding:10px 0">'
       +'<div style="font-size:14px;font-weight:600">'+esc(x.branch_name)+' · กะ '+esc(x.shift_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(String(x.work_date))+'</span></div>'
       +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">ยังไม่ทำ '+x.todo+' · ตีกลับ '+x.sent_back+' · <b style="color:#c2410c">รอตรวจ '+x.submitted+'</b></div>'
