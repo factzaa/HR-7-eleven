@@ -1128,6 +1128,15 @@
   </div>
 </div>
 
+<!-- Modal: รายละเอียดใบลา (อ่านอย่างเดียว — ใช้ตรวจสอบย้อนหลัง) -->
+<div class="overlay" id="lvDetailOverlay">
+  <div class="modal">
+    <div class="modal-h"><h2>รายละเอียดใบลา</h2><button class="close" id="lvdClose">×</button></div>
+    <div class="modal-b" id="lvd_body"></div>
+    <div class="modal-f"><button class="btn btn-sec" id="lvdCloseBtn">ปิด</button></div>
+  </div>
+</div>
+
 <style>
   /* แท็บลา: จอใหญ่ = ตาราง · จอเล็ก(มือถือ) = การ์ดต่อรายการ */
   .lv-mobile{display:none;}
@@ -2022,9 +2031,10 @@ function lvStatusPill(l){
   return '<span class="pill warn">รอ</span>';
 }
 function lvActionButtons(l){
-  const id=esc(l.leave_id); let b='';
-  if(l.status==='pending') b=`<button class="icobtn" style="color:#c2410c;font-weight:600" data-lprop="${id}">ข้อเสนอแนะเพิ่มเติม</button> <button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${id}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${id}">ปฏิเสธ</button> `;
-  else if(l.status==='proposed') b=`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${id}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${id}">ปฏิเสธ</button> <button class="icobtn" style="color:#c2410c" data-lprop="${id}">เสนอแนะอีกครั้ง</button> `;
+  const id=esc(l.leave_id);
+  let b=`<button class="icobtn" style="color:#0369a1" data-lview="${id}">👁 ดู</button> `;
+  if(l.status==='pending') b+=`<button class="icobtn" style="color:#c2410c;font-weight:600" data-lprop="${id}">ข้อเสนอแนะเพิ่มเติม</button> <button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${id}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${id}">ปฏิเสธ</button> `;
+  else if(l.status==='proposed') b+=`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${id}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${id}">ปฏิเสธ</button> <button class="icobtn" style="color:#c2410c" data-lprop="${id}">เสนอแนะอีกครั้ง</button> `;
   return b+`<button class="icobtn" data-ldel="${id}">ลบ</button>`;
 }
 function lvCard(l){
@@ -2082,7 +2092,32 @@ async function loadLeaves(){
     if(r.ok){ toast('ok','ปฏิเสธใบลาแล้ว'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
   });
   document.querySelectorAll('[data-lprop]').forEach(b=>b.onclick=()=>openLeavePropose(b.dataset.lprop));
+  document.querySelectorAll('[data-lview]').forEach(b=>b.onclick=()=>openLeaveDetail(b.dataset.lview));
 }
+// ---------- โมดัลรายละเอียดใบลา (อ่านอย่างเดียว) ----------
+function lvFmtDT(s){ if(!s) return '—'; try{ return new Date(s).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return String(s); } }
+function openLeaveDetail(leaveId){
+  const l=(LEAVES_ROWS||[]).find(x=>String(x.leave_id)===String(leaveId));
+  if(!l){ toast('err','ไม่พบใบลา'); return; }
+  const range=esc(l.start_date)+(l.end_date&&l.end_date!==l.start_date?(' – '+esc(l.end_date)):'');
+  const row=(lbl,val)=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="width:120px;color:var(--muted);flex:none;font-size:13px">${lbl}</div><div style="flex:1;font-size:13.5px;white-space:pre-wrap;word-break:break-word">${val}</div></div>`;
+  let h='';
+  h+=row('เลขที่', '#'+esc(l.leave_id));
+  h+=row('พนักงาน', esc(l.emp_name)+' <span style="color:var(--muted)">('+esc(l.emp_id)+')</span>');
+  h+=row('ประเภท', esc(l.type||'—'));
+  h+=row('ช่วงลา', range+' · '+l.days+' วัน');
+  h+=row('เหตุผล', l.reason?esc(l.reason):'—');
+  h+=row('สถานะ', lvStatusPill(l)+(l.hr_note?('<div style="margin-top:3px;color:#b45309">หมายเหตุ HR: '+esc(l.hr_note)+'</div>'):''));
+  if(l.doc_url) h+=row('เอกสารแนบ', '<a href="'+esc(l.doc_url)+'" target="_blank">📎 เปิดเอกสาร</a>');
+  if(l.proposal_msg) h+=row('📩 ข้อเสนอแนะ (HR)', esc(l.proposal_msg)+'<div style="color:var(--muted);font-size:11.5px;margin-top:2px">'+lvFmtDT(l.proposal_at)+'</div>');
+  if(l.response) h+=row('↩ พนักงานตอบ', (l.response==='accepted'?'✓ ยอมรับ':'✗ ไม่ยอมรับ')+(l.response_msg?(' — '+esc(l.response_msg)):'')+'<div style="color:var(--muted);font-size:11.5px;margin-top:2px">'+lvFmtDT(l.response_at)+'</div>');
+  h+=row('ยื่นเมื่อ', lvFmtDT(l.created_at));
+  $('lvd_body').innerHTML=h;
+  $('lvDetailOverlay').classList.add('show');
+}
+['lvdClose','lvdCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('lvDetailOverlay').classList.remove('show'); });
+$('lvDetailOverlay') && $('lvDetailOverlay').addEventListener('click', e=>{ if(e.target.id==='lvDetailOverlay') $('lvDetailOverlay').classList.remove('show'); });
+
 // ---------- โมดัลข้อเสนอแนะเพิ่มเติม (มีปุ่ม "ให้นิดาร่าง") ----------
 let LVP_LEAVE=null;
 function openLeavePropose(leaveId){
