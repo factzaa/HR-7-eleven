@@ -388,13 +388,14 @@
     <span class="count" id="count">—</span>
     <button class="btn btn-pri" id="newBtn">+ เพิ่มพนักงาน</button>
   </div>
-  <div class="card">
+  <div class="card only-desktop">
     <div class="tablewrap"><table>
       <thead><tr><th>รหัส</th><th>ชื่อ</th><th>กะ</th><th>สาขา</th><th>เบอร์โทร</th><th>ใบหน้า</th><th>สถานะ</th><th></th></tr></thead>
       <tbody id="empRows"></tbody>
     </table></div>
-    <div class="empty" id="empEmpty" style="display:none">ไม่พบข้อมูล</div>
   </div>
+  <div id="empCards" class="only-mobile"></div>
+  <div class="empty" id="empEmpty" style="display:none">ไม่พบข้อมูล</div>
 </div>
 
 <!-- Report -->
@@ -1138,6 +1139,21 @@
   .lvcard-act{display:flex; flex-wrap:wrap; gap:7px; margin-top:11px; border-top:1px solid var(--line); padding-top:10px;}
   .lvcard-act .icobtn{border:1px solid var(--line2); border-radius:9px; padding:9px 13px; font-size:13.5px;}
   @media (max-width:820px){ .lv-desktop{display:none;} .lv-mobile{display:block;} }
+
+  /* การ์ด responsive กลาง — ใช้ซ้ำได้ทุกตาราง (พนักงาน/รายงาน ฯลฯ) */
+  .only-mobile{display:none;}
+  @media (max-width:820px){ .only-desktop{display:none;} .only-mobile{display:block;} }
+  .rcard{border:1px solid var(--line); border-radius:14px; padding:12px 13px; margin-bottom:10px; background:#fff;}
+  .rcard.inactive{opacity:.6;}
+  .rcard.clickable{cursor:pointer;}
+  .rcard-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .rcard-info{font-size:13px; color:var(--muted); margin-top:8px; line-height:1.6;}
+  .rcard-stats{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px;}
+  .rcard-stat{background:#fafbf9; border:1px solid var(--line); border-radius:10px; padding:8px 6px; text-align:center;}
+  .rcard-stat .v{font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .rcard-stat .l{font-size:11px; color:var(--muted); margin-top:1px;}
+  .rcard-act{display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:11px; border-top:1px solid var(--line); padding-top:9px;}
+  .rcard-act .icobtn{border:1px solid var(--line2); border-radius:9px; padding:8px 12px;}
 </style>
 
 <!-- Modal: Leave -->
@@ -1430,6 +1446,19 @@ function renderEmployees(){
       <td>${act?'<span class="pill ok">ทำงานอยู่</span>':'<span class="pill bad">ปิดใช้งาน</span>'}</td>
       <td class="rowact" style="white-space:nowrap"><button class="icobtn" data-del="${esc(r.emp_id)}" style="color:#dc2626">ลบ</button> <span class="icobtn">ดู ›</span></td>
     </tr>`;
+  }).join('');
+  $('empCards').innerHTML = filtered.map(r=>{
+    const act = isActive(r.active);
+    const thumb = r.photo_url ? `<div class="thumb"><img src="${esc(r.photo_url)}"></div>` : `<div class="thumb">${esc(pickInitial(r.nickname || r.name))}</div>`;
+    const face = r.face_descriptor==='registered' ? '<span class="pill ok" style="font-size:11px;padding:2px 8px">ใบหน้า ✓</span>' : '<span class="pill muted" style="font-size:11px;padding:2px 8px">ยังไม่มีใบหน้า</span>';
+    return `<div class="rcard clickable${act?'':' inactive'}" data-view="${esc(r.emp_id)}">
+      <div class="rcard-top">
+        <div class="name-cell">${thumb}<div class="ntext"><span class="nm">${esc(r.name||'')}</span><span class="nick">${esc(r.emp_id)}${r.nickname?' · '+esc(r.nickname):''}</span></div></div>
+        ${act?'<span class="pill ok">ทำงานอยู่</span>':'<span class="pill bad">ปิดใช้งาน</span>'}
+      </div>
+      <div class="rcard-info">🕘 กะ ${esc(shiftName(r.default_shift))} · 🏪 ${esc(branchName(r.branch_id))} · ☎ ${esc(r.phone||'—')}</div>
+      <div class="rcard-act">${face}<span style="flex:1"></span><button class="icobtn" data-del="${esc(r.emp_id)}" style="color:#dc2626">ลบ</button><span class="icobtn">ดู ›</span></div>
+    </div>`;
   }).join('');
   document.querySelectorAll('[data-view]').forEach(tr=>tr.onclick=()=>openView(tr.dataset.view));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async(ev)=>{
@@ -1759,7 +1788,7 @@ function renderReportSummary(){
     $('r_body').innerHTML='<div class="empty">'+(total? ('ไม่มีคนที่มีข้อมูลในช่วงนี้ ('+total+' คนเป็นศูนย์ทั้งหมด) — เอาเครื่องหมาย “ซ่อนคนที่ไม่มีข้อมูล” ออกเพื่อดูทั้งหมด') : 'ไม่พบข้อมูล')+'</div>';
     $('r_count').textContent = '0 คน'+(hidden? ' (ซ่อน '+hidden+')' : ''); return;
   }
-  $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
+  const tableHtml = `<div class="card only-desktop"><div class="tablewrap"><table>
     <thead><tr><th>พนักงาน</th><th>วันทำงาน</th><th>สาย (วัน)</th><th>สาย (นาที)</th><th>ขาด (วัน)</th><th>ลา (วัน)</th><th>OT (วัน)</th><th>OT (ชม.)</th><th>ไปแทน (วัน)</th><th>ออกก่อน (วัน/ชม.)</th></tr></thead>
     <tbody>${sumRows.map(e=>`
       <tr>
@@ -1775,6 +1804,20 @@ function renderReportSummary(){
         <td class="mono">${e.early_out_days>0?'<span style="color:#b45309;font-weight:600">'+e.early_out_days+' วัน · '+(e.early_out_hours||0)+' ชม.</span>':'0'}</td>
       </tr>`).join('')}</tbody></table></div>
     <div style="font-size:12px;color:var(--muted);padding:8px 12px">* ขาด = วันที่จัดเวรไว้และผ่านไปแล้ว แต่ไม่มา/ไม่ลา · วันทำงาน &amp; OT อิงการลงเวลาจริง · สาย(วัน) = จำนวนวันที่มาสาย · กะครึ่งวันนับ 0.5 · ออกก่อน = ออกก่อนเวลาเลิกกะเกินผ่อนผัน</div></div>`;
+  const cardsHtml = `<div class="only-mobile">${sumRows.map(e=>`
+    <div class="rcard">
+      <div class="rcard-top"><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}${e.nickname?' ('+esc(e.nickname)+')':''}</span><span class="nick">${esc(e.emp_id)}</span></div></div></div>
+      <div class="rcard-stats">
+        <div class="rcard-stat"><div class="v">${e.days}</div><div class="l">วันทำงาน</div></div>
+        <div class="rcard-stat"><div class="v" style="${e.late_count>0?'color:var(--red)':''}">${e.late_count||0}</div><div class="l">สาย(วัน)</div></div>
+        <div class="rcard-stat"><div class="v">${e.late_total||0}</div><div class="l">สาย(นาที)</div></div>
+        <div class="rcard-stat"><div class="v" style="${e.absent>0?'color:var(--red)':''}">${e.absent||0}</div><div class="l">ขาด(วัน)</div></div>
+        <div class="rcard-stat"><div class="v">${e.leave_days||0}</div><div class="l">ลา(วัน)</div></div>
+        <div class="rcard-stat"><div class="v">${fmtOT(e.ot)}</div><div class="l">OT</div></div>
+      </div>
+      ${(e.days_cover>0||e.early_out_days>0)?`<div class="rcard-info">${e.days_cover>0?('🔁 ไปแทน '+e.days_cover+' วัน'):''}${(e.days_cover>0&&e.early_out_days>0)?' · ':''}${e.early_out_days>0?('🚪 ออกก่อน '+e.early_out_days+' วัน · '+(e.early_out_hours||0)+' ชม.'):''}</div>`:''}
+    </div>`).join('')}</div>`;
+  $('r_body').innerHTML = tableHtml + cardsHtml;
   $('r_count').textContent = sumRows.length + ' คน'+(hidden? ' (ซ่อน '+hidden+' ที่เป็นศูนย์)' : '');
 }
 function renderCoverage(){
