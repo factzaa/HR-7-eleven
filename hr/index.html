@@ -2812,7 +2812,7 @@ async function loadQaFolders(){
       +'<div style="flex:1"><div style="font-weight:700;font-size:15px">📁 '+esc(f.title)+(s.expiring>0?' <span style="background:#dc2626;color:#fff;font-size:12px;border-radius:999px;padding:1px 8px">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
       +(f.target_month?'<div style="font-size:12.5px;color:var(--muted)">เดือนเป้าหมาย: '+esc(f.target_month)+'</div>':'')
       +(f.note?'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">📝 '+esc(f.note)+'</div>':'')
-      +'<div style="font-size:12.5px;color:var(--muted);margin-top:3px">ผู้รับผิดชอบ: '+esc((f.assignees||[]).join(', ')||'—')+'</div>'
+      +'<details style="font-size:12.5px;color:var(--muted);margin-top:3px"><summary style="cursor:pointer;user-select:none">ผู้รับผิดชอบ '+((f.assignees||[]).length)+' คน <span style="color:var(--brand,#0a7a43)">(กดดู)</span></summary><div style="margin-top:3px">'+esc((f.assignees||[]).join(', ')||'—')+'</div></details>'
       +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">สินค้า '+s.total+' รายการ · ยังอยู่ '+s.on_shelf+' · ขายแล้ว '+(s.sold||0)+' · เก็บออก '+(s.removed||0)+'</div>'
       +'</div><div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-qaview="'+f.id+'">ดูสินค้า</button><button class="btn btn-sec btn-sm" data-qadel="'+f.id+'">🗑 ลบ</button></div>'
       +'</div></div>';
