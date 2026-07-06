@@ -208,6 +208,13 @@
   </div>
 </div>
 
+<div class="overlay" id="propOverlay">
+  <div class="sheet" style="gap:0; padding:0; overflow:hidden;">
+    <div style="padding:16px 18px; color:#fff; text-align:center; background:var(--orange)">📩 ข้อความจากฝ่ายบุคคล<div style="font-size:13px;opacity:.92;margin-top:2px;font-weight:400">เรื่องคำขอลาของคุณ</div></div>
+    <div id="propBody" style="padding:16px 18px; display:flex; flex-direction:column; gap:11px;"></div>
+  </div>
+</div>
+
 <div class="overlay" id="rulesOverlay">
   <div class="sheet" style="gap:12px;">
     <h2>ยอมรับระเบียบการทำงาน</h2>
@@ -779,8 +786,45 @@ function ackSummary(action, info, s){
 }
 $('ackBtn').onclick = async ()=>{
   $('ackOverlay').classList.remove('show'); clearInterval(ackTimer);
-  if(ackPending){ try{ await HR.acknowledgeStatus(ackPending.empId, ackPending.summary, ackPending.name); }catch(e){} ackPending=null; }
+  var eid=null;
+  if(ackPending){ try{ await HR.acknowledgeStatus(ackPending.empId, ackPending.summary, ackPending.name); }catch(e){} eid=ackPending.empId; ackPending=null; }
+  if(eid) showLeaveProposals(eid);   // ต่อด้วยข้อเสนอแนะเพิ่มเติมการลา (ถ้ามี) — เด้งทีละใบ
 };
+
+// ====== ป๊อปอัพข้อเสนอแนะเพิ่มเติมการลาจาก HR (หลังเช็กอิน) — เด้งทีละใบ ======
+async function showLeaveProposals(empId){
+  if(!empId || !HR.getLeaveProposals) return;
+  let res; try{ res=await HR.getLeaveProposals(empId); }catch(e){ return; }
+  const pend=(res&&res.pending)||[];
+  if(pend.length) showOneProposal(pend, 0, empId);
+}
+function showOneProposal(list, idx, empId){
+  if(idx>=list.length){ $('propOverlay').classList.remove('show'); return; }
+  const p=list[idx];
+  const range=p.start_date+(p.end_date && p.end_date!==p.start_date?(' – '+p.end_date):'');
+  $('propBody').innerHTML=
+    '<div style="font-size:12.5px;color:var(--muted)">คำขอลา'+(p.type?(' ('+escH(p.type)+')'):'')+' · '+escH(range)+(list.length>1?(' · ('+(idx+1)+'/'+list.length+')'):'')+'</div>'
+    +'<div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:11px;padding:11px 13px;font-size:14px;color:#7c2d12;white-space:pre-wrap">'+escH(p.proposal_msg||'')+'</div>'
+    +'<label style="font-size:12.5px;color:var(--muted)">ข้อความตอบกลับ HR <span style="color:var(--red)">(ถ้าไม่ยอมรับ ต้องระบุเหตุผล)</span></label>'
+    +'<textarea id="propNote" rows="2" placeholder="พิมพ์ข้อความถึง HR…" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px;resize:vertical;box-sizing:border-box"></textarea>'
+    +'<div id="propErr" style="color:var(--red);font-size:12.5px;display:none"></div>'
+    +'<div style="display:flex;gap:8px">'
+      +'<button id="propNo" class="act" style="flex:1;background:#fff;color:var(--red);border:1.5px solid #f1bcbe">✖ ไม่ยอมรับ</button>'
+      +'<button id="propYes" class="act in" style="flex:1">✓ ยอมรับ</button>'
+    +'</div>';
+  $('propOverlay').classList.add('show');
+  const doResp=async function(resp){
+    const note=($('propNote').value||'').trim();
+    const errEl=$('propErr');
+    if(resp==='declined' && !note){ errEl.textContent='กรุณาระบุเหตุผลที่ไม่ยอมรับค่ะ'; errEl.style.display='block'; return; }
+    $('propYes').disabled=true; $('propNo').disabled=true;
+    try{ await HR.respondProposal(empId, p.leave_id, resp, note); showToast('ok', resp==='accepted'?'ยอมรับข้อเสนอแล้ว ส่งให้ HR แล้วค่ะ':'ส่งคำตอบให้ HR แล้วค่ะ'); }
+    catch(err){ errEl.textContent=(err.message||'ไม่สำเร็จ'); errEl.style.display='block'; $('propYes').disabled=false; $('propNo').disabled=false; return; }
+    showOneProposal(list, idx+1, empId);   // ใบถัดไป
+  };
+  $('propYes').onclick=function(){ doResp('accepted'); };
+  $('propNo').onclick=function(){ doResp('declined'); };
+}
 
 async function showSelf(){
   $('selfOverlay').classList.add('show');
@@ -788,13 +832,29 @@ async function showSelf(){
   if(!empMatch || empMatch.unknown){ body.innerHTML='<p style="color:var(--red)">กรอกรหัสพนักงานให้ถูกต้องก่อน</p>'; return; }
   body.innerHTML='<p>กำลังโหลด…</p>';
   try{
-    const [s, ms, leaves] = await Promise.all([
+    const [s, ms, leaves, props] = await Promise.all([
       HR.selfStatus(empMatch.emp_id),
       HR.myStatus(empMatch.emp_id).catch(()=>null),   // คะแนนจริง (สูตรเดียวกับ HR)
-      HR.myLeaves(empMatch.emp_id).catch(()=>[])
+      HR.myLeaves(empMatch.emp_id).catch(()=>[]),
+      (HR.getLeaveProposals?HR.getLeaveProposals(empMatch.emp_id):Promise.resolve({history:[]})).catch(()=>({history:[]}))
     ]);
-    body.innerHTML = renderSelf(s, ms&&ms.score) + renderMyLeaves(leaves);
+    body.innerHTML = renderSelf(s, ms&&ms.score) + renderProposalHistory(props&&props.history) + renderMyLeaves(leaves);
   }catch(e){ console.error(e); body.innerHTML='<p style="color:var(--red)">โหลดไม่สำเร็จ: '+escH(e.message||'')+'</p>'; }
+}
+// ประวัติข้อเสนอ/การสื่อสารกับ HR (แสดงในสถานะของฉัน)
+function renderProposalHistory(rows){
+  const list=(rows||[]).filter(r=>r.proposal_at);
+  if(!list.length) return '';
+  return '<div style="font-weight:700;margin-top:14px;margin-bottom:6px">ข้อเสนอ/การสื่อสารกับ HR</div>'
+    + list.map(p=>{
+      const range=(p.end_date&&p.end_date!==p.start_date)?(p.start_date+' – '+p.end_date):p.start_date;
+      const rb=p.response==='accepted'?'<span class="pill ok">คุณยอมรับ</span>':p.response==='declined'?'<span class="pill bad">คุณไม่ยอมรับ</span>':(p.status==='proposed'?'<span class="pill idle">รอคุณตอบ</span>':'');
+      return '<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+escH(range)+'</b>'+rb+'</div>'
+        +(p.proposal_msg?'<div style="margin-top:3px;font-size:13px;color:#9a3412;white-space:pre-wrap">📩 HR: '+escH(p.proposal_msg)+'</div>':'')
+        +(p.response_msg?'<div style="margin-top:2px;font-size:13px;color:#1d4ed8;white-space:pre-wrap">↩ คุณ: '+escH(p.response_msg)+'</div>':'')
+        +'</div>';
+    }).join('');
 }
 function renderMyLeaves(rows){
   const head='<div style="font-weight:700;margin-top:14px;margin-bottom:6px">สถานะใบลาของฉัน</div>';

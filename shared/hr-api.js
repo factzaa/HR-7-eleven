@@ -147,6 +147,7 @@
         case 'hr_shift_save':     return await hrShiftSave(p.data);
         case 'hr_shift_delete':   return await hrShiftDelete(p.shift_id);
         case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status, p.note);
+        case 'hr_leave_propose':  return await hrLeaveProposeConditional(p.leave_id, p.message);
         case 'hr_leavetype_list': return await hrLeaveTypeList();
         case 'hr_leavetype_save': return await hrLeaveTypeSave(p.data);
         case 'hr_rule_status':    return await hrRuleStatus();
@@ -1029,6 +1030,21 @@
     return { ok: true };
   }
 
+  // ข้อเสนอแนะเพิ่มเติมการลา → สถานะ 'proposed' + ข้อความถึงพนักงาน (HR แก้กะ+อนุมัติเองภายหลัง)
+  async function hrLeaveProposeConditional(leaveId, message) {
+    if (!leaveId) return { ok: false, error: 'ไม่ระบุใบลา' };
+    const msg = String(message || '').trim();
+    if (!msg) return { ok: false, error: 'กรุณาพิมพ์ข้อเสนอแนะเพิ่มเติมถึงพนักงาน' };
+    const { data: lv } = await sb().from('leaves').select('emp_id,type,start_date,end_date').eq('leave_id', leaveId).maybeSingle();
+    if (!lv) return { ok: false, error: 'ไม่พบใบลา' };
+    const upd = { status: 'proposed', proposal_msg: msg, proposal_at: new Date().toISOString(), proposal_seen: false, response: null, response_msg: null, response_at: null };
+    const { error } = await sb().from('leaves').update(upd).eq('leave_id', leaveId);
+    if (error) throw error;
+    const range = lv.start_date + (lv.end_date && lv.end_date !== lv.start_date ? (' – ' + lv.end_date) : '');
+    await logAct('ส่งข้อเสนอแนะเพิ่มเติม (การลา)', lv.emp_id, (lv.type || 'ลา') + ' ' + range + ' · ' + msg.slice(0, 120));
+    return { ok: true };
+  }
+
   // ---------- LEAVE TYPES (เงื่อนไขการลา) ----------
   async function hrLeaveTypeList() {
     const { data, error } = await sb().from('leave_types').select('*').order('sort');
@@ -1126,9 +1142,17 @@
     }).map(s => ({ emp_id: s.emp_id, emp_name: empName[s.emp_id] || s.emp_id, shift_id: s.shift_id, shift_name: shiftName[s.shift_id] || s.shift_id, start_time: shiftStart[s.shift_id] }));
 
     const pending_profiles = (subR.data || []).filter(s => !branch || empBranch[s.emp_id] === branch).map(s => ({ id: s.id, emp_id: s.emp_id, name: s.name || s.emp_id }));
+    // พนักงานตอบข้อเสนอแนะเพิ่มเติมการลาแล้ว (รอ HR ปรับกะ+อนุมัติ)
+    const { data: lrData } = await sb().from('leaves')
+      .select('leave_id,emp_id,type,start_date,end_date,response,response_msg,proposal_msg,response_at')
+      .eq('status', 'proposed').not('response', 'is', null).order('response_at', { ascending: false });
+    const leave_responses = (lrData || []).filter(l => !branch || empBranch[l.emp_id] === branch).map(l => ({
+      leave_id: l.leave_id, emp_id: l.emp_id, emp_name: empName[l.emp_id] || l.emp_id, type: l.type,
+      start_date: l.start_date, end_date: l.end_date, response: l.response, response_msg: l.response_msg, proposal_msg: l.proposal_msg,
+    }));
     return {
-      ok: true, pending_leaves, not_checked_out, late_today, absent_roster, pending_profiles,
-      counts: { pending_leaves: pending_leaves.length, not_checked_out: not_checked_out.length, late_today: late_today.length, absent_roster: absent_roster.length, pending_profiles: pending_profiles.length },
+      ok: true, pending_leaves, not_checked_out, late_today, absent_roster, pending_profiles, leave_responses,
+      counts: { pending_leaves: pending_leaves.length, not_checked_out: not_checked_out.length, late_today: late_today.length, absent_roster: absent_roster.length, pending_profiles: pending_profiles.length, leave_responses: leave_responses.length },
     };
   }
 

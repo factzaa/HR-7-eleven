@@ -146,10 +146,27 @@ async function myLeaves(){
   try{ if(window.HRSession) HRSession.setEmp(id); }catch(e){}   // จำรหัสข้ามหน้า
   try{ LUSAGE = await HR.getLeaveUsage(id); }catch(e){ LUSAGE={}; }
   updateRule();
+  // แถบเตือน "ข้อเสนอแนะเพิ่มเติมจาก HR" ที่รอตอบ (บนสุด — กันไม่เห็น)
+  let propHtml='';
+  try{
+    const pr=await HR.getLeaveProposals(id); const pend=(pr&&pr.pending)||[];
+    propHtml = pend.map(p=>{
+      const rg=(p.end_date&&p.end_date!==p.start_date)?(p.start_date+' – '+p.end_date):p.start_date;
+      return '<div class="lvprop" data-lid="'+lvEsc(p.leave_id)+'" style="border:1.5px solid #fdba74;background:#fff7ed;border-radius:12px;padding:11px 13px;margin-bottom:9px">'
+        +'<div style="font-weight:800;color:#9a3412">📩 ข้อเสนอจาก HR — รอคุณตอบ</div>'
+        +'<div style="font-size:12.5px;color:#7c2d12;margin-top:1px">คำขอลา'+(p.type?(' ('+lvEsc(p.type)+')'):'')+' · '+lvEsc(rg)+'</div>'
+        +'<div style="margin-top:6px;font-size:14px;color:#7c2d12;white-space:pre-wrap">'+lvEsc(p.proposal_msg||'')+'</div>'
+        +'<textarea class="lvpnote" rows="2" placeholder="ข้อความตอบกลับ HR (ถ้าไม่ยอมรับ ต้องระบุเหตุผล)" style="width:100%;margin-top:7px;padding:8px 10px;border:1.5px solid #fdba74;border-radius:9px;font:inherit;font-size:14px;box-sizing:border-box;resize:vertical"></textarea>'
+        +'<div class="lvperr" style="color:#dc2626;font-size:12px;display:none;margin-top:3px"></div>'
+        +'<div style="display:flex;gap:8px;margin-top:7px"><button type="button" class="lvpno" style="flex:1;padding:9px;border:1.5px solid #f1bcbe;background:#fff;color:#dc2626;border-radius:9px;font-weight:700;cursor:pointer">✖ ไม่ยอมรับ</button><button type="button" class="lvpyes" style="flex:1;padding:9px;border:0;background:#16a34a;color:#fff;border-radius:9px;font-weight:700;cursor:pointer">✓ ยอมรับ</button></div>'
+        +'</div>';
+    }).join('');
+  }catch(e){}
   try{ const rows=await HR.myLeaves(id);
-    $('lvMine').innerHTML = rows.length ? '<div style="font-weight:700;margin:4px 0 6px">สถานะใบลาของฉัน</div>'+rows.map(r=>{
+    const listHtml = rows.length ? '<div style="font-weight:700;margin:4px 0 6px">สถานะใบลาของฉัน</div>'+rows.map(r=>{
       const badge=r.status==='approved'?'<span style="background:#dcfce7;color:#166534;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✓ อนุมัติแล้ว</span>'
         :r.status==='rejected'?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✗ ไม่อนุมัติ</span>'
+        :r.status==='proposed'?'<span style="background:#ffedd5;color:#9a3412;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">📩 มีข้อเสนอ</span>'
         :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
       const range=(r.end_date&&r.end_date!==r.start_date)?(r.start_date+' – '+r.end_date):r.start_date;
       const reason=r.reason?('<div style="color:#6b7280;margin-top:2px">เหตุผล: '+lvEsc(r.reason)+'</div>'):'';
@@ -158,7 +175,24 @@ async function myLeaves(){
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+range+'</b>'+badge+'</div>'
         +'<div style="color:#374151;margin-top:2px">ประเภท: '+lvEsc(r.type||'-')+'</div>'+reason+note+'</div>';
     }).join('') : '<span style="color:#9ca3af">ยังไม่มีคำขอลา</span>';
-  }catch(e){ $('lvMine').innerHTML=''; }
+    $('lvMine').innerHTML = propHtml + listHtml;
+  }catch(e){ $('lvMine').innerHTML=propHtml; }
+  // ผูกปุ่มยอมรับ/ไม่ยอมรับของแถบข้อเสนอ
+  document.querySelectorAll('#lvMine .lvprop').forEach(function(box){
+    const lid=box.getAttribute('data-lid');
+    const note=box.querySelector('.lvpnote'), err=box.querySelector('.lvperr');
+    const yes=box.querySelector('.lvpyes'), no=box.querySelector('.lvpno');
+    const resp=async function(rr){
+      const n=(note.value||'').trim();
+      if(rr==='declined' && !n){ err.textContent='กรุณาระบุเหตุผลที่ไม่ยอมรับค่ะ'; err.style.display='block'; return; }
+      yes.disabled=true; no.disabled=true;
+      try{ await HR.respondProposal(id, lid, rr, n); toast('ok', rr==='accepted'?'ยอมรับข้อเสนอแล้ว ส่งให้ HR แล้วค่ะ':'ส่งคำตอบให้ HR แล้วค่ะ'); }
+      catch(e2){ err.textContent=(e2.message||'ไม่สำเร็จ'); err.style.display='block'; yes.disabled=false; no.disabled=false; return; }
+      myLeaves();
+    };
+    if(yes) yes.onclick=function(){ resp('accepted'); };
+    if(no) no.onclick=function(){ resp('declined'); };
+  });
 }
 $('lvSubmit').onclick=async()=>{
   const id=$('lvEmp').value.trim();

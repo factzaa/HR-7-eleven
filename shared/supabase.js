@@ -484,6 +484,9 @@
     const emp = await lookupEmployee(empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
+    // ล็อก: มีข้อเสนอแนะเพิ่มเติมจาก HR ที่ยังไม่ตอบ → ต้องตอบก่อนยื่นใบใหม่ (กันความซับซ้อน)
+    const { data: openProp } = await sb.from('leaves').select('leave_id').eq('emp_id', empId).eq('status', 'proposed').is('response', null).limit(1);
+    if (openProp && openProp.length) throw new Error('คุณมีข้อเสนอแนะเพิ่มเติมจาก HR ที่ยังไม่ได้ตอบ กรุณาตอบรับ/ปฏิเสธก่อนยื่นใบลาใหม่ค่ะ');
     const end = end_date || start_date;
     const today = bangkokDate();
     // เงื่อนไขตามประเภทการลา
@@ -516,6 +519,31 @@
     if (error) throw error;
     return { ok: true };
   }
+  // ---------- ข้อเสนอแนะเพิ่มเติมการลา (จาก HR) — ดึงที่ค้าง + ประวัติ ----------
+  async function getLeaveProposals(empId) {
+    if (!empId) return { pending: [], history: [] };
+    const { data } = await sb.from('leaves')
+      .select('leave_id,start_date,end_date,type,reason,status,proposal_msg,proposal_at,response,response_msg,response_at')
+      .eq('emp_id', empId).not('proposal_at', 'is', null).order('proposal_at', { ascending: false }).limit(20);
+    const rows = data || [];
+    const pending = rows.filter(l => l.status === 'proposed' && !l.response);   // รอตอบ
+    return { pending, history: rows };
+  }
+  // ---------- พนักงานตอบข้อเสนอ (ยอมรับ/ปฏิเสธ) — ปฏิเสธต้องมีเหตุผล ----------
+  async function respondProposal(empId, leave_id, response, note) {
+    if (!empId || !leave_id) throw new Error('ข้อมูลไม่ครบ');
+    response = (response === 'accepted') ? 'accepted' : 'declined';
+    note = (note || '').trim();
+    if (response === 'declined' && !note) throw new Error('กรุณาระบุเหตุผลที่ไม่ยอมรับ');
+    const { data: lv } = await sb.from('leaves').select('leave_id,emp_id,status').eq('leave_id', leave_id).maybeSingle();
+    if (!lv || lv.emp_id !== empId) throw new Error('ไม่พบใบลานี้');
+    if (lv.status !== 'proposed') throw new Error('ใบลานี้ไม่ได้อยู่ระหว่างรอตอบแล้ว');
+    const upd = { response, response_msg: note || null, response_at: new Date().toISOString(), proposal_seen: true };
+    const { error } = await sb.from('leaves').update(upd).eq('leave_id', leave_id).eq('emp_id', empId);
+    if (error) throw error;
+    return { ok: true, response };
+  }
+
   // ---------- ใบลาของฉัน (ดูสถานะ + เหตุผลปฏิเสธ) ----------
   async function myLeaves(empId) {
     const { data, error } = await sb.from('leaves')
@@ -1096,5 +1124,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState };
 })();

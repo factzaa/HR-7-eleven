@@ -1923,14 +1923,27 @@ $('wvCloseBtn').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
 $('wvPrint').onclick = ()=>window.print();
 
 // ========== LEAVES & HOLIDAYS ==========
+function lvStatusCell(l){
+  if(l.status==='approved') return '<span class="pill ok">อนุมัติ</span>';
+  if(l.status==='rejected') return '<span class="pill bad">ปฏิเสธ</span>'+(l.hr_note?`<div style="font-size:11px;color:#dc2626">${esc(l.hr_note)}</div>`:'');
+  if(l.status==='proposed'){
+    let h = l.response==='accepted' ? '<span class="pill ok">✓ พนักงานยอมรับ</span>'
+          : l.response==='declined' ? '<span class="pill bad">✗ พนักงานปฏิเสธ</span>'
+          : '<span class="pill warn">ข้อเสนอแนะเพิ่มเติม · รอตอบ</span>';
+    if(l.proposal_msg) h+=`<div style="font-size:11px;color:#9a3412;margin-top:2px">📩 ${esc(l.proposal_msg)}</div>`;
+    if(l.response_msg) h+=`<div style="font-size:11px;color:#1d4ed8;margin-top:2px">↩ ${esc(l.response_msg)}</div>`;
+    return h;
+  }
+  return '<span class="pill warn">รอ</span>';
+}
 async function loadLeaves(){
   const r = await post({ action:'hr_leaves_list', password:pwd });
   if(!r.ok){ $('lv_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
   if(!r.rows.length){ $('lv_body').innerHTML='<div class="empty">ยังไม่มีใบลา</div>'; return; }
   $('lv_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>ตั้งแต่</th><th>ถึง</th><th>วัน</th><th>ประเภท</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead>
-    <tbody>${r.rows.slice().sort((a,b)=>(b.status==='pending')-(a.status==='pending')).map(l=>`
-      <tr${l.status==='pending'?' style="background:#fffbeb"':''}>
+    <tbody>${r.rows.slice().sort((a,b)=>((b.status==='pending'||b.status==='proposed')?1:0)-((a.status==='pending'||a.status==='proposed')?1:0)).map(l=>`
+      <tr${l.status==='pending'?' style="background:#fffbeb"':l.status==='proposed'?' style="background:#fff7ed"':''}>
         <td class="mono">${esc(l.leave_id)}</td>
         <td><div class="ntext"><span class="nm">${esc(l.emp_name)}</span><span class="nick">${esc(l.emp_id)}</span></div></td>
         <td class="mono">${esc(l.start_date)}</td>
@@ -1938,8 +1951,8 @@ async function loadLeaves(){
         <td class="mono">${l.days}</td>
         <td>${esc(l.type||'—')}${l.doc_url?` <a href="${esc(l.doc_url)}" target="_blank" title="เอกสารแนบ">📎</a>`:''}</td>
         <td style="max-width:240px;white-space:normal;font-size:13px;color:#374151">${l.reason?esc(l.reason):'<span style="color:#9ca3af">—</span>'}</td>
-        <td>${l.status==='approved'?'<span class="pill ok">อนุมัติ</span>':l.status==='rejected'?'<span class="pill bad">ปฏิเสธ</span>':'<span class="pill warn">รอ</span>'}${l.status==='rejected'&&l.hr_note?`<div style="font-size:11px;color:#dc2626">${esc(l.hr_note)}</div>`:''}</td>
-        <td class="rowact">${l.status==='pending'?`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> `:''}<button class="icobtn" data-ldel="${esc(l.leave_id)}">ลบ</button></td>
+        <td style="max-width:260px;white-space:normal">${lvStatusCell(l)}</td>
+        <td class="rowact">${l.status==='pending'?`<button class="icobtn" style="color:#c2410c;font-weight:600" data-lprop="${esc(l.leave_id)}">ข้อเสนอแนะเพิ่มเติม</button> <button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> `:l.status==='proposed'?`<button class="icobtn" style="color:#16a34a;font-weight:600" data-lapp="${esc(l.leave_id)}">อนุมัติ</button> <button class="icobtn" style="color:#dc2626" data-lrej="${esc(l.leave_id)}">ปฏิเสธ</button> <button class="icobtn" style="color:#c2410c" data-lprop="${esc(l.leave_id)}">เสนอแนะอีกครั้ง</button> `:''}<button class="icobtn" data-ldel="${esc(l.leave_id)}">ลบ</button></td>
       </tr>`).join('')}</tbody></table></div></div>`;
   document.querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{
     if(!confirm('ลบใบลานี้?')) return;
@@ -1955,6 +1968,12 @@ async function loadLeaves(){
     if(note===null) return;
     const r = await post({ action:'hr_leave_status', password:pwd, leave_id:b.dataset.lrej, status:'rejected', note });
     if(r.ok){ toast('ok','ปฏิเสธใบลาแล้ว'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+  document.querySelectorAll('[data-lprop]').forEach(b=>b.onclick=async()=>{
+    const msg = prompt('พิมพ์ข้อเสนอแนะเพิ่มเติมถึงพนักงาน\n(พนักงานจะเห็นเป็นป๊อปอัพหลังสแกนหน้าเข้างาน + ในหน้าขอลา/สถานะของฉัน)\nเช่น: ขอเปลี่ยนวันหยุดจาก 8 ก.ค. เป็น 10 ก.ค. และอนุมัติลาเฉพาะ 11 ก.ค.','');
+    if(msg===null || !msg.trim()) return;
+    const r = await post({ action:'hr_leave_propose', password:pwd, leave_id:b.dataset.lprop, message:msg.trim() });
+    if(r.ok){ toast('ok','ส่งข้อเสนอแนะเพิ่มเติมให้พนักงานแล้ว รอพนักงานตอบ'); loadLeaves(); if(typeof loadNotifications==='function') loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
   });
 }
 $('lv_new').onclick = ()=>{
