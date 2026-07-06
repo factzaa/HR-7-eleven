@@ -112,6 +112,7 @@
     try {
       switch (p.action) {
         case 'hr_login':          return await hrLogin(p.password);
+        case 'mgr_login':         return await mgrLogin(p.emp_id, p.pin);
         case 'hr_list':           return await hrList();
         case 'hr_dashboard':      return await hrDashboard(p.branch);
         case 'hr_board':          return await hrBoard(p.date);
@@ -196,6 +197,8 @@
         case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
         case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note);
         case 'hr_mark_duty':            return await hrMarkDuty(p.data);
+        case 'hr_duty_list':            return await hrDutyList(p.branch);
+        case 'hr_duty_delete':          return await hrDutyDelete(p.emp_id, p.work_date);
         case 'hr_activity':       return await hrActivity();
         case 'hr_notifications':  return await hrNotifications(p.branch);
         case 'hr_notify_history': return await hrNotifyHistory();
@@ -219,6 +222,19 @@
     return { ok: data === true, error: data === true ? null : 'รหัสผ่านไม่ถูกต้อง' };
   }
 
+  // ---------- LOGIN ผจก.สาขา (รหัสพนักงาน + PIN) ----------
+  async function mgrLogin(empId, pin) {
+    empId = String(empId || '').trim();
+    pin = String(pin || '').trim();
+    if (!empId || !pin) return { ok: false, error: 'กรอกรหัสพนักงานและ PIN' };
+    const { data, error } = await sb().rpc('mgr_login', { p_emp_id: empId, p_pin: pin });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !row.branch_id) return { ok: false, error: 'รหัสพนักงานหรือ PIN ไม่ถูกต้อง' };
+    await logAct('ผจก.เข้าระบบ', empId, 'สาขา ' + row.branch_id);
+    return { ok: true, emp_id: empId, branch_id: row.branch_id, name: row.name || '', nickname: row.nickname || '' };
+  }
+
   // ---------- LIST (พนักงาน + meta) ----------
   async function hrList() {
     const [emp, br, sh] = await Promise.all([
@@ -227,7 +243,10 @@
       sb().from('shifts').select('*').order('start_time'),
     ]);
     if (emp.error) throw emp.error;
-    const rows = (emp.data || []).map(e => ({ ...e, face_descriptor: e.face_descriptor ? 'registered' : '' }));
+    const rows = (emp.data || []).map(e => {
+      const { manager_pin, ...rest } = e;              // ไม่ส่ง PIN ออกไปฝั่ง client
+      return { ...rest, has_pin: !!manager_pin, is_manager: !!e.is_manager, face_descriptor: e.face_descriptor ? 'registered' : '' };
+    });
     return { ok: true, headers: [], rows, branches: br.data || [], shifts: sh.data || [] };
   }
 
@@ -474,7 +493,11 @@
       emergency_name: d.emergency_name || null, emergency_phone: d.emergency_phone || null,
       bank_name: d.bank_name || null, bank_account: d.bank_account || null, id_card: d.id_card || null,
       active: !!d.active,
+      is_manager: !!d.is_manager,
     };
+    // PIN ผจก.: ยกเลิกสิทธิ์ = ล้าง PIN · ตั้ง ผจก.+กรอก PIN ใหม่ = อัปเดต · ตั้ง ผจก.แต่เว้น PIN = คง PIN เดิม
+    if (!d.is_manager) row.manager_pin = null;
+    else if (d.manager_pin != null && String(d.manager_pin).trim() !== '') row.manager_pin = String(d.manager_pin).trim();
     if (d._photo_base64) row.photo_url = await window.HR.uploadPhoto('employee-photos', d.emp_id + '.jpg', d._photo_base64);
     else if (d.photo_url === '') row.photo_url = null;
 
@@ -1423,6 +1446,15 @@
     };
     const { error } = await sb().from('score_events').insert(row);
     if (error) throw error;
+    // แจ้งพนักงาน (โปร่งใส) — กล่องแจ้งเตือน emp_notifications
+    try {
+      await sb().from('emp_notifications').insert({
+        emp_id: d.emp_id, kind: 'score_deduct',
+        title: 'คะแนนวินัยถูกหัก ' + Math.abs(points) + ' คะแนน',
+        body: 'เหตุผล: ' + (d.note || row.label || '-') + '\nดูคะแนนรวมล่าสุดในหน้า "สถานะของฉัน"',
+        ref: 'score', created_by: 'HR',
+      });
+    } catch (e) { console.warn('emp_notify', e); }
     await logAct('ตัดคะแนนวินัย', d.emp_id, row.label + ' (' + points + ')' + (d.note ? (' · ' + d.note) : ''));
     return { ok: true };
   }
@@ -2216,6 +2248,37 @@
     if (error) throw error;
     await logAct('บันทึกวันอบรม/ปฏิบัติงานนอกสถานที่', emp.emp_id, rows.length + ' วัน' + (note ? (' · ' + note) : ''));
     return { ok: true, count: rows.length };
+  }
+  // รายการบันทึกวันอบรม/ปฏิบัติงานนอกสถานที่ (status=TRAINING) — ล่าสุดก่อน
+  async function hrDutyList(branch) {
+    let q = sb().from('attendance').select('id,emp_id,work_date,shift_id,branch_id,duty_note,created_at')
+      .eq('status', 'TRAINING').order('work_date', { ascending: false }).limit(300);
+    if (branch) q = q.eq('branch_id', branch);
+    const [aR, empR, brR, shR] = await Promise.all([
+      q,
+      sb().from('employees').select('emp_id,name,nickname'),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('shifts').select('shift_id,name'),
+    ]);
+    if (aR.error) throw aR.error;
+    const empName = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; });
+    const empNick = {}; (empR.data || []).forEach(e => { empNick[e.emp_id] = e.nickname || ''; });
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const shName = {}; (shR.data || []).forEach(s => { shName[s.shift_id] = s.name; });
+    const rows = (aR.data || []).map(a => ({
+      id: a.id, emp_id: a.emp_id, emp_name: empName[a.emp_id] || a.emp_id, nickname: empNick[a.emp_id] || '',
+      work_date: a.work_date, shift_name: shName[a.shift_id] || a.shift_id || '',
+      branch_name: brName[a.branch_id] || a.branch_id || '—', note: a.duty_note || '', created_at: a.created_at,
+    }));
+    return { ok: true, rows };
+  }
+  // ลบบันทึกวันอบรม 1 วัน (ใช้กับที่ลงผิด) — ลบเฉพาะแถวที่เป็น TRAINING
+  async function hrDutyDelete(empId, workDate) {
+    if (!empId || !workDate) return { ok: false, error: 'ไม่ระบุพนักงาน/วันที่' };
+    const { error } = await sb().from('attendance').delete().eq('emp_id', empId).eq('work_date', workDate).eq('status', 'TRAINING');
+    if (error) throw error;
+    await logAct('ลบบันทึกวันอบรม', empId, String(workDate));
+    return { ok: true };
   }
 
   window.HRAPI = { dispatch };

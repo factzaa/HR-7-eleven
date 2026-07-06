@@ -544,6 +544,21 @@
     return { ok: true, response };
   }
 
+  // ---------- กล่องแจ้งเตือนของฉัน (คะแนน/ข้อความจากระบบ) ----------
+  async function getMyNotifications(empId) {
+    if (!empId) return { unseen: [], all: [] };
+    const { data } = await sb.from('emp_notifications').select('*').eq('emp_id', empId).order('created_at', { ascending: false }).limit(30);
+    const rows = data || [];
+    return { unseen: rows.filter(n => !n.seen_at), all: rows };
+  }
+  async function markNotificationsSeen(empId, ids) {
+    if (!empId) return { ok: true };
+    let q = sb.from('emp_notifications').update({ seen_at: new Date().toISOString() }).eq('emp_id', empId).is('seen_at', null);
+    if (Array.isArray(ids) && ids.length) q = q.in('id', ids);
+    const { error } = await q; if (error) throw error;
+    return { ok: true };
+  }
+
   // ---------- ใบลาของฉัน (ดูสถานะ + เหตุผลปฏิเสธ) ----------
   async function myLeaves(empId) {
     const { data, error } = await sb.from('leaves')
@@ -1124,5 +1139,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState };
 })();

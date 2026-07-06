@@ -317,6 +317,7 @@
     <div class="t2">ระบบบริหารพนักงาน</div>
   </div>
   <div class="topact" id="topact" style="display:none">
+    <span id="mgrBadge" style="display:none;font-size:13px;font-weight:600;color:#0369a1;background:#e0f2fe;padding:6px 12px;border-radius:999px"></span>
     <button class="btn-ghost" id="pushBtn" title="แจ้งเตือนอุปกรณ์นี้">🔔 แจ้งเตือน: ปิด</button>
     <a class="btn-ghost" href="../" title="หน้าแรก" style="text-decoration:none">🏠 หน้าแรก</a>
     <button class="btn-ghost" id="logoutBtn">ออกจากระบบ</button>
@@ -349,9 +350,19 @@
 <div class="login" id="loginView">
   <div class="loginbox">
     <h2>เข้าระบบจัดการพนักงาน</h2>
-    <p>กรอกรหัสผู้ดูแลที่ตั้งไว้ใน Apps Script (HR_PASSWORD)</p>
-    <div class="field"><label>รหัสผู้ดูแล</label><input id="pwd" type="password" autocomplete="off" placeholder="••••••••"></div>
-    <button class="btn btn-pri" id="loginBtn" style="width:100%; margin-top:14px; padding:13px 0; font-size:15px;">เข้าระบบ</button>
+    <div id="loginHR">
+      <p>กรอกรหัสผู้ดูแล (HR)</p>
+      <div class="field"><label>รหัสผู้ดูแล</label><input id="pwd" type="password" autocomplete="off" placeholder="••••••••"></div>
+      <button class="btn btn-pri" id="loginBtn" style="width:100%; margin-top:14px; padding:13px 0; font-size:15px;">เข้าระบบ HR</button>
+      <div style="text-align:center;margin-top:14px"><a href="#" id="toMgr" style="font-size:13px;color:var(--muted);text-decoration:none">🏪 เข้าระบบสำหรับ ผจก.สาขา →</a></div>
+    </div>
+    <div id="loginMgr" style="display:none">
+      <p>สำหรับผู้จัดการสาขา — เห็นเฉพาะสาขาตัวเอง</p>
+      <div class="field"><label>รหัสพนักงาน</label><input id="mgr_emp" type="text" inputmode="numeric" autocomplete="off" placeholder="เช่น 0657379"></div>
+      <div class="field" style="margin-top:10px"><label>PIN (6 หลัก)</label><input id="mgr_pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••"></div>
+      <button class="btn btn-pri" id="mgrLoginBtn" style="width:100%; margin-top:14px; padding:13px 0; font-size:15px;">เข้าระบบ ผจก.</button>
+      <div style="text-align:center;margin-top:14px"><a href="#" id="toHR" style="font-size:13px;color:var(--muted);text-decoration:none">← กลับไปเข้าระบบ HR</a></div>
+    </div>
   </div>
 </div>
 
@@ -364,6 +375,7 @@
   <div id="openTasksPanel"></div>
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
+  <div id="dutyPanel"></div>
 </div>
 
 <!-- Board: บอร์ดวันนี้ -->
@@ -1055,6 +1067,15 @@
           <input type="checkbox" id="f_active" checked>
           <div><div class="lbl">เปิดใช้งาน</div><div class="sub">ปิดเพื่อหยุดให้พนักงานคนนี้ใช้ระบบ</div></div>
         </label>
+        <label class="toggle" style="margin-top:10px">
+          <input type="checkbox" id="f_is_manager">
+          <div><div class="lbl">เป็น ผจก.สาขา</div><div class="sub">ให้เข้าระบบด้วย PIN เห็นเฉพาะสาขาตัวเอง (ส่ง/รับผลัด · งานพิเศษ · QA · เชลฟ์ · Dashboard)</div></div>
+        </label>
+        <div class="field" id="f_pin_wrap" style="max-width:260px;margin-top:10px;display:none">
+          <label>PIN สำหรับ ผจก. (6 หลัก)</label>
+          <input id="f_manager_pin" type="text" inputmode="numeric" maxlength="6" placeholder="ตั้งใหม่ / รีเซ็ต">
+          <div style="font-size:12px;color:var(--muted);margin-top:4px" id="f_pin_hint">เว้นว่าง = คง PIN เดิม</div>
+        </div>
         <div class="facehint" id="faceHint" style="margin-top:10px"></div>
       </div>
     </div>
@@ -1202,6 +1223,8 @@
 
 <script>
 let pwd = sessionStorage.getItem('hr_pwd') || '';
+let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '';
+const MGR_TABS = ['dashboard','handover','special','qa','shelf'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -1239,7 +1262,31 @@ async function tryLogin(p){
 }
 $('loginBtn').onclick = ()=>tryLogin($('pwd').value.trim());
 $('pwd').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(e.target.value.trim()); });
-$('logoutBtn').onclick = ()=>{ pwd=''; sessionStorage.removeItem('hr_pwd'); location.reload(); };
+$('logoutBtn').onclick = ()=>{ pwd=''; sessionStorage.removeItem('hr_pwd'); sessionStorage.removeItem('mgr_branch'); sessionStorage.removeItem('mgr_emp'); location.reload(); };
+
+// ---------- สลับโหมด HR / ผจก. ----------
+$('toMgr') && ($('toMgr').onclick = e=>{ e.preventDefault(); $('loginHR').style.display='none'; $('loginMgr').style.display='block'; setTimeout(()=>$('mgr_emp').focus(),50); });
+$('toHR')  && ($('toHR').onclick  = e=>{ e.preventDefault(); $('loginMgr').style.display='none'; $('loginHR').style.display='block'; });
+
+async function mgrTryLogin(){
+  const emp=$('mgr_emp').value.trim(), pin=$('mgr_pin').value.trim();
+  if(!emp||!pin){ toast('err','กรอกรหัสพนักงานและ PIN'); return; }
+  $('mgrLoginBtn').innerHTML='<span class="spin"></span>';
+  const r = await post({ action:'mgr_login', emp_id:emp, pin });
+  $('mgrLoginBtn').textContent='เข้าระบบ ผจก.';
+  if(!r.ok){ toast('err', r.error||'เข้าระบบไม่สำเร็จ'); return; }
+  MGR_MODE=true; MGR_BRANCH=r.branch_id||''; MGR_EMP=emp; pwd='';
+  sessionStorage.setItem('mgr_branch',MGR_BRANCH); sessionStorage.setItem('mgr_emp',emp);
+  $('loginView').style.display='none'; $('mainView').style.display='block';
+  $('tabbar').style.display='flex'; $('topact').style.display='flex';
+  document.body.classList.add('is-logged');
+  await loadAll();
+  applyManagerMode();
+  showTab('dashboard');
+  toast('ok','สวัสดี ผจก. '+(r.nickname||r.name||emp));
+}
+$('mgrLoginBtn') && ($('mgrLoginBtn').onclick = mgrTryLogin);
+$('mgr_pin') && $('mgr_pin').addEventListener('keydown', e=>{ if(e.key==='Enter') mgrTryLogin(); });
 
 // ---------- TABS ----------
 function showTab(name){
@@ -1301,7 +1348,7 @@ $('dashListOverlay') && $('dashListOverlay').addEventListener('click', e=>{ if(e
 async function loadDashboard(){
   if($('dash_branch') && !$('dash_branch').dataset.filled){
     $('dash_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
-    $('dash_branch').dataset.filled='1'; $('dash_branch').onchange=()=>{ loadDashboard(); loadNotifications(); };
+    $('dash_branch').dataset.filled='1'; $('dash_branch').onchange=()=>{ loadDashboard(); loadNotifications(); loadDutyRecords(); };
   }
   const dbr=$('dash_branch')?$('dash_branch').value:'';
   $('dash_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
@@ -1344,7 +1391,7 @@ async function loadDashboard(){
       <div class="kpi ${punc<90?'warn':'ok'}"><div class="lbl">มาตรงเวลา (รอบนี้)</div><div class="val">${punc}<span class="sm">%</span></div><div class="delta">${sWork} วัน-คน ที่ลงเวลา</div></div>
       <div class="kpi ${sLateC?'bad':''}"><div class="lbl">มาสายรวม</div><div class="val">${sLateC}<span class="sm"> ครั้ง</span></div><div class="delta">${sLateM} นาที</div></div>
       <div class="kpi ${sAbsent?'warn':''}"><div class="lbl">ขาด (ไม่มา/ไม่ลา)</div><div class="val">${sAbsent}<span class="sm"> วัน-คน</span></div></div>
-      <div class="kpi"><div class="lbl">OT รวมรอบนี้</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>
+      ${MGR_MODE ? '' : `<div class="kpi"><div class="lbl">OT รวมรอบนี้</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>`}
     </div>`;
 
   const risk = demps.filter(e=>e.level>=1).slice(0,6);
@@ -1607,11 +1654,13 @@ $('f_photo_remove').onclick = ()=>{ photoState = { url:'', newBase64:'' }; setPh
 ['f_name','f_nickname'].forEach(id=>$(id).addEventListener('input', ()=>{
   if(!photoState.newBase64 && !photoState.url) setPhotoPreview();
 }));
+$('f_is_manager') && ($('f_is_manager').onchange = ()=>{ $('f_pin_wrap').style.display = $('f_is_manager').checked ? 'block' : 'none'; });
 
 function openNew(){
   editing = null; $('formTitle').textContent = 'เพิ่มพนักงาน';
   FIELDS.forEach(k=>{ const el=$('f_'+k); if(el) el.value=''; });
   $('f_emp_id').readOnly = false; $('f_active').checked = true; $('faceHint').textContent='';
+  $('f_is_manager').checked = false; $('f_manager_pin').value=''; $('f_pin_wrap').style.display='none'; $('f_pin_hint').textContent='ตั้ง PIN 6 หลัก';
   if($('f_changeId')) $('f_changeId').style.display='none';
   photoState = { url:'', newBase64:'' }; setPhotoPreview();
   $('formOverlay').classList.add('show');
@@ -1625,6 +1674,9 @@ function openEdit(empId){
   $('f_emp_id').readOnly = true;
   if($('f_changeId')) $('f_changeId').style.display='inline-block';
   $('f_active').checked = isActive(r.active);
+  $('f_is_manager').checked = !!r.is_manager; $('f_manager_pin').value='';
+  $('f_pin_wrap').style.display = r.is_manager ? 'block' : 'none';
+  $('f_pin_hint').textContent = r.has_pin ? 'ตั้ง PIN แล้ว — เว้นว่างเพื่อคงเดิม / กรอกใหม่เพื่อรีเซ็ต' : 'ยังไม่ได้ตั้ง PIN — กรอก 6 หลัก';
   $('faceHint').textContent = r.face_descriptor==='registered' ? '✓ ลงทะเบียนใบหน้าแล้ว' : '○ ยังไม่ลงทะเบียนใบหน้า';
   photoState = { url: r.photo_url||'', newBase64:'' }; setPhotoPreview();
   $('formOverlay').classList.add('show');
@@ -1650,9 +1702,19 @@ $('f_changeId') && ($('f_changeId').onclick = async ()=>{
 $('saveBtn').onclick = async ()=>{
   const data = {}; FIELDS.forEach(k=>{ data[k] = $('f_'+k).value.trim(); });
   data.active = $('f_active').checked;
+  data.is_manager = $('f_is_manager').checked;
+  const pinVal = $('f_manager_pin').value.trim();
+  data.manager_pin = pinVal;
   if(!data.emp_id){ toast('err','ต้องระบุรหัสพนักงาน'); return; }
   if(!data.name){ toast('err','ต้องระบุชื่อ'); return; }
   if(data.id_card && !/^\d{13}$/.test(data.id_card)){ toast('err','เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก'); return; }
+  if(data.is_manager){
+    const cur = DATA.rows.find(x=>String(x.emp_id)===String(data.emp_id));
+    const hadPin = cur && cur.has_pin;
+    if(pinVal && !/^\d{6}$/.test(pinVal)){ toast('err','PIN ต้องเป็นตัวเลข 6 หลัก'); return; }
+    if(!pinVal && !hadPin){ toast('err','กรุณาตั้ง PIN 6 หลักสำหรับ ผจก.'); return; }
+    if(!data.branch_id){ toast('err','ผจก.ต้องระบุสาขาที่สังกัด'); return; }
+  }
   if(photoState.newBase64) data._photo_base64 = photoState.newBase64;
   else if(!photoState.url) data.photo_url = '';
   $('saveBtn').innerHTML='<span class="spin"></span>';
@@ -2357,7 +2419,7 @@ function exportAnalyticsXlsx(){
 const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
-  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); }
+  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='report') loadReport();
@@ -2376,6 +2438,39 @@ showTab = function(name){
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
   else if(name==='notifylog') loadNotifyLog();
+};
+ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
+
+// ---------- โหมด ผจก.สาขา: ล็อกเมนู + ล็อกสาขา ----------
+function applyManagerMode(){
+  if(!MGR_MODE) return;
+  document.body.classList.add('mgr-mode');
+  // แสดงเฉพาะ 5 เมนู ที่อนุญาต
+  ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.style.display = MGR_TABS.includes(n) ? '' : 'none'; });
+  // เปลี่ยนป้ายหัวเป็นสาขาของ ผจก.
+  const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
+  const badge=$('mgrBadge');
+  if(badge){ badge.textContent='🏪 ผจก. · '+(b?b.name:MGR_BRANCH); badge.style.display='inline-block'; }
+  enforceMgrBranch();
+}
+// ล็อกทุก dropdown ที่เป็น "สาขา" ให้เป็นสาขาของ ผจก. เท่านั้น
+function enforceMgrBranch(){
+  if(!MGR_MODE) return;
+  const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
+  const label=b?b.name:MGR_BRANCH;
+  document.querySelectorAll('select').forEach(sel=>{
+    if(!/branch/i.test(sel.id||'')) return;
+    if(sel.dataset.mgrLocked==='1' && sel.value===MGR_BRANCH) return;
+    sel.innerHTML='<option value="'+esc(MGR_BRANCH)+'">'+esc(label)+'</option>';
+    sel.value=MGR_BRANCH; sel.disabled=true; sel.dataset.mgrLocked='1'; sel.dataset.filled='1';
+  });
+}
+// หุ้ม showTab: กันเข้าเมนูนอกสิทธิ์ + ล็อกสาขาหลังโหลด (เผื่อ select เพิ่งถูกเติม)
+const __showTab_base = showTab;
+showTab = function(name){
+  if(MGR_MODE && !MGR_TABS.includes(name)) name='dashboard';
+  __showTab_base(name);
+  if(MGR_MODE) [0,200,500].forEach(ms=>setTimeout(enforceMgrBranch, ms));
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
 
@@ -4072,6 +4167,52 @@ async function loadOpenTasks(){
     if(!confirm('ยืนยันปิด (อนุมัติ) งานค้างทั้งกลุ่ม '+x.branch_name+' กะ '+x.shift_name+' วันที่ '+beDate(x.work_date)+' ?')) return;
     const r2=await post({ action:'hr_task_close_group', password:pwd, data:{ work_date:x.work_date, branch_id:x.branch_id, shift_id:x.shift_id } });
     if(r2.ok){ toast('ok','ปิดงานค้างแล้ว '+(r2.closed||0)+' งาน'); loadOpenTasks(); } else toast('err',r2.error||'ไม่สำเร็จ');
+  });
+}
+
+// ========== พาเนลบันทึกวันอบรมบน Dashboard (มีตัวกรอง) ==========
+let DUTY_ROWS=[];
+async function loadDutyRecords(){
+  const box=$('dutyPanel'); if(!box) return;
+  const dbr=$('dash_branch')?$('dash_branch').value:'';
+  let r; try{ r=await post({ action:'hr_duty_list', password:pwd, branch:dbr }); }catch(e){ box.innerHTML=''; return; }
+  if(!r||!r.ok){ box.innerHTML=''; return; }
+  DUTY_ROWS=r.rows||[];
+  box.innerHTML='<div class="card" style="margin-bottom:14px">'
+    +'<div class="card-h" style="flex-wrap:wrap;gap:8px"><h3>🎓 บันทึกวันอบรม / ปฏิบัติงานนอกสถานที่</h3>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      +'<input id="duty_q" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+      +'<input id="duty_month" type="month" title="กรองตามเดือน" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+      +'<button class="btn btn-sec btn-sm" id="duty_clear">ล้างตัวกรอง</button>'
+    +'</div></div>'
+    +'<div class="card-b" id="duty_list" style="padding-top:6px"></div></div>';
+  $('duty_q').oninput=renderDutyList;
+  $('duty_month').onchange=renderDutyList;
+  $('duty_clear').onclick=()=>{ $('duty_q').value=''; $('duty_month').value=''; renderDutyList(); };
+  renderDutyList();
+}
+function renderDutyList(){
+  const el=$('duty_list'); if(!el) return;
+  const q=($('duty_q')?$('duty_q').value:'').trim().toLowerCase();
+  const mo=$('duty_month')?$('duty_month').value:'';
+  const rows=DUTY_ROWS.filter(x=>{
+    if(mo && String(x.work_date).slice(0,7)!==mo) return false;
+    if(q && !((x.emp_id+' '+x.emp_name+' '+(x.nickname||'')).toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if(!rows.length){ el.innerHTML='<div class="empty" style="padding:18px">'+(DUTY_ROWS.length?'ไม่พบรายการตามตัวกรอง':'ยังไม่มีบันทึกวันอบรม/ปฏิบัติงานนอกสถานที่')+'</div>'; return; }
+  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">รวม '+rows.length+' รายการ'+(rows.length!==DUTY_ROWS.length?(' (จากทั้งหมด '+DUTY_ROWS.length+')'):'')+'</div>'
+    +rows.map(x=>'<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-top:1px solid var(--line)">'
+      +'<div style="min-width:100px;flex:none"><div style="font-weight:600;font-size:13px">'+beDate(x.work_date)+'</div><div style="font-size:11px;color:var(--muted)">'+esc(x.shift_name||'')+'</div></div>'
+      +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13.5px">'+esc(x.emp_name)+(x.nickname?' <span style="color:var(--muted);font-weight:400">('+esc(x.nickname)+')</span>':'')+' <span style="color:var(--muted);font-weight:400;font-size:12px">'+esc(x.emp_id)+'</span></div>'
+        +'<div style="font-size:12.5px;color:var(--muted)">🏪 '+esc(x.branch_name)+(x.note?(' · 📋 '+esc(x.note)):' · <span style="color:#9ca3af">ไม่ระบุหัวข้อ</span>')+'</div></div>'
+      +'<button class="icobtn" style="color:#dc2626;flex:none" data-dutydel="'+esc(x.emp_id)+'|'+esc(x.work_date)+'">ลบ</button>'
+      +'</div>').join('');
+  el.querySelectorAll('[data-dutydel]').forEach(b=>b.onclick=async()=>{
+    const parts=b.dataset.dutydel.split('|'); const eid=parts[0], wd=parts[1];
+    if(!confirm('ลบบันทึกวันอบรมวันที่ '+beDate(wd)+' ของ '+eid+' ?')) return;
+    const r=await post({ action:'hr_duty_delete', password:pwd, emp_id:eid, work_date:wd });
+    if(r.ok){ toast('ok','ลบแล้ว'); loadDutyRecords(); } else toast('err',r.error||'ไม่สำเร็จ');
   });
 }
 
