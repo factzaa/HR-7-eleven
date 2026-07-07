@@ -211,6 +211,7 @@
         case 'hr_mtask_stage':       return await hrMtaskStage(p.id, p.status, p.role, p.sender_name);
         case 'hr_mtask_feed_add':    return await hrMtaskFeedAdd(p.data);
         case 'hr_mtask_feed_list':   return await hrMtaskFeedList(p.task_id);
+        case 'hr_mtask_assign':      return await hrMtaskAssign(p.id, p.emp_id, p.emp_name);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2262,6 +2263,14 @@
     const { data, error } = await sb().from('mgr_task_feed').select('*').eq('task_id', taskId).order('created_at', { ascending: true });
     if (error) throw error;
     return { ok: true, rows: data || [] };
+  }
+  // ผจก.มอบต่อให้พนักงานในสาขา
+  async function hrMtaskAssign(id, empId, empName) {
+    if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const { error } = await sb().from('mgr_tasks').update({ assignee_emp: empId || null, assignee_name: empName || null, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+    await sb().from('mgr_task_feed').insert({ task_id: id, role: 'mgr', sender_name: 'ผจก.', kind: 'status', message: empName ? ('มอบหมายให้: ' + empName) : 'ยกเลิกการมอบหมาย' });
+    return { ok: true };
   }
 
   // แก้ไขรายละเอียดสินค้า QA (ชื่อ/บาร์โค้ด/ขนาด/จำนวน/หมดอายุ/โซน/สถานะ)

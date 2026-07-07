@@ -2771,7 +2771,7 @@ function renderMtBoard(){
   const bf = MGR_MODE?'':($('mt_branch')?$('mt_branch').value:'');
   const rows=MT_ROWS.filter(t=>!bf||String(t.branch_id)===String(bf));
   box.innerHTML='<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px">'+MT_STAGES.map(st=>{
-    const cards=rows.filter(t=>t.status===st.key);
+    const cards=rows.filter(t=>t.status===st.key).sort((a,b)=>((b.priority==='urgent'?1:0)-(a.priority==='urgent'?1:0)));
     return '<div style="flex:0 0 250px;min-width:250px;background:#f6f7f9;border-radius:12px;padding:8px">'
       +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
       +(cards.length?cards.map(mtCard).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
@@ -2783,8 +2783,10 @@ function mtCard(t){
   const urg=t.priority==='urgent'?'<span style="background:#dc2626;color:#fff;font-size:10px;border-radius:999px;padding:1px 6px;margin-left:4px">ด่วน</span>':'';
   const due=t.due_date?'<div style="font-size:11px;color:#b45309;margin-top:3px">⏰ ส่ง '+beDate(t.due_date)+'</div>':'';
   const nph=(Array.isArray(t.hr_photos)?t.hr_photos.length:0);
-  return '<div data-mtopen="'+esc(t.id)+'" style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;cursor:pointer">'
+  const cardStyle = t.priority==='urgent' ? 'background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626' : 'background:#fff;border:1px solid var(--line)';
+  return '<div data-mtopen="'+esc(t.id)+'" style="'+cardStyle+';border-radius:10px;padding:10px;margin-top:8px;cursor:pointer">'
     +'<div style="font-weight:600;font-size:13.5px">'+esc(t.title)+urg+'</div>'
+    +(t.assignee_name?'<div style="font-size:11.5px;color:#0369a1;margin-top:3px">👤 '+esc(t.assignee_name)+'</div>':'')
     +(MGR_MODE?'':'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">🏪 '+esc(t.branch_name||'—')+'</div>')
     +due
     +'<div style="font-size:11px;color:#9aa4b2;margin-top:5px">อัปเดต '+beDateTime(t.updated_at)+(nph?(' · 📎'+nph):'')+'</div>'
@@ -2813,8 +2815,20 @@ function renderMtDetail(){
   if(t.detail) h+='<div style="font-size:13.5px;white-space:pre-wrap;margin-bottom:6px">'+esc(t.detail)+'</div>';
   h+='<div style="font-size:12px;color:var(--muted)">🏪 '+esc(t.branch_name||'—')+(t.due_date?(' · ⏰ ส่ง '+beDate(t.due_date)):'')+(t.priority==='urgent'?' · 🔴 ด่วน':'')+' · สถานะ: '+mtStLabel(t.status)+'</div>';
   if(Array.isArray(t.hr_photos)&&t.hr_photos.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+  // มอบต่อให้พนักงาน (ผจก.เลือกได้ · HR เห็นชื่อ)
+  if(MGR_MODE){
+    const emps=(DATA.rows||[]).filter(e=>e.active!==false && String(e.branch_id)===String(MGR_BRANCH));
+    h+='<div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:12.5px;color:var(--muted)">👤 มอบหมายให้:</span><select id="mt_assignee" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px"><option value="">— ไม่ระบุ —</option>'+emps.map(e=>'<option value="'+esc(e.emp_id)+'"'+(String(t.assignee_emp||'')===String(e.emp_id)?' selected':'')+'>'+esc(e.nickname||e.name)+'</option>').join('')+'</select></div>';
+  } else if(t.assignee_name){
+    h+='<div style="font-size:12.5px;color:#0369a1;margin-top:6px">👤 ผู้รับผิดชอบ: '+esc(t.assignee_name)+'</div>';
+  }
   h+='<div style="font-weight:700;font-size:13px;margin:12px 0 4px">💬 ความเคลื่อนไหว / พูดคุย</div><div id="mt_feed" style="max-height:38vh;overflow-y:auto;background:#f8fafc;border-radius:10px;padding:8px"></div>';
   $('mt_body').innerHTML=h;
+  if($('mt_assignee')) $('mt_assignee').onchange=async()=>{
+    const sel=$('mt_assignee'); const eid=sel.value; const nm=eid?sel.options[sel.selectedIndex].text:'';
+    const r=await post({ action:'hr_mtask_assign', password:pwd, id:t.id, emp_id:eid, emp_name:nm });
+    if(r.ok){ t.assignee_emp=eid; t.assignee_name=nm; refreshMtFeed(); loadMtasks(); toast('ok', nm?('มอบหมายให้ '+nm):'ยกเลิกการมอบหมาย'); } else toast('err', r.error||'ไม่สำเร็จ');
+  };
   let f='';
   if(MGR_MODE) f+='<div style="display:flex;gap:6px;flex-wrap:wrap">'+MT_STAGES.filter(s=>s.key!==t.status).map(s=>'<button class="btn btn-sec btn-sm" data-mtstage="'+s.key+'">'+s.label+'</button>').join('')+'</div>';
   f+='<div id="mt_photobar" style="display:flex;gap:6px;flex-wrap:wrap"></div>'
@@ -2904,7 +2918,7 @@ $('mtaSave') && ($('mtaSave').onclick=async()=>{
   const btn=$('mtaSave'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_mtask_create', password:pwd, data:{ branch_id:branch, title, detail:$('mta_detail').value, due_date:$('mta_due').value||null, priority:$('mta_urgent').checked?'urgent':'normal', hr_photos:MTA_PHOTOS.slice() } });
   btn.disabled=false; btn.textContent='มอบหมาย';
-  if(r.ok){ toast('ok','มอบหมายแล้ว'); closeMtAssign(); loadMtasks(); } else toast('err', r.error||'ไม่สำเร็จ');
+  if(r.ok){ try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} toast('ok','มอบหมายแล้ว'); closeMtAssign(); loadMtasks(); } else toast('err', r.error||'ไม่สำเร็จ');
 });
 
 const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
@@ -5102,9 +5116,16 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64ToU8(window.VAPID_PUBLIC) });
     const j = sub.toJSON();
-    const label = prompt('ตั้งชื่ออุปกรณ์นี้ (เช่น โทรศัพท์ร้าน A / มือถือ HR)', 'อุปกรณ์ HR') || 'อุปกรณ์ HR';
-    const brList=(DATA.branches||[]).map(b=>b.branch_id+' = '+b.name).join('\n');
-    const branch_id=(prompt('เครื่องนี้รับแจ้งเตือนของสาขาไหน? พิมพ์ "รหัสสาขา"\n(เว้นว่าง = ส่วนกลาง รับทุกสาขา)\n\n'+brList, ($('dash_branch')?$('dash_branch').value:'')||'')||'').trim();
+    // โหมด ผจก.: ผูกเครื่องกับสาขาตัวเองอัตโนมัติ (ไม่ต้องถาม)
+    let label, branch_id;
+    if(typeof MGR_MODE!=='undefined' && MGR_MODE){
+      label = prompt('ตั้งชื่ออุปกรณ์นี้', 'มือถือ ผจก.') || 'มือถือ ผจก.';
+      branch_id = MGR_BRANCH;
+    } else {
+      label = prompt('ตั้งชื่ออุปกรณ์นี้ (เช่น โทรศัพท์ร้าน A / มือถือ HR)', 'อุปกรณ์ HR') || 'อุปกรณ์ HR';
+      const brList=(DATA.branches||[]).map(b=>b.branch_id+' = '+b.name).join('\n');
+      branch_id=(prompt('เครื่องนี้รับแจ้งเตือนของสาขาไหน? พิมพ์ "รหัสสาขา"\n(เว้นว่าง = ส่วนกลาง รับทุกสาขา)\n\n'+brList, ($('dash_branch')?$('dash_branch').value:'')||'')||'').trim();
+    }
     if(branch_id && !(DATA.branches||[]).some(b=>b.branch_id===branch_id)){ toast('err','ไม่พบรหัสสาขา '+branch_id+' — ลองใหม่'); return; }
     const { error } = await window.HR.sb.from('push_subscriptions').upsert({
       endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, label, branch_id: branch_id||null
