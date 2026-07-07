@@ -2608,6 +2608,7 @@ async function openApplicant(id){
   h+=row('วันเกิด', a.birth_date?beDate(a.birth_date):'');
   h+=row('เลขบัตร ปชช.', a.id_card);
   h+=row('ที่อยู่', a.address);
+  h+=row('ผู้ติดต่อฉุกเฉิน', a.emergency_name ? (a.emergency_name + (a.emergency_relation?(' ('+a.emergency_relation+')'):'') + (a.emergency_phone?(' · '+a.emergency_phone):'')) : '');
   h+=row('เงินเดือนคาดหวัง', a.expected_salary?(Number(a.expected_salary).toLocaleString()+' บาท'):'');
   h+=row('พร้อมเริ่มงาน', a.start_available?beDate(a.start_available):'');
   h+=row('ประสบการณ์', a.experience);
@@ -2836,12 +2837,14 @@ function renderMtDetail(){
     +'<div style="display:flex;gap:6px;align-items:center">'
     +'<label class="btn btn-sec btn-sm" style="cursor:pointer">📷<input type="file" accept="image/*" capture="environment" id="mt_cam" style="display:none"></label>'
     +'<label class="btn btn-sec btn-sm" style="cursor:pointer">🖼️<input type="file" accept="image/*" multiple id="mt_file" style="display:none"></label>'
+    +'<button class="btn btn-sec btn-sm" id="mt_draw" type="button" title="วาดภาพ / วาดบนรูป">✏️ วาด</button>'
     +'<input id="mt_msg" type="text" placeholder="พิมพ์ข้อความ / อัปเดต…" style="flex:1;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'
     +'<button class="btn btn-pri btn-sm" id="mt_send">ส่ง</button></div>';
   $('mt_foot').innerHTML=f;
   $('mt_foot').querySelectorAll('[data-mtstage]').forEach(b=>b.onclick=()=>mtStage(b.dataset.mtstage));
   $('mt_cam').onchange=e=>mtAddFiles(e.target);
   $('mt_file').onchange=e=>mtAddFiles(e.target);
+  $('mt_draw').onclick=mtDrawNew;
   $('mt_send').onclick=mtSend;
   renderMtPhotoBar();
 }
@@ -2851,7 +2854,16 @@ async function refreshMtFeed(){
   if(!r.ok) return;
   const el=$('mt_feed'); if(!el) return;
   el.innerHTML=(r.rows||[]).map(mtFeedRow).join('') || '<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px">ยังไม่มีความเคลื่อนไหว</div>';
+  el.querySelectorAll('[data-mtedit]').forEach(b=>b.onclick=()=>mtEditFeedPhoto(b.dataset.mtedit));
   el.scrollTop=el.scrollHeight;
+}
+// ดึงรูปจากไทม์ไลน์ (ที่อีกฝ่ายส่งมา) มาวาดทับ แล้วส่งกลับได้
+function mtEditFeedPhoto(url){
+  if(!url) return;
+  MT_PHOTOS.push(url);
+  renderMtPhotoBar();
+  mtDrawPhoto(MT_PHOTOS.length-1);
+  toast('ok','ดึงรูปมาวาดแล้ว — วาดเสร็จกด "ส่ง"');
 }
 function mtFeedRow(m){
   if(m.kind==='status'||m.role==='system') return '<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:6px 0">— '+esc(m.message||'')+' ('+esc(m.sender_name||'')+' · '+beDateTime(m.created_at)+') —</div>';
@@ -2860,7 +2872,7 @@ function mtFeedRow(m){
   let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%;background:'+bg+';border-radius:12px;padding:7px 11px">';
   c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||(m.role==='hr'?'HR':'ผจก.'))+' · '+beDateTime(m.created_at)+'</div>';
   if(m.message) c+='<div style="font-size:13.5px;white-space:pre-wrap">'+esc(m.message)+'</div>';
-  if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:82px;height:82px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+  if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">'+m.photos.map(u=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" onclick="lightbox(this)" style="width:82px;height:82px;object-fit:cover;border-radius:8px;cursor:zoom-in"><button type="button" data-mtedit="'+esc(u)+'" title="วาดทับ/แก้ไขรูปนี้" style="position:absolute;bottom:-4px;right:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:11px;cursor:pointer">✏️</button></span>').join('')+'</div>';
   return c+'</div></div>';
 }
 function mtAddFiles(input){
@@ -2873,6 +2885,12 @@ function renderMtPhotoBar(){
   bar.innerHTML=MT_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:52px;height:52px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="mtDrawPhoto('+i+')" title="วาดทับ" style="position:absolute;bottom:-4px;left:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer">✏️</button><button type="button" onclick="mtRmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join('');
 }
 function mtRmPhoto(i){ MT_PHOTOS.splice(i,1); renderMtPhotoBar(); }
+function mtBlankCanvas(){ const c=document.createElement('canvas'); c.width=1000; c.height=750; const x=c.getContext('2d'); x.fillStyle='#ffffff'; x.fillRect(0,0,c.width,c.height); return c.toDataURL('image/jpeg',0.9); }
+function mtDrawNew(){
+  // มีรูปแนบอยู่ → วาดทับรูปล่าสุด · ไม่มี → วาดบนกระดาษเปล่า
+  if(MT_PHOTOS.length){ mtDrawPhoto(MT_PHOTOS.length-1); return; }
+  MT_PHOTOS.push(mtBlankCanvas()); renderMtPhotoBar(); mtDrawPhoto(MT_PHOTOS.length-1);
+}
 function mtDrawPhoto(i){
   const src=MT_PHOTOS[i]; if(!src) return;
   ensureMarkupUI();

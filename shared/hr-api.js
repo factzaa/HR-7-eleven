@@ -2163,6 +2163,7 @@
     const emp = {
       emp_id: code, name: a.full_name, nickname: a.nickname || null,
       phone: a.phone || null, address: a.address || null, id_card: a.id_card || null,
+      emergency_name: a.emergency_name || null, emergency_phone: a.emergency_phone || null,
       branch_id: branch, active: true, start_date: bkkToday(),
       photo_url: a.photo_url || null, idcard_url: a.idcard_url || null,
       house_url: a.house_url || null, edu_url: a.edu_url || null,
