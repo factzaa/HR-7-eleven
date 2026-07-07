@@ -427,8 +427,15 @@
   <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
     <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">🧑‍💼 รับสมัครงาน</h3>
     <input id="rc_search" type="text" placeholder="ค้นหาชื่อ/เบอร์/ตำแหน่ง" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="rc_position" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกตำแหน่ง</option></select>
+    <select id="rc_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสถานะ</option><option value="new">🆕 สมัครใหม่</option><option value="reviewing">🔍 รอพิจารณา</option><option value="interview">📅 นัดสัมภาษณ์</option><option value="hired">✅ รับเริ่มงาน</option><option value="rejected">❌ ไม่ผ่าน</option></select>
     <select id="rc_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
-    <button class="btn btn-sec btn-sm" id="rc_refresh">🔄 รีเฟรช</button>
+    <label style="font-size:12px;color:var(--muted)">สมัคร:</label>
+    <input id="rc_from" type="date" title="ตั้งแต่วันที่" style="padding:6px 8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
+    <span style="color:var(--muted)">–</span>
+    <input id="rc_to" type="date" title="ถึงวันที่" style="padding:6px 8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
+    <button class="btn btn-sec btn-sm" id="rc_clear">ล้าง</button>
+    <button class="btn btn-sec btn-sm" id="rc_refresh">🔄</button>
   </div>
   <div id="rc_board"><div class="empty">กำลังโหลด…</div></div>
 </div>
@@ -2625,22 +2632,44 @@ async function loadRecruit(){
     $('rc_branch').onchange=renderRcBoard;
     $('rc_search').oninput=renderRcBoard;
     $('rc_refresh').onclick=loadRecruit;
+    $('rc_position').onchange=renderRcBoard;
+    $('rc_status').onchange=renderRcBoard;
+    $('rc_from').onchange=renderRcBoard;
+    $('rc_to').onchange=renderRcBoard;
+    $('rc_clear').onclick=()=>{ $('rc_search').value=''; $('rc_position').value=''; $('rc_status').value=''; $('rc_branch').value=''; $('rc_from').value=''; $('rc_to').value=''; renderRcBoard(); };
   }
   let r; try{ r=await post({ action:'hr_applicants_list', password:pwd }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   RC_ROWS=r.rows||[];
+  // เติมตัวเลือกตำแหน่งจากใบสมัครจริง (คงค่าที่เลือกไว้)
+  const posSel=$('rc_position');
+  if(posSel){
+    const cur=posSel.value;
+    const poss=[...new Set(RC_ROWS.map(a=>a.position).filter(Boolean))].sort();
+    posSel.innerHTML='<option value="">ทุกตำแหน่ง</option>'+poss.map(p=>'<option value="'+esc(p)+'">'+esc(p)+'</option>').join('');
+    if(cur && poss.includes(cur)) posSel.value=cur;
+  }
   renderRcBoard();
 }
 function renderRcBoard(){
   const box=$('rc_board'); if(!box) return;
   const q=($('rc_search')?$('rc_search').value:'').trim().toLowerCase();
   const bf=$('rc_branch')?$('rc_branch').value:'';
+  const pf=$('rc_position')?$('rc_position').value:'';
+  const from=$('rc_from')?$('rc_from').value:'';
+  const to=$('rc_to')?$('rc_to').value:'';
   const rows=RC_ROWS.filter(a=>{
     if(bf && String(a.branch_id)!==String(bf)) return false;
+    if(pf && String(a.position||'')!==String(pf)) return false;
+    const d=(a.created_at||'').slice(0,10);
+    if(from && d && d<from) return false;
+    if(to && d && d>to) return false;
     if(q && !((a.full_name+' '+(a.phone||'')+' '+(a.position||'')+' '+(a.nickname||'')).toLowerCase().includes(q))) return false;
     return true;
   });
-  box.innerHTML='<div class="kanban">'+RC_STAGES.map(st=>{
+  const sf=$('rc_status')?$('rc_status').value:'';
+  const stages=sf?RC_STAGES.filter(s=>s.key===sf):RC_STAGES;
+  box.innerHTML='<div class="kanban">'+stages.map(st=>{
     const cards=rows.filter(a=>a.status===st.key);
     return '<div class="kanban-col">'
       +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
