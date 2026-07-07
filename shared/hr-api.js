@@ -212,6 +212,7 @@
         case 'hr_mtask_feed_add':    return await hrMtaskFeedAdd(p.data);
         case 'hr_mtask_feed_list':   return await hrMtaskFeedList(p.task_id);
         case 'hr_mtask_assign':      return await hrMtaskAssign(p.id, p.emp_id, p.emp_name);
+        case 'hr_mtask_delete':      return await hrMtaskDelete(p.id);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2272,6 +2273,15 @@
     const { data, error } = await sb().from('mgr_task_feed').select('*').eq('task_id', taskId).order('created_at', { ascending: true });
     if (error) throw error;
     return { ok: true, rows: data || [] };
+  }
+  async function hrMtaskDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const { data: t } = await sb().from('mgr_tasks').select('title').eq('id', id).maybeSingle();
+    await sb().from('mgr_task_feed').delete().eq('task_id', id);   // เผื่อ FK ไม่ได้ตั้ง cascade
+    const { error } = await sb().from('mgr_tasks').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ลบงาน ผจก.', null, (t && t.title) || ('#' + id));
+    return { ok: true };
   }
   // ผจก.มอบต่อให้พนักงานในสาขา
   async function hrMtaskAssign(id, empId, empName) {

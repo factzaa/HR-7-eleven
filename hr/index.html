@@ -2833,6 +2833,7 @@ function renderMtDetail(){
   };
   let f='';
   if(MGR_MODE) f+='<div style="display:flex;gap:6px;flex-wrap:wrap">'+MT_STAGES.filter(s=>s.key!==t.status).map(s=>'<button class="btn btn-sec btn-sm" data-mtstage="'+s.key+'">'+s.label+'</button>').join('')+'</div>';
+  else f+='<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-danger btn-sm" id="mt_del">🗑 ลบงานนี้</button></div>';
   f+='<div id="mt_photobar" style="display:flex;gap:6px;flex-wrap:wrap"></div>'
     +'<div style="display:flex;gap:6px;align-items:center">'
     +'<label class="btn btn-sec btn-sm" style="cursor:pointer">📷<input type="file" accept="image/*" capture="environment" id="mt_cam" style="display:none"></label>'
@@ -2846,6 +2847,11 @@ function renderMtDetail(){
   $('mt_file').onchange=e=>mtAddFiles(e.target);
   $('mt_draw').onclick=mtDrawNew;
   $('mt_send').onclick=mtSend;
+  if($('mt_del')) $('mt_del').onclick=async()=>{
+    if(!confirm('ลบงาน "'+(MT_CUR.title||'')+'" ? (ไทม์ไลน์และรูปทั้งหมดจะถูกลบด้วย)')) return;
+    const r=await post({ action:'hr_mtask_delete', password:pwd, id:MT_CUR.id });
+    if(r.ok){ toast('ok','ลบงานแล้ว'); closeMtask(); loadMtasks(); } else toast('err', r.error||'ลบไม่สำเร็จ');
+  };
   renderMtPhotoBar();
 }
 async function refreshMtFeed(){
