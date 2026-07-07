@@ -329,6 +329,7 @@
   <button class="tab active" id="tab_dashboard"><span class="tabicon">📊</span>Dashboard</button>
   <button class="tab" id="tab_board"><span class="tabicon">🗒️</span>บอร์ดวันนี้</button>
   <button class="tab" id="tab_employees"><span class="tabicon">👥</span>พนักงาน</button>
+  <button class="tab" id="tab_recruit"><span class="tabicon">🧑‍💼</span>รับสมัครงาน</button>
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
@@ -376,6 +377,26 @@
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
   <div id="dutyPanel"></div>
+</div>
+
+<!-- Recruitment (รับสมัครงาน) -->
+<div id="view_recruit" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">🧑‍💼 รับสมัครงาน</h3>
+    <input id="rc_search" type="text" placeholder="ค้นหาชื่อ/เบอร์/ตำแหน่ง" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="rc_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-sec btn-sm" id="rc_refresh">🔄 รีเฟรช</button>
+  </div>
+  <div id="rc_board"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- Applicant detail modal -->
+<div class="overlay" id="rcOverlay">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-h"><h2 id="rc_title">ผู้สมัคร</h2><button class="close" id="rcClose">×</button></div>
+    <div class="modal-b" id="rc_body"></div>
+    <div class="modal-f" id="rc_foot"></div>
+  </div>
 </div>
 
 <!-- Board: บอร์ดวันนี้ -->
@@ -2468,12 +2489,103 @@ function exportAnalyticsXlsx(){
 }
 
 // ---------- override showTab รองรับแท็บใหม่ ----------
-const ALL_TABS = ['dashboard','board','employees','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+// ========== รับสมัครงาน (Recruitment) ==========
+let RC_ROWS = [], RC_CUR = null;
+const RC_STAGES = [
+  { key:'new',       label:'🆕 สมัครใหม่',  color:'#0ea5e9' },
+  { key:'reviewing', label:'🔍 รอพิจารณา',  color:'#a06515' },
+  { key:'interview', label:'📅 นัดสัมภาษณ์', color:'#7c3aed' },
+  { key:'hired',     label:'✅ รับเริ่มงาน', color:'#16a34a' },
+  { key:'rejected',  label:'❌ ไม่ผ่าน',    color:'#dc2626' },
+];
+function rcStageLabel(k){ const s=RC_STAGES.find(x=>x.key===k); return s?s.label:k; }
+async function loadRecruit(){
+  const box=$('rc_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  if($('rc_branch') && !$('rc_branch').dataset.filled){
+    $('rc_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+    $('rc_branch').dataset.filled='1';
+    $('rc_branch').onchange=renderRcBoard;
+    $('rc_search').oninput=renderRcBoard;
+    $('rc_refresh').onclick=loadRecruit;
+  }
+  let r; try{ r=await post({ action:'hr_applicants_list', password:pwd }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  RC_ROWS=r.rows||[];
+  renderRcBoard();
+}
+function renderRcBoard(){
+  const box=$('rc_board'); if(!box) return;
+  const q=($('rc_search')?$('rc_search').value:'').trim().toLowerCase();
+  const bf=$('rc_branch')?$('rc_branch').value:'';
+  const rows=RC_ROWS.filter(a=>{
+    if(bf && String(a.branch_id)!==String(bf)) return false;
+    if(q && !((a.full_name+' '+(a.phone||'')+' '+(a.position||'')+' '+(a.nickname||'')).toLowerCase().includes(q))) return false;
+    return true;
+  });
+  box.innerHTML='<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px">'+RC_STAGES.map(st=>{
+    const cards=rows.filter(a=>a.status===st.key);
+    return '<div style="flex:0 0 240px;min-width:240px;background:#f6f7f9;border-radius:12px;padding:8px">'
+      +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
+      +(cards.length?cards.map(a=>rcCard(a)).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
+      +'</div>';
+  }).join('')+'</div>';
+  box.querySelectorAll('[data-rcopen]').forEach(c=>c.onclick=()=>openApplicant(c.dataset.rcopen));
+}
+function rcCard(a){
+  const nw=!a.seen?'<span style="background:#dc2626;color:#fff;font-size:10px;border-radius:999px;padding:1px 6px;margin-left:4px">ใหม่</span>':'';
+  const img=a.photo_url?`<img src="${esc(a.photo_url)}" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex:none">`:`<div style="width:36px;height:36px;border-radius:8px;background:#e5e7eb;display:flex;align-items:center;justify-content:center;flex:none">👤</div>`;
+  return '<div data-rcopen="'+esc(a.id)+'" style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px;margin-top:8px;cursor:pointer">'
+    +'<div style="display:flex;gap:8px;align-items:center">'+img+'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13.5px">'+esc(a.full_name)+nw+'</div><div style="font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.position||'—')+'</div></div></div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:5px">🏪 '+esc(a.branch_name||'—')+' · 📞 '+esc(a.phone||'—')+'</div>'
+    +'<div style="font-size:11px;color:#9aa4b2;margin-top:2px">'+beDateTime(a.created_at)+'</div>'
+    +'</div>';
+}
+async function openApplicant(id){
+  const r=await post({ action:'hr_applicant_get', password:pwd, id });
+  if(!r.ok){ toast('err', r.error||'ไม่พบผู้สมัคร'); return; }
+  const a=r.applicant; RC_CUR=a;
+  const idx=RC_ROWS.findIndex(x=>String(x.id)===String(id)); if(idx>=0) RC_ROWS[idx].seen=true;
+  $('rc_title').textContent=a.full_name;
+  const row=(l,v)=>v?('<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)"><div style="width:120px;color:var(--muted);font-size:13px">'+l+'</div><div style="flex:1;font-size:13.5px">'+esc(v)+'</div></div>'):'';
+  const docs=[['รูปถ่าย',a.photo_url],['สำเนาบัตร',a.idcard_url],['ทะเบียนบ้าน',a.house_url],['วุฒิการศึกษา',a.edu_url],['เอกสารอื่น',a.other_url]];
+  let h='';
+  h+=row('ตำแหน่ง', a.position);
+  h+=row('สาขาที่สมัคร', a.branch_name);
+  h+=row('เบอร์โทร', a.phone);
+  h+=row('อีเมล', a.email);
+  h+=row('วันเกิด', a.birth_date?beDate(a.birth_date):'');
+  h+=row('เลขบัตร ปชช.', a.id_card);
+  h+=row('ที่อยู่', a.address);
+  h+=row('เงินเดือนคาดหวัง', a.expected_salary?(Number(a.expected_salary).toLocaleString()+' บาท'):'');
+  h+=row('พร้อมเริ่มงาน', a.start_available?beDate(a.start_available):'');
+  h+=row('ประสบการณ์', a.experience);
+  h+=row('สถานะ', rcStageLabel(a.status));
+  if(a.interview_at) h+=row('นัดสัมภาษณ์', beDateTime(a.interview_at)+(a.interview_note?(' · '+a.interview_note):''));
+  if(a.reject_reason) h+=row('เหตุผลไม่ผ่าน', a.reject_reason);
+  if(a.hired_emp_id) h+=row('รหัสพนักงาน', a.hired_emp_id);
+  h+='<div style="margin-top:10px;font-weight:600;font-size:13px">📎 เอกสารแนบ</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">';
+  h+=(docs.map(([label,url])=>url?`<a href="${esc(url)}" target="_blank" style="text-align:center;text-decoration:none;color:inherit"><img src="${esc(url)}" style="width:74px;height:74px;object-fit:cover;border-radius:9px;border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted);margin-top:2px">${label}</div></a>`:'').join('')) || '<div style="color:var(--muted);font-size:12px">— ไม่มีเอกสาร —</div>';
+  h+='</div>';
+  $('rc_body').innerHTML=h;
+  $('rc_foot').innerHTML='<span style="font-size:12px;color:var(--muted);align-self:center;margin-right:auto">ย้ายสถานะ →</span>'+RC_STAGES.filter(s=>s.key!==a.status).map(s=>'<button class="btn btn-sec btn-sm" data-rcstage="'+s.key+'">'+s.label+'</button>').join('');
+  $('rc_foot').querySelectorAll('[data-rcstage]').forEach(b=>b.onclick=async()=>{
+    const st=b.dataset.rcstage;
+    const r2=await post({ action:'hr_applicant_stage', password:pwd, id:a.id, status:st });
+    if(r2.ok){ toast('ok','เปลี่ยนสถานะแล้ว'); closeApplicant(); loadRecruit(); } else toast('err', r2.error||'ไม่สำเร็จ');
+  });
+  $('rcOverlay').classList.add('show');
+}
+function closeApplicant(){ $('rcOverlay').classList.remove('show'); }
+$('rcClose') && ($('rcClose').onclick=closeApplicant);
+$('rcOverlay') && $('rcOverlay').addEventListener('click', e=>{ if(e.target===$('rcOverlay')) closeApplicant(); });
+
+const ALL_TABS = ['dashboard','board','employees','recruit','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
+  else if(name==='recruit') loadRecruit();
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();

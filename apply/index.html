@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00703c">
+<title>สมัครงาน · 7-Eleven</title>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#00703c;--green-d:#00582f;--orange:#f5821f;--red:#e11f26;--bg:#eef1ec;--line:#dbe2dc;--line2:#c7d0c9;--muted:#6b756d;--txt:#1b2a20;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:'Anuphan',sans-serif;background:var(--bg);color:var(--txt);min-height:100dvh;}
+  .wrap{max-width:520px;margin:0 auto;min-height:100dvh;background:#fff;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.06);}
+  .top{background:linear-gradient(135deg,var(--green),var(--green-d));color:#fff;padding:20px 18px;}
+  .top .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
+  .top .brand .logo{background:#fff;color:var(--green);font-weight:800;border-radius:7px;padding:2px 7px;font-size:14px;letter-spacing:.5px}
+  .top h1{font-size:21px;font-weight:700;margin-top:12px}
+  .top p{font-size:13px;opacity:.9;margin-top:3px}
+  .body{padding:16px 16px 30px;flex:1}
+  .sec{margin-top:18px}
+  .sec h2{font-size:15px;font-weight:700;color:var(--green-d);margin-bottom:10px;display:flex;align-items:center;gap:7px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:13.5px;font-weight:600;margin-bottom:5px}
+  .field label .req{color:var(--red)}
+  .field input,.field select,.field textarea{width:100%;padding:11px 13px;border:1.5px solid var(--line2);border-radius:11px;font:inherit;font-size:15px;background:#fff}
+  .field textarea{resize:vertical;min-height:76px}
+  .field .hint{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .doc{border:1.5px dashed var(--line2);border-radius:12px;padding:12px;margin-bottom:11px}
+  .doc .dh{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;margin-bottom:8px}
+  .doc .dh .req{color:var(--red)}
+  .doc .btns{display:flex;gap:8px;flex-wrap:wrap}
+  .doc .prev{margin-top:9px;position:relative;display:none}
+  .doc .prev img{width:100%;max-height:180px;object-fit:contain;border-radius:9px;background:#f4f6f4;border:1px solid var(--line)}
+  .doc .prev .rm{position:absolute;top:6px;right:6px;background:var(--red);color:#fff;border:0;border-radius:50%;width:28px;height:28px;font-size:15px;cursor:pointer}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:11px;font:inherit;font-weight:600;cursor:pointer;padding:10px 14px;font-size:14px}
+  .btn-sec{background:var(--green-soft,#e7f3ec);color:var(--green-d);border:1.5px solid var(--line2)}
+  .btn-pri{background:var(--green);color:#fff;width:100%;padding:15px;font-size:16px;margin-top:20px}
+  .btn-pri:disabled{opacity:.6}
+  .spin{width:16px;height:16px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:11px 18px;border-radius:11px;font-size:14px;z-index:99;opacity:0;transition:.25s;pointer-events:none;max-width:90%;text-align:center}
+  .toast.show{opacity:1}
+  .toast.err{background:var(--red)} .toast.ok{background:var(--green)}
+  .done{padding:50px 24px;text-align:center;display:none}
+  .done .ic{width:88px;height:88px;border-radius:50%;background:var(--green-soft,#e7f3ec);color:var(--green);font-size:46px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+  .done h2{font-size:22px;font-weight:700;color:var(--green-d)}
+  .done p{font-size:15px;color:var(--muted);margin-top:8px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><span class="logo">7-11</span> ฝ่ายบุคคล</div>
+    <h1>ใบสมัครงาน</h1>
+    <p>กรอกข้อมูลให้ครบถ้วน แล้วแนบเอกสาร เจ้าหน้าที่จะติดต่อกลับ</p>
+  </div>
+
+  <div class="body" id="formBody">
+    <div class="sec">
+      <h2>👤 ข้อมูลส่วนตัว</h2>
+      <div class="field"><label>ชื่อ-นามสกุล <span class="req">*</span></label><input id="f_full_name" type="text" placeholder="เช่น สมชาย ใจดี"></div>
+      <div class="row2">
+        <div class="field"><label>ชื่อเล่น</label><input id="f_nickname" type="text"></div>
+        <div class="field"><label>เบอร์โทร <span class="req">*</span></label><input id="f_phone" type="tel" inputmode="tel" placeholder="08x-xxx-xxxx"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>วันเกิด <span class="req">*</span></label><input id="f_birth_date" type="date"><div class="hint">ต้องอายุ 18 ปีขึ้นไป</div></div>
+        <div class="field"><label>อีเมล</label><input id="f_email" type="email" inputmode="email"></div>
+      </div>
+      <div class="field"><label>เลขบัตรประชาชน <span class="req">*</span></label><input id="f_id_card" type="text" inputmode="numeric" maxlength="13" placeholder="ตัวเลข 13 หลัก"></div>
+      <div class="field"><label>ที่อยู่</label><textarea id="f_address" placeholder="บ้านเลขที่ / หมู่ / ตำบล / อำเภอ / จังหวัด"></textarea></div>
+    </div>
+
+    <div class="sec">
+      <h2>💼 ตำแหน่งที่สมัคร</h2>
+      <div class="row2">
+        <div class="field"><label>สาขาที่สมัคร <span class="req">*</span></label><select id="f_branch_id"><option value="">— เลือกสาขา —</option></select></div>
+        <div class="field"><label>ตำแหน่ง <span class="req">*</span></label><select id="f_position"><option value="">— เลือกตำแหน่ง —</option></select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>เงินเดือนที่คาดหวัง</label><input id="f_expected_salary" type="number" inputmode="numeric" placeholder="บาท/เดือน"></div>
+        <div class="field"><label>พร้อมเริ่มงานวันที่</label><input id="f_start_available" type="date"></div>
+      </div>
+      <div class="field"><label>ประสบการณ์ / แนะนำตัว</label><textarea id="f_experience" placeholder="ประสบการณ์ทำงาน หรือข้อความถึง HR (ถ้ามี)"></textarea></div>
+    </div>
+
+    <div class="sec">
+      <h2>📎 เอกสารแนบ</h2>
+      <div id="docs"></div>
+    </div>
+
+    <button class="btn btn-pri" id="submitBtn">ส่งใบสมัคร</button>
+  </div>
+
+  <div class="done" id="doneBody">
+    <div class="ic">✓</div>
+    <h2>ส่งใบสมัครเรียบร้อย</h2>
+    <p>ขอบคุณที่สนใจร่วมงานกับเรา<br>เจ้าหน้าที่ฝ่ายบุคคลจะติดต่อกลับตามเบอร์ที่ให้ไว้</p>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+function toast(kind,msg){ const t=$('toast'); t.className='toast show '+kind; t.textContent=msg; setTimeout(()=>t.classList.remove('show'),3500); }
+
+// เอกสาร: [key,label,required]
+const DOCS=[['photo','รูปถ่าย / เซลฟี่',true],['idcard','สำเนาบัตรประชาชน',true],['house','สำเนาทะเบียนบ้าน',false],['edu','วุฒิการศึกษา',false],['other','เอกสารอื่น ๆ',false]];
+const DOC_DATA={};   // key -> dataURL
+
+function renderDocs(){
+  $('docs').innerHTML=DOCS.map(([k,label,req])=>
+    '<div class="doc" id="doc_'+k+'">'
+    +'<div class="dh">📄 '+label+(req?' <span class="req">*</span>':'')+'</div>'
+    +'<div class="btns">'
+    +'<label class="btn btn-sec">📷 ถ่าย/สแกน<input type="file" accept="image/*" capture="environment" data-doc="'+k+'" style="display:none"></label>'
+    +'<label class="btn btn-sec">🖼️ เลือกรูป<input type="file" accept="image/*" data-doc="'+k+'" style="display:none"></label>'
+    +'</div>'
+    +'<div class="prev" id="prev_'+k+'"><img><button type="button" class="rm" data-rm="'+k+'">×</button></div>'
+    +'</div>').join('');
+  document.querySelectorAll('[data-doc]').forEach(inp=>inp.onchange=async e=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    try{ const url=await readResized(f); DOC_DATA[e.target.dataset.doc]=url; showPrev(e.target.dataset.doc); }
+    catch(err){ toast('err','อ่านรูปไม่สำเร็จ'); }
+    e.target.value='';
+  });
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ delete DOC_DATA[b.dataset.rm]; showPrev(b.dataset.rm); });
+}
+function showPrev(k){
+  const box=$('prev_'+k); const url=DOC_DATA[k];
+  if(url){ box.style.display='block'; box.querySelector('img').src=url; }
+  else { box.style.display='none'; box.querySelector('img').removeAttribute('src'); }
+}
+// ย่อรูปก่อนอัปโหลด → dataURL (jpeg)
+function readResized(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=ev=>{ const img=new Image(); img.onload=()=>{
+      const max=1400, sc=Math.min(1,max/Math.max(img.width,img.height));
+      const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      res(c.toDataURL('image/jpeg',0.85));
+    }; img.onerror=rej; img.src=ev.target.result; };
+    r.onerror=rej; r.readAsDataURL(file);
+  });
+}
+function ageFrom(dstr){ if(!dstr) return null; const d=new Date(dstr+'T00:00:00'); if(isNaN(d)) return null; const n=new Date(); let a=n.getFullYear()-d.getFullYear(); const m=n.getMonth()-d.getMonth(); if(m<0||(m===0&&n.getDate()<d.getDate()))a--; return a; }
+
+async function init(){
+  renderDocs();
+  try{
+    const [branches,positions]=await Promise.all([window.HR.getBranchesPublic(),window.HR.getPositions()]);
+    $('f_branch_id').innerHTML='<option value="">— เลือกสาขา —</option>'+branches.map(b=>'<option value="'+b.branch_id+'">'+(b.name||b.branch_id)+'</option>').join('');
+    $('f_position').innerHTML='<option value="">— เลือกตำแหน่ง —</option>'+positions.map(p=>'<option value="'+p+'">'+p+'</option>').join('');
+  }catch(e){ toast('err','โหลดข้อมูลสาขา/ตำแหน่งไม่สำเร็จ'); }
+}
+
+$('submitBtn').onclick=async()=>{
+  const g=id=>$(id).value.trim();
+  const full_name=g('f_full_name'), phone=g('f_phone'), birth=g('f_birth_date'), id_card=g('f_id_card'), branch_id=g('f_branch_id'), position=g('f_position');
+  if(!full_name){ toast('err','กรอกชื่อ-นามสกุล'); return; }
+  if(!phone){ toast('err','กรอกเบอร์โทร'); return; }
+  if(!birth){ toast('err','เลือกวันเกิด'); return; }
+  const age=ageFrom(birth); if(age!=null && age<18){ toast('err','ผู้สมัครต้องอายุ 18 ปีขึ้นไป'); return; }
+  if(!/^\d{13}$/.test(id_card)){ toast('err','เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก'); return; }
+  if(!branch_id){ toast('err','เลือกสาขาที่สมัคร'); return; }
+  if(!position){ toast('err','เลือกตำแหน่งที่สมัคร'); return; }
+  if(!DOC_DATA.photo){ toast('err','แนบรูปถ่าย/เซลฟี่'); return; }
+  if(!DOC_DATA.idcard){ toast('err','แนบสำเนาบัตรประชาชน'); return; }
+
+  const btn=$('submitBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังส่ง…';
+  try{
+    await window.HR.submitApplication({
+      full_name, nickname:g('f_nickname'), phone, email:g('f_email'), birth_date:birth, address:g('f_address'),
+      id_card, branch_id, position, expected_salary:g('f_expected_salary'), start_available:g('f_start_available'), experience:g('f_experience'),
+      photo:DOC_DATA.photo, idcard:DOC_DATA.idcard, house:DOC_DATA.house, edu:DOC_DATA.edu, other:DOC_DATA.other,
+    });
+    $('formBody').style.display='none'; $('doneBody').style.display='block'; window.scrollTo(0,0);
+  }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ ลองใหม่'); btn.disabled=false; btn.textContent='ส่งใบสมัคร'; }
+};
+
+init();
+</script>
+</body>
+</html>

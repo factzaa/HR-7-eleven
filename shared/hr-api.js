@@ -196,6 +196,9 @@
         case 'hr_qa_items':          return await hrQaItems(p.folder_id, p.status);
         case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
         case 'hr_qa_item_update':    return await hrQaItemUpdate(p.id, p.data);
+        case 'hr_applicants_list':   return await hrApplicantsList(p.branch);
+        case 'hr_applicant_get':     return await hrApplicantGet(p.id);
+        case 'hr_applicant_stage':   return await hrApplicantStage(p.id, p.status);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2068,6 +2071,36 @@
     const { error } = await sb().from('qa_items').delete().eq('id', id);
     if (error) throw error;
     await logAct('ลบสินค้า QA', null, '#' + id);
+    return { ok: true };
+  }
+
+  // ---------- รับสมัครงาน (Recruitment) ----------
+  async function hrApplicantsList(branch) {
+    let q = sb().from('applicants').select('*').order('created_at', { ascending: false }).limit(500);
+    if (branch) q = q.eq('branch_id', branch);
+    const [aR, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    if (aR.error) throw aR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (aR.data || []).map(a => ({ ...a, branch_name: brName[a.branch_id] || a.branch_id || '—' }));
+    const counts = { new: 0, reviewing: 0, interview: 0, hired: 0, rejected: 0, unseen: 0 };
+    rows.forEach(r => { if (counts[r.status] != null) counts[r.status]++; if (!r.seen) counts.unseen++; });
+    return { ok: true, rows, counts };
+  }
+  async function hrApplicantGet(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const { data, error } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return { ok: false, error: 'ไม่พบผู้สมัคร' };
+    if (!data.seen) { try { await sb().from('applicants').update({ seen: true }).eq('id', id); } catch (e) {} }
+    const { data: br } = await sb().from('branches').select('name').eq('branch_id', data.branch_id || '').maybeSingle();
+    return { ok: true, applicant: { ...data, seen: true, branch_name: (br && br.name) || data.branch_id || '—' } };
+  }
+  async function hrApplicantStage(id, status) {
+    const allowed = ['new', 'reviewing', 'interview', 'hired', 'rejected'];
+    if (!id || !allowed.includes(status)) return { ok: false, error: 'ข้อมูลไม่ถูกต้อง' };
+    const { error } = await sb().from('applicants').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+    await logAct('เปลี่ยนสถานะผู้สมัคร', null, '#' + id + ' → ' + status);
     return { ok: true };
   }
 

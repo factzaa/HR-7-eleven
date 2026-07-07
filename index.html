@@ -81,7 +81,27 @@
       <span style="font-size:22px;color:#9ca3af">›</span>
     </a>
 
+    <button id="applyBtn" style="display:flex;align-items:center;gap:12px;margin:12px 16px 0;padding:14px 16px;border:1px solid #eceef1;border-radius:16px;background:#fff;cursor:pointer;width:calc(100% - 32px);text-align:left;color:var(--ink);box-shadow:0 4px 14px rgba(0,0,0,.04)">
+      <span style="width:42px;height:42px;border-radius:12px;background:#fff3e6;display:grid;place-items:center;font-size:21px;flex:none">📝</span>
+      <span style="flex:1"><span style="display:block;font-size:15px;font-weight:700">สมัครงาน (QR)</span><span style="display:block;font-size:12.5px;color:#6b7280;margin-top:1px">แสดง QR ให้ผู้สมัครสแกน กรอกใบสมัคร+แนบเอกสาร</span></span>
+      <span style="font-size:22px;color:#9ca3af">›</span>
+    </button>
+
     <div class="foot">กล้องและ GPS ทำงานบน HTTPS เท่านั้น</div>
+  </div>
+
+  <div class="ovl" id="applyOvl">
+    <div class="modal" style="text-align:center">
+      <button class="mx" id="applyClose">×</button>
+      <h2>สมัครงาน</h2>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:12px">ให้ผู้สมัครสแกน QR นี้ด้วยกล้องมือถือ เพื่อเปิดหน้ากรอกใบสมัคร</p>
+      <div id="qrBox" style="display:flex;justify-content:center;padding:14px;background:#fff;border:1px solid #eceef1;border-radius:14px;margin:0 auto;width:fit-content"></div>
+      <div id="applyUrl" style="font-size:12px;color:#6b7280;margin-top:10px;word-break:break-all"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button id="applyCopy" style="flex:1;padding:12px;border:1.5px solid #d7dbe0;border-radius:11px;background:#f6f7f9;font:inherit;font-weight:600;cursor:pointer">📋 คัดลอกลิงก์</button>
+        <a id="applyOpen" href="./apply/" style="flex:1;padding:12px;border:0;border-radius:11px;background:var(--brand,#00703c);color:#fff;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center">เปิดหน้าสมัคร</a>
+      </div>
+    </div>
   </div>
 
   <div class="ovl" id="leaveOvl">
@@ -415,6 +435,33 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   // init: badge + refresh เป็นระยะ
   setTimeout(function(){ refreshBadge(); }, 1500);
   setInterval(refreshBadge, 4*60*1000);
+})();
+</script>
+
+<!-- ===== สมัครงาน (QR) ===== -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+  var applyUrl = new URL('apply/', location.href).href;
+  var qrDone = false;
+  function openApply(){
+    document.getElementById('applyOvl').classList.add('show');
+    document.getElementById('applyUrl').textContent = applyUrl;
+    if(!qrDone && window.QRCode){
+      try{ new QRCode(document.getElementById('qrBox'), { text: applyUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M }); qrDone = true; }
+      catch(e){ document.getElementById('qrBox').innerHTML = '<div style="color:#e11f26;font-size:13px">สร้าง QR ไม่สำเร็จ — ใช้ลิงก์ด้านล่างแทน</div>'; }
+    }
+  }
+  function closeApply(){ document.getElementById('applyOvl').classList.remove('show'); }
+  var b=document.getElementById('applyBtn'); if(b) b.onclick=openApply;
+  var c=document.getElementById('applyClose'); if(c) c.onclick=closeApply;
+  var ov=document.getElementById('applyOvl'); if(ov) ov.addEventListener('click', function(e){ if(e.target===ov) closeApply(); });
+  var cp=document.getElementById('applyCopy');
+  if(cp) cp.onclick=function(){
+    (navigator.clipboard ? navigator.clipboard.writeText(applyUrl) : Promise.reject())
+      .then(function(){ cp.textContent='✓ คัดลอกแล้ว'; setTimeout(function(){ cp.textContent='📋 คัดลอกลิงก์'; },1800); })
+      .catch(function(){ var t=document.createElement('textarea'); t.value=applyUrl; document.body.appendChild(t); t.select(); try{document.execCommand('copy');}catch(_){}; t.remove(); cp.textContent='✓ คัดลอกแล้ว'; setTimeout(function(){ cp.textContent='📋 คัดลอกลิงก์'; },1800); });
+  };
 })();
 </script>
 

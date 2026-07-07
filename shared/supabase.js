@@ -596,6 +596,49 @@
     return { ok: true };
   }
 
+  // ---------- รับสมัครงาน (สาธารณะ) ----------
+  async function getPositions() {
+    const { data } = await sb.from('positions').select('name').eq('active', true).order('sort');
+    return (data || []).map(p => p.name);
+  }
+  async function getBranchesPublic() {
+    const { data } = await sb.from('branches').select('branch_id,name').order('branch_id');
+    return data || [];
+  }
+  async function submitApplication(p) {
+    p = p || {};
+    if (!p.full_name || !String(p.full_name).trim()) throw new Error('กรอกชื่อ-นามสกุล');
+    if (!p.phone || !String(p.phone).trim()) throw new Error('กรอกเบอร์โทร');
+    if (!p.branch_id) throw new Error('เลือกสาขาที่สมัคร');
+    if (!p.position) throw new Error('เลือกตำแหน่งที่สมัคร');
+    if (p.id_card && !/^\d{13}$/.test(String(p.id_card).trim())) throw new Error('เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก');
+    const base = 'applicants/' + (String(p.id_card || 'x').trim() || 'x') + '_' + Date.now();
+    const up = async (val, name) => val ? await uploadPhoto('employee-docs', base + '_' + name + '.jpg', val) : null;
+    const row = {
+      full_name: String(p.full_name).trim(),
+      nickname: (p.nickname || '').trim() || null,
+      phone: String(p.phone).trim(),
+      email: (p.email || '').trim() || null,
+      birth_date: p.birth_date || null,
+      address: (p.address || '').trim() || null,
+      id_card: (p.id_card || '').trim() || null,
+      branch_id: p.branch_id || null,
+      position: p.position || null,
+      expected_salary: (p.expected_salary === '' || p.expected_salary == null) ? null : Number(p.expected_salary),
+      start_available: p.start_available || null,
+      experience: (p.experience || '').trim() || null,
+      photo_url: await up(p.photo, 'photo'),
+      idcard_url: await up(p.idcard, 'idcard'),
+      house_url: await up(p.house, 'house'),
+      edu_url: await up(p.edu, 'edu'),
+      other_url: await up(p.other, 'other'),
+      status: 'new',
+    };
+    const { error } = await sb.from('applicants').insert(row);
+    if (error) throw error;
+    return { ok: true };
+  }
+
   // ---------- รับทราบ/ยอมรับระเบียบการทำงาน ----------
   async function acceptRules(empId, version) {
     const emp = await lookupEmployee(empId);
@@ -1139,5 +1182,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();
