@@ -2728,7 +2728,10 @@ $('rcClose') && ($('rcClose').onclick=closeApplicant);
 $('rcOverlay') && $('rcOverlay').addEventListener('click', e=>{ if(e.target===$('rcOverlay')) closeApplicant(); });
 
 // ========== งาน ผจก. (Manager Tasks) ==========
-let MT_ROWS=[], MT_CUR=null, MT_PHOTOS=[], MT_POLL=null, MTA_PHOTOS=[];
+let MT_ROWS=[], MT_CUR=null, MT_PHOTOS=[], MT_POLL=null, MTA_PHOTOS=[], MT_CH=null, MT_BOARD_CH=null, MT_BOARD_T=null;
+function mtSb(){ return (window.HR && window.HR.sb) ? window.HR.sb : null; }
+function mtUnsub(){ if(MT_CH){ try{ mtSb() && mtSb().removeChannel(MT_CH); }catch(e){} MT_CH=null; } }
+function mtBoardDebounced(){ clearTimeout(MT_BOARD_T); MT_BOARD_T=setTimeout(()=>{ const v=$('view_mgrtasks'); if(v && v.style.display!=='none') loadMtasks(); }, 800); }
 const MT_STAGES=[
   {key:'todo',  label:'🆕 งานใหม่/ค้าง', color:'#0ea5e9'},
   {key:'doing', label:'🔧 กำลังทำ',       color:'#a06515'},
@@ -2754,6 +2757,14 @@ async function loadMtasks(){
   let r; try{ r=await post({ action:'hr_mtask_list', password:pwd, branch:br }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   MT_ROWS=r.rows||[]; renderMtBoard();
+  // Realtime บอร์ด: มีงาน/สถานะเปลี่ยน → รีเฟรชอัตโนมัติ
+  if(!MT_BOARD_CH && mtSb()){
+    try{
+      const opts={ event:'*', schema:'public', table:'mgr_tasks' };
+      if(MGR_MODE) opts.filter='branch_id=eq.'+MGR_BRANCH;
+      MT_BOARD_CH=mtSb().channel('mtboard').on('postgres_changes', opts, ()=>mtBoardDebounced()).subscribe();
+    }catch(e){}
+  }
 }
 function renderMtBoard(){
   const box=$('mt_board'); if(!box) return;
@@ -2787,8 +2798,14 @@ async function openMtask(id){
   renderMtDetail();
   await refreshMtFeed();
   $('mtOverlay').classList.add('show');
+  // Realtime ไทม์ไลน์: มีข้อความ/อัปเดตใหม่ → เด้งทันที
+  mtUnsub();
+  if(mtSb()){
+    try{ MT_CH=mtSb().channel('mtfeed:'+MT_CUR.id).on('postgres_changes', { event:'INSERT', schema:'public', table:'mgr_task_feed', filter:'task_id=eq.'+MT_CUR.id }, ()=>refreshMtFeed()).subscribe(); }catch(e){}
+  }
+  // fallback poll (เผื่อ realtime ไม่เปิด) — ช้าลงเพราะมี realtime แล้ว
   if(MT_POLL) clearInterval(MT_POLL);
-  MT_POLL=setInterval(refreshMtFeed, 4000);
+  MT_POLL=setInterval(refreshMtFeed, 12000);
 }
 function renderMtDetail(){
   const t=MT_CUR; if(!t) return;
@@ -2865,7 +2882,7 @@ async function mtStage(status){
   if(r.ok){ MT_CUR.status=status; renderMtDetail(); refreshMtFeed(); loadMtasks(); toast('ok','อัปเดตสถานะแล้ว'); }
   else toast('err', r.error||'ไม่สำเร็จ');
 }
-function closeMtask(){ $('mtOverlay').classList.remove('show'); if(MT_POLL){ clearInterval(MT_POLL); MT_POLL=null; } MT_CUR=null; }
+function closeMtask(){ $('mtOverlay').classList.remove('show'); if(MT_POLL){ clearInterval(MT_POLL); MT_POLL=null; } mtUnsub(); MT_CUR=null; }
 $('mtClose') && ($('mtClose').onclick=closeMtask);
 $('mtOverlay') && $('mtOverlay').addEventListener('click', e=>{ if(e.target===$('mtOverlay')) closeMtask(); });
 // มอบหมายงาน (HR)
