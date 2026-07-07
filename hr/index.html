@@ -3376,11 +3376,11 @@ function renderSchedule(){
       let inner;
       if(MGR_MODE){
         // ผจก.: ดูอย่างเดียว แก้ไขไม่ได้
-        if(!arr.length) inner = '<span style="color:#e0803a;font-weight:700;font-size:13px">OFF</span>';
+        if(!arr.length) inner = '<span style="color:#dc2626;font-weight:700;font-size:13px">OFF</span>';
         else inner = arr.map(c=>`<div style="font-weight:700;font-size:14px;${c.is_cover?'color:#ea580c':''}">${esc(shiftCodeOf(c.shift_id))}${c.is_cover?('<div style="font-size:10px;color:#ea580c;font-weight:600">→'+esc(c.branch_id)+'</div>'):''}</div>`).join('');
       } else if(!arr.length){
         // ยังไม่มีกะ → แสดง "OFF" (ยังกดเลือกกะเพื่อจัดเวรได้)
-        inner = `<select onchange="if(this.value)scAddShift('${esc(e.emp_id)}','${d}',this.value)" title="OFF — เลือกกะเพื่อจัดเวร" style="${_selCss};width:54px;font-weight:700;text-align:center;color:#e0803a">${_optOff}</select>`;
+        inner = `<select onchange="if(this.value)scAddShift('${esc(e.emp_id)}','${d}',this.value)" title="OFF — เลือกกะเพื่อจัดเวร" style="${_selCss};width:54px;font-weight:700;text-align:center;color:#dc2626">${_optOff}</select>`;
       } else {
         inner = arr.map(c=>{
           const cover = !!c.is_cover;
@@ -3498,7 +3498,7 @@ function buildScheduleCanvas(){
         const covers=arr.filter(cc=>cc.is_cover).map(cc=>cc.branch_id);
         x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(codes, cx+colW/2, y+rowH/2 - (covers.length?7:0));
         if(covers.length){ x.fillStyle='#ea580c'; x.font='400 9px Anuphan,sans-serif'; x.fillText('→'+covers.join(','), cx+colW/2, y+rowH/2+11); }
-      } else { x.fillStyle='#e0803a'; x.font='700 12px Anuphan,sans-serif'; x.fillText('OFF', cx+colW/2, y+rowH/2); }
+      } else { x.fillStyle='#dc2626'; x.font='700 12px Anuphan,sans-serif'; x.fillText('OFF', cx+colW/2, y+rowH/2); }
     });
   });
   x.strokeStyle='#e5e7eb'; x.lineWidth=1;
