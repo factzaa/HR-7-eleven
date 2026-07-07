@@ -43,7 +43,7 @@
   .navgrp-btn{padding:13px 14px; font-size:14px; font-weight:500; color:var(--muted); cursor:pointer; border:0; border-bottom:3px solid transparent; background:none; white-space:nowrap; display:flex; align-items:center; gap:5px;}
   .navgrp-btn .caret{font-size:10px; opacity:.7;}
   .navgrp-btn.on{color:var(--green-d); border-bottom-color:var(--green); font-weight:600;}
-  .navgrp-menu{position:absolute; top:100%; left:0; background:#fff; border:1px solid var(--line); border-radius:0 0 12px 12px; box-shadow:0 10px 26px rgba(0,0,0,.13); padding:6px; display:none; z-index:30; min-width:210px;}
+  .navgrp-menu{position:fixed; background:#fff; border:1px solid var(--line); border-radius:0 0 12px 12px; box-shadow:0 10px 26px rgba(0,0,0,.16); padding:6px; display:none; z-index:70; min-width:210px; max-height:78vh; overflow-y:auto;}
   .navgrp.open .navgrp-menu{display:block;}
   .navgrp-menu .tab{display:flex; width:100%; text-align:left; padding:10px 12px; border:0; border-radius:8px; white-space:normal;}
   .navgrp-menu .tab:hover{background:#f6f7f9;}
@@ -84,6 +84,11 @@
 
   .tablewrap{overflow-x:auto;}
   table{width:100%; border-collapse:collapse; font-size:14px;}
+  /* ตารางจัดกะ: ล็อกแถวหัว (วัน) + คอลัมน์แรก (ชื่อ) แบบ freeze pane */
+  .sc-freeze{overflow:auto; max-height:72vh;}
+  #scTable thead th{position:sticky; top:0; z-index:2; background:#fff; box-shadow:inset 0 -1px 0 var(--line);}
+  #scTable tbody td:first-child{position:sticky; left:0; z-index:1; background:#fff; box-shadow:inset -1px 0 0 var(--line);}
+  #scTable thead th:first-child{left:0; z-index:4; box-shadow:inset -1px -1px 0 var(--line);}
   thead th{background:#fafbf9; text-align:left; font-weight:600; font-size:12px; color:var(--muted); letter-spacing:.4px; padding:11px 14px; border-bottom:1px solid var(--line); text-transform:uppercase; white-space:nowrap;}
   tbody td{padding:11px 14px; border-bottom:1px solid var(--line); vertical-align:middle;}
   tbody tr{transition:background .12s;}
@@ -272,7 +277,7 @@
     .navgrp{flex-direction:column; width:100%;}
     .navgrp-btn{width:100%; padding:11px 18px; background:#eef4f0; color:var(--green-d); font-weight:700; border-bottom:1px solid var(--line); border-radius:0;}
     .navgrp-btn .caret{display:none;}
-    .navgrp-menu{position:static; display:block; box-shadow:none; border:0; border-radius:0; padding:0; min-width:0;}
+    .navgrp-menu{position:static; display:block; box-shadow:none; border:0; border-radius:0; padding:0; min-width:0; max-height:none; overflow:visible;}
     .navgrp-menu .tab{border-bottom:1px solid var(--line); border-radius:0; padding:13px 26px;}
     .navgrp-menu .tab.active{border-left:3px solid var(--green);}
 
@@ -915,7 +920,7 @@
     <div style="font-size:12.5px; color:var(--muted); margin-top:8px">พิมพ์โค้ดกะในช่อง (เช่น 1/2/3/D) แล้วกด Enter · ช่องว่าง = วันหยุด · คลิก "ไปแทน" ใต้ช่องเพื่อจัดไปสาขาอื่น <span style="color:#ea580c; font-weight:600">(ช่องสีส้ม)</span> · ดู/แก้โค้ดได้ที่แท็บ "ตั้งค่ากะ"</div>
   </div>
   <div id="sc_summary"></div>
-  <div class="card"><div class="tablewrap"><table id="scTable" style="min-width:760px">
+  <div class="card"><div class="tablewrap sc-freeze"><table id="scTable" style="min-width:760px">
     <thead id="scHead"></thead><tbody id="scBody"></tbody>
   </table></div><div class="empty" id="scEmpty" style="display:none">ยังไม่มีพนักงาน</div></div>
 </div>
@@ -3329,7 +3334,7 @@ function buildGroupedNav(){
     btn.innerHTML='<span class="tabicon">'+g.icon+'</span>'+g.label+'<span class="caret">▾</span>';
     const menu=document.createElement('div'); menu.className='navgrp-menu';
     g.tabs.forEach(k=>{ const t=$('tab_'+k); if(t){ menu.appendChild(t); used.add(k); } });
-    btn.onclick=(e)=>{ e.stopPropagation(); const wasOpen=grp.classList.contains('open'); closeAllNavGroups(); if(!wasOpen) grp.classList.add('open'); };
+    btn.onclick=(e)=>{ e.stopPropagation(); const wasOpen=grp.classList.contains('open'); closeAllNavGroups(); if(!wasOpen){ grp.classList.add('open'); const rc=btn.getBoundingClientRect(); menu.style.top=rc.bottom+'px'; menu.style.left=Math.max(6, Math.min(rc.left, (window.innerWidth||360)-220))+'px'; } };
     grp.appendChild(btn); grp.appendChild(menu); return grp;
   });
   // แท็บที่ไม่ได้อยู่กลุ่มไหน (กันตกหล่น) — ต่อท้ายแบบเดี่ยว
