@@ -2566,14 +2566,81 @@ async function openApplicant(id){
   h+='<div style="margin-top:10px;font-weight:600;font-size:13px">📎 เอกสารแนบ</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">';
   h+=(docs.map(([label,url])=>url?`<a href="${esc(url)}" target="_blank" style="text-align:center;text-decoration:none;color:inherit"><img src="${esc(url)}" style="width:74px;height:74px;object-fit:cover;border-radius:9px;border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted);margin-top:2px">${label}</div></a>`:'').join('')) || '<div style="color:var(--muted);font-size:12px">— ไม่มีเอกสาร —</div>';
   h+='</div>';
+  h+='<div id="rc_actionbox" style="margin-top:12px"></div>';
   $('rc_body').innerHTML=h;
-  $('rc_foot').innerHTML='<span style="font-size:12px;color:var(--muted);align-self:center;margin-right:auto">ย้ายสถานะ →</span>'+RC_STAGES.filter(s=>s.key!==a.status).map(s=>'<button class="btn btn-sec btn-sm" data-rcstage="'+s.key+'">'+s.label+'</button>').join('');
-  $('rc_foot').querySelectorAll('[data-rcstage]').forEach(b=>b.onclick=async()=>{
-    const st=b.dataset.rcstage;
-    const r2=await post({ action:'hr_applicant_stage', password:pwd, id:a.id, status:st });
-    if(r2.ok){ toast('ok','เปลี่ยนสถานะแล้ว'); closeApplicant(); loadRecruit(); } else toast('err', r2.error||'ไม่สำเร็จ');
-  });
+  renderRcActions(a);
   $('rcOverlay').classList.add('show');
+}
+function renderRcActions(a){
+  const btns=[];
+  if(a.status!=='hired' && a.status!=='rejected'){
+    if(a.status==='new') btns.push('<button class="btn btn-sec btn-sm" data-rcact="reviewing">🔍 รอพิจารณา</button>');
+    btns.push('<button class="btn btn-sec btn-sm" data-rcact="interview">📅 นัดสัมภาษณ์</button>');
+    btns.push('<button class="btn btn-pri btn-sm" data-rcact="hire">✅ รับเริ่มงาน</button>');
+    btns.push('<button class="btn btn-warn btn-sm" data-rcact="reject">❌ ไม่ผ่าน</button>');
+  } else {
+    btns.push('<button class="btn btn-sec btn-sm" data-rcact="reviewing">↩ กลับไปรอพิจารณา</button>');
+  }
+  $('rc_foot').innerHTML=btns.join('');
+  $('rc_foot').querySelectorAll('[data-rcact]').forEach(b=>b.onclick=()=>rcAct(b.dataset.rcact, a));
+}
+async function rcAct(act, a){
+  const box=$('rc_actionbox');
+  if(act==='reviewing'){
+    const r=await post({ action:'hr_applicant_stage', password:pwd, id:a.id, status:'reviewing' });
+    if(r.ok){ toast('ok','ย้ายไปรอพิจารณา'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ไม่สำเร็จ');
+    return;
+  }
+  if(act==='reject'){
+    const reason=prompt('เหตุผลที่ไม่ผ่านเกณฑ์ (เก็บไว้ภายใน · ผู้สมัครไม่เห็น):'); if(reason===null) return;
+    const r=await post({ action:'hr_applicant_reject', password:pwd, id:a.id, reason });
+    if(r.ok){ toast('ok','บันทึกไม่ผ่านแล้ว'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ไม่สำเร็จ');
+    return;
+  }
+  if(act==='interview'){
+    box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div style="font-weight:700;margin-bottom:8px">📅 นัดสัมภาษณ์</div>'
+      +'<div class="field"><label>วัน-เวลาสัมภาษณ์</label><input id="iv_at" type="datetime-local"></div>'
+      +'<div class="field"><label>สถานที่ / หมายเหตุ</label><input id="iv_note" type="text" placeholder="เช่น ที่สาขา... แต่งกายสุภาพ"></div>'
+      +'<button class="btn btn-pri btn-sm" id="iv_save">บันทึกนัด + ร่างข้อความ</button><div id="iv_draft" style="margin-top:10px"></div></div>';
+    $('iv_save').onclick=async()=>{
+      const at=$('iv_at').value; if(!at){ toast('err','เลือกวัน-เวลา'); return; }
+      const note=$('iv_note').value.trim();
+      const r=await post({ action:'hr_applicant_interview', password:pwd, id:a.id, interview_at:new Date(at).toISOString(), note });
+      if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
+      toast('ok','นัดสัมภาษณ์แล้ว');
+      const msg=rcDraftMsg(a, at, note);
+      $('iv_draft').innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:4px">ข้อความส่งผู้สมัคร (คัดลอกไปส่งทางโทร/LINE):</div>'
+        +'<textarea id="iv_msg" style="width:100%;min-height:130px;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">'+esc(msg)+'</textarea>'
+        +'<button class="btn btn-sec btn-sm" id="iv_copy" style="margin-top:6px">📋 คัดลอกข้อความ</button>';
+      $('iv_copy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('iv_msg').value); }catch(e){ $('iv_msg').select(); try{document.execCommand('copy');}catch(_){} } toast('ok','คัดลอกแล้ว'); };
+      loadRecruit();
+    };
+    return;
+  }
+  if(act==='hire'){
+    const opts=(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(b.branch_id===a.branch_id?' selected':'')+'>'+esc(b.name)+'</option>').join('');
+    box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div style="font-weight:700;margin-bottom:8px">✅ รับเข้าทำงาน</div>'
+      +'<div class="field"><label>สาขาที่รับเข้า</label><select id="hire_branch">'+opts+'</select></div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">ระบบจะสร้างพนักงานใหม่ + รหัสชั่วคราว <b>NEW-xxxxx</b> (เปลี่ยนภายหลังได้ที่แท็บพนักงาน) และคัดลอกเอกสารให้อัตโนมัติ</div>'
+      +'<button class="btn btn-pri btn-sm" id="hire_go">ยืนยันรับเข้าทำงาน</button></div>';
+    $('hire_go').onclick=async()=>{
+      if(!confirm('ยืนยันรับ '+a.full_name+' เข้าทำงาน?')) return;
+      $('hire_go').disabled=true; $('hire_go').innerHTML='<span class="spin"></span>';
+      const r=await post({ action:'hr_applicant_hire', password:pwd, id:a.id, branch_id:$('hire_branch').value });
+      if(r.ok){ toast('ok','รับเข้าทำงานแล้ว · รหัส '+r.emp_id); closeApplicant(); loadRecruit(); if(typeof loadAll==='function') await loadAll(); }
+      else { toast('err', r.error||'ไม่สำเร็จ'); $('hire_go').disabled=false; $('hire_go').textContent='ยืนยันรับเข้าทำงาน'; }
+    };
+    return;
+  }
+}
+function rcDraftMsg(a, at, note){
+  const d=new Date(at);
+  const dateTh=d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const timeTh=d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+  return 'เรียนคุณ '+a.full_name+'\n\nบริษัทขอเชิญท่านเข้าสัมภาษณ์งานตำแหน่ง "'+(a.position||'-')+'"'
+    +'\n📅 วันที่ '+dateTh+'\n🕐 เวลา '+timeTh+' น.'
+    +(note?('\n📍 '+note):'')
+    +'\n\nกรุณานำสำเนาบัตรประชาชน วุฒิการศึกษา และเอกสารที่เกี่ยวข้องมาด้วย\nสอบถามเพิ่มเติมติดต่อกลับตามเบอร์นี้ได้เลย ขอบคุณค่ะ';
 }
 function closeApplicant(){ $('rcOverlay').classList.remove('show'); }
 $('rcClose') && ($('rcClose').onclick=closeApplicant);
@@ -4532,20 +4599,21 @@ async function loadNotifications(){
   const r = await post({ action:'hr_notifications', password:pwd, branch:dbr, date:ddt });
   if(!r.ok) return;
   const c = r.counts;
-  const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster + (c.pending_profiles||0);
+  const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster + (c.pending_profiles||0) + (c.new_applicants||0);
   if(!total){ $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px;color:#16a34a">🔔 ไม่มีรายการที่ต้องดำเนินการวันนี้</div>`; return; }
   const chip=(n,label,color)=> n>0?`<span class="lvl-pill" style="background:${color}"><span class="lvl-dot"></span> ${label} ${n}</span>`:'';
   const list=(title,arr,fmt)=> arr.length?`<div style="margin-top:10px"><div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:3px">${title}</div>${arr.map(fmt).join('')}</div>`:'';
   $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <b style="font-size:15px">🔔 แจ้งเตือน</b>
+      ${chip(c.new_applicants||0,'🧑‍💼 ใบสมัครใหม่','#0891b2')}
       ${chip(c.pending_leaves,'ใบลารออนุมัติ','#d97706')}
       ${chip(c.pending_profiles||0,'ข้อมูลรอตรวจ','#7c3aed')}
       ${chip(c.absent_roster,'ขาด/ยังไม่มา','#b91c1c')}
       ${chip(c.late_today,'มาสายวันนี้','#ea580c')}
       ${chip(c.not_checked_out,'ลืมกดออก (เลยเวลาเลิก)','#0ea5e9')}
     </div>
-    ${list('ข้อมูล/เอกสารพนักงานรอตรวจ (ไปแท็บ "ข้อมูลรอตรวจ")', r.pending_profiles||[], p=>`<div style="font-size:13px;padding:2px 0">• ${esc(p.name)} (${esc(p.emp_id)})</div>`)}
+    ${list('🧑‍💼 ใบสมัครงานใหม่ (ไปแท็บ "รับสมัครงาน")', r.new_applicants||[], a=>`<div style="font-size:13px;padding:2px 0;cursor:pointer" onclick="showTab('recruit')">• ${esc(a.full_name)}${a.position?(' · '+esc(a.position)):''}</div>`)}
     ${list('ใบลารออนุมัติ (ไปแท็บ "ลา & วันหยุด" เพื่ออนุมัติ)', r.pending_leaves, l=>`<div style="font-size:13px;padding:2px 0">• ${esc(l.emp_name)} · ${esc(l.type||'')} ${beDate(l.start_date)}${l.end_date&&l.end_date!==l.start_date?(' – '+beDate(l.end_date)):''} (${l.days} วัน)</div>`)}
     ${list('ขาด/ยังไม่มาตามตารางวันนี้', r.absent_roster, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · กะ ${esc(shiftName(a.shift_id))}</div>`)}
     ${list('ลืมกดออกงาน (เลยเวลาเลิกกะแล้ว)', r.not_checked_out, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · เข้า ${esc(a.check_in)}${a.end_time?' · เลิก '+esc(a.end_time):''}</div>`)}

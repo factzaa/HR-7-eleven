@@ -199,6 +199,9 @@
         case 'hr_applicants_list':   return await hrApplicantsList(p.branch);
         case 'hr_applicant_get':     return await hrApplicantGet(p.id);
         case 'hr_applicant_stage':   return await hrApplicantStage(p.id, p.status);
+        case 'hr_applicant_interview': return await hrApplicantInterview(p.id, p.interview_at, p.note);
+        case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason);
+        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -1193,9 +1196,15 @@
       leave_id: l.leave_id, emp_id: l.emp_id, emp_name: empName[l.emp_id] || l.emp_id, type: l.type,
       start_date: l.start_date, end_date: l.end_date, response: l.response, response_msg: l.response_msg, proposal_msg: l.proposal_msg,
     }));
+    // ใบสมัครงานใหม่ (กันตารางยังไม่ถูกสร้าง)
+    let new_applicants = [];
+    try {
+      const { data: appR } = await sb().from('applicants').select('id,full_name,position,branch_id,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(30);
+      new_applicants = (appR || []).filter(a => !branch || a.branch_id === branch).map(a => ({ id: a.id, full_name: a.full_name, position: a.position || '', created_at: a.created_at }));
+    } catch (e) { /* ตาราง applicants ยังไม่มี */ }
     return {
-      ok: true, pending_leaves, not_checked_out, late_today, absent_roster, pending_profiles, leave_responses,
-      counts: { pending_leaves: pending_leaves.length, not_checked_out: not_checked_out.length, late_today: late_today.length, absent_roster: absent_roster.length, pending_profiles: pending_profiles.length, leave_responses: leave_responses.length },
+      ok: true, pending_leaves, not_checked_out, late_today, absent_roster, pending_profiles, leave_responses, new_applicants,
+      counts: { pending_leaves: pending_leaves.length, not_checked_out: not_checked_out.length, late_today: late_today.length, absent_roster: absent_roster.length, pending_profiles: pending_profiles.length, leave_responses: leave_responses.length, new_applicants: new_applicants.length },
     };
   }
 
@@ -2102,6 +2111,52 @@
     if (error) throw error;
     await logAct('เปลี่ยนสถานะผู้สมัคร', null, '#' + id + ' → ' + status);
     return { ok: true };
+  }
+  async function hrApplicantInterview(id, interviewAt, note) {
+    if (!id || !interviewAt) return { ok: false, error: 'ระบุวัน-เวลาสัมภาษณ์' };
+    const { error } = await sb().from('applicants').update({
+      status: 'interview', interview_at: interviewAt, interview_note: note || null, updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+    await logAct('นัดสัมภาษณ์ผู้สมัคร', null, '#' + id + ' · ' + interviewAt);
+    return { ok: true };
+  }
+  async function hrApplicantReject(id, reason) {
+    if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const { error } = await sb().from('applicants').update({
+      status: 'rejected', reject_reason: reason || null, updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+    await logAct('ปฏิเสธผู้สมัคร', null, '#' + id + (reason ? (' · ' + reason) : ''));
+    return { ok: true };
+  }
+  // รับเข้าทำงาน → เจนรหัสชั่วคราว NEW-xxxxx + สร้างพนักงาน + ย้ายเอกสาร
+  async function hrApplicantHire(id, branchId) {
+    if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const { data: a } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
+    if (!a) return { ok: false, error: 'ไม่พบผู้สมัคร' };
+    if (a.hired_emp_id) return { ok: true, emp_id: a.hired_emp_id, already: true };
+    const branch = branchId || a.branch_id;
+    if (!branch) return { ok: false, error: 'เลือกสาขาที่รับเข้า' };
+    // หารหัสชั่วคราวถัดไป NEW-00001
+    const { data: exist } = await sb().from('employees').select('emp_id').like('emp_id', 'NEW-%');
+    let mx = 0; (exist || []).forEach(e => { const n = parseInt(String(e.emp_id).replace('NEW-', ''), 10); if (!isNaN(n) && n > mx) mx = n; });
+    const code = 'NEW-' + String(mx + 1).padStart(5, '0');
+    const emp = {
+      emp_id: code, name: a.full_name, nickname: a.nickname || null,
+      phone: a.phone || null, address: a.address || null, id_card: a.id_card || null,
+      branch_id: branch, active: true, start_date: bkkToday(),
+      photo_url: a.photo_url || null, idcard_url: a.idcard_url || null,
+      house_url: a.house_url || null, edu_url: a.edu_url || null,
+    };
+    const { error: e1 } = await sb().from('employees').insert(emp);
+    if (e1) throw e1;
+    const { error: e2 } = await sb().from('applicants').update({
+      status: 'hired', hired_emp_id: code, updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (e2) throw e2;
+    await logAct('รับผู้สมัครเข้าทำงาน', code, a.full_name + ' · สาขา ' + branch);
+    return { ok: true, emp_id: code };
   }
 
   // แก้ไขรายละเอียดสินค้า QA (ชื่อ/บาร์โค้ด/ขนาด/จำนวน/หมดอายุ/โซน/สถานะ)
