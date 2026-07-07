@@ -149,6 +149,14 @@
   .modal-b{padding:18px 22px; max-height:calc(100dvh - 200px); overflow-y:auto;}
   .modal-f{padding:13px 22px; border-top:1px solid var(--line); display:flex; gap:9px; justify-content:flex-end; background:#fafbf9; flex-wrap:wrap;}
 
+  /* บอร์ด Kanban — เดสก์ท็อปเลื่อนแนวนอน · มือถือเรียงลงเต็มจอ (ไม่ต้องเลื่อนซ้ายขวา) */
+  .kanban{display:flex; gap:10px; overflow-x:auto; padding-bottom:8px;}
+  .kanban-col{flex:0 0 250px; min-width:250px; background:#f6f7f9; border-radius:12px; padding:8px;}
+  @media(max-width:640px){
+    .kanban{flex-direction:column; overflow-x:visible;}
+    .kanban-col{flex:1 1 auto; min-width:0; width:100%;}
+  }
+
   .section{margin-bottom:16px;}
   .section + .section{padding-top:14px; border-top:1px dashed var(--line);}
   .section h3{font-size:12px; color:var(--green-d); font-weight:600; letter-spacing:.6px; text-transform:uppercase; margin-bottom:9px;}
@@ -2631,9 +2639,9 @@ function renderRcBoard(){
     if(q && !((a.full_name+' '+(a.phone||'')+' '+(a.position||'')+' '+(a.nickname||'')).toLowerCase().includes(q))) return false;
     return true;
   });
-  box.innerHTML='<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px">'+RC_STAGES.map(st=>{
+  box.innerHTML='<div class="kanban">'+RC_STAGES.map(st=>{
     const cards=rows.filter(a=>a.status===st.key);
-    return '<div style="flex:0 0 240px;min-width:240px;background:#f6f7f9;border-radius:12px;padding:8px">'
+    return '<div class="kanban-col">'
       +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
       +(cards.length?cards.map(a=>rcCard(a)).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
       +'</div>';
@@ -2831,9 +2839,9 @@ function renderMtBoard(){
   const box=$('mt_board'); if(!box) return;
   const bf = MGR_MODE?'':($('mt_branch')?$('mt_branch').value:'');
   const rows=MT_ROWS.filter(t=>!bf||String(t.branch_id)===String(bf));
-  box.innerHTML='<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px">'+MT_STAGES.map(st=>{
+  box.innerHTML='<div class="kanban">'+MT_STAGES.map(st=>{
     const cards=rows.filter(t=>t.status===st.key).sort((a,b)=>((b.priority==='urgent'?1:0)-(a.priority==='urgent'?1:0)));
-    return '<div style="flex:0 0 250px;min-width:250px;background:#f6f7f9;border-radius:12px;padding:8px">'
+    return '<div class="kanban-col">'
       +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
       +(cards.length?cards.map(mtCard).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
       +'</div>';
@@ -3175,6 +3183,13 @@ $('mdr_back') && ($('mdr_back').onclick=()=>mdrShowReport(false));
 $('mrp_go') && ($('mrp_go').onclick=loadMdailyReport);
 $('mrp_csv') && ($('mrp_csv').onclick=mdrExportCsv);
 // ---- HR: จัดการเทมเพลตงานประจำวัน (ในแท็บตั้งค่ากะ) ----
+let MDD_ROWS=[];
+async function mddMove(i, dir){
+  const j=i+dir; if(j<0||j>=MDD_ROWS.length) return;
+  const a=MDD_ROWS.slice(); const t=a[i]; a[i]=a[j]; a[j]=t;
+  await Promise.all(a.map((d,idx)=>post({ action:'hr_mdaily_defs_save', password:pwd, data:{ id:d.id, title:d.title, min_photos:d.min_photos, sort:idx, active:d.active } })));
+  loadMdailyDefs();
+}
 async function loadMdailyDefs(){
   const box=$('mdd_list'); if(!box) return;
   if($('mdd_add') && !$('mdd_add').dataset.wired){
@@ -3189,10 +3204,14 @@ async function loadMdailyDefs(){
   const r=await post({ action:'hr_mdaily_defs_list', password:pwd });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   if(!r.rows.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีรายการ</div>'; return; }
-  box.innerHTML=r.rows.map(d=>'<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'
+  MDD_ROWS=r.rows;
+  box.innerHTML=r.rows.map((d,i)=>'<div style="display:flex;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'
+    +'<div style="display:flex;flex-direction:column;gap:1px"><button class="btn btn-sec btn-sm" style="padding:0 6px;line-height:1.4"'+(i===0?' disabled':'')+' data-mddup="'+i+'">▲</button><button class="btn btn-sec btn-sm" style="padding:0 6px;line-height:1.4"'+(i===r.rows.length-1?' disabled':'')+' data-mdddown="'+i+'">▼</button></div>'
     +'<span style="flex:1;font-size:14px'+(d.active===false?';color:var(--muted);text-decoration:line-through':'')+'">'+esc(d.title)+(d.min_photos>0?' <span style="font-size:11px;color:var(--muted)">📷'+d.min_photos+'</span>':'')+'</span>'
     +'<button class="btn btn-sec btn-sm" data-mddtog="'+d.id+'">'+(d.active===false?'เปิด':'ปิด')+'</button>'
     +'<button class="btn btn-danger btn-sm" data-mdddel="'+d.id+'">ลบ</button></div>').join('');
+  box.querySelectorAll('[data-mddup]').forEach(b=>b.onclick=()=>mddMove(Number(b.dataset.mddup),-1));
+  box.querySelectorAll('[data-mdddown]').forEach(b=>b.onclick=()=>mddMove(Number(b.dataset.mdddown),1));
   box.querySelectorAll('[data-mddtog]').forEach(b=>b.onclick=async()=>{ const d=r.rows.find(x=>String(x.id)===b.dataset.mddtog); if(!d)return; const r2=await post({action:'hr_mdaily_defs_save',password:pwd,data:{id:d.id,title:d.title,min_photos:d.min_photos,sort:d.sort,active:(d.active===false)}}); if(r2.ok) loadMdailyDefs(); else toast('err',r2.error||'ไม่สำเร็จ'); });
   box.querySelectorAll('[data-mdddel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบรายการนี้?'))return; const r2=await post({action:'hr_mdaily_defs_delete',password:pwd,id:Number(b.dataset.mdddel)}); if(r2.ok){ toast('ok','ลบแล้ว'); loadMdailyDefs(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
 }
