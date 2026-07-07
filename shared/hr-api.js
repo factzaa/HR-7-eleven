@@ -202,6 +202,9 @@
         case 'hr_applicant_interview': return await hrApplicantInterview(p.id, p.interview_at, p.note);
         case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason);
         case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id);
+        case 'hr_positions_list':    return await hrPositionsList();
+        case 'hr_position_save':     return await hrPositionSave(p.data);
+        case 'hr_position_delete':   return await hrPositionDelete(p.id);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2157,6 +2160,28 @@
     if (e2) throw e2;
     await logAct('รับผู้สมัครเข้าทำงาน', code, a.full_name + ' · สาขา ' + branch);
     return { ok: true, emp_id: code };
+  }
+  // ---------- ตำแหน่งงาน (สำหรับหน้าสมัคร) ----------
+  async function hrPositionsList() {
+    const { data, error } = await sb().from('positions').select('*').order('sort').order('id');
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+  async function hrPositionSave(d) {
+    d = d || {};
+    if (!d.name || !String(d.name).trim()) return { ok: false, error: 'กรอกชื่อตำแหน่ง' };
+    const row = { name: String(d.name).trim(), active: d.active !== false, sort: Number(d.sort) || 0 };
+    if (d.id) { const { error } = await sb().from('positions').update(row).eq('id', d.id); if (error) throw error; }
+    else { const { error } = await sb().from('positions').insert(row); if (error) throw error; }
+    await logAct('บันทึกตำแหน่งงาน', null, row.name);
+    return { ok: true };
+  }
+  async function hrPositionDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุตำแหน่ง' };
+    const { error } = await sb().from('positions').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ลบตำแหน่งงาน', null, '#' + id);
+    return { ok: true };
   }
 
   // แก้ไขรายละเอียดสินค้า QA (ชื่อ/บาร์โค้ด/ขนาด/จำนวน/หมดอายุ/โซน/สถานะ)

@@ -868,6 +868,18 @@
     <b>เข้า/ออก</b> ใช้คำนวณการมาสายและ OT
   </div>
 
+  <div class="card" style="margin-top:16px">
+    <div class="card-h"><h3>🧑‍💼 ตำแหน่งงาน (ตัวเลือกในหน้าสมัครงาน)</h3></div>
+    <div class="card-b">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input id="pos_new" type="text" placeholder="ชื่อตำแหน่งใหม่" style="flex:1;min-width:160px;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <button class="btn btn-pri btn-sm" id="pos_add">+ เพิ่ม</button>
+      </div>
+      <div id="pos_list"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">ตำแหน่งที่ "เปิด" จะแสดงให้ผู้สมัครเลือกในหน้าสมัครงาน</div>
+    </div>
+  </div>
+
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">เงื่อนไขการลา</h3></div>
   <div class="card"><div class="tablewrap"><table>
     <thead><tr><th>ประเภท</th><th>ลาล่วงหน้าขั้นต่ำ (วัน)</th><th>โควตา/เดือน<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่จำกัด</span></th><th>ลาย้อนหลังได้</th><th>ต้องแนบเอกสาร</th><th></th></tr></thead>
@@ -2645,6 +2657,36 @@ function rcDraftMsg(a, at, note){
     +'\n\nกรุณานำสำเนาบัตรประชาชน วุฒิการศึกษา และเอกสารที่เกี่ยวข้องมาด้วย\nสอบถามเพิ่มเติมติดต่อกลับตามเบอร์นี้ได้เลย ขอบคุณค่ะ';
 }
 function closeApplicant(){ $('rcOverlay').classList.remove('show'); }
+// ---- จัดการตำแหน่งงาน (ในแท็บตั้งค่ากะ) ----
+async function loadPositions(){
+  const box=$('pos_list'); if(!box) return;
+  if($('pos_add') && !$('pos_add').dataset.wired){
+    $('pos_add').dataset.wired='1';
+    $('pos_add').onclick=async()=>{
+      const name=$('pos_new').value.trim(); if(!name){ toast('err','กรอกชื่อตำแหน่ง'); return; }
+      const r=await post({ action:'hr_position_save', password:pwd, data:{ name } });
+      if(r.ok){ toast('ok','เพิ่มแล้ว'); $('pos_new').value=''; loadPositions(); } else toast('err', r.error||'ไม่สำเร็จ');
+    };
+  }
+  const r=await post({ action:'hr_positions_list', password:pwd });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  if(!r.rows.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีตำแหน่ง</div>'; return; }
+  box.innerHTML=r.rows.map(p=>'<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'
+    +'<span style="flex:1;font-size:14px'+(p.active===false?';color:var(--muted);text-decoration:line-through':'')+'">'+esc(p.name)+'</span>'
+    +'<button class="btn btn-sec btn-sm" data-postog="'+p.id+'">'+(p.active===false?'เปิด':'ปิด')+'</button>'
+    +'<button class="btn btn-danger btn-sm" data-posdel="'+p.id+'">ลบ</button>'
+    +'</div>').join('');
+  box.querySelectorAll('[data-postog]').forEach(b=>b.onclick=async()=>{
+    const p=r.rows.find(x=>String(x.id)===b.dataset.postog); if(!p) return;
+    const r2=await post({ action:'hr_position_save', password:pwd, data:{ id:p.id, name:p.name, active:(p.active===false), sort:p.sort } });
+    if(r2.ok){ loadPositions(); } else toast('err', r2.error||'ไม่สำเร็จ');
+  });
+  box.querySelectorAll('[data-posdel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบตำแหน่งนี้?')) return;
+    const r2=await post({ action:'hr_position_delete', password:pwd, id:Number(b.dataset.posdel) });
+    if(r2.ok){ toast('ok','ลบแล้ว'); loadPositions(); } else toast('err', r2.error||'ไม่สำเร็จ');
+  });
+}
 $('rcClose') && ($('rcClose').onclick=closeApplicant);
 $('rcOverlay') && $('rcOverlay').addEventListener('click', e=>{ if(e.target===$('rcOverlay')) closeApplicant(); });
 
@@ -2667,7 +2709,7 @@ showTab = function(name){
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
   else if(name==='notifylog') loadNotifyLog();

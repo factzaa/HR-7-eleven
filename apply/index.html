@@ -186,6 +186,8 @@ $('submitBtn').onclick=async()=>{
       id_card, branch_id, position, expected_salary:g('f_expected_salary'), start_available:g('f_start_available'), experience:g('f_experience'),
       photo:DOC_DATA.photo, idcard:DOC_DATA.idcard, house:DOC_DATA.house, edu:DOC_DATA.edu, other:DOC_DATA.other,
     });
+    // แจ้ง HR ทันที (ไม่ต้องรอ cron) — ไม่สำเร็จก็ปล่อยผ่าน cron จะตามส่งให้เอง
+    try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){}
     $('formBody').style.display='none'; $('doneBody').style.display='block'; window.scrollTo(0,0);
   }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ ลองใหม่'); btn.disabled=false; btn.textContent='ส่งใบสมัคร'; }
 };
