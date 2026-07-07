@@ -150,13 +150,19 @@ function readResized(file){
 }
 function ageFrom(dstr){ if(!dstr) return null; const d=new Date(dstr+'T00:00:00'); if(isNaN(d)) return null; const n=new Date(); let a=n.getFullYear()-d.getFullYear(); const m=n.getMonth()-d.getMonth(); if(m<0||(m===0&&n.getDate()<d.getDate()))a--; return a; }
 
+const DEFAULT_POS=['พนักงานขาย (หน้าร้าน)','พนักงานคลัง/สต๊อก','พนักงานเดลิเวอรี','ผู้ช่วยผู้จัดการ','ผู้จัดการสาขา'];
 async function init(){
   renderDocs();
+  // สาขา
   try{
-    const [branches,positions]=await Promise.all([window.HR.getBranchesPublic(),window.HR.getPositions()]);
-    $('f_branch_id').innerHTML='<option value="">— เลือกสาขา —</option>'+branches.map(b=>'<option value="'+b.branch_id+'">'+(b.name||b.branch_id)+'</option>').join('');
-    $('f_position').innerHTML='<option value="">— เลือกตำแหน่ง —</option>'+positions.map(p=>'<option value="'+p+'">'+p+'</option>').join('');
-  }catch(e){ toast('err','โหลดข้อมูลสาขา/ตำแหน่งไม่สำเร็จ'); }
+    const branches=await window.HR.getBranchesPublic();
+    $('f_branch_id').innerHTML='<option value="">— เลือกสาขา —</option>'+(branches||[]).map(b=>'<option value="'+b.branch_id+'">'+(b.name||b.branch_id)+'</option>').join('');
+  }catch(e){ toast('err','โหลดสาขาไม่สำเร็จ'); }
+  // ตำแหน่ง (ถ้าตารางว่าง/ยังไม่ได้ตั้งค่า ใช้รายการเริ่มต้น)
+  let positions=[];
+  try{ positions=await window.HR.getPositions(); }catch(e){}
+  if(!positions||!positions.length) positions=DEFAULT_POS;
+  $('f_position').innerHTML='<option value="">— เลือกตำแหน่ง —</option>'+positions.map(p=>'<option value="'+p+'">'+p+'</option>').join('');
 }
 
 $('submitBtn').onclick=async()=>{
