@@ -1324,6 +1324,7 @@ function fillSelect(sel, pairs, emptyLabel){
 
 // ========== DASHBOARD ==========
 let DASH = null;
+let DASH_SUM = { mode:'cycle', cycle:'current' };   // ตัวกรองสถิติสรุป (รอบ/ช่วงวันที่)
 function dashList(key){
   if(!DASH || !DASH.lists) return;
   const meta = ({
@@ -1363,9 +1364,12 @@ async function loadDashboard(){
   const dbr=$('dash_branch')?$('dash_branch').value:'';
   const ddt=$('dash_date')?$('dash_date').value:'';
   $('dash_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  const discReq = (DASH_SUM.mode==='range' && DASH_SUM.start && DASH_SUM.end)
+    ? { action:'hr_discipline', password:pwd, range:{ start:DASH_SUM.start, end:DASH_SUM.end } }
+    : { action:'hr_discipline', password:pwd, cycle:DASH_SUM.cycle };
   const [r, dr] = await Promise.all([
     post({ action:'hr_dashboard', password:pwd, branch:dbr, date:ddt }),
-    post({ action:'hr_discipline', password:pwd, cycle:'current' }),
+    post(discReq),
   ]);
   if(!r.ok){ $('dash_body').innerHTML = '<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
   DASH = r;
@@ -1398,11 +1402,28 @@ async function loadDashboard(){
   const sOT    = Math.round(demps.reduce((s,e)=>s+(e.ot_hours||0),0)*10)/10;
   const sWork  = demps.reduce((s,e)=>s+(e.days_worked||0),0);
   const punc   = sWork>0 ? Math.round((sWork-sLateC)/sWork*100) : 100;
-  const scorecard = `<div class="kpi-grid" style="margin-bottom:14px">
-      <div class="kpi ${punc<90?'warn':'ok'}"><div class="lbl">มาตรงเวลา (รอบนี้)</div><div class="val">${punc}<span class="sm">%</span></div><div class="delta">${sWork} วัน-คน ที่ลงเวลา</div></div>
+  const sumRange = (dr && dr.cycle) ? (beDate(dr.cycle.startStr)+' – '+beDate(dr.cycle.endStr)) : '';
+  const sumScope = DASH_SUM.mode==='range' ? '(ช่วงที่เลือก)' : (DASH_SUM.cycle==='current' ? '(รอบนี้)' : '(รอบที่เลือก)');
+  const sumBar = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <b style="font-size:13px">📊 สถิติสรุป:</b>
+      <select id="sum_cycle" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
+        <option value="current">รอบปัจจุบัน</option>
+        <option value="previous">รอบก่อนหน้า</option>
+        <option value="prev2">2 รอบก่อน</option>
+        <option value="prev3">3 รอบก่อน</option>
+        <option value="range">กำหนดช่วงเอง…</option>
+      </select>
+      <span id="sum_rangebox" style="display:none;gap:6px;align-items:center">
+        <input id="sum_start" type="date" style="padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px"><span>–</span><input id="sum_end" type="date" style="padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px">
+        <button id="sum_apply" class="btn btn-sec btn-sm">ดู</button>
+      </span>
+      <span style="font-size:12px;color:var(--muted)">${sumRange}</span>
+    </div>`;
+  const scorecard = sumBar + `<div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi ${punc<90?'warn':'ok'}"><div class="lbl">มาตรงเวลา ${sumScope}</div><div class="val">${punc}<span class="sm">%</span></div><div class="delta">${sWork} วัน-คน ที่ลงเวลา</div></div>
       <div class="kpi ${sLateC?'bad':''}"><div class="lbl">มาสายรวม</div><div class="val">${sLateC}<span class="sm"> ครั้ง</span></div><div class="delta">${sLateM} นาที</div></div>
       <div class="kpi ${sAbsent?'warn':''}"><div class="lbl">ขาด (ไม่มา/ไม่ลา)</div><div class="val">${sAbsent}<span class="sm"> วัน-คน</span></div></div>
-      ${MGR_MODE ? '' : `<div class="kpi"><div class="lbl">OT รวมรอบนี้</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>`}
+      ${MGR_MODE ? '' : `<div class="kpi"><div class="lbl">OT รวม ${sumScope}</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>`}
     </div>`;
 
   const risk = demps.filter(e=>e.level>=1).slice(0,6);
@@ -1479,6 +1500,23 @@ async function loadDashboard(){
         <div class="card-b">${branches}</div>
       </div>
     </div>`;
+  // ---- wire ตัวกรองสถิติสรุป (รอบ/ช่วงวันที่) ----
+  const _sc=$('sum_cycle');
+  if(_sc){
+    _sc.value = DASH_SUM.mode==='range' ? 'range' : DASH_SUM.cycle;
+    const _rb=$('sum_rangebox'); if(_rb) _rb.style.display = _sc.value==='range' ? 'inline-flex' : 'none';
+    if(DASH_SUM.mode==='range'){ if($('sum_start'))$('sum_start').value=DASH_SUM.start||''; if($('sum_end'))$('sum_end').value=DASH_SUM.end||''; }
+    _sc.onchange=()=>{
+      if(_sc.value==='range'){ if($('sum_rangebox'))$('sum_rangebox').style.display='inline-flex'; }
+      else { DASH_SUM={mode:'cycle',cycle:_sc.value}; loadDashboard(); }
+    };
+    if($('sum_apply')) $('sum_apply').onclick=()=>{
+      const s=$('sum_start').value, e=$('sum_end').value;
+      if(!s||!e){ toast('err','เลือกช่วงวันที่ให้ครบ'); return; }
+      if(s>e){ toast('err','วันที่เริ่มต้องไม่เกินวันสิ้นสุด'); return; }
+      DASH_SUM={mode:'range',start:s,end:e}; loadDashboard();
+    };
+  }
 }
 
 // ========== EMPLOYEES ==========

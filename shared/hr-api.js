@@ -14,15 +14,24 @@
   function daysBetween(a, b) { if (!a) return 0; const s = new Date(a + 'T00:00:00'), e = new Date((b || a) + 'T00:00:00'); return Math.round((e - s) / 86400000) + 1; }
 
   // รอบประเมิน 21–20 (ตรงกับ defaultCycle เดิม)
+  // which = 'current'|'previous' หรือจำนวนรอบย้อนหลัง (0=ปัจจุบัน, 1=ก่อนหน้า, 2=สองรอบก่อน ...)
   function cycleRange(which) {
     const t = new Date(bkkToday() + 'T00:00:00');
     const day = t.getDate();
     let endRef = (day <= 20) ? new Date(t.getFullYear(), t.getMonth(), 20)
                              : new Date(t.getFullYear(), t.getMonth() + 1, 20);
-    if (which === 'previous') endRef = new Date(endRef.getFullYear(), endRef.getMonth() - 1, 20);
+    const back = (typeof which === 'number') ? which : (which === 'previous' ? 1 : 0);
+    if (back) endRef = new Date(endRef.getFullYear(), endRef.getMonth() - back, 20);
     const end = new Date(endRef.getFullYear(), endRef.getMonth(), 20);
     const start = new Date(endRef.getFullYear(), endRef.getMonth() - 1, 21);
     return { start: iso(start), end: iso(end), startStr: iso(start), endStr: iso(end) };
+  }
+  // แปลงคีย์เวิร์ดรอบ → จำนวนรอบย้อนหลัง
+  function cycleBack(which) {
+    if (which === 'previous') return 1;
+    if (which === 'prev2') return 2;
+    if (which === 'prev3') return 3;
+    return (typeof which === 'number') ? which : 0;
   }
 
   // นับวันที่ "ต้องมาทำงาน" ในช่วง (ตัดวันหยุดประจำสัปดาห์ + วันหยุดบริษัท)
@@ -121,7 +130,7 @@
         case 'hr_emp_delete':     return await hrEmpDelete(p.emp_id);
         case 'hr_change_emp_id':  return await hrChangeEmpId(p.old_id, p.new_id);
         case 'hr_report':         return await hrReport(p.filter);
-        case 'hr_discipline':     return await hrDiscipline(p.cycle);
+        case 'hr_discipline':     return await hrDiscipline(p.cycle, p.range);
         case 'hr_settings_get':   return await hrSettingsGet();
         case 'hr_settings_save':  return await hrSettingsSave(p.key, p.value);
         case 'hr_warnings_list':  return await hrWarningsList();
@@ -682,8 +691,11 @@
   }
 
   // ---------- DISCIPLINE ----------
-  async function hrDiscipline(which) {
-    const cyc = cycleRange(which === 'previous' ? 'previous' : 'current');
+  async function hrDiscipline(which, range) {
+    // รองรับ: รอบ (current/previous/prev2/prev3) หรือ ช่วงวันที่กำหนดเอง {start,end}
+    const cyc = (range && range.start && range.end)
+      ? { start: range.start, end: range.end, startStr: range.start, endStr: range.end }
+      : cycleRange(cycleBack(which));
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
     const discRules = await loadDisciplineRules();
