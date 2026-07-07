@@ -205,6 +205,12 @@
         case 'hr_positions_list':    return await hrPositionsList();
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
+        case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
+        case 'hr_mtask_list':        return await hrMtaskList(p.branch);
+        case 'hr_mtask_get':         return await hrMtaskGet(p.id);
+        case 'hr_mtask_stage':       return await hrMtaskStage(p.id, p.status, p.role, p.sender_name);
+        case 'hr_mtask_feed_add':    return await hrMtaskFeedAdd(p.data);
+        case 'hr_mtask_feed_list':   return await hrMtaskFeedList(p.task_id);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2182,6 +2188,80 @@
     if (error) throw error;
     await logAct('ลบตำแหน่งงาน', null, '#' + id);
     return { ok: true };
+  }
+
+  // ---------- งาน ผจก. (Manager Tasks) ----------
+  async function _uploadMany(prefix, arr) {
+    const urls = [];
+    for (const m of (arr || [])) {
+      if (typeof m === 'string' && m.startsWith('data:')) {
+        try { urls.push(await window.HR.uploadPhoto('employee-docs', prefix + '_' + Date.now() + '_' + urls.length + '.jpg', m)); } catch (e) { console.warn('mtask upload', e); }
+      } else if (typeof m === 'string' && m) urls.push(m);
+    }
+    return urls;
+  }
+  async function hrMtaskCreate(d) {
+    d = d || {};
+    if (!d.title || !String(d.title).trim()) return { ok: false, error: 'กรอกหัวข้องาน' };
+    if (!d.branch_id) return { ok: false, error: 'เลือกสาขา' };
+    const photos = await _uploadMany('mtask/hr', d.hr_photos);
+    const { data, error } = await sb().from('mgr_tasks').insert({
+      title: String(d.title).trim(), detail: (d.detail || '').trim() || null, branch_id: d.branch_id,
+      priority: d.priority === 'urgent' ? 'urgent' : 'normal', source: d.source || 'HR',
+      due_date: d.due_date || null, hr_photos: photos.length ? photos : null, created_by: 'HR', status: 'todo',
+    }).select('id').single();
+    if (error) throw error;
+    await sb().from('mgr_task_feed').insert({ task_id: data.id, role: 'hr', sender_name: 'HR', kind: 'assign', message: 'มอบหมายงาน: ' + String(d.title).trim(), photos: photos.length ? photos : null });
+    await logAct('มอบหมายงาน ผจก.', null, String(d.title).trim() + ' · สาขา ' + d.branch_id);
+    return { ok: true, id: data.id };
+  }
+  async function hrMtaskList(branch) {
+    let q = sb().from('mgr_tasks').select('*').order('updated_at', { ascending: false }).limit(300);
+    if (branch) q = q.eq('branch_id', branch);
+    const [tR, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    if (tR.error) throw tR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (tR.data || []).map(t => ({ ...t, branch_name: brName[t.branch_id] || t.branch_id || '—' }));
+    return { ok: true, rows };
+  }
+  async function hrMtaskGet(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const { data, error } = await sb().from('mgr_tasks').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return { ok: false, error: 'ไม่พบงาน' };
+    const { data: br } = await sb().from('branches').select('name').eq('branch_id', data.branch_id || '').maybeSingle();
+    return { ok: true, task: { ...data, branch_name: (br && br.name) || data.branch_id || '—' } };
+  }
+  async function hrMtaskStage(id, status, actorRole, actorName) {
+    const allowed = ['todo', 'doing', 'review', 'done'];
+    if (!id || !allowed.includes(status)) return { ok: false, error: 'ข้อมูลไม่ถูกต้อง' };
+    const upd = { status, updated_at: new Date().toISOString() };
+    if (status === 'done') upd.done_at = new Date().toISOString();
+    const { error } = await sb().from('mgr_tasks').update(upd).eq('id', id);
+    if (error) throw error;
+    const lbl = ({ todo: 'งานใหม่', doing: 'กำลังทำ', review: 'ใกล้เสร็จ', done: 'สำเร็จ' })[status];
+    await sb().from('mgr_task_feed').insert({ task_id: id, role: actorRole || 'mgr', sender_name: actorName || 'ผจก.', kind: 'status', message: 'เปลี่ยนสถานะ → ' + lbl });
+    return { ok: true };
+  }
+  async function hrMtaskFeedAdd(d) {
+    d = d || {};
+    if (!d.task_id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const msg = (d.message || '').trim();
+    const photos = await _uploadMany('mtask/feed', d.photos);
+    if (!msg && !photos.length) return { ok: false, error: 'พิมพ์ข้อความหรือแนบรูป' };
+    const { error } = await sb().from('mgr_task_feed').insert({
+      task_id: d.task_id, role: d.role || 'mgr', sender_name: d.sender_name || '', message: msg || null,
+      photos: photos.length ? photos : null, kind: d.kind || 'chat',
+    });
+    if (error) throw error;
+    await sb().from('mgr_tasks').update({ updated_at: new Date().toISOString() }).eq('id', d.task_id);
+    return { ok: true };
+  }
+  async function hrMtaskFeedList(taskId) {
+    if (!taskId) return { ok: false, error: 'ไม่ระบุงาน' };
+    const { data, error } = await sb().from('mgr_task_feed').select('*').eq('task_id', taskId).order('created_at', { ascending: true });
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
   }
 
   // แก้ไขรายละเอียดสินค้า QA (ชื่อ/บาร์โค้ด/ขนาด/จำนวน/หมดอายุ/โซน/สถานะ)

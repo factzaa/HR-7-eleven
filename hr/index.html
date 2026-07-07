@@ -326,6 +326,7 @@
 
 <div class="drawer-ov" id="drawerOv"></div>
 <div class="tabs" id="tabbar" style="display:none">
+  <button class="tab" id="tab_mgrtasks"><span class="tabicon">📌</span>งาน ผจก.</button>
   <button class="tab active" id="tab_dashboard"><span class="tabicon">📊</span>Dashboard</button>
   <button class="tab" id="tab_board"><span class="tabicon">🗒️</span>บอร์ดวันนี้</button>
   <button class="tab" id="tab_employees"><span class="tabicon">👥</span>พนักงาน</button>
@@ -396,6 +397,42 @@
     <div class="modal-h"><h2 id="rc_title">ผู้สมัคร</h2><button class="close" id="rcClose">×</button></div>
     <div class="modal-b" id="rc_body"></div>
     <div class="modal-f" id="rc_foot"></div>
+  </div>
+</div>
+
+<!-- Manager tasks (งาน ผจก.) -->
+<div id="view_mgrtasks" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">📌 งาน ผจก. <span id="mt_sub" style="font-size:12px;color:var(--muted);font-weight:400"></span></h3>
+    <select id="mt_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-sec btn-sm" id="mt_refresh">🔄</button>
+    <button class="btn btn-pri btn-sm" id="mt_new">+ มอบหมายงาน</button>
+  </div>
+  <div id="mt_board"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- Manager task detail modal -->
+<div class="overlay" id="mtOverlay">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-h"><h2 id="mt_title" style="font-size:16px">งาน</h2><button class="close" id="mtClose">×</button></div>
+    <div class="modal-b" id="mt_body" style="display:flex;flex-direction:column"></div>
+    <div class="modal-f" id="mt_foot" style="flex-direction:column;align-items:stretch;gap:8px"></div>
+  </div>
+</div>
+
+<!-- Assign manager task modal (HR) -->
+<div class="overlay" id="mtaOverlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-h"><h2 style="font-size:16px">มอบหมายงานให้ ผจก.</h2><button class="close" id="mtaClose">×</button></div>
+    <div class="modal-b">
+      <div class="field"><label>สาขา <span style="color:#dc2626">*</span></label><select id="mta_branch"></select></div>
+      <div class="field"><label>หัวข้องาน <span style="color:#dc2626">*</span></label><input id="mta_title" type="text"></div>
+      <div class="field"><label>รายละเอียด</label><textarea id="mta_detail" rows="3" style="width:100%;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></textarea></div>
+      <div class="field"><label>กำหนดส่ง</label><input id="mta_due" type="date"></div>
+      <label class="toggle" style="margin-top:4px"><input type="checkbox" id="mta_urgent"><div><div class="lbl">🔴 งานด่วน</div></div></label>
+      <div class="field span2" style="margin-top:8px"><label>แนบรูปตัวอย่าง (หลายรูปได้)</label><input id="mta_photos" type="file" accept="image/*" multiple><div id="mta_prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-sec" id="mtaCancel">ยกเลิก</button><button class="btn btn-pri" id="mtaSave">มอบหมาย</button></div>
   </div>
 </div>
 
@@ -1257,7 +1294,7 @@
 <script>
 let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '';
-const MGR_TABS = ['dashboard','handover','special','qa','shelf','schedule'];
+const MGR_TABS = ['mgrtasks','dashboard','handover','special','qa','shelf','schedule'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -1317,7 +1354,7 @@ async function mgrTryLogin(){
   document.body.classList.add('is-logged');
   await loadAll();
   applyManagerMode();
-  showTab('dashboard');
+  showTab('mgrtasks');
   toast('ok','สวัสดี ผจก. '+(r.nickname||r.name||emp));
 }
 $('mgrLoginBtn') && ($('mgrLoginBtn').onclick = mgrTryLogin);
@@ -2690,13 +2727,177 @@ async function loadPositions(){
 $('rcClose') && ($('rcClose').onclick=closeApplicant);
 $('rcOverlay') && $('rcOverlay').addEventListener('click', e=>{ if(e.target===$('rcOverlay')) closeApplicant(); });
 
-const ALL_TABS = ['dashboard','board','employees','recruit','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+// ========== งาน ผจก. (Manager Tasks) ==========
+let MT_ROWS=[], MT_CUR=null, MT_PHOTOS=[], MT_POLL=null, MTA_PHOTOS=[];
+const MT_STAGES=[
+  {key:'todo',  label:'🆕 งานใหม่/ค้าง', color:'#0ea5e9'},
+  {key:'doing', label:'🔧 กำลังทำ',       color:'#a06515'},
+  {key:'review',label:'📋 ใกล้เสร็จ',      color:'#7c3aed'},
+  {key:'done',  label:'✅ สำเร็จ',         color:'#16a34a'},
+];
+function mtRole(){ return MGR_MODE?'mgr':'hr'; }
+function mtName(){ return MGR_MODE?'ผจก.':'HR'; }
+function mtStLabel(k){ const s=MT_STAGES.find(x=>x.key===k); return s?s.label:k; }
+async function loadMtasks(){
+  const box=$('mt_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  $('mt_sub').textContent = MGR_MODE ? '· สาขาของคุณ' : '· ทุกสาขา (คุณดู+คุยได้ · ผจก.เป็นผู้ลงมือ)';
+  if(MGR_MODE){ $('mt_branch').style.display='none'; $('mt_new').style.display='none'; }
+  else {
+    $('mt_branch').style.display=''; $('mt_new').style.display='';
+    if(!$('mt_branch').dataset.filled){
+      $('mt_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+      $('mt_branch').dataset.filled='1'; $('mt_branch').onchange=renderMtBoard;
+    }
+  }
+  if(!$('mt_refresh').dataset.wired){ $('mt_refresh').dataset.wired='1'; $('mt_refresh').onclick=loadMtasks; $('mt_new').onclick=openMtAssign; }
+  const br = MGR_MODE?MGR_BRANCH:'';
+  let r; try{ r=await post({ action:'hr_mtask_list', password:pwd, branch:br }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  MT_ROWS=r.rows||[]; renderMtBoard();
+}
+function renderMtBoard(){
+  const box=$('mt_board'); if(!box) return;
+  const bf = MGR_MODE?'':($('mt_branch')?$('mt_branch').value:'');
+  const rows=MT_ROWS.filter(t=>!bf||String(t.branch_id)===String(bf));
+  box.innerHTML='<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px">'+MT_STAGES.map(st=>{
+    const cards=rows.filter(t=>t.status===st.key);
+    return '<div style="flex:0 0 250px;min-width:250px;background:#f6f7f9;border-radius:12px;padding:8px">'
+      +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
+      +(cards.length?cards.map(mtCard).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
+      +'</div>';
+  }).join('')+'</div>';
+  box.querySelectorAll('[data-mtopen]').forEach(c=>c.onclick=()=>openMtask(c.dataset.mtopen));
+}
+function mtCard(t){
+  const urg=t.priority==='urgent'?'<span style="background:#dc2626;color:#fff;font-size:10px;border-radius:999px;padding:1px 6px;margin-left:4px">ด่วน</span>':'';
+  const due=t.due_date?'<div style="font-size:11px;color:#b45309;margin-top:3px">⏰ ส่ง '+beDate(t.due_date)+'</div>':'';
+  const nph=(Array.isArray(t.hr_photos)?t.hr_photos.length:0);
+  return '<div data-mtopen="'+esc(t.id)+'" style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;cursor:pointer">'
+    +'<div style="font-weight:600;font-size:13.5px">'+esc(t.title)+urg+'</div>'
+    +(MGR_MODE?'':'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">🏪 '+esc(t.branch_name||'—')+'</div>')
+    +due
+    +'<div style="font-size:11px;color:#9aa4b2;margin-top:5px">อัปเดต '+beDateTime(t.updated_at)+(nph?(' · 📎'+nph):'')+'</div>'
+    +'</div>';
+}
+async function openMtask(id){
+  const r=await post({ action:'hr_mtask_get', password:pwd, id });
+  if(!r.ok){ toast('err', r.error||'ไม่พบงาน'); return; }
+  MT_CUR=r.task; MT_PHOTOS=[];
+  $('mt_title').textContent=r.task.title;
+  renderMtDetail();
+  await refreshMtFeed();
+  $('mtOverlay').classList.add('show');
+  if(MT_POLL) clearInterval(MT_POLL);
+  MT_POLL=setInterval(refreshMtFeed, 4000);
+}
+function renderMtDetail(){
+  const t=MT_CUR; if(!t) return;
+  let h='';
+  if(t.detail) h+='<div style="font-size:13.5px;white-space:pre-wrap;margin-bottom:6px">'+esc(t.detail)+'</div>';
+  h+='<div style="font-size:12px;color:var(--muted)">🏪 '+esc(t.branch_name||'—')+(t.due_date?(' · ⏰ ส่ง '+beDate(t.due_date)):'')+(t.priority==='urgent'?' · 🔴 ด่วน':'')+' · สถานะ: '+mtStLabel(t.status)+'</div>';
+  if(Array.isArray(t.hr_photos)&&t.hr_photos.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+  h+='<div style="font-weight:700;font-size:13px;margin:12px 0 4px">💬 ความเคลื่อนไหว / พูดคุย</div><div id="mt_feed" style="max-height:38vh;overflow-y:auto;background:#f8fafc;border-radius:10px;padding:8px"></div>';
+  $('mt_body').innerHTML=h;
+  let f='';
+  if(MGR_MODE) f+='<div style="display:flex;gap:6px;flex-wrap:wrap">'+MT_STAGES.filter(s=>s.key!==t.status).map(s=>'<button class="btn btn-sec btn-sm" data-mtstage="'+s.key+'">'+s.label+'</button>').join('')+'</div>';
+  f+='<div id="mt_photobar" style="display:flex;gap:6px;flex-wrap:wrap"></div>'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+    +'<label class="btn btn-sec btn-sm" style="cursor:pointer">📷<input type="file" accept="image/*" capture="environment" id="mt_cam" style="display:none"></label>'
+    +'<label class="btn btn-sec btn-sm" style="cursor:pointer">🖼️<input type="file" accept="image/*" multiple id="mt_file" style="display:none"></label>'
+    +'<input id="mt_msg" type="text" placeholder="พิมพ์ข้อความ / อัปเดต…" style="flex:1;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'
+    +'<button class="btn btn-pri btn-sm" id="mt_send">ส่ง</button></div>';
+  $('mt_foot').innerHTML=f;
+  $('mt_foot').querySelectorAll('[data-mtstage]').forEach(b=>b.onclick=()=>mtStage(b.dataset.mtstage));
+  $('mt_cam').onchange=e=>mtAddFiles(e.target);
+  $('mt_file').onchange=e=>mtAddFiles(e.target);
+  $('mt_send').onclick=mtSend;
+  renderMtPhotoBar();
+}
+async function refreshMtFeed(){
+  if(!MT_CUR) return;
+  const r=await post({ action:'hr_mtask_feed_list', password:pwd, task_id:MT_CUR.id });
+  if(!r.ok) return;
+  const el=$('mt_feed'); if(!el) return;
+  el.innerHTML=(r.rows||[]).map(mtFeedRow).join('') || '<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px">ยังไม่มีความเคลื่อนไหว</div>';
+  el.scrollTop=el.scrollHeight;
+}
+function mtFeedRow(m){
+  if(m.kind==='status'||m.role==='system') return '<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:6px 0">— '+esc(m.message||'')+' ('+esc(m.sender_name||'')+' · '+beDateTime(m.created_at)+') —</div>';
+  const bg=m.role==='hr'?'#e0f2fe':'#dcfce7';
+  const align=m.role==='hr'?'flex-start':'flex-end';
+  let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%;background:'+bg+';border-radius:12px;padding:7px 11px">';
+  c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||(m.role==='hr'?'HR':'ผจก.'))+' · '+beDateTime(m.created_at)+'</div>';
+  if(m.message) c+='<div style="font-size:13.5px;white-space:pre-wrap">'+esc(m.message)+'</div>';
+  if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:82px;height:82px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+  return c+'</div></div>';
+}
+function mtAddFiles(input){
+  const files=[...(input.files||[])];
+  Promise.all(files.map(f=>spReadImg(f))).then(urls=>{ urls.forEach(u=>MT_PHOTOS.push(u)); renderMtPhotoBar(); }).catch(()=>toast('err','อ่านรูปไม่สำเร็จ'));
+  input.value='';
+}
+function renderMtPhotoBar(){
+  const bar=$('mt_photobar'); if(!bar) return;
+  bar.innerHTML=MT_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:52px;height:52px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="mtDrawPhoto('+i+')" title="วาดทับ" style="position:absolute;bottom:-4px;left:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer">✏️</button><button type="button" onclick="mtRmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join('');
+}
+function mtRmPhoto(i){ MT_PHOTOS.splice(i,1); renderMtPhotoBar(); }
+function mtDrawPhoto(i){
+  const src=MT_PHOTOS[i]; if(!src) return;
+  ensureMarkupUI();
+  MK={ task:{}, tool:'circle', cur:0, imgs:[{src, el:null, shapes:[]}], reviewFn:(note,out)=>{ if(out&&out[0]){ MT_PHOTOS[i]=out[0]; renderMtPhotoBar(); } } };
+  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
+  document.getElementById('mkNote').value=''; document.getElementById('mkOverlay').style.display='flex';
+  mkLoadCur();
+}
+async function mtSend(){
+  if(!MT_CUR) return;
+  const msg=$('mt_msg').value.trim();
+  if(!msg && !MT_PHOTOS.length){ toast('err','พิมพ์ข้อความหรือแนบรูป'); return; }
+  const btn=$('mt_send'); btn.disabled=true;
+  const r=await post({ action:'hr_mtask_feed_add', password:pwd, data:{ task_id:MT_CUR.id, role:mtRole(), sender_name:mtName(), message:msg, photos:MT_PHOTOS.slice(), kind: MT_PHOTOS.length?'progress':'chat' } });
+  btn.disabled=false;
+  if(r.ok){ $('mt_msg').value=''; MT_PHOTOS=[]; renderMtPhotoBar(); refreshMtFeed(); }
+  else toast('err', r.error||'ส่งไม่สำเร็จ');
+}
+async function mtStage(status){
+  if(!MT_CUR) return;
+  const r=await post({ action:'hr_mtask_stage', password:pwd, id:MT_CUR.id, status, role:mtRole(), sender_name:mtName() });
+  if(r.ok){ MT_CUR.status=status; renderMtDetail(); refreshMtFeed(); loadMtasks(); toast('ok','อัปเดตสถานะแล้ว'); }
+  else toast('err', r.error||'ไม่สำเร็จ');
+}
+function closeMtask(){ $('mtOverlay').classList.remove('show'); if(MT_POLL){ clearInterval(MT_POLL); MT_POLL=null; } MT_CUR=null; }
+$('mtClose') && ($('mtClose').onclick=closeMtask);
+$('mtOverlay') && $('mtOverlay').addEventListener('click', e=>{ if(e.target===$('mtOverlay')) closeMtask(); });
+// มอบหมายงาน (HR)
+function openMtAssign(){
+  MTA_PHOTOS=[];
+  if(!$('mta_branch').dataset.filled){ $('mta_branch').innerHTML='<option value="">— เลือกสาขา —</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); $('mta_branch').dataset.filled='1'; }
+  $('mta_title').value=''; $('mta_detail').value=''; $('mta_due').value=''; $('mta_urgent').checked=false; $('mta_prev').innerHTML='';
+  if(!$('mta_photos').dataset.wired){ $('mta_photos').dataset.wired='1'; $('mta_photos').onchange=e=>{ const files=[...(e.target.files||[])]; Promise.all(files.map(f=>spReadImg(f))).then(urls=>{ urls.forEach(u=>MTA_PHOTOS.push(u)); renderMtaPrev(); }); e.target.value=''; }; }
+  $('mtaOverlay').classList.add('show');
+}
+function renderMtaPrev(){ $('mta_prev').innerHTML=MTA_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:52px;height:52px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="MTA_PHOTOS.splice('+i+',1);renderMtaPrev()" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join(''); }
+function closeMtAssign(){ $('mtaOverlay').classList.remove('show'); }
+$('mtaClose') && ($('mtaClose').onclick=closeMtAssign);
+$('mtaCancel') && ($('mtaCancel').onclick=closeMtAssign);
+$('mtaSave') && ($('mtaSave').onclick=async()=>{
+  const branch=$('mta_branch').value, title=$('mta_title').value.trim();
+  if(!branch){ toast('err','เลือกสาขา'); return; }
+  if(!title){ toast('err','กรอกหัวข้องาน'); return; }
+  const btn=$('mtaSave'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_mtask_create', password:pwd, data:{ branch_id:branch, title, detail:$('mta_detail').value, due_date:$('mta_due').value||null, priority:$('mta_urgent').checked?'urgent':'normal', hr_photos:MTA_PHOTOS.slice() } });
+  btn.disabled=false; btn.textContent='มอบหมาย';
+  if(r.ok){ toast('ok','มอบหมายแล้ว'); closeMtAssign(); loadMtasks(); } else toast('err', r.error||'ไม่สำเร็จ');
+});
+
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
+  else if(name==='mgrtasks') loadMtasks();
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
