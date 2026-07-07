@@ -289,6 +289,9 @@
     const s = await loadAppSettings(); const v = s[key];
     return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? def : Number(v);
   }
+  async function getSettingBool(key) { const s = await loadAppSettings(); return String(s[key] || '') === '1'; }
+  // ปรับ OT ตามเงื่อนไข: ถ้าตั้ง "ปัดชั่วโมงเต็มต่อวัน" → ปัดลงเป็นจำนวนเต็ม (เศษนาทีไม่นับ) · ใช้ต่อรายการลงเวลา (ต่อวัน) ก่อนนำไปรวม
+  function otAdj(h, whole) { h = Number(h) || 0; return whole ? Math.floor(h + 1e-9) : h; }
   function hmToMin(hm) { const p = String(hm || '').split(':'); return (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0); }
   // "ลืมกดออก" แล้วหรือยัง — รองรับกะข้ามคืน (deadline ของกะดึกตกในวันถัดไป)
   // workDate=วันที่ของแถวลงเวลา · st/en=เวลาเข้า/ออกของกะ · grace=ผ่อนผัน · today=วันนี้ · nowMin=นาทีปัจจุบัน
@@ -312,6 +315,7 @@
   async function hrDashboard(branch, date) {
     const today = bkkToday();
     const d = date || today;                 // วันที่ของ "ภาพรวมรายวัน" (ค่าเริ่มต้น = วันนี้)
+    const otWhole = await getSettingBool('ot_whole_day');
     const cyc = cycleRange('current');
     let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id').eq('active', true);
     let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status,extend_until').eq('work_date', d);
@@ -394,7 +398,7 @@
 
     // trend 30 วัน
     const tmap = {};
-    (d30R.data || []).forEach(a => { const m = tmap[a.work_date] || (tmap[a.work_date] = { late: 0, ot: 0 }); if (a.late_min > 0) m.late++; m.ot += Number(a.ot_hours) || 0; });
+    (d30R.data || []).forEach(a => { const m = tmap[a.work_date] || (tmap[a.work_date] = { late: 0, ot: 0 }); if (a.late_min > 0) m.late++; m.ot += otAdj(a.ot_hours, otWhole); });
     const trend = [];
     for (let i = 29; i >= 0; i--) { const d = addDays(today, -i); const m = tmap[d] || { late: 0, ot: 0 }; trend.push({ date: d.slice(5), late: m.late, ot: Math.round(m.ot * 10) / 10 }); }
 
@@ -639,6 +643,7 @@
     const shDVmap = {}; (shR2.data || []).forEach(s => { shDVmap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
     const dvOf = sid => (shDVmap[sid] != null ? shDVmap[sid] : 1);
     const earlyGrace = await getSettingNum('early_out_grace_min', 10);
+    const otWhole = await getSettingBool('ot_whole_day');
 
     const map = {};
     function ensureM(empId) {
@@ -662,7 +667,7 @@
         if (r.early_out_min != null && r.early_out_min > earlyGrace) { m.early_out_days++; m.early_out_min += r.early_out_min; }
       }
       if (r.late_min > 0) { m.late_count++; m.late_total += r.late_min; }
-      if (Number(r.ot_hours) > 0) { m.ot += Number(r.ot_hours); m.ot_days++; }
+      if (Number(r.ot_hours) > 0) { m.ot += otAdj(r.ot_hours, otWhole); m.ot_days++; }
     });
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงาน
     const workedByEmp = {};
@@ -730,6 +735,7 @@
     const dvOf = sid => (dvMap[sid] != null ? dvMap[sid] : 1);
     const earlyGrace = await getSettingNum('early_out_grace_min', 10);
     const earlyWarnDays = await getSettingNum('early_out_warn_days', 3);
+    const otWhole = await getSettingBool('ot_whole_day');
     // ตารางเวรต่อพนักงาน (map วันที่ → กะ ไว้ถ่วงน้ำหนักครึ่งวัน)
     const schByEmp = {};
     (schR.data || []).forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
@@ -740,7 +746,7 @@
       const late = myAtt.filter(a => a.late_min > 0);
       const late_count = late.length;
       const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
-      const ot_hours = Math.round(myAtt.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
+      const ot_hours = Math.round(myAtt.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
       const myLeaves = leaves.filter(l => l.emp_id === e.emp_id);
       const onLeave = (dateStr) => myLeaves.some(l => dateStr >= l.start_date && dateStr <= (l.end_date || l.start_date));
 
@@ -1709,7 +1715,8 @@
     const workedSet = new Set(att.filter(a => a.check_in).map(a => a.work_date));
     const late = att.filter(a => a.late_min > 0);
     const late_count = late.length, late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
-    const ot_hours = Math.round(att.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
+    const otWhole = await getSettingBool('ot_whole_day');
+    const ot_hours = Math.round(att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
     const mySched = [...new Set((schR.data || []).filter(s => s.shift_id).map(s => s.work_date))];
     const pastSched = mySched.filter(d => d < today);
     const days_should = pastSched.length;
@@ -1796,6 +1803,7 @@
     const holidaySet = new Set((hdR.data || []).map(h => h.date));
     const att = attR.data || [], sch = schR.data || [], leaves = lvR.data || [];
     const tasks = taskR.data || [], shelfChk = shelfR.data || [], handovers = handR.data || [], qaItems = qaR.data || [];
+    const otWhole = await getSettingBool('ot_whole_day');
 
     // จัดกลุ่มตาม emp
     const byEmp = {};
@@ -1817,7 +1825,7 @@
       const lateRows = g.att.filter(a => (a.late_min || 0) > 0);
       const late_count = lateRows.length;
       const late_total = lateRows.reduce((s, a) => s + (a.late_min || 0), 0);
-      const ot_hours = Math.round(g.att.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
+      const ot_hours = Math.round(g.att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
       const schedDates = [...new Set(g.sched.map(s => s.work_date))];
       const pastSched = schedDates.filter(d => d < today);
       const days_should = pastSched.length;
@@ -1843,7 +1851,7 @@
     const dayMap = {};
     const eachDay = (s, e, fn) => { const d = new Date(s + 'T00:00:00'), z = new Date(e + 'T00:00:00'); for (; d <= z; d.setDate(d.getDate() + 1)) fn(iso(d)); };
     eachDay(start, endEff, d => { dayMap[d] = { date: d, present: 0, late: 0, absent: 0, ot: 0 }; });
-    att.forEach(a => { const d = dayMap[a.work_date]; if (!d) return; if (a.check_in) d.present++; if ((a.late_min || 0) > 0) d.late++; d.ot += Number(a.ot_hours) || 0; });
+    att.forEach(a => { const d = dayMap[a.work_date]; if (!d) return; if (a.check_in) d.present++; if ((a.late_min || 0) > 0) d.late++; d.ot += otAdj(a.ot_hours, otWhole); });
     // ขาดรายวัน: มีเวรวันนั้น(อดีต) แต่ไม่มาและไม่ลา
     const empLeaves = {}; emps.forEach(e => { empLeaves[e.emp_id] = byEmp[e.emp_id].leaves; });
     const workedByDay = {}; att.forEach(a => { if (a.check_in) (workedByDay[a.work_date] = workedByDay[a.work_date] || new Set()).add(a.emp_id); });
