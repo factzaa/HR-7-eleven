@@ -370,7 +370,7 @@
 
 <!-- Dashboard -->
 <div id="view_dashboard" class="container" style="display:none">
-  <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
+  <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="dash_date" type="date" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="dash_today" title="กลับมาวันนี้">วันนี้</button><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
   <div id="coCorrPanel"></div>
   <div id="openTasksPanel"></div>
   <div id="notifPanel"></div>
@@ -1352,10 +1352,19 @@ async function loadDashboard(){
     $('dash_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
     $('dash_branch').dataset.filled='1'; $('dash_branch').onchange=()=>{ loadDashboard(); loadNotifications(); loadDutyRecords(); };
   }
+  // ตัวกรองวันที่ (ค่าเริ่มต้น = วันนี้)
+  if($('dash_date') && !$('dash_date').dataset.wired){
+    if(!$('dash_date').value) $('dash_date').value=bkkTodayStr();
+    $('dash_date').max=bkkTodayStr();
+    $('dash_date').dataset.wired='1';
+    $('dash_date').onchange=()=>{ loadDashboard(); loadNotifications(); };
+    if($('dash_today')) $('dash_today').onclick=()=>{ $('dash_date').value=bkkTodayStr(); loadDashboard(); loadNotifications(); };
+  }
   const dbr=$('dash_branch')?$('dash_branch').value:'';
+  const ddt=$('dash_date')?$('dash_date').value:'';
   $('dash_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
   const [r, dr] = await Promise.all([
-    post({ action:'hr_dashboard', password:pwd, branch:dbr }),
+    post({ action:'hr_dashboard', password:pwd, branch:dbr, date:ddt }),
     post({ action:'hr_discipline', password:pwd, cycle:'current' }),
   ]);
   if(!r.ok){ $('dash_body').innerHTML = '<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
@@ -1433,10 +1442,13 @@ async function loadDashboard(){
       <div class="stats">${b.count} คน · สาย ${b.late}</div>
     </div>`).join('') : '<div class="empty" style="padding:24px">ยังไม่มีคนลงเวลาวันนี้</div>';
 
+  const _isToday = !ddt || ddt===bkkTodayStr();
+  const _dayLbl = _isToday ? 'วันนี้' : beDate(ddt);
   $('dash_body').innerHTML = `
+    ${_isToday?'':`<div style="background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;border-radius:11px;padding:9px 13px;margin-bottom:12px;font-size:13.5px;font-weight:600">📅 กำลังดูข้อมูลย้อนหลัง: ${beDate(ddt)} — กดปุ่ม "วันนี้" เพื่อกลับสู่ปัจจุบัน</div>`}
     <div class="kpi-grid">
-      <div class="kpi" style="cursor:pointer" onclick="dashList('checked_in')"><div class="lbl">วันนี้ลงเวลาแล้ว ›</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
-      <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="lbl">สายวันนี้ ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
+      <div class="kpi" style="cursor:pointer" onclick="dashList('checked_in')"><div class="lbl">ลงเวลาแล้ว (${_dayLbl}) ›</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
+      <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="lbl">มาสาย (${_dayLbl}) ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
       <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
       <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${beDate(c.cycle_start)}<br>ถึง ${beDate(c.cycle_end)}</div></div>
     </div>
@@ -1447,7 +1459,7 @@ async function loadDashboard(){
         <div class="card-b">${watch}</div>
       </div>
       <div class="card">
-        <div class="card-h"><h3>กะวันนี้</h3></div>
+        <div class="card-h"><h3>กะ${_isToday?'วันนี้':(' '+beDate(ddt))}</h3></div>
         <div class="card-b">${shiftRows}</div>
       </div>
     </div>
@@ -4366,7 +4378,8 @@ async function saveDuty(){
 // ========== แจ้งเตือนแอดมิน ==========
 async function loadNotifications(){
   const dbr=$('dash_branch')?$('dash_branch').value:'';
-  const r = await post({ action:'hr_notifications', password:pwd, branch:dbr });
+  const ddt=$('dash_date')?$('dash_date').value:'';
+  const r = await post({ action:'hr_notifications', password:pwd, branch:dbr, date:ddt });
   if(!r.ok) return;
   const c = r.counts;
   const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster + (c.pending_profiles||0);

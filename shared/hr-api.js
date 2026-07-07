@@ -114,7 +114,7 @@
         case 'hr_login':          return await hrLogin(p.password);
         case 'mgr_login':         return await mgrLogin(p.emp_id, p.pin);
         case 'hr_list':           return await hrList();
-        case 'hr_dashboard':      return await hrDashboard(p.branch);
+        case 'hr_dashboard':      return await hrDashboard(p.branch, p.date);
         case 'hr_board':          return await hrBoard(p.date);
         case 'hr_save':           return await hrSave(p.data);
         case 'hr_toggle':         return await hrToggle(p.emp_id);
@@ -201,7 +201,7 @@
         case 'hr_duty_list':            return await hrDutyList(p.branch);
         case 'hr_duty_delete':          return await hrDutyDelete(p.emp_id, p.work_date);
         case 'hr_activity':       return await hrActivity();
-        case 'hr_notifications':  return await hrNotifications(p.branch);
+        case 'hr_notifications':  return await hrNotifications(p.branch, p.date);
         case 'hr_notify_history': return await hrNotifyHistory();
         case 'hr_announce_save':  return await hrAnnounceSave(p.data);
         case 'hr_announce_delete':return await hrAnnounceDelete(p.id);
@@ -284,14 +284,15 @@
     return { ok: true };
   }
 
-  async function hrDashboard(branch) {
+  async function hrDashboard(branch, date) {
     const today = bkkToday();
+    const d = date || today;                 // วันที่ของ "ภาพรวมรายวัน" (ค่าเริ่มต้น = วันนี้)
     const cyc = cycleRange('current');
     let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id').eq('active', true);
-    let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status,extend_until').eq('work_date', today);
+    let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status,extend_until').eq('work_date', d);
     let qD30 = sb().from('attendance').select('work_date,late_min,ot_hours,branch_id').gte('work_date', addDays(today, -29)).lte('work_date', today);
     let qCyc = sb().from('attendance').select('emp_id,late_min,branch_id').gte('work_date', cyc.start).lte('work_date', cyc.end);
-    let qSch = sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today);
+    let qSch = sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', d);
     if (branch) { qEmp = qEmp.eq('branch_id', branch); qToday = qToday.eq('branch_id', branch); qD30 = qD30.eq('branch_id', branch); qCyc = qCyc.eq('branch_id', branch); qSch = qSch.eq('branch_id', branch); }
     const [empsR, shR, brR, todayR, d30R, cycR, schR, upLvR] = await Promise.all([
       qEmp,
@@ -314,7 +315,7 @@
     const coGrace = await getSettingNum('checkout_grace_min', 15);   // ผ่อนผันก่อนเตือนลืมกดออก
     const nowMin = hmToMin(nowHM);
     // ยึด "กะปัจจุบันจากตารางเวร" (รองรับ HR เปลี่ยนกะหลังเช็กอิน + ควบกะ) — ไม่ใช้กะที่ค้างในแถวลงเวลา
-    let qSchOv = sb().from('schedules').select('emp_id,shift_id,work_date').gte('work_date', addDays(today, -1)).lte('work_date', today);
+    let qSchOv = sb().from('schedules').select('emp_id,shift_id,work_date').gte('work_date', addDays(d, -1)).lte('work_date', d);
     if (branch) qSchOv = qSchOv.eq('branch_id', branch);
     const schOv = (await qSchOv).data || [];
     const schByED = {};
@@ -339,11 +340,11 @@
       return false;
     };
     // รวมกะข้ามคืน: ดึงแถวที่ยังเปิดค้างจากเมื่อวานมาด้วย (กะดึกเลิกเช้าวันถัดไป)
-    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,extend_until').eq('work_date', addDays(today, -1)).not('check_in', 'is', null).is('check_out', null);
+    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,extend_until').eq('work_date', addDays(d, -1)).not('check_in', 'is', null).is('check_out', null);
     if (branch) qYestOpen = qYestOpen.eq('branch_id', branch);
     const yestOpen = (await qYestOpen).data || [];
-    const openRows = todayA.filter(a => a.check_in && !a.check_out).map(a => ({ ...a, work_date: today }))
-      .concat(yestOpen.map(a => ({ ...a, work_date: addDays(today, -1) })));
+    const openRows = todayA.filter(a => a.check_in && !a.check_out).map(a => ({ ...a, work_date: d }))
+      .concat(yestOpen.map(a => ({ ...a, work_date: addDays(d, -1) })));
     const stillOpenList = openRows.filter(a => {
       if (a.extend_until && new Date(a.extend_until).getTime() > Date.now()) return false;   // ประกาศควบกะต่อ → ยังไม่ถือว่าลืม
       return isOverdue(a.emp_id, a.work_date, a.shift_id);
@@ -1093,14 +1094,16 @@
   }
 
   // ---------- NOTIFICATIONS (แจ้งเตือนแอดมิน) ----------
-  async function hrNotifications(branch) {
+  async function hrNotifications(branch, date) {
     const today = bkkToday();
+    const d = date || today;                 // วันที่ของภาพรวมรายวัน (ค่าเริ่มต้น = วันนี้)
+    const isPast = d < today;
     const [lvR, todayR, schR, empR, lvApprR, subR, shR] = await Promise.all([
       sb().from('leaves').select('*, employees(name)').eq('status', 'pending').order('created_at', { ascending: false }),
-      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,extend_until').eq('work_date', today),
-      sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', today),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,extend_until').eq('work_date', d),
+      sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', d),
       sb().from('employees').select('emp_id,name,branch_id').eq('active', true),
-      sb().from('leaves').select('emp_id,start_date,end_date').eq('status', 'approved').lte('start_date', today),
+      sb().from('leaves').select('emp_id,start_date,end_date').eq('status', 'approved').lte('start_date', d),
       sb().from('profile_submissions').select('id,emp_id,name,submitted_at').eq('status', 'pending').order('submitted_at', { ascending: false }),
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
     ]);
@@ -1109,7 +1112,7 @@
     const att = (todayR.data || []).filter(a => !branch || a.branch_id === branch);
     const schRows = (schR.data || []).filter(s => (!branch || s.branch_id === branch) && activeSet.has(s.emp_id));   // ตัดกะของพนักงานที่ปิดใช้งานออก
     const checkedIn = new Set(att.filter(a => a.check_in).map(a => a.emp_id));
-    const onleave = new Set((lvApprR.data || []).filter(l => today <= (l.end_date || l.start_date)).map(l => l.emp_id));
+    const onleave = new Set((lvApprR.data || []).filter(l => d >= l.start_date && d <= (l.end_date || l.start_date)).map(l => l.emp_id));
 
     const pending_leaves = (lvR.data || []).filter(l => !branch || empBranch[l.emp_id] === branch).map(l => ({
       leave_id: l.leave_id, emp_id: l.emp_id, emp_name: (l.employees && l.employees.name) || l.emp_id,
@@ -1124,7 +1127,7 @@
     const coGrace = await getSettingNum('checkout_grace_min', 15);
     const nowMin = hmToMin(nowHM);
     // ยึด "กะปัจจุบันจากตารางเวร" (รองรับ HR เปลี่ยนกะหลังเช็กอิน + ควบกะ) — ไม่ใช้กะที่ค้างในแถวลงเวลา
-    let qSchOv = sb().from('schedules').select('emp_id,shift_id,work_date').gte('work_date', addDays(today, -1)).lte('work_date', today);
+    let qSchOv = sb().from('schedules').select('emp_id,shift_id,work_date').gte('work_date', addDays(d, -1)).lte('work_date', d);
     if (branch) qSchOv = qSchOv.eq('branch_id', branch);
     const schByED = {};
     ((await qSchOv).data || []).forEach(s => { if (s.shift_id) (schByED[s.emp_id + '|' + s.work_date] = schByED[s.emp_id + '|' + s.work_date] || []).push(s.shift_id); });
@@ -1147,11 +1150,11 @@
       return false;
     };
     // รวมกะข้ามคืน: ดึงแถวที่ยังเปิดค้างจากเมื่อวาน (กะดึกเลิกเช้าวันถัดไป)
-    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,extend_until').eq('work_date', addDays(today, -1)).not('check_in', 'is', null).is('check_out', null);
+    let qYestOpen = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,extend_until').eq('work_date', addDays(d, -1)).not('check_in', 'is', null).is('check_out', null);
     if (branch) qYestOpen = qYestOpen.eq('branch_id', branch);
     const yestOpen = (await qYestOpen).data || [];
-    const ncoRows = att.filter(a => a.check_in && !a.check_out).map(a => ({ ...a, work_date: today }))
-      .concat(yestOpen.map(a => ({ ...a, work_date: addDays(today, -1) })));
+    const ncoRows = att.filter(a => a.check_in && !a.check_out).map(a => ({ ...a, work_date: d }))
+      .concat(yestOpen.map(a => ({ ...a, work_date: addDays(d, -1) })));
     const not_checked_out = ncoRows.filter(a => {
       if (a.extend_until && new Date(a.extend_until).getTime() > Date.now()) return false;   // ประกาศควบกะต่อ → ยังไม่ถือว่าลืม
       return isOverdueN(a.emp_id, a.work_date, a.shift_id);
@@ -1163,7 +1166,7 @@
       if (checkedIn.has(s.emp_id) || onleave.has(s.emp_id)) return false;
       const st = shiftStart[s.shift_id];
       if (!st) return false;            // ไม่มีเวลากะ = ยังไม่เตือน
-      return nowHM >= st;               // ถึงเวลาเข้ากะแล้วเท่านั้น
+      return isPast || nowHM >= st;     // วันย้อนหลัง = ถือว่าถึงเวลาแล้วทั้งหมด · วันนี้ = เฉพาะกะที่ถึงเวลาเข้าแล้ว
     }).map(s => ({ emp_id: s.emp_id, emp_name: empName[s.emp_id] || s.emp_id, shift_id: s.shift_id, shift_name: shiftName[s.shift_id] || s.shift_id, start_time: shiftStart[s.shift_id] }));
 
     const pending_profiles = (subR.data || []).filter(s => !branch || empBranch[s.emp_id] === branch).map(s => ({ id: s.id, emp_id: s.emp_id, name: s.name || s.emp_id }));
