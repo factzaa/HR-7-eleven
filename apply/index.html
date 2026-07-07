@@ -74,6 +74,15 @@
     </div>
 
     <div class="sec">
+      <h2>🚨 ผู้ติดต่อฉุกเฉิน</h2>
+      <div class="row2">
+        <div class="field"><label>ชื่อผู้ติดต่อ</label><input id="f_em_name" type="text" placeholder="ชื่อ-นามสกุล"></div>
+        <div class="field"><label>ความสัมพันธ์</label><input id="f_em_relation" type="text" placeholder="เช่น บิดา / มารดา / คู่สมรส"></div>
+      </div>
+      <div class="field"><label>เบอร์โทรผู้ติดต่อฉุกเฉิน</label><input id="f_em_phone" type="tel" inputmode="tel" placeholder="08x-xxx-xxxx"></div>
+    </div>
+
+    <div class="sec">
       <h2>💼 ตำแหน่งที่สมัคร</h2>
       <div class="row2">
         <div class="field"><label>สาขาที่สมัคร <span class="req">*</span></label><select id="f_branch_id"><option value="">— เลือกสาขา —</option></select></div>
@@ -183,6 +192,7 @@ $('submitBtn').onclick=async()=>{
   try{
     await window.HR.submitApplication({
       full_name, nickname:g('f_nickname'), phone, line_id:g('f_line_id'), email:g('f_email'), birth_date:birth, address:g('f_address'),
+      emergency_name:g('f_em_name'), emergency_relation:g('f_em_relation'), emergency_phone:g('f_em_phone'),
       id_card, branch_id, position, expected_salary:g('f_expected_salary'), start_available:g('f_start_available'), experience:g('f_experience'),
       photo:DOC_DATA.photo, idcard:DOC_DATA.idcard, house:DOC_DATA.house, edu:DOC_DATA.edu, other:DOC_DATA.other,
     });
