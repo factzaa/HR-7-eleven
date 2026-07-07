@@ -276,7 +276,8 @@
 
     /* Modal แบบเต็มจอ + แถบปุ่มติดล่าง กดง่าย */
     .overlay{padding:0; align-items:stretch;}
-    .modal, .modal.wide{max-width:100%; min-height:100dvh; border-radius:0; border-top:0;}
+    /* มือถือ: ให้ modal เป็นตัวเลื่อนเอง (เนื้อหายาวเลื่อนดูได้ครบ ทั้ง modal ที่มี/ไม่มี .modal-b) */
+    .modal, .modal.wide{max-width:100%; height:100dvh; max-height:100dvh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:0; border-top:0;}
     .modal-h{padding:14px 16px; position:sticky; top:0; background:#fff; z-index:3; border-top:4px solid var(--green);}
     .modal-h h2{font-size:16px;}
     .modal-b{padding:14px 16px; max-height:none;}
