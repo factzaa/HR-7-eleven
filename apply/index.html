@@ -64,6 +64,7 @@
         <div class="field"><label>ชื่อเล่น</label><input id="f_nickname" type="text"></div>
         <div class="field"><label>เบอร์โทร <span class="req">*</span></label><input id="f_phone" type="tel" inputmode="tel" placeholder="08x-xxx-xxxx"></div>
       </div>
+      <div class="field"><label>LINE ID</label><input id="f_line_id" type="text" placeholder="ไอดีไลน์ของคุณ"><div class="hint" style="color:var(--green-d);font-weight:600">📩 เบอร์โทร/LINE นี้ ใช้เป็นช่องทางนัดสัมภาษณ์และแจ้งผล</div></div>
       <div class="row2">
         <div class="field"><label>วันเกิด <span class="req">*</span></label><input id="f_birth_date" type="date"><div class="hint">ต้องอายุ 18 ปีขึ้นไป</div></div>
         <div class="field"><label>อีเมล</label><input id="f_email" type="email" inputmode="email"></div>
@@ -181,7 +182,7 @@ $('submitBtn').onclick=async()=>{
   const btn=$('submitBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังส่ง…';
   try{
     await window.HR.submitApplication({
-      full_name, nickname:g('f_nickname'), phone, email:g('f_email'), birth_date:birth, address:g('f_address'),
+      full_name, nickname:g('f_nickname'), phone, line_id:g('f_line_id'), email:g('f_email'), birth_date:birth, address:g('f_address'),
       id_card, branch_id, position, expected_salary:g('f_expected_salary'), start_available:g('f_start_available'), experience:g('f_experience'),
       photo:DOC_DATA.photo, idcard:DOC_DATA.idcard, house:DOC_DATA.house, edu:DOC_DATA.edu, other:DOC_DATA.other,
     });

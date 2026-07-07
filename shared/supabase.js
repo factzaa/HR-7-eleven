@@ -618,6 +618,7 @@
       full_name: String(p.full_name).trim(),
       nickname: (p.nickname || '').trim() || null,
       phone: String(p.phone).trim(),
+      line_id: (p.line_id || '').trim() || null,
       email: (p.email || '').trim() || null,
       birth_date: p.birth_date || null,
       address: (p.address || '').trim() || null,
