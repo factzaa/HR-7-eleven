@@ -220,6 +220,7 @@
         case 'hr_mdaily_submit':     return await hrMdailySubmit(p.data);
         case 'hr_mdaily_review':     return await hrMdailyReview(p.log_id, p.status, p.note, p.markup);
         case 'hr_mdaily_board':      return await hrMdailyBoard(p.date, p.branch);
+        case 'hr_mdaily_report':     return await hrMdailyReport(p.month, p.branch);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2388,6 +2389,39 @@
       return { branch_id: b.branch_id, branch_name: b.name, items, total: items.length, done, pending };
     });
     return { ok: true, date: d, rows, def_count: defs.length };
+  }
+  // รายงานย้อนหลังรายเดือน (ต่อสาขา)
+  async function hrMdailyReport(month, branch) {
+    const today = bkkToday();
+    const m = month || today.slice(0, 7);
+    const start = m + '-01';
+    const y = parseInt(m.slice(0, 4)), mo = parseInt(m.slice(5, 7));
+    const endMonth = iso(new Date(y, mo, 0));           // วันสุดท้ายของเดือน
+    const endEff = endMonth < today ? endMonth : today; // ไม่นับวันอนาคต
+    const days = (endEff >= start) ? daysBetween(start, endEff) : 0;
+    const [defR, brR, logR] = await Promise.all([
+      sb().from('mgr_daily_defs').select('id').eq('active', true),
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('mgr_daily_logs').select('branch_id,def_id,work_date,status').gte('work_date', start).lte('work_date', endEff),
+    ]);
+    if (defR.error) throw defR.error;
+    const defCount = (defR.data || []).length;
+    const expected = defCount * days;
+    let branches = (brR.data || []);
+    if (branch) branches = branches.filter(b => b.branch_id === branch);
+    const logs = logR.data || [];
+    const rows = branches.map(b => {
+      const bl = logs.filter(l => l.branch_id === b.branch_id);
+      const approved = bl.filter(l => l.status === 'approved').length;
+      const rejected = bl.filter(l => l.status === 'rejected').length;
+      const submitted = bl.filter(l => l.status === 'submitted').length;
+      const done = bl.length;                             // ทำแล้ว (ส่ง/ผ่าน/ไม่ผ่าน)
+      const missed = Math.max(0, expected - done);
+      const pct = expected ? Math.round(done / expected * 100) : 0;
+      const passPct = done ? Math.round(approved / done * 100) : 0;
+      return { branch_id: b.branch_id, branch_name: b.name, expected, done, approved, rejected, submitted, missed, pct, pass_pct: passPct };
+    });
+    return { ok: true, month: m, days, def_count: defCount, expected, rows };
   }
 
   async function hrMtaskDelete(id) {
