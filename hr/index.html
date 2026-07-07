@@ -501,14 +501,14 @@
 <!-- Assign manager task modal (HR) -->
 <div class="overlay" id="mtaOverlay">
   <div class="modal" style="max-width:480px">
-    <div class="modal-h"><h2 style="font-size:16px">มอบหมายงานให้ ผจก.</h2><button class="close" id="mtaClose">×</button></div>
+    <div class="modal-h"><h2 style="font-size:16px" id="mta_htitle">มอบหมายงานให้ ผจก.</h2><button class="close" id="mtaClose">×</button></div>
     <div class="modal-b">
       <div class="field"><label>สาขา <span style="color:#dc2626">*</span></label><select id="mta_branch"></select></div>
       <div class="field"><label>หัวข้องาน <span style="color:#dc2626">*</span></label><input id="mta_title" type="text"></div>
       <div class="field"><label>รายละเอียด</label><textarea id="mta_detail" rows="3" style="width:100%;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></textarea></div>
       <div class="field"><label>กำหนดส่ง</label><input id="mta_due" type="date"></div>
       <label class="toggle" style="margin-top:4px"><input type="checkbox" id="mta_urgent"><div><div class="lbl">🔴 งานด่วน</div></div></label>
-      <div class="field span2" style="margin-top:8px"><label>แนบรูปตัวอย่าง (หลายรูปได้)</label><input id="mta_photos" type="file" accept="image/*" multiple><div id="mta_prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div></div>
+      <div class="field span2" id="mta_photofield" style="margin-top:8px"><label>แนบรูปตัวอย่าง (หลายรูปได้)</label><input id="mta_photos" type="file" accept="image/*" multiple><div id="mta_prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div></div>
     </div>
     <div class="modal-f"><button class="btn btn-sec" id="mtaCancel">ยกเลิก</button><button class="btn btn-pri" id="mtaSave">มอบหมาย</button></div>
   </div>
@@ -2953,7 +2953,7 @@ function renderMtDetail(){
   };
   let f='';
   if(MGR_MODE) f+='<div style="display:flex;gap:6px;flex-wrap:wrap">'+MT_STAGES.filter(s=>s.key!==t.status).map(s=>'<button class="btn btn-sec btn-sm" data-mtstage="'+s.key+'">'+s.label+'</button>').join('')+'</div>';
-  else f+='<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-danger btn-sm" id="mt_del">🗑 ลบงานนี้</button></div>';
+  else f+='<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sec btn-sm" id="mt_edit">✏️ แก้ไขงาน</button><button class="btn btn-danger btn-sm" id="mt_del">🗑 ลบงานนี้</button></div>';
   f+='<div id="mt_photobar" style="display:flex;gap:6px;flex-wrap:wrap"></div>'
     +'<div style="display:flex;gap:6px;align-items:center">'
     +'<label class="btn btn-sec btn-sm" style="cursor:pointer">📷<input type="file" accept="image/*" capture="environment" id="mt_cam" style="display:none"></label>'
@@ -2967,6 +2967,7 @@ function renderMtDetail(){
   $('mt_file').onchange=e=>mtAddFiles(e.target);
   $('mt_draw').onclick=mtDrawNew;
   $('mt_send').onclick=mtSend;
+  if($('mt_edit')) $('mt_edit').onclick=()=>openMtAssign(MT_CUR);
   if($('mt_del')) $('mt_del').onclick=async()=>{
     if(!confirm('ลบงาน "'+(MT_CUR.title||'')+'" ? (ไทม์ไลน์และรูปทั้งหมดจะถูกลบด้วย)')) return;
     const r=await post({ action:'hr_mtask_delete', password:pwd, id:MT_CUR.id });
@@ -3044,12 +3045,19 @@ async function mtStage(status){
 function closeMtask(){ $('mtOverlay').classList.remove('show'); if(MT_POLL){ clearInterval(MT_POLL); MT_POLL=null; } mtUnsub(); MT_CUR=null; }
 $('mtClose') && ($('mtClose').onclick=closeMtask);
 $('mtOverlay') && $('mtOverlay').addEventListener('click', e=>{ if(e.target===$('mtOverlay')) closeMtask(); });
-// มอบหมายงาน (HR)
-function openMtAssign(){
+// มอบหมาย/แก้ไขงาน (HR) — ส่ง editTask เพื่อแก้ไข
+let MT_EDIT=null;
+function openMtAssign(editTask){
+  MT_EDIT = (editTask && editTask.id) ? editTask : null;
   MTA_PHOTOS=[];
   if(!$('mta_branch').dataset.filled){ $('mta_branch').innerHTML='<option value="">— เลือกสาขา —</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); $('mta_branch').dataset.filled='1'; }
-  $('mta_title').value=''; $('mta_detail').value=''; $('mta_due').value=''; $('mta_urgent').checked=false; $('mta_prev').innerHTML='';
-  if(!$('mta_photos').dataset.wired){ $('mta_photos').dataset.wired='1'; $('mta_photos').onchange=e=>{ const files=[...(e.target.files||[])]; Promise.all(files.map(f=>spReadImg(f))).then(urls=>{ urls.forEach(u=>MTA_PHOTOS.push(u)); renderMtaPrev(); }); e.target.value=''; }; }
+  const e=MT_EDIT||{};
+  $('mta_title').value=e.title||''; $('mta_detail').value=e.detail||''; $('mta_due').value=e.due_date||''; $('mta_urgent').checked=e.priority==='urgent'; $('mta_prev').innerHTML='';
+  $('mta_branch').value=e.branch_id||'';
+  if($('mta_htitle')) $('mta_htitle').textContent = MT_EDIT?'แก้ไขงาน ผจก.':'มอบหมายงานให้ ผจก.';
+  if($('mta_photofield')) $('mta_photofield').style.display = MT_EDIT?'none':'block';  // แก้ไข = คงรูปเดิม
+  if($('mtaSave')) $('mtaSave').textContent = MT_EDIT?'บันทึกการแก้ไข':'มอบหมาย';
+  if(!$('mta_photos').dataset.wired){ $('mta_photos').dataset.wired='1'; $('mta_photos').onchange=ev=>{ const files=[...(ev.target.files||[])]; Promise.all(files.map(f=>spReadImg(f))).then(urls=>{ urls.forEach(u=>MTA_PHOTOS.push(u)); renderMtaPrev(); }); ev.target.value=''; }; }
   $('mtaOverlay').classList.add('show');
 }
 function renderMtaPrev(){ $('mta_prev').innerHTML=MTA_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:52px;height:52px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="MTA_PHOTOS.splice('+i+',1);renderMtaPrev()" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join(''); }
@@ -3060,10 +3068,19 @@ $('mtaSave') && ($('mtaSave').onclick=async()=>{
   const branch=$('mta_branch').value, title=$('mta_title').value.trim();
   if(!branch){ toast('err','เลือกสาขา'); return; }
   if(!title){ toast('err','กรอกหัวข้องาน'); return; }
-  const btn=$('mtaSave'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
-  const r=await post({ action:'hr_mtask_create', password:pwd, data:{ branch_id:branch, title, detail:$('mta_detail').value, due_date:$('mta_due').value||null, priority:$('mta_urgent').checked?'urgent':'normal', hr_photos:MTA_PHOTOS.slice() } });
-  btn.disabled=false; btn.textContent='มอบหมาย';
-  if(r.ok){ try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} toast('ok','มอบหมายแล้ว'); closeMtAssign(); loadMtasks(); } else toast('err', r.error||'ไม่สำเร็จ');
+  const data={ branch_id:branch, title, detail:$('mta_detail').value, due_date:$('mta_due').value||null, priority:$('mta_urgent').checked?'urgent':'normal' };
+  const btn=$('mtaSave'); const old=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  let r;
+  if(MT_EDIT){ r=await post({ action:'hr_mtask_update', password:pwd, id:MT_EDIT.id, data }); }
+  else { data.hr_photos=MTA_PHOTOS.slice(); r=await post({ action:'hr_mtask_create', password:pwd, data }); }
+  btn.disabled=false; btn.textContent=old;
+  if(r.ok){
+    if(!MT_EDIT){ try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} }
+    toast('ok', MT_EDIT?'แก้ไขแล้ว':'มอบหมายแล้ว');
+    const wasEdit=!!MT_EDIT; MT_EDIT=null; closeMtAssign();
+    if(wasEdit && MT_CUR){ openMtask(MT_CUR.id); }   // รีเฟรชรายละเอียดที่เปิดอยู่
+    loadMtasks();
+  } else toast('err', r.error||'ไม่สำเร็จ');
 });
 
 // ========== งานประจำวัน ผจก. (Daily Checklist) ==========

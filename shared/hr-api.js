@@ -212,6 +212,7 @@
         case 'hr_mtask_feed_add':    return await hrMtaskFeedAdd(p.data);
         case 'hr_mtask_feed_list':   return await hrMtaskFeedList(p.task_id);
         case 'hr_mtask_assign':      return await hrMtaskAssign(p.id, p.emp_id, p.emp_name);
+        case 'hr_mtask_update':      return await hrMtaskUpdate(p.id, p.data);
         case 'hr_mtask_delete':      return await hrMtaskDelete(p.id);
         case 'hr_mdaily_defs_list':  return await hrMdailyDefsList();
         case 'hr_mdaily_defs_save':  return await hrMdailyDefsSave(p.data);
@@ -2424,6 +2425,25 @@
     return { ok: true, month: m, days, def_count: defCount, expected, rows };
   }
 
+  // แก้ไขงานที่มอบหมาย (หัวข้อ/รายละเอียด/กำหนดส่ง/ด่วน/สาขา)
+  async function hrMtaskUpdate(id, d) {
+    d = d || {};
+    if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
+    if (!d.title || !String(d.title).trim()) return { ok: false, error: 'กรอกหัวข้องาน' };
+    const upd = {
+      title: String(d.title).trim(),
+      detail: (d.detail || '').trim() || null,
+      due_date: d.due_date || null,
+      priority: d.priority === 'urgent' ? 'urgent' : 'normal',
+      updated_at: new Date().toISOString(),
+    };
+    if (d.branch_id) upd.branch_id = d.branch_id;
+    const { error } = await sb().from('mgr_tasks').update(upd).eq('id', id);
+    if (error) throw error;
+    await sb().from('mgr_task_feed').insert({ task_id: id, role: 'hr', sender_name: 'HR', kind: 'status', message: 'แก้ไขรายละเอียดงาน' });
+    await logAct('แก้ไขงาน ผจก.', null, upd.title);
+    return { ok: true };
+  }
   async function hrMtaskDelete(id) {
     if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
     const { data: t } = await sb().from('mgr_tasks').select('title').eq('id', id).maybeSingle();
