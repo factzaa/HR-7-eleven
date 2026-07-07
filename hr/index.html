@@ -331,6 +331,7 @@
   <button class="tab" id="tab_board"><span class="tabicon">🗒️</span>บอร์ดวันนี้</button>
   <button class="tab" id="tab_employees"><span class="tabicon">👥</span>พนักงาน</button>
   <button class="tab" id="tab_recruit"><span class="tabicon">🧑‍💼</span>รับสมัครงาน</button>
+  <button class="tab" id="tab_mgrdailyrev"><span class="tabicon">📋</span>ตรวจงานประจำวัน</button>
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
@@ -380,6 +381,26 @@
   <div id="dutyPanel"></div>
 </div>
 
+<!-- ตรวจงานประจำวัน ผจก. (HR) -->
+<div id="view_mgrdailyrev" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">📋 ตรวจงานประจำวัน ผจก.</h3>
+    <input id="mdr_date" type="date" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="mdr_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-sec btn-sm" id="mdr_refresh">🔄</button>
+  </div>
+  <div id="mdr_board"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- ฟอร์มทำงานประจำวัน (ผจก.) -->
+<div class="overlay" id="mdOverlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-h"><h2 id="md_title" style="font-size:16px">ทำงาน</h2><button class="close" id="mdClose">×</button></div>
+    <div class="modal-b" id="md_body"></div>
+    <div class="modal-f"><button class="btn btn-sec" id="mdCancel">ยกเลิก</button><button class="btn btn-pri" id="mdSubmit">ส่งงาน</button></div>
+  </div>
+</div>
+
 <!-- Recruitment (รับสมัครงาน) -->
 <div id="view_recruit" class="container" style="display:none">
   <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -402,13 +423,20 @@
 
 <!-- Manager tasks (งาน ผจก.) -->
 <div id="view_mgrtasks" class="container" style="display:none">
-  <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
-    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">📌 งาน ผจก. <span id="mt_sub" style="font-size:12px;color:var(--muted);font-weight:400"></span></h3>
-    <select id="mt_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
-    <button class="btn btn-sec btn-sm" id="mt_refresh">🔄</button>
-    <button class="btn btn-pri btn-sm" id="mt_new">+ มอบหมายงาน</button>
+  <div id="mt_switch" style="display:none;gap:8px;margin-bottom:12px">
+    <button class="btn btn-sec btn-sm" id="mtsw_daily" style="flex:1">📋 งานประจำวัน</button>
+    <button class="btn btn-sec btn-sm" id="mtsw_assigned" style="flex:1">📌 งานที่มอบหมาย</button>
   </div>
-  <div id="mt_board"><div class="empty">กำลังโหลด…</div></div>
+  <div id="mt_daily" style="display:none"></div>
+  <div id="mt_assigned">
+    <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">📌 งาน ผจก. <span id="mt_sub" style="font-size:12px;color:var(--muted);font-weight:400"></span></h3>
+      <select id="mt_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+      <button class="btn btn-sec btn-sm" id="mt_refresh">🔄</button>
+      <button class="btn btn-pri btn-sm" id="mt_new">+ มอบหมายงาน</button>
+    </div>
+    <div id="mt_board"><div class="empty">กำลังโหลด…</div></div>
+  </div>
 </div>
 
 <!-- Manager task detail modal -->
@@ -914,6 +942,20 @@
       </div>
       <div id="pos_list"></div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px">ตำแหน่งที่ "เปิด" จะแสดงให้ผู้สมัครเลือกในหน้าสมัครงาน</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-h"><h3>📋 งานประจำวัน ผจก. (เช็กลิสต์ทุกสาขา)</h3></div>
+    <div class="card-b">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+        <input id="mdd_new" type="text" placeholder="ชื่องานประจำวัน" style="flex:1;min-width:150px;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <label style="font-size:12.5px;color:var(--muted)">รูปขั้นต่ำ</label>
+        <input id="mdd_mp" type="number" min="0" value="0" style="width:60px;padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;text-align:center">
+        <button class="btn btn-pri btn-sm" id="mdd_add">+ เพิ่ม</button>
+      </div>
+      <div id="mdd_list"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">รายการที่ "เปิด" จะเป็นเช็กลิสต์ให้ ผจก.ทุกสาขาทำทุกวัน · รูปขั้นต่ำ 0 = ติ๊กเฉย ๆ ไม่ต้องแนบรูป</div>
     </div>
   </div>
 
@@ -2946,14 +2988,177 @@ $('mtaSave') && ($('mtaSave').onclick=async()=>{
   if(r.ok){ try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} toast('ok','มอบหมายแล้ว'); closeMtAssign(); loadMtasks(); } else toast('err', r.error||'ไม่สำเร็จ');
 });
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+// ========== งานประจำวัน ผจก. (Daily Checklist) ==========
+let MT_VIEW='daily', MD_ITEMS=[], MD_DATE='', MD_CUR=null, MD_PHOTOS=[];
+function mdStPill(st){
+  const m={ todo:['ยังไม่ทำ','#6b7280'], submitted:['รอตรวจ','#d97706'], approved:['ผ่าน','#16a34a'], rejected:['ไม่ผ่าน','#dc2626'] };
+  const v=m[st]||['—','#6b7280'];
+  return '<span style="display:inline-block;background:'+v[1]+'1a;color:'+v[1]+';border:1px solid '+v[1]+';border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600">'+v[0]+'</span>';
+}
+// เข้าแท็บงาน ผจก. → ผจก.เห็นสวิตช์ (ประจำวัน/มอบหมาย) · HR เห็นเฉพาะบอร์ดมอบหมาย
+function enterMtasks(){
+  if(MGR_MODE){
+    $('mt_switch').style.display='flex';
+    if(!$('mt_switch').dataset.wired){ $('mt_switch').dataset.wired='1'; $('mtsw_daily').onclick=()=>showMtView('daily'); $('mtsw_assigned').onclick=()=>showMtView('assigned'); }
+    showMtView(MT_VIEW||'daily');
+  } else {
+    $('mt_switch').style.display='none'; $('mt_daily').style.display='none'; $('mt_assigned').style.display='block';
+    loadMtasks();
+  }
+}
+function showMtView(which){
+  MT_VIEW=which;
+  const dOn=which==='daily';
+  $('mt_daily').style.display=dOn?'block':'none';
+  $('mt_assigned').style.display=dOn?'none':'block';
+  $('mtsw_daily').classList.toggle('btn-pri',dOn); $('mtsw_daily').classList.toggle('btn-sec',!dOn);
+  $('mtsw_assigned').classList.toggle('btn-pri',!dOn); $('mtsw_assigned').classList.toggle('btn-sec',dOn);
+  if(dOn) loadMdaily(); else loadMtasks();
+}
+async function loadMdaily(){
+  const box=$('mt_daily'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  MD_DATE = MD_DATE || bkkTodayStr();
+  const r=await post({ action:'hr_mdaily_today', password:pwd, branch:MGR_BRANCH, date:MD_DATE });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  MD_ITEMS=r.items||[];
+  const isToday = MD_DATE===bkkTodayStr();
+  const pct = r.total? Math.round(r.done/r.total*100):0;
+  let h='<div class="toolbar" style="margin-bottom:8px;gap:8px;flex-wrap:wrap"><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="md_date" type="date" value="'+esc(MD_DATE)+'" max="'+esc(bkkTodayStr())+'" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'
+    +(isToday?'':'<button class="btn btn-sec btn-sm" id="md_today">วันนี้</button>')
+    +'<span style="flex:1"></span><b style="font-size:13px">ทำแล้ว '+r.done+'/'+r.total+' ('+pct+'%)</b></div>';
+  if(!isToday) h+='<div style="background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">📅 ดูย้อนหลัง '+beDate(MD_DATE)+' (อ่านอย่างเดียว)</div>';
+  if(!MD_ITEMS.length){ h+='<div class="empty" style="padding:20px">ยังไม่มีรายการงานประจำวัน (HR ตั้งค่าในแท็บ "ตั้งค่ากะ")</div>'; box.innerHTML=h; }
+  else { h+=MD_ITEMS.map((it,i)=>mdItemCard(it,i,isToday)).join(''); box.innerHTML=h; }
+  if($('md_date')) $('md_date').onchange=()=>{ MD_DATE=$('md_date').value||bkkTodayStr(); loadMdaily(); };
+  if($('md_today')) $('md_today').onclick=()=>{ MD_DATE=bkkTodayStr(); loadMdaily(); };
+  box.querySelectorAll('[data-mddo]').forEach(b=>b.onclick=()=>openMd(Number(b.dataset.mddo)));
+}
+function mdItemCard(it,i,isToday){
+  const canDo = isToday && (it.status==='todo');
+  let c='<div class="card" style="padding:12px;margin-bottom:8px">'
+    +'<div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><div style="font-weight:600;font-size:14px">'+esc(it.title)+(it.min_photos>0?' <span style="font-size:11px;color:var(--muted)">📷'+it.min_photos+'</span>':'')+'</div>'
+    +'<div style="margin-top:3px">'+mdStPill(it.status)+(it.done_name?(' <span style="font-size:11.5px;color:var(--muted)">· โดย '+esc(it.done_name)+'</span>'):'')+'</div>';
+  if(it.status==='rejected'&&it.review_note) c+='<div style="font-size:12.5px;color:#b91c1c;margin-top:5px">⚠️ ไม่ผ่าน: '+esc(it.review_note)+' <span style="color:var(--muted)">(ปรับปรุงในวันถัดไป)</span></div>';
+  if(it.status==='rejected'&&Array.isArray(it.review_markup)&&it.review_markup.length) c+='<div style="font-size:12px;color:#dc2626;font-weight:700;margin-top:4px">📍 จุดที่ต้องปรับปรุง</div>'+thumbsRow(it.review_markup);
+  if((it.status==='submitted'||it.status==='approved'||it.status==='rejected')&&Array.isArray(it.photos)&&it.photos.length) c+=thumbsRow(it.photos);
+  if(it.note&&it.status!=='todo') c+='<div style="font-size:12px;color:var(--muted);margin-top:4px">📝 '+esc(it.note)+'</div>';
+  c+='</div>'+(canDo?'<button class="btn btn-pri btn-sm" data-mddo="'+i+'">ทำงาน</button>':'')+'</div>';
+  return c+'</div>';
+}
+function thumbsRow(arr){ return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+arr.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:66px;height:66px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>'; }
+function openMd(i){
+  const it=MD_ITEMS[i]; if(!it) return; MD_CUR=it; MD_PHOTOS=[];
+  $('md_title').textContent=it.title;
+  $('md_body').innerHTML='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">'+(it.min_photos>0?('ต้องแนบรูปอย่างน้อย '+it.min_photos+' รูป'):'ถ่าย/แนบรูปได้ตามต้องการ (ไม่บังคับ)')+'</div>'
+    +'<div id="md_photobar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:10px"><label class="btn btn-sec btn-sm" style="cursor:pointer">📷<input type="file" accept="image/*" capture="environment" id="md_cam" style="display:none"></label>'
+    +'<label class="btn btn-sec btn-sm" style="cursor:pointer">🖼️<input type="file" accept="image/*" multiple id="md_file" style="display:none"></label>'
+    +'<button class="btn btn-sec btn-sm" id="md_draw" type="button">✏️ วาด</button></div>'
+    +'<input id="md_note" type="text" placeholder="หมายเหตุ (ถ้ามี)" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">';
+  $('md_cam').onchange=e=>mdAddFiles(e.target);
+  $('md_file').onchange=e=>mdAddFiles(e.target);
+  $('md_draw').onclick=mdDrawNew;
+  renderMdPhotoBar();
+  $('mdOverlay').classList.add('show');
+}
+function mdAddFiles(input){ const files=[...(input.files||[])]; Promise.all(files.map(f=>spReadImg(f))).then(urls=>{ urls.forEach(u=>MD_PHOTOS.push(u)); renderMdPhotoBar(); }); input.value=''; }
+function renderMdPhotoBar(){ const bar=$('md_photobar'); if(!bar) return; bar.innerHTML=MD_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:52px;height:52px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="mdDrawPhoto('+i+')" style="position:absolute;bottom:-4px;left:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer">✏️</button><button type="button" onclick="mdRmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join(''); }
+function mdRmPhoto(i){ MD_PHOTOS.splice(i,1); renderMdPhotoBar(); }
+function mdDrawPhoto(i){ const src=MD_PHOTOS[i]; if(!src) return; ensureMarkupUI(); MK={ task:{}, tool:'circle', cur:0, imgs:[{src, el:null, shapes:[]}], reviewFn:(n,o)=>{ if(o&&o[0]){ MD_PHOTOS[i]=o[0]; renderMdPhotoBar(); } } }; document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle')); document.getElementById('mkNote').value=''; document.getElementById('mkOverlay').style.display='flex'; mkLoadCur(); }
+function mdDrawNew(){ if(MD_PHOTOS.length){ mdDrawPhoto(MD_PHOTOS.length-1); return; } MD_PHOTOS.push(mtBlankCanvas()); renderMdPhotoBar(); mdDrawPhoto(MD_PHOTOS.length-1); }
+function closeMd(){ $('mdOverlay').classList.remove('show'); MD_CUR=null; }
+$('mdClose') && ($('mdClose').onclick=closeMd);
+$('mdCancel') && ($('mdCancel').onclick=closeMd);
+$('mdOverlay') && $('mdOverlay').addEventListener('click', e=>{ if(e.target===$('mdOverlay')) closeMd(); });
+$('mdSubmit') && ($('mdSubmit').onclick=async()=>{
+  if(!MD_CUR) return;
+  if((MD_CUR.min_photos||0)>0 && MD_PHOTOS.length<MD_CUR.min_photos){ toast('err','ต้องแนบรูปอย่างน้อย '+MD_CUR.min_photos+' รูป'); return; }
+  const btn=$('mdSubmit'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_mdaily_submit', password:pwd, data:{ def_id:MD_CUR.def_id, branch_id:MGR_BRANCH, work_date:bkkTodayStr(), photos:MD_PHOTOS.slice(), note:$('md_note').value, emp_id:MGR_EMP, emp_name:'ผจก.' } });
+  btn.disabled=false; btn.textContent='ส่งงาน';
+  if(r.ok){ toast('ok','ส่งงานแล้ว'); closeMd(); loadMdaily(); } else toast('err', r.error||'ส่งไม่สำเร็จ');
+});
+// ---- HR: บอร์ดตรวจงานประจำวัน ----
+let MDR_ROWS=[];
+async function loadMdailyBoard(){
+  const box=$('mdr_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  if($('mdr_branch') && !$('mdr_branch').dataset.filled){
+    $('mdr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+    $('mdr_branch').dataset.filled='1'; $('mdr_branch').onchange=loadMdailyBoard;
+    $('mdr_refresh').onclick=loadMdailyBoard;
+    $('mdr_date').onchange=loadMdailyBoard;
+  }
+  if(!$('mdr_date').value) $('mdr_date').value=bkkTodayStr();
+  const r=await post({ action:'hr_mdaily_board', password:pwd, date:$('mdr_date').value, branch:$('mdr_branch')?$('mdr_branch').value:'' });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  MDR_ROWS=r.rows||[];
+  if(!r.def_count){ box.innerHTML='<div class="empty" style="padding:20px">ยังไม่มีรายการงานประจำวัน — ตั้งค่าในแท็บ "ตั้งค่ากะ"</div>'; return; }
+  if(!MDR_ROWS.length){ box.innerHTML='<div class="empty">ไม่มีสาขา</div>'; return; }
+  box.innerHTML=MDR_ROWS.map(mdrBranchCard).join('');
+  box.querySelectorAll('[data-mdrev]').forEach(b=>b.onclick=()=>{ const p=b.dataset.mdrev.split('|'); mdReview(p[0], p[1]); });
+}
+function mdrBranchCard(b){
+  const pct=b.total?Math.round(b.done/b.total*100):0;
+  let h='<div class="card" style="padding:14px;margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><b style="flex:1;font-size:15px">🏪 '+esc(b.branch_name)+'</b><span style="font-size:12.5px;color:var(--muted)">ทำแล้ว '+b.done+'/'+b.total+' ('+pct+'%)'+(b.pending?(' · รอตรวจ '+b.pending):'')+'</span></div>';
+  h+=b.items.map(it=>{
+    let c='<div style="border-top:1px solid var(--line);padding:8px 0"><div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><div style="font-size:13.5px;font-weight:600">'+esc(it.title)+'</div><div style="margin-top:2px">'+mdStPill(it.status)+(it.done_name?(' <span style="font-size:11px;color:var(--muted)">· '+esc(it.done_name)+'</span>'):'')+'</div>';
+    if(it.note) c+='<div style="font-size:12px;color:var(--muted);margin-top:3px">📝 '+esc(it.note)+'</div>';
+    if(Array.isArray(it.photos)&&it.photos.length) c+=thumbsRow(it.photos);
+    if(it.status==='rejected'&&it.review_note) c+='<div style="font-size:12px;color:#b91c1c;margin-top:3px">↳ '+esc(it.review_note)+'</div>';
+    c+='</div>';
+    if(it.status==='submitted') c+='<div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-mdrev="'+it.log_id+'|approved">✅ ผ่าน</button><button class="btn btn-warn btn-sm" data-mdrev="'+it.log_id+'|reject">⤴ ตีกลับ</button></div>';
+    return c+'</div>';
+  }).join('');
+  return h+'</div>';
+}
+async function mdReview(logId, act){
+  if(act==='approved'){ const r=await post({ action:'hr_mdaily_review', password:pwd, log_id:logId, status:'approved' }); if(r.ok){ toast('ok','ผ่านแล้ว'); loadMdailyBoard(); } else toast('err',r.error||'ไม่สำเร็จ'); return; }
+  // ตีกลับ: หา item เพื่อดึงรูปมาวาด
+  let item=null; MDR_ROWS.forEach(b=>b.items.forEach(it=>{ if(String(it.log_id)===String(logId)) item=it; }));
+  const photos=(item&&Array.isArray(item.photos)&&item.photos.length)?item.photos:[];
+  if(!photos.length){ const note=prompt('เหตุผลที่ไม่ผ่าน (ผจก.เห็น · ปรับปรุงวันถัดไป):'); if(note===null) return; const r=await post({ action:'hr_mdaily_review', password:pwd, log_id:logId, status:'rejected', note }); if(r.ok){ toast('ok','ตีกลับแล้ว'); loadMdailyBoard(); } else toast('err',r.error||'ไม่สำเร็จ'); return; }
+  ensureMarkupUI();
+  MK={ task:{id:logId}, tool:'circle', cur:0, imgs:photos.map(u=>({src:u, el:null, shapes:[]})), reviewFn:(note,out)=>mdReviewSubmit(logId, note, out) };
+  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
+  document.getElementById('mkNote').value=''; document.getElementById('mkOverlay').style.display='flex';
+  mkLoadCur();
+}
+async function mdReviewSubmit(logId, note, markup){
+  const r=await post({ action:'hr_mdaily_review', password:pwd, log_id:logId, status:'rejected', note, markup });
+  if(r.ok){ toast('ok','ตีกลับแล้ว'); loadMdailyBoard(); } else toast('err', r.error||'ไม่สำเร็จ');
+}
+// ---- HR: จัดการเทมเพลตงานประจำวัน (ในแท็บตั้งค่ากะ) ----
+async function loadMdailyDefs(){
+  const box=$('mdd_list'); if(!box) return;
+  if($('mdd_add') && !$('mdd_add').dataset.wired){
+    $('mdd_add').dataset.wired='1';
+    $('mdd_add').onclick=async()=>{
+      const name=$('mdd_new').value.trim(); if(!name){ toast('err','กรอกชื่องาน'); return; }
+      const mp=Math.max(0,parseInt($('mdd_mp').value)||0);
+      const r=await post({ action:'hr_mdaily_defs_save', password:pwd, data:{ title:name, min_photos:mp } });
+      if(r.ok){ toast('ok','เพิ่มแล้ว'); $('mdd_new').value=''; $('mdd_mp').value='0'; loadMdailyDefs(); } else toast('err',r.error||'ไม่สำเร็จ');
+    };
+  }
+  const r=await post({ action:'hr_mdaily_defs_list', password:pwd });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  if(!r.rows.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีรายการ</div>'; return; }
+  box.innerHTML=r.rows.map(d=>'<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'
+    +'<span style="flex:1;font-size:14px'+(d.active===false?';color:var(--muted);text-decoration:line-through':'')+'">'+esc(d.title)+(d.min_photos>0?' <span style="font-size:11px;color:var(--muted)">📷'+d.min_photos+'</span>':'')+'</span>'
+    +'<button class="btn btn-sec btn-sm" data-mddtog="'+d.id+'">'+(d.active===false?'เปิด':'ปิด')+'</button>'
+    +'<button class="btn btn-danger btn-sm" data-mdddel="'+d.id+'">ลบ</button></div>').join('');
+  box.querySelectorAll('[data-mddtog]').forEach(b=>b.onclick=async()=>{ const d=r.rows.find(x=>String(x.id)===b.dataset.mddtog); if(!d)return; const r2=await post({action:'hr_mdaily_defs_save',password:pwd,data:{id:d.id,title:d.title,min_photos:d.min_photos,sort:d.sort,active:(d.active===false)}}); if(r2.ok) loadMdailyDefs(); else toast('err',r2.error||'ไม่สำเร็จ'); });
+  box.querySelectorAll('[data-mdddel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบรายการนี้?'))return; const r2=await post({action:'hr_mdaily_defs_delete',password:pwd,id:Number(b.dataset.mdddel)}); if(r2.ok){ toast('ok','ลบแล้ว'); loadMdailyDefs(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
+}
+
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
-  else if(name==='mgrtasks') loadMtasks();
+  else if(name==='mgrdailyrev') loadMdailyBoard();
+  else if(name==='mgrtasks') enterMtasks();
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
@@ -2966,7 +3171,7 @@ showTab = function(name){
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
   else if(name==='notifylog') loadNotifyLog();

@@ -213,6 +213,13 @@
         case 'hr_mtask_feed_list':   return await hrMtaskFeedList(p.task_id);
         case 'hr_mtask_assign':      return await hrMtaskAssign(p.id, p.emp_id, p.emp_name);
         case 'hr_mtask_delete':      return await hrMtaskDelete(p.id);
+        case 'hr_mdaily_defs_list':  return await hrMdailyDefsList();
+        case 'hr_mdaily_defs_save':  return await hrMdailyDefsSave(p.data);
+        case 'hr_mdaily_defs_delete':return await hrMdailyDefsDelete(p.id);
+        case 'hr_mdaily_today':      return await hrMdailyToday(p.branch, p.date);
+        case 'hr_mdaily_submit':     return await hrMdailySubmit(p.data);
+        case 'hr_mdaily_review':     return await hrMdailyReview(p.log_id, p.status, p.note, p.markup);
+        case 'hr_mdaily_board':      return await hrMdailyBoard(p.date, p.branch);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -2274,6 +2281,115 @@
     if (error) throw error;
     return { ok: true, rows: data || [] };
   }
+  // ---------- งานประจำวัน ผจก. (Manager Daily Checklist) ----------
+  async function hrMdailyDefsList() {
+    const { data, error } = await sb().from('mgr_daily_defs').select('*').order('sort').order('id');
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+  async function hrMdailyDefsSave(d) {
+    d = d || {};
+    if (!d.title || !String(d.title).trim()) return { ok: false, error: 'กรอกชื่องาน' };
+    const row = { title: String(d.title).trim(), min_photos: Math.max(0, parseInt(d.min_photos) || 0), sort: Number(d.sort) || 0, active: d.active !== false };
+    if (d.id) { const { error } = await sb().from('mgr_daily_defs').update(row).eq('id', d.id); if (error) throw error; }
+    else { const { error } = await sb().from('mgr_daily_defs').insert(row); if (error) throw error; }
+    await logAct('บันทึกงานประจำวัน ผจก.', null, row.title);
+    return { ok: true };
+  }
+  async function hrMdailyDefsDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุ' };
+    const { error } = await sb().from('mgr_daily_defs').delete().eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+  // เช็กลิสต์ของสาขา/วันนั้น = เทมเพลต active + ผลที่ทำแล้ว (merge)
+  async function hrMdailyToday(branch, date) {
+    const d = date || bkkToday();
+    const [defR, logR] = await Promise.all([
+      sb().from('mgr_daily_defs').select('*').eq('active', true).order('sort').order('id'),
+      branch ? sb().from('mgr_daily_logs').select('*').eq('branch_id', branch).eq('work_date', d)
+             : Promise.resolve({ data: [] }),
+    ]);
+    if (defR.error) throw defR.error;
+    const logByDef = {}; (logR.data || []).forEach(l => { logByDef[l.def_id] = l; });
+    const items = (defR.data || []).map(def => {
+      const l = logByDef[def.id];
+      return {
+        def_id: def.id, title: def.title, min_photos: def.min_photos || 0,
+        log_id: l ? l.id : null, status: l ? l.status : 'todo',
+        photos: (l && l.photos) || [], note: (l && l.note) || '',
+        review_note: (l && l.review_note) || '', review_markup: (l && l.review_markup) || [],
+        done_name: (l && l.done_name) || '', submitted_at: l ? l.submitted_at : null,
+      };
+    });
+    const done = items.filter(i => i.status !== 'todo').length;
+    return { ok: true, date: d, items, total: items.length, done };
+  }
+  async function hrMdailySubmit(d) {
+    d = d || {};
+    if (!d.def_id || !d.branch_id) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    const today = bkkToday();
+    const wd = d.work_date || today;
+    if (wd !== today) return { ok: false, error: 'ส่งได้เฉพาะงานของวันนี้' };
+    // ล็อกถ้าตรวจแล้ว (ผ่าน/ไม่ผ่าน) — แก้ในวันถัดไป
+    const { data: cur } = await sb().from('mgr_daily_logs').select('id,status').eq('def_id', d.def_id).eq('branch_id', d.branch_id).eq('work_date', wd).maybeSingle();
+    if (cur && (cur.status === 'approved' || cur.status === 'rejected')) return { ok: false, error: 'HR ตรวจแล้ว — ปรับปรุงในวันถัดไป' };
+    const photos = await _uploadMany('mdaily/' + d.branch_id, d.photos);
+    const row = {
+      def_id: d.def_id, branch_id: d.branch_id, work_date: wd, status: 'submitted',
+      photos: photos.length ? photos : null, note: (d.note || '').trim() || null,
+      done_by: d.emp_id || null, done_name: d.emp_name || null, submitted_at: new Date().toISOString(),
+      reviewer: null, review_note: null, review_markup: null, reviewed_at: null,
+    };
+    const { error } = await sb().from('mgr_daily_logs').upsert(row, { onConflict: 'def_id,branch_id,work_date' });
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrMdailyReview(logId, status, note, markup) {
+    if (!logId || !['approved', 'rejected'].includes(status)) return { ok: false, error: 'ข้อมูลไม่ถูกต้อง' };
+    const upd = { status, reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    if (status === 'rejected' && Array.isArray(markup) && markup.length) {
+      const urls = [];
+      for (const m of markup) {
+        if (typeof m === 'string' && m.startsWith('data:')) { try { urls.push(await window.HR.uploadPhoto('employee-docs', 'mdailymk/' + logId + '_' + Date.now() + '_' + urls.length + '.jpg', m)); } catch (e) {} }
+        else if (typeof m === 'string' && m) urls.push(m);
+      }
+      upd.review_markup = urls.length ? urls : null;
+    }
+    const { error } = await sb().from('mgr_daily_logs').update(upd).eq('id', logId);
+    if (error) throw error;
+    await logAct(status === 'approved' ? 'อนุมัติงานประจำวัน' : 'ตีกลับงานประจำวัน', null, '#' + logId + (note ? (' · ' + note) : ''));
+    return { ok: true };
+  }
+  // บอร์ด HR: รวมทุกสาขาของวันนั้น + สรุป
+  async function hrMdailyBoard(date, branch) {
+    const d = date || bkkToday();
+    const [defR, brR, logR] = await Promise.all([
+      sb().from('mgr_daily_defs').select('*').eq('active', true).order('sort').order('id'),
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('mgr_daily_logs').select('*').eq('work_date', d),
+    ]);
+    if (defR.error) throw defR.error;
+    const defs = defR.data || [];
+    let branches = (brR.data || []);
+    if (branch) branches = branches.filter(b => b.branch_id === branch);
+    const logs = (logR.data || []);
+    const logKey = {}; logs.forEach(l => { logKey[l.def_id + '|' + l.branch_id] = l; });
+    const rows = branches.map(b => {
+      const items = defs.map(def => {
+        const l = logKey[def.id + '|' + b.branch_id];
+        return { def_id: def.id, title: def.title, min_photos: def.min_photos || 0,
+          log_id: l ? l.id : null, status: l ? l.status : 'todo',
+          photos: (l && l.photos) || [], note: (l && l.note) || '', done_name: (l && l.done_name) || '',
+          review_note: (l && l.review_note) || '', review_markup: (l && l.review_markup) || [] };
+      });
+      const done = items.filter(i => i.status !== 'todo').length;
+      const pending = items.filter(i => i.status === 'submitted').length;
+      return { branch_id: b.branch_id, branch_name: b.name, items, total: items.length, done, pending };
+    });
+    return { ok: true, date: d, rows, def_count: defs.length };
+  }
+
   async function hrMtaskDelete(id) {
     if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
     const { data: t } = await sb().from('mgr_tasks').select('title').eq('id', id).maybeSingle();
