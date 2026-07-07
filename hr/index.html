@@ -38,6 +38,16 @@
   .tab:hover{color:var(--txt);}
   .tab.active{color:var(--green-d); border-bottom-color:var(--green); font-weight:600;}
   .tab .tabicon{margin-right:6px;}
+  /* เมนูแบบจัดกลุ่ม (ดรอปดาวน์) */
+  .navgrp{position:relative; display:flex;}
+  .navgrp-btn{padding:13px 14px; font-size:14px; font-weight:500; color:var(--muted); cursor:pointer; border:0; border-bottom:3px solid transparent; background:none; white-space:nowrap; display:flex; align-items:center; gap:5px;}
+  .navgrp-btn .caret{font-size:10px; opacity:.7;}
+  .navgrp-btn.on{color:var(--green-d); border-bottom-color:var(--green); font-weight:600;}
+  .navgrp-menu{position:absolute; top:100%; left:0; background:#fff; border:1px solid var(--line); border-radius:0 0 12px 12px; box-shadow:0 10px 26px rgba(0,0,0,.13); padding:6px; display:none; z-index:30; min-width:210px;}
+  .navgrp.open .navgrp-menu{display:block;}
+  .navgrp-menu .tab{display:flex; width:100%; text-align:left; padding:10px 12px; border:0; border-radius:8px; white-space:normal;}
+  .navgrp-menu .tab:hover{background:#f6f7f9;}
+  .navgrp-menu .tab.active{background:#f3faf6; color:var(--green-d); border:0;}
   .hamburger{display:none; background:none; border:0; font-size:22px; line-height:1; cursor:pointer; color:var(--green-d); padding:4px 8px; margin-right:2px;}
   .drawer-ov{display:none; position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:19;}
   .drawer-ov.show{display:block;}
@@ -258,6 +268,13 @@
     .tabs.open{transform:translateX(0);}
     .tabs .tab{width:100%; text-align:left; padding:14px 18px; font-size:14.5px; white-space:normal; border-bottom:1px solid var(--line); border-left:3px solid transparent;}
     .tabs .tab.active{border-bottom-color:var(--line); border-left-color:var(--green); background:#f3faf6;}
+    /* กลุ่มเมนูในมือถือ: กางเป็นหมวด (หัวข้อ + รายการ) */
+    .navgrp{flex-direction:column; width:100%;}
+    .navgrp-btn{width:100%; padding:11px 18px; background:#eef4f0; color:var(--green-d); font-weight:700; border-bottom:1px solid var(--line); border-radius:0;}
+    .navgrp-btn .caret{display:none;}
+    .navgrp-menu{position:static; display:block; box-shadow:none; border:0; border-radius:0; padding:0; min-width:0;}
+    .navgrp-menu .tab{border-bottom:1px solid var(--line); border-radius:0; padding:13px 26px;}
+    .navgrp-menu .tab.active{border-left:3px solid var(--green);}
 
     .toolbar{gap:8px; margin-bottom:12px;}
     .toolbar > .btn, .toolbar > select{flex:1 1 auto; min-width:0;}
@@ -1405,6 +1422,7 @@ async function tryLogin(p){
     $('tabbar').style.display='flex'; $('topact').style.display='flex';
     document.body.classList.add('is-logged');
     await loadAll();
+    buildGroupedNav();
     showTab('dashboard');
   } else toast('err', r.error || 'เข้าระบบไม่สำเร็จ');
 }
@@ -3287,8 +3305,43 @@ showTab = function(name){
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
   else if(name==='notifylog') loadNotifyLog();
+  if(typeof updateNavActive==='function') updateNavActive(name);
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
+
+// ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
+const NAV_GROUPS=[
+  { icon:'📊', label:'ภาพรวม',     tabs:['dashboard','board','analytics'] },
+  { icon:'👥', label:'พนักงาน',    tabs:['employees','empsum','recruit'] },
+  { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
+  { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
+  { icon:'⚠️', label:'วินัย',       tabs:['discipline','score'] },
+  { icon:'⚙️', label:'ระบบ',        tabs:['branches','settings','submissions','activity','notifylog'] },
+];
+function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
+function updateNavActive(name){ document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{ if(NAV_GROUPS[i]) b.classList.toggle('on', NAV_GROUPS[i].tabs.includes(name)); }); }
+function buildGroupedNav(){
+  const bar=$('tabbar'); if(!bar || bar.dataset.grouped) return;
+  const used=new Set();
+  const groups=NAV_GROUPS.map(g=>{
+    const grp=document.createElement('div'); grp.className='navgrp';
+    const btn=document.createElement('button'); btn.className='navgrp-btn'; btn.type='button';
+    btn.innerHTML='<span class="tabicon">'+g.icon+'</span>'+g.label+'<span class="caret">▾</span>';
+    const menu=document.createElement('div'); menu.className='navgrp-menu';
+    g.tabs.forEach(k=>{ const t=$('tab_'+k); if(t){ menu.appendChild(t); used.add(k); } });
+    btn.onclick=(e)=>{ e.stopPropagation(); const wasOpen=grp.classList.contains('open'); closeAllNavGroups(); if(!wasOpen) grp.classList.add('open'); };
+    grp.appendChild(btn); grp.appendChild(menu); return grp;
+  });
+  // แท็บที่ไม่ได้อยู่กลุ่มไหน (กันตกหล่น) — ต่อท้ายแบบเดี่ยว
+  const leftover=[]; ALL_TABS.forEach(k=>{ if(!used.has(k)){ const t=$('tab_'+k); if(t) leftover.push(t); } });
+  bar.innerHTML='';
+  groups.forEach(g=>bar.appendChild(g));
+  leftover.forEach(t=>bar.appendChild(t));
+  bar.dataset.grouped='1';
+  // ปิดเมนูเมื่อคลิกที่แท็บ หรือคลิกนอกเมนู
+  bar.querySelectorAll('.navgrp-menu .tab').forEach(t=>t.addEventListener('click', closeAllNavGroups));
+  document.addEventListener('click', e=>{ if(!e.target.closest('.navgrp')) closeAllNavGroups(); });
+}
 
 // ---------- โหมด ผจก.สาขา: ล็อกเมนู + ล็อกสาขา ----------
 function applyManagerMode(){
