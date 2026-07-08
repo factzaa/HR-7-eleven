@@ -1038,6 +1038,7 @@
       <div class="field" style="max-width:300px"><label>ปิดงานอัตโนมัติหลังเลิกกะ (นาที) — OT=0</label><input id="coAutoClose" type="number" min="0" value="60"></div>
       <div class="field" style="max-width:300px"><label>เริ่มคิด OT ที่ชั่วโมงที่ (หลังเลิกกะ)</label><input id="otStartHour" type="number" min="1" value="2"></div>
       <label class="toggle" style="max-width:420px"><input type="checkbox" id="otWholeDay"><div><div class="lbl">ปัด OT ลงเป็นชั่วโมงเต็ม (ต่อวัน)</div><div class="sub">เศษนาทีไม่ครบชั่วโมงไม่นับจ่าย · ปัดลงต่อวันก่อนรวม (เช่น 1.30+1.30 = 2 ชม. ไม่ใช่ 3)</div></div></label>
+      <label class="toggle" style="max-width:420px"><input type="checkbox" id="pushMgrTaskOff"><div><div class="lbl">ปิดแจ้งเตือน push งานผู้จัดการ</div><div class="sub">ปิดการส่ง push "งานใหม่จาก HR" ไปเครื่องสาขา (ยังเห็นงานในหน้างาน ผจก. ตามปกติ)</div></div></label>
       <div class="field" style="max-width:300px"><label>เตือน "งานค้างก่อนหมดกะ" ล่วงหน้า (นาที)</label><input id="taskWarn" type="number" min="0" value="30"></div>
       <div class="field" style="max-width:300px"><label>เข้างานก่อนกะได้ไม่เกิน (นาที) — เกินนี้เตือน "นอกกะ"</label><input id="checkinEarly" type="number" min="0" value="180"></div>
       <div class="field" style="max-width:300px"><label>เตือนถ้าเพิ่งออกงานภายใน (ชม.) ตอนกดเข้างานใหม่</label><input id="recentCoHrs" type="number" min="0" value="8"></div>
@@ -4540,6 +4541,7 @@ async function loadCheckoutGrace(){
     if(s.checkout_autoclose_min!=null && $('coAutoClose')) $('coAutoClose').value = s.checkout_autoclose_min;
     if(s.ot_start_hour!=null && $('otStartHour')) $('otStartHour').value = s.ot_start_hour;
     if($('otWholeDay')) $('otWholeDay').checked = String(s.ot_whole_day||'')==='1';
+    if($('pushMgrTaskOff')) $('pushMgrTaskOff').checked = String(s.push_mgr_task_off||'')==='1';
     if(s.mdaily_remind_hour!=null && $('mdd_remind')) $('mdd_remind').value = s.mdaily_remind_hour;
     if(s.task_warn_before_min!=null && $('taskWarn')) $('taskWarn').value = s.task_warn_before_min;
     if(s.checkin_early_min!=null && $('checkinEarly')) $('checkinEarly').value = s.checkin_early_min;
@@ -4571,6 +4573,7 @@ async function saveCheckoutGrace(){
     post({ action:'hr_settings_save', password:pwd, key:'checkout_autoclose_min', value:String(ac) }),
     post({ action:'hr_settings_save', password:pwd, key:'ot_start_hour', value:String(oh) }),
     post({ action:'hr_settings_save', password:pwd, key:'ot_whole_day', value:(($('otWholeDay')||{}).checked?'1':'0') }),
+    post({ action:'hr_settings_save', password:pwd, key:'push_mgr_task_off', value:(($('pushMgrTaskOff')||{}).checked?'1':'0') }),
     post({ action:'hr_settings_save', password:pwd, key:'mdaily_remind_hour', value:String(Math.max(0,Math.min(23,parseInt(($('mdd_remind')||{}).value)||20))) }),
     post({ action:'hr_settings_save', password:pwd, key:'task_warn_before_min', value:String(w) }),
     post({ action:'hr_settings_save', password:pwd, key:'checkin_early_min', value:String(ce) }),
