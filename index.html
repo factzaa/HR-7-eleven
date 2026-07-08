@@ -117,7 +117,8 @@
         <div style="flex:1"><label>ตั้งแต่</label><input id="lvStart" type="date"></div>
         <div style="flex:1"><label>ถึง</label><input id="lvEnd" type="date"></div>
       </div>
-      <label>เหตุผล</label><input id="lvReason" type="text" placeholder="ระบุเหตุผล (ถ้ามี)">
+      <label>เหตุผล <span style="color:#dc2626">*</span></label><input id="lvReason" type="text" placeholder="ระบุเหตุผลการลา (จำเป็น)">
+      <div id="lvReasonErr" style="display:none;color:#dc2626;font-size:12.5px;margin-top:4px">⚠️ กรุณาระบุเหตุผลการลาก่อนส่งคำขอ</div>
       <div id="lvDocWrap" style="display:none">
         <label>แนบใบรับรองแพทย์ / เอกสาร <span style="color:#dc2626">*</span></label>
         <input id="lvDoc" type="file" accept="image/*">
@@ -220,12 +221,15 @@ $('lvSubmit').onclick=async()=>{
   const start=$('lvStart').value, end=$('lvEnd').value, type=$('lvType').value, reason=$('lvReason').value.trim();
   if(!start){ toast('err','เลือกวันที่เริ่มลา'); return; }
   if(end&&end<start){ toast('err','วันสิ้นสุดต้องไม่ก่อนวันเริ่ม'); return; }
+  if(!reason){ $('lvReasonErr').style.display='block'; $('lvReason').focus(); toast('err','กรุณาระบุเหตุผลการลา'); return; }
+  $('lvReasonErr').style.display='none';
   $('lvSubmit').disabled=true; $('lvSubmit').textContent='กำลังส่ง…';
   try{ await HR.requestLeave({ empId:id, start_date:start, end_date:end||start, type, reason, doc:LDOC });
-    toast('ok','ส่งคำขอลาแล้ว รอ HR อนุมัติ'); $('lvReason').value=''; LDOC=null; $('lvDoc').value=''; $('lvDocPrev').style.display='none'; myLeaves();
+    toast('ok','ส่งคำขอลาแล้ว รอ HR อนุมัติ'); $('lvReason').value=''; $('lvReasonErr').style.display='none'; LDOC=null; $('lvDoc').value=''; $('lvDocPrev').style.display='none'; myLeaves();
   }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); }
   $('lvSubmit').disabled=false; $('lvSubmit').textContent='ส่งคำขอลา';
 };
+$('lvReason').addEventListener('input',()=>{ if($('lvReason').value.trim()) $('lvReasonErr').style.display='none'; });
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
 </script>
 
