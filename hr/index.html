@@ -1147,6 +1147,7 @@
         <div class="vitem span2"><span class="vlabel">ชื่อ-นามสกุล</span><span class="vvalue" id="v_fullname">—</span></div>
         <div class="vitem"><span class="vlabel">ชื่อเล่น</span><span class="vvalue" id="v_nickname">—</span></div>
         <div class="vitem"><span class="vlabel">อายุงาน</span><span class="vvalue" id="v_tenure">—</span></div>
+        <div class="vitem"><span class="vlabel">วันสิ้นสุดการทำงาน</span><span class="vvalue mono" id="v_end_date">—</span></div>
         <div class="vitem"><span class="vlabel">กะประจำ</span><span class="vvalue" id="v_shift">—</span></div>
         <div class="vitem"><span class="vlabel">สาขา</span><span class="vvalue" id="v_branch">—</span></div>
         <div class="vitem span2"><span class="vlabel">วันหยุดประจำสัปดาห์</span><span class="vvalue" id="v_weekly_off">—</span></div>
@@ -1204,6 +1205,7 @@
         <div class="grid">
           <div class="field"><label>รหัสพนักงาน<span class="req">*</span></label><input id="f_emp_id" type="text" inputmode="numeric"><button type="button" class="btn btn-sec btn-sm" id="f_changeId" style="display:none;margin-top:6px">🔁 เปลี่ยนรหัส</button></div>
           <div class="field"><label>วันที่เริ่มงาน</label><input id="f_start_date" type="date"></div>
+          <div class="field"><label>วันสิ้นสุดการทำงาน</label><input id="f_end_date" type="date"><div class="hint">เว้นว่าง = ยังทำงานอยู่ · กรอกเมื่อพนักงานลาออก/พ้นสภาพ</div></div>
           <div class="field span2"><label>ชื่อ-นามสกุล<span class="req">*</span></label><input id="f_name" type="text"></div>
           <div class="field"><label>ชื่อเล่น</label><input id="f_nickname" type="text"></div>
           <div class="field"><label>สาขา<span class="req">*</span></label><select id="f_branch_id"></select></div>
@@ -1689,7 +1691,7 @@ async function loadDashboard(){
 }
 
 // ========== EMPLOYEES ==========
-const FIELDS = ['emp_id','start_date','name','nickname','branch_id','phone',
+const FIELDS = ['emp_id','start_date','end_date','name','nickname','branch_id','phone',
                 'emergency_phone','emergency_name','bank_name','bank_account','id_card','address','line_user_id','weekly_off'];
 function fillEmpBranchFilter(){
   const sel=$('q_branch'); if(!sel) return; const cur=sel.value;
@@ -1962,6 +1964,9 @@ function openView(empId){
   vSet('v_emp_id', r.emp_id); vSet('v_start_date', r.start_date);
   vSet('v_fullname', r.name); vSet('v_nickname', r.nickname);
   vSet('v_tenure', tenureText(r.start_date));
+  vSet('v_end_date', r.end_date ? beDate(r.end_date) : '');
+  if(r.end_date){ const ended = String(r.end_date) <= new Date().toISOString().slice(0,10);
+    $('v_pills').innerHTML += '<span class="pill bad">'+(ended?'สิ้นสุดแล้ว ':'จะสิ้นสุด ')+beDate(r.end_date)+'</span>'; }
   vSet('v_shift', shiftName(r.default_shift)); vSet('v_branch', branchName(r.branch_id));
   vSet('v_weekly_off', r.weekly_off || 'ทำงานทุกวัน');
   vSetPhone('v_phone', r.phone); vSet('v_line', r.line_user_id); vSet('v_address', r.address);

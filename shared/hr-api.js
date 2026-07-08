@@ -529,6 +529,7 @@
     const row = {
       emp_id: d.emp_id, name: d.name, nickname: d.nickname || null,
       start_date: d.start_date || null,
+      end_date: d.end_date || null,
       branch_id: d.branch_id || null, weekly_off: d.weekly_off || null,
       phone: d.phone || null, line_user_id: d.line_user_id || null, address: d.address || null,
       emergency_name: d.emergency_name || null, emergency_phone: d.emergency_phone || null,
