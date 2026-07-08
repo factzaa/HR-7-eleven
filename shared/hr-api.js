@@ -2460,6 +2460,18 @@
     const { error } = await sb().from('mgr_tasks').update({ assignee_emp: empId || null, assignee_name: empName || null, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
     await sb().from('mgr_task_feed').insert({ task_id: id, role: 'mgr', sender_name: 'ผจก.', kind: 'status', message: empName ? ('มอบหมายให้: ' + empName) : 'ยกเลิกการมอบหมาย' });
+    // แจ้งพนักงานที่ถูกมอบหมาย → เห็นในกล่องแจ้งเตือน + งานโผล่ในหน้า "งานรับส่งผลัด"
+    if (empId) {
+      try {
+        const { data: t } = await sb().from('mgr_tasks').select('title').eq('id', id).maybeSingle();
+        await sb().from('emp_notifications').insert({
+          emp_id: empId, kind: 'mgr_task',
+          title: 'ได้รับมอบหมายงานจากผู้จัดการ',
+          body: 'งาน: ' + ((t && t.title) || '-') + '\nเปิดหน้า "งานรับส่งผลัด" เพื่อทำและส่งรูปหลักฐาน',
+          ref: 'mgr_task', created_by: 'ผจก.',
+        });
+      } catch (e) { console.warn('mtask emp_notify', e); }
+    }
     return { ok: true };
   }
 

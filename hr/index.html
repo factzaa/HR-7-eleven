@@ -2999,10 +2999,11 @@ function mtEditFeedPhoto(url){
 }
 function mtFeedRow(m){
   if(m.kind==='status'||m.role==='system') return '<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:6px 0">— '+esc(m.message||'')+' ('+esc(m.sender_name||'')+' · '+beDateTime(m.created_at)+') —</div>';
-  const bg=m.role==='hr'?'#e0f2fe':'#dcfce7';
+  const bg=m.role==='hr'?'#e0f2fe':(m.role==='emp'?'#fef3c7':'#dcfce7');
   const align=m.role==='hr'?'flex-start':'flex-end';
+  const who=m.role==='hr'?'HR':(m.role==='emp'?'พนักงาน':'ผจก.');
   let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%;background:'+bg+';border-radius:12px;padding:7px 11px">';
-  c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||(m.role==='hr'?'HR':'ผจก.'))+' · '+beDateTime(m.created_at)+'</div>';
+  c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||who)+(m.role==='emp'?' 👷':'')+' · '+beDateTime(m.created_at)+'</div>';
   if(m.message) c+='<div style="font-size:13.5px;white-space:pre-wrap">'+esc(m.message)+'</div>';
   if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">'+m.photos.map(u=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" onclick="lightbox(this)" style="width:82px;height:82px;object-fit:cover;border-radius:8px;cursor:zoom-in"><button type="button" data-mtedit="'+esc(u)+'" title="วาดทับ/แก้ไขรูปนี้" style="position:absolute;bottom:-4px;right:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:11px;cursor:pointer">✏️</button></span>').join('')+'</div>';
   return c+'</div></div>';

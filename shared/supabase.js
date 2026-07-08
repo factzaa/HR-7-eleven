@@ -1086,6 +1086,45 @@
     return { ok:true };
   }
 
+  // ---------- งานที่ ผจก. มอบหมายให้พนักงาน (mgr_tasks.assignee_emp) ----------
+  async function getMyMgrTasks(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data } = await sb.from('mgr_tasks').select('*')
+      .eq('assignee_emp', empId).neq('status','done')
+      .order('updated_at',{ ascending:false }).limit(60);
+    const rows=(data||[]).map(t=>({
+      id:t.id, title:t.title, detail:t.detail||'', priority:t.priority||'normal',
+      due_date:t.due_date, status:t.status, hr_photos:t.hr_photos||[],
+      emp_photos:t.emp_photos||[], emp_note:t.emp_note||'', emp_submitted_at:t.emp_submitted_at||null,
+    }));
+    return { emp, rows };
+  }
+  async function submitMgrTaskByEmp({ task_id, empId, photos, note }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const t=(await sb.from('mgr_tasks').select('id,assignee_emp,status,branch_id').eq('id',task_id).maybeSingle()).data;
+    if(!t) throw new Error('ไม่พบงานนี้');
+    if(t.assignee_emp!==empId) throw new Error('งานนี้ไม่ได้มอบหมายให้คุณ');
+    const msg=(note||'').trim();
+    const urls=[];
+    for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','mtask/emp/'+(t.branch_id||'x')+'_'+task_id+'_'+empId+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    if(!urls.length && !msg) throw new Error('กรุณาแนบรูปหรือพิมพ์หมายเหตุ');
+    // 1) เข้าไทม์ไลน์งาน ผจก. (role='emp') → ผจก./HR เห็นแบบเรียลไทม์
+    const who=emp.nickname||emp.name||('พนง.'+empId);
+    const { error:eF }=await sb.from('mgr_task_feed').insert({
+      task_id, role:'emp', sender_name:who,
+      message: msg||('พนักงานส่งความคืบหน้า'+(urls.length?(' · '+urls.length+' รูป'):'')),
+      photos: urls.length?urls:null, kind:'progress',
+    });
+    if(eF) throw eF;
+    // 2) อัปเดตงาน: เก็บชุดล่าสุด + ดันสถานะเป็น review ถ้ายังไม่ถึง
+    const upd={ emp_submitted_at:new Date().toISOString(), emp_note:msg||null, updated_at:new Date().toISOString() };
+    if(urls.length) upd.emp_photos=urls;
+    if(t.status==='todo'||t.status==='doing') upd.status='review';
+    const { error:eT }=await sb.from('mgr_tasks').update(upd).eq('id',task_id);
+    if(eT) throw eT;
+    return { ok:true };
+  }
+
   // ---------- QA สินค้าใกล้หมดอายุ (พนักงานบันทึก/ดู + ระบบจำบาร์โค้ด) ----------
   function _addDaysStr(s, n){ return new Date(new Date(s+'T00:00:00Z').getTime()+n*86400000).toISOString().slice(0,10); }
   async function getQaFolders(empId){
@@ -1186,5 +1225,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();
