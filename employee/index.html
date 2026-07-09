@@ -217,6 +217,13 @@
   </div>
 </div>
 
+<div class="overlay" id="notifOverlay">
+  <div class="sheet" style="gap:0; padding:0; overflow-y:auto;">
+    <div id="notifHead" style="padding:16px 18px; color:#fff; text-align:center; font-weight:600; background:var(--green)">🔔 แจ้งเตือนจากระบบ</div>
+    <div id="notifBody" style="padding:16px 18px; display:flex; flex-direction:column; gap:11px;"></div>
+  </div>
+</div>
+
 <div class="overlay" id="rulesOverlay">
   <div class="sheet" style="gap:12px;">
     <h2>ยอมรับระเบียบการทำงาน</h2>
@@ -391,7 +398,8 @@ function updateUI(){
 }
 
 async function getDescriptor(){
-  const det = await faceapi.detectSingleFace($('video'), new faceapi.TinyFaceDetectorOptions())
+  // scoreThreshold สูงขึ้น = ต้องมั่นใจว่าเป็นใบหน้าจริง (กันถ่ายเพดาน/วัตถุคล้ายหน้าหลุดผ่าน)
+  const det = await faceapi.detectSingleFace($('video'), new faceapi.TinyFaceDetectorOptions({ scoreThreshold:0.6 }))
     .withFaceLandmarks().withFaceDescriptor();
   return det ? Array.from(det.descriptor) : null;
 }
@@ -519,8 +527,10 @@ async function submit(action){
   setBtnBusy(true);
   try{
     const descriptor = await getDescriptor();
-    if(!descriptor){ showToast('err','ไม่พบใบหน้าชัดเจน\nลองใหม่'); return; }
-    const faceMatch = matchFace(descriptor, empMatch);  // true/false/null (soft flag)
+    if(!descriptor){ showToast('err','ไม่พบใบหน้าชัดเจน — กรุณาหันหน้าเข้ากล้องให้เห็นเต็มหน้า แล้วลองใหม่'); return; }
+    const faceMatch = matchFace(descriptor, empMatch);  // true=ตรง / false=ไม่ตรง / null=ยังไม่ลงทะเบียน
+    // บังคับ: ถ้าลงทะเบียนใบหน้าไว้แล้วแต่หน้าไม่ตรง → บล็อก (กันลงเวลาผิดคน/ถ่ายเพดาน)
+    if(faceMatch===false){ showToast('err','ใบหน้าไม่ตรงกับที่ลงทะเบียนของ '+(empMatch.name||empMatch.emp_id)+'\nกรุณาให้เจ้าตัวสแกนใบหน้าของตนเอง'); return; }
     const shiftId  = empMatch.default_shift;
     const branchId = gps.branch ? gps.branch.branch_id : empMatch.branch_id;
     const timeStr  = new Date().toLocaleTimeString('th-TH',{hour12:false});
@@ -795,13 +805,14 @@ $('ackBtn').onclick = async ()=>{
 
 // ====== ป๊อปอัพข้อเสนอแนะเพิ่มเติมการลาจาก HR (หลังเช็กอิน) — เด้งทีละใบ ======
 async function showLeaveProposals(empId){
-  if(!empId || !HR.getLeaveProposals) return;
-  let res; try{ res=await HR.getLeaveProposals(empId); }catch(e){ return; }
+  if(!empId || !HR.getLeaveProposals){ showMyNotifications(empId); return; }
+  let res; try{ res=await HR.getLeaveProposals(empId); }catch(e){ showMyNotifications(empId); return; }
   const pend=(res&&res.pending)||[];
   if(pend.length) showOneProposal(pend, 0, empId);
+  else showMyNotifications(empId);   // ไม่มีข้อเสนอค้าง → ไปต่อที่กล่องแจ้งเตือน
 }
 function showOneProposal(list, idx, empId){
-  if(idx>=list.length){ $('propOverlay').classList.remove('show'); return; }
+  if(idx>=list.length){ $('propOverlay').classList.remove('show'); showMyNotifications(empId); return; }
   const p=list[idx];
   const range=beDate(p.start_date)+(p.end_date && p.end_date!==p.start_date?(' – '+beDate(p.end_date)):'');
   $('propBody').innerHTML=
@@ -828,19 +839,60 @@ function showOneProposal(list, idx, empId){
   $('propNo').onclick=function(){ doResp('declined'); };
 }
 
+// ====== กล่องแจ้งเตือนจากระบบ (หลังเช็กอิน) — เด้งทีละอัน ======
+async function showMyNotifications(empId){
+  if(!empId || !HR.getMyNotifications) return;
+  let res; try{ res=await HR.getMyNotifications(empId); }catch(e){ return; }
+  const list=(res&&res.unseen)||[];
+  if(list.length) showOneNotif(list, 0, empId);
+}
+function notifStyle(kind){
+  if(kind==='score_deduct') return {bg:'var(--red)', ic:'⛔'};
+  if(kind==='score_add'||kind==='leave_restored') return {bg:'var(--green)', ic:kind==='leave_restored'?'✅':'➕'};
+  return {bg:'var(--green)', ic:'🔔'};
+}
+function showOneNotif(list, idx, empId){
+  if(idx>=list.length){ $('notifOverlay').classList.remove('show'); return; }
+  const n=list[idx]; const st=notifStyle(n.kind);
+  $('notifHead').style.background=st.bg;
+  $('notifHead').textContent=st.ic+' แจ้งเตือนจากระบบ'+(list.length>1?(' ('+(idx+1)+'/'+list.length+')'):'');
+  $('notifBody').innerHTML=
+    '<div style="font-size:15px;font-weight:700">'+escH(n.title||'')+'</div>'
+    +(n.body?('<div style="font-size:13.5px;color:var(--muted);white-space:pre-wrap;line-height:1.5">'+escH(n.body)+'</div>'):'')
+    +'<div style="font-size:11.5px;color:var(--muted)">'+beDateTime(n.created_at)+(n.created_by?(' · โดย '+escH(n.created_by)):'')+'</div>'
+    +'<button class="act in" id="notifOk" style="width:100%;margin-top:4px">รับทราบ</button>';
+  $('notifOverlay').classList.add('show');
+  $('notifOk').onclick=async function(){
+    try{ await HR.markNotificationsSeen(empId, [n.id]); }catch(e){}
+    showOneNotif(list, idx+1, empId);
+  };
+}
+function renderNotifHistory(rows){
+  const list=(rows||[]);
+  if(!list.length) return '';
+  return '<div style="font-weight:700;margin-top:14px;margin-bottom:6px">การแจ้งเตือนจากระบบ</div>'
+    + list.slice(0,10).map(n=>{
+      const st=notifStyle(n.kind);
+      return '<div style="border:1px solid var(--line);border-left:4px solid '+st.bg+';border-radius:11px;padding:9px 11px;margin-bottom:7px">'
+        +'<div style="font-weight:600;font-size:13.5px">'+st.ic+' '+escH(n.title||'')+'</div>'
+        +(n.body?('<div style="font-size:12.5px;color:var(--muted);white-space:pre-wrap;margin-top:2px">'+escH(n.body)+'</div>'):'')
+        +'<div style="font-size:11px;color:var(--muted);margin-top:3px">'+beDateTime(n.created_at)+'</div></div>';
+    }).join('');
+}
 async function showSelf(){
   $('selfOverlay').classList.add('show');
   const body = $('selfBody');
   if(!empMatch || empMatch.unknown){ body.innerHTML='<p style="color:var(--red)">กรอกรหัสพนักงานให้ถูกต้องก่อน</p>'; return; }
   body.innerHTML='<p>กำลังโหลด…</p>';
   try{
-    const [s, ms, leaves, props] = await Promise.all([
+    const [s, ms, leaves, props, notifs] = await Promise.all([
       HR.selfStatus(empMatch.emp_id),
       HR.myStatus(empMatch.emp_id).catch(()=>null),   // คะแนนจริง (สูตรเดียวกับ HR)
       HR.myLeaves(empMatch.emp_id).catch(()=>[]),
-      (HR.getLeaveProposals?HR.getLeaveProposals(empMatch.emp_id):Promise.resolve({history:[]})).catch(()=>({history:[]}))
+      (HR.getLeaveProposals?HR.getLeaveProposals(empMatch.emp_id):Promise.resolve({history:[]})).catch(()=>({history:[]})),
+      (HR.getMyNotifications?HR.getMyNotifications(empMatch.emp_id):Promise.resolve({all:[]})).catch(()=>({all:[]}))
     ]);
-    body.innerHTML = renderSelf(s, ms&&ms.score) + renderProposalHistory(props&&props.history) + renderMyLeaves(leaves);
+    body.innerHTML = renderSelf(s, ms&&ms.score) + renderNotifHistory(notifs&&notifs.all) + renderProposalHistory(props&&props.history) + renderMyLeaves(leaves);
   }catch(e){ console.error(e); body.innerHTML='<p style="color:var(--red)">โหลดไม่สำเร็จ: '+escH(e.message||'')+'</p>'; }
 }
 // ประวัติข้อเสนอ/การสื่อสารกับ HR (แสดงในสถานะของฉัน)
