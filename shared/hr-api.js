@@ -910,6 +910,7 @@
       branch_id: String(d.branch_id).trim(), name: d.name.trim(),
       lat, lng, radius_m: isFinite(radius) && radius > 0 ? radius : 80,
     };
+    if (d.line_group_id !== undefined) row.line_group_id = (d.line_group_id || '').trim() || null;   // กลุ่ม LINE ต่อสาขา (รับสินค้า)
     const { data: existing } = await sb().from('branches').select('branch_id').eq('branch_id', row.branch_id).maybeSingle();
     const action = existing ? 'updated' : 'created';
     const { error } = await sb().from('branches').upsert(row, { onConflict: 'branch_id' });

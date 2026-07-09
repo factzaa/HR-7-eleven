@@ -1198,9 +1198,12 @@
     const row={ ref_no:ref, branch_id:branch, work_date:workDate, warehouse_id, warehouse_code:(wh&&wh.code)||null, warehouse_name:(wh&&wh.name)||null,
       crates_in:cin, crates_return:cret, return_expected:expected, diff, in_photos:urls.length?urls:null, note:(note||'').trim()||null,
       done_by:emp.emp_id, done_name:emp.nickname||emp.name, updated_at:new Date().toISOString(), line_notified:false };
-    if(id){ const {error}=await sb.from('goods_receipts').update(row).eq('id',id); if(error) throw error; return { ok:true, id }; }
-    const {data,error}=await sb.from('goods_receipts').insert(row).select('id').single(); if(error) throw error;
-    return { ok:true, id:data&&data.id };
+    let rid=id;
+    if(id){ const {error}=await sb.from('goods_receipts').update(row).eq('id',id); if(error) throw error; }
+    else { const {data,error}=await sb.from('goods_receipts').insert(row).select('id').single(); if(error) throw error; rid=data&&data.id; }
+    // ยิง Flex เข้ากลุ่ม LINE ของสาขา (fire-and-forget · edge function กันซ้ำด้วย line_notified)
+    try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(base&&rid) fetch(base+'/functions/v1/line-goods-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid})}); }catch(e){}
+    return { ok:true, id:rid };
   }
 
   // ---------- QA สินค้าใกล้หมดอายุ (พนักงานบันทึก/ดู + ระบบจำบาร์โค้ด) ----------

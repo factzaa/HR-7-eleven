@@ -4253,6 +4253,7 @@ async function loadBranches(){
       <td class="mono">${b.emp_count} คน</td>
       <td style="white-space:nowrap">
         <button class="btn btn-sec btn-sm" onclick="brEdit('${esc(b.branch_id)}')">แก้ไข</button>
+        ${b.line_group_id?`<button class="btn btn-sec btn-sm" onclick="brTestLine('${esc(b.branch_id)}')">📤 ทดสอบ LINE</button>`:''}
         <button class="btn btn-danger btn-sm" onclick="brDelete('${esc(b.branch_id)}')">ลบ</button>
       </td>
     </tr>`).join('');
@@ -4266,10 +4267,18 @@ function brOpen(branch){
   $('br_lat').value = branch ? branch.lat : '';
   $('br_lng').value = branch ? branch.lng : '';
   $('br_radius').value = branch ? branch.radius_m : 80;
+  if($('br_line')) $('br_line').value = branch ? (branch.line_group_id||'') : '';
   brUpdateMap();
   $('brOverlay').classList.add('show');
 }
 function brEdit(id){ const b=(BR&&BR.rows||[]).find(x=>x.branch_id===id); if(b) brOpen(b); }
+async function brTestLine(id){
+  const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+  if(!base){ toast('err','ไม่พบ config'); return; }
+  toast('ok','กำลังทดสอบส่ง…');
+  try{ const res=await fetch(base+'/functions/v1/line-goods-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({test:true, branch_id:id})}); const j=await res.json().catch(()=>({})); if(j&&j.ok&&j.sent) toast('ok','ส่งทดสอบเข้ากลุ่ม LINE แล้ว'); else toast('err',(j&&j.error)||'ส่งไม่สำเร็จ — ตรวจ Token/Group ID'); }
+  catch(e){ toast('err','เรียก edge function ไม่ได้ (deploy แล้วหรือยัง)'); }
+}
 async function brDelete(id){
   if(!confirm('ลบสาขา '+id+' ?')) return;
   const r = await post({ action:'hr_branch_delete', password:pwd, branch_id:id });
@@ -5456,6 +5465,7 @@ async function loadSubmissions(){
         <button type="button" class="btn btn-sec btn-sm" id="br_gps">📍 ดึงพิกัดปัจจุบัน</button>
         <a class="btn btn-sec btn-sm" id="br_map" target="_blank" href="#">🗺️ ดูบนแผนที่</a>
       </div>
+      <div class="field" style="margin-top:10px"><label>LINE Group ID (แจ้งรับสินค้าเข้ากลุ่มนี้)</label><input id="br_line" type="text" placeholder="เช่น Cxxxxxxxxxxxxxxxx (ว่าง = ไม่ส่ง LINE)"><div class="hint">ใช้ Channel Token ตัวเดียวร่วมกัน · แยกกลุ่มด้วย Group ID ต่อสาขา</div></div>
     </div>
     <div class="modal-f"><button class="btn btn-pri" id="brSave">บันทึก</button></div>
   </div>`;
@@ -5526,7 +5536,7 @@ async function loadSubmissions(){
     }, ()=>{ $('br_gps').textContent='📍 ดึงพิกัดปัจจุบัน'; toast('err','ดึงพิกัดไม่สำเร็จ (อนุญาตตำแหน่ง)'); }, { enableHighAccuracy:true, timeout:10000 });
   };
   $('brSave').onclick = async ()=>{
-    const data = { branch_id:$('br_id').value.trim(), name:$('br_name').value.trim(), lat:$('br_lat').value.trim(), lng:$('br_lng').value.trim(), radius_m:$('br_radius').value };
+    const data = { branch_id:$('br_id').value.trim(), name:$('br_name').value.trim(), lat:$('br_lat').value.trim(), lng:$('br_lng').value.trim(), radius_m:$('br_radius').value, line_group_id:($('br_line')?$('br_line').value:'') };
     if(!data.branch_id||!data.name){ toast('err','กรอกรหัสและชื่อสาขา'); return; }
     $('brSave').innerHTML='<span class="spin"></span>';
     const r = await post({ action:'hr_branch_save', password:pwd, data });
