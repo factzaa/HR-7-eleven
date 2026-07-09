@@ -67,7 +67,8 @@
 
     let photo_url = null;
     if (photoDataUrl) {
-      photo_url = await uploadPhoto('attendance-photos', `${empId}/${today}.jpg`, photoDataUrl);
+      // ใส่ timestamp กันชื่อไฟล์ซ้ำ: ถ้าลบข้อมูลแล้วเช็กอินใหม่วันเดิม จะได้ URL ใหม่ (ไม่ติดแคชรูปเก่า)
+      photo_url = await uploadPhoto('attendance-photos', `${empId}/${today}_${Date.now()}.jpg`, photoDataUrl);
     }
     // คำนวณสายผ่าน RPC (อิงกะที่ใช้จริง)
     const nowIso = new Date().toISOString();
