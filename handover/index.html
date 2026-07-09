@@ -74,7 +74,7 @@
       <button class="imgbtn" id="bMenu2" style="position:relative"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"><span id="spBadge" style="display:none;position:absolute;top:8px;right:10px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;min-width:24px;height:24px;line-height:24px;border-radius:999px;padding:0 7px;box-shadow:0 2px 6px rgba(0,0,0,.3)">0</span></button>
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
       <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
-      <button class="btn btn-pri" id="bGoods" style="width:100%;margin-top:4px">🎁 รับสินค้า (ผู้คุมผลัด)</button>
+      <button class="btn btn-pri" id="bGoods" style="width:100%;margin-top:4px;display:none">🚚 รับสินค้าจากคลัง (ผู้คุมผลัด)</button>
       <button class="btn btn-sec" id="bNotify" style="width:100%;margin-top:4px;display:none">🔔 เปิดแจ้งเตือนงานบนมือถือนี้</button>
     </div>
 
@@ -224,6 +224,7 @@ $('goBtn').onclick=async()=>{
     $('m_nm').textContent=emp.nickname||emp.name;
     $('m_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
     show('step_menu');
+    refreshGoodsBtn();       // แสดงปุ่มรับสินค้าเฉพาะผู้คุมผลัด / ปุ่มกดรับตอนยังว่าง
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"
     refreshCoCard();         // การ์ดเตือนกดออก/ควบกะ
     if(window.refreshNotifyBtn) window.refreshNotifyBtn();
@@ -592,7 +593,18 @@ async function mkSend(){
 // ============ รับสินค้า (ผู้คุมผลัด) ============
 let GOODS=null, GD_EDIT=null, GD_PHOTOS=[];
 $('bGoods').onclick=openGoods;
-$('gd_back').onclick=()=>show('step_menu');
+$('gd_back').onclick=()=>{ show('step_menu'); refreshGoodsBtn(); };
+// แสดงปุ่ม "รับสินค้า" เฉพาะผู้คุมผลัดของสาขาวันนี้ · ถ้ายังไม่มีผู้คุม → ปุ่ม "กดรับเป็นผู้คุมผลัด" · ถ้าคนอื่นเป็นผู้คุมแล้ว → ซ่อน
+async function refreshGoodsBtn(){
+  const b=$('bGoods'); if(!b) return; b.style.display='none';
+  try{
+    const sc=await window.HR.getShiftController(EMP.emp_id);
+    if(!sc||!sc.branch) return;
+    if(sc.is_me){ b.textContent='🚚 รับสินค้าจากคลัง (ผู้คุมผลัด)'; b.style.display=''; }
+    else if(!sc.controller){ b.textContent='🚚 กดรับเป็นผู้คุมผลัด (รับสินค้าจากคลัง)'; b.style.display=''; }
+    else { b.style.display='none'; }   // มีผู้คุมผลัดคนอื่นแล้ว
+  }catch(e){}
+}
 async function openGoods(){
   show('step_goods'); $('gd_nm').textContent=EMP.nickname||EMP.name;
   $('gd_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
