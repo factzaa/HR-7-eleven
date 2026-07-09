@@ -617,10 +617,10 @@ function renderGoods(){
     h+='<div class="card"><h3 class="sec" style="margin-top:0">'+(GD_EDIT?'✏️ แก้ไขใบรับสินค้า':'บันทึกรับสินค้า')+'</h3>'
       +'<label>คลัง</label><select id="gd_wh">'+goodsWhOptions(GD_EDIT?GD_EDIT.warehouse_id:'')+'</select>'
       +'<label style="margin-top:8px">เลขที่เอกสาร (เลขรัน 6 หลัก)</label><input id="gd_ref" type="text" inputmode="numeric" maxlength="6" placeholder="เช่น 004521" style="font-size:20px;padding:12px;letter-spacing:2px;text-align:center;font-weight:700" value="'+esc(GD_EDIT?(GD_EDIT.ref_no||''):'')+'">'
-      +'<label style="margin-top:8px">ลังเข้าวันนี้ (จำนวนลัง)</label><input id="gd_in" type="number" min="0" inputmode="numeric" style="font-size:24px;padding:14px;text-align:center;font-weight:700" value="'+(GD_EDIT?(GD_EDIT.crates_in||0):0)+'">'
-      +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:6px;display:inline-block">📷 ถ่ายรูป / เลือกรูป ลัง/บิล<input type="file" accept="image/*" multiple id="gd_fc" style="display:none"></label>'
+      +'<label style="margin-top:8px">ลังเข้าวันนี้ (จำนวนลัง)</label><input id="gd_in" type="number" min="0" inputmode="numeric" style="font-size:20px;padding:12px;letter-spacing:2px;text-align:center;font-weight:700;background:#dcfce7" value="'+(GD_EDIT?(GD_EDIT.crates_in||0):0)+'">'
+      +'<label style="margin-top:8px">ลังคืนวันนี้ (จำนวนลัง) <span class="muted" id="gd_exp"></span></label><input id="gd_ret" type="number" min="0" inputmode="numeric" style="font-size:20px;padding:12px;letter-spacing:2px;text-align:center;font-weight:700;background:#fee2e2" value="0"><div class="muted" id="gd_diff" style="font-size:12.5px;margin-top:2px"></div>'
+      +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:10px;display:inline-block">📷 ถ่ายรูป / เลือกรูป ลัง/บิล<input type="file" accept="image/*" multiple id="gd_fc" style="display:none"></label>'
       +'<div class="thumbs" id="gd_thumbs" style="margin:6px 0 4px"></div>'
-      +'<label style="margin-top:8px">ลังคืนวันนี้ (จำนวนลัง) <span class="muted" id="gd_exp"></span></label><input id="gd_ret" type="number" min="0" inputmode="numeric" style="font-size:24px;padding:14px;text-align:center;font-weight:700" value="0"><div class="muted" id="gd_diff" style="font-size:12.5px;margin-top:2px"></div>'
       +'<label style="margin-top:8px">หมายเหตุ</label><input id="gd_note" type="text" placeholder="(ถ้ามี)" value="'+esc(GD_EDIT?(GD_EDIT.note||''):'')+'">'
       +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-pri" id="gd_save" style="flex:1">'+(GD_EDIT?'อัปเดต':'บันทึก')+'</button>'+(GD_EDIT?'<button class="btn btn-sec" id="gd_cancel" style="flex:none">ยกเลิก</button>':'')+'</div>'
       +'</div>';
