@@ -2062,7 +2062,7 @@ function renderReportDetail(){
         <td class="mono">${esc(r.check_out||'—')}</td>
         <td class="mono">${r.late_min>0?'<span style="color:var(--red)">'+r.late_min+'</span>':'—'}</td>
         <td class="mono">${fmtOT(r.ot_hours)}</td>
-        <td>${(()=>{const a=[];if(r.photo_url)a.push('<a href="'+esc(r.photo_url)+'" target="_blank" title="รูปตอนเข้างาน">📷 เข้า</a>');if(r.checkout_photo_url)a.push('<a href="'+esc(r.checkout_photo_url)+'" target="_blank" title="รูปตอนออกงาน">📷 ออก</a>');return a.length?a.join('<br>'):'—';})()}</td>
+        <td>${(()=>{const a=[];if(r.photo_url)a.push('<a href="'+esc(bustUrl(r.photo_url,r.check_in))+'" target="_blank" title="รูปตอนเข้างาน">📷 เข้า</a>');if(r.checkout_photo_url)a.push('<a href="'+esc(bustUrl(r.checkout_photo_url,r.check_out))+'" target="_blank" title="รูปตอนออกงาน">📷 ออก</a>');return a.length?a.join('<br>'):'—';})()}</td>
         <td>${r.gps_lat?`<a href="https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}" target="_blank">แผนที่</a>`:'—'}</td>
         <td>${String(r.status).toUpperCase()==='OPEN'?'<span class="pill warn">ค้าง</span>':'<span class="pill ok">ปิดแล้ว</span>'}</td>
       </tr>`).join('')}</tbody></table></div></div>`;
@@ -4110,10 +4110,12 @@ function fillBoardFilters(){
   if(!sb.dataset.filled){ sb.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); sb.dataset.filled='1'; }
   if(!ss.dataset.filled){ ss.innerHTML='<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join(''); ss.dataset.filled='1'; }
 }
+// เติมตัวกันแคชต่อท้าย URL รูป (ผูกกับเวลาเข้า/ออก) — ถ้าลงเวลาใหม่ทับไฟล์เดิม รูปจริงจะเด้งมาแทนรูปที่ค้างแคช
+function bustUrl(u, ver){ if(!u) return u; return u + (u.indexOf('?')>=0?'&':'?') + 'v=' + encodeURIComponent(String(ver||'1')); }
 function bdPhotos(p){
   const t=[];
-  if(p.att_photo_in) t.push('<img src="'+esc(p.att_photo_in)+'" onclick="lightbox(this)" title="รูปตอนเข้างาน" style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #cbd5e1">');
-  if(p.att_photo_out) t.push('<img src="'+esc(p.att_photo_out)+'" onclick="lightbox(this)" title="รูปตอนออกงาน" style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #16a34a">');
+  if(p.att_photo_in) t.push('<img src="'+esc(bustUrl(p.att_photo_in, p.check_in))+'" onclick="lightbox(this)" title="รูปตอนเข้างาน" style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #cbd5e1">');
+  if(p.att_photo_out) t.push('<img src="'+esc(bustUrl(p.att_photo_out, p.check_out))+'" onclick="lightbox(this)" title="รูปตอนออกงาน" style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #16a34a">');
   return t.length?'<span style="display:flex;gap:3px" title="เข้า(เทา)/ออก(เขียว)">'+t.join('')+'</span>':'';
 }
 function renderBoard(r){
