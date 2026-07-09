@@ -160,6 +160,7 @@
         case 'hr_wh_save':        return await hrWhSave(p.data);
         case 'hr_wh_delete':      return await hrWhDelete(p.id);
         case 'hr_goods_list':     return await hrGoodsList(p.filter);
+        case 'hr_goods_audit':    return await hrGoodsAudit(p.filter);
         case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status, p.note);
         case 'hr_leave_propose':  return await hrLeaveProposeConditional(p.leave_id, p.message);
         case 'hr_leavetype_list': return await hrLeaveTypeList();
@@ -1126,6 +1127,27 @@
     if (gr.error) throw gr.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const rows = (gr.data || []).map(r => ({ ...r, branch_name: brName[r.branch_id] || r.branch_id || '—' }));
+    return { ok: true, rows };
+  }
+  // ออดิทลัง: รวมต่อสาขา×คลัง — คงค้าง (สะสมถึงวันสิ้นสุด) + กิจกรรมในช่วง + ส่วนต่าง
+  async function hrGoodsAudit(f) {
+    f = f || {};
+    let q = sb().from('goods_receipts').select('branch_id,warehouse_id,warehouse_name,warehouse_code,crates_in,crates_return,diff,work_date').limit(5000);
+    if (f.branch_id) q = q.eq('branch_id', f.branch_id);
+    if (f.warehouse_id) q = q.eq('warehouse_id', f.warehouse_id);
+    if (f.end) q = q.lte('work_date', f.end);   // คงค้างนับสะสมถึงวันสิ้นสุด
+    const [gr, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    if (gr.error) throw gr.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const groups = {};
+    (gr.data || []).forEach(r => {
+      const key = (r.branch_id || '') + '|' + r.warehouse_id;
+      const g = groups[key] || (groups[key] = { branch_id: r.branch_id, branch_name: brName[r.branch_id] || r.branch_id || '—', warehouse_id: r.warehouse_id, warehouse_name: r.warehouse_name || ('คลัง #' + r.warehouse_id), warehouse_code: r.warehouse_code || '', outstanding: 0, range_in: 0, range_return: 0, range_docs: 0, range_diff_docs: 0, range_diff_sum: 0 });
+      g.outstanding += (r.crates_in || 0) - (r.crates_return || 0);   // สะสมถึงวันสิ้นสุด
+      const inRange = (!f.start || r.work_date >= f.start) && (!f.end || r.work_date <= f.end);
+      if (inRange) { g.range_in += r.crates_in || 0; g.range_return += r.crates_return || 0; g.range_docs++; if ((r.diff || 0) !== 0) g.range_diff_docs++; g.range_diff_sum += (r.diff || 0); }
+    });
+    const rows = Object.values(groups).sort((a, b) => (a.branch_name || '').localeCompare(b.branch_name || '', 'th') || (a.warehouse_name || '').localeCompare(b.warehouse_name || '', 'th'));
     return { ok: true, rows };
   }
 

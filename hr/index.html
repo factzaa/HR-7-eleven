@@ -958,12 +958,19 @@
       <div class="field" style="max-width:150px"><label>ถึง</label><input id="gq_end" type="date"></div>
       <div class="field" style="max-width:170px"><label>ค้นหาเลขที่เอกสาร</label><input id="gq_ref" type="text" inputmode="numeric" placeholder="เลขรัน 6 หลัก"></div>
       <button class="btn btn-pri btn-sm" id="gq_go">ค้นหา</button>
+      <button class="btn btn-sec btn-sm" id="gq_csv">⬇ CSV รายการ</button>
     </div>
   </div>
   <div class="card"><div class="tablewrap"><table>
     <thead><tr><th>วันที่</th><th>สาขา</th><th>คลัง</th><th>เลขที่</th><th>ลังเข้า</th><th>ลังคืน</th><th>ควรคืน</th><th>ส่วนต่าง</th><th>ผู้คุม</th><th>รูป</th><th>หมายเหตุ</th></tr></thead>
     <tbody id="gqRows"></tbody>
   </table></div><div class="empty" id="gqEmpty" style="display:none">ไม่มีข้อมูล</div></div>
+
+  <div class="toolbar" style="margin-top:18px"><h3 style="flex:1; font-size:15px; font-weight:600">สรุปออดิทลังคงค้าง (ต่อสาขา × คลัง)</h3><button class="btn btn-sec btn-sm" id="ga_csv">⬇ CSV ออดิท</button></div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>สาขา</th><th>คลัง</th><th>ลังเข้า (ช่วง)</th><th>ลังคืน (ช่วง)</th><th>ใบ</th><th>ใบมีส่วนต่าง</th><th>ส่วนต่างสะสม</th><th>คงค้างล่าสุด</th></tr></thead>
+    <tbody id="gaRows"></tbody>
+  </table></div><div class="empty" id="gaEmpty" style="display:none">ไม่มีข้อมูล</div></div>
 </div>
 
 <!-- Activity: บันทึกกิจกรรม -->
@@ -3374,7 +3381,7 @@ async function loadGoodsTab(){
   await loadWarehouses();
   const brSel=$('gq_branch'); if(brSel && !brSel.dataset.filled){ brSel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); brSel.dataset.filled='1'; }
   if(!$('gq_start').value){ const d=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); $('gq_start').value=d; $('gq_end').value=d; }
-  loadGoodsList();
+  loadGoodsList(); loadGoodsAudit();
 }
 async function loadWarehouses(){
   const r=await post({ action:'hr_wh_list', password:pwd });
@@ -3392,17 +3399,36 @@ function whEdit(w){ w=w||{}; const name=prompt('ชื่อคลัง', w.nam
 function whToggle(w){ if(!w) return; whSaveRow({ id:w.id, name:w.name, code:w.code, sort:w.sort, active:!w.active }); }
 async function whDelete(id){ if(!confirm('ลบคลังนี้? (ถ้ามีประวัติรับสินค้าจะลบไม่ได้ — ปิดใช้งานแทน)')) return; const r=await post({ action:'hr_wh_delete', password:pwd, id:Number(id) }); if(r&&r.ok){ toast('ok','ลบแล้ว'); loadWarehouses(); } else toast('err',(r&&r.error)||'ลบไม่สำเร็จ'); }
 $('wh_new').onclick=()=>whEdit(null);
-$('gq_go').onclick=loadGoodsList;
+$('gq_go').onclick=()=>{ loadGoodsList(); loadGoodsAudit(); };
+let GQ_ROWS=[], GA_ROWS=[];
+function gqFilter(){ return { branch_id:$('gq_branch').value, warehouse_id:$('gq_wh').value?Number($('gq_wh').value):null, start:$('gq_start').value, end:$('gq_end').value, ref_no:$('gq_ref').value.trim() }; }
 async function loadGoodsList(){
-  const f={ branch_id:$('gq_branch').value, warehouse_id:$('gq_wh').value?Number($('gq_wh').value):null, start:$('gq_start').value, end:$('gq_end').value, ref_no:$('gq_ref').value.trim() };
-  const r=await post({ action:'hr_goods_list', password:pwd, filter:f });
-  const rows=(r&&r.rows)||[];
-  $('gqEmpty').style.display=rows.length?'none':'block';
-  $('gqRows').innerHTML=rows.map(x=>{ const dcls=(x.diff||0)===0?'ok':'bad';
+  const r=await post({ action:'hr_goods_list', password:pwd, filter:gqFilter() });
+  GQ_ROWS=(r&&r.rows)||[];
+  $('gqEmpty').style.display=GQ_ROWS.length?'none':'block';
+  $('gqRows').innerHTML=GQ_ROWS.map(x=>{ const dcls=(x.diff||0)===0?'ok':'bad';
     const imgs=(Array.isArray(x.in_photos)&&x.in_photos.length)?x.in_photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:zoom-in;margin:1px">').join(''):'—';
     return `<tr><td class="mono">${esc(beDate(x.work_date))}</td><td>${esc(x.branch_name)}</td><td>${esc(x.warehouse_name||x.warehouse_id)}</td><td class="mono">${esc(x.ref_no||'-')}</td><td class="mono">${x.crates_in||0}</td><td class="mono">${x.crates_return||0}</td><td class="mono">${x.return_expected||0}</td><td class="mono"><span class="pill ${dcls}">${(x.diff||0)>0?'+':''}${x.diff||0}</span></td><td>${esc(x.done_name||x.done_by||'-')}</td><td style="white-space:nowrap">${imgs}</td><td>${esc(x.note||'')}</td></tr>`;
   }).join('');
 }
+async function loadGoodsAudit(){
+  const r=await post({ action:'hr_goods_audit', password:pwd, filter:gqFilter() });
+  GA_ROWS=(r&&r.rows)||[];
+  $('gaEmpty').style.display=GA_ROWS.length?'none':'block';
+  $('gaRows').innerHTML=GA_ROWS.map(g=>{ const ocls=(g.outstanding||0)===0?'ok':'warn'; const dcls=(g.range_diff_sum||0)===0?'ok':'bad';
+    return `<tr><td>${esc(g.branch_name)}</td><td>${esc((g.warehouse_code?('['+g.warehouse_code+'] '):'')+g.warehouse_name)}</td><td class="mono">${g.range_in||0}</td><td class="mono">${g.range_return||0}</td><td class="mono">${g.range_docs||0}</td><td class="mono">${g.range_diff_docs||0}</td><td class="mono"><span class="pill ${dcls}">${(g.range_diff_sum||0)>0?'+':''}${g.range_diff_sum||0}</span></td><td class="mono"><span class="pill ${ocls}">${g.outstanding||0}</span></td></tr>`;
+  }).join('');
+}
+function gdToCsv(headers, rows){ const c=v=>{ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }; return '﻿'+[headers.map(c).join(',')].concat(rows.map(r=>r.map(c).join(','))).join('\n'); }
+function gdDownload(name, text){ const b=new Blob([text],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+$('gq_csv').onclick=()=>{ if(!GQ_ROWS.length){ toast('err','ไม่มีข้อมูลให้ export'); return; }
+  const H=['วันที่','สาขา','คลัง','เลขที่เอกสาร','ลังเข้า','ลังคืน','ควรคืน','ส่วนต่าง','ผู้คุม','หมายเหตุ'];
+  const R=GQ_ROWS.map(x=>[x.work_date,x.branch_name,(x.warehouse_name||x.warehouse_id),x.ref_no||'',x.crates_in||0,x.crates_return||0,x.return_expected||0,x.diff||0,(x.done_name||x.done_by||''),x.note||'']);
+  gdDownload('goods_receipts.csv', gdToCsv(H,R)); };
+$('ga_csv').onclick=()=>{ if(!GA_ROWS.length){ toast('err','ไม่มีข้อมูลให้ export'); return; }
+  const H=['สาขา','คลัง','ลังเข้า(ช่วง)','ลังคืน(ช่วง)','ใบ','ใบมีส่วนต่าง','ส่วนต่างสะสม','คงค้างล่าสุด'];
+  const R=GA_ROWS.map(g=>[g.branch_name,((g.warehouse_code?('['+g.warehouse_code+'] '):'')+g.warehouse_name),g.range_in||0,g.range_return||0,g.range_docs||0,g.range_diff_docs||0,g.range_diff_sum||0,g.outstanding||0]);
+  gdDownload('goods_audit.csv', gdToCsv(H,R)); };
 
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
 const NAV_GROUPS=[
