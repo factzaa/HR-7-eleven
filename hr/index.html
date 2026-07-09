@@ -5009,8 +5009,13 @@ function showLB(){
 }
 function lightbox(imgEl){
   ensureLightbox();
-  const cont=imgEl.parentElement;
-  LB.imgs=[...cont.querySelectorAll('img')].map(i=>i.src);   // รูปทั้งหมดในช่องเดียวกัน = แกลเลอรี
+  // หา "กลุ่มรูป" = แกลเลอรี · ถ้า parent มีรูปเดียว (เช่นในไทม์ไลน์งาน ผจก. แต่ละรูปถูกห่อ span พร้อมปุ่มแก้ไข)
+  // ให้ขยับขึ้นไปหากลุ่มที่มีหลายรูป เพื่อให้เลื่อนซ้าย-ขวา/ปัดนิ้วเปลี่ยนรูปได้
+  let cont=imgEl.parentElement;
+  if(cont && cont.querySelectorAll('img').length<=1 && cont.parentElement && cont.parentElement.querySelectorAll('img').length>1){
+    cont=cont.parentElement;
+  }
+  LB.imgs=[...cont.querySelectorAll('img')].map(i=>i.src);
   LB.idx=Math.max(0, LB.imgs.indexOf(imgEl.src));
   showLB();
   document.getElementById('lightbox').style.display='flex';
