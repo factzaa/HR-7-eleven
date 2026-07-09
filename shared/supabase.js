@@ -1132,6 +1132,77 @@
     return { ok:true };
   }
 
+  // ---------- ผู้คุมผลัด + รับสินค้า (Goods Receiving) ----------
+  async function getWarehouses(){
+    const { data } = await sb.from('warehouses').select('*').eq('active',true).order('sort').order('id');
+    return { rows: data||[] };
+  }
+  async function getShiftController(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const {workDate,branch}=await _shiftCtx(emp);
+    const ctrl=(await sb.from('shift_controllers').select('*').eq('branch_id',branch||'').eq('work_date',workDate).maybeSingle()).data;
+    return { emp, branch, work_date:workDate, controller:ctrl||null, is_me: !!(ctrl&&ctrl.emp_id===emp.emp_id) };
+  }
+  async function claimShiftController({empId}){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const {workDate,branch}=await _shiftCtx(emp);
+    if(!branch) throw new Error('ยังไม่มีข้อมูลสาขา/กะของคุณวันนี้ จึงกดรับผู้คุมผลัดไม่ได้');
+    const cur=(await sb.from('shift_controllers').select('*').eq('branch_id',branch).eq('work_date',workDate).maybeSingle()).data;
+    if(cur){ if(cur.emp_id===emp.emp_id) return { ok:true, already:true }; throw new Error('วันนี้ '+(cur.emp_name||cur.emp_id)+' เป็นผู้คุมผลัดของสาขานี้แล้ว'); }
+    const { error }=await sb.from('shift_controllers').insert({ branch_id:branch, work_date:workDate, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name });
+    if(error){ if(String(error.message||'').toLowerCase().includes('duplicate')) throw new Error('เพิ่งมีคนกดรับเป็นผู้คุมผลัดไปแล้ว'); throw error; }
+    return { ok:true };
+  }
+  async function releaseShiftController({empId}){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const {workDate,branch}=await _shiftCtx(emp);
+    const cur=(await sb.from('shift_controllers').select('emp_id').eq('branch_id',branch||'').eq('work_date',workDate).maybeSingle()).data;
+    if(!cur) return { ok:true };
+    if(cur.emp_id!==emp.emp_id) throw new Error('เฉพาะผู้คุมผลัดปัจจุบันเท่านั้นที่ปล่อยสิทธิ์ได้');
+    const { error }=await sb.from('shift_controllers').delete().eq('branch_id',branch).eq('work_date',workDate); if(error) throw error;
+    return { ok:true };
+  }
+  // ยอดคงค้างต่อคลัง (running balance) = Σลังเข้า − Σลังคืน ก่อนวันที่กำหนด
+  async function _whOutstanding(branch, warehouseId, beforeDate){
+    const { data } = await sb.from('goods_receipts').select('crates_in,crates_return').eq('branch_id',branch||'').eq('warehouse_id',warehouseId).lt('work_date',beforeDate);
+    let bal=0; (data||[]).forEach(r=>{ bal += (r.crates_in||0) - (r.crates_return||0); });
+    return bal;
+  }
+  async function getGoodsReceiving(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const {workDate,branch}=await _shiftCtx(emp);
+    const [whR, todayR]=await Promise.all([
+      sb.from('warehouses').select('*').eq('active',true).order('sort').order('id'),
+      sb.from('goods_receipts').select('*').eq('branch_id',branch||'').eq('work_date',workDate).order('submitted_at',{ascending:false}),
+    ]);
+    const warehouses=whR.data||[]; const today=todayR.data||[];
+    const outstanding={};
+    for(const w of warehouses){ outstanding[w.id]=await _whOutstanding(branch, w.id, workDate); }
+    return { emp, branch, work_date:workDate, warehouses, outstanding, today };
+  }
+  async function submitGoodsReceipt({ empId, id, warehouse_id, ref_no, crates_in, crates_return, in_photos, note }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const {workDate,branch}=await _shiftCtx(emp);
+    const ctrl=(await sb.from('shift_controllers').select('emp_id').eq('branch_id',branch||'').eq('work_date',workDate).maybeSingle()).data;
+    if(!ctrl||ctrl.emp_id!==emp.emp_id) throw new Error('เฉพาะผู้คุมผลัดของสาขาวันนี้เท่านั้นที่บันทึกรับสินค้าได้');
+    if(!warehouse_id) throw new Error('เลือกคลังก่อน');
+    const ref=String(ref_no||'').trim();
+    if(!/^\d{6}$/.test(ref)) throw new Error('เลขรันต้องเป็นตัวเลข 6 หลัก');
+    const wh=(await sb.from('warehouses').select('code,name').eq('id',warehouse_id).maybeSingle()).data;
+    const cin=Math.max(0, parseInt(crates_in)||0);
+    const cret=Math.max(0, parseInt(crates_return)||0);
+    const expected=await _whOutstanding(branch, warehouse_id, workDate);
+    const diff=cret - expected;
+    const urls=[];
+    for(const p of (in_photos||[])){ if(!p) continue; if(typeof p==='string'&&/^https?:/i.test(p)) urls.push(p); else urls.push(await uploadPhoto('employee-docs','goods/'+(branch||'x')+'_'+warehouse_id+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    const row={ ref_no:ref, branch_id:branch, work_date:workDate, warehouse_id, warehouse_code:(wh&&wh.code)||null, warehouse_name:(wh&&wh.name)||null,
+      crates_in:cin, crates_return:cret, return_expected:expected, diff, in_photos:urls.length?urls:null, note:(note||'').trim()||null,
+      done_by:emp.emp_id, done_name:emp.nickname||emp.name, updated_at:new Date().toISOString(), line_notified:false };
+    if(id){ const {error}=await sb.from('goods_receipts').update(row).eq('id',id); if(error) throw error; return { ok:true, id }; }
+    const {data,error}=await sb.from('goods_receipts').insert(row).select('id').single(); if(error) throw error;
+    return { ok:true, id:data&&data.id };
+  }
+
   // ---------- QA สินค้าใกล้หมดอายุ (พนักงานบันทึก/ดู + ระบบจำบาร์โค้ด) ----------
   function _addDaysStr(s, n){ return new Date(new Date(s+'T00:00:00Z').getTime()+n*86400000).toISOString().slice(0,10); }
   async function getQaFolders(empId){
@@ -1232,5 +1303,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();

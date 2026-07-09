@@ -74,6 +74,7 @@
       <button class="imgbtn" id="bMenu2" style="position:relative"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"><span id="spBadge" style="display:none;position:absolute;top:8px;right:10px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;min-width:24px;height:24px;line-height:24px;border-radius:999px;padding:0 7px;box-shadow:0 2px 6px rgba(0,0,0,.3)">0</span></button>
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
       <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
+      <button class="btn btn-pri" id="bGoods" style="width:100%;margin-top:4px">🎁 รับสินค้า (ผู้คุมผลัด)</button>
       <button class="btn btn-sec" id="bNotify" style="width:100%;margin-top:4px;display:none">🔔 เปิดแจ้งเตือนงานบนมือถือนี้</button>
     </div>
 
@@ -104,6 +105,12 @@
       <div id="pv_body"><div class="card muted">กำลังโหลด…</div></div>
     </div>
 
+    <!-- goods receiving -->
+    <div id="step_goods" class="hide">
+      <div class="who"><div><div class="nm" id="gd_nm">—</div><div class="sub" id="gd_sub"></div></div><span class="ch" id="gd_back">‹ เมนู</span></div>
+      <div id="gd_body"><div class="card muted">กำลังโหลด…</div></div>
+    </div>
+
     <!-- report -->
     <div id="step_report" class="hide">
       <div class="who"><div><div class="nm">รายงานรับส่งผลัด</div><div class="sub" id="rp_branch"></div></div><span class="ch" id="rp_back">‹ เมนู</span></div>
@@ -123,7 +130,7 @@
 const $=id=>document.getElementById(id);
 function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',3000);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function show(id){['step_id','step_menu','step_m1','step_m2','step_m3','step_report'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
+function show(id){['step_id','step_menu','step_m1','step_m2','step_m3','step_goods','step_report'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
 function fmt(t){try{return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'});}catch(e){return '';}}
 function ST(s){return s==='approved'?['ผ่านแล้ว','ok']:s==='submitted'?['รอตรวจ','warn']:s==='sent_back'?['ตีกลับ','bad']:['มอบหมายแล้ว','muted2'];}
 function resizeFile(file){return new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{
@@ -580,6 +587,79 @@ async function mkSend(){
   for(const im of marked){ const W=Math.min(im.el.naturalWidth,1280),H=Math.round(im.el.naturalHeight*(W/im.el.naturalWidth)); const c=document.createElement('canvas'); c.width=W;c.height=H; const ctx=c.getContext('2d'); ctx.drawImage(im.el,0,0,W,H); mkShapes(ctx,im.shapes,W,H); out.push(c.toDataURL('image/jpeg',0.9)); }
   await doPrevReview(MK.task.id,'sent_back',note,out);
   document.getElementById('mkSend').disabled=false; document.getElementById('mkOverlay').style.display='none'; MK=null;
+}
+
+// ============ รับสินค้า (ผู้คุมผลัด) ============
+let GOODS=null, GD_EDIT=null, GD_PHOTOS=[];
+$('bGoods').onclick=openGoods;
+$('gd_back').onclick=()=>show('step_menu');
+async function openGoods(){
+  show('step_goods'); $('gd_nm').textContent=EMP.nickname||EMP.name;
+  $('gd_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  let sc; try{ sc=await window.HR.getShiftController(EMP.emp_id); }catch(e){ $('gd_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
+  $('gd_sub').textContent='สาขา '+esc(branchName(sc.branch))+' · '+esc(String(sc.work_date));
+  if(!sc.branch){ $('gd_body').innerHTML='<div class="card muted">วันนี้ยังไม่มีข้อมูลสาขา/กะของคุณ จึงยังใช้เมนูรับสินค้าไม่ได้</div>'; return; }
+  if(!sc.controller){
+    $('gd_body').innerHTML='<div class="card"><div style="font-weight:700;margin-bottom:6px">ยังไม่มีผู้คุมผลัดของสาขานี้วันนี้</div><div class="muted" style="margin-bottom:10px">กดรับเป็นผู้คุมผลัดเพื่อเปิดเมนูรับสินค้า (1 คน/สาขา/วัน)</div><button class="btn btn-pri" id="gd_claim" style="width:100%">✋ กดรับเป็นผู้คุมผลัด</button></div>';
+    $('gd_claim').onclick=async()=>{ $('gd_claim').innerHTML='<span class="spin"></span>'; try{ await window.HR.claimShiftController({empId:EMP.emp_id}); toast('ok','คุณเป็นผู้คุมผลัดแล้ว'); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } openGoods(); };
+    return;
+  }
+  if(!sc.is_me){ $('gd_body').innerHTML='<div class="card"><div style="font-weight:700">ผู้คุมผลัดวันนี้: '+esc(sc.controller.emp_name||sc.controller.emp_id)+'</div><div class="muted" style="margin-top:4px">เฉพาะผู้คุมผลัดเท่านั้นที่บันทึกรับสินค้าได้</div></div>'; return; }
+  let g; try{ g=await window.HR.getGoodsReceiving(EMP.emp_id); }catch(e){ $('gd_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
+  GOODS=g; renderGoods();
+}
+function goodsWhOptions(sel){ return '<option value="">— เลือกคลัง —</option>'+(GOODS.warehouses||[]).map(w=>'<option value="'+w.id+'"'+(String(sel)===String(w.id)?' selected':'')+'>'+esc((w.code?('['+w.code+'] '):'')+w.name)+'</option>').join(''); }
+function renderGoods(){
+  const g=GOODS;
+  let h='<div class="card" style="padding:10px;margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1"><b>ผู้คุมผลัด:</b> '+esc(EMP.nickname||EMP.name)+'</div><span class="ch" id="gd_release">ปล่อยสิทธิ์</span></div></div>';
+  if(!g.warehouses.length){ h+='<div class="card muted">ยังไม่มีคลังในระบบ — ให้ HR เพิ่มคลังก่อน</div>'; }
+  else {
+    h+='<div class="card"><h3 class="sec" style="margin-top:0">'+(GD_EDIT?'✏️ แก้ไขใบรับสินค้า':'บันทึกรับสินค้า')+'</h3>'
+      +'<label>คลัง</label><select id="gd_wh">'+goodsWhOptions(GD_EDIT?GD_EDIT.warehouse_id:'')+'</select>'
+      +'<label style="margin-top:8px">เลขที่เอกสาร (เลขรัน 6 หลัก)</label><input id="gd_ref" type="text" inputmode="numeric" maxlength="6" placeholder="เช่น 004521" value="'+esc(GD_EDIT?(GD_EDIT.ref_no||''):'')+'">'
+      +'<label style="margin-top:8px">ลังเข้าวันนี้</label><input id="gd_in" type="number" min="0" value="'+(GD_EDIT?(GD_EDIT.crates_in||0):0)+'">'
+      +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:6px;display:inline-block">📷 ถ่ายรูป ลัง/บิล<input type="file" accept="image/*" capture="environment" id="gd_fc" style="display:none"></label>'
+      +'<div class="thumbs" id="gd_thumbs" style="margin:6px 0 4px"></div>'
+      +'<label style="margin-top:8px">ลังคืนวันนี้ <span class="muted" id="gd_exp"></span></label><input id="gd_ret" type="number" min="0" value="0"><div class="muted" id="gd_diff" style="font-size:12.5px;margin-top:2px"></div>'
+      +'<label style="margin-top:8px">หมายเหตุ</label><input id="gd_note" type="text" placeholder="(ถ้ามี)" value="'+esc(GD_EDIT?(GD_EDIT.note||''):'')+'">'
+      +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-pri" id="gd_save" style="flex:1">'+(GD_EDIT?'อัปเดต':'บันทึก')+'</button>'+(GD_EDIT?'<button class="btn btn-sec" id="gd_cancel" style="flex:none">ยกเลิก</button>':'')+'</div>'
+      +'</div>';
+  }
+  h+='<h3 class="sec">รับสินค้าวันนี้</h3>';
+  if(!g.today.length) h+='<div class="muted" style="padding:4px 2px">ยังไม่มีการรับสินค้าวันนี้</div>';
+  else h+=g.today.map(r=>{ const dcls=(r.diff||0)===0?'ok':'bad';
+    return '<div class="card" style="padding:10px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(r.warehouse_name||('คลัง #'+r.warehouse_id))+'</b> <span class="muted">· เลขที่ '+esc(r.ref_no||'-')+'</span></div><span class="ch" data-gedit="'+r.id+'">แก้ไข</span></div>'
+      +'<div style="font-size:13px;margin-top:4px">ลังเข้า <b>'+(r.crates_in||0)+'</b> · ลังคืน <b>'+(r.crates_return||0)+'</b> · ควรคืน '+(r.return_expected||0)+' · ส่วนต่าง <span class="pill '+dcls+'">'+((r.diff||0)>0?'+':'')+(r.diff||0)+'</span></div>'
+      +(r.note?'<div class="muted" style="margin-top:2px">📝 '+esc(r.note)+'</div>':'')
+      +((r.in_photos&&r.in_photos.length)?thumbsHtml(r.in_photos):'')
+      +'</div>';
+  }).join('');
+  $('gd_body').innerHTML=h;
+  wireGoods();
+}
+function renderGdThumbs(){ const t=$('gd_thumbs'); if(!t) return; t.innerHTML=(GD_PHOTOS||[]).map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmGdPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join(''); }
+function rmGdPhoto(i){ GD_PHOTOS.splice(i,1); renderGdThumbs(); }
+function wireGoods(){
+  $('gd_release')&&($('gd_release').onclick=async()=>{ if(!confirm('ปล่อยสิทธิ์ผู้คุมผลัด? (คนอื่นจะกดรับแทนได้)')) return; try{ await window.HR.releaseShiftController({empId:EMP.emp_id}); toast('ok','ปล่อยสิทธิ์แล้ว'); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } openGoods(); });
+  if(!GOODS.warehouses.length) return;
+  GD_PHOTOS = (GD_EDIT && Array.isArray(GD_EDIT.in_photos)) ? GD_EDIT.in_photos.slice() : [];
+  renderGdThumbs();
+  const inp=$('gd_fc'); if(inp) inp.addEventListener('change',async()=>{ if(!inp.files||!inp.files.length) return; const a=await filesToData(inp.files); GD_PHOTOS=GD_PHOTOS.concat(a); inp.value=''; renderGdThumbs(); });
+  const upd=()=>{ const wid=$('gd_wh').value; const exp=wid?(GOODS.outstanding[wid]||0):0; $('gd_exp').textContent=wid?('(ยอดคงค้างควรคืน '+exp+' ลัง)'):''; const ret=parseInt($('gd_ret').value)||0; const d=ret-exp; if($('gd_diff')){ $('gd_diff').textContent=wid?('ส่วนต่าง: '+(d>0?'+':'')+d+(d===0?' (ตรง)':' (ไม่ตรง — บันทึกเป็นออดิท)')):''; $('gd_diff').style.color=d===0?'var(--muted)':'#dc2626'; } };
+  $('gd_wh').onchange=()=>{ const wid=$('gd_wh').value; if(wid && !GD_EDIT){ $('gd_ret').value=GOODS.outstanding[wid]||0; } upd(); };
+  $('gd_ret').oninput=upd;
+  if(GD_EDIT){ $('gd_ret').value=GD_EDIT.crates_return||0; } else if($('gd_wh').value){ $('gd_ret').value=GOODS.outstanding[$('gd_wh').value]||0; }
+  upd();
+  $('gd_cancel')&&($('gd_cancel').onclick=()=>{ GD_EDIT=null; renderGoods(); });
+  document.querySelectorAll('[data-gedit]').forEach(b=>b.onclick=()=>{ GD_EDIT=GOODS.today.find(x=>String(x.id)===String(b.dataset.gedit))||null; renderGoods(); });
+  $('gd_save').onclick=async()=>{
+    const warehouse_id=$('gd_wh').value, ref_no=$('gd_ref').value.trim(), crates_in=$('gd_in').value, crates_return=$('gd_ret').value, note=$('gd_note').value;
+    if(!warehouse_id){ toast('err','เลือกคลังก่อน'); return; }
+    if(!/^\d{6}$/.test(ref_no)){ toast('err','เลขรันต้องเป็นตัวเลข 6 หลัก'); return; }
+    $('gd_save').innerHTML='<span class="spin"></span>';
+    try{ await window.HR.submitGoodsReceipt({ empId:EMP.emp_id, id:GD_EDIT?GD_EDIT.id:null, warehouse_id:Number(warehouse_id), ref_no, crates_in, crates_return, in_photos:GD_PHOTOS, note }); toast('ok','บันทึกรับสินค้าแล้ว'); GD_EDIT=null; openGoods(); }
+    catch(e){ toast('err',e.message||'ไม่สำเร็จ'); $('gd_save').textContent=GD_EDIT?'อัปเดต':'บันทึก'; }
+  };
 }
 
 // ============ รายงานรับส่งผลัด ============

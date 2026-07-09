@@ -156,6 +156,10 @@
         case 'hr_shift_list':     return await hrShiftList();
         case 'hr_shift_save':     return await hrShiftSave(p.data);
         case 'hr_shift_delete':   return await hrShiftDelete(p.shift_id);
+        case 'hr_wh_list':        return await hrWhList();
+        case 'hr_wh_save':        return await hrWhSave(p.data);
+        case 'hr_wh_delete':      return await hrWhDelete(p.id);
+        case 'hr_goods_list':     return await hrGoodsList(p.filter);
         case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status, p.note);
         case 'hr_leave_propose':  return await hrLeaveProposeConditional(p.leave_id, p.message);
         case 'hr_leavetype_list': return await hrLeaveTypeList();
@@ -1083,6 +1087,45 @@
     const { error } = await sb().from('shifts').delete().eq('shift_id', shiftId);
     if (error) throw error;
     return { ok: true };
+  }
+
+  // ---------- คลัง (Warehouses) — ใช้ร่วมทุกสาขา ----------
+  async function hrWhList() {
+    const { data, error } = await sb().from('warehouses').select('*').order('sort').order('id');
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+  async function hrWhSave(d) {
+    d = d || {};
+    if (!d.name || !String(d.name).trim()) return { ok: false, error: 'กรอกชื่อคลัง' };
+    const row = { code: (d.code || '').trim() || null, name: String(d.name).trim(), active: d.active !== false, sort: Number(d.sort) || 0 };
+    if (d.id) { const { error } = await sb().from('warehouses').update(row).eq('id', d.id); if (error) throw error; }
+    else { const { error } = await sb().from('warehouses').insert(row); if (error) throw error; }
+    await logAct('บันทึกคลัง', null, row.name);
+    return { ok: true };
+  }
+  async function hrWhDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุคลัง' };
+    const { count } = await sb().from('goods_receipts').select('id', { count: 'exact', head: true }).eq('warehouse_id', id);
+    if (count && count > 0) return { ok: false, error: 'ลบไม่ได้: มีประวัติรับสินค้าคลังนี้ ' + count + ' รายการ (ปิดใช้งานแทนได้)' };
+    const { error } = await sb().from('warehouses').delete().eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+  // ---------- รับสินค้า: รายการ + ค้นหาเลขรัน ----------
+  async function hrGoodsList(f) {
+    f = f || {};
+    let q = sb().from('goods_receipts').select('*').order('submitted_at', { ascending: false }).limit(500);
+    if (f.branch_id) q = q.eq('branch_id', f.branch_id);
+    if (f.warehouse_id) q = q.eq('warehouse_id', f.warehouse_id);
+    if (f.ref_no) q = q.eq('ref_no', String(f.ref_no).trim());
+    if (f.start) q = q.gte('work_date', f.start);
+    if (f.end) q = q.lte('work_date', f.end);
+    const [gr, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    if (gr.error) throw gr.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (gr.data || []).map(r => ({ ...r, branch_name: brName[r.branch_id] || r.branch_id || '—' }));
+    return { ok: true, rows };
   }
 
   // ---------- LEAVE APPROVAL (อนุมัติ/ปฏิเสธใบลา + เหตุผล) ----------

@@ -375,6 +375,7 @@
   <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
+  <button class="tab" id="tab_goods"><span class="tabicon">🎁</span>รับสินค้า</button>
   <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
   <button class="tab" id="tab_submissions"><span class="tabicon">📥</span>ข้อมูลรอตรวจ</button>
   <button class="tab" id="tab_activity"><span class="tabicon">🕘</span>บันทึกกิจกรรม</button>
@@ -935,6 +936,34 @@
     <thead><tr><th>รหัส</th><th>ชื่อสาขา</th><th>พิกัด (lat, lng)</th><th>รัศมี</th><th>พนักงานประจำ</th><th></th></tr></thead>
     <tbody id="brRows"></tbody>
   </table></div><div class="empty" id="brEmpty" style="display:none">ยังไม่มีสาขา</div></div>
+</div>
+
+<!-- Goods receiving: คลัง + รับสินค้า -->
+<div id="view_goods" class="container" style="display:none">
+  <div class="toolbar">
+    <h3 style="flex:1; font-size:15px; font-weight:600">คลัง (ใช้ร่วมทุกสาขา)</h3>
+    <button class="btn btn-pri" id="wh_new">+ เพิ่มคลัง</button>
+  </div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>รหัสคลัง</th><th>ชื่อคลัง</th><th>ลำดับ</th><th>สถานะ</th><th></th></tr></thead>
+    <tbody id="whRows"></tbody>
+  </table></div><div class="empty" id="whEmpty" style="display:none">ยังไม่มีคลัง</div></div>
+
+  <div class="toolbar" style="margin-top:20px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการรับสินค้า / ออดิทลัง</h3></div>
+  <div class="card" style="padding:12px;margin-bottom:12px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="field" style="max-width:200px"><label>สาขา</label><select id="gq_branch"></select></div>
+      <div class="field" style="max-width:200px"><label>คลัง</label><select id="gq_wh"></select></div>
+      <div class="field" style="max-width:150px"><label>ตั้งแต่</label><input id="gq_start" type="date"></div>
+      <div class="field" style="max-width:150px"><label>ถึง</label><input id="gq_end" type="date"></div>
+      <div class="field" style="max-width:170px"><label>ค้นหาเลขที่เอกสาร</label><input id="gq_ref" type="text" inputmode="numeric" placeholder="เลขรัน 6 หลัก"></div>
+      <button class="btn btn-pri btn-sm" id="gq_go">ค้นหา</button>
+    </div>
+  </div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>วันที่</th><th>สาขา</th><th>คลัง</th><th>เลขที่</th><th>ลังเข้า</th><th>ลังคืน</th><th>ควรคืน</th><th>ส่วนต่าง</th><th>ผู้คุม</th><th>รูป</th><th>หมายเหตุ</th></tr></thead>
+    <tbody id="gqRows"></tbody>
+  </table></div><div class="empty" id="gqEmpty" style="display:none">ไม่มีข้อมูล</div></div>
 </div>
 
 <!-- Activity: บันทึกกิจกรรม -->
@@ -3309,7 +3338,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); loadMdailyDash(); }
@@ -3330,6 +3359,7 @@ showTab = function(name){
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty(); }
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
+  else if(name==='goods') loadGoodsTab();
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
@@ -3338,6 +3368,42 @@ showTab = function(name){
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
 
+// ---------- รับสินค้า: คลัง CRUD + รายการ/ออดิท ----------
+let WH_ROWS=[];
+async function loadGoodsTab(){
+  await loadWarehouses();
+  const brSel=$('gq_branch'); if(brSel && !brSel.dataset.filled){ brSel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); brSel.dataset.filled='1'; }
+  if(!$('gq_start').value){ const d=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); $('gq_start').value=d; $('gq_end').value=d; }
+  loadGoodsList();
+}
+async function loadWarehouses(){
+  const r=await post({ action:'hr_wh_list', password:pwd });
+  WH_ROWS=(r&&r.rows)||[];
+  const tb=$('whRows');
+  tb.innerHTML=WH_ROWS.map(w=>`<tr><td class="mono">${esc(w.code||'—')}</td><td>${esc(w.name)}</td><td class="mono">${w.sort||0}</td><td>${w.active?'<span class="pill ok">ใช้งาน</span>':'<span class="pill muted">ปิด</span>'}</td><td style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-whedit="${w.id}">แก้ไข</button> <button class="btn btn-sec btn-sm" data-whtog="${w.id}">${w.active?'ปิด':'เปิด'}</button> <button class="btn btn-danger btn-sm" data-whdel="${w.id}">ลบ</button></td></tr>`).join('');
+  $('whEmpty').style.display=WH_ROWS.length?'none':'block';
+  tb.querySelectorAll('[data-whedit]').forEach(b=>b.onclick=()=>whEdit(WH_ROWS.find(x=>String(x.id)===b.dataset.whedit)));
+  tb.querySelectorAll('[data-whtog]').forEach(b=>b.onclick=()=>whToggle(WH_ROWS.find(x=>String(x.id)===b.dataset.whtog)));
+  tb.querySelectorAll('[data-whdel]').forEach(b=>b.onclick=()=>whDelete(b.dataset.whdel));
+  const s=$('gq_wh'); if(s){ const cur=s.value; s.innerHTML='<option value="">ทุกคลัง</option>'+WH_ROWS.map(w=>`<option value="${w.id}">${esc((w.code?('['+w.code+'] '):'')+w.name)}</option>`).join(''); if(cur) s.value=cur; }
+}
+async function whSaveRow(d){ const r=await post({ action:'hr_wh_save', password:pwd, data:d }); if(r&&r.ok){ toast('ok','บันทึกคลังแล้ว'); loadWarehouses(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ'); }
+function whEdit(w){ w=w||{}; const name=prompt('ชื่อคลัง', w.name||''); if(name===null) return; if(!name.trim()){ toast('err','กรอกชื่อคลัง'); return; } const code=(prompt('รหัสคลัง (ว่างได้)', w.code||'')||'').trim(); const sort=prompt('ลำดับการแสดง (ตัวเลข)', String(w.sort||0))||'0'; whSaveRow({ id:w.id, name:name.trim(), code, sort:parseInt(sort)||0, active:w.active!==false }); }
+function whToggle(w){ if(!w) return; whSaveRow({ id:w.id, name:w.name, code:w.code, sort:w.sort, active:!w.active }); }
+async function whDelete(id){ if(!confirm('ลบคลังนี้? (ถ้ามีประวัติรับสินค้าจะลบไม่ได้ — ปิดใช้งานแทน)')) return; const r=await post({ action:'hr_wh_delete', password:pwd, id:Number(id) }); if(r&&r.ok){ toast('ok','ลบแล้ว'); loadWarehouses(); } else toast('err',(r&&r.error)||'ลบไม่สำเร็จ'); }
+$('wh_new').onclick=()=>whEdit(null);
+$('gq_go').onclick=loadGoodsList;
+async function loadGoodsList(){
+  const f={ branch_id:$('gq_branch').value, warehouse_id:$('gq_wh').value?Number($('gq_wh').value):null, start:$('gq_start').value, end:$('gq_end').value, ref_no:$('gq_ref').value.trim() };
+  const r=await post({ action:'hr_goods_list', password:pwd, filter:f });
+  const rows=(r&&r.rows)||[];
+  $('gqEmpty').style.display=rows.length?'none':'block';
+  $('gqRows').innerHTML=rows.map(x=>{ const dcls=(x.diff||0)===0?'ok':'bad';
+    const imgs=(Array.isArray(x.in_photos)&&x.in_photos.length)?x.in_photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:zoom-in;margin:1px">').join(''):'—';
+    return `<tr><td class="mono">${esc(beDate(x.work_date))}</td><td>${esc(x.branch_name)}</td><td>${esc(x.warehouse_name||x.warehouse_id)}</td><td class="mono">${esc(x.ref_no||'-')}</td><td class="mono">${x.crates_in||0}</td><td class="mono">${x.crates_return||0}</td><td class="mono">${x.return_expected||0}</td><td class="mono"><span class="pill ${dcls}">${(x.diff||0)>0?'+':''}${x.diff||0}</span></td><td>${esc(x.done_name||x.done_by||'-')}</td><td style="white-space:nowrap">${imgs}</td><td>${esc(x.note||'')}</td></tr>`;
+  }).join('');
+}
+
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
 const NAV_GROUPS=[
   { icon:'📊', label:'ภาพรวม',     tabs:['dashboard','board','analytics'] },
@@ -3345,7 +3411,7 @@ const NAV_GROUPS=[
   { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
   { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'⚠️', label:'วินัย',       tabs:['discipline','score'] },
-  { icon:'⚙️', label:'ระบบ',        tabs:['branches','settings','submissions','activity','notifylog'] },
+  { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
 function updateNavActive(name){ document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{ if(NAV_GROUPS[i]) b.classList.toggle('on', NAV_GROUPS[i].tabs.includes(name)); }); }
