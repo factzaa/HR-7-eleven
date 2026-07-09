@@ -1005,10 +1005,16 @@
     const def=(await sb.from('task_defs').select('min_photos').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
     const urls=[];
-    for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','task/'+(row.branch_id||'x')+'_'+id+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    // photos อาจมีทั้ง "รูปเดิม" (http URL — เก็บไว้ตามเดิม) และ "รูปใหม่" (data URL — อัปโหลด)
+    // → แก้ไขงานที่ส่งแล้วได้เรื่อย ๆ: เพิ่ม/ลบรูป โดยรูปเดิมนับรวมกับขั้นต่ำ ไม่ต้องถ่ายใหม่ทั้งหมด
+    for(const p of (photos||[])){
+      if(!p) continue;
+      if(typeof p==='string' && /^https?:/i.test(p)) urls.push(p);
+      else urls.push(await uploadPhoto('employee-docs','task/'+(row.branch_id||'x')+'_'+id+'_'+Date.now()+'_'+urls.length+'.jpg', p));
+    }
     if(urls.length < minP) throw new Error('งานนี้ต้องแนบรูปอย่างน้อย '+minP+' รูป');
     const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null };
-    if(urls.length){ upd.photos=urls; upd.photo_url=urls[0]; }
+    upd.photos = urls.length?urls:null; upd.photo_url = urls.length?urls[0]:null;
     const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
     return { ok:true };
   }
