@@ -5032,8 +5032,9 @@ async function loadTaskList(){
     const imgs=ph.length?'<div style="font-size:11px;color:var(--muted);margin-top:6px">🖼 รูปที่พนักงานส่ง'+(Array.isArray(t.review_markup)&&t.review_markup.length?' (แก้แล้ว)':'')+'</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
     const mk=(Array.isArray(t.review_markup)&&t.review_markup.length)?'<div style="font-size:11px;color:#dc2626;margin-top:6px;font-weight:600">📍 จุดที่ผู้ตรวจสั่งแก้</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px">'+t.review_markup.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:2px solid #ef4444">').join('')+'</div>':'';
     const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
+    const aiBtn=ph.length?' <button class="btn btn-sec btn-sm" data-tkai="'+t.id+'">🤖 AI ช่วยดู</button>':'';
     return '<div style="padding:12px 2px;border-bottom:1px solid var(--line)">'
-      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+' <button class="btn btn-danger btn-sm" data-tdel="'+t.id+'" title="ลบงานนี้ (ลงผิด/ซ้ำ)">🗑</button></div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+aiBtn+' <button class="btn btn-danger btn-sm" data-tdel="'+t.id+'" title="ลบงานนี้ (ลงผิด/ซ้ำ)">🗑</button></div>'
       +'<div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.8">'
         +'👤 ผู้ทำ: <b style="color:var(--txt)">'+esc(t.emp_name||t.emp_id||'—')+'</b><br>'
         +'📤 ส่งงาน: '+fmtDT(t.submitted_at)+'<br>'
@@ -5041,7 +5042,8 @@ async function loadTaskList(){
         +(t.sent_back_count>0?(' · ⤴ เคยตีกลับ '+t.sent_back_count+' ครั้ง'):'')
       +'</div>'
       +(t.review_note?'<div style="font-size:12.5px;color:#b45309;margin-top:4px">↳ หมายเหตุผู้ตรวจ: '+esc(t.review_note)+'</div>':'')
-      +mk+imgs+'</div>';
+      +mk+imgs
+      +'<div id="tkai_'+t.id+'" style="font-size:12.5px;white-space:pre-wrap;line-height:1.65;margin-top:6px;color:var(--txt)"></div></div>';
   };
   const shiftGroups=ts=>{
     const groups={}; ts.forEach(t=>{ const k=t.shift_id||'_'; (groups[k]=groups[k]||[]).push(t); });
@@ -5069,6 +5071,17 @@ async function loadTaskList(){
   document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
   document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>openMarkupEditor(tkmap[Number(b.dataset.trb)]));
   document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>taskDelete(Number(b.dataset.tdel)));
+  document.querySelectorAll('[data-tkai]').forEach(b=>b.onclick=async()=>{
+    const t=tkmap[b.dataset.tkai]||tkmap[Number(b.dataset.tkai)]; if(!t) return;
+    const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+    if(!photos.length){ toast('err','งานนี้ไม่มีรูปให้ AI ดู'); return; }
+    const out=$('tkai_'+t.id); b.innerHTML='<span class="spin"></span>'; if(out) out.textContent='🤖 AI กำลังดูรูป… (สักครู่)';
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+    try{ const res=await fetch(base+'/functions/v1/ai-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd, title:t.title, photos, task_id:t.id})}); const j=await res.json().catch(()=>({}));
+      if(out) out.textContent = (j&&j.ok) ? ('🤖 คำแนะนำจาก AI (HR ตัดสินเอง):\n'+(j.advice||'(ไม่มีผล)')) : ('AI ไม่สำเร็จ: '+((j&&j.error)||'ตรวจ deploy/GEMINI_API_KEY'));
+    }catch(e){ if(out) out.textContent='เรียก ai-review ไม่ได้ (deploy edge function แล้วหรือยัง)'; }
+    b.innerHTML='🤖 AI ช่วยดู';
+  });
 }
 async function taskReview(id,status,note,markup){
   const r=await post({ action:'hr_task_review', password:pwd, id, status, note, markup });
