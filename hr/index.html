@@ -474,6 +474,7 @@
 
 <!-- Manager tasks (งาน ผจก.) -->
 <div id="view_mgrtasks" class="container" style="display:none">
+  <div id="mt_intask" style="margin-bottom:14px"></div>
   <div id="mt_switch" style="display:none;gap:8px;margin-bottom:12px">
     <button class="btn btn-sec btn-sm" id="mtsw_daily" style="flex:1">📋 งานประจำวัน</button>
     <button class="btn btn-sec btn-sm" id="mtsw_assigned" style="flex:1">📌 งานที่มอบหมาย</button>
@@ -1123,7 +1124,7 @@
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>งาน</th><th>กะ</th><th>รูปขั้นต่ำ</th><th>ลำดับ</th><th>เปิดใช้</th><th></th></tr></thead>
+    <thead><tr><th>งาน</th><th>กะ</th><th>รูปขั้นต่ำ</th><th>ลำดับ</th><th>เปิดใช้</th><th>ผจก.ตรวจ</th><th></th></tr></thead>
     <tbody id="tdRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">รายการนี้ใช้ตอน "มอบหมายงาน" ในแท็บ ส่ง/รับผลัด · ติ๊ก "ต้องแนบรูป" = พนักงานต้องถ่ายรูปก่อนส่งงานนั้น</div>
@@ -3150,6 +3151,7 @@ function mdStPill(st){
 }
 // เข้าแท็บงาน ผจก. → ผจก.เห็นสวิตช์ (ประจำวัน/มอบหมาย) · HR เห็นเฉพาะบอร์ดมอบหมาย
 function enterMtasks(){
+  loadMtaskIntask();
   if(MGR_MODE){
     $('mt_switch').style.display='flex';
     if(!$('mt_switch').dataset.wired){ $('mt_switch').dataset.wired='1'; $('mtsw_daily').onclick=()=>showMtView('daily'); $('mtsw_assigned').onclick=()=>showMtView('assigned'); }
@@ -3158,6 +3160,35 @@ function enterMtasks(){
     $('mt_switch').style.display='none'; $('mt_daily').style.display='none'; $('mt_assigned').style.display='block';
     loadMtasks();
   }
+}
+function intaskReviewer(){ try{ return MGR_MODE ? (typeof mtName==='function'?mtName():'') : ''; }catch(e){ return ''; } }
+async function loadMtaskIntask(){
+  const box=$('mt_intask'); if(!box) return;
+  let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null }); }catch(e){ box.innerHTML=''; return; }
+  const rows=(r&&r.rows)||[];
+  if(!rows.length){ box.innerHTML=''; box.style.display='none'; return; }
+  box.style.display='block';
+  let h='<div class="card" style="padding:12px;border-left:4px solid #f59e0b"><h3 style="font-size:15px;font-weight:700;margin-bottom:6px">🧾 รอตรวจจากงานในกะ ('+rows.length+')</h3>';
+  h+=rows.map(t=>{
+    const imgs=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+    const thumbs=imgs.length?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'<div class="muted" style="font-size:12px;margin:4px 0">— ไม่มีรูปแนบ —</div>';
+    return '<div style="border-top:1px dashed var(--line);padding:8px 0">'
+      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · '+esc(beDate(t.work_date))+'</span></div>'
+      +(t.emp_note?'<div class="muted" style="font-size:12.5px;margin-top:2px">📝 '+esc(t.emp_note)+'</div>':'')
+      +thumbs
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" data-iapprove="'+t.id+'">✓ ผ่าน</button><button class="btn btn-danger btn-sm" data-ireject="'+t.id+'">⤴ ตีกลับ / วาด</button></div>'
+      +'</div>';
+  }).join('')+'</div>';
+  box.innerHTML=h;
+  box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
+  box.querySelectorAll('[data-ireject]').forEach(b=>b.onclick=()=>{ const t=rows.find(x=>String(x.id)===b.dataset.ireject); if(t) intaskReject(t); });
+}
+async function intaskReject(t){
+  const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+  const doReject=async(note,markup)=>{ const r=await post({ action:'hr_mgr_intask_review', password:pwd, id:t.id, decision:'sent_back', note:note||'', markup:markup||null, reviewer:intaskReviewer() }); if(r&&r.ok){ toast('ok','ตีกลับให้พนักงานแก้แล้ว'); loadMtaskIntask(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ'); };
+  if(!photos.length){ const note=prompt('ระบุสิ่งที่ต้องแก้ (ตีกลับ):'); if(note===null) return; await doReject(note); return; }
+  await openMarkupEditor(t);
+  if(MK) MK.reviewFn=async(note,out)=>{ await doReject(note,out); };
 }
 function showMtView(which){
   MT_VIEW=which;
@@ -4610,6 +4641,7 @@ function shOpen(shift){
   $('sh_main').value = shift ? (shift.main_shift||'') : '';
   if($('sh_no_ot')) $('sh_no_ot').checked = shift ? (shift.no_ot===true) : false;
   if($('sh_half')) $('sh_half').checked = shift ? (Number(shift.day_value)===0.5) : false;
+  if($('sh_mgrrev')) $('sh_mgrrev').checked = shift ? (shift.mgr_review!==false) : true;
   $('shOverlay').classList.add('show');
 }
 function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
@@ -4954,6 +4986,7 @@ async function loadTaskList(){
   let base=r.rows;
   if(selBr) base=base.filter(t=>t.branch_id===selBr);
   if(selSh) base=base.filter(t=>String(t.shift_id||'')===selSh);
+  base=base.filter(t=>!(t.needs_mgr && t.status==='submitted'));   // งานที่รอ ผจก.ตรวจ → แสดงในบอร์ดงาน ผจก. ไม่ซ้ำในคิว HR
   // ชิปสถานะ = ปุ่มกดกรองได้ (แตะซ้ำ = ยกเลิก) · แสดงครบทุกสถานะรวมถึง "ตีกลับ" · จำนวนอิงตัวกรองสาขา/กะ
   const c={ submitted:base.filter(t=>t.status==='submitted').length, todo:base.filter(t=>(t.status||'todo')==='todo').length, sent_back:base.filter(t=>t.status==='sent_back').length, approved:base.filter(t=>t.status==='approved').length };
   const chip=(key,label,cls,n)=>'<span class="pill '+cls+' tkchip" data-st="'+key+'" style="cursor:pointer;'+(TK_STATUS===key?'outline:2.5px solid #0f172a;outline-offset:1px':'opacity:.9')+'">'+label+' '+(n||0)+'</span>';
@@ -5227,11 +5260,12 @@ async function loadTaskDefs(){
     <td style="text-align:center"><input type="number" min="0" max="9" value="${d.min_photos!=null?d.min_photos:(d.require_photo?1:0)}" id="td_mp_${d.id}" style="width:56px;padding:6px;border:1.5px solid var(--line2);border-radius:7px;text-align:center"></td>
     <td><input type="number" value="${d.sort||0}" id="td_s_${d.id}" style="width:60px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td style="text-align:center"><input type="checkbox" ${d.active!==false?'checked':''} id="td_a_${d.id}"></td>
+    <td style="text-align:center"><input type="checkbox" ${d.mgr_review?'checked':''} id="td_mgr_${d.id}" title="ให้ ผจก.ตรวจ (ข้าม HR)"></td>
     <td style="white-space:nowrap"><button class="btn btn-pri btn-sm" data-tdsave="${d.id}">บันทึก</button> <button class="btn btn-danger btn-sm" data-tddel="${d.id}">ลบ</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" style="padding:14px;color:var(--muted)">ยังไม่มีรายการงาน</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="7" style="padding:14px;color:var(--muted)">ยังไม่มีรายการงาน</td></tr>';
   document.querySelectorAll('[data-tdsave]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.tdsave);
-    const data={ id, title:$('td_t_'+id).value, min_photos:$('td_mp_'+id).value, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked, shift_id:$('td_sh_'+id).value };
+    const data={ id, title:$('td_t_'+id).value, min_photos:$('td_mp_'+id).value, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked, shift_id:$('td_sh_'+id).value, mgr_review:($('td_mgr_'+id)||{}).checked };
     const r=await post({ action:'hr_task_def_save', password:pwd, data });
     if(r.ok) toast('ok','บันทึกแล้ว'); else toast('err', r.error||'ไม่สำเร็จ');
   });
@@ -5561,6 +5595,7 @@ async function loadSubmissions(){
       <div class="field"><label>ผลัดหลัก (ระบบงานผลัด) — กะนี้นับเป็น เช้า/บ่าย/ดึก หรือพิเศษ</label><select id="sh_main"></select></div>
       <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_no_ot" style="width:18px;height:18px"> ไม่คิด OT สำหรับกะนี้ (เช่น กะ ผจก.)</label></div>
       <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_half" style="width:18px;height:18px"> <span>กะครึ่งวัน — นับเป็น <b>0.5 วัน</b> (มีผลกับรายงาน/ขาด/วินัย)</span></label></div>
+      <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_mgrrev" style="width:18px;height:18px" checked> <span>กะนี้อยู่ในเวลา ผจก. — ให้ ผจก.ตรวจงานในกะที่ติ๊ก "ผจก.ตรวจ" ได้ (ติ๊กออกสำหรับกะที่ ผจก.ไม่อยู่ เช่น กะดึก → งานจะไป HR ตรวจแทน)</span></label></div>
     </div>
     <div class="modal-f"><button class="btn btn-pri" id="shSave">บันทึก</button></div>
   </div>`;
@@ -5570,7 +5605,7 @@ async function loadSubmissions(){
   $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
   $('dr_save') && ($('dr_save').onclick = saveDiscRules);
   $('shSave').onclick = async ()=>{
-    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked, day_value:($('sh_half')&&$('sh_half').checked)?0.5:1 };
+    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked, day_value:($('sh_half')&&$('sh_half').checked)?0.5:1, mgr_review:($('sh_mgrrev')?$('sh_mgrrev').checked:true) };
     if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
     $('shSave').innerHTML='<span class="spin"></span>';
     const r = await post({ action:'hr_shift_save', password:pwd, data });

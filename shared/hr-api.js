@@ -187,6 +187,8 @@
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
+        case 'hr_mgr_intask_list':   return await hrMgrIntaskList(p.branch);
+        case 'hr_mgr_intask_review': return await hrMgrIntaskReview(p.id, p.decision, p.note, p.markup, p.reviewer);
         case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_open_tasks':        return await hrOpenTasks();
@@ -1074,10 +1076,12 @@
       main_shift: (d.main_shift === undefined) ? undefined : (d.main_shift || null),  // ผลัดหลักที่สังกัด (ว่าง=พิเศษ)
       no_ot: (d.no_ot === undefined) ? undefined : !!d.no_ot,   // กะนี้ไม่คิด OT (เช่น กะ ผจก.)
       day_value: (d.day_value === undefined) ? undefined : (Number(d.day_value) === 0.5 ? 0.5 : 1.0),  // 0.5 = กะครึ่งวัน
+      mgr_review: (d.mgr_review === undefined) ? undefined : !!d.mgr_review,   // กะนี้อยู่ในเวลา ผจก. → ให้ ผจก.ตรวจงานในกะได้
     };
     if (row.no_ot === undefined) delete row.no_ot;
     if (row.main_shift === undefined) delete row.main_shift;
     if (row.day_value === undefined) delete row.day_value;
+    if (row.mgr_review === undefined) delete row.mgr_review;
     const { error } = await sb().from('shifts').upsert(row, { onConflict: 'shift_id' });
     if (error) throw error;
     return { ok: true };
@@ -1681,7 +1685,7 @@
   async function hrTaskDefSave(d) {
     if (!d || !d.title) return { ok: false, error: 'ต้องมีชื่องาน' };
     const mp = (Number(d.min_photos) >= 0) ? Number(d.min_photos) : 0;
-    const row = { title: String(d.title).trim(), require_photo: mp > 0, min_photos: mp, active: d.active !== false, sort: Number(d.sort) || 0, shift_id: d.shift_id || null };
+    const row = { title: String(d.title).trim(), require_photo: mp > 0, min_photos: mp, active: d.active !== false, sort: Number(d.sort) || 0, shift_id: d.shift_id || null, mgr_review: !!d.mgr_review };
     if (d.id) { const { error } = await sb().from('task_defs').update(row).eq('id', d.id); if (error) throw error; }
     else { const { error } = await sb().from('task_defs').insert(row); if (error) throw error; }
     return { ok: true };
@@ -1747,6 +1751,40 @@
     await logAct(status === 'approved' ? 'อนุมัติงาน' : 'ตีงานกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
     return { ok: true };
   }
+  // ---------- ผจก. ตรวจงานในกะที่ติ๊กไว้ (ข้าม HR) ----------
+  async function hrMgrIntaskList(branch) {
+    let q = sb().from('task_assignments').select('*').eq('needs_mgr', true).eq('status', 'submitted').order('work_date', { ascending: false }).limit(300);
+    if (branch) q = q.eq('branch_id', branch);
+    const [tR, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    if (tR.error) throw tR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (tR.data || []).map(t => ({ ...t, branch_name: brName[t.branch_id] || t.branch_id || '—' }));
+    return { ok: true, rows };
+  }
+  async function hrMgrIntaskReview(id, decision, note, markup, reviewerName) {
+    const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count').eq('id', id).maybeSingle();
+    const who = reviewerName ? ('ผจก. · ' + reviewerName) : 'ผจก.';
+    if (decision === 'approved') {
+      const { error } = await sb().from('task_assignments').update({ status: 'approved', reviewer: who, review_note: note || null, reviewed_at: new Date().toISOString() }).eq('id', id);
+      if (error) throw error;
+      await logAct('ผจก.อนุมัติงานในกะ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
+      return { ok: true };
+    }
+    const upd = { status: 'sent_back', reviewer: who, review_note: note || null, reviewed_at: new Date().toISOString(), sent_back_count: ((t && t.sent_back_count) || 0) + 1 };
+    if (Array.isArray(markup) && markup.length) {
+      const urls = [];
+      for (const m of markup) {
+        if (typeof m === 'string' && m.startsWith('data:')) { try { urls.push(await window.HR.uploadPhoto('employee-docs', 'markup/' + id + '_' + Date.now() + '_' + urls.length + '.jpg', m)); } catch (e) { console.warn('markup upload', e); } }
+        else if (typeof m === 'string' && m) urls.push(m);
+      }
+      upd.review_markup = urls.length ? urls : null;
+    }
+    const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
+    if (error) throw error;
+    await logAct('ผจก.ตีงานในกะกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
+    return { ok: true };
+  }
+
   // ลบงานในกะออกจากระบบ (ใช้กับงานที่ลงผิดวัน/ซ้ำ)
   async function hrTaskDelete(id) {
     if (!id) return { ok: false, error: 'ไม่ระบุงาน' };

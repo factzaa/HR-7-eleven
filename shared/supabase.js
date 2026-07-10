@@ -1002,8 +1002,12 @@
   async function submitTaskMulti({ id, empId, photos, note }){
     const row=(await sb.from('task_assignments').select('branch_id,task_def_id,shift_id,work_date').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
     await _assertShiftStarted(row.shift_id, row.work_date);
-    const def=(await sb.from('task_defs').select('min_photos').eq('id',row.task_def_id).maybeSingle()).data;
+    const def=(await sb.from('task_defs').select('min_photos,mgr_review').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
+    // needs_mgr = งานติ๊ก "ผจก.ตรวจ" และกะนั้นเป็นกะที่ ผจก.ตรวจ (บางกะ เช่นดึก ไม่อยู่ในเวลา ผจก.)
+    let shiftMgr=true;
+    if(def && def.mgr_review && row.shift_id){ const sh=(await sb.from('shifts').select('mgr_review').eq('shift_id',row.shift_id).maybeSingle()).data; shiftMgr = !sh || sh.mgr_review!==false; }
+    const wantMgr = !!(def && def.mgr_review && shiftMgr);
     const urls=[];
     // photos อาจมีทั้ง "รูปเดิม" (http URL — เก็บไว้ตามเดิม) และ "รูปใหม่" (data URL — อัปโหลด)
     // → แก้ไขงานที่ส่งแล้วได้เรื่อย ๆ: เพิ่ม/ลบรูป โดยรูปเดิมนับรวมกับขั้นต่ำ ไม่ต้องถ่ายใหม่ทั้งหมด
@@ -1013,7 +1017,7 @@
       else urls.push(await uploadPhoto('employee-docs','task/'+(row.branch_id||'x')+'_'+id+'_'+Date.now()+'_'+urls.length+'.jpg', p));
     }
     if(urls.length < minP) throw new Error('งานนี้ต้องแนบรูปอย่างน้อย '+minP+' รูป');
-    const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null };
+    const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null, needs_mgr: wantMgr };
     upd.photos = urls.length?urls:null; upd.photo_url = urls.length?urls[0]:null;
     const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
     return { ok:true };
