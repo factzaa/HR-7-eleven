@@ -336,7 +336,7 @@
     const d = date || today;                 // วันที่ของ "ภาพรวมรายวัน" (ค่าเริ่มต้น = วันนี้)
     const otWhole = await getSettingBool('ot_whole_day');
     const cyc = cycleRange('current');
-    let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id').eq('active', true);
+    let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id,end_date').eq('active', true);
     let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status,extend_until').eq('work_date', d);
     let qD30 = sb().from('attendance').select('work_date,late_min,ot_hours,branch_id').gte('work_date', addDays(today, -29)).lte('work_date', today);
     let qCyc = sb().from('attendance').select('emp_id,late_min,branch_id').gte('work_date', cyc.start).lte('work_date', cyc.end);
@@ -350,7 +350,7 @@
       sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').gte('end_date', today).lte('start_date', addDays(today, 14)),  // ลาที่จะถึงใน 14 วัน
     ]);
     if (empsR.error) throw empsR.error;
-    const emps = empsR.data || [], todayA = todayR.data || [];
+    const emps = (empsR.data || []).filter(e => !(e.end_date && String(e.end_date) < d)), todayA = todayR.data || [];   // ตัดคนที่สิ้นสุดการทำงานแล้วออกจากภาพรวม/นับกะ
     const empSet = new Set(emps.map(e => e.emp_id));
     const empName = {}, empPhoto = {}, brName = {};
     emps.forEach(e => { empName[e.emp_id] = e.name; empPhoto[e.emp_id] = e.photo_url; });
@@ -447,7 +447,7 @@
     const d = date || bkkToday();
     const [schR, empsR, shR, brR, attR, lvR] = await Promise.all([
       sb().from('schedules').select('emp_id,shift_id,branch_id,is_cover,note').eq('work_date', d),
-      sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url,active,end_date'),
       sb().from('shifts').select('shift_id,name,code,start_time').order('start_time'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
       sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,face_match,gps_accuracy,photo_url,checkout_photo_url').eq('work_date', d),
@@ -479,8 +479,10 @@
     const scheduledEmp = new Set();
     (schR.data || []).forEach(s => {
       if (!s.shift_id) return;
-      scheduledEmp.add(s.emp_id);
       const emp = empById[s.emp_id] || { emp_id: s.emp_id, name: s.emp_id };
+      // พนักงานที่ "สิ้นสุดการทำงานแล้ว" หรือปิดใช้งาน = ไม่โชว์ในบอร์ด (แม้เคยจัดเวรไว้ก่อนหน้า)
+      if (emp.active === false || (emp.end_date && String(emp.end_date) < d)) return;
+      scheduledEmp.add(s.emp_id);
       const brId = s.branch_id || emp.branch_id || '—';
       const home = emp.branch_id || null;
       const st = statusOf(s.emp_id);
@@ -1253,13 +1255,13 @@
       sb().from('leaves').select('*, employees(name)').eq('status', 'pending').order('created_at', { ascending: false }),
       sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,extend_until').eq('work_date', d),
       sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', d),
-      sb().from('employees').select('emp_id,name,branch_id').eq('active', true),
+      sb().from('employees').select('emp_id,name,branch_id,end_date').eq('active', true),
       sb().from('leaves').select('emp_id,start_date,end_date').eq('status', 'approved').lte('start_date', d),
       sb().from('profile_submissions').select('id,emp_id,name,submitted_at').eq('status', 'pending').order('submitted_at', { ascending: false }),
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
     ]);
     const empName = {}, empBranch = {}; (empR.data || []).forEach(e => { empName[e.emp_id] = e.name; empBranch[e.emp_id] = e.branch_id; });
-    const activeSet = new Set((empR.data || []).map(e => e.emp_id));   // เฉพาะพนักงานที่ยัง active
+    const activeSet = new Set((empR.data || []).filter(e => !(e.end_date && String(e.end_date) < d)).map(e => e.emp_id));   // active และยังไม่สิ้นสุดการทำงาน
     const att = (todayR.data || []).filter(a => !branch || a.branch_id === branch);
     const schRows = (schR.data || []).filter(s => (!branch || s.branch_id === branch) && activeSet.has(s.emp_id));   // ตัดกะของพนักงานที่ปิดใช้งานออก
     const checkedIn = new Set(att.filter(a => a.check_in).map(a => a.emp_id));
