@@ -529,7 +529,9 @@ async function submit(action){
     const descriptor = await getDescriptor();
     if(!descriptor){ showToast('err','ไม่พบใบหน้าชัดเจน — กรุณาหันหน้าเข้ากล้องให้เห็นเต็มหน้า แล้วลองใหม่'); return; }
     const faceMatch = matchFace(descriptor, empMatch);  // true=ตรง / false=ไม่ตรง / null=ยังไม่ลงทะเบียน
-    // บังคับ: ถ้าลงทะเบียนใบหน้าไว้แล้วแต่หน้าไม่ตรง → บล็อก (กันลงเวลาผิดคน/ถ่ายเพดาน)
+    // บังคับ: ต้องลงทะเบียนใบหน้าก่อน (คนยังไม่ลงทะเบียน = ลงเวลาไม่ได้)
+    if(faceMatch===null){ showToast('err','คุณยังไม่ได้ลงทะเบียนใบหน้า จึงลงเวลาไม่ได้\nกรุณากดปุ่ม "ลงทะเบียนใบหน้า" ก่อน หรือให้ HR ลงทะเบียนให้'); return; }
+    // บังคับ: ลงทะเบียนแล้วแต่หน้าไม่ตรง → บล็อก (กันลงเวลาผิดคน/ถ่ายเพดาน)
     if(faceMatch===false){ showToast('err','ใบหน้าไม่ตรงกับที่ลงทะเบียนของ '+(empMatch.name||empMatch.emp_id)+'\nกรุณาให้เจ้าตัวสแกนใบหน้าของตนเอง'); return; }
     const shiftId  = empMatch.default_shift;
     const branchId = gps.branch ? gps.branch.branch_id : empMatch.branch_id;
