@@ -1130,6 +1130,12 @@
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">รายการนี้ใช้ตอน "มอบหมายงาน" ในแท็บ ส่ง/รับผลัด · ติ๊ก "ต้องแนบรูป" = พนักงานต้องถ่ายรูปก่อนส่งงานนั้น</div>
 
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">🤖 AI ช่วยวิเคราะห์รูปแบบการตรวจ</h3><button class="btn btn-pri btn-sm" id="air_go">วิเคราะห์จากประวัติ</button></div>
+  <div class="card" style="padding:14px">
+    <div class="hint" style="margin-bottom:8px">ดึงประวัติการตรวจจริง (ผ่าน/ตีกลับ + เหตุผล) ต่อหัวข้องาน มาให้ AI สรุปเป็น "เกณฑ์ตรวจ + จุดพลาดบ่อย + AI ตรวจได้แค่ไหน" เพื่อวางแผนให้ AI ช่วยตรวจงาน</div>
+    <div id="air_out" style="white-space:pre-wrap;font-size:13.5px;line-height:1.75;color:var(--txt)"></div>
+  </div>
+
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">สถานะการรับทราบระเบียบ <span id="ru_ver" style="font-weight:400; color:var(--muted); font-size:13px"></span></h3><button class="btn btn-sec btn-sm" id="ru_refresh">รีเฟรช</button></div>
   <div id="ru_body"></div>
 </div>
@@ -5292,6 +5298,14 @@ $('td_new') && ($('td_new').onclick=async()=>{
   const title=prompt('ชื่องานใหม่:'); if(!title) return;
   const r=await post({ action:'hr_task_def_save', password:pwd, data:{ title, require_photo:false, active:true, sort:0 } });
   if(r.ok){ toast('ok','เพิ่มงานแล้ว'); loadTaskDefs(); } else toast('err', r.error||'ไม่สำเร็จ');
+});
+$('air_go') && ($('air_go').onclick=async()=>{
+  $('air_go').innerHTML='<span class="spin"></span>'; $('air_out').textContent='กำลังวิเคราะห์จากประวัติการตรวจ… (อาจใช้เวลาสักครู่)';
+  const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+  try{ const res=await fetch(base+'/functions/v1/ai-review-analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})}); const j=await res.json().catch(()=>({}));
+    $('air_out').textContent = (j&&j.ok) ? (j.summary||'(ไม่มีผลวิเคราะห์)') : ('ไม่สำเร็จ: '+((j&&j.error)||'ตรวจการตั้งค่า/deploy'));
+  }catch(e){ $('air_out').textContent='เรียก ai-review-analyze ไม่ได้ (deploy edge function แล้วหรือยัง · ต้องมี GEMINI_API_KEY)'; }
+  $('air_go').textContent='วิเคราะห์จากประวัติ';
 });
 
 // ========== ประวัติแจ้งเตือน + ประกาศถึงพนักงาน ==========
