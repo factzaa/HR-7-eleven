@@ -3194,12 +3194,24 @@ async function loadMtaskIntask(boxId){
       +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · '+esc(beDate(t.work_date))+'</span></div>'
       +(t.emp_note?'<div class="muted" style="font-size:12.5px;margin-top:2px">📝 '+esc(t.emp_note)+'</div>':'')
       +thumbs
-      +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" data-iapprove="'+t.id+'">✓ ผ่าน</button><button class="btn btn-danger btn-sm" data-ireject="'+t.id+'">⤴ ตีกลับ / วาด</button></div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" data-iapprove="'+t.id+'">✓ ผ่าน</button><button class="btn btn-danger btn-sm" data-ireject="'+t.id+'">⤴ ตีกลับ / วาด</button><button class="btn btn-sec btn-sm" data-aihelp="'+t.id+'">🤖 ให้ AI ช่วยดู</button></div>'
+      +'<div id="airx_'+t.id+'" style="font-size:12.5px;white-space:pre-wrap;line-height:1.65;margin-top:6px;color:var(--txt)"></div>'
       +'</div>';
   }).join('')+'</div>';
   box.innerHTML=h;
   box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(boxId); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
   box.querySelectorAll('[data-ireject]').forEach(b=>b.onclick=()=>{ const t=rows.find(x=>String(x.id)===b.dataset.ireject); if(t) intaskReject(t, boxId); });
+  box.querySelectorAll('[data-aihelp]').forEach(b=>b.onclick=async()=>{
+    const t=rows.find(x=>String(x.id)===b.dataset.aihelp); if(!t) return;
+    const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+    if(!photos.length){ toast('err','งานนี้ไม่มีรูปให้ AI ดู'); return; }
+    const out=$('airx_'+t.id); b.innerHTML='<span class="spin"></span>'; if(out) out.textContent='🤖 AI กำลังดูรูป… (สักครู่)';
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+    try{ const res=await fetch(base+'/functions/v1/ai-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd, title:t.title, photos, task_id:t.id})}); const j=await res.json().catch(()=>({}));
+      if(out) out.textContent = (j&&j.ok) ? ('🤖 คำแนะนำจาก AI (ผจก.ตัดสินเอง):\n'+(j.advice||'(ไม่มีผล)')) : ('AI ไม่สำเร็จ: '+((j&&j.error)||'ตรวจ deploy/GEMINI_API_KEY'));
+    }catch(e){ if(out) out.textContent='เรียก ai-review ไม่ได้ (deploy edge function แล้วหรือยัง)'; }
+    b.innerHTML='🤖 ให้ AI ช่วยดู';
+  });
 }
 async function intaskReject(t, boxId){
   const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
