@@ -423,6 +423,7 @@
     <button class="btn btn-sec btn-sm" id="mdr_refresh">🔄</button>
     <button class="btn btn-sec btn-sm" id="mdr_reportbtn">📊 รายงานเดือน</button>
   </div>
+  <div id="mdr_intask" style="margin-bottom:14px"></div>
   <div id="mdr_board"><div class="empty">กำลังโหลด…</div></div>
   <div id="mdr_report" style="display:none">
     <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -2840,10 +2841,20 @@ async function rcAct(act, a){
       if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
       toast('ok','นัดสัมภาษณ์แล้ว');
       const msg=rcDraftMsg(a, at, note);
-      $('iv_draft').innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:4px">ข้อความส่งผู้สมัคร (คัดลอกไปส่งทางโทร/LINE):</div>'
+      $('iv_draft').innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:4px">ข้อความส่งผู้สมัคร (แก้ไขได้ก่อนส่ง):</div>'
         +'<textarea id="iv_msg" style="width:100%;min-height:130px;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">'+esc(msg)+'</textarea>'
-        +'<button class="btn btn-sec btn-sm" id="iv_copy" style="margin-top:6px">📋 คัดลอกข้อความ</button>';
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn btn-sec btn-sm" id="iv_copy">📋 คัดลอกข้อความ</button>'
+        +(a.phone?('<button class="btn btn-pri btn-sm" id="iv_sms">📱 ส่ง SMS ไป '+esc(a.phone)+'</button>'):'<span class="muted" style="font-size:12px;align-self:center">— ไม่มีเบอร์ ส่ง SMS ไม่ได้ —</span>')+'</div>';
       $('iv_copy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('iv_msg').value); }catch(e){ $('iv_msg').select(); try{document.execCommand('copy');}catch(_){} } toast('ok','คัดลอกแล้ว'); };
+      if($('iv_sms')) $('iv_sms').onclick=async()=>{
+        const m=($('iv_msg').value||'').trim(); if(!m){ toast('err','ไม่มีข้อความ'); return; }
+        if(!confirm('ส่ง SMS นัดสัมภาษณ์ไปที่ '+a.phone+' ?')) return;
+        $('iv_sms').innerHTML='<span class="spin"></span>';
+        const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+        try{ const res=await fetch(base+'/functions/v1/sms-send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd, to:a.phone, msg:m, applicant_id:a.id})}); const j=await res.json().catch(()=>({})); if(j&&j.ok){ toast('ok','ส่ง SMS แล้ว'+(j.credit!=null?(' · เครดิตเหลือ '+j.credit):'')); } else toast('err',(j&&j.error)||'ส่งไม่สำเร็จ'); }
+        catch(e){ toast('err','เรียก sms-send ไม่ได้ (deploy edge function แล้วหรือยัง)'); }
+        $('iv_sms').innerHTML='📱 ส่ง SMS ไป '+esc(a.phone);
+      };
       loadRecruit();
     };
     return;
@@ -3162,8 +3173,9 @@ function enterMtasks(){
   }
 }
 function intaskReviewer(){ try{ return MGR_MODE ? (typeof mtName==='function'?mtName():'') : ''; }catch(e){ return ''; } }
-async function loadMtaskIntask(){
-  const box=$('mt_intask'); if(!box) return;
+async function loadMtaskIntask(boxId){
+  boxId = boxId || 'mt_intask';
+  const box=$(boxId); if(!box) return;
   let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null }); }catch(e){ box.innerHTML=''; return; }
   const rows=(r&&r.rows)||[];
   if(!rows.length){ box.innerHTML=''; box.style.display='none'; return; }
@@ -3180,12 +3192,12 @@ async function loadMtaskIntask(){
       +'</div>';
   }).join('')+'</div>';
   box.innerHTML=h;
-  box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
-  box.querySelectorAll('[data-ireject]').forEach(b=>b.onclick=()=>{ const t=rows.find(x=>String(x.id)===b.dataset.ireject); if(t) intaskReject(t); });
+  box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(boxId); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
+  box.querySelectorAll('[data-ireject]').forEach(b=>b.onclick=()=>{ const t=rows.find(x=>String(x.id)===b.dataset.ireject); if(t) intaskReject(t, boxId); });
 }
-async function intaskReject(t){
+async function intaskReject(t, boxId){
   const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-  const doReject=async(note,markup)=>{ const r=await post({ action:'hr_mgr_intask_review', password:pwd, id:t.id, decision:'sent_back', note:note||'', markup:markup||null, reviewer:intaskReviewer() }); if(r&&r.ok){ toast('ok','ตีกลับให้พนักงานแก้แล้ว'); loadMtaskIntask(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ'); };
+  const doReject=async(note,markup)=>{ const r=await post({ action:'hr_mgr_intask_review', password:pwd, id:t.id, decision:'sent_back', note:note||'', markup:markup||null, reviewer:intaskReviewer() }); if(r&&r.ok){ toast('ok','ตีกลับให้พนักงานแก้แล้ว'); loadMtaskIntask(boxId); } else toast('err',(r&&r.error)||'ไม่สำเร็จ'); };
   if(!photos.length){ const note=prompt('ระบุสิ่งที่ต้องแก้ (ตีกลับ):'); if(note===null) return; await doReject(note); return; }
   await openMarkupEditor(t);
   if(MK) MK.reviewFn=async(note,out)=>{ await doReject(note,out); };
@@ -3265,6 +3277,7 @@ $('mdSubmit') && ($('mdSubmit').onclick=async()=>{
 // ---- HR: บอร์ดตรวจงานประจำวัน ----
 let MDR_ROWS=[];
 async function loadMdailyBoard(){
+  loadMtaskIntask('mdr_intask');   // แสดง "รอตรวจจากงานในกะ" ให้ HR เห็นในหน้านี้ด้วย
   const box=$('mdr_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   if($('mdr_branch') && !$('mdr_branch').dataset.filled){
     $('mdr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
