@@ -949,6 +949,21 @@
     <tbody id="whRows"></tbody>
   </table></div><div class="empty" id="whEmpty" style="display:none">ยังไม่มีคลัง</div></div>
 
+  <div class="toolbar" style="margin-top:20px"><h3 style="flex:1; font-size:15px; font-weight:600">ยอดคงค้างตั้งต้น (ต่อสาขา × คลัง)</h3></div>
+  <div class="card" style="padding:12px;margin-bottom:12px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="field" style="max-width:200px"><label>สาขา</label><select id="go_branch"></select></div>
+      <div class="field" style="max-width:200px"><label>คลัง</label><select id="go_wh"></select></div>
+      <div class="field" style="max-width:170px"><label>ยอดคงค้างตั้งต้น (ลัง)</label><input id="go_val" type="number" min="0" value="0"></div>
+      <button class="btn btn-pri btn-sm" id="go_save">บันทึก</button>
+    </div>
+    <div class="hint" style="margin-top:6px">ตั้งค่าลังที่ค้างคืนอยู่ก่อนเริ่มใช้ระบบ · ระบบจะบวกยอดนี้เข้ากับ "ควรคืน/คงค้าง" ให้อัตโนมัติ (บันทึกซ้ำ = ทับค่าเดิม)</div>
+  </div>
+  <div class="card" style="margin-bottom:4px"><div class="tablewrap"><table>
+    <thead><tr><th>สาขา</th><th>คลัง</th><th>ยอดตั้งต้น</th><th></th></tr></thead>
+    <tbody id="goRows"></tbody>
+  </table></div><div class="empty" id="goEmpty" style="display:none">ยังไม่ได้ตั้งค่ายอดตั้งต้น</div></div>
+
   <div class="toolbar" style="margin-top:20px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการรับสินค้า / ออดิทลัง</h3></div>
   <div class="card" style="padding:12px;margin-bottom:12px">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
@@ -3381,8 +3396,26 @@ async function loadGoodsTab(){
   await loadWarehouses();
   const brSel=$('gq_branch'); if(brSel && !brSel.dataset.filled){ brSel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); brSel.dataset.filled='1'; }
   if(!$('gq_start').value){ const d=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); $('gq_start').value=d; $('gq_end').value=d; }
-  loadGoodsList(); loadGoodsAudit();
+  loadGoodsOpening(); loadGoodsList(); loadGoodsAudit();
 }
+async function loadGoodsOpening(){
+  const r=await post({ action:'hr_goods_opening_list', password:pwd });
+  const WHS=(r&&r.warehouses)||[], BRS=(r&&r.branches)||[];
+  const bs=$('go_branch'); if(bs&&!bs.dataset.filled){ bs.innerHTML='<option value="">— เลือกสาขา —</option>'+BRS.map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); bs.dataset.filled='1'; }
+  const ws=$('go_wh'); if(ws){ const cur=ws.value; ws.innerHTML='<option value="">— เลือกคลัง —</option>'+WHS.map(w=>`<option value="${w.id}">${esc((w.code?('['+w.code+'] '):'')+w.name)}</option>`).join(''); if(cur) ws.value=cur; }
+  const rows=(r&&r.rows)||[];
+  $('goEmpty').style.display=rows.length?'none':'block';
+  $('goRows').innerHTML=rows.map(o=>`<tr><td>${esc(o.branch_name)}</td><td>${esc((o.warehouse_code?('['+o.warehouse_code+'] '):'')+o.warehouse_name)}</td><td class="mono">${o.opening||0}</td><td><button class="btn btn-sec btn-sm" data-gob="${esc(o.branch_id)}" data-gow="${o.warehouse_id}" data-gov="${o.opening||0}">แก้ไข</button></td></tr>`).join('');
+  $('goRows').querySelectorAll('[data-gob]').forEach(b=>b.onclick=()=>{ $('go_branch').value=b.dataset.gob; $('go_wh').value=b.dataset.gow; $('go_val').value=b.dataset.gov; });
+}
+$('go_save').onclick=async()=>{
+  const branch_id=$('go_branch').value, warehouse_id=$('go_wh').value, opening=$('go_val').value;
+  if(!branch_id||!warehouse_id){ toast('err','เลือกสาขาและคลัง'); return; }
+  $('go_save').innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_goods_opening_save', password:pwd, data:{ branch_id, warehouse_id:Number(warehouse_id), opening } });
+  $('go_save').textContent='บันทึก';
+  if(r&&r.ok){ toast('ok','บันทึกยอดตั้งต้นแล้ว'); loadGoodsOpening(); loadGoodsAudit(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+};
 async function loadWarehouses(){
   const r=await post({ action:'hr_wh_list', password:pwd });
   WH_ROWS=(r&&r.rows)||[];

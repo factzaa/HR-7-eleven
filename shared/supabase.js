@@ -1164,8 +1164,12 @@
   }
   // ยอดคงค้างต่อคลัง (running balance) = Σลังเข้า − Σลังคืน ก่อนวันที่กำหนด
   async function _whOutstanding(branch, warehouseId, beforeDate){
-    const { data } = await sb.from('goods_receipts').select('crates_in,crates_return').eq('branch_id',branch||'').eq('warehouse_id',warehouseId).lt('work_date',beforeDate);
-    let bal=0; (data||[]).forEach(r=>{ bal += (r.crates_in||0) - (r.crates_return||0); });
+    const [rcp, op] = await Promise.all([
+      sb.from('goods_receipts').select('crates_in,crates_return').eq('branch_id',branch||'').eq('warehouse_id',warehouseId).lt('work_date',beforeDate),
+      sb.from('goods_opening').select('opening').eq('branch_id',branch||'').eq('warehouse_id',warehouseId).maybeSingle(),
+    ]);
+    let bal=(op.data&&op.data.opening)||0;   // ยอดคงค้างตั้งต้น + Σ(ลังเข้า − ลังคืน) ก่อนวันที่กำหนด
+    (rcp.data||[]).forEach(r=>{ bal += (r.crates_in||0) - (r.crates_return||0); });
     return bal;
   }
   async function getGoodsReceiving(empId){

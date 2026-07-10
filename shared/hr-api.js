@@ -161,6 +161,8 @@
         case 'hr_wh_delete':      return await hrWhDelete(p.id);
         case 'hr_goods_list':     return await hrGoodsList(p.filter);
         case 'hr_goods_audit':    return await hrGoodsAudit(p.filter);
+        case 'hr_goods_opening_list': return await hrGoodsOpeningList();
+        case 'hr_goods_opening_save': return await hrGoodsOpeningSave(p.data);
         case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status, p.note);
         case 'hr_leave_propose':  return await hrLeaveProposeConditional(p.leave_id, p.message);
         case 'hr_leavetype_list': return await hrLeaveTypeList();
@@ -1147,8 +1149,42 @@
       const inRange = (!f.start || r.work_date >= f.start) && (!f.end || r.work_date <= f.end);
       if (inRange) { g.range_in += r.crates_in || 0; g.range_return += r.crates_return || 0; g.range_docs++; if ((r.diff || 0) !== 0) g.range_diff_docs++; g.range_diff_sum += (r.diff || 0); }
     });
+    // บวกยอดคงค้างตั้งต้น (opening) — รวมกรณีคลังที่มี opening แต่ยังไม่มีใบรับสินค้า
+    let opQ = sb().from('goods_opening').select('branch_id,warehouse_id,opening');
+    if (f.branch_id) opQ = opQ.eq('branch_id', f.branch_id);
+    if (f.warehouse_id) opQ = opQ.eq('warehouse_id', f.warehouse_id);
+    const [opR, whR] = await Promise.all([opQ, sb().from('warehouses').select('id,name,code')]);
+    const whMap = {}; (whR.data || []).forEach(w => { whMap[w.id] = w; });
+    (opR.data || []).forEach(o => {
+      const key = (o.branch_id || '') + '|' + o.warehouse_id;
+      let g = groups[key];
+      if (!g) { const w = whMap[o.warehouse_id] || {}; g = groups[key] = { branch_id: o.branch_id, branch_name: brName[o.branch_id] || o.branch_id || '—', warehouse_id: o.warehouse_id, warehouse_name: w.name || ('คลัง #' + o.warehouse_id), warehouse_code: w.code || '', outstanding: 0, range_in: 0, range_return: 0, range_docs: 0, range_diff_docs: 0, range_diff_sum: 0 }; }
+      g.outstanding += (o.opening || 0);
+      g.opening = (o.opening || 0);
+    });
     const rows = Object.values(groups).sort((a, b) => (a.branch_name || '').localeCompare(b.branch_name || '', 'th') || (a.warehouse_name || '').localeCompare(b.warehouse_name || '', 'th'));
     return { ok: true, rows };
+  }
+  // ---------- ยอดคงค้างตั้งต้น (Opening balance) ----------
+  async function hrGoodsOpeningList() {
+    const [op, brR, whR] = await Promise.all([
+      sb().from('goods_opening').select('*'),
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('warehouses').select('id,code,name').order('sort').order('id'),
+    ]);
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const whMap = {}; (whR.data || []).forEach(w => { whMap[w.id] = w; });
+    const rows = (op.data || []).map(o => ({ ...o, branch_name: brName[o.branch_id] || o.branch_id, warehouse_name: (whMap[o.warehouse_id] || {}).name || ('คลัง #' + o.warehouse_id), warehouse_code: (whMap[o.warehouse_id] || {}).code || '' }))
+      .sort((a, b) => (a.branch_name || '').localeCompare(b.branch_name || '', 'th') || (a.warehouse_name || '').localeCompare(b.warehouse_name || '', 'th'));
+    return { ok: true, rows, branches: brR.data || [], warehouses: whR.data || [] };
+  }
+  async function hrGoodsOpeningSave(d) {
+    d = d || {};
+    if (!d.branch_id || !d.warehouse_id) return { ok: false, error: 'เลือกสาขาและคลัง' };
+    const row = { branch_id: String(d.branch_id), warehouse_id: Number(d.warehouse_id), opening: Math.max(0, parseInt(d.opening) || 0), updated_at: new Date().toISOString() };
+    const { error } = await sb().from('goods_opening').upsert(row, { onConflict: 'branch_id,warehouse_id' });
+    if (error) throw error;
+    return { ok: true };
   }
 
   // ---------- LEAVE APPROVAL (อนุมัติ/ปฏิเสธใบลา + เหตุผล) ----------
