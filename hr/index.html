@@ -2457,7 +2457,7 @@ function renderReportDetail(){
       <tr${r.is_cover?' style="background:#fff7ed"':''}>
         <td class="mono">${beDate(r.work_date)}</td>
         <td><div class="ntext"><span class="nm">${esc(r.emp_name)}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
-        <td>${esc(r.shift_name)}</td>
+        <td>${esc(r.shift_name)}${Number(r.day_value)!==1?` <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700" title="${esc(r.day_note||'')}">นับ ${r.day_value} วัน</span>`:''}</td>
         <td>${esc(r.branch_name)}${r.is_cover?` <span class="pill" style="background:#ffedd5;color:#c2410c">ไปแทน · ประจำ ${esc(r.home_branch)}</span>`:''}</td>
         <td class="mono">${esc(r.check_in||'—')}</td>
         <td class="mono">${esc(r.check_out||'—')}</td>

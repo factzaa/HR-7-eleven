@@ -657,7 +657,9 @@
         home_branch: brName[home] || home || '',
         is_cover,
         shift_id: r.shift_id || '',
-        day_value: (r.shifts && r.shifts.day_value != null) ? Number(r.shifts.day_value) : 1,
+        // ค่าวันของแถวนี้: ถ้ามีการปรับรายวัน (เช่น ลาฉุกเฉินครึ่งวัน) ให้ใช้ค่านั้นก่อน · ไม่มี → ใช้ค่าจากกะ
+        day_value: (r.day_value != null) ? Number(r.day_value) : ((r.shifts && r.shifts.day_value != null) ? Number(r.shifts.day_value) : 1),
+        day_note: r.day_note || '',
         early_out_min: r.early_out_min != null ? Number(r.early_out_min) : null,
         check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
         late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,
@@ -753,7 +755,7 @@
     const discRules = await loadDisciplineRules();
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,branch_id').eq('active', true),
-      sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
@@ -781,8 +783,9 @@
       const myLeaves = leaves.filter(l => l.emp_id === e.emp_id);
       const onLeave = (dateStr) => myLeaves.some(l => dateStr >= l.start_date && dateStr <= (l.end_date || l.start_date));
 
-      // ถ่วงน้ำหนักวันด้วย day_value ของกะ (ครึ่งวัน=0.5) — มีผลกับ "วันทำงาน/ขาด/วินัย"
-      const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = dvOf(a.shift_id); });
+      // ถ่วงน้ำหนักวันด้วย day_value (ครึ่งวัน=0.5) — มีผลกับ "วันทำงาน/ขาด/วินัย"
+      // ลำดับ: ค่าที่ปรับรายวันในแถวลงเวลา (เช่น ลาฉุกเฉินครึ่งวัน) → ค่าจากกะ → 1
+      const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });
       const days_worked = Math.round([...workedSet].reduce((s, d) => s + (attDV[d] || 1), 0) * 10) / 10;
       // ออกก่อนเวลา (เกินผ่อนผัน) — เก็บจำนวนครั้ง + รวมนาที
       const earlyRows = myAtt.filter(a => a.early_out_min != null && a.early_out_min > earlyGrace);
