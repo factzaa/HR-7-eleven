@@ -1491,6 +1491,7 @@ async function tryLogin(p){
     await loadAll();
     buildGroupedNav();
     showTab('dashboard');
+    chatInit();
   } else toast('err', r.error || 'เข้าระบบไม่สำเร็จ');
 }
 $('loginBtn').onclick = ()=>tryLogin($('pwd').value.trim());
@@ -1516,9 +1517,108 @@ async function mgrTryLogin(){
   await loadAll();
   applyManagerMode();
   showTab('mgrtasks');
+  chatInit();
   toast('ok','สวัสดี ผจก. '+(r.nickname||r.name||emp));
 }
 $('mgrLoginBtn') && ($('mgrLoginBtn').onclick = mgrTryLogin);
+
+// ================= แชทสาขา HR ↔ ผจก. (real-time) =================
+let CHAT={ open:false, view:'list', branch:null, rows:[], ch:null, branches:[] };
+function chatSb(){ return (window.HR&&window.HR.sb)?window.HR.sb:null; }
+function chatSide(){ return MGR_MODE?'mgr':'hr'; }
+function chatMine(role){ return MGR_MODE ? (role==='mgr') : (role==='hr'||role==='nida'); }
+function chatTime(t){ try{ return new Date(t).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+function chatSetBadge(n){ const b=$('chatFabBadge'); if(!b) return; if(n>0){ b.textContent=n>99?'99+':n; b.style.display=''; } else b.style.display='none'; }
+function chatEnsureDom(){
+  if($('chatFab')) return;
+  const fab=document.createElement('button'); fab.id='chatFab';
+  fab.style.cssText='position:fixed;right:18px;bottom:96px;width:56px;height:56px;border-radius:50%;background:#0369a1;color:#fff;border:0;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:850;font-size:24px';
+  fab.innerHTML='💬<span id="chatFabBadge" style="position:absolute;top:-5px;right:-5px;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;font-size:12px;line-height:22px;display:none;border:2px solid #fff">0</span>';
+  fab.onclick=chatOpen; document.body.appendChild(fab);
+  const ov=document.createElement('div'); ov.id='chatOverlay'; ov.className='overlay'; ov.style.alignItems='flex-end'; ov.style.justifyContent='flex-end';
+  ov.innerHTML='<div class="modal" style="max-width:430px;width:96%;height:82vh;max-height:660px;display:flex;flex-direction:column;padding:0;overflow:hidden;margin:0 12px 12px 0">'
+    +'<div id="chatHead" style="display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line)"></div>'
+    +'<div id="chatBody" style="flex:1;overflow-y:auto;background:#f7faf9;padding:10px"></div>'
+    +'<div id="chatFoot" style="border-top:1px solid var(--line);padding:8px 10px"></div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) chatClose(); });
+}
+function chatInit(){ chatEnsureDom(); $('chatFab').style.display=''; chatSubscribe(); chatRefreshBadge(); }
+function chatSubscribe(){
+  const sb=chatSb(); if(!sb||CHAT.ch) return;
+  try{ const opts={ event:'INSERT', schema:'public', table:'mgr_chat' }; if(MGR_MODE) opts.filter='branch_id=eq.'+MGR_BRANCH;
+    CHAT.ch=sb.channel('mgrchat').on('postgres_changes', opts, (p)=>chatOnInsert(p&&p.new)).subscribe(); }catch(e){}
+}
+function chatOnInsert(m){
+  if(!m) return;
+  if(CHAT.open && CHAT.view==='thread' && String(CHAT.branch)===String(m.branch_id)){ chatLoadThread(CHAT.branch,true); }
+  else { chatRefreshBadge(); if(CHAT.open && CHAT.view==='list') chatLoadList(); }
+}
+async function chatRefreshBadge(){
+  try{
+    if(MGR_MODE){ const r=await post({ action:'hr_chat_list', password:pwd, branch:MGR_BRANCH });
+      if(r&&r.ok){ const lr=r.mgr_read; chatSetBadge((r.rows||[]).filter(m=>(m.sender_role==='hr'||m.sender_role==='nida')&&(!lr||m.created_at>lr)).length); } }
+    else { const r=await post({ action:'hr_chat_branches', password:pwd }); if(r&&r.ok){ CHAT.branches=r.rows||[]; chatSetBadge(r.total_unread||0); } }
+  }catch(e){}
+}
+function chatOpen(){ chatEnsureDom(); CHAT.open=true; $('chatOverlay').classList.add('show'); if(MGR_MODE) chatOpenThread(MGR_BRANCH); else chatLoadList(); }
+function chatClose(){ CHAT.open=false; $('chatOverlay').classList.remove('show'); chatRefreshBadge(); }
+async function chatLoadList(){
+  CHAT.view='list';
+  $('chatHead').innerHTML='<div style="font-weight:700;flex:1;font-size:15px">💬 แชทสาขา</div><button class="btn btn-sec btn-sm" id="chatBroadcast">📢 บรอดแคสต์</button><button class="close" id="chatX" style="position:static">×</button>';
+  $('chatFoot').style.display='none'; $('chatBody').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  $('chatX').onclick=chatClose; $('chatBroadcast').onclick=chatBroadcastPrompt;
+  const r=await post({ action:'hr_chat_branches', password:pwd }); const rows=(r&&r.rows)||[]; CHAT.branches=rows; chatSetBadge((r&&r.total_unread)||0);
+  $('chatBody').innerHTML=rows.map(b=>{
+    const preview=(b.last_role==='mgr'?'':(b.last_role==='nida'?'นิดา: ':'คุณ: '))+(b.last_text||'ยังไม่มีข้อความ');
+    const badge=b.unread>0?'<span style="min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center">'+b.unread+'</span>':'';
+    return '<div data-chatbr="'+esc(b.branch_id)+'" style="display:flex;gap:10px;align-items:center;padding:11px 10px;border-bottom:1px solid var(--line);cursor:pointer;'+(b.unread>0?'background:#eff6ff':'')+'">'
+      +'<div style="width:38px;height:38px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#475569;flex:none">'+esc(String(b.name||b.branch_id).slice(0,2))+'</div>'
+      +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13.5px">'+esc(b.name||b.branch_id)+'</div><div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(preview)+'</div></div>'
+      +'<div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px"><span style="font-size:10.5px;color:var(--muted)">'+(b.last_at?chatTime(b.last_at):'')+'</span>'+badge+'</div></div>';
+  }).join('')||'<div class="empty">ยังไม่มีสาขา</div>';
+  $('chatBody').querySelectorAll('[data-chatbr]').forEach(el=>el.onclick=()=>chatOpenThread(el.dataset.chatbr));
+}
+function chatBranchName(branch){ const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(branch)); return b?b.name:branch; }
+function chatOpenThread(branch){
+  CHAT.view='thread'; CHAT.branch=branch;
+  $('chatHead').innerHTML=(MGR_MODE?'':'<button class="btn btn-sec btn-sm" id="chatBack" style="flex:none">‹</button>')+'<div style="font-weight:700;flex:1;font-size:14.5px">'+esc(MGR_MODE?'สำนักงาน / HR':('สาขา '+chatBranchName(branch)))+'</div><button class="close" id="chatX" style="position:static">×</button>';
+  $('chatFoot').style.display='';
+  $('chatFoot').innerHTML='<div style="display:flex;gap:8px;align-items:center"><input id="chatInput" type="text" placeholder="พิมพ์ข้อความ…" style="flex:1;padding:9px 12px;border:1.5px solid var(--line2);border-radius:999px;font:inherit;font-size:13.5px"><button class="btn btn-pri btn-sm" id="chatSend" style="flex:none">ส่ง</button></div>';
+  $('chatX').onclick=chatClose; if($('chatBack')) $('chatBack').onclick=chatLoadList;
+  $('chatSend').onclick=chatDoSend; $('chatInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); chatDoSend(); } });
+  chatLoadThread(branch,true);
+}
+async function chatLoadThread(branch, markRead){
+  const r=await post({ action:'hr_chat_list', password:pwd, branch }); const rows=(r&&r.rows)||[]; CHAT.rows=rows;
+  const otherRead = MGR_MODE ? (r&&r.hr_read) : (r&&r.mgr_read);
+  const body=$('chatBody'); if(!body) return;
+  body.innerHTML=rows.map(m=>{
+    const mine=chatMine(m.sender_role);
+    const bg = m.sender_role==='nida' ? 'background:#f3e8ff;color:#6b21a8' : (mine?'background:#0369a1;color:#fff':'background:#fff;border:1px solid var(--line)');
+    const align=mine?'flex-end':'flex-start';
+    const who = m.sender_role==='nida' ? '🤖 นิดา · ผู้ช่วยฝ่ายบริหาร / HR' : (m.sender_role==='mgr' ? esc(m.sender_name||'ผจก.') : 'HR');
+    const readTick=(mine && otherRead && String(m.created_at)<=String(otherRead)) ? '<span style="font-size:10px;color:#2563eb">✓✓ อ่านแล้ว</span>' : (mine?'<span style="font-size:10px;color:var(--muted)">ส่งแล้ว</span>':'');
+    let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%">';
+    if(!mine||m.sender_role==='nida') c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+who+'</div>';
+    c+='<div style="'+bg+';border-radius:12px;padding:8px 11px;font-size:13px;line-height:1.5;white-space:pre-wrap">'+esc(m.text||'')+'</div>';
+    if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:70px;height:70px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+    c+='<div style="text-align:'+(mine?'right':'left')+';margin-top:2px;font-size:10px;color:var(--muted)">'+chatTime(m.created_at)+' '+readTick+'</div>';
+    return c+'</div></div>';
+  }).join('')||'<div class="empty">เริ่มบทสนทนาได้เลย</div>';
+  body.scrollTop=body.scrollHeight;
+  if(markRead){ try{ await post({ action:'hr_chat_read', password:pwd, branch, side:chatSide() }); }catch(e){} chatSetBadge(0); }
+}
+async function chatDoSend(){
+  const inp=$('chatInput'); if(!inp) return; const text=(inp.value||'').trim(); if(!text) return; inp.value='';
+  const r=await post({ action:'hr_chat_send', password:pwd, data:{ branch_id:CHAT.branch, text, role:chatSide(), emp_id:MGR_MODE?MGR_EMP:null } });
+  if(r&&r.ok){ chatLoadThread(CHAT.branch,true); } else { toast('err',(r&&r.error)||'ส่งไม่สำเร็จ'); inp.value=text; }
+}
+async function chatBroadcastPrompt(){
+  const text=prompt('📢 บรอดแคสต์ถึงทุกสาขา (เด้งเข้าห้องแชทของทุกสาขา):'); if(text===null) return; if(!text.trim()){ toast('err','พิมพ์ข้อความ'); return; }
+  const r=await post({ action:'hr_chat_send', password:pwd, data:{ broadcast:true, text:text.trim(), role:'hr' } });
+  if(r&&r.ok){ toast('ok','ส่งถึง '+(r.sent||0)+' สาขาแล้ว'); chatLoadList(); } else toast('err',(r&&r.error)||'ส่งไม่สำเร็จ');
+}
 $('mgr_pin') && $('mgr_pin').addEventListener('keydown', e=>{ if(e.key==='Enter') mgrTryLogin(); });
 
 // ---------- TABS ----------

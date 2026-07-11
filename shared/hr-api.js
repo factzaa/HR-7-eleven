@@ -189,6 +189,10 @@
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
         case 'hr_mgr_intask_list':   return await hrMgrIntaskList(p.branch);
         case 'hr_mgr_intask_review': return await hrMgrIntaskReview(p.id, p.decision, p.note, p.markup, p.reviewer);
+        case 'hr_chat_branches':     return await hrChatBranches();
+        case 'hr_chat_list':         return await hrChatList(p.branch);
+        case 'hr_chat_send':         return await hrChatSend(p.data);
+        case 'hr_chat_read':         return await hrChatRead(p.branch, p.side);
         case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_open_tasks':        return await hrOpenTasks();
@@ -1784,6 +1788,62 @@
     const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
     if (error) throw error;
     await logAct('ผจก.ตีงานในกะกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
+    return { ok: true };
+  }
+
+  // ---------- แชทสาขา HR ↔ ผจก. ----------
+  async function hrChatBranches() {
+    const [brR, msgR, rdR] = await Promise.all([
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('mgr_chat').select('branch_id,sender_role,sender_name,text,created_at').order('created_at', { ascending: false }).limit(800),
+      sb().from('mgr_chat_reads').select('branch_id,last_read_at').eq('side', 'hr'),
+    ]);
+    const hrRead = {}; (rdR.data || []).forEach(r => { hrRead[r.branch_id] = r.last_read_at; });
+    const last = {}, unread = {};
+    (msgR.data || []).forEach(m => {
+      if (!last[m.branch_id]) last[m.branch_id] = m;
+      if (m.sender_role === 'mgr') { const lr = hrRead[m.branch_id]; if (!lr || m.created_at > lr) unread[m.branch_id] = (unread[m.branch_id] || 0) + 1; }
+    });
+    const rows = (brR.data || []).map(b => ({
+      branch_id: b.branch_id, name: b.name,
+      last_text: (last[b.branch_id] || {}).text || '', last_at: (last[b.branch_id] || {}).created_at || null,
+      last_role: (last[b.branch_id] || {}).sender_role || '', last_name: (last[b.branch_id] || {}).sender_name || '',
+      unread: unread[b.branch_id] || 0,
+    })).sort((a, b) => (b.last_at || '').localeCompare(a.last_at || ''));
+    return { ok: true, rows, total_unread: rows.reduce((s, r) => s + r.unread, 0) };
+  }
+  async function hrChatList(branch) {
+    if (!branch) return { ok: false, error: 'ไม่ระบุสาขา' };
+    const [msgR, rdR] = await Promise.all([
+      sb().from('mgr_chat').select('*').eq('branch_id', branch).order('created_at', { ascending: true }).limit(400),
+      sb().from('mgr_chat_reads').select('side,last_read_at').eq('branch_id', branch),
+    ]);
+    const reads = {}; (rdR.data || []).forEach(r => { reads[r.side] = r.last_read_at; });
+    return { ok: true, rows: msgR.data || [], hr_read: reads.hr || null, mgr_read: reads.mgr || null };
+  }
+  async function hrChatSend(d) {
+    d = d || {};
+    const text = String(d.text || '').trim();
+    const photos = (Array.isArray(d.photos) && d.photos.length) ? d.photos : null;
+    if (!text && !photos) return { ok: false, error: 'พิมพ์ข้อความก่อน' };
+    const role = ['hr', 'mgr', 'nida'].includes(d.role) ? d.role : 'hr';
+    const name = d.sender_name || (role === 'mgr' ? 'ผจก.' : role === 'nida' ? 'นิดา · ผู้ช่วยฝ่ายบริหาร / HR' : 'HR');
+    const base = { sender_role: role, sender_name: name, emp_id: d.emp_id || null, text: text || null, photos };
+    if (d.broadcast) {
+      const { data: brs } = await sb().from('branches').select('branch_id');
+      const rows = (brs || []).map(b => ({ ...base, branch_id: b.branch_id, is_broadcast: true }));
+      if (rows.length) { const { error } = await sb().from('mgr_chat').insert(rows); if (error) throw error; }
+      return { ok: true, sent: rows.length };
+    }
+    if (!d.branch_id) return { ok: false, error: 'ไม่ระบุสาขา' };
+    const { error } = await sb().from('mgr_chat').insert({ ...base, branch_id: d.branch_id });
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrChatRead(branch, side) {
+    if (!branch || !['hr', 'mgr'].includes(side)) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    const { error } = await sb().from('mgr_chat_reads').upsert({ branch_id: branch, side, last_read_at: new Date().toISOString() }, { onConflict: 'branch_id,side' });
+    if (error) throw error;
     return { ok: true };
   }
 
