@@ -187,7 +187,7 @@
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
-        case 'hr_mgr_intask_list':   return await hrMgrIntaskList(p.branch);
+        case 'hr_mgr_intask_list':   return await hrMgrIntaskList(p.branch, p.date);
         case 'hr_mgr_intask_review': return await hrMgrIntaskReview(p.id, p.decision, p.note, p.markup, p.reviewer);
         case 'hr_task_flow':         return await hrTaskFlow(p.id);
         case 'hr_mgr_intask_fixing': return await hrMgrIntaskFixing(p.branch);
@@ -1784,31 +1784,44 @@
     return { ok: true };
   }
   // ---------- ผจก. ตรวจงานในกะที่ติ๊กไว้ (ข้าม HR) ----------
-  async function hrMgrIntaskList(branch) {
+  async function hrMgrIntaskList(branch, date) {
     // ดึงงานที่ "ส่งแล้ว รอตรวจ" ของสาขานั้นทั้งหมด แล้วค่อยคัดว่าเป็นงานที่ ผจก.ต้องตรวจ
     // เกณฑ์: needs_mgr === true  หรือ  (needs_mgr ว่าง/ยังไม่ถูกประทับ  และ  task_def ติ๊ก "ผจก.ตรวจ" และกะนั้นไม่ได้ปิดการตรวจของ ผจก.)
     //  → รองรับงานเก่าที่ส่งก่อนเปิดฟีเจอร์ และเครื่องพนักงานที่ยังแคชสคริปต์เดิม
     // ผจก.ต้องตรวจซ้ำได้แม้ผลัดถัดไปจะกด "ผ่าน" ไปแล้ว → ดึงทั้ง submitted และ approved ที่ ผจก.ยังไม่ได้ตรวจ
-    let q = sb().from('task_assignments').select('*').in('status', ['submitted', 'approved']).order('work_date', { ascending: false }).limit(400);
+    // จำกัด "เฉพาะวันที่ที่ดูอยู่" (ค่าเริ่มต้น = วันนี้) ไม่งั้นงานย้อนหลังจะกองรวมกันทุกวัน
+    // ⚠️ กะข้ามวัน (กะดึก): work_date เป็นของ "เมื่อวาน" แต่กะยังคาบเกี่ยวมาถึงวันนี้
+    //    → ดึงของเมื่อวานมาด้วย แล้วเก็บไว้เฉพาะแถวที่เป็น "กะข้ามคืน" (เหมือนลอจิกหน้ารับส่งผลัด)
+    const day = date || bkkToday();
+    const prevDay = addDays(day, -1);
+    let q = sb().from('task_assignments').select('*').in('work_date', [day, prevDay])
+      .in('status', ['submitted', 'approved']).order('work_date', { ascending: false }).order('shift_id').limit(500);
     if (branch) q = q.eq('branch_id', branch);
     const [tR, brR, dfR, shR] = await Promise.all([
       q,
       sb().from('branches').select('branch_id,name'),
       sb().from('task_defs').select('id,mgr_review'),
-      sb().from('shifts').select('shift_id,mgr_review,name'),
+      sb().from('shifts').select('shift_id,mgr_review,name,start_time,end_time'),
     ]);
     if (tR.error) throw tR.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const defMgr = {}; (dfR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
-    const shOff = {}, shName = {};
-    (shR.data || []).forEach(s => { shOff[s.shift_id] = (s.mgr_review === false); shName[s.shift_id] = s.name || s.shift_id; });
+    const shOff = {}, shName = {}, shOvernight = {};
+    (shR.data || []).forEach(s => {
+      shOff[s.shift_id] = (s.mgr_review === false);
+      shName[s.shift_id] = s.name || s.shift_id;
+      // กะข้ามคืน = เวลาเลิกน้อยกว่า/เท่ากับเวลาเข้า (เช่น 22:00 → 06:00)
+      shOvernight[s.shift_id] = !!(s.start_time && s.end_time && String(s.end_time) <= String(s.start_time));
+    });
 
     const all = tR.data || [];
     // ตัดสินจาก "การตั้งค่าปัจจุบัน" เป็นหลัก (needs_mgr default=false ทำให้แถวที่ไม่ถูกประทับหลุดคิว)
-    const pick = all.filter(t =>
-      (t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]))
-      && !t.mgr_checked_at    // ผจก.ยังไม่ได้ตรวจซ้ำ (ถึงผลัดถัดไปจะกดผ่านไปแล้วก็ยังอยู่ในคิว)
-    );
+    const pick = all.filter(t => {
+      // ของเมื่อวาน: เก็บไว้เฉพาะกะข้ามคืน (กะดึกที่คาบเกี่ยวมาถึงวันที่ดูอยู่)
+      if (String(t.work_date) !== day && !shOvernight[t.shift_id]) return false;
+      if (t.mgr_checked_at) return false;      // ผจก.ตรวจซ้ำไปแล้ว
+      return t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]);
+    });
 
     // ชื่อพนักงาน (ผู้ส่ง + ผู้ตรวจของผลัดถัดไป)
     const ids = [...new Set(pick.flatMap(t => [t.emp_id, t.checked_by_emp]).filter(Boolean))];
@@ -1826,6 +1839,8 @@
       branch_name: brName[t.branch_id] || t.branch_id || '—',
       emp_name: empName[t.emp_id] || t.emp_id,
       shift_name: shName[t.shift_id] || t.shift_id || '',
+      overnight: !!shOvernight[t.shift_id],
+      from_prev_day: String(t.work_date) !== day,      // กะดึกของเมื่อวานที่คาบเกี่ยวมาถึงวันนี้
       // ร่องรอย: ผลัดถัดไปตรวจผ่านไปแล้วหรือยัง (ถ้าใช่ = ผจก.กำลัง "ตรวจซ้ำ" และคนแก้จะเป็นผู้ตรวจคนนี้)
       already_checked: !!t.checked_at,
       checked_by_name: t.checked_by_name || (t.checked_by_emp ? (empName[t.checked_by_emp] || t.checked_by_emp) : ''),

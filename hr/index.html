@@ -3629,25 +3629,39 @@ async function loadMtaskFixing(boxId){
     out.innerHTML=(f.timeline||[]).map(x=>'• '+esc(beDateTime(x.at))+' — <b>'+esc(x.event_th)+'</b> โดย '+esc(x.by||'-')+(x.shift?(' (กะ '+esc(x.shift)+')'):'')+(x.note?('<br><span class="muted" style="margin-left:12px">'+esc(x.note)+'</span>'):'')).join('<br>')||'<span class="muted">ยังไม่มีไทม์ไลน์ (งานเก่าก่อนเปิดระบบบันทึก)</span>';
   });
 }
+let INTASK_DATE = '';   // วันที่ที่กำลังตรวจ (ว่าง = วันนี้)
 async function loadMtaskIntask(boxId){
   boxId = boxId || 'mt_intask';
   const box=$(boxId); if(!box) return;
-  let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null }); }catch(e){ box.innerHTML=''; return; }
+  const day = INTASK_DATE || bkkTodayStr();
+  let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null, date: day }); }catch(e){ box.innerHTML=''; return; }
   const rows=(r&&r.rows)||[]; const meta=(r&&r.meta)||{};
   if(!rows.length){
-    // ไม่มีงานเข้าคิว → ถ้ามีงานส่งมารอตรวจอยู่ แต่ไม่เข้าเกณฑ์ ผจก. ให้บอกสาเหตุ (กันงงว่า "งานไม่ขึ้น")
-    if(MGR_MODE && (meta.submitted_total||0) > 0){
-      box.style.display='block';
-      box.innerHTML='<div class="card" style="padding:11px;border-left:4px solid #94a3b8"><div style="font-weight:600;font-size:14px">🧾 รอตรวจจากงานในกะ (0)</div>'
-        +'<div class="muted" style="font-size:12.5px;margin-top:3px">สาขานี้มีงานส่งมารอตรวจ '+(meta.submitted_total||0)+' รายการ แต่ยังไม่มีรายการไหนถูกตั้งให้ "ผจก.ตรวจ"'
-        +(meta.defs_flagged?'':' · ยังไม่ได้ติ๊ก "ผจก.ตรวจ" ในหน้าตั้งค่างานในกะเลยสักงาน')
-        +' — งานเหล่านี้จะไปเข้าคิวของสำนักงานแทนค่ะ</div></div>';
-      return;
-    }
-    box.innerHTML=''; box.style.display='none'; return;
+    // ไม่มีงานเข้าคิวของวันนี้ → ยังโชว์ตัวเลือกวันที่ไว้ให้ย้อนดูได้
+    box.style.display='block';
+    box.innerHTML='<div class="card" style="padding:11px;border-left:4px solid #94a3b8">'
+      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      +'<div style="font-weight:600;font-size:14px;flex:1">🧾 รอตรวจจากงานในกะ (0)</div>'
+      +'<input type="date" id="itk_date_'+boxId+'" value="'+esc(day)+'" style="padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px">'
+      +(day===bkkTodayStr()?'':'<button class="btn btn-sec btn-sm" id="itk_today_'+boxId+'">กลับมาวันนี้</button>')
+      +'</div>'
+      +'<div class="muted" style="font-size:12.5px;margin-top:4px">'
+      + ((meta.submitted_total||0) > 0
+          ? ('วันนี้มีงานส่งมารอตรวจ '+(meta.submitted_total||0)+' รายการ แต่ยังไม่มีรายการไหนถูกตั้งให้ "ผจก.ตรวจ"'+(meta.defs_flagged?'':' · ยังไม่ได้ติ๊ก "ผจก.ตรวจ" ในตั้งค่างานในกะเลยสักงาน'))
+          : 'ยังไม่มีงานรอตรวจของวันที่เลือก')
+      +'</div></div>';
+    const dEl0=$('itk_date_'+boxId); if(dEl0) dEl0.onchange=()=>{ INTASK_DATE=dEl0.value||''; loadMtaskIntask(boxId); };
+    const tEl0=$('itk_today_'+boxId); if(tEl0) tEl0.onclick=()=>{ INTASK_DATE=''; loadMtaskIntask(boxId); };
+    return;
   }
   box.style.display='block';
-  let h='<div class="card" style="padding:12px;border-left:4px solid #f59e0b"><h3 style="font-size:15px;font-weight:700;margin-bottom:6px">🧾 รอตรวจจากงานในกะ ('+rows.length+')</h3>';
+  const isToday = (day === bkkTodayStr());
+  let h='<div class="card" style="padding:12px;border-left:4px solid #f59e0b">'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
+    +'<h3 style="font-size:15px;font-weight:700;flex:1">🧾 รอตรวจจากงานในกะ ('+rows.length+')</h3>'
+    +'<input type="date" id="itk_date_'+boxId+'" value="'+esc(day)+'" style="padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px">'
+    +(isToday?'<span class="pill ok" style="font-size:11.5px">วันนี้</span>':'<button class="btn btn-sec btn-sm" id="itk_today_'+boxId+'">กลับมาวันนี้</button>')
+    +'</div>';
   h+=rows.map(t=>{
     const imgs=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
     const thumbs=imgs.length?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'<div class="muted" style="font-size:12px;margin:4px 0">— ไม่มีรูปแนบ —</div>';
@@ -3657,8 +3671,9 @@ async function loadMtaskIntask(boxId){
         +'🔁 <b>ตรวจซ้ำ</b> · ส่งโดย '+esc(t.emp_name||t.emp_id)+' (กะ '+esc(t.shift_name||'-')+') → ผลัดถัดไปตรวจผ่านแล้วโดย <b>'+esc(t.checked_by_name||'-')+'</b> (กะ '+esc(t.checked_shift_name||'-')+')'
         +'<br>ถ้าตีกลับ งานแก้จะตกเป็นของ <b>'+esc(t.checked_by_name||'-')+'</b> (ผู้ตรวจ) ไม่ใช่ผู้ส่ง</div>'
       : '<div class="muted" style="font-size:12px;margin:4px 0">ผลัดถัดไปยังไม่ได้ตรวจ · ถ้าตีกลับ ผู้ส่งเป็นผู้แก้</div>';
+    const nightTag = t.from_prev_day ? ' <span class="pill" style="background:#e0e7ff;color:#3730a3;font-size:11px">🌙 กะข้ามคืน · ของ '+esc(beDate(t.work_date))+'</span>' : '';
     return '<div style="border-top:1px dashed var(--line);padding:8px 0">'
-      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · '+esc(beDate(t.work_date))+'</span></div>'
+      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+nightTag+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_name||'-')+' · '+esc(beDate(t.work_date))+'</span></div>'
       +trail
       +(t.emp_note?'<div class="muted" style="font-size:12.5px;margin-top:2px">📝 '+esc(t.emp_note)+'</div>':'')
       +thumbs
@@ -3667,6 +3682,9 @@ async function loadMtaskIntask(boxId){
       +'</div>';
   }).join('')+'</div>';
   box.innerHTML=h;
+  // เลือกวันที่ที่จะตรวจ (ค่าเริ่มต้น = วันนี้ · ย้อนดูวันก่อนได้)
+  const dEl=$('itk_date_'+boxId); if(dEl) dEl.onchange=()=>{ INTASK_DATE=dEl.value||''; loadMtaskIntask(boxId); };
+  const tEl=$('itk_today_'+boxId); if(tEl) tEl.onclick=()=>{ INTASK_DATE=''; loadMtaskIntask(boxId); };
   box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(boxId); loadMtaskFixing(boxId==='mdr_intask'?'mdr_fixing':'mt_fixing'); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
   box.querySelectorAll('[data-ireject]').forEach(b=>b.onclick=()=>{ const t=rows.find(x=>String(x.id)===b.dataset.ireject); if(t) intaskReject(t, boxId); });
   box.querySelectorAll('[data-aihelp]').forEach(b=>b.onclick=async()=>{
