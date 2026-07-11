@@ -3210,15 +3210,20 @@ async function rcAct(act, a){
   if(act==='hire'){
     const opts=(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(b.branch_id===a.branch_id?' selected':'')+'>'+esc(b.name)+'</option>').join('');
     box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div style="font-weight:700;margin-bottom:8px">✅ รับเข้าทำงาน</div>'
+      +'<div class="field"><label>รหัสพนักงาน (ตัวเลขล้วน) *</label><input id="hire_emp" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="เช่น 0874771" autocomplete="off"></div>'
       +'<div class="field"><label>สาขาที่รับเข้า</label><select id="hire_branch">'+opts+'</select></div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">ระบบจะสร้างพนักงานใหม่ + รหัสชั่วคราว <b>NEW-xxxxx</b> (เปลี่ยนภายหลังได้ที่แท็บพนักงาน) และคัดลอกเอกสารให้อัตโนมัติ</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">กำหนดรหัสพนักงานเองตามรหัสจริง — ต้องเป็น <b>ตัวเลขล้วน</b> เพราะหน้าลงเวลาเป็นแป้นตัวเลข (พิมพ์ตัวอักษรไม่ได้) · ระบบจะสร้างพนักงานใหม่ + คัดลอกเอกสารจากใบสมัครให้อัตโนมัติ</div>'
+      +'<div id="hire_err" style="color:var(--red);font-size:12.5px;display:none;margin-bottom:6px"></div>'
       +'<button class="btn btn-pri btn-sm" id="hire_go">ยืนยันรับเข้าทำงาน</button></div>';
+    $('hire_emp').addEventListener('input',e=>{ e.target.value=e.target.value.replace(/\D/g,''); $('hire_err').style.display='none'; });
     $('hire_go').onclick=async()=>{
-      if(!confirm('ยืนยันรับ '+a.full_name+' เข้าทำงาน?')) return;
+      const code=($('hire_emp').value||'').trim();
+      if(!/^\d+$/.test(code)){ $('hire_err').textContent='กรุณากรอกรหัสพนักงานเป็นตัวเลขล้วน'; $('hire_err').style.display='block'; $('hire_emp').focus(); return; }
+      if(!confirm('ยืนยันรับ '+a.full_name+' เข้าทำงาน · รหัส '+code+' ?')) return;
       $('hire_go').disabled=true; $('hire_go').innerHTML='<span class="spin"></span>';
-      const r=await post({ action:'hr_applicant_hire', password:pwd, id:a.id, branch_id:$('hire_branch').value });
+      const r=await post({ action:'hr_applicant_hire', password:pwd, id:a.id, branch_id:$('hire_branch').value, emp_id:code });
       if(r.ok){ toast('ok','รับเข้าทำงานแล้ว · รหัส '+r.emp_id); closeApplicant(); loadRecruit(); if(typeof loadAll==='function') await loadAll(); }
-      else { toast('err', r.error||'ไม่สำเร็จ'); $('hire_go').disabled=false; $('hire_go').textContent='ยืนยันรับเข้าทำงาน'; }
+      else { $('hire_err').textContent=r.error||'ไม่สำเร็จ'; $('hire_err').style.display='block'; toast('err', r.error||'ไม่สำเร็จ'); $('hire_go').disabled=false; $('hire_go').textContent='ยืนยันรับเข้าทำงาน'; }
     };
     return;
   }

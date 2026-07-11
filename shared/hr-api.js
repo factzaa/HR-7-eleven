@@ -219,7 +219,7 @@
         case 'hr_applicant_stage':   return await hrApplicantStage(p.id, p.status);
         case 'hr_applicant_interview': return await hrApplicantInterview(p.id, p.interview_at, p.note);
         case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason);
-        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id);
+        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id);
         case 'hr_positions_list':    return await hrPositionsList();
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
@@ -2471,17 +2471,20 @@
     return { ok: true };
   }
   // รับเข้าทำงาน → เจนรหัสชั่วคราว NEW-xxxxx + สร้างพนักงาน + ย้ายเอกสาร
-  async function hrApplicantHire(id, branchId) {
+  async function hrApplicantHire(id, branchId, empId) {
     if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
     const { data: a } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
     if (!a) return { ok: false, error: 'ไม่พบผู้สมัคร' };
     if (a.hired_emp_id) return { ok: true, emp_id: a.hired_emp_id, already: true };
     const branch = branchId || a.branch_id;
     if (!branch) return { ok: false, error: 'เลือกสาขาที่รับเข้า' };
-    // หารหัสชั่วคราวถัดไป NEW-00001
-    const { data: exist } = await sb().from('employees').select('emp_id').like('emp_id', 'NEW-%');
-    let mx = 0; (exist || []).forEach(e => { const n = parseInt(String(e.emp_id).replace('NEW-', ''), 10); if (!isNaN(n) && n > mx) mx = n; });
-    const code = 'NEW-' + String(mx + 1).padStart(5, '0');
+
+    // รหัสพนักงาน: HR กำหนดเอง (หน้าลงเวลาเป็นแป้นตัวเลข → ต้องเป็นตัวเลขล้วน)
+    const code = String(empId || '').trim();
+    if (!code) return { ok: false, error: 'กรุณากำหนดรหัสพนักงาน (ตัวเลขล้วน)' };
+    if (!/^\d+$/.test(code)) return { ok: false, error: 'รหัสพนักงานต้องเป็นตัวเลขล้วน (หน้าลงเวลาพิมพ์ตัวอักษรไม่ได้)' };
+    const { data: dup } = await sb().from('employees').select('emp_id,name').eq('emp_id', code).maybeSingle();
+    if (dup) return { ok: false, error: 'รหัส ' + code + ' ถูกใช้แล้ว (' + (dup.name || '') + ') กรุณาใช้รหัสอื่น' };
     const emp = {
       emp_id: code, name: a.full_name, nickname: a.nickname || null,
       phone: a.phone || null, address: a.address || null, id_card: a.id_card || null,
