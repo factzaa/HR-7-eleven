@@ -565,8 +565,10 @@
     </div>
     <div style="display:flex; gap:10px; margin-top:11px; align-items:center; flex-wrap:wrap">
       <label class="check"><input type="checkbox" id="r_late">เฉพาะที่สาย</label>
+      <label class="check"><input type="checkbox" id="r_early">เฉพาะที่ออกก่อนเวลา</label>
       <label class="check"><input type="checkbox" id="r_ot">เฉพาะที่มี OT</label>
       <label class="check"><input type="checkbox" id="r_cover">เฉพาะวันไปแทน</label>
+      <label class="check"><input type="checkbox" id="r_holiday">เฉพาะวันหยุดบริษัท</label>
       <label class="check"><input type="checkbox" id="r_hidezero" checked>ซ่อนคนที่ไม่มีข้อมูล</label>
       <span class="count" id="r_count" style="flex:1; text-align:right">—</span>
       <button class="btn btn-sec" id="r_export">⬇ Export CSV</button>
@@ -1587,8 +1589,20 @@ $('pwd').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(e.target.
 $('logoutBtn').onclick = ()=>{ pwd=''; sessionStorage.removeItem('hr_pwd'); sessionStorage.removeItem('mgr_branch'); sessionStorage.removeItem('mgr_emp'); location.reload(); };
 
 // ---------- สลับโหมด HR / ผจก. ----------
-$('toMgr') && ($('toMgr').onclick = e=>{ e.preventDefault(); $('loginHR').style.display='none'; $('loginMgr').style.display='block'; setTimeout(()=>$('mgr_emp').focus(),50); });
-$('toHR')  && ($('toHR').onclick  = e=>{ e.preventDefault(); $('loginMgr').style.display='none'; $('loginHR').style.display='block'; });
+function showMgrLogin(){ $('loginHR').style.display='none'; $('loginMgr').style.display='block'; setTimeout(()=>$('mgr_emp').focus(),50); }
+function showHrLogin(){ $('loginMgr').style.display='none'; $('loginHR').style.display='block'; setTimeout(()=>$('pwd').focus(),50); }
+$('toMgr') && ($('toMgr').onclick = e=>{ e.preventDefault(); showMgrLogin(); });
+$('toHR')  && ($('toHR').onclick  = e=>{ e.preventDefault(); showHrLogin(); });
+// เข้าจากปุ่ม "งานผู้จัดการ" หน้าแรก (?mgr=1) → เด้งฟอร์ม ผจก. ทันที ไม่ต้องผ่านหน้า HR
+(function initLoginMode(){
+  try{
+    const p=new URLSearchParams(location.search);
+    if(p.get('mgr')==='1'){
+      showMgrLogin();
+      const h=document.querySelector('#loginView h2'); if(h) h.textContent='งานผู้จัดการ';
+    }
+  }catch(e){}
+})();
 
 async function mgrTryLogin(){
   const emp=$('mgr_emp').value.trim(), pin=$('mgr_pin').value.trim();
@@ -2448,7 +2462,9 @@ async function loadReport(){
   const filter = {
     start: $('r_start').value, end: $('r_end').value,
     emp_id: $('r_emp').value, branch_id: $('r_branch').value, shift_id: $('r_shift').value,
-    only_late: $('r_late').checked, only_ot: $('r_ot').checked, only_cover: $('r_cover').checked
+    only_late: $('r_late').checked, only_ot: $('r_ot').checked, only_cover: $('r_cover').checked,
+    only_early: $('r_early') ? $('r_early').checked : false,
+    only_holiday: $('r_holiday') ? $('r_holiday').checked : false
   };
   const r = await post({ action:'hr_report', password:pwd, filter });
   if(!r.ok){ $('r_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
@@ -2466,7 +2482,7 @@ function renderReportDetail(){
   $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr>
       <th>วันที่</th><th>พนักงาน</th><th>กะ</th><th>สาขา</th>
-      <th>เข้า</th><th>ออก</th><th>สาย</th><th>OT</th><th>รูป</th><th>GPS</th><th>สถานะ</th>
+      <th>เข้า</th><th>ออก</th><th>สาย</th><th>ออกก่อน</th><th>OT</th><th>รูป</th><th>GPS</th><th>สถานะ</th>
     </tr></thead>
     <tbody>${REPORT.rows.map(r=>`
       <tr${r.is_holiday
@@ -2479,6 +2495,7 @@ function renderReportDetail(){
         <td class="mono">${esc(r.check_in||'—')}</td>
         <td class="mono">${esc(r.check_out||'—')}</td>
         <td class="mono">${r.late_min>0?'<span style="color:var(--red)">'+r.late_min+'</span>':'—'}</td>
+        <td class="mono">${r.early_out_flag?'<span style="color:#c2410c;font-weight:700">'+r.early_out_min+' น.</span>':'—'}</td>
         <td class="mono">${fmtOT(r.ot_hours)}</td>
         <td>${(()=>{const a=[];if(r.photo_url)a.push('<a href="'+esc(bustUrl(r.photo_url,r.check_in))+'" target="_blank" title="รูปตอนเข้างาน">📷 เข้า</a>');if(r.checkout_photo_url)a.push('<a href="'+esc(bustUrl(r.checkout_photo_url,r.check_out))+'" target="_blank" title="รูปตอนออกงาน">📷 ออก</a>');return a.length?a.join('<br>'):'—';})()}</td>
         <td>${r.gps_lat?`<a href="https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}" target="_blank">แผนที่</a>`:'—'}</td>
@@ -2559,6 +2576,8 @@ $('r_mode').addEventListener('change', loadReport);
 $('r_cover').addEventListener('change', loadReport);
 $('r_late') && $('r_late').addEventListener('change', loadReport);
 $('r_ot') && $('r_ot').addEventListener('change', loadReport);
+$('r_early') && $('r_early').addEventListener('change', loadReport);
+$('r_holiday') && $('r_holiday').addEventListener('change', loadReport);
 $('r_hidezero') && $('r_hidezero').addEventListener('change', renderReport);   // สลับซ่อน/แสดง = เรนเดอร์ใหม่ ไม่ต้องดึงข้อมูลซ้ำ
 $('r_export').onclick = ()=>{
   const mode = $('r_mode').value;
