@@ -1531,8 +1531,7 @@ function chatTime(t){ try{ return new Date(t).toLocaleTimeString('th-TH',{hour:'
 function chatSetBadge(n){ const b=$('chatFabBadge'); if(!b) return; if(n>0){ b.textContent=n>99?'99+':n; b.style.display=''; } else b.style.display='none'; }
 function chatEnsureDom(){
   if($('chatFab')) return;
-  const fab=document.createElement('button'); fab.id='chatFab';
-  fab.style.cssText='position:fixed;right:18px;bottom:96px;width:56px;height:56px;border-radius:50%;background:#0369a1;color:#fff;border:0;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:850;font-size:24px';
+  const fab=document.createElement('button'); fab.id='chatFab'; fab.type='button';
   fab.innerHTML='💬<span id="chatFabBadge" style="position:absolute;top:-5px;right:-5px;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;font-size:12px;line-height:22px;display:none;border:2px solid #fff">0</span>';
   fab.onclick=chatOpen; document.body.appendChild(fab);
   const ov=document.createElement('div'); ov.id='chatOverlay'; ov.className='overlay'; ov.style.alignItems='flex-end'; ov.style.justifyContent='flex-end';
@@ -1543,7 +1542,7 @@ function chatEnsureDom(){
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) chatClose(); });
 }
-function chatInit(){ chatEnsureDom(); $('chatFab').style.display=''; chatSubscribe(); chatRefreshBadge(); }
+function chatInit(){ chatEnsureDom(); $('chatFab').style.display='block'; chatSubscribe(); chatRefreshBadge(); }
 function chatSubscribe(){
   const sb=chatSb(); if(!sb||CHAT.ch) return;
   try{ const opts={ event:'INSERT', schema:'public', table:'mgr_chat' }; if(MGR_MODE) opts.filter='branch_id=eq.'+MGR_BRANCH;
@@ -5910,8 +5909,13 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
 })();
 </script>
 
-<!-- ===== ปุ่มลอยผู้ช่วย AI (น้องนิดา) ===== -->
+<!-- ===== ปุ่มลอยผู้ช่วย AI (น้องนิดา) + ปุ่มลอยแชทสาขา ===== -->
 <style>
+/* กัน horizontal overflow ของทั้งหน้า → ปุ่มลอย fixed ไม่หลุดขอบจอ (ตารางยังเลื่อนในกล่องตัวเองได้) */
+html,body{max-width:100%;overflow-x:hidden;}
+#chatFab{position:fixed;right:18px;bottom:104px;width:56px;height:56px;border-radius:50%;background:#0369a1;color:#fff;border:0;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:860;font-size:24px;display:none;-webkit-tap-highlight-color:transparent}
+body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่มีปุ่มนิดา → ลงมาอยู่มุมล่างปกติ */
+@media(max-width:640px){ #chatFab{right:14px;width:52px;height:52px;font-size:22px;} }
 #asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 8px 16px rgba(0,0,0,.28));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
 body.is-logged #asstFab{display:block}
 body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
