@@ -1537,7 +1537,9 @@
 
 <script>
 let pwd = sessionStorage.getItem('hr_pwd') || '';
-let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '';
+let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
+// ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
+function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
 const MGR_TABS = ['mgrtasks','dashboard','handover','special','qa','shelf','schedule'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
@@ -1593,8 +1595,8 @@ async function mgrTryLogin(){
   const r = await post({ action:'mgr_login', emp_id:emp, pin });
   $('mgrLoginBtn').textContent='เข้าระบบ ผจก.';
   if(!r.ok){ toast('err', r.error||'เข้าระบบไม่สำเร็จ'); return; }
-  MGR_MODE=true; MGR_BRANCH=r.branch_id||''; MGR_EMP=emp; pwd='';
-  sessionStorage.setItem('mgr_branch',MGR_BRANCH); sessionStorage.setItem('mgr_emp',emp);
+  MGR_MODE=true; MGR_BRANCH=r.branch_id||''; MGR_EMP=emp; MGR_PIN=pin; pwd='';
+  sessionStorage.setItem('mgr_branch',MGR_BRANCH); sessionStorage.setItem('mgr_emp',emp); sessionStorage.setItem('mgr_pin',pin);
   $('loginView').style.display='none'; $('mainView').style.display='block';
   $('tabbar').style.display='flex'; $('topact').style.display='flex';
   document.body.classList.add('is-logged');
@@ -3556,7 +3558,7 @@ async function loadMtaskIntask(boxId){
     if(!photos.length){ toast('err','งานนี้ไม่มีรูปให้ AI ดู'); return; }
     const out=$('airx_'+t.id); b.innerHTML='<span class="spin"></span>'; if(out) out.textContent='🤖 AI กำลังดูรูป… (สักครู่)';
     const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
-    try{ const res=await fetch(base+'/functions/v1/ai-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd, title:t.title, photos, task_id:t.id})}); const j=await res.json().catch(()=>({}));
+    try{ const res=await fetch(base+'/functions/v1/ai-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign(authBody(), { title:t.title, photos, task_id:t.id }))}); const j=await res.json().catch(()=>({}));
       if(out) out.textContent = (j&&j.ok) ? ('🤖 คำแนะนำจาก AI (ผจก.ตัดสินเอง):\n'+(j.advice||'(ไม่มีผล)')) : ('AI ไม่สำเร็จ: '+((j&&j.error)||'ตรวจ deploy/GEMINI_API_KEY'));
     }catch(e){ if(out) out.textContent='เรียก ai-review ไม่ได้ (deploy edge function แล้วหรือยัง)'; }
     b.innerHTML='🤖 ให้ AI ช่วยดู';
@@ -5738,7 +5740,7 @@ async function loadTaskList(){
     if(!photos.length){ toast('err','งานนี้ไม่มีรูปให้ AI ดู'); return; }
     const out=$('tkai_'+t.id); b.innerHTML='<span class="spin"></span>'; if(out) out.textContent='🤖 AI กำลังดูรูป… (สักครู่)';
     const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
-    try{ const res=await fetch(base+'/functions/v1/ai-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd, title:t.title, photos, task_id:t.id})}); const j=await res.json().catch(()=>({}));
+    try{ const res=await fetch(base+'/functions/v1/ai-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign(authBody(), { title:t.title, photos, task_id:t.id }))}); const j=await res.json().catch(()=>({}));
       if(out) out.textContent = (j&&j.ok) ? ('🤖 คำแนะนำจาก AI (HR ตัดสินเอง):\n'+(j.advice||'(ไม่มีผล)')) : ('AI ไม่สำเร็จ: '+((j&&j.error)||'ตรวจ deploy/GEMINI_API_KEY'));
     }catch(e){ if(out) out.textContent='เรียก ai-review ไม่ได้ (deploy edge function แล้วหรือยัง)'; }
     b.innerHTML='🤖 AI ช่วยดู';
