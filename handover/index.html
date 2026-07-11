@@ -317,13 +317,16 @@ async function openM2(){
   html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3>';
   if(!r.mine.length) html+='<div class="card muted">ยังไม่มีงานที่มอบหมายให้คุณ</div>';
   else html+=r.mine.map(a=>{
-    const s=ST(a.status); const isEdit=(a.status==='submitted'); const canDo=(a.status==='todo'||a.status==='sent_back'||isEdit);
+    let s=ST(a.status); const isEdit=(a.status==='submitted'); const canDo=(a.status==='todo'||a.status==='sent_back'||isEdit);
+    // ป้ายสถานะให้ตรงลำดับจริง: ส่งแล้ว = รอผลัดถัดไปตรวจ · ผ่านผลัดถัดไปแล้วแต่ยังรอ ผจก. = บอกให้ชัด
+    if(a.status==='submitted') s=['รอผลัดถัดไปตรวจ','warn'];
+    else if(a.status==='approved' && a.needs_mgr===true && !a.mgr_checked_at) s=['ผ่านผลัดถัดไป · รอ ผจก.','ok'];
     const min=(r.unassigned.find(x=>x.id===a.task_def_id)||{}).min_photos; // อาจ undefined → ใช้ require_photo
     let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px">⚠️ ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
     if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:2px 0 4px">📍 จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
-    if(isEdit){ c+='<div class="muted" style="font-size:12px;margin-bottom:4px">⏳ รอผู้จัดการตรวจ'+(a.submitted_at?(' · ส่งเมื่อ '+fmt(a.submitted_at)):'')+' — แก้ไข/เพิ่มรูป/ลบรูป แล้วส่งใหม่ได้เรื่อย ๆ จนกว่าจะตรวจ (รูปเดิมอยู่ด้านล่าง)</div>'; }
-    if(!canDo) c+=thumbsHtml(a.photos);
+    if(isEdit){ c+=flowStepsHTML(a); }
+    if(!canDo) c+=flowStepsHTML(a)+thumbsHtml(a.photos);
     if(!canDo&&a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุ: '+esc(a.emp_note)+'</div>';
     if(canDo){
       c+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
@@ -452,6 +455,41 @@ function updateSpBadge(rows){
 }
 async function refreshSpBadge(){ try{ const sp=await window.HR.getSpecialTasks(EMP.emp_id); updateSpBadge(sp.rows||[]); }catch(e){} }
 
+// ============ ลำดับขั้นการตรวจงานในกะ (กันพนักงานเข้าใจผิดว่าไม่ต้องตรวจผลัดก่อนหน้า) ============
+// ส่งงาน → หัวหน้าผลัดถัดไปตรวจ → (ถ้าเป็นงานที่ ผจก.ต้องตรวจ) ผู้จัดการตรวจซ้ำ
+function flowStepsHTML(a){
+  if(a.status!=='submitted' && a.status!=='approved') return '';
+  const needMgr = (a.needs_mgr===true);
+  const checked = !!a.checked_at || a.status==='approved';
+  const mgrDone = !!a.mgr_checked_at;
+
+  const step=(n,label,state,detail)=>{
+    const col = state==='done' ? '#16a34a' : (state==='now' ? '#d97706' : '#9ca3af');
+    const bg  = state==='now' ? '#fffbeb' : 'transparent';
+    const icon= state==='done' ? '✓' : (state==='now' ? String(n) : String(n));
+    return '<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 7px;border-radius:8px;background:'+bg+'">'
+      +'<span style="flex:none;width:20px;height:20px;border-radius:50%;background:'+col+';color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px">'+icon+'</span>'
+      +'<span style="font-size:12.5px;line-height:1.45"><b style="color:'+col+'">'+label+'</b>'
+      +(state==='now'?' <span style="color:#d97706">← ตอนนี้อยู่ขั้นนี้</span>':'')
+      +(detail?('<div class="muted" style="font-size:11.5px">'+detail+'</div>'):'')+'</span></div>';
+  };
+
+  let h='<div style="border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:8px;background:#fafafa">'
+    +'<div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:4px">ลำดับการตรวจงานนี้</div>';
+  h+=step(1,'คุณส่งงานแล้ว','done', a.submitted_at?('ส่งเมื่อ '+fmt(a.submitted_at)):'');
+  h+=step(2,'หัวหน้าผลัดถัดไปตรวจ', checked?'done':'now',
+        checked ? ('ตรวจผ่านแล้ว'+(a.checked_by_name?(' โดย '+esc(a.checked_by_name)):''))
+                : 'ยังไม่ถูกตรวจ — <b style="color:#b45309">งานนี้ต้องให้ผลัดถัดไปตรวจก่อน</b>');
+  if(needMgr){
+    h+=step(3,'ผู้จัดการตรวจซ้ำ', mgrDone?'done':(checked?'now':'wait'),
+        mgrDone ? 'ผู้จัดการตรวจแล้ว' : (checked ? 'รอผู้จัดการตรวจซ้ำ' : 'จะเริ่มหลังผลัดถัดไปตรวจเสร็จ'));
+  }
+  if(a.status==='submitted'){
+    h+='<div class="muted" style="font-size:11.5px;margin-top:5px;border-top:1px dashed var(--line);padding-top:5px">แก้ไข/เพิ่ม/ลบรูป แล้วส่งใหม่ได้เรื่อย ๆ จนกว่าจะถูกตรวจ (รูปเดิมอยู่ด้านล่าง)</div>';
+  }
+  return h+'</div>';
+}
+
 // ============ งานที่ ผจก.ตีกลับให้แก้ (อาจเป็นงานที่เรา "ตรวจผ่าน" ไม่ใช่งานที่เราส่ง) ============
 function renderFixTasksHTML(rows){
   if(!rows||!rows.length) return '';
@@ -577,8 +615,13 @@ async function openM3(){
   let r; try{ r=await window.HR.getPrevShiftReview(EMP.emp_id); }catch(e){ $('pv_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   $('pv_sub').textContent='ผลัดของคุณ: '+esc(r.cur_name||'-');
   if(r.isMain===false){ $('pv_body').innerHTML='<div class="card warn">กะของคุณเป็น <b>กะพิเศษ</b> ไม่อยู่ในวงจรตรวจรับผลัด (เช้า/บ่าย/ดึก)<br><span class="muted">ถ้าต้องการให้กะนี้ตรวจผลัดก่อนหน้าได้ ให้ผู้จัดการตั้ง "ผลัดหลัก" ของกะนี้ในหน้าตั้งค่ากะ</span></div>'; return; }
+  const pend=(r.tasks||[]).filter(t=>t.status==='submitted').length;
   let head='<div class="card"><div style="font-weight:600">ตรวจงานผลัดก่อนหน้า: '+esc(r.prev_name||'-')+'</div><div class="muted">วันที่ '+esc(String(r.prev_date))+'</div>'
-    +(r.canReview?'<div class="pill ok" style="margin-top:6px">คุณเป็นหัวหน้าผลัด — ตรวจ/ตีกลับได้</div>':'<div class="pill warn" style="margin-top:6px">ดูได้อย่างเดียว (เฉพาะหัวหน้าผลัดตรวจได้)</div>')+'</div>';
+    +(r.canReview?'<div class="pill ok" style="margin-top:6px">คุณเป็นหัวหน้าผลัด — ตรวจ/ตีกลับได้</div>':'<div class="pill warn" style="margin-top:6px">ดูได้อย่างเดียว (เฉพาะหัวหน้าผลัดตรวจได้)</div>')
+    +(r.canReview&&pend?'<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12.5px;color:#92400e">'
+        +'⚠️ <b>มีงานรอคุณตรวจ '+pend+' รายการ</b><br>งานเหล่านี้ต้องให้ <b>คุณ (ผลัดถัดไป) ตรวจก่อน</b> — ผู้จัดการจะตรวจซ้ำทีหลัง ไม่ใช่ตรวจแทนคุณ'
+        +'<br>ถ้าคุณตรวจผ่านแล้วผู้จัดการตรวจซ้ำไม่ผ่าน <b>ผลัดของคุณจะเป็นผู้รับผิดชอบแก้ไข</b></div>':'')
+    +'</div>';
   if(!r.tasks.length){ $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานบันทึกไว้</div>'; return; }
   $('pv_body').innerHTML=head+r.tasks.map(a=>{
     const s=ST(a.status); let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
