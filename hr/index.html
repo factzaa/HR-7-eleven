@@ -1542,7 +1542,7 @@ let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 // ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
-const MGR_TABS = ['mgrtasks','dashboard','handover','special','qa','shelf','schedule'];
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -4975,9 +4975,11 @@ let BOARD = null;
 function boardList(key){
   if(!BOARD || !BOARD.branches) return;
   const ppl=[];
-  (BOARD.branches||[]).forEach(b=> (b.shifts||[]).forEach(sh=> (sh.people||[]).forEach(p=>{
-    ppl.push(Object.assign({ _shift: sh.shift_name||'' }, p));
-  })));
+  (BOARD.branches||[])
+    .filter(b=> !MGR_MODE || String(b.branch_id)===String(MGR_BRANCH))   // ผจก. เห็นเฉพาะสาขาตัวเอง
+    .forEach(b=> (b.shifts||[]).forEach(sh=> (sh.people||[]).forEach(p=>{
+      ppl.push(Object.assign({ _shift: sh.shift_name||'' }, p));
+    })));
   let rows, title;
   if(key==='scheduled'){ rows=ppl.filter(p=>!p.off_schedule); title='👥 จัดเวรวันนี้'; }
   else if(key==='present'){ rows=ppl.filter(p=>!p.off_schedule && (p.status==='present'||p.status==='late')); title='✅ มาแล้ว'; }
@@ -5008,7 +5010,12 @@ function bdChip(p){
 }
 function fillBoardFilters(){
   const sb=$('bd_branch'), ss=$('bd_shift'); if(!sb||!ss) return;
-  if(!sb.dataset.filled){ sb.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); sb.dataset.filled='1'; }
+  if(MGR_MODE){   // ผจก. เห็นเฉพาะสาขาตัวเอง (ล็อกช่องเลือกสาขา)
+    const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
+    sb.innerHTML='<option value="'+esc(MGR_BRANCH)+'">'+esc(b?b.name:MGR_BRANCH)+'</option>';
+    sb.value=MGR_BRANCH; sb.disabled=true; sb.dataset.filled='1'; sb.dataset.mgrLocked='1';
+  }
+  else if(!sb.dataset.filled){ sb.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); sb.dataset.filled='1'; }
   if(!ss.dataset.filled){ ss.innerHTML='<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join(''); ss.dataset.filled='1'; }
 }
 // เติมตัวกันแคชต่อท้าย URL รูป (ผูกกับเวลาเข้า/ออก) — ถ้าลงเวลาใหม่ทับไฟล์เดิม รูปจริงจะเด้งมาแทนรูปที่ค้างแคช
@@ -5022,9 +5029,19 @@ function bdPhotos(p){
 function renderBoard(r){
   BOARD = r;
   fillBoardFilters();
-  const fBr=$('bd_branch')?$('bd_branch').value:''; const fSh=$('bd_shift')?$('bd_shift').value:'';
+  const fBr = MGR_MODE ? MGR_BRANCH : ($('bd_branch')?$('bd_branch').value:''); const fSh=$('bd_shift')?$('bd_shift').value:'';
   const bShow=(r.branches||[]).map(b=>({...b, shifts:(b.shifts||[]).filter(sh=> !fSh || sh.shift_id===fSh)})).filter(b=> (!fBr||b.branch_id===fBr) && b.shifts.length);
-  const s=r.summary;
+  // ผจก.: สรุป KPI นับเฉพาะสาขาตัวเอง (ไม่ใช่ยอดรวมทุกสาขา)
+  let s=r.summary;
+  if(MGR_MODE){
+    const mine=(r.branches||[]).filter(b=>String(b.branch_id)===String(MGR_BRANCH));
+    const ppl=[]; mine.forEach(b=>(b.shifts||[]).forEach(sh=>(sh.people||[]).forEach(p=>ppl.push(p))));
+    s={ scheduled: ppl.filter(p=>!p.off_schedule).length,
+        present:   ppl.filter(p=>!p.off_schedule && p.status==='present').length,
+        late:      ppl.filter(p=>!p.off_schedule && p.status==='late').length,
+        absent:    ppl.filter(p=>p.status==='absent').length,
+        leave:     ppl.filter(p=>p.status==='leave').length };
+  }
   $('bd_summary').innerHTML = `<div class="kpi-grid" style="margin-bottom:12px">
     <div class="kpi" style="cursor:pointer" onclick="boardList('scheduled')"><div class="lbl">จัดเวร ›</div><div class="val">${s.scheduled}<span class="sm"> คน</span></div></div>
     <div class="kpi" style="cursor:pointer" onclick="boardList('present')"><div class="lbl">มาแล้ว ›</div><div class="val" style="color:#16a34a">${s.present+s.late}</div></div>
