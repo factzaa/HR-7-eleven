@@ -3499,8 +3499,19 @@ async function loadMtaskIntask(boxId){
   boxId = boxId || 'mt_intask';
   const box=$(boxId); if(!box) return;
   let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null }); }catch(e){ box.innerHTML=''; return; }
-  const rows=(r&&r.rows)||[];
-  if(!rows.length){ box.innerHTML=''; box.style.display='none'; return; }
+  const rows=(r&&r.rows)||[]; const meta=(r&&r.meta)||{};
+  if(!rows.length){
+    // ไม่มีงานเข้าคิว → ถ้ามีงานส่งมารอตรวจอยู่ แต่ไม่เข้าเกณฑ์ ผจก. ให้บอกสาเหตุ (กันงงว่า "งานไม่ขึ้น")
+    if(MGR_MODE && (meta.submitted_total||0) > 0){
+      box.style.display='block';
+      box.innerHTML='<div class="card" style="padding:11px;border-left:4px solid #94a3b8"><div style="font-weight:600;font-size:14px">🧾 รอตรวจจากงานในกะ (0)</div>'
+        +'<div class="muted" style="font-size:12.5px;margin-top:3px">สาขานี้มีงานส่งมารอตรวจ '+(meta.submitted_total||0)+' รายการ แต่ยังไม่มีรายการไหนถูกตั้งให้ "ผจก.ตรวจ"'
+        +(meta.defs_flagged?'':' · ยังไม่ได้ติ๊ก "ผจก.ตรวจ" ในหน้าตั้งค่างานในกะเลยสักงาน')
+        +' — งานเหล่านี้จะไปเข้าคิวของสำนักงานแทนค่ะ</div></div>';
+      return;
+    }
+    box.innerHTML=''; box.style.display='none'; return;
+  }
   box.style.display='block';
   let h='<div class="card" style="padding:12px;border-left:4px solid #f59e0b"><h3 style="font-size:15px;font-weight:700;margin-bottom:6px">🧾 รอตรวจจากงานในกะ ('+rows.length+')</h3>';
   h+=rows.map(t=>{

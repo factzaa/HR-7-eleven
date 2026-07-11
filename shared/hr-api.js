@@ -1764,13 +1764,54 @@
   }
   // ---------- ผจก. ตรวจงานในกะที่ติ๊กไว้ (ข้าม HR) ----------
   async function hrMgrIntaskList(branch) {
-    let q = sb().from('task_assignments').select('*').eq('needs_mgr', true).eq('status', 'submitted').order('work_date', { ascending: false }).limit(300);
+    // ดึงงานที่ "ส่งแล้ว รอตรวจ" ของสาขานั้นทั้งหมด แล้วค่อยคัดว่าเป็นงานที่ ผจก.ต้องตรวจ
+    // เกณฑ์: needs_mgr === true  หรือ  (needs_mgr ว่าง/ยังไม่ถูกประทับ  และ  task_def ติ๊ก "ผจก.ตรวจ" และกะนั้นไม่ได้ปิดการตรวจของ ผจก.)
+    //  → รองรับงานเก่าที่ส่งก่อนเปิดฟีเจอร์ และเครื่องพนักงานที่ยังแคชสคริปต์เดิม
+    let q = sb().from('task_assignments').select('*').eq('status', 'submitted').order('work_date', { ascending: false }).limit(300);
     if (branch) q = q.eq('branch_id', branch);
-    const [tR, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    const [tR, brR, dfR, shR] = await Promise.all([
+      q,
+      sb().from('branches').select('branch_id,name'),
+      sb().from('task_defs').select('id,mgr_review'),
+      sb().from('shifts').select('shift_id,mgr_review'),
+    ]);
     if (tR.error) throw tR.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
-    const rows = (tR.data || []).map(t => ({ ...t, branch_name: brName[t.branch_id] || t.branch_id || '—' }));
-    return { ok: true, rows };
+    const defMgr = {}; (dfR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
+    const shOff = {}; (shR.data || []).forEach(s => { shOff[s.shift_id] = (s.mgr_review === false); });   // กะที่ปิดการตรวจของ ผจก. (เช่นกะดึก)
+
+    const all = tR.data || [];
+    // ตัดสินจาก "การตั้งค่าปัจจุบัน" เป็นหลัก (needs_mgr default=false ทำให้แถวที่ไม่ถูกประทับหลุดคิว)
+    //   → เข้าคิว ผจก. เมื่อ: task_def ติ๊ก "ผจก.ตรวจ" และกะนั้นไม่ได้ปิดการตรวจของ ผจก.
+    //   → หรือแถวถูกประทับ needs_mgr = true ไว้แล้ว (เผื่อ HR ปลดติ๊กภายหลัง)
+    const pick = all.filter(t => t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]));
+
+    // ชื่อพนักงาน (การ์ดจะได้ไม่ขึ้นเป็นรหัสเปล่า)
+    const ids = [...new Set(pick.map(t => t.emp_id).filter(Boolean))];
+    const empName = {};
+    if (ids.length) {
+      const { data: emps } = await sb().from('employees').select('emp_id,name,nickname').in('emp_id', ids);
+      (emps || []).forEach(e => { empName[e.emp_id] = e.nickname ? (e.name + ' (' + e.nickname + ')') : e.name; });
+    }
+    // ซ่อมข้อมูลย้อนหลัง: แถวที่เข้าเกณฑ์แต่ยังไม่ถูกประทับ ให้ประทับ needs_mgr=true (ครั้งเดียว)
+    const unstamped = pick.filter(t => t.needs_mgr !== true).map(t => t.id);
+    if (unstamped.length) { try { await sb().from('task_assignments').update({ needs_mgr: true }).in('id', unstamped); } catch (e) { console.warn('stamp needs_mgr', e); } }
+
+    const rows = pick.map(t => ({
+      ...t,
+      branch_name: brName[t.branch_id] || t.branch_id || '—',
+      emp_name: empName[t.emp_id] || t.emp_id,
+    }));
+    // meta ไว้ช่วยวิเคราะห์เวลาไม่มีงานขึ้น
+    return {
+      ok: true, rows,
+      meta: {
+        submitted_total: all.length,
+        matched: rows.length,
+        defs_flagged: Object.values(defMgr).filter(Boolean).length,
+        shifts_off: Object.keys(shOff).filter(k => shOff[k]),
+      },
+    };
   }
   async function hrMgrIntaskReview(id, decision, note, markup, reviewerName) {
     const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count').eq('id', id).maybeSingle();
