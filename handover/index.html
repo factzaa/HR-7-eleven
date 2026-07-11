@@ -304,6 +304,11 @@ async function openM2(){
   let fx={rows:[]}; try{ fx=await window.HR.getMyFixTasks(EMP.emp_id); }catch(e){}
   let r=null, shiftErr='';
   try{ r=await window.HR.getMyAssignments(EMP.emp_id); }catch(e){ shiftErr=e.message||''; }
+  // กันงานซ้ำ: ถ้างานที่ต้องแก้เป็นงานของกะ/วันนี้ของเราอยู่แล้ว (โผล่ใน "งานของฉัน") ไม่ต้องโชว์ซ้ำในกล่องงานแก้
+  if(r && Array.isArray(r.mine) && fx.rows && fx.rows.length){
+    const mineIds=new Set(r.mine.map(x=>String(x.id)));
+    fx.rows=fx.rows.filter(x=>!mineIds.has(String(x.id)));
+  }
   $('my_sub').textContent = r ? ('กะ '+esc(r.shift_name||'-')+(r.leader?(' · หัวหน้าผลัด: '+esc(r.leader.name)):'')) : 'งานพิเศษจากผู้จัดการ';
   let html='';
   // ===== งานที่ผู้จัดการตีกลับให้แก้ (บนสุด — อาจเป็นงานที่เราเป็นคน "ตรวจผ่าน" ไม่ใช่คนส่ง) =====
