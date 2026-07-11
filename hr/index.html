@@ -3683,9 +3683,11 @@ async function loadMtaskIntask(boxId){
       trail='<div class="muted" style="font-size:12px;margin:4px 0">ผลัดถัดไปยังไม่ได้ตรวจ · ถ้าตีกลับ ผู้ส่งเป็นผู้แก้</div>';
     }
     const nightTag = t.from_prev_day ? ' <span class="pill" style="background:#e0e7ff;color:#3730a3;font-size:11px">🌙 กะข้ามคืน · ของ '+esc(beDate(t.work_date))+'</span>' : '';
-    const stTag = t.status==='approved'
-      ? ' <span class="pill ok" style="font-size:11px">ตรวจผ่านแล้ว · รอ ผจก.ตรวจซ้ำ</span>'
-      : ' <span class="pill warn" style="font-size:11px">รอตรวจ</span>';
+    const stTag = t.resubmitted
+      ? ' <span class="pill" style="background:#ede9fe;color:#5b21b6;font-size:11px">🔧 แก้แล้ว ส่งกลับมาตรวจซ้ำ'+(t.fixed_by_name?(' · โดย '+esc(t.fixed_by_name)):'')+'</span>'
+      : (t.status==='approved'
+        ? ' <span class="pill ok" style="font-size:11px">ตรวจผ่านแล้ว · รอ ผจก.ตรวจซ้ำ</span>'
+        : ' <span class="pill warn" style="font-size:11px">รอตรวจ</span>');
     return '<div style="border-top:1px dashed var(--line);padding:8px 0">'
       +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+stTag+nightTag+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_name||'-')+' · '+esc(beDate(t.work_date))+'</span></div>'
       +trail
