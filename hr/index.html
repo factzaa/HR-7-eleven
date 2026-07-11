@@ -4246,9 +4246,24 @@ function initAssistant(){
     chips.querySelectorAll('[data-chip]').forEach(b=>b.onclick=()=>{ $('asst_in').value=b.dataset.chip; $('asst_in').focus(); });
     $('asst_send').onclick=asstSend;
     $('asst_in').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); asstSend(); } });
-    $('asst_clear').onclick=()=>{ ASST_MSGS=[]; asstRender(); };
+    $('asst_clear').onclick=()=>{ ASST_MSGS=[]; ASST_PHOTOS=[]; asstRenderThumbs(); asstRender(); };
+    const f=$('asst_file');
+    if(f) f.addEventListener('change', async(e)=>{
+      const fs=[...(e.target.files||[])].slice(0,4);
+      for(const file of fs){ try{ ASST_PHOTOS.push(await asstFileToData(file)); }catch(_e){} }
+      e.target.value=''; asstRenderThumbs();
+      if(ASST_PHOTOS.length) $('asst_in').focus();
+    });
+    // วางรูปจากคลิปบอร์ดได้ (Ctrl+V) — สะดวกตอนแคปหน้าจอบิล/ตารางเวร
+    $('asst_in').addEventListener('paste', async(e)=>{
+      const items=[...((e.clipboardData&&e.clipboardData.items)||[])].filter(i=>i.type&&i.type.startsWith('image/'));
+      if(!items.length) return;
+      e.preventDefault();
+      for(const it of items.slice(0,4)){ const file=it.getAsFile(); if(file){ try{ ASST_PHOTOS.push(await asstFileToData(file)); }catch(_e){} } }
+      asstRenderThumbs();
+    });
   }
-  asstRender();
+  asstRenderThumbs(); asstRender();
 }
 function asstCardsHtml(cards){
   if(!cards||!Array.isArray(cards.groups)||!cards.groups.length) return '';
@@ -4287,6 +4302,9 @@ function asstRender(){
     let txt=m.text, imgs=[];
     const cardsHtml=(!me&&m.cards)?asstCardsHtml(m.cards):'';
     if(!me){ const found=(m.text.match(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi)||[]); imgs=Array.from(new Set(found)); imgs.forEach(u=>{ txt=txt.split(u).join(''); }); txt=txt.replace(/[ \t]*\n{3,}/g,'\n\n').trim(); if(cardsHtml) imgs=[]; }
+    if(me && Array.isArray(m.images) && m.images.length){
+      html+='<div style="align-self:flex-end;display:flex;gap:5px;flex-wrap:wrap;max-width:82%;justify-content:flex-end">'+m.images.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:86px;height:86px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>';
+    }
     html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:82%;background:'+(me?'#00582f':'#eef1ef')+';color:'+(me?'#fff':'#1f2937')+';padding:10px 13px;border-radius:13px;font-size:14.5px;white-space:pre-wrap;line-height:1.55">'+esc(txt||(cardsHtml?'🧾 รายการงาน':(imgs.length?'📷 รูปงาน':' ')))+'</div>';
     if(cardsHtml) html+=cardsHtml;
     if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'; }
@@ -4308,13 +4326,28 @@ async function asstConfirm(idx){
   asstRender();
 }
 function asstCancel(idx){ const m=ASST_MSGS[idx]; if(m) m.pending=null; ASST_MSGS.push({role:'assistant',text:'ยกเลิกแล้วค่ะ ไม่ได้ทำรายการ'}); asstRender(); }
+// ---- แนบรูปให้นิดาอ่าน (บิลรับสินค้า / ตารางเวร / เอกสาร / รูปหน้าร้าน) ----
+let ASST_PHOTOS=[];
+function asstFileToData(file){
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=ev=>{ const img=new Image(); img.onload=()=>{ const M=1600; let w=img.width,h=img.height; if(w>M||h>M){ if(w>h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} } const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg',0.9)); }; img.onerror=rej; img.src=ev.target.result; }; r.onerror=rej; r.readAsDataURL(file); });
+}
+function asstRenderThumbs(){
+  const t=$('asst_thumbs'); if(!t) return;
+  t.style.display=ASST_PHOTOS.length?'flex':'none';
+  t.innerHTML=ASST_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" style="width:46px;height:46px;object-fit:cover;border-radius:8px;display:block"><button type="button" data-asrm="'+i+'" style="position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>').join('');
+  t.querySelectorAll('[data-asrm]').forEach(b=>b.onclick=()=>{ ASST_PHOTOS.splice(Number(b.dataset.asrm),1); asstRenderThumbs(); });
+}
 async function asstSend(){
-  const inp=$('asst_in'); const t=(inp.value||'').trim(); if(!t) return;
-  inp.value=''; ASST_MSGS.push({role:'user',text:t});
+  const inp=$('asst_in'); const t=(inp.value||'').trim();
+  const photos=ASST_PHOTOS.slice();
+  if(!t && !photos.length) return;
+  inp.value=''; ASST_PHOTOS=[]; asstRenderThumbs();
+  const um={role:'user',text:t||'ช่วยอ่านข้อมูลจากรูปนี้ให้หน่อยค่ะ'}; if(photos.length) um.images=photos;
+  ASST_MSGS.push(um);
   ASST_MSGS.push({role:'assistant',text:'กำลังคิด…'}); asstRender();
   const {base,key}=asstApiBase();
   try{
-    const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…').map(m=>({role:m.role,text:m.text}));
+    const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…').map(m=>{ const o={role:m.role,text:m.text}; if(m.role==='user'&&m.images&&m.images.length) o.images=m.images; return o; });
     const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:send})});
     const j=await r.json(); ASST_MSGS.pop();
     const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.pendingAction) msg.pending=j.pendingAction; if(j&&j.cards) msg.cards=j.cards;
@@ -6479,7 +6512,11 @@ body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
   <div class="pb">
     <div id="asst_chips"></div>
     <div id="asst_log"></div>
-    <div class="prow"><input id="asst_in" placeholder="พิมพ์คำถาม เช่น ใครมาสายมากสุดรอบนี้"><button class="btn btn-pri" id="asst_send">ส่ง</button></div>
+    <div id="asst_thumbs" style="display:none;gap:5px;flex-wrap:wrap;margin:0 0 6px"></div>
+    <div class="prow">
+      <label class="btn btn-sec" style="cursor:pointer;margin:0;flex:none;padding:8px 10px" title="แนบรูปให้นิดาอ่าน (บิล/ตารางเวร/เอกสาร)">📷<input type="file" id="asst_file" accept="image/*" multiple style="display:none"></label>
+      <input id="asst_in" placeholder="พิมพ์คำถาม หรือแนบรูปให้นิดาอ่านข้อมูล"><button class="btn btn-pri" id="asst_send">ส่ง</button>
+    </div>
   </div>
 </div>
 <script>
