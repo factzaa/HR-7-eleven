@@ -975,32 +975,54 @@
       <div class="hint" style="margin-top:6px">ระบบจะดึงตัวเลขจริงจากฐานข้อมูล (Top 8) มาวาดเป็นกราฟแท่ง แล้วให้นิดาเขียนหัวเรื่อง + ข้อสังเกตให้</div>
     </div>
 
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+      <div style="font-weight:600;font-size:13.5px;margin-bottom:6px">🖼️ ภาพประกอบ</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label class="btn btn-sec btn-sm" style="cursor:pointer;margin:0">📷 อัปโหลดรูป<input type="file" id="po_files" accept="image/*" multiple style="display:none"></label>
+        <label class="toggle" style="margin:0"><input type="checkbox" id="po_mascot" checked><div><div class="lbl" style="font-size:13px">ใส่มาสคอตนิดา</div></div></label>
+        <input id="po_artprompt" type="text" placeholder="ให้ AI วาดภาพประกอบ เช่น ถุงพลาสติกกับถุงผ้า (ไม่มีตัวหนังสือ)" style="flex:1;min-width:220px;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
+        <select id="po_artstyle" style="max-width:150px"><option value="cartoon">การ์ตูน 3D</option><option value="flat">แฟลตเวกเตอร์</option><option value="photo">ภาพถ่ายสินค้า</option></select>
+        <button class="btn btn-sec btn-sm" id="po_art">🎨 ให้ AI วาด</button>
+      </div>
+      <div id="po_thumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+      <div class="hint" style="margin-top:4px">รูปที่ใส่จะไปอยู่แถบภาพประกอบของโปสเตอร์ · AI วาดเฉพาะภาพ ไม่ใส่ตัวหนังสือ (ข้อความไทยเรนเดอร์โดยระบบเพื่อไม่ให้เพี้ยน)</div>
+    </div>
+
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn btn-pri" id="po_gen">✨ ให้นิดาร่าง + สร้างรูป</button>
-      <button class="btn btn-sec" id="po_redraw" style="display:none">🎨 วาดใหม่ (สลับสีธีม)</button>
+      <button class="btn btn-sec" id="po_redraw" style="display:none">🎨 สลับสีธีม</button>
     </div>
     <div id="po_status" class="hint" style="margin-top:8px"></div>
   </div>
 
   <div class="card" id="po_result" style="display:none;padding:14px">
-    <div style="display:flex;gap:14px;flex-wrap:wrap">
-      <div style="flex:0 0 auto"><canvas id="po_canvas" width="1080" height="1350" style="width:280px;max-width:100%;border:1px solid var(--line);border-radius:10px;background:#fff"></canvas></div>
-      <div style="flex:1;min-width:250px">
-        <div style="font-weight:600;font-size:14px;margin-bottom:6px">แก้ข้อความก่อนส่ง</div>
-        <div class="field"><label>หัวเรื่อง</label><input id="po_t" type="text"></div>
-        <div class="field"><label>คำโปรย</label><input id="po_s" type="text"></div>
-        <div class="field"><label>เนื้อหา (1 บรรทัด = 1 ข้อ · ใช้ | คั่นหัวข้อกับรายละเอียด)</label><textarea id="po_items" rows="7" style="font-size:12.5px"></textarea></div>
-        <div class="field"><label>บรรทัดปิดท้าย</label><input id="po_f" type="text"></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="flex:0 0 auto;width:300px;max-width:100%">
+        <div id="po_preview" style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-          <button class="btn btn-sec btn-sm" id="po_apply">↻ อัปเดตรูป</button>
           <button class="btn btn-pri btn-sm" id="po_dl">⬇️ ดาวน์โหลด PNG</button>
           <button class="btn btn-sec btn-sm" id="po_chat">💬 ส่งเข้าแชททุกสาขา</button>
           <button class="btn btn-sec btn-sm" id="po_line">🟩 ส่งเข้ากลุ่ม LINE</button>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div style="font-weight:600;font-size:14px;margin-bottom:6px">แก้เนื้อหาก่อนส่ง</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div class="field" style="flex:1;min-width:180px"><label>หัวเรื่อง</label><input id="po_t" type="text"></div>
+          <div class="field" style="flex:1;min-width:180px"><label>คำขยาย</label><input id="po_s" type="text"></div>
+        </div>
+        <div class="field"><label>แถบวันที่มีผล (ว่างได้)</label><input id="po_d" type="text" placeholder="มีผลตั้งแต่ 13 กรกฎาคม 2569 เป็นต้นไป"></div>
+        <div id="po_blocks"></div>
+        <div class="field" style="margin-top:8px"><label>บรรทัดปิดท้าย</label><input id="po_f" type="text"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn btn-sec btn-sm" id="po_apply">↻ อัปเดตรูป</button>
         </div>
         <div class="hint" style="margin-top:8px">ดาวน์โหลดแล้วส่งต่อในไลน์กลุ่มพนักงานได้เลย · หรือกด "ส่งเข้ากลุ่ม LINE" ให้ระบบยิงรูปเข้ากลุ่มสาขาให้อัตโนมัติ</div>
       </div>
     </div>
   </div>
+  <!-- เวทีเรนเดอร์จริง 1080px (นอกจอ) → แปลงเป็น PNG -->
+  <div id="po_stagewrap" style="position:fixed;left:-10000px;top:0;width:1080px"><div id="po_stage"></div></div>
 </div>
 
 <div id="view_goods" class="container" style="display:none">
@@ -3856,12 +3878,12 @@ $('ga_csv').onclick=()=>{ if(!GA_ROWS.length){ toast('err','ไม่มีข�
 // ================= สร้างสื่อ / โปสเตอร์อินโฟกราฟิก (ธีม 7-Eleven) =================
 const PO_THEME={ green:{main:'#008061',soft:'#e8f5f0',dark:'#00614a'}, orange:{main:'#f68121',soft:'#fef1e5',dark:'#c9631a'}, red:{main:'#ee3124',soft:'#fdeceb',dark:'#c0261b'} };
 const PO_FONT="'Sarabun','Noto Sans Thai','Prompt',system-ui,-apple-system,'Segoe UI',sans-serif";
-let POSTER={ spec:null, url:'' };
+let POSTER={ spec:null, url:'', images:[] };
 
 function loadPosterTab(){
   const bs=$('po_branch'); if(bs && !bs.dataset.filled){ bs.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); bs.dataset.filled='1'; }
   if(!$('po_start').value){ const t=new Date(Date.now()+7*3600*1000); const e=t.toISOString().slice(0,10); const s=new Date(t.getTime()-29*86400000).toISOString().slice(0,10); $('po_start').value=s; $('po_end').value=e; }
-  poKindUI();
+  poKindUI(); poLoadFont(); poRenderThumbs();
 }
 function poKindUI(){ $('po_reportbox').style.display = $('po_kind').value==='report' ? 'block' : 'none'; }
 $('po_kind').onchange=poKindUI;
@@ -3905,125 +3927,208 @@ $('po_gen').onclick=async()=>{
 };
 $('po_redraw').onclick=async()=>{ if(!POSTER.spec) return; const o=['green','orange','red']; POSTER.spec.accent=o[(o.indexOf(POSTER.spec.accent)+1)%3]; await poDraw(); };
 
+// ---------- ตัวแก้เนื้อหา (สร้างช่องกรอกตามชนิดบล็อกที่ AI ร่างมา) ----------
+const PO_BLOCK_LABEL={ notice:'📣 กล่องแจ้ง', cause:'❗ สาเหตุ', table:'📋 ตาราง/รายการ', steps:'✅ วิธีปฏิบัติ (ขั้นตอน)', compare:'⇄ เปรียบเทียบ 2 กรณี', dos:'✓/✕ ควรทำ-ห้ามทำ', remember:'⭐ อย่าลืม' };
 function poFillEditor(){
   const s=POSTER.spec||{};
-  $('po_t').value=s.title||''; $('po_s').value=s.subtitle||''; $('po_f').value=s.footer||'';
-  let txt='';
-  if(s.kind==='dos') txt=(s.dos||[]).map(x=>'+ '+x).concat((s.donts||[]).map(x=>'- '+x)).join('\n');
-  else if(s.kind==='report') txt=(s.insights||[]).join('\n');
-  else txt=(s.steps||[]).map(x=>(x.head||'')+' | '+(x.detail||'')).join('\n');
-  $('po_items').value=txt;
+  $('po_t').value=s.title||''; $('po_s').value=s.subtitle||''; $('po_d').value=s.date_note||''; $('po_f').value=s.footer||'';
+  const box=$('po_blocks'); box.innerHTML='';
+  (s.blocks||[]).forEach((bl,i)=>{
+    const d=document.createElement('div');
+    d.style.cssText='border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-top:8px;background:#fbfdfc';
+    let inner='<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px"><b style="font-size:12.5px">'+(PO_BLOCK_LABEL[bl.type]||bl.type)+'</b>'
+      +'<button class="btn btn-sec btn-sm" data-poup="'+i+'" style="margin-left:auto;padding:1px 7px">↑</button>'
+      +'<button class="btn btn-danger btn-sm" data-podel="'+i+'" style="padding:1px 7px">ลบ</button></div>';
+    const F=(lb,id,v)=>'<div class="field" style="margin-bottom:5px"><label style="font-size:11.5px">'+lb+'</label><input data-po="'+id+'" type="text" value="'+esc(v||'')+'"></div>';
+    const T=(lb,id,v,rows)=>'<div class="field" style="margin-bottom:5px"><label style="font-size:11.5px">'+lb+'</label><textarea data-po="'+id+'" rows="'+(rows||3)+'" style="font-size:12.5px">'+esc(v||'')+'</textarea></div>';
+    if(bl.type==='notice') inner+=F('หัวข้อ','h',bl.head)+T('ใจความ','t',bl.text,2)+F('หมายเหตุ/ข้อยกเว้น','n',bl.note);
+    else if(bl.type==='cause') inner+=F('หัวข้อ','h',bl.head)+T('เนื้อหา','t',bl.text,3);
+    else if(bl.type==='table') inner+=F('หัวตาราง','h',bl.head)+T('1 บรรทัด = 1 แถว · รูปแบบ  รหัส | รายละเอียด','rows',(bl.rows||[]).map(r=>(r.code||'')+' | '+(r.label||'')).join('\n'),4);
+    else if(bl.type==='steps') inner+=F('หัวข้อ','h',bl.head)+T('1 บรรทัด = 1 ขั้น · รูปแบบ  ชื่อขั้น | รายละเอียด','items',(bl.items||[]).map(x=>(x.head||'')+' | '+(x.detail||'')).join('\n'),4);
+    else if(bl.type==='compare') inner+=F('หัวข้อ','h',bl.head)+F('ซ้าย: หัวข้อ','lh',(bl.left||{}).head)+T('ซ้าย: เนื้อหา','lt',(bl.left||{}).text,2)+F('ขวา: หัวข้อ','rh',(bl.right||{}).head)+T('ขวา: เนื้อหา','rt',(bl.right||{}).text,2);
+    else if(bl.type==='dos') inner+=T('ควรทำ (บรรทัดละข้อ)','dos',(bl.dos||[]).join('\n'),3)+T('ห้ามทำ (บรรทัดละข้อ)','donts',(bl.donts||[]).join('\n'),3);
+    else if(bl.type==='remember') inner+=T('ข้อความ','t',bl.text,2);
+    d.innerHTML=inner; d.dataset.idx=i; box.appendChild(d);
+  });
+  box.querySelectorAll('[data-podel]').forEach(b=>b.onclick=()=>{ POSTER.spec.blocks.splice(Number(b.dataset.podel),1); poFillEditor(); poDraw(); });
+  box.querySelectorAll('[data-poup]').forEach(b=>b.onclick=()=>{ const i=Number(b.dataset.poup); if(i<1) return; const bl=POSTER.spec.blocks; [bl[i-1],bl[i]]=[bl[i],bl[i-1]]; poFillEditor(); poDraw(); });
 }
 function poReadEditor(){
-  const s=POSTER.spec||{}; s.title=$('po_t').value.trim(); s.subtitle=$('po_s').value.trim(); s.footer=$('po_f').value.trim();
-  const lines=$('po_items').value.split('\n').map(x=>x.trim()).filter(Boolean);
-  if(s.kind==='dos'){ s.dos=lines.filter(l=>l.startsWith('+')).map(l=>l.replace(/^\+\s*/,'')); s.donts=lines.filter(l=>l.startsWith('-')).map(l=>l.replace(/^-\s*/,'')); }
-  else if(s.kind==='report'){ s.insights=lines; }
-  else { s.steps=lines.map(l=>{ const i=l.indexOf('|'); return i<0?{head:l,detail:''}:{ head:l.slice(0,i).trim(), detail:l.slice(i+1).trim() }; }); }
+  const s=POSTER.spec||{};
+  s.title=$('po_t').value.trim(); s.subtitle=$('po_s').value.trim(); s.date_note=$('po_d').value.trim(); s.footer=$('po_f').value.trim();
+  const L=v=>String(v||'').split('\n').map(x=>x.trim()).filter(Boolean);
+  const P=l=>{ const i=l.indexOf('|'); return i<0?[l,'']:[l.slice(0,i).trim(), l.slice(i+1).trim()]; };
+  [...$('po_blocks').children].forEach(d=>{
+    const bl=s.blocks[Number(d.dataset.idx)]; if(!bl) return;
+    const g=k=>{ const el=d.querySelector('[data-po="'+k+'"]'); return el?el.value:''; };
+    if(bl.type==='notice'){ bl.head=g('h'); bl.text=g('t'); bl.note=g('n'); }
+    else if(bl.type==='cause'){ bl.head=g('h'); bl.text=g('t'); }
+    else if(bl.type==='table'){ bl.head=g('h'); bl.rows=L(g('rows')).map(l=>{ const [a,b]=P(l); return { code:a, label:b }; }); }
+    else if(bl.type==='steps'){ bl.head=g('h'); bl.items=L(g('items')).map(l=>{ const [a,b]=P(l); return { head:a, detail:b }; }); }
+    else if(bl.type==='compare'){ bl.head=g('h'); bl.left={ head:g('lh'), text:g('lt') }; bl.right={ head:g('rh'), text:g('rt') }; }
+    else if(bl.type==='dos'){ bl.dos=L(g('dos')); bl.donts=L(g('donts')); }
+    else if(bl.type==='remember'){ bl.text=g('t'); }
+  });
 }
 $('po_apply').onclick=async()=>{ if(!POSTER.spec) return; poReadEditor(); await poDraw(); toast('ok','อัปเดตรูปแล้ว'); };
 
-// ---- ตัวช่วยวาด ----
-function poRR(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
-// ตัดบรรทัดภาษาไทย (ไม่มีเว้นวรรค → ตัดทีละอักขระ แต่ห้ามแยกสระ/วรรณยุกต์ออกจากพยัญชนะ)
-function poComb(ch){ const c=ch.codePointAt(0); return c===0x0E31 || (c>=0x0E34&&c<=0x0E3A) || (c>=0x0E47&&c<=0x0E4E); }
-function poLead(ch){ const c=ch.codePointAt(0); return c>=0x0E40 && c<=0x0E44; }   // เ แ โ ใ ไ ต้องอยู่หน้าพยัญชนะเสมอ
-function poWrap(c,text,maxW){
-  const out=[]; let line=''; const arr=[...String(text||'')];
-  for(let i=0;i<arr.length;i++){
-    const ch=arr[i];
-    if(ch==='\n'){ out.push(line); line=''; continue; }
-    const t=line+ch;
-    if(line && c.measureText(t).width>maxW && !poComb(ch)){
-      let cut=line, carry=(ch===' '?'':ch);
-      while(cut.length>1 && poLead(cut[cut.length-1])){ carry=cut[cut.length-1]+carry; cut=cut.slice(0,-1); }
-      out.push(cut); line=carry;
-    } else line=t;
-  }
-  if(line) out.push(line);
-  return out;
+// ---------- ภาพประกอบ: อัปโหลด / AI วาด / มาสคอต ----------
+function poRenderThumbs(){
+  $('po_thumbs').innerHTML=(POSTER.images||[]).map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" style="width:58px;height:58px;object-fit:cover;border-radius:8px;display:block;border:1px solid var(--line)"><button type="button" data-porm="'+i+'" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:19px;height:19px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
+  $('po_thumbs').querySelectorAll('[data-porm]').forEach(b=>b.onclick=()=>{ POSTER.images.splice(Number(b.dataset.porm),1); poRenderThumbs(); if(POSTER.spec) poDraw(); });
 }
-function poText(c,text,x,y,maxW,lh,maxLines){
-  const ls=poWrap(c,text,maxW); const n=maxLines||ls.length;
-  for(let i=0;i<Math.min(ls.length,n);i++){ let t=ls[i]; if(i===n-1&&ls.length>n) t=t.slice(0,-1)+'…'; c.fillText(t,x,y+i*lh); }
-  return y+Math.min(ls.length,n)*lh;
+function poFileToData(file){
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=ev=>{ const img=new Image(); img.onload=()=>{ const M=900; let w=img.width,h=img.height; if(w>M||h>M){ if(w>h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} } const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg',0.9)); }; img.onerror=rej; img.src=ev.target.result; }; r.onerror=rej; r.readAsDataURL(file); });
+}
+$('po_files').addEventListener('change', async(e)=>{
+  const fs=[...(e.target.files||[])];
+  for(const f of fs){ try{ POSTER.images.push(await poFileToData(f)); }catch(_e){} }
+  e.target.value=''; poRenderThumbs(); if(POSTER.spec) poDraw();
+});
+$('po_mascot').onchange=()=>{ if(POSTER.spec) poDraw(); };
+$('po_art').onclick=async()=>{
+  const prompt=$('po_artprompt').value.trim();
+  if(!prompt){ toast('err','พิมพ์ว่าอยากให้วาดอะไร'); return; }
+  const b=$('po_art'); b.innerHTML='<span class="spin"></span> กำลังวาด…';
+  try{
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+    const res=await fetch(base+'/functions/v1/poster-art',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ password:pwd, prompt, style:$('po_artstyle').value }) });
+    const j=await res.json().catch(()=>({}));
+    if(!j.ok) throw new Error(j.error||'วาดไม่สำเร็จ');
+    POSTER.images.push(j.image); poRenderThumbs(); if(POSTER.spec) await poDraw();
+    toast('ok','เพิ่มภาพประกอบจาก AI แล้ว');
+  }catch(e){ toast('err',String(e.message||e)); }
+  b.textContent='🎨 ให้ AI วาด';
+};
+
+// ---------- เรนเดอร์โปสเตอร์เป็น HTML แล้วแปลงเป็น PNG (ข้อความไทยคมชัด ไม่เพี้ยน) ----------
+let PO_H2C=null;
+function poLoadH2C(){
+  if(PO_H2C) return PO_H2C;
+  PO_H2C=new Promise((res,rej)=>{
+    if(window.html2canvas) return res(window.html2canvas);
+    const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload=()=>res(window.html2canvas); s.onerror=()=>rej(new Error('โหลดตัวแปลงรูปไม่สำเร็จ (ตรวจอินเทอร์เน็ต)')); document.head.appendChild(s);
+  });
+  return PO_H2C;
+}
+function poLoadFont(){
+  if(document.getElementById('poFont')) return;
+  const l=document.createElement('link'); l.id='poFont'; l.rel='stylesheet';
+  l.href='https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700;900&display=swap';
+  document.head.appendChild(l);
+}
+function poBlockHTML(bl, TH){
+  const E=esc;
+  const nl=v=>E(v||'').replace(/\n/g,'<br>');
+  if(bl.type==='notice') return ''
+    +'<div style="display:flex;gap:16px;align-items:stretch;background:'+TH.soft+';border:3px solid '+TH.main+';border-radius:20px;padding:18px 22px;margin-bottom:16px">'
+    +'<div style="flex:1"><div style="display:inline-block;background:'+TH.main+';color:#fff;font-weight:900;font-size:27px;border-radius:999px;padding:5px 20px;margin-bottom:9px">📣 '+E(bl.head||'แจ้งร้านทุกสาขา')+'</div>'
+    +'<div style="font-size:31px;font-weight:800;color:#0f172a;line-height:1.4">'+nl(bl.text)+'</div>'
+    +(bl.note?'<div style="font-size:20px;color:#64748b;margin-top:7px">('+E(bl.note)+')</div>':'')
+    +'</div></div>';
+  if(bl.type==='cause') return ''
+    +'<div style="background:#f0fdf4;border:3px solid #16a34a;border-radius:20px;padding:18px 22px;margin-bottom:16px">'
+    +'<div style="display:inline-block;background:#16a34a;color:#fff;font-weight:900;font-size:25px;border-radius:999px;padding:4px 18px;margin-bottom:8px">❗ '+E(bl.head||'สาเหตุ')+'</div>'
+    +'<div style="font-size:26px;color:#14532d;line-height:1.55">'+nl(bl.text)+'</div></div>';
+  if(bl.type==='table') return ''
+    +'<div style="border:3px solid '+TH.main+';border-radius:20px;overflow:hidden;margin-bottom:16px">'
+    +'<div style="background:'+TH.main+';color:#fff;font-weight:900;font-size:28px;text-align:center;padding:9px">'+E(bl.head||'รายการ')+'</div>'
+    +'<div style="padding:6px 20px 12px">'
+    + (bl.rows||[]).map(r=>'<div style="display:flex;gap:14px;align-items:center;border-bottom:2px dashed #e2e8f0;padding:10px 0">'
+        +'<span style="width:14px;height:14px;border-radius:50%;background:'+TH.main+';flex:none"></span>'
+        +'<span style="font-weight:900;font-size:26px;color:#0f172a;min-width:230px">'+E(r.code||'')+'</span>'
+        +'<span style="font-size:25px;color:#334155">'+E(r.label||'')+'</span></div>').join('')
+    +'</div></div>';
+  if(bl.type==='steps') return ''
+    +'<div style="background:#f1f5f9;border-radius:20px;padding:16px 20px;margin-bottom:16px">'
+    +'<div style="display:inline-block;background:#1e3a8a;color:#fff;font-weight:900;font-size:26px;border-radius:999px;padding:4px 20px;margin-bottom:10px">✅ '+E(bl.head||'วิธีปฏิบัติ')+'</div>'
+    + (bl.items||[]).map((it,i)=>'<div style="display:flex;gap:14px;align-items:flex-start;background:#fff;border-radius:14px;padding:12px 14px;margin-bottom:9px">'
+        +'<span style="flex:none;width:46px;height:46px;border-radius:50%;background:'+TH.main+';color:#fff;font-weight:900;font-size:26px;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'
+        +'<span><b style="font-size:27px;color:#0f172a">'+E(it.head||'')+'</b>'
+        +(it.detail?'<div style="font-size:23px;color:#475569;line-height:1.45;margin-top:2px">'+E(it.detail)+'</div>':'')+'</span></div>').join('')
+    +'</div>';
+  if(bl.type==='compare') return ''
+    +'<div style="margin-bottom:16px">'
+    +(bl.head?'<div style="display:inline-block;background:#1e3a8a;color:#fff;font-weight:900;font-size:26px;border-radius:999px;padding:4px 20px;margin-bottom:10px">'+E(bl.head)+'</div>':'')
+    +'<div style="display:flex;gap:14px">'
+    + [[bl.left,'#16a34a','#f0fdf4','✔'],[bl.right,'#dc2626','#fef2f2','✔']].map(([side,col,bg,ic])=>
+        '<div style="flex:1;background:'+bg+';border:3px solid '+col+';border-radius:18px;padding:14px 16px">'
+        +'<div style="font-weight:900;font-size:26px;color:'+col+';margin-bottom:6px">'+ic+' '+E((side||{}).head||'')+'</div>'
+        +'<div style="font-size:24px;color:#1f2937;line-height:1.5">'+nl((side||{}).text)+'</div></div>').join('')
+    +'</div></div>';
+  if(bl.type==='dos') return ''
+    +'<div style="display:flex;gap:14px;margin-bottom:16px">'
+    + [['ควรทำ','#16a34a','#f0fdf4',(bl.dos||[]),'✓'],['ห้ามทำ','#dc2626','#fef2f2',(bl.donts||[]),'✕']].map(([h,col,bg,list,ic])=>
+        '<div style="flex:1;background:'+bg+';border:3px solid '+col+';border-radius:18px;overflow:hidden">'
+        +'<div style="background:'+col+';color:#fff;font-weight:900;font-size:27px;text-align:center;padding:7px">'+ic+' '+h+'</div>'
+        +'<div style="padding:12px 16px">'+list.map(x=>'<div style="display:flex;gap:9px;font-size:24px;color:#1f2937;line-height:1.45;margin-bottom:8px"><span style="color:'+col+';font-weight:900">'+ic+'</span><span>'+E(x)+'</span></div>').join('')+'</div></div>').join('')
+    +'</div>';
+  if(bl.type==='remember') return ''
+    +'<div style="display:flex;gap:12px;align-items:center;background:#fffbeb;border:3px solid #f59e0b;border-radius:18px;padding:14px 20px;margin-bottom:16px">'
+    +'<span style="font-size:34px">⭐</span><div style="font-weight:800;font-size:27px;color:#78350f;line-height:1.4">'+nl(bl.text)+'</div></div>';
+  return '';
+}
+function poBarsHTML(s, TH){
+  const list=(s.bars||[]).slice(0,8); if(!list.length) return '';
+  const max=Math.max(1,...list.map(b=>Number(b.value)||0));
+  return '<div style="border:3px solid '+TH.main+';border-radius:20px;padding:16px 20px;margin-bottom:16px">'
+    + list.map(b=>{ const w=Math.max(3, Math.round(100*(Number(b.value)||0)/max));
+        return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
+          +'<span style="width:180px;text-align:right;font-weight:700;font-size:24px;color:#334155">'+esc(String(b.label))+'</span>'
+          +'<span style="flex:1;background:'+TH.soft+';border-radius:10px;height:40px;position:relative">'
+            +'<span style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:'+TH.main+';border-radius:10px"></span></span>'
+          +'<span style="width:120px;font-weight:800;font-size:24px;color:#0f172a">'+esc(String(b.value))+' '+esc(s.unit||'')+'</span></div>';
+      }).join('')
+    +'</div>';
+}
+function poStageHTML(s){
+  const TH=PO_THEME[s.accent]||PO_THEME.green;
+  const imgs=(POSTER.images||[]);
+  const mascot=$('po_mascot') && $('po_mascot').checked;
+  const stripes='<div style="display:flex;height:14px"><div style="flex:1;background:#ee3124"></div><div style="flex:1;background:#f68121"></div><div style="flex:1;background:#008061"></div></div>';
+  let h='<div style="width:1080px;background:#fff;font-family:\'Noto Sans Thai\',\'Sarabun\',sans-serif;color:#0f172a;box-sizing:border-box">';
+  // หัวโปสเตอร์
+  h+='<div style="background:'+TH.main+';padding:26px 44px 22px;position:relative;display:flex;align-items:center;gap:18px">'
+    +'<div style="flex:1">'
+    +'<div style="color:rgba(255,255,255,.85);font-weight:700;font-size:22px;letter-spacing:.5px">7-ELEVEN · สื่อสารถึงร้านสาขา</div>'
+    +'<div style="color:#fff;font-weight:900;font-size:64px;line-height:1.12;margin-top:4px;text-shadow:0 3px 0 rgba(0,0,0,.18)">'+esc(s.title||'')+'</div>'
+    +(s.subtitle?'<div style="color:#fff;font-weight:700;font-size:30px;margin-top:4px;opacity:.95">'+esc(s.subtitle)+'</div>':'')
+    +(s.date_note?'<div style="display:inline-block;margin-top:10px;background:#b91c1c;color:#fff;font-weight:900;font-size:26px;border-radius:999px;padding:6px 22px">'+esc(s.date_note)+'</div>':'')
+    +'</div>'
+    +(mascot?'<img src="./assistant-mascot.png" style="width:190px;height:190px;object-fit:contain;flex:none;filter:drop-shadow(0 6px 10px rgba(0,0,0,.25))">':'')
+    +'</div>'+stripes;
+  h+='<div style="padding:24px 44px 10px">';
+  if(s.kind==='report') h+=poBarsHTML(s,TH);
+  (s.blocks||[]).forEach(bl=>{ h+=poBlockHTML(bl,TH); });
+  // แถบภาพประกอบ
+  if(imgs.length){
+    const per=imgs.length===1?1:(imgs.length===2?2:3);
+    h+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">'
+      + imgs.map(u=>'<img src="'+esc(u)+'" style="width:'+Math.floor((992-(per-1)*10)/per)+'px;height:'+(per===1?420:260)+'px;object-fit:contain;background:#f8fafc;border:2px solid #e2e8f0;border-radius:16px">').join('')
+      +'</div>';
+  }
+  h+='</div>';
+  // ท้ายโปสเตอร์
+  h+=stripes+'<div style="background:'+TH.main+';color:#fff;display:flex;align-items:center;padding:16px 44px;font-weight:700;font-size:24px">'
+    +'<div style="flex:1">'+esc(s.footer||'ทีมงานผู้จัดการ · 7-Eleven')+'</div>'
+    +'<div style="font-weight:900">'+esc(new Date(Date.now()+7*3600*1000).toLocaleDateString('th-TH'))+'</div></div>';
+  h+='</div>';
+  return h;
 }
 async function poDraw(){
   const s=POSTER.spec; if(!s) return;
+  poLoadFont();
+  const h2c=await poLoadH2C();
+  const stage=$('po_stage');
+  stage.innerHTML=poStageHTML(s);
+  // รอฟอนต์ + รูปทั้งหมดโหลดเสร็จ ก่อนแปลงเป็น PNG (ไม่งั้นรูปจะหาย/ฟอนต์เพี้ยน)
   try{ if(document.fonts&&document.fonts.ready) await document.fonts.ready; }catch(e){}
-  const cv=$('po_canvas'), c=cv.getContext('2d'), W=1080, H=1350;
-  const TH=PO_THEME[s.accent]||PO_THEME.green;
-  c.fillStyle='#fff'; c.fillRect(0,0,W,H);
-
-  // หัวโปสเตอร์
-  c.fillStyle=TH.main; c.fillRect(0,0,W,250);
-  c.fillStyle=TH.dark; c.fillRect(0,250,W,8);
-  // แถบ 3 สี 7-Eleven
-  const bars=[['#ee3124',0],['#f68121',1],['#008061',2]];
-  bars.forEach(([col,i])=>{ c.fillStyle=col; c.fillRect(i*(W/3),258,W/3,14); });
-
-  c.textBaseline='top'; c.textAlign='left';
-  c.fillStyle='rgba(255,255,255,.85)'; c.font='700 30px '+PO_FONT;
-  c.fillText('7-ELEVEN · สื่อภายในร้าน', 56, 40);
-  c.fillStyle='#fff'; c.font='800 62px '+PO_FONT;
-  let y=poText(c, s.title||'', 56, 92, W-112, 70, 2);
-  if(s.subtitle){ c.font='400 32px '+PO_FONT; c.fillStyle='rgba(255,255,255,.92)'; poText(c, s.subtitle, 56, Math.min(y+6,196), W-112, 38, 1); }
-
-  y=316;
-  if(s.kind==='dos'){
-    const colW=(W-56*2-24)/2, x2=56+colW+24;
-    [[ 'ควรทำ ✓', s.dos||[], '#008061', '#e8f5f0', 56 ], [ 'ห้ามทำ ✕', s.donts||[], '#ee3124', '#fdeceb', x2 ]].forEach(([head,list,col,soft,x])=>{
-      const h=H-y-160;
-      c.fillStyle=soft; poRR(c,x,y,colW,h,20); c.fill();
-      c.fillStyle=col; poRR(c,x,y,colW,68,20); c.fill(); c.fillRect(x,y+40,colW,28);
-      c.fillStyle='#fff'; c.font='800 34px '+PO_FONT; c.fillText(head, x+22, y+16);
-      let yy=y+96; c.font='400 30px '+PO_FONT;
-      (list||[]).forEach(it=>{ c.fillStyle=col; c.beginPath(); c.arc(x+30,yy+16,8,0,7); c.fill(); c.fillStyle='#1f2937'; yy=poText(c,it,x+50,yy,colW-72,40,3)+18; });
-    });
-  } else if(s.kind==='report'){
-    const list=(s.bars||[]).slice(0,8), max=Math.max(1,...list.map(b=>Number(b.value)||0));
-    const bw=W-56*2-220;
-    c.font='700 28px '+PO_FONT;
-    list.forEach(b=>{
-      c.fillStyle='#334155'; c.textAlign='right'; c.fillText(String(b.label).slice(0,12), 56+150, y+8); c.textAlign='left';
-      const w=Math.max(8, Math.round(bw*(Number(b.value)||0)/max));
-      c.fillStyle=TH.soft; poRR(c,56+170,y,bw,44,10); c.fill();
-      c.fillStyle=TH.main; poRR(c,56+170,y,w,44,10); c.fill();
-      c.fillStyle='#0f172a'; c.font='700 26px '+PO_FONT;
-      c.fillText(String(b.value)+' '+(s.unit||''), 56+170+w+12, y+8);
-      c.font='700 28px '+PO_FONT;
-      y+=62;
-    });
-    if((s.insights||[]).length){
-      y+=14; c.fillStyle=TH.soft; poRR(c,56,y,W-112,H-y-160,20); c.fill();
-      c.fillStyle=TH.dark; c.font='800 32px '+PO_FONT; c.fillText('ข้อสังเกต', 82, y+22);
-      let yy=y+76; c.font='400 29px '+PO_FONT;
-      (s.insights||[]).forEach(it=>{ c.fillStyle=TH.main; c.beginPath(); c.arc(90,yy+16,7,0,7); c.fill(); c.fillStyle='#1f2937'; yy=poText(c,it,110,yy,W-112-90,40,3)+14; });
-    }
-  } else {
-    const list=(s.steps||[]).slice(0,6);
-    const avail=H-y-150, gap=16, ch=Math.min(160, Math.floor((avail-gap*(list.length-1))/Math.max(1,list.length)));
-    list.forEach((st,i)=>{
-      c.fillStyle=TH.soft; poRR(c,56,y,W-112,ch,18); c.fill();
-      c.fillStyle=TH.main; c.beginPath(); c.arc(112,y+ch/2,36,0,7); c.fill();
-      c.fillStyle='#fff'; c.font='800 40px '+PO_FONT; c.textAlign='center'; c.textBaseline='middle';
-      c.fillText(String(i+1), 112, y+ch/2+2);
-      c.textAlign='left'; c.textBaseline='top';
-      c.fillStyle='#0f172a'; c.font='800 34px '+PO_FONT;
-      const hy=poText(c, st.head||'', 170, y+ (st.detail?24:ch/2-22), W-112-140, 40, 1);
-      if(st.detail){ c.fillStyle='#475569'; c.font='400 28px '+PO_FONT; poText(c, st.detail, 170, hy+4, W-112-140, 36, 2); }
-      y+=ch+gap;
-    });
-  }
-
-  // ท้ายโปสเตอร์
-  c.fillStyle=TH.main; c.fillRect(0,H-96,W,96);
-  bars.forEach(([col,i])=>{ c.fillStyle=col; c.fillRect(i*(W/3),H-110,W/3,14); });
-  c.fillStyle='#fff'; c.font='600 30px '+PO_FONT; c.textBaseline='middle';
-  c.fillText(s.footer||'ทีมงาน HR · 7-Eleven', 56, H-46);
-  c.textAlign='right'; c.font='800 30px '+PO_FONT; c.fillText(new Date(Date.now()+7*3600*1000).toLocaleDateString('th-TH'), W-56, H-46);
-  c.textAlign='left'; c.textBaseline='top';
+  await Promise.all([...stage.querySelectorAll('img')].map(im=>im.complete?Promise.resolve():new Promise(r=>{ im.onload=r; im.onerror=r; })));
+  const cv=await h2c(stage.firstElementChild, { backgroundColor:'#ffffff', scale:1, useCORS:true, logging:false, windowWidth:1080 });
   POSTER.url=cv.toDataURL('image/png');
+  $('po_preview').innerHTML='<img src="'+POSTER.url+'" style="width:100%;display:block">';
 }
 $('po_dl').onclick=()=>{ if(!POSTER.url){ toast('err','ยังไม่มีรูป'); return; }
   const a=document.createElement('a'); a.href=POSTER.url; a.download='poster_'+Date.now()+'.png'; document.body.appendChild(a); a.click(); a.remove(); };
