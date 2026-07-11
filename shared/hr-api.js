@@ -1824,7 +1824,9 @@
   async function hrChatSend(d) {
     d = d || {};
     const text = String(d.text || '').trim();
-    const photos = (Array.isArray(d.photos) && d.photos.length) ? d.photos : null;
+    // รูปที่แนบมาเป็น data URL → อัปโหลดขึ้น storage ก่อน
+    const photoArr = (Array.isArray(d.photos) && d.photos.length) ? await _uploadMany('chat/' + (d.branch_id || 'bc'), d.photos) : [];
+    const photos = photoArr.length ? photoArr : null;
     if (!text && !photos) return { ok: false, error: 'พิมพ์ข้อความก่อน' };
     const role = ['hr', 'mgr', 'nida'].includes(d.role) ? d.role : 'hr';
     const name = d.sender_name || (role === 'mgr' ? 'ผจก.' : role === 'nida' ? 'นิดา · ผู้ช่วยฝ่ายบริหาร / HR' : 'HR');

@@ -1583,11 +1583,27 @@ function chatOpenThread(branch){
   CHAT.view='thread'; CHAT.branch=branch;
   $('chatHead').innerHTML=(MGR_MODE?'':'<button class="btn btn-sec btn-sm" id="chatBack" style="flex:none">‹</button>')+'<div style="font-weight:700;flex:1;font-size:14.5px">'+esc(MGR_MODE?'สำนักงาน / HR':('สาขา '+chatBranchName(branch)))+'</div><button class="close" id="chatX" style="position:static">×</button>';
   $('chatFoot').style.display='';
-  $('chatFoot').innerHTML='<div style="display:flex;gap:8px;align-items:center"><input id="chatInput" type="text" placeholder="พิมพ์ข้อความ…" style="flex:1;padding:9px 12px;border:1.5px solid var(--line2);border-radius:999px;font:inherit;font-size:13.5px"><button class="btn btn-pri btn-sm" id="chatSend" style="flex:none">ส่ง</button></div>';
+  $('chatFoot').innerHTML='<div id="chatThumbs" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px"></div>'
+    +'<div style="display:flex;gap:8px;align-items:center">'
+    +'<label class="btn btn-sec btn-sm" style="flex:none;cursor:pointer;margin:0">📷<input type="file" accept="image/*" multiple id="chatFile" style="display:none"></label>'
+    +'<input id="chatInput" type="text" placeholder="พิมพ์ข้อความ…" style="flex:1;padding:9px 12px;border:1.5px solid var(--line2);border-radius:999px;font:inherit;font-size:13.5px">'
+    +'<button class="btn btn-pri btn-sm" id="chatSend" style="flex:none">ส่ง</button></div>';
   $('chatX').onclick=chatClose; if($('chatBack')) $('chatBack').onclick=chatLoadList;
   $('chatSend').onclick=chatDoSend; $('chatInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); chatDoSend(); } });
+  CHAT_PHOTOS=[]; chatRenderThumbs();
+  $('chatFile').addEventListener('change',async(e)=>{ const fs=[...(e.target.files||[])]; for(const f of fs){ try{ CHAT_PHOTOS.push(await chatFileToData(f)); }catch(_e){} } e.target.value=''; chatRenderThumbs(); });
   chatLoadThread(branch,true);
 }
+let CHAT_PHOTOS=[];
+function chatFileToData(file){
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=ev=>{ const img=new Image(); img.onload=()=>{ const M=1280; let w=img.width,h=img.height; if(w>M||h>M){ if(w>h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} } const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg',0.85)); }; img.onerror=rej; img.src=ev.target.result; }; r.onerror=rej; r.readAsDataURL(file); });
+}
+function chatRenderThumbs(){
+  const t=$('chatThumbs'); if(!t) return;
+  t.innerHTML=CHAT_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" style="width:48px;height:48px;object-fit:cover;border-radius:7px;display:block"><button type="button" onclick="chatRmPhoto('+i+')" style="position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>').join('');
+}
+function chatRmPhoto(i){ CHAT_PHOTOS.splice(i,1); chatRenderThumbs(); }
+function chatFirePush(){ try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(base) fetch(base+'/functions/v1/chat-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} }
 async function chatLoadThread(branch, markRead){
   const r=await post({ action:'hr_chat_list', password:pwd, branch }); const rows=(r&&r.rows)||[]; CHAT.rows=rows;
   const otherRead = MGR_MODE ? (r&&r.hr_read) : (r&&r.mgr_read);
@@ -1609,14 +1625,20 @@ async function chatLoadThread(branch, markRead){
   if(markRead){ try{ await post({ action:'hr_chat_read', password:pwd, branch, side:chatSide() }); }catch(e){} chatSetBadge(0); }
 }
 async function chatDoSend(){
-  const inp=$('chatInput'); if(!inp) return; const text=(inp.value||'').trim(); if(!text) return; inp.value='';
-  const r=await post({ action:'hr_chat_send', password:pwd, data:{ branch_id:CHAT.branch, text, role:chatSide(), emp_id:MGR_MODE?MGR_EMP:null } });
-  if(r&&r.ok){ chatLoadThread(CHAT.branch,true); } else { toast('err',(r&&r.error)||'ส่งไม่สำเร็จ'); inp.value=text; }
+  const inp=$('chatInput'); if(!inp) return; const text=(inp.value||'').trim();
+  const photos=CHAT_PHOTOS.slice();
+  if(!text && !photos.length) return;
+  inp.value=''; CHAT_PHOTOS=[]; chatRenderThumbs();
+  const btn=$('chatSend'); if(btn) btn.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_chat_send', password:pwd, data:{ branch_id:CHAT.branch, text, photos, role:chatSide(), emp_id:MGR_MODE?MGR_EMP:null } });
+  if(btn) btn.textContent='ส่ง';
+  if(r&&r.ok){ chatFirePush(); chatLoadThread(CHAT.branch,true); }
+  else { toast('err',(r&&r.error)||'ส่งไม่สำเร็จ'); inp.value=text; CHAT_PHOTOS=photos; chatRenderThumbs(); }
 }
 async function chatBroadcastPrompt(){
   const text=prompt('📢 บรอดแคสต์ถึงทุกสาขา (เด้งเข้าห้องแชทของทุกสาขา):'); if(text===null) return; if(!text.trim()){ toast('err','พิมพ์ข้อความ'); return; }
   const r=await post({ action:'hr_chat_send', password:pwd, data:{ broadcast:true, text:text.trim(), role:'hr' } });
-  if(r&&r.ok){ toast('ok','ส่งถึง '+(r.sent||0)+' สาขาแล้ว'); chatLoadList(); } else toast('err',(r&&r.error)||'ส่งไม่สำเร็จ');
+  if(r&&r.ok){ chatFirePush(); toast('ok','ส่งถึง '+(r.sent||0)+' สาขาแล้ว'); chatLoadList(); } else toast('err',(r&&r.error)||'ส่งไม่สำเร็จ');
 }
 $('mgr_pin') && $('mgr_pin').addEventListener('keydown', e=>{ if(e.key==='Enter') mgrTryLogin(); });
 
