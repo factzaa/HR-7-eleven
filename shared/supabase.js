@@ -1000,8 +1000,10 @@
     return { ok:true };
   }
   async function submitTaskMulti({ id, empId, photos, note }){
-    const row=(await sb.from('task_assignments').select('branch_id,task_def_id,shift_id,work_date').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
-    await _assertShiftStarted(row.shift_id, row.work_date);
+    const row=(await sb.from('task_assignments').select('*').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
+    // งานที่ ผจก.ตีกลับให้ "ผู้ตรวจของผลัดถัดไป" แก้ → คนแก้ไม่ได้อยู่กะเดียวกับงานเดิม จึงไม่ต้องเช็กว่ากะเริ่มหรือยัง
+    const isFix = !!(row.fix_emp && !row.fix_done_at && row.status==='sent_back');
+    if(!isFix) await _assertShiftStarted(row.shift_id, row.work_date);
     const def=(await sb.from('task_defs').select('min_photos,mgr_review').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
     // needs_mgr = งานติ๊ก "ผจก.ตรวจ" และกะนั้นเป็นกะที่ ผจก.ตรวจ (บางกะ เช่นดึก ไม่อยู่ในเวลา ผจก.)
@@ -1019,8 +1021,20 @@
     if(urls.length < minP) throw new Error('งานนี้ต้องแนบรูปอย่างน้อย '+minP+' รูป');
     const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null, needs_mgr: wantMgr };
     upd.photos = urls.length?urls:null; upd.photo_url = urls.length?urls[0]:null;
+    if(isFix){
+      // ส่งงานที่แก้แล้ว → ปิดงานแก้ + ล้างผลตรวจของ ผจก. เพื่อให้ ผจก.ตรวจซ้ำอีกรอบ
+      upd.fix_done_at=new Date().toISOString();
+      upd.mgr_checked_at=null; upd.mgr_checked_by=null; upd.mgr_result=null;
+      upd.needs_mgr=true;
+    }
     const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
-    return { ok:true };
+    try{
+      const who=await lookupEmployee(empId);
+      await sb.from('task_flow_log').insert({ task_id:id, branch_id:row.branch_id||null, work_date:row.work_date||null,
+        event: isFix?'fix_submit':'submit', actor_emp: empId||null, actor_name: who?(who.nickname||who.name):null,
+        actor_role:'emp', shift_id: row.shift_id||null, note: note||null });
+    }catch(e){}
+    return { ok:true, fix:isFix };
   }
 
   // เมนู 3: ตรวจผลัดก่อนหน้า (เฉพาะหัวหน้าผลัดถัดไป)
@@ -1044,6 +1058,9 @@
     if(!pv.group || task.shift_id!==pv.group || String(task.work_date)!==pv.date) throw new Error('ตรวจได้เฉพาะงานของผลัดก่อนหน้าเท่านั้น');
     const upd={ status: status==='approved'?'approved':'sent_back', reviewer: emp.nickname||emp.name, review_note:note||null, reviewed_at:new Date().toISOString() };
     if(status!=='approved') upd.sent_back_count=(task.sent_back_count||0)+1;
+    // เก็บร่องรอย "ผลัดไหนตรวจ" — ถ้า ผจก.มาตรวจซ้ำแล้วไม่ผ่าน คนแก้จะเป็นผู้ตรวจคนนี้ (เพราะรับรองงานไปแล้ว)
+    upd.checked_by_emp=emp.emp_id; upd.checked_by_name=emp.nickname||emp.name;
+    upd.checked_by_shift=curGroup; upd.checked_at=new Date().toISOString();
     // รูปที่หัวหน้าผลัดวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
     if(status!=='approved' && Array.isArray(markup) && markup.length){
       const urls=[];
@@ -1051,7 +1068,28 @@
       upd.review_markup=urls.length?urls:null;
     }
     const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
+    try{ await sb.from('task_flow_log').insert({ task_id:id, branch_id:branch||null, work_date:task.work_date||null,
+      event: status==='approved'?'shift_approve':'shift_reject', actor_emp:emp.emp_id, actor_name:emp.nickname||emp.name,
+      actor_role:'leader', shift_id:curGroup, note:note||null }); }catch(e){}
     return { ok:true };
+  }
+
+  // ---------- งานที่ ผจก.ตีกลับมาให้ "ฉัน" แก้ (อาจเป็นงานที่ฉันเป็นคนตรวจผ่าน ไม่ใช่คนส่ง) ----------
+  async function getMyFixTasks(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data } = await sb.from('task_assignments').select('*')
+      .eq('fix_emp', emp.emp_id).eq('status','sent_back').is('fix_done_at', null)
+      .order('work_date',{ascending:false}).limit(50);
+    const rows=data||[];
+    const shIds=[...new Set(rows.map(r=>r.shift_id).concat(rows.map(r=>r.fix_shift_id)).filter(Boolean))];
+    let shName={};
+    if(shIds.length){ const {data:sh}=await sb.from('shifts').select('shift_id,name').in('shift_id',shIds); (sh||[]).forEach(s=>{ shName[s.shift_id]=s.name||s.shift_id; }); }
+    return { emp, rows: rows.map(r=>({
+      ...r,
+      shift_name: shName[r.shift_id]||r.shift_id||'',
+      fix_shift_name: shName[r.fix_shift_id]||r.fix_shift_id||'',
+      i_was_checker: r.checked_by_emp===emp.emp_id && r.emp_id!==emp.emp_id,   // ฉันเป็นคนตรวจผ่าน → ฉันต้องแก้
+    })) };
   }
 
   // รายงานรับส่งผลัด (พนักงานดูสาขาตัวเอง)
@@ -1314,5 +1352,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();

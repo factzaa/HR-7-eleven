@@ -427,6 +427,7 @@
     <button class="btn btn-sec btn-sm" id="mdr_reportbtn">📊 รายงานเดือน</button>
   </div>
   <div id="mdr_intask" style="margin-bottom:14px"></div>
+  <div id="mdr_fixing" style="margin-bottom:14px"></div>
   <div id="mdr_board"><div class="empty">กำลังโหลด…</div></div>
   <div id="mdr_report" style="display:none">
     <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -479,6 +480,7 @@
 <!-- Manager tasks (งาน ผจก.) -->
 <div id="view_mgrtasks" class="container" style="display:none">
   <div id="mt_intask" style="margin-bottom:14px"></div>
+  <div id="mt_fixing" style="margin-bottom:14px"></div>
   <div id="mt_switch" style="display:none;gap:8px;margin-bottom:12px">
     <button class="btn btn-sec btn-sm" id="mtsw_daily" style="flex:1">📋 งานประจำวัน</button>
     <button class="btn btn-sec btn-sm" id="mtsw_assigned" style="flex:1">📌 งานที่มอบหมาย</button>
@@ -3581,6 +3583,7 @@ function mdStPill(st){
 // เข้าแท็บงาน ผจก. → ผจก.เห็นสวิตช์ (ประจำวัน/มอบหมาย) · HR เห็นเฉพาะบอร์ดมอบหมาย
 function enterMtasks(){
   loadMtaskIntask();
+  loadMtaskFixing();          // งานที่สั่งแก้แล้วรอส่งกลับ
   if(MGR_MODE){
     $('mt_switch').style.display='flex';
     if(!$('mt_switch').dataset.wired){ $('mt_switch').dataset.wired='1'; $('mtsw_daily').onclick=()=>showMtView('daily'); $('mtsw_assigned').onclick=()=>showMtView('assigned'); }
@@ -3591,6 +3594,41 @@ function enterMtasks(){
   }
 }
 function intaskReviewer(){ try{ return MGR_MODE ? (typeof mtName==='function'?mtName():'') : ''; }catch(e){ return ''; } }
+// ---------- งานที่ ผจก.สั่งแก้ (รอคนแก้ส่งกลับ) ----------
+async function loadMtaskFixing(boxId){
+  boxId = boxId || 'mt_fixing';
+  const box=$(boxId); if(!box) return;
+  let r; try{ r=await post({ action:'hr_mgr_intask_fixing', password:pwd, branch: MGR_MODE?MGR_BRANCH:null }); }catch(e){ box.innerHTML=''; return; }
+  const rows=(r&&r.rows)||[];
+  if(!rows.length){ box.innerHTML=''; box.style.display='none'; return; }
+  box.style.display='block';
+  let h='<div class="card" style="padding:12px;border-left:4px solid #dc2626"><h3 style="font-size:15px;font-weight:700;margin-bottom:6px">⤴ งานที่สั่งแก้ · รอส่งกลับ ('+rows.length+')</h3>';
+  h+=rows.map(t=>{
+    const imgs=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
+    const mk=(Array.isArray(t.review_markup)&&t.review_markup.length)?t.review_markup:[];
+    const late=t.waiting_days>=1?'<span class="pill bad" style="margin-left:6px">ค้าง '+t.waiting_days+' วัน</span>':'';
+    return '<div style="border-top:1px dashed var(--line);padding:8px 0">'
+      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+late+'</div>'
+      +'<div class="muted" style="font-size:12px;margin-top:2px">🏪 '+esc(t.branch_name)+' · '+esc(beDate(t.work_date))+' · กะ '+esc(t.shift_name||'-')+'</div>'
+      +'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:7px 9px;margin:6px 0;font-size:12.5px;color:#b91c1c">'
+        +'⚠️ ตีกลับ: '+esc(t.review_note||'-')
+        +'<div style="color:#7f1d1d;margin-top:3px">ผู้ส่งงานเดิม: '+esc(t.submitter_name)+' · <b>ผู้ต้องแก้: '+esc(t.fix_name)+'</b>'+(t.fix_shift_name?(' (กะ '+esc(t.fix_shift_name)+')'):'')
+        +(t.fix_to_checker?' <span class="pill" style="background:#ffedd5;color:#9a3412">ผู้ตรวจผ่านเป็นผู้แก้</span>':' <span class="pill muted">ผู้ส่งเป็นผู้แก้</span>')+'</div></div>'
+      +(mk.length?'<div class="muted" style="font-size:12px">📍 จุดที่สั่งแก้</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0">'+mk.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:54px;height:54px;object-fit:cover;border-radius:7px;cursor:zoom-in;border:1px solid #fecaca">').join('')+'</div>':'')
+      +(imgs.length?'<div class="muted" style="font-size:12px">รูปที่ส่งมาก่อนหน้า</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:54px;height:54px;object-fit:cover;border-radius:7px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'')
+      +'<button class="btn btn-sec btn-sm" data-flow="'+t.id+'">🧾 ดูไทม์ไลน์งานนี้</button>'
+      +'<div id="flow_'+t.id+'" style="font-size:12.5px;line-height:1.6;margin-top:6px"></div>'
+      +'</div>';
+  }).join('')+'<div class="hint" style="margin-top:6px">งานเหล่านี้จะกลับเข้าคิว "รอตรวจ" ให้ตรวจซ้ำอัตโนมัติ เมื่อผู้รับผิดชอบส่งงานที่แก้แล้ว</div></div>';
+  box.innerHTML=h;
+  box.querySelectorAll('[data-flow]').forEach(b=>b.onclick=async()=>{
+    const out=$('flow_'+b.dataset.flow); if(!out) return;
+    out.textContent='กำลังโหลด…';
+    const f=await post({ action:'hr_task_flow', password:pwd, id:Number(b.dataset.flow) });
+    if(!f||!f.ok){ out.textContent='โหลดไทม์ไลน์ไม่สำเร็จ'; return; }
+    out.innerHTML=(f.timeline||[]).map(x=>'• '+esc(beDateTime(x.at))+' — <b>'+esc(x.event_th)+'</b> โดย '+esc(x.by||'-')+(x.shift?(' (กะ '+esc(x.shift)+')'):'')+(x.note?('<br><span class="muted" style="margin-left:12px">'+esc(x.note)+'</span>'):'')).join('<br>')||'<span class="muted">ยังไม่มีไทม์ไลน์ (งานเก่าก่อนเปิดระบบบันทึก)</span>';
+  });
+}
 async function loadMtaskIntask(boxId){
   boxId = boxId || 'mt_intask';
   const box=$(boxId); if(!box) return;
@@ -3613,8 +3651,15 @@ async function loadMtaskIntask(boxId){
   h+=rows.map(t=>{
     const imgs=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
     const thumbs=imgs.length?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'<div class="muted" style="font-size:12px;margin:4px 0">— ไม่มีรูปแนบ —</div>';
+    // ร่องรอย: ผลัดถัดไปตรวจผ่านไปแล้ว → ถ้า ผจก.ตีกลับ ผู้ตรวจคนนั้นจะเป็นผู้แก้
+    const trail = t.already_checked
+      ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px;margin:5px 0;font-size:12px;color:#9a3412">'
+        +'🔁 <b>ตรวจซ้ำ</b> · ส่งโดย '+esc(t.emp_name||t.emp_id)+' (กะ '+esc(t.shift_name||'-')+') → ผลัดถัดไปตรวจผ่านแล้วโดย <b>'+esc(t.checked_by_name||'-')+'</b> (กะ '+esc(t.checked_shift_name||'-')+')'
+        +'<br>ถ้าตีกลับ งานแก้จะตกเป็นของ <b>'+esc(t.checked_by_name||'-')+'</b> (ผู้ตรวจ) ไม่ใช่ผู้ส่ง</div>'
+      : '<div class="muted" style="font-size:12px;margin:4px 0">ผลัดถัดไปยังไม่ได้ตรวจ · ถ้าตีกลับ ผู้ส่งเป็นผู้แก้</div>';
     return '<div style="border-top:1px dashed var(--line);padding:8px 0">'
       +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · '+esc(beDate(t.work_date))+'</span></div>'
+      +trail
       +(t.emp_note?'<div class="muted" style="font-size:12.5px;margin-top:2px">📝 '+esc(t.emp_note)+'</div>':'')
       +thumbs
       +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" data-iapprove="'+t.id+'">✓ ผ่าน</button><button class="btn btn-danger btn-sm" data-ireject="'+t.id+'">⤴ ตีกลับ / วาด</button><button class="btn btn-sec btn-sm" data-aihelp="'+t.id+'">🤖 ให้ AI ช่วยดู</button></div>'
@@ -3622,7 +3667,7 @@ async function loadMtaskIntask(boxId){
       +'</div>';
   }).join('')+'</div>';
   box.innerHTML=h;
-  box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(boxId); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
+  box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(boxId); loadMtaskFixing(boxId==='mdr_intask'?'mdr_fixing':'mt_fixing'); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
   box.querySelectorAll('[data-ireject]').forEach(b=>b.onclick=()=>{ const t=rows.find(x=>String(x.id)===b.dataset.ireject); if(t) intaskReject(t, boxId); });
   box.querySelectorAll('[data-aihelp]').forEach(b=>b.onclick=async()=>{
     const t=rows.find(x=>String(x.id)===b.dataset.aihelp); if(!t) return;
@@ -3638,7 +3683,7 @@ async function loadMtaskIntask(boxId){
 }
 async function intaskReject(t, boxId){
   const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-  const doReject=async(note,markup)=>{ const r=await post({ action:'hr_mgr_intask_review', password:pwd, id:t.id, decision:'sent_back', note:note||'', markup:markup||null, reviewer:intaskReviewer() }); if(r&&r.ok){ toast('ok','ตีกลับให้พนักงานแก้แล้ว'); loadMtaskIntask(boxId); } else toast('err',(r&&r.error)||'ไม่สำเร็จ'); };
+  const doReject=async(note,markup)=>{ const r=await post({ action:'hr_mgr_intask_review', password:pwd, id:t.id, decision:'sent_back', note:note||'', markup:markup||null, reviewer:intaskReviewer() }); if(r&&r.ok){ toast('ok', r.fix_to_checker?'ตีกลับแล้ว — มอบให้ผู้ที่ตรวจผ่านเป็นผู้แก้':'ตีกลับให้ผู้ส่งแก้แล้ว'); loadMtaskIntask(boxId); loadMtaskFixing(boxId==='mdr_intask'?'mdr_fixing':'mt_fixing'); } else toast('err',(r&&r.error)||'ไม่สำเร็จ'); };
   if(!photos.length){ const note=prompt('ระบุสิ่งที่ต้องแก้ (ตีกลับ):'); if(note===null) return; await doReject(note); return; }
   await openMarkupEditor(t);
   if(MK) MK.reviewFn=async(note,out)=>{ await doReject(note,out); };
@@ -3719,6 +3764,7 @@ $('mdSubmit') && ($('mdSubmit').onclick=async()=>{
 let MDR_ROWS=[];
 async function loadMdailyBoard(){
   loadMtaskIntask('mdr_intask');   // แสดง "รอตรวจจากงานในกะ" ให้ HR เห็นในหน้านี้ด้วย
+  loadMtaskFixing('mdr_fixing');   // และงานที่ ผจก.สั่งแก้ ค้างรอส่งกลับ
   const box=$('mdr_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   if($('mdr_branch') && !$('mdr_branch').dataset.filled){
     $('mdr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');

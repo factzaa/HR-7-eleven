@@ -189,6 +189,8 @@
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
         case 'hr_mgr_intask_list':   return await hrMgrIntaskList(p.branch);
         case 'hr_mgr_intask_review': return await hrMgrIntaskReview(p.id, p.decision, p.note, p.markup, p.reviewer);
+        case 'hr_task_flow':         return await hrTaskFlow(p.id);
+        case 'hr_mgr_intask_fixing': return await hrMgrIntaskFixing(p.branch);
         case 'hr_chat_branches':     return await hrChatBranches();
         case 'hr_chat_list':         return await hrChatList(p.branch);
         case 'hr_chat_send':         return await hrChatSend(p.data);
@@ -675,13 +677,18 @@
         photo_url: r.photo_url || '', checkout_photo_url: r.checkout_photo_url || '', gps_lat: r.gps_lat, gps_lng: r.gps_lng, status: r.status,
       };
     });
+    const earlyGrace = await getSettingNum('early_out_grace_min', 10);
+    // ติดธง "ออกก่อนเวลา" (เกินเวลาผ่อนผัน) ให้แต่ละแถว — ใช้ทั้งกรองและแสดงผล
+    rows.forEach(r => { r.early_out_flag = (r.early_out_min != null && r.early_out_min > earlyGrace); });
+
     if (f.only_late) rows = rows.filter(r => r.late_min > 0);
     if (f.only_ot) rows = rows.filter(r => r.ot_hours > 0);
     if (f.only_cover) rows = rows.filter(r => r.is_cover);
+    if (f.only_early) rows = rows.filter(r => r.early_out_flag);          // เฉพาะที่ออกก่อนเวลา
+    if (f.only_holiday) rows = rows.filter(r => r.is_holiday);            // เฉพาะที่มาทำงานวันหยุดบริษัท
     // แผนที่ day_value ต่อกะ (ใช้ถ่วงน้ำหนักวันจัดเวร/ขาด)
     const shDVmap = {}; (shR2.data || []).forEach(s => { shDVmap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
     const dvOf = sid => (shDVmap[sid] != null ? shDVmap[sid] : 1);
-    const earlyGrace = await getSettingNum('early_out_grace_min', 10);
     const otWhole = await getSettingBool('ot_whole_day');
 
     const map = {};
@@ -743,7 +750,7 @@
     });
     // ถ้าติ๊กตัวกรอง (เฉพาะที่สาย / มี OT / วันไปแทน) → สรุปต่อคนต้องเหลือเฉพาะคนที่เข้าเงื่อนไขจริง
     // (เดิมลูปตารางเวร/ใบลา ดึงทุกคนกลับเข้ามา ทำให้เหมือนตัวกรองไม่ทำงาน)
-    const onlyMode = !!(f.only_late || f.only_ot || f.only_cover);
+    const onlyMode = !!(f.only_late || f.only_ot || f.only_cover || f.only_early || f.only_holiday);
     const keepSet = new Set(rows.map(r => r.emp_id));
     let summary = Object.values(map).map(m => ({
       ...m, ot: Math.round(m.ot * 100) / 100,
@@ -1781,27 +1788,30 @@
     // ดึงงานที่ "ส่งแล้ว รอตรวจ" ของสาขานั้นทั้งหมด แล้วค่อยคัดว่าเป็นงานที่ ผจก.ต้องตรวจ
     // เกณฑ์: needs_mgr === true  หรือ  (needs_mgr ว่าง/ยังไม่ถูกประทับ  และ  task_def ติ๊ก "ผจก.ตรวจ" และกะนั้นไม่ได้ปิดการตรวจของ ผจก.)
     //  → รองรับงานเก่าที่ส่งก่อนเปิดฟีเจอร์ และเครื่องพนักงานที่ยังแคชสคริปต์เดิม
-    let q = sb().from('task_assignments').select('*').eq('status', 'submitted').order('work_date', { ascending: false }).limit(300);
+    // ผจก.ต้องตรวจซ้ำได้แม้ผลัดถัดไปจะกด "ผ่าน" ไปแล้ว → ดึงทั้ง submitted และ approved ที่ ผจก.ยังไม่ได้ตรวจ
+    let q = sb().from('task_assignments').select('*').in('status', ['submitted', 'approved']).order('work_date', { ascending: false }).limit(400);
     if (branch) q = q.eq('branch_id', branch);
     const [tR, brR, dfR, shR] = await Promise.all([
       q,
       sb().from('branches').select('branch_id,name'),
       sb().from('task_defs').select('id,mgr_review'),
-      sb().from('shifts').select('shift_id,mgr_review'),
+      sb().from('shifts').select('shift_id,mgr_review,name'),
     ]);
     if (tR.error) throw tR.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const defMgr = {}; (dfR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
-    const shOff = {}; (shR.data || []).forEach(s => { shOff[s.shift_id] = (s.mgr_review === false); });   // กะที่ปิดการตรวจของ ผจก. (เช่นกะดึก)
+    const shOff = {}, shName = {};
+    (shR.data || []).forEach(s => { shOff[s.shift_id] = (s.mgr_review === false); shName[s.shift_id] = s.name || s.shift_id; });
 
     const all = tR.data || [];
     // ตัดสินจาก "การตั้งค่าปัจจุบัน" เป็นหลัก (needs_mgr default=false ทำให้แถวที่ไม่ถูกประทับหลุดคิว)
-    //   → เข้าคิว ผจก. เมื่อ: task_def ติ๊ก "ผจก.ตรวจ" และกะนั้นไม่ได้ปิดการตรวจของ ผจก.
-    //   → หรือแถวถูกประทับ needs_mgr = true ไว้แล้ว (เผื่อ HR ปลดติ๊กภายหลัง)
-    const pick = all.filter(t => t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]));
+    const pick = all.filter(t =>
+      (t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]))
+      && !t.mgr_checked_at    // ผจก.ยังไม่ได้ตรวจซ้ำ (ถึงผลัดถัดไปจะกดผ่านไปแล้วก็ยังอยู่ในคิว)
+    );
 
-    // ชื่อพนักงาน (การ์ดจะได้ไม่ขึ้นเป็นรหัสเปล่า)
-    const ids = [...new Set(pick.map(t => t.emp_id).filter(Boolean))];
+    // ชื่อพนักงาน (ผู้ส่ง + ผู้ตรวจของผลัดถัดไป)
+    const ids = [...new Set(pick.flatMap(t => [t.emp_id, t.checked_by_emp]).filter(Boolean))];
     const empName = {};
     if (ids.length) {
       const { data: emps } = await sb().from('employees').select('emp_id,name,nickname').in('emp_id', ids);
@@ -1815,6 +1825,11 @@
       ...t,
       branch_name: brName[t.branch_id] || t.branch_id || '—',
       emp_name: empName[t.emp_id] || t.emp_id,
+      shift_name: shName[t.shift_id] || t.shift_id || '',
+      // ร่องรอย: ผลัดถัดไปตรวจผ่านไปแล้วหรือยัง (ถ้าใช่ = ผจก.กำลัง "ตรวจซ้ำ" และคนแก้จะเป็นผู้ตรวจคนนี้)
+      already_checked: !!t.checked_at,
+      checked_by_name: t.checked_by_name || (t.checked_by_emp ? (empName[t.checked_by_emp] || t.checked_by_emp) : ''),
+      checked_shift_name: t.checked_by_shift ? (shName[t.checked_by_shift] || t.checked_by_shift) : '',
     }));
     // meta ไว้ช่วยวิเคราะห์เวลาไม่มีงานขึ้น
     return {
@@ -1827,16 +1842,46 @@
       },
     };
   }
+  // บันทึกไทม์ไลน์งาน (ใครส่ง / ใครตรวจ / ใครแก้) — ใช้วิเคราะห์กระบวนการภายหลัง
+  async function taskFlowLog(t, event, actor) {
+    try {
+      await sb().from('task_flow_log').insert({
+        task_id: t.id, branch_id: t.branch_id || null, work_date: t.work_date || null,
+        event, actor_emp: actor.emp || null, actor_name: actor.name || null,
+        actor_role: actor.role || null, shift_id: actor.shift || null, note: actor.note || null,
+      });
+    } catch (e) { console.warn('task_flow_log', e); }
+  }
+
   async function hrMgrIntaskReview(id, decision, note, markup, reviewerName) {
-    const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count').eq('id', id).maybeSingle();
+    const { data: t } = await sb().from('task_assignments').select('*').eq('id', id).maybeSingle();
+    if (!t) return { ok: false, error: 'ไม่พบงานนี้' };
     const who = reviewerName ? ('ผจก. · ' + reviewerName) : 'ผจก.';
+    const nowIso = new Date().toISOString();
+
     if (decision === 'approved') {
-      const { error } = await sb().from('task_assignments').update({ status: 'approved', reviewer: who, review_note: note || null, reviewed_at: new Date().toISOString() }).eq('id', id);
+      const { error } = await sb().from('task_assignments').update({
+        status: 'approved', reviewer: who, review_note: note || null, reviewed_at: nowIso,
+        mgr_checked_at: nowIso, mgr_checked_by: who, mgr_result: 'approved',
+      }).eq('id', id);
       if (error) throw error;
-      await logAct('ผจก.อนุมัติงานในกะ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
+      await taskFlowLog(t, 'mgr_approve', { name: who, role: 'mgr', note: note || (t.checked_at ? 'ตรวจซ้ำหลังผลัดถัดไปตรวจผ่าน' : '') });
+      await logAct('ผจก.อนุมัติงานในกะ', t.emp_id, (t.title || '') + (note ? (' · ' + note) : ''));
       return { ok: true };
     }
-    const upd = { status: 'sent_back', reviewer: who, review_note: note || null, reviewed_at: new Date().toISOString(), sent_back_count: ((t && t.sent_back_count) || 0) + 1 };
+
+    // ---- ตีกลับ ----
+    // กติกา: ถ้าผลัดถัดไป "กดตรวจผ่าน" ไปแล้ว = รับรองงานนั้นแล้ว → คนที่ต้องแก้คือ "ผู้ตรวจ" ไม่ใช่ผู้ส่ง
+    const fixToChecker = !!t.checked_by_emp;
+    const upd = {
+      status: 'sent_back', reviewer: who, review_note: note || null, reviewed_at: nowIso,
+      sent_back_count: (t.sent_back_count || 0) + 1,
+      mgr_checked_at: nowIso, mgr_checked_by: who, mgr_result: 'sent_back',
+      fix_emp: fixToChecker ? t.checked_by_emp : t.emp_id,
+      fix_emp_name: fixToChecker ? (t.checked_by_name || '') : null,
+      fix_shift_id: fixToChecker ? (t.checked_by_shift || null) : (t.shift_id || null),
+      fix_assigned_at: nowIso, fix_done_at: null,
+    };
     if (Array.isArray(markup) && markup.length) {
       const urls = [];
       for (const m of markup) {
@@ -1847,8 +1892,87 @@
     }
     const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
     if (error) throw error;
-    await logAct('ผจก.ตีงานในกะกลับ', t ? t.emp_id : null, (t ? t.title : '') + (note ? (' · ' + note) : ''));
-    return { ok: true };
+
+    await taskFlowLog(t, 'mgr_reject', {
+      name: who, role: 'mgr',
+      note: (note || '') + (fixToChecker ? (' · มอบให้ผลัดที่ตรวจผ่านเป็นผู้แก้: ' + (t.checked_by_name || t.checked_by_emp) + ' (กะ ' + (t.checked_by_shift || '-') + ')') : ' · ผลัดถัดไปยังไม่ได้ตรวจ → ผู้ส่งเป็นผู้แก้'),
+    });
+
+    // แจ้งเตือนคนที่ต้องแก้
+    try {
+      await sb().from('emp_notifications').insert({
+        emp_id: upd.fix_emp, kind: 'task_fix',
+        title: fixToChecker ? 'งานที่คุณตรวจผ่านถูกผู้จัดการตีกลับ' : 'งานถูกผู้จัดการตีกลับให้แก้',
+        body: 'งาน: ' + (t.title || '-') + '\nเหตุผล: ' + (note || '-') + (fixToChecker ? '\n(คุณเป็นผู้ตรวจผ่านงานนี้ จึงเป็นผู้รับผิดชอบแก้ไข)' : '') + '\nเปิดหน้า "งานรับส่งผลัด" เพื่อแก้และส่งใหม่',
+        ref: 'task_fix', created_by: 'ผู้จัดการ',
+      });
+    } catch (e) { console.warn('fix notify', e); }
+
+    await logAct('ผจก.ตีงานในกะกลับ', t.emp_id, (t.title || '') + (note ? (' · ' + note) : '') + (fixToChecker ? (' · ให้ ' + (t.checked_by_name || t.checked_by_emp) + ' แก้') : ''));
+    return { ok: true, fix_emp: upd.fix_emp, fix_to_checker: fixToChecker };
+  }
+
+  // งานที่ ผจก. "สั่งแก้" แล้วยังรอคนแก้ส่งกลับ (ค้างอยู่ที่ผลัดที่ตรวจ/ผู้ส่ง)
+  async function hrMgrIntaskFixing(branch) {
+    let q = sb().from('task_assignments').select('*')
+      .eq('status', 'sent_back').eq('mgr_result', 'sent_back').is('fix_done_at', null)
+      .order('reviewed_at', { ascending: false }).limit(200);
+    if (branch) q = q.eq('branch_id', branch);
+    const [tR, brR, shR] = await Promise.all([
+      q,
+      sb().from('branches').select('branch_id,name'),
+      sb().from('shifts').select('shift_id,name'),
+    ]);
+    if (tR.error) throw tR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const shName = {}; (shR.data || []).forEach(s => { shName[s.shift_id] = s.name || s.shift_id; });
+
+    const rows0 = tR.data || [];
+    const ids = [...new Set(rows0.flatMap(t => [t.emp_id, t.fix_emp, t.checked_by_emp]).filter(Boolean))];
+    const empName = {};
+    if (ids.length) {
+      const { data: emps } = await sb().from('employees').select('emp_id,name,nickname').in('emp_id', ids);
+      (emps || []).forEach(e => { empName[e.emp_id] = e.nickname ? (e.name + ' (' + e.nickname + ')') : e.name; });
+    }
+    const today = bkkToday();
+    const rows = rows0.map(t => {
+      const days = t.fix_assigned_at ? Math.max(0, Math.round((new Date(today + 'T00:00:00').getTime() - new Date(String(t.fix_assigned_at).slice(0, 10) + 'T00:00:00').getTime()) / 86400000)) : 0;
+      return {
+        ...t,
+        branch_name: brName[t.branch_id] || t.branch_id || '—',
+        shift_name: shName[t.shift_id] || t.shift_id || '',
+        submitter_name: empName[t.emp_id] || t.emp_id,
+        fix_name: t.fix_emp_name || empName[t.fix_emp] || t.fix_emp || '-',
+        fix_shift_name: shName[t.fix_shift_id] || t.fix_shift_id || '',
+        fix_to_checker: !!(t.checked_by_emp && t.fix_emp === t.checked_by_emp && t.fix_emp !== t.emp_id),
+        waiting_days: days,
+      };
+    });
+    return { ok: true, rows, count: rows.length };
+  }
+
+  // ไทม์ไลน์ของงานหนึ่ง (ใครส่ง → ใครตรวจ → ผจก.ตรวจซ้ำ → ใครแก้)
+  async function hrTaskFlow(taskId) {
+    if (!taskId) return { ok: false, error: 'ไม่ระบุงาน' };
+    const [tR, fR] = await Promise.all([
+      sb().from('task_assignments').select('*').eq('id', taskId).maybeSingle(),
+      sb().from('task_flow_log').select('*').eq('task_id', taskId).order('at', { ascending: true }),
+    ]);
+    if (!tR.data) return { ok: false, error: 'ไม่พบงานนี้' };
+    const t = tR.data;
+    const EV = { submit: 'พนักงานส่งงาน', shift_approve: 'ผลัดถัดไปตรวจผ่าน', shift_reject: 'ผลัดถัดไปตีกลับ', mgr_approve: 'ผจก.ตรวจซ้ำ → ผ่าน', mgr_reject: 'ผจก.ตรวจซ้ำ → ตีกลับ', fix_submit: 'ส่งงานที่แก้แล้ว' };
+    return {
+      ok: true,
+      task: {
+        id: t.id, title: t.title, work_date: t.work_date, branch_id: t.branch_id,
+        submitted_by: t.emp_id, submit_shift: t.shift_id,
+        checked_by: t.checked_by_name || t.checked_by_emp || '', checked_shift: t.checked_by_shift || '', checked_at: t.checked_at,
+        mgr_checked_at: t.mgr_checked_at, mgr_result: t.mgr_result,
+        fix_emp: t.fix_emp, fix_emp_name: t.fix_emp_name, fix_shift: t.fix_shift_id, fix_done_at: t.fix_done_at,
+        status: t.status, sent_back_count: t.sent_back_count || 0,
+      },
+      timeline: (fR.data || []).map(x => ({ at: x.at, event: x.event, event_th: EV[x.event] || x.event, by: x.actor_name || x.actor_emp, role: x.actor_role, shift: x.shift_id, note: x.note })),
+    };
   }
 
   // ---------- แชทสาขา HR ↔ ผจก. ----------
