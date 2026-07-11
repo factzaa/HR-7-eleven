@@ -631,15 +631,17 @@
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงานให้ถูก แม้ไปทำแทนสาขาอื่น
     let wq = sb().from('attendance').select('emp_id,work_date').not('check_in', 'is', null).gte('work_date', f.start).lte('work_date', f.end);
     if (f.emp_id) wq = wq.eq('emp_id', f.emp_id);
-    const [{ data, error }, brR, schR, lvR, empR, wR, shR2] = await Promise.all([
+    const [{ data, error }, brR, schR, lvR, empR, wR, shR2, hdR] = await Promise.all([
       q,
       sb().from('branches').select('branch_id,name'),
       sq, lq,
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id'),
       wq,
       sb().from('shifts').select('shift_id,day_value'),
+      sb().from('holidays').select('date,name').eq('active', true).gte('date', f.start).lte('date', f.end),   // วันหยุดบริษัทในช่วง
     ]);
     if (error) throw error;
+    const holiName = {}; (hdR.data || []).forEach(h => { holiName[h.date] = h.name || 'วันหยุดบริษัท'; });
     const brName = {};
     (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const empById = {};
@@ -661,6 +663,9 @@
         // ค่าวันของแถวนี้: ถ้ามีการปรับรายวัน (เช่น ลาฉุกเฉินครึ่งวัน) ให้ใช้ค่านั้นก่อน · ไม่มี → ใช้ค่าจากกะ
         day_value: (r.day_value != null) ? Number(r.day_value) : ((r.shifts && r.shifts.day_value != null) ? Number(r.shifts.day_value) : 1),
         day_note: r.day_note || '',
+        // ทำงานตรงกับวันหยุดบริษัท (ไว้ไฮไลต์กรอบแดงในรายงาน)
+        is_holiday: !!holiName[r.work_date],
+        holiday_name: holiName[r.work_date] || '',
         early_out_min: r.early_out_min != null ? Number(r.early_out_min) : null,
         check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
         late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,

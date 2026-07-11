@@ -2469,8 +2469,10 @@ function renderReportDetail(){
       <th>เข้า</th><th>ออก</th><th>สาย</th><th>OT</th><th>รูป</th><th>GPS</th><th>สถานะ</th>
     </tr></thead>
     <tbody>${REPORT.rows.map(r=>`
-      <tr${r.is_cover?' style="background:#fff7ed"':''}>
-        <td class="mono">${beDate(r.work_date)}</td>
+      <tr${r.is_holiday
+            ? ' style="background:#fef2f2;outline:2px solid #dc2626;outline-offset:-2px" title="ทำงานในวันหยุดบริษัท: '+esc(r.holiday_name||'')+'"'
+            : (r.is_cover?' style="background:#fff7ed"':'')}>
+        <td class="mono">${beDate(r.work_date)}${r.is_holiday?`<div><span class="pill bad" style="font-size:10.5px;padding:1px 7px">🎌 วันหยุดบริษัท</span></div>`:''}</td>
         <td><div class="ntext"><span class="nm">${esc(r.emp_name)}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
         <td>${esc(r.shift_name)}${Number(r.day_value)!==1?` <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700" title="${esc(r.day_note||'')}">นับ ${r.day_value} วัน</span>`:''}</td>
         <td>${esc(r.branch_name)}${r.is_cover?` <span class="pill" style="background:#ffedd5;color:#c2410c">ไปแทน · ประจำ ${esc(r.home_branch)}</span>`:''}</td>
