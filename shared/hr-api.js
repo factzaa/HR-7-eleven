@@ -1834,6 +1834,20 @@
     const unstamped = pick.filter(t => t.needs_mgr !== true).map(t => t.id);
     if (unstamped.length) { try { await sb().from('task_assignments').update({ needs_mgr: true }).in('id', unstamped); } catch (e) { console.warn('stamp needs_mgr', e); } }
 
+    // ซ่อมข้อมูลย้อนหลัง: งานที่ "ตรวจผ่านแล้ว" แต่ไม่มีร่องรอยผู้ตรวจ → ย้อนหาหัวหน้าผลัดถัดไปมาเติม
+    // (จะได้รู้ตั้งแต่ก่อนกดตีกลับว่าใครจะเป็นผู้แก้)
+    const needBackfill = pick.filter(t => !t.checked_by_emp && t.status === 'approved');
+    for (const t of needBackfill) {
+      const ck = await findNextShiftChecker(t);
+      if (!ck) continue;
+      t.checked_by_emp = ck.emp_id; t.checked_by_name = ck.name; t.checked_by_shift = ck.shift_id; t.checked_at = t.reviewed_at || new Date().toISOString();
+      try {
+        await sb().from('task_assignments').update({
+          checked_by_emp: ck.emp_id, checked_by_name: ck.name, checked_by_shift: ck.shift_id, checked_at: t.checked_at,
+        }).eq('id', t.id);
+      } catch (e) { console.warn('backfill checker(list)', e); }
+    }
+
     const rows = pick.map(t => ({
       ...t,
       branch_name: brName[t.branch_id] || t.branch_id || '—',
@@ -1841,10 +1855,13 @@
       shift_name: shName[t.shift_id] || t.shift_id || '',
       overnight: !!shOvernight[t.shift_id],
       from_prev_day: String(t.work_date) !== day,      // กะดึกของเมื่อวานที่คาบเกี่ยวมาถึงวันนี้
-      // ร่องรอย: ผลัดถัดไปตรวจผ่านไปแล้วหรือยัง (ถ้าใช่ = ผจก.กำลัง "ตรวจซ้ำ" และคนแก้จะเป็นผู้ตรวจคนนี้)
-      already_checked: !!t.checked_at,
-      checked_by_name: t.checked_by_name || (t.checked_by_emp ? (empName[t.checked_by_emp] || t.checked_by_emp) : ''),
+      // ร่องรอย: ผลัดถัดไป/HR ตรวจผ่านไปแล้วหรือยัง
+      //   · งานที่ approved แล้ว = มีคนตรวจผ่านไปแล้วแน่นอน (แม้ยังไม่มีร่องรอย checked_* เพราะตรวจก่อนอัปเดตระบบ)
+      already_checked: !!t.checked_at || t.status === 'approved',
+      has_checker_id: !!t.checked_by_emp,              // รู้ตัวผู้ตรวจ → ตีกลับแล้วมอบให้ผู้ตรวจแก้ได้
+      checked_by_name: t.checked_by_name || (t.checked_by_emp ? (empName[t.checked_by_emp] || t.checked_by_emp) : (t.reviewer || '')),
       checked_shift_name: t.checked_by_shift ? (shName[t.checked_by_shift] || t.checked_by_shift) : '',
+      status_th: t.status === 'approved' ? 'ผลัดถัดไปตรวจผ่านแล้ว' : 'ส่งแล้ว รอตรวจ',
     }));
     // meta ไว้ช่วยวิเคราะห์เวลาไม่มีงานขึ้น
     return {
@@ -1868,9 +1885,40 @@
     } catch (e) { console.warn('task_flow_log', e); }
   }
 
+  // หา "ผลัดถัดไป" ของงานนั้น + หัวหน้าผลัดที่เป็นผู้ตรวจ (ใช้ย้อนหาเมื่อแถวเก่าไม่มีร่องรอย checked_by_*)
+  async function findNextShiftChecker(t) {
+    try {
+      const { data: shifts } = await sb().from('shifts').select('shift_id,main_shift,start_time').order('start_time');
+      const chain = (shifts || []).filter(s => s.main_shift && s.main_shift === s.shift_id).map(s => s.shift_id);
+      const idx = chain.indexOf(t.shift_id);
+      if (idx < 0) return null;                                   // กะพิเศษ ไม่อยู่ในวงจรตรวจผลัด
+      const isLast = idx === chain.length - 1;
+      const nextShift = isLast ? chain[0] : chain[idx + 1];       // ดึก → เช้าของวันถัดไป
+      const nextDate = isLast ? addDays(t.work_date, 1) : t.work_date;
+      const { data: lead } = await sb().from('shift_leads').select('emp_id,emp_name')
+        .eq('work_date', nextDate).eq('branch_id', t.branch_id || '').eq('shift_id', nextShift).maybeSingle();
+      if (!lead || !lead.emp_id) return null;
+      return { emp_id: lead.emp_id, name: lead.emp_name || lead.emp_id, shift_id: nextShift, work_date: nextDate };
+    } catch (e) { console.warn('findNextShiftChecker', e); return null; }
+  }
+
   async function hrMgrIntaskReview(id, decision, note, markup, reviewerName) {
     const { data: t } = await sb().from('task_assignments').select('*').eq('id', id).maybeSingle();
     if (!t) return { ok: false, error: 'ไม่พบงานนี้' };
+
+    // งานที่ "ตรวจผ่านแล้ว" แต่ยังไม่มีร่องรอยผู้ตรวจ (ตรวจก่อนอัปเดตระบบ) → ย้อนหาหัวหน้าผลัดถัดไปมาเติมให้
+    if (!t.checked_by_emp && t.status === 'approved') {
+      const ck = await findNextShiftChecker(t);
+      if (ck) {
+        t.checked_by_emp = ck.emp_id; t.checked_by_name = ck.name; t.checked_by_shift = ck.shift_id;
+        try {
+          await sb().from('task_assignments').update({
+            checked_by_emp: ck.emp_id, checked_by_name: ck.name, checked_by_shift: ck.shift_id,
+            checked_at: t.reviewed_at || new Date().toISOString(),
+          }).eq('id', id);
+        } catch (e) { console.warn('backfill checker', e); }
+      }
+    }
     const who = reviewerName ? ('ผจก. · ' + reviewerName) : 'ผจก.';
     const nowIso = new Date().toISOString();
 

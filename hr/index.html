@@ -3656,9 +3656,12 @@ async function loadMtaskIntask(boxId){
   }
   box.style.display='block';
   const isToday = (day === bkkTodayStr());
+  const nWait = rows.filter(x=>x.status!=='approved').length;
+  const nRe   = rows.length - nWait;
   let h='<div class="card" style="padding:12px;border-left:4px solid #f59e0b">'
     +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
-    +'<h3 style="font-size:15px;font-weight:700;flex:1">🧾 รอตรวจจากงานในกะ ('+rows.length+')</h3>'
+    +'<h3 style="font-size:15px;font-weight:700;flex:1">🧾 รอตรวจจากงานในกะ ('+rows.length+')'
+      +'<span class="muted" style="font-weight:500;font-size:12.5px"> · ยังไม่ถูกตรวจ '+nWait+' · ตรวจผ่านแล้วรอ ผจก.ตรวจซ้ำ '+nRe+'</span></h3>'
     +'<input type="date" id="itk_date_'+boxId+'" value="'+esc(day)+'" style="padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px">'
     +(isToday?'<span class="pill ok" style="font-size:11.5px">วันนี้</span>':'<button class="btn btn-sec btn-sm" id="itk_today_'+boxId+'">กลับมาวันนี้</button>')
     +'</div>';
@@ -3666,14 +3669,25 @@ async function loadMtaskIntask(boxId){
     const imgs=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
     const thumbs=imgs.length?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'<div class="muted" style="font-size:12px;margin:4px 0">— ไม่มีรูปแนบ —</div>';
     // ร่องรอย: ผลัดถัดไปตรวจผ่านไปแล้ว → ถ้า ผจก.ตีกลับ ผู้ตรวจคนนั้นจะเป็นผู้แก้
-    const trail = t.already_checked
-      ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px;margin:5px 0;font-size:12px;color:#9a3412">'
-        +'🔁 <b>ตรวจซ้ำ</b> · ส่งโดย '+esc(t.emp_name||t.emp_id)+' (กะ '+esc(t.shift_name||'-')+') → ผลัดถัดไปตรวจผ่านแล้วโดย <b>'+esc(t.checked_by_name||'-')+'</b> (กะ '+esc(t.checked_shift_name||'-')+')'
-        +'<br>ถ้าตีกลับ งานแก้จะตกเป็นของ <b>'+esc(t.checked_by_name||'-')+'</b> (ผู้ตรวจ) ไม่ใช่ผู้ส่ง</div>'
-      : '<div class="muted" style="font-size:12px;margin:4px 0">ผลัดถัดไปยังไม่ได้ตรวจ · ถ้าตีกลับ ผู้ส่งเป็นผู้แก้</div>';
+    let trail;
+    if(t.already_checked && t.has_checker_id){
+      trail='<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px;margin:5px 0;font-size:12px;color:#9a3412">'
+        +'🔁 <b>ตรวจซ้ำ</b> · ส่งโดย '+esc(t.emp_name||t.emp_id)+' (กะ '+esc(t.shift_name||'-')+') → ตรวจผ่านแล้วโดย <b>'+esc(t.checked_by_name||'-')+'</b>'+(t.checked_shift_name?(' (กะ '+esc(t.checked_shift_name)+')'):'')
+        +'<br>ถ้าตีกลับ งานแก้จะตกเป็นของ <b>'+esc(t.checked_by_name||'-')+'</b> (ผู้ตรวจ) ไม่ใช่ผู้ส่ง</div>';
+    } else if(t.already_checked){
+      // ตรวจผ่านไปแล้วแต่ไม่มีร่องรอยว่าใครตรวจ (ตรวจก่อนอัปเดตระบบ หรือ HR เป็นผู้ตรวจ)
+      trail='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 9px;margin:5px 0;font-size:12px;color:#1e40af">'
+        +'✅ <b>ตรวจผ่านไปแล้ว</b>'+(t.checked_by_name?(' โดย '+esc(t.checked_by_name)):' (ไม่มีบันทึกผู้ตรวจ — ตรวจก่อนเปิดระบบบันทึก)')+' · ผจก.ตรวจซ้ำได้'
+        +'<br>ถ้าตีกลับ งานแก้จะตกเป็นของ <b>ผู้ส่ง</b> ('+esc(t.emp_name||t.emp_id)+') เพราะระบบไม่รู้ตัวผู้ตรวจ</div>';
+    } else {
+      trail='<div class="muted" style="font-size:12px;margin:4px 0">ผลัดถัดไปยังไม่ได้ตรวจ · ถ้าตีกลับ ผู้ส่งเป็นผู้แก้</div>';
+    }
     const nightTag = t.from_prev_day ? ' <span class="pill" style="background:#e0e7ff;color:#3730a3;font-size:11px">🌙 กะข้ามคืน · ของ '+esc(beDate(t.work_date))+'</span>' : '';
+    const stTag = t.status==='approved'
+      ? ' <span class="pill ok" style="font-size:11px">ตรวจผ่านแล้ว · รอ ผจก.ตรวจซ้ำ</span>'
+      : ' <span class="pill warn" style="font-size:11px">รอตรวจ</span>';
     return '<div style="border-top:1px dashed var(--line);padding:8px 0">'
-      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+nightTag+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_name||'-')+' · '+esc(beDate(t.work_date))+'</span></div>'
+      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+stTag+nightTag+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_name||'-')+' · '+esc(beDate(t.work_date))+'</span></div>'
       +trail
       +(t.emp_note?'<div class="muted" style="font-size:12.5px;margin-top:2px">📝 '+esc(t.emp_note)+'</div>':'')
       +thumbs
