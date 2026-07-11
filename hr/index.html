@@ -2100,6 +2100,14 @@ function fillEmpBranchFilter(){
   sel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
   if(cur) sel.value=cur;
 }
+// ยังทำงานอยู่จริง = active + ยังไม่ถึงวันสิ้นสุดการทำงาน
+function empEnded(r){ return !!(r && r.end_date && String(r.end_date) < bkkTodayStr()); }
+function empOnDuty(r){ return isActive(r.active) && !empEnded(r); }
+function empStatusPill(r){
+  if(empOnDuty(r)) return '<span class="pill ok">ทำงานอยู่</span>';
+  if(empEnded(r))  return '<span class="pill bad">สิ้นสุดงาน '+esc(beDate(r.end_date))+'</span>';
+  return '<span class="pill bad">ปิดใช้งาน</span>';
+}
 function renderEmployees(){
   fillEmpBranchFilter();
   const q = $('q').value.trim().toLowerCase();
@@ -2109,10 +2117,17 @@ function renderEmployees(){
     if(!q) return true;
     return ['emp_id','name','nickname','phone'].some(k => String(r[k]||'').toLowerCase().includes(q));
   });
-  $('count').textContent = filtered.length + ' / ' + DATA.rows.length + ' คน';
+  // เรียงลำดับ: คนที่ยังทำงานอยู่ขึ้นก่อนเสมอ · คนที่ปิดใช้งาน/สิ้นสุดงานแล้วไปไว้ล่างสุด (ไม่แทรกปนกัน)
+  filtered.sort((a,b)=>{
+    const oa = empOnDuty(a)?0:1, ob = empOnDuty(b)?0:1;
+    if(oa!==ob) return oa-ob;
+    return String(a.emp_id).localeCompare(String(b.emp_id), undefined, {numeric:true});
+  });
+  const offCount = filtered.filter(r=>!empOnDuty(r)).length;
+  $('count').textContent = filtered.length + ' / ' + DATA.rows.length + ' คน' + (offCount?(' · ปิดใช้งาน '+offCount):'');
   $('empEmpty').style.display = filtered.length===0 ? 'block' : 'none';
   $('empRows').innerHTML = filtered.map(r=>{
-    const act = isActive(r.active);
+    const act = empOnDuty(r);
     const face = r.face_descriptor==='registered'
       ? '<span class="pill ok" style="font-size:11.5px; padding:3px 9px;">ใบหน้า ✓</span>'
       : '<span class="pill muted" style="font-size:11.5px; padding:3px 9px;">ยังไม่มี</span>';
@@ -2124,18 +2139,18 @@ function renderEmployees(){
       <td>${esc(branchName(r.branch_id))}</td>
       <td class="mono">${esc(r.phone||'—')}</td>
       <td>${face}</td>
-      <td>${act?'<span class="pill ok">ทำงานอยู่</span>':'<span class="pill bad">ปิดใช้งาน</span>'}</td>
+      <td>${empStatusPill(r)}</td>
       <td class="rowact" style="white-space:nowrap"><button class="icobtn" data-del="${esc(r.emp_id)}" style="color:#dc2626">ลบ</button> <span class="icobtn">ดู ›</span></td>
     </tr>`;
   }).join('');
   $('empCards').innerHTML = filtered.map(r=>{
-    const act = isActive(r.active);
+    const act = empOnDuty(r);
     const thumb = r.photo_url ? `<div class="thumb"><img src="${esc(r.photo_url)}"></div>` : `<div class="thumb">${esc(pickInitial(r.nickname || r.name))}</div>`;
     const face = r.face_descriptor==='registered' ? '<span class="pill ok" style="font-size:11px;padding:2px 8px">ใบหน้า ✓</span>' : '<span class="pill muted" style="font-size:11px;padding:2px 8px">ยังไม่มีใบหน้า</span>';
     return `<div class="rcard clickable${act?'':' inactive'}" data-view="${esc(r.emp_id)}">
       <div class="rcard-top">
         <div class="name-cell">${thumb}<div class="ntext"><span class="nm">${esc(r.name||'')}</span><span class="nick">${esc(r.emp_id)}${r.nickname?' · '+esc(r.nickname):''}</span></div></div>
-        ${act?'<span class="pill ok">ทำงานอยู่</span>':'<span class="pill bad">ปิดใช้งาน</span>'}
+        ${empStatusPill(r)}
       </div>
       <div class="rcard-info">🕘 กะ ${esc(shiftName(r.default_shift))} · 🏪 ${esc(branchName(r.branch_id))} · ☎ ${esc(r.phone||'—')}</div>
       <div class="rcard-act">${face}<span style="flex:1"></span><button class="icobtn" data-del="${esc(r.emp_id)}" style="color:#dc2626">ลบ</button><span class="icobtn">ดู ›</span></div>
