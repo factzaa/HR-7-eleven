@@ -2553,7 +2553,10 @@ function renderCoverage(){
 }
 $('r_apply').onclick = loadReport;
 $('r_mode').addEventListener('change', loadReport);
+// ติ๊กตัวกรอง = ค้นหาใหม่ทันที (เดิม 2 ตัวนี้ไม่ผูกอีเวนต์ ต้องกด "ค้นหา" เอง จึงดูเหมือนกรองไม่ได้)
 $('r_cover').addEventListener('change', loadReport);
+$('r_late') && $('r_late').addEventListener('change', loadReport);
+$('r_ot') && $('r_ot').addEventListener('change', loadReport);
 $('r_hidezero') && $('r_hidezero').addEventListener('change', renderReport);   // สลับซ่อน/แสดง = เรนเดอร์ใหม่ ไม่ต้องดึงข้อมูลซ้ำ
 $('r_export').onclick = ()=>{
   const mode = $('r_mode').value;
@@ -3390,7 +3393,9 @@ function renderMtDetail(){
   };
   let f='';
   if(MGR_MODE) f+='<div style="display:flex;gap:6px;flex-wrap:wrap">'+MT_STAGES.filter(s=>s.key!==t.status).map(s=>'<button class="btn btn-sec btn-sm" data-mtstage="'+s.key+'">'+s.label+'</button>').join('')+'</div>';
-  else f+='<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sec btn-sm" id="mt_edit">✏️ แก้ไขงาน</button><button class="btn btn-danger btn-sm" id="mt_del">🗑 ลบงานนี้</button></div>';
+  else f+='<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +(t.status==='done'||t.status==='review'?'<button class="btn btn-danger btn-sm" id="mt_reject">⤴ ตีกลับให้แก้ไข</button>':'')
+    +'<button class="btn btn-sec btn-sm" id="mt_edit">✏️ แก้ไขงาน</button><button class="btn btn-danger btn-sm" id="mt_del">🗑 ลบงานนี้</button></div>';
   f+='<div id="mt_photobar" style="display:flex;gap:6px;flex-wrap:wrap"></div>'
     +'<div style="display:flex;gap:6px;align-items:center">'
     +'<label class="btn btn-sec btn-sm" style="cursor:pointer">📷<input type="file" accept="image/*" capture="environment" id="mt_cam" style="display:none"></label>'
@@ -3405,6 +3410,7 @@ function renderMtDetail(){
   $('mt_draw').onclick=mtDrawNew;
   $('mt_send').onclick=mtSend;
   if($('mt_edit')) $('mt_edit').onclick=()=>openMtAssign(MT_CUR);
+  if($('mt_reject')) $('mt_reject').onclick=()=>mtReject();
   if($('mt_del')) $('mt_del').onclick=async()=>{
     if(!confirm('ลบงาน "'+(MT_CUR.title||'')+'" ? (ไทม์ไลน์และรูปทั้งหมดจะถูกลบด้วย)')) return;
     const r=await post({ action:'hr_mtask_delete', password:pwd, id:MT_CUR.id });
@@ -3480,6 +3486,20 @@ async function mtStage(status){
   if(r.ok){ MT_CUR.status=status; renderMtDetail(); refreshMtFeed(); loadMtasks(); toast('ok','อัปเดตสถานะแล้ว'); }
   else toast('err', r.error||'ไม่สำเร็จ');
 }
+// HR ตีกลับงานที่ ผจก.ปิดว่าเสร็จ → ย้ายการ์ดกลับไป "กำลังทำ" พร้อมเหตุผล (+ แนบรูป/วาดชี้จุดได้)
+async function mtReject(){
+  if(!MT_CUR) return;
+  const note=prompt('เหตุผลที่ตีกลับ (พนักงาน/ผจก. จะเห็นข้อความนี้):','');
+  if(note===null) return;
+  if(!note.trim()){ toast('err','ต้องระบุเหตุผล'); return; }
+  const photos=MT_PHOTOS.slice();   // ถ้าแนบรูป/วาดไว้ในช่องล่างก่อนกด จะแนบไปกับการตีกลับด้วย
+  const r=await post({ action:'hr_mtask_reject', password:pwd, data:{ id:MT_CUR.id, note:note.trim(), photos, back_to:'doing' } });
+  if(r.ok){
+    MT_CUR.status='doing'; MT_PHOTOS=[]; renderMtPhotoBar();
+    renderMtDetail(); refreshMtFeed(); loadMtasks();
+    toast('ok','ตีกลับให้แก้ไขแล้ว — การ์ดย้ายไป "กำลังทำ"');
+  } else toast('err', r.error||'ไม่สำเร็จ');
+}
 function closeMtask(){ $('mtOverlay').classList.remove('show'); if(MT_POLL){ clearInterval(MT_POLL); MT_POLL=null; } mtUnsub(); MT_CUR=null; }
 $('mtClose') && ($('mtClose').onclick=closeMtask);
 $('mtOverlay') && $('mtOverlay').addEventListener('click', e=>{ if(e.target===$('mtOverlay')) closeMtask(); });
@@ -3488,7 +3508,14 @@ let MT_EDIT=null;
 function openMtAssign(editTask){
   MT_EDIT = (editTask && editTask.id) ? editTask : null;
   MTA_PHOTOS=[];
-  if(!$('mta_branch').dataset.filled){ $('mta_branch').innerHTML='<option value="">— เลือกสาขา —</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); $('mta_branch').dataset.filled='1'; }
+  if(!$('mta_branch').dataset.filled){
+    $('mta_branch').innerHTML='<option value="">— เลือกสาขา —</option>'
+      +'<option value="*">🏬 ทุกสาขา (สร้างงานให้ครบทุกสาขาในครั้งเดียว)</option>'
+      +(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+    $('mta_branch').dataset.filled='1';
+  }
+  // แก้ไขงานเดิม = เลือกได้เฉพาะสาขาเดียว (ซ่อนตัวเลือกทุกสาขา)
+  const optAll=[...$('mta_branch').options].find(o=>o.value==='*'); if(optAll) optAll.style.display = MT_EDIT?'none':'';
   const e=MT_EDIT||{};
   $('mta_title').value=e.title||''; $('mta_detail').value=e.detail||''; $('mta_due').value=e.due_date||''; $('mta_urgent').checked=e.priority==='urgent'; $('mta_prev').innerHTML='';
   $('mta_branch').value=e.branch_id||'';
@@ -3506,6 +3533,8 @@ $('mtaSave') && ($('mtaSave').onclick=async()=>{
   const branch=$('mta_branch').value, title=$('mta_title').value.trim();
   if(!branch){ toast('err','เลือกสาขา'); return; }
   if(!title){ toast('err','กรอกหัวข้องาน'); return; }
+  const nBr=(DATA.branches||[]).length;
+  if(branch==='*' && !MT_EDIT && !confirm('สร้างงาน "'+title+'" ให้ทุกสาขา ('+nBr+' สาขา) ใช่ไหม?\nแต่ละสาขาจะได้การ์ดงานของตัวเอง แยกไทม์ไลน์กัน')) return;
   const data={ branch_id:branch, title, detail:$('mta_detail').value, due_date:$('mta_due').value||null, priority:$('mta_urgent').checked?'urgent':'normal' };
   const btn=$('mtaSave'); const old=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
   let r;
@@ -3514,7 +3543,7 @@ $('mtaSave') && ($('mtaSave').onclick=async()=>{
   btn.disabled=false; btn.textContent=old;
   if(r.ok){
     if(!MT_EDIT){ try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} }
-    toast('ok', MT_EDIT?'แก้ไขแล้ว':'มอบหมายแล้ว');
+    toast('ok', MT_EDIT?'แก้ไขแล้ว':(r.count>1?('มอบหมายแล้ว '+r.count+' สาขา'):'มอบหมายแล้ว'));
     const wasEdit=!!MT_EDIT; MT_EDIT=null; closeMtAssign();
     if(wasEdit && MT_CUR){ openMtask(MT_CUR.id); }   // รีเฟรชรายละเอียดที่เปิดอยู่
     loadMtasks();

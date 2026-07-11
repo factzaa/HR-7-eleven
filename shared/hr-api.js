@@ -227,6 +227,7 @@
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
         case 'hr_mtask_stage':       return await hrMtaskStage(p.id, p.status, p.role, p.sender_name);
+        case 'hr_mtask_reject':      return await hrMtaskReject(p.data);
         case 'hr_mtask_feed_add':    return await hrMtaskFeedAdd(p.data);
         case 'hr_mtask_feed_list':   return await hrMtaskFeedList(p.task_id);
         case 'hr_mtask_assign':      return await hrMtaskAssign(p.id, p.emp_id, p.emp_name);
@@ -735,12 +736,17 @@
       });
       m.leave_days = ld;
     });
-    const summary = Object.values(map).map(m => ({
+    // ถ้าติ๊กตัวกรอง (เฉพาะที่สาย / มี OT / วันไปแทน) → สรุปต่อคนต้องเหลือเฉพาะคนที่เข้าเงื่อนไขจริง
+    // (เดิมลูปตารางเวร/ใบลา ดึงทุกคนกลับเข้ามา ทำให้เหมือนตัวกรองไม่ทำงาน)
+    const onlyMode = !!(f.only_late || f.only_ot || f.only_cover);
+    const keepSet = new Set(rows.map(r => r.emp_id));
+    let summary = Object.values(map).map(m => ({
       ...m, ot: Math.round(m.ot * 100) / 100,
       days: Math.round(m.days * 10) / 10, days_home: Math.round(m.days_home * 10) / 10, days_cover: Math.round(m.days_cover * 10) / 10,
       early_out_hours: Math.round((m.early_out_min / 60) * 10) / 10,
       cover_detail: Object.keys(m.cover_by).map(k => k + ' ' + m.cover_by[k] + ' วัน').join(' · '),
     }));
+    if (onlyMode) summary = summary.filter(m => keepSet.has(m.emp_id));
     return { ok: true, rows, summary };
   }
 
@@ -2537,18 +2543,35 @@
   }
   async function hrMtaskCreate(d) {
     d = d || {};
-    if (!d.title || !String(d.title).trim()) return { ok: false, error: 'กรอกหัวข้องาน' };
-    if (!d.branch_id) return { ok: false, error: 'เลือกสาขา' };
-    const photos = await _uploadMany('mtask/hr', d.hr_photos);
-    const { data, error } = await sb().from('mgr_tasks').insert({
-      title: String(d.title).trim(), detail: (d.detail || '').trim() || null, branch_id: d.branch_id,
-      priority: d.priority === 'urgent' ? 'urgent' : 'normal', source: d.source || 'HR',
-      due_date: d.due_date || null, hr_photos: photos.length ? photos : null, created_by: 'HR', status: 'todo',
-    }).select('id').single();
-    if (error) throw error;
-    await sb().from('mgr_task_feed').insert({ task_id: data.id, role: 'hr', sender_name: 'HR', kind: 'assign', message: 'มอบหมายงาน: ' + String(d.title).trim(), photos: photos.length ? photos : null });
-    await logAct('มอบหมายงาน ผจก.', null, String(d.title).trim() + ' · สาขา ' + d.branch_id);
-    return { ok: true, id: data.id };
+    const title = String(d.title || '').trim();
+    if (!title) return { ok: false, error: 'กรอกหัวข้องาน' };
+
+    // branch_id = '*' หรือ all:true → สร้างงานเดียวกันให้ทุกสาขา (คนละใบ แยกไทม์ไลน์)
+    const allBranches = d.all === true || String(d.branch_id) === '*';
+    let branches = [];
+    if (allBranches) {
+      const { data: brs } = await sb().from('branches').select('branch_id').order('branch_id');
+      branches = (brs || []).map(b => b.branch_id);
+      if (!branches.length) return { ok: false, error: 'ไม่พบสาขาในระบบ' };
+    } else {
+      if (!d.branch_id) return { ok: false, error: 'เลือกสาขา' };
+      branches = [d.branch_id];
+    }
+
+    const photos = await _uploadMany('mtask/hr', d.hr_photos);   // อัปโหลดครั้งเดียว ใช้ร่วมทุกสาขา
+    const ids = [];
+    for (const br of branches) {
+      const { data, error } = await sb().from('mgr_tasks').insert({
+        title, detail: (d.detail || '').trim() || null, branch_id: br,
+        priority: d.priority === 'urgent' ? 'urgent' : 'normal', source: d.source || 'HR',
+        due_date: d.due_date || null, hr_photos: photos.length ? photos : null, created_by: 'HR', status: 'todo',
+      }).select('id').single();
+      if (error) throw error;
+      ids.push(data.id);
+      await sb().from('mgr_task_feed').insert({ task_id: data.id, role: 'hr', sender_name: 'HR', kind: 'assign', message: 'มอบหมายงาน: ' + title, photos: photos.length ? photos : null });
+    }
+    await logAct('มอบหมายงาน ผจก.', null, title + ' · ' + (allBranches ? ('ทุกสาขา (' + branches.length + ')') : ('สาขา ' + branches[0])));
+    return { ok: true, id: ids[0], ids, count: ids.length, all: allBranches };
   }
   async function hrMtaskList(branch) {
     let q = sb().from('mgr_tasks').select('*').order('updated_at', { ascending: false }).limit(300);
@@ -2576,6 +2599,36 @@
     if (error) throw error;
     const lbl = ({ todo: 'งานใหม่', doing: 'กำลังทำ', review: 'ใกล้เสร็จ', done: 'สำเร็จ' })[status];
     await sb().from('mgr_task_feed').insert({ task_id: id, role: actorRole || 'mgr', sender_name: actorName || 'ผจก.', kind: 'status', message: 'เปลี่ยนสถานะ → ' + lbl });
+    return { ok: true };
+  }
+  // HR ตีกลับงานที่ ผจก.ปิดว่าเสร็จแล้ว → ย้ายการ์ดกลับไป "กำลังทำ" พร้อมเหตุผล (+ รูปวาดชี้จุด)
+  async function hrMtaskReject(d) {
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const note = String(d.note || '').trim();
+    if (!note) return { ok: false, error: 'ระบุเหตุผลที่ตีกลับ' };
+    const back = ['todo', 'doing', 'review'].includes(d.back_to) ? d.back_to : 'doing';
+    const { data: t } = await sb().from('mgr_tasks').select('title,branch_id,assignee_emp,assignee_name').eq('id', d.id).maybeSingle();
+    if (!t) return { ok: false, error: 'ไม่พบงานนี้' };
+
+    const photos = await _uploadMany('mtask/reject', d.photos);
+    const { error } = await sb().from('mgr_tasks').update({ status: back, done_at: null, updated_at: new Date().toISOString() }).eq('id', d.id);
+    if (error) throw error;
+    await sb().from('mgr_task_feed').insert({
+      task_id: d.id, role: 'hr', sender_name: 'HR', kind: 'status',
+      message: '⤴ ตีกลับให้แก้ไข: ' + note, photos: photos.length ? photos : null,
+    });
+    // แจ้งพนักงานที่รับผิดชอบ (ถ้ามอบต่อไว้)
+    if (t.assignee_emp) {
+      try {
+        await sb().from('emp_notifications').insert({
+          emp_id: t.assignee_emp, kind: 'mgr_task',
+          title: 'งานถูกตีกลับให้แก้ไข', body: 'งาน: ' + (t.title || '-') + '\nเหตุผล: ' + note,
+          ref: 'mgr_task', created_by: 'ผู้จัดการ',
+        });
+      } catch (e) { console.warn('mtask reject notify', e); }
+    }
+    await logAct('ตีกลับงาน ผจก.', null, (t.title || '') + ' · สาขา ' + (t.branch_id || '') + ' · ' + note);
     return { ok: true };
   }
   async function hrMtaskFeedAdd(d) {
