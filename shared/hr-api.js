@@ -1764,9 +1764,17 @@
     return { ok: true, date: d, rows, counts };
   }
   async function hrTaskReview(id, status, note, markup) {
-    const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count').eq('id', id).maybeSingle();
-    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString() };
+    const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count,needs_mgr').eq('id', id).maybeSingle();
+    const nowIso = new Date().toISOString();
+    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: nowIso };
     if (status !== 'approved') upd.sent_back_count = ((t && t.sent_back_count) || 0) + 1;
+    // HR/สำนักงานตรวจงานที่ติ๊ก "ผจก.ตรวจ" → ถือว่าปิดการตรวจแล้ว ไม่ให้ค้างในคิว ผจก. ตลอดไป
+    if (t && t.needs_mgr === true) {
+      upd.mgr_checked_at = nowIso;
+      upd.mgr_checked_by = 'สำนักงาน (HR)';
+      upd.mgr_result = (status === 'approved') ? 'approved' : 'sent_back';
+      if (status !== 'approved') { upd.fix_emp = t.emp_id; upd.fix_assigned_at = nowIso; upd.fix_done_at = null; }
+    }
     // รูปที่ผู้ตรวจวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
     if (status !== 'approved' && Array.isArray(markup) && markup.length) {
       const urls = [];
@@ -1797,8 +1805,16 @@
     let q = sb().from('task_assignments').select('*').in('work_date', [day, prevDay])
       .in('status', ['submitted', 'approved']).order('work_date', { ascending: false }).order('shift_id').limit(500);
     if (branch) q = q.eq('branch_id', branch);
-    const [tR, brR, dfR, shR] = await Promise.all([
-      q,
+
+    // งานที่ ผจก.ตีกลับ แล้วพนักงานเพิ่งส่งกลับมา "ข้ามวัน" (work_date เป็นของวันเก่า)
+    // ต้องกลับเข้าคิวตรวจซ้ำด้วย ไม่งั้นจะหายไปเลย
+    let q2 = sb().from('task_assignments').select('*')
+      .eq('status', 'submitted').not('fix_done_at', 'is', null).is('mgr_checked_at', null)
+      .order('fix_done_at', { ascending: false }).limit(100);
+    if (branch) q2 = q2.eq('branch_id', branch);
+
+    const [tR, t2R, brR, dfR, shR] = await Promise.all([
+      q, q2,
       sb().from('branches').select('branch_id,name'),
       sb().from('task_defs').select('id,mgr_review'),
       sb().from('shifts').select('shift_id,mgr_review,name,start_time,end_time'),
@@ -1814,12 +1830,20 @@
       shOvernight[s.shift_id] = !!(s.start_time && s.end_time && String(s.end_time) <= String(s.start_time));
     });
 
-    const all = tR.data || [];
+    // รวมงาน "แก้แล้วส่งกลับ" (ข้ามวันได้) เข้ากับงานของวันที่ดูอยู่ · ตัดตัวซ้ำด้วย id
+    const byId = {};
+    (tR.data || []).forEach(t => { byId[t.id] = t; });
+    (t2R.data || []).forEach(t => { byId[t.id] = Object.assign({}, byId[t.id] || {}, t, { resubmitted: true }); });
+    const all = Object.values(byId);
+
     // ตัดสินจาก "การตั้งค่าปัจจุบัน" เป็นหลัก (needs_mgr default=false ทำให้แถวที่ไม่ถูกประทับหลุดคิว)
     const pick = all.filter(t => {
-      // ของเมื่อวาน: เก็บไว้เฉพาะกะข้ามคืน (กะดึกที่คาบเกี่ยวมาถึงวันที่ดูอยู่)
-      if (String(t.work_date) !== day && !shOvernight[t.shift_id]) return false;
       if (t.mgr_checked_at) return false;      // ผจก.ตรวจซ้ำไปแล้ว
+      const isResubmit = !!t.fix_done_at && t.status === 'submitted';   // แก้แล้วส่งกลับ → เข้าคิวเสมอ ไม่ผูกกับวันที่
+      if (!isResubmit) {
+        // ของเมื่อวาน: เก็บไว้เฉพาะกะข้ามคืน (กะดึกที่คาบเกี่ยวมาถึงวันที่ดูอยู่)
+        if (String(t.work_date) !== day && !shOvernight[t.shift_id]) return false;
+      }
       return t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]);
     });
 
@@ -1861,7 +1885,9 @@
       has_checker_id: !!t.checked_by_emp,              // รู้ตัวผู้ตรวจ → ตีกลับแล้วมอบให้ผู้ตรวจแก้ได้
       checked_by_name: t.checked_by_name || (t.checked_by_emp ? (empName[t.checked_by_emp] || t.checked_by_emp) : (t.reviewer || '')),
       checked_shift_name: t.checked_by_shift ? (shName[t.checked_by_shift] || t.checked_by_shift) : '',
-      status_th: t.status === 'approved' ? 'ผลัดถัดไปตรวจผ่านแล้ว' : 'ส่งแล้ว รอตรวจ',
+      status_th: t.status === 'approved' ? 'ผลัดถัดไปตรวจผ่านแล้ว' : (t.fix_done_at ? 'แก้แล้ว ส่งกลับมาให้ตรวจซ้ำ' : 'ส่งแล้ว รอตรวจ'),
+      resubmitted: !!t.fix_done_at && t.status === 'submitted',
+      fixed_by_name: t.fix_emp_name || (t.fix_emp ? (empName[t.fix_emp] || t.fix_emp) : ''),
     }));
     // meta ไว้ช่วยวิเคราะห์เวลาไม่มีงานขึ้น
     return {
