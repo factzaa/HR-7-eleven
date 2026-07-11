@@ -1604,6 +1604,8 @@ function chatRenderThumbs(){
 }
 function chatRmPhoto(i){ CHAT_PHOTOS.splice(i,1); chatRenderThumbs(); }
 function chatFirePush(){ try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(base) fetch(base+'/functions/v1/chat-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} }
+// ผจก.ส่งข้อความ → ให้นิดาตอบกลับ (เฉพาะเรื่องงาน) แล้วข้อความจะเด้งเข้าห้องผ่าน realtime
+function chatFireNidaReply(branch){ try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(base) fetch(base+'/functions/v1/chat-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({branch_id:branch})}); }catch(e){} }
 async function chatLoadThread(branch, markRead){
   const r=await post({ action:'hr_chat_list', password:pwd, branch }); const rows=(r&&r.rows)||[]; CHAT.rows=rows;
   const otherRead = MGR_MODE ? (r&&r.hr_read) : (r&&r.mgr_read);
@@ -1612,7 +1614,9 @@ async function chatLoadThread(branch, markRead){
     const mine=chatMine(m.sender_role);
     const bg = m.sender_role==='nida' ? 'background:#f3e8ff;color:#6b21a8' : (mine?'background:#0369a1;color:#fff':'background:#fff;border:1px solid var(--line)');
     const align=mine?'flex-end':'flex-start';
-    const who = m.sender_role==='nida' ? '🤖 นิดา · ผู้ช่วยฝ่ายบริหาร / HR' : (m.sender_role==='mgr' ? esc(m.sender_name||'ผจก.') : 'HR');
+    const who = m.sender_role==='nida'
+      ? '<img src="./assistant-mascot.png" alt="" style="width:16px;height:16px;border-radius:50%;object-fit:cover;vertical-align:-3px;margin-right:3px">นิดา · ผู้ช่วยฝ่ายบริหาร / HR'
+      : (m.sender_role==='mgr' ? esc(m.sender_name||'ผจก.') : 'HR');
     const readTick=(mine && otherRead && String(m.created_at)<=String(otherRead)) ? '<span style="font-size:10px;color:#2563eb">✓✓ อ่านแล้ว</span>' : (mine?'<span style="font-size:10px;color:var(--muted)">ส่งแล้ว</span>':'');
     let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%">';
     if(!mine||m.sender_role==='nida') c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+who+'</div>';
@@ -1632,7 +1636,7 @@ async function chatDoSend(){
   const btn=$('chatSend'); if(btn) btn.innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_chat_send', password:pwd, data:{ branch_id:CHAT.branch, text, photos, role:chatSide(), emp_id:MGR_MODE?MGR_EMP:null } });
   if(btn) btn.textContent='ส่ง';
-  if(r&&r.ok){ chatFirePush(); chatLoadThread(CHAT.branch,true); }
+  if(r&&r.ok){ chatFirePush(); if(MGR_MODE) chatFireNidaReply(CHAT.branch); chatLoadThread(CHAT.branch,true); }
   else { toast('err',(r&&r.error)||'ส่งไม่สำเร็จ'); inp.value=text; CHAT_PHOTOS=photos; chatRenderThumbs(); }
 }
 async function chatBroadcastPrompt(){
