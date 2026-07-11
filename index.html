@@ -108,7 +108,7 @@
     <div class="modal">
       <button class="mx" id="lvClose">×</button>
       <h2>ขอลา</h2>
-      <p style="color:#6b7280;font-size:13px;margin-bottom:6px">ส่งให้ HR อนุมัติ — กรอกรหัสพนักงานของคุณ</p>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:6px">ส่งให้ผู้จัดการอนุมัติ — กรอกรหัสพนักงานของคุณ</p>
       <label>รหัสพนักงาน</label><input id="lvEmp" type="text" inputmode="numeric" placeholder="เช่น 001">
       <label>ประเภทการลา</label>
       <select id="lvType"><option>ลาป่วย</option><option>แจ้งขอหยุดฉุกเฉิน</option><option>แจ้งขอหยุด</option></select>
@@ -174,10 +174,10 @@ async function myLeaves(){
     propHtml = pend.map(p=>{
       const rg=(p.end_date&&p.end_date!==p.start_date)?(beDate(p.start_date)+' – '+beDate(p.end_date)):beDate(p.start_date);
       return '<div class="lvprop" data-lid="'+lvEsc(p.leave_id)+'" style="border:1.5px solid #fdba74;background:#fff7ed;border-radius:12px;padding:11px 13px;margin-bottom:9px">'
-        +'<div style="font-weight:800;color:#9a3412">📩 ข้อเสนอจาก HR — รอคุณตอบ</div>'
+        +'<div style="font-weight:800;color:#9a3412">📩 ข้อเสนอจากผู้จัดการ — รอคุณตอบ</div>'
         +'<div style="font-size:12.5px;color:#7c2d12;margin-top:1px">คำขอลา'+(p.type?(' ('+lvEsc(p.type)+')'):'')+' · '+lvEsc(rg)+'</div>'
         +'<div style="margin-top:6px;font-size:14px;color:#7c2d12;white-space:pre-wrap">'+lvEsc(p.proposal_msg||'')+'</div>'
-        +'<textarea class="lvpnote" rows="2" placeholder="ข้อความตอบกลับ HR (ถ้าไม่ยอมรับ ต้องระบุเหตุผล)" style="width:100%;margin-top:7px;padding:8px 10px;border:1.5px solid #fdba74;border-radius:9px;font:inherit;font-size:14px;box-sizing:border-box;resize:vertical"></textarea>'
+        +'<textarea class="lvpnote" rows="2" placeholder="ข้อความตอบกลับผู้จัดการ (ถ้าไม่ยอมรับ ต้องระบุเหตุผล)" style="width:100%;margin-top:7px;padding:8px 10px;border:1.5px solid #fdba74;border-radius:9px;font:inherit;font-size:14px;box-sizing:border-box;resize:vertical"></textarea>'
         +'<div class="lvperr" style="color:#dc2626;font-size:12px;display:none;margin-top:3px"></div>'
         +'<div style="display:flex;gap:8px;margin-top:7px"><button type="button" class="lvpno" style="flex:1;padding:9px;border:1.5px solid #f1bcbe;background:#fff;color:#dc2626;border-radius:9px;font-weight:700;cursor:pointer">✖ ไม่ยอมรับ</button><button type="button" class="lvpyes" style="flex:1;padding:9px;border:0;background:#16a34a;color:#fff;border-radius:9px;font-weight:700;cursor:pointer">✓ ยอมรับ</button></div>'
         +'</div>';
@@ -191,7 +191,7 @@ async function myLeaves(){
         :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
       const range=(r.end_date&&r.end_date!==r.start_date)?(beDate(r.start_date)+' – '+beDate(r.end_date)):beDate(r.start_date);
       const reason=r.reason?('<div style="color:#6b7280;margin-top:2px">เหตุผล: '+lvEsc(r.reason)+'</div>'):'';
-      const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+lvEsc(r.hr_note)+'</div>'):'';
+      const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจากผู้จัดการ: '+lvEsc(r.hr_note)+'</div>'):'';
       return '<div style="border:1px solid #eceef1;border-radius:11px;padding:9px 11px;margin-bottom:7px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+range+'</b>'+badge+'</div>'
         +'<div style="color:#374151;margin-top:2px">ประเภท: '+lvEsc(r.type||'-')+'</div>'+reason+note+'</div>';
@@ -207,7 +207,7 @@ async function myLeaves(){
       const n=(note.value||'').trim();
       if(rr==='declined' && !n){ err.textContent='กรุณาระบุเหตุผลที่ไม่ยอมรับค่ะ'; err.style.display='block'; return; }
       yes.disabled=true; no.disabled=true;
-      try{ await HR.respondProposal(id, lid, rr, n); toast('ok', rr==='accepted'?'ยอมรับข้อเสนอแล้ว ส่งให้ HR แล้วค่ะ':'ส่งคำตอบให้ HR แล้วค่ะ'); }
+      try{ await HR.respondProposal(id, lid, rr, n); toast('ok', rr==='accepted'?'ยอมรับข้อเสนอแล้ว ส่งให้ผู้จัดการแล้วค่ะ':'ส่งคำตอบให้ผู้จัดการแล้วค่ะ'); }
       catch(e2){ err.textContent=(e2.message||'ไม่สำเร็จ'); err.style.display='block'; yes.disabled=false; no.disabled=false; return; }
       myLeaves();
     };
@@ -225,7 +225,7 @@ $('lvSubmit').onclick=async()=>{
   $('lvReasonErr').style.display='none';
   $('lvSubmit').disabled=true; $('lvSubmit').textContent='กำลังส่ง…';
   try{ await HR.requestLeave({ empId:id, start_date:start, end_date:end||start, type, reason, doc:LDOC });
-    toast('ok','ส่งคำขอลาแล้ว รอ HR อนุมัติ'); $('lvReason').value=''; $('lvReasonErr').style.display='none'; LDOC=null; $('lvDoc').value=''; $('lvDocPrev').style.display='none'; myLeaves();
+    toast('ok','ส่งคำขอลาแล้ว รอผู้จัดการอนุมัติ'); $('lvReason').value=''; $('lvReasonErr').style.display='none'; LDOC=null; $('lvDoc').value=''; $('lvDocPrev').style.display='none'; myLeaves();
   }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); }
   $('lvSubmit').disabled=false; $('lvSubmit').textContent='ส่งคำขอลา';
 };

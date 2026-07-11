@@ -487,7 +487,7 @@
     if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
     // ล็อก: มีข้อเสนอแนะเพิ่มเติมจาก HR ที่ยังไม่ตอบ → ต้องตอบก่อนยื่นใบใหม่ (กันความซับซ้อน)
     const { data: openProp } = await sb.from('leaves').select('leave_id').eq('emp_id', empId).eq('status', 'proposed').is('response', null).limit(1);
-    if (openProp && openProp.length) throw new Error('คุณมีข้อเสนอแนะเพิ่มเติมจาก HR ที่ยังไม่ได้ตอบ กรุณาตอบรับ/ปฏิเสธก่อนยื่นใบลาใหม่ค่ะ');
+    if (openProp && openProp.length) throw new Error('คุณมีข้อเสนอแนะเพิ่มเติมจากผู้จัดการที่ยังไม่ได้ตอบ กรุณาตอบรับ/ปฏิเสธก่อนยื่นใบลาใหม่ค่ะ');
     const end = end_date || start_date;
     const today = bangkokDate();
     // เงื่อนไขตามประเภทการลา
@@ -576,7 +576,7 @@
   }
   async function submitProfile(p) {
     const emp = await lookupEmployee(p.empId);
-    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้ (ให้ HR สร้างรหัสก่อน)');
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้ (ให้ผู้จัดการสร้างรหัสก่อน)');
     if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
     const base = p.empId + '/' + Date.now();
     const up = async (val, name) => val ? await uploadPhoto('employee-docs', base + '_' + name + '.jpg', val) : null;
@@ -910,7 +910,7 @@
   // กฎ 0: ต้องมี "กะ" ก่อนจึงบันทึกงานได้ (งานไม่มีกะจะหลุดระบบตรวจรับผลัด → คนตรวจมองไม่เห็น)
   function _assertHasShift(shift){
     if(!shift || !String(shift).trim())
-      throw new Error('ยังไม่มีกะของวันนี้ — ให้ HR จัดตารางเวร หรือหัวหน้าผลัดใช้ "เพิ่มเข้ากะ" ก่อน จึงจะบันทึกงานได้ (งานที่ไม่มีกะจะไม่เข้าระบบตรวจรับผลัด ทำให้คนตรวจมองไม่เห็น)');
+      throw new Error('ยังไม่มีกะของวันนี้ — ให้ผู้จัดการจัดตารางเวร หรือหัวหน้าผลัดใช้ "เพิ่มเข้ากะ" ก่อน จึงจะบันทึกงานได้ (งานที่ไม่มีกะจะไม่เข้าระบบตรวจรับผลัด ทำให้คนตรวจมองไม่เห็น)');
   }
   // กฎ 2: ถึงเวลาเข้ากะหรือยัง (ห้ามทำ/แจกงานก่อนเวลาเข้ากะ)
   async function _assertShiftStarted(group, workDate){

@@ -1624,7 +1624,7 @@
         emp_id: d.emp_id, kind: 'score_deduct',
         title: 'คะแนนวินัยถูกหัก ' + Math.abs(points) + ' คะแนน',
         body: 'เหตุผล: ' + (d.note || row.label || '-') + '\nดูคะแนนรวมล่าสุดในหน้า "สถานะของฉัน"',
-        ref: 'score', created_by: 'HR',
+        ref: 'score', created_by: 'ผู้จัดการ',
       });
     } catch (e) { console.warn('emp_notify', e); }
     await logAct('ตัดคะแนนวินัย', d.emp_id, row.label + ' (' + points + ')' + (d.note ? (' · ' + d.note) : ''));
@@ -1744,7 +1744,7 @@
   }
   async function hrTaskReview(id, status, note, markup) {
     const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count').eq('id', id).maybeSingle();
-    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString() };
     if (status !== 'approved') upd.sent_back_count = ((t && t.sent_back_count) || 0) + 1;
     // รูปที่ผู้ตรวจวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
     if (status !== 'approved' && Array.isArray(markup) && markup.length) {
@@ -1947,7 +1947,7 @@
   // ปิด (อนุมัติ) งานค้างทั้งกลุ่มในครั้งเดียว — ใช้แก้ deadlock งานข้ามวัน
   async function hrTaskCloseGroup(d) {
     if (!d || !d.work_date) return { ok: false, error: 'ไม่ระบุกลุ่มงาน' };
-    let q = sb().from('task_assignments').update({ status: 'approved', reviewer: 'HR', review_note: (d.note || 'ปิดโดย HR (งานค้างข้ามวัน)'), reviewed_at: new Date().toISOString() })
+    let q = sb().from('task_assignments').update({ status: 'approved', reviewer: 'ผู้จัดการ', review_note: (d.note || 'ปิดโดยผู้จัดการ (งานค้างข้ามวัน)'), reviewed_at: new Date().toISOString() })
       .eq('work_date', d.work_date).neq('status', 'approved');
     if (d.branch_id != null) q = q.eq('branch_id', d.branch_id);
     if (d.shift_id != null) q = q.eq('shift_id', d.shift_id);
@@ -2257,7 +2257,7 @@
     const { data: a } = await sb().from('special_task_assignees').select('emp_id,task_id').eq('id', assigneeId).maybeSingle();
     const upd = {
       status: status === 'approved' ? 'approved' : 'sent_back',
-      reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString(),
+      reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString(),
     };
     // ตีกลับ = ให้ทำใหม่ + แจ้งพนักงานอีกครั้ง
     if (upd.status === 'sent_back') upd.assigned_notified = false;
@@ -2617,7 +2617,7 @@
   }
   async function hrMdailyReview(logId, status, note, markup) {
     if (!logId || !['approved', 'rejected'].includes(status)) return { ok: false, error: 'ข้อมูลไม่ถูกต้อง' };
-    const upd = { status, reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    const upd = { status, reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString() };
     if (status === 'rejected' && Array.isArray(markup) && markup.length) {
       const urls = [];
       for (const m of markup) {
@@ -2878,7 +2878,7 @@
   async function hrShelfCheckReview(id, status, note, markup) {
     if (!id) return { ok: false, error: 'ไม่ระบุรายการตรวจ' };
     const { data: c } = await sb().from('shelf_checks').select('emp_id,shelf_id,check_date,sent_back_count').eq('id', id).maybeSingle();
-    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString() };
     if (status !== 'approved') upd.sent_back_count = ((c && c.sent_back_count) || 0) + 1;
     // รูปที่ผู้ตรวจวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
     if (status !== 'approved' && Array.isArray(markup) && markup.length) {
@@ -2933,7 +2933,7 @@
     if (!id) return { ok: false, error: 'ไม่ระบุคำขอ' };
     const { data: c } = await sb().from('checkout_corrections').select('*').eq('id', id).maybeSingle();
     if (!c) return { ok: false, error: 'ไม่พบคำขอ' };
-    const upd = { status: status === 'approved' ? 'approved' : 'rejected', reviewer: 'HR', review_note: note || null, reviewed_at: new Date().toISOString() };
+    const upd = { status: status === 'approved' ? 'approved' : 'rejected', reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString() };
     const { error } = await sb().from('checkout_corrections').update(upd).eq('id', id);
     if (error) throw error;
     if (upd.status === 'approved') {

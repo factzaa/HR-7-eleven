@@ -262,7 +262,7 @@ async function openLeaderPanel(){
   const inShift=new Set((b.members||[]).map(m=>m.emp_id));
   populateAddList();
   const memOpts=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'">'+esc(m.name)+'</option>').join('');
-  if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (HR ตั้งที่ "ตั้งค่ากะ")</div>'; return; }
+  if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (ผู้จัดการตั้งที่ "ตั้งค่ากะ")</div>'; return; }
   $('l_board').innerHTML=b.defs.map(d=>{
     const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.require_photo?' <span class="pill muted2">📷</span>':'')+'</div>';
     if(a){ const s=ST(a.status); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
@@ -303,11 +303,11 @@ async function openM2(){
   let mt={rows:[]}; try{ mt=await window.HR.getMyMgrTasks(EMP.emp_id); }catch(e){}
   let r=null, shiftErr='';
   try{ r=await window.HR.getMyAssignments(EMP.emp_id); }catch(e){ shiftErr=e.message||''; }
-  $('my_sub').textContent = r ? ('กะ '+esc(r.shift_name||'-')+(r.leader?(' · หัวหน้าผลัด: '+esc(r.leader.name)):'')) : 'งานพิเศษจาก HR';
+  $('my_sub').textContent = r ? ('กะ '+esc(r.shift_name||'-')+(r.leader?(' · หัวหน้าผลัด: '+esc(r.leader.name)):'')) : 'งานพิเศษจากผู้จัดการ';
   let html='';
   // ===== งานที่ผู้จัดการมอบหมาย (บนสุด) =====
   html += renderMgrTasksHTML(mt.rows||[]);
-  // ===== งานพิเศษจาก HR =====
+  // ===== งานพิเศษจากผู้จัดการ =====
   html += renderSpecialHTML(sp.rows||[]);
   // ===== งานตามกะ =====
   if(r){
@@ -319,7 +319,7 @@ async function openM2(){
     let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px">⚠️ ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
     if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:2px 0 4px">📍 จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
-    if(isEdit){ c+='<div class="muted" style="font-size:12px;margin-bottom:4px">⏳ รอ HR ตรวจ'+(a.submitted_at?(' · ส่งเมื่อ '+fmt(a.submitted_at)):'')+' — แก้ไข/เพิ่มรูป/ลบรูป แล้วส่งใหม่ได้เรื่อย ๆ จนกว่าจะตรวจ (รูปเดิมอยู่ด้านล่าง)</div>'; }
+    if(isEdit){ c+='<div class="muted" style="font-size:12px;margin-bottom:4px">⏳ รอผู้จัดการตรวจ'+(a.submitted_at?(' · ส่งเมื่อ '+fmt(a.submitted_at)):'')+' — แก้ไข/เพิ่มรูป/ลบรูป แล้วส่งใหม่ได้เรื่อย ๆ จนกว่าจะตรวจ (รูปเดิมอยู่ด้านล่าง)</div>'; }
     if(!canDo) c+=thumbsHtml(a.photos);
     if(!canDo&&a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุ: '+esc(a.emp_note)+'</div>';
     if(canDo){
@@ -374,7 +374,7 @@ async function openM2(){
   }
 }
 
-// ===== งานพิเศษจาก HR: render + wire =====
+// ===== งานพิเศษจากผู้จัดการ: render + wire =====
 function spST(s){ return s==='approved'?['ผ่านแล้ว','ok']:s==='submitted'?['รอตรวจ','warn']:s==='sent_back'?['ตีกลับ ต้องแก้','bad']:['ต้องทำ','muted2']; }
 function fmtDeadline(dl){
   if(!dl) return '';
@@ -387,27 +387,27 @@ function fmtDeadline(dl){
 }
 function renderSpecialHTML(rows){
   if(!rows||!rows.length) return '';
-  let h='<h3 class="sec">⭐ งานพิเศษจาก HR</h3>';
+  let h='<h3 class="sec">⭐ งานพิเศษจากผู้จัดการ</h3>';
   h+=rows.map(a=>{
     const s=spST(a.status); const canDo=(a.status==='todo'||a.status==='sent_back');
     let c='<div class="card" style="border-left:3px solid var(--green)"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:700;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     if(a.detail) c+='<div style="font-size:13.5px;margin-bottom:4px;white-space:pre-wrap">'+esc(a.detail)+'</div>';
     c+=fmtDeadline(a.deadline);
-    if(a.hr_note) c+='<div class="muted" style="margin-top:4px">📝 หมายเหตุจาก HR: '+esc(a.hr_note)+'</div>';
-    if(a.hr_photos&&a.hr_photos.length) c+='<div style="margin-top:6px"><div class="muted" style="font-size:12px">รูปตัวอย่าง/อ้างอิงจาก HR</div>'+thumbsHtml(a.hr_photos)+'</div>';
+    if(a.hr_note) c+='<div class="muted" style="margin-top:4px">📝 หมายเหตุจากผู้จัดการ: '+esc(a.hr_note)+'</div>';
+    if(a.hr_photos&&a.hr_photos.length) c+='<div style="margin-top:6px"><div class="muted" style="font-size:12px">รูปตัวอย่าง/อ้างอิงจากผู้จัดการ</div>'+thumbsHtml(a.hr_photos)+'</div>';
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-top:8px">⚠️ ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
     if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:6px 0 4px">📍 จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
     if(!canDo){
       if(a.photos&&a.photos.length) c+='<div style="margin-top:8px"><div class="muted" style="font-size:12px">รูปที่คุณส่ง</div>'+thumbsHtml(a.photos)+'</div>';
       if(a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุของคุณ: '+esc(a.emp_note)+'</div>';
-      if(a.status==='submitted') c+='<div class="muted" style="margin-top:4px">⏳ รอ HR ตรวจ'+(a.submitted_at?(' · ส่งเมื่อ '+fmt(a.submitted_at)):'')+'</div>';
+      if(a.status==='submitted') c+='<div class="muted" style="margin-top:4px">⏳ รอผู้จัดการตรวจ'+(a.submitted_at?(' · ส่งเมื่อ '+fmt(a.submitted_at)):'')+'</div>';
     }
     if(canDo){
       c+='<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:10px">'
         +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">📷 ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" id="spfc_'+a.id+'" style="display:none"></label>'
         +'<div class="thumbs" id="spt_'+a.id+'" style="margin:6px 0 4px"></div>'
         +'<div class="muted" id="spc_'+a.id+'" style="margin-bottom:8px">ถ่ายรูปได้หลายรูป (บังคับกล้อง · สแตมป์ชื่อ/เวลา/สาขาอัตโนมัติ)</div>'
-        +'<input type="text" id="spn_'+a.id+'" placeholder="หมายเหตุถึง HR (ถ้ามี)" style="margin-bottom:8px">'
+        +'<input type="text" id="spn_'+a.id+'" placeholder="หมายเหตุถึงผู้จัดการ (ถ้ามี)" style="margin-bottom:8px">'
         +'<button class="btn btn-pri" data-spsub="'+a.id+'">ส่งงาน</button>'
         +'</div>';
     }
@@ -506,7 +506,7 @@ async function openM3(){
   $('pv_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
   let r; try{ r=await window.HR.getPrevShiftReview(EMP.emp_id); }catch(e){ $('pv_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   $('pv_sub').textContent='ผลัดของคุณ: '+esc(r.cur_name||'-');
-  if(r.isMain===false){ $('pv_body').innerHTML='<div class="card warn">กะของคุณเป็น <b>กะพิเศษ</b> ไม่อยู่ในวงจรตรวจรับผลัด (เช้า/บ่าย/ดึก)<br><span class="muted">ถ้าต้องการให้กะนี้ตรวจผลัดก่อนหน้าได้ ให้ HR ตั้ง "ผลัดหลัก" ของกะนี้ในหน้าตั้งค่ากะ</span></div>'; return; }
+  if(r.isMain===false){ $('pv_body').innerHTML='<div class="card warn">กะของคุณเป็น <b>กะพิเศษ</b> ไม่อยู่ในวงจรตรวจรับผลัด (เช้า/บ่าย/ดึก)<br><span class="muted">ถ้าต้องการให้กะนี้ตรวจผลัดก่อนหน้าได้ ให้ผู้จัดการตั้ง "ผลัดหลัก" ของกะนี้ในหน้าตั้งค่ากะ</span></div>'; return; }
   let head='<div class="card"><div style="font-weight:600">ตรวจงานผลัดก่อนหน้า: '+esc(r.prev_name||'-')+'</div><div class="muted">วันที่ '+esc(String(r.prev_date))+'</div>'
     +(r.canReview?'<div class="pill ok" style="margin-top:6px">คุณเป็นหัวหน้าผลัด — ตรวจ/ตีกลับได้</div>':'<div class="pill warn" style="margin-top:6px">ดูได้อย่างเดียว (เฉพาะหัวหน้าผลัดตรวจได้)</div>')+'</div>';
   if(!r.tasks.length){ $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานบันทึกไว้</div>'; return; }
@@ -624,7 +624,7 @@ function goodsWhOptions(sel){ return '<option value="">— เลือกคล
 function renderGoods(){
   const g=GOODS;
   let h='<div class="card" style="padding:10px;margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1"><b>ผู้คุมผลัด:</b> '+esc(EMP.nickname||EMP.name)+'</div><span class="ch" id="gd_release">ปล่อยสิทธิ์</span></div></div>';
-  if(!g.warehouses.length){ h+='<div class="card muted">ยังไม่มีคลังในระบบ — ให้ HR เพิ่มคลังก่อน</div>'; }
+  if(!g.warehouses.length){ h+='<div class="card muted">ยังไม่มีคลังในระบบ — ให้ผู้จัดการเพิ่มคลังก่อน</div>'; }
   else {
     h+='<div class="card"><h3 class="sec" style="margin-top:0">'+(GD_EDIT?'✏️ แก้ไขใบรับสินค้า':'บันทึกรับสินค้า')+'</h3>'
       +'<label>คลัง</label><select id="gd_wh">'+goodsWhOptions(GD_EDIT?GD_EDIT.warehouse_id:'')+'</select>'
@@ -721,7 +721,7 @@ async function refreshCoCard(){
   if(row.check_out && row.auto_closed){
     box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'
       +'<div style="font-weight:600">ระบบบันทึกเวลาออกให้แล้ว</div>'
-      +'<div style="margin-top:2px">ถ้าคุณออกจริงหลังเวลาเลิกกะ กดยื่นแก้ไขเวลาออกเพื่อให้หัวหน้า/HR ตรวจสอบ</div>'
+      +'<div style="margin-top:2px">ถ้าคุณออกจริงหลังเวลาเลิกกะ กดยื่นแก้ไขเวลาออกเพื่อให้หัวหน้า/ผู้จัดการ ตรวจสอบ</div>'
       +'<button class="btn btn-sec btn-sm" id="hoCorrBtn" style="margin-top:8px">ยื่นแก้ไขเวลาออกจริง</button></div>';
     $('hoCorrBtn').onclick=()=>openCorrForm(row);
     return;
@@ -762,7 +762,7 @@ function openCorrForm(row){
   $('hoCorrCancel').onclick=refreshCoCard;
   $('hoCorrSend').onclick=async()=>{
     const v=$('hoCorrTime').value; if(!v){ toast('err','เลือกเวลาออกจริง'); return; }
-    try{ await window.HR.requestCheckoutCorrection({ empId:EMP.emp_id, actualIso:new Date(v).toISOString(), reason:$('hoCorrReason').value }); toast('ok','ส่งคำขอแล้ว รอหัวหน้า/HR อนุมัติ'); box.innerHTML=''; }
+    try{ await window.HR.requestCheckoutCorrection({ empId:EMP.emp_id, actualIso:new Date(v).toISOString(), reason:$('hoCorrReason').value }); toast('ok','ส่งคำขอแล้ว รอหัวหน้า/ผู้จัดการอนุมัติ'); box.innerHTML=''; }
     catch(e){ toast('err', e.message||'ไม่สำเร็จ'); }
   };
 }

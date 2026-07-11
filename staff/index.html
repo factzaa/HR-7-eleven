@@ -47,10 +47,10 @@
   </div>
 
   <div class="card" id="step1">
-    <p style="color:var(--muted);font-size:14px;margin-bottom:10px">กรอกรหัสพนักงานที่ได้รับจาก HR เพื่อเริ่มกรอกข้อมูลและแนบเอกสาร</p>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:10px">กรอกรหัสพนักงานที่ได้รับจากผู้จัดการ เพื่อเริ่มกรอกข้อมูลและแนบเอกสาร</p>
     <label>รหัสพนักงาน</label>
     <input id="empId" type="text" inputmode="numeric" placeholder="เช่น 001">
-    <div class="hint">ถ้ายังไม่มีรหัส ให้ติดต่อ HR เพื่อสร้างรหัสก่อน</div>
+    <div class="hint">ถ้ายังไม่มีรหัส ให้ติดต่อผู้จัดการเพื่อสร้างรหัสก่อน</div>
     <button class="btn" id="checkBtn">ถัดไป</button>
   </div>
 
@@ -94,14 +94,14 @@
       <input type="checkbox" id="agreeRules" style="width:18px;height:18px;margin-top:2px;flex:none">
       <span>ข้าพเจ้าได้อ่านและยอมรับ <a href="../rules/" target="_blank" style="color:var(--green)">ระเบียบการทำงาน</a> และยินยอมให้เก็บข้อมูลส่วนบุคคลตาม PDPA</span>
     </label>
-    <button class="btn" id="submitBtn">ส่งข้อมูลให้ HR ตรวจ</button>
-    <div class="hint" style="text-align:center;margin-top:8px">ข้อมูลจะถูกส่งให้ HR ตรวจสอบและอนุมัติก่อนบันทึกเข้าระบบ</div>
+    <button class="btn" id="submitBtn">ส่งข้อมูลให้ผู้จัดการตรวจ</button>
+    <div class="hint" style="text-align:center;margin-top:8px">ข้อมูลจะถูกส่งให้ผู้จัดการตรวจสอบและอนุมัติก่อนบันทึกเข้าระบบ</div>
   </div>
 
   <div class="card done" id="done" style="display:none">
     <div class="big">✅</div>
     <h2 style="font-size:18px;margin:8px 0">ส่งข้อมูลเรียบร้อย</h2>
-    <p style="color:var(--muted)">รอ HR ตรวจสอบและอนุมัติ ขอบคุณครับ</p>
+    <p style="color:var(--muted)">รอผู้จัดการตรวจสอบและอนุมัติ ขอบคุณครับ</p>
     <a class="home" style="display:inline-block;margin-top:14px" href="../">กลับหน้าแรก</a>
   </div>
 </div>
@@ -122,7 +122,7 @@ $('checkBtn').onclick = async ()=>{
   $('checkBtn').disabled=true; $('checkBtn').textContent='กำลังตรวจ…';
   try{
     const emp = await HR.lookupEmployee(id);
-    if(!emp){ toast('err','ไม่พบรหัสนี้ — ให้ HR สร้างรหัสก่อน'); return; }
+    if(!emp){ toast('err','ไม่พบรหัสนี้ — ให้ผู้จัดการสร้างรหัสก่อน'); return; }
     if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); return; }
     try{ HRSession.setEmp(emp.emp_id||id); }catch(_e){}   // จำรหัสข้ามหน้า
     $('who').textContent = 'พนักงาน: '+emp.name+' ('+id+')';
@@ -163,7 +163,7 @@ $('submitBtn').onclick = async ()=>{
     try{ await HR.acceptRules(id, window.RULES_VERSION||'2026-06-28'); }catch(_){}
     $('step2').style.display='none'; $('done').style.display='block';
     window.scrollTo(0,0);
-  }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); $('submitBtn').disabled=false; $('submitBtn').textContent='ส่งข้อมูลให้ HR ตรวจ'; }
+  }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); $('submitBtn').disabled=false; $('submitBtn').textContent='ส่งข้อมูลให้ผู้จัดการตรวจ'; }
 };
 </script>
 </body>
