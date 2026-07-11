@@ -464,9 +464,10 @@ function renderFixTasksHTML(rows){
       +'ℹ️ คุณเป็นผู้ <b>ตรวจผ่าน</b> งานนี้ในผลัดของคุณ เมื่อผู้จัดการตรวจซ้ำแล้วไม่ผ่าน <b>ผลัดที่ตรวจ (คุณ) เป็นผู้รับผิดชอบแก้ไข</b></div>';
     if(a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-top:6px">⚠️ ผู้จัดการตีกลับ: '+esc(a.review_note)+'</div>';
     if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:6px 0 4px">📍 จุดที่ต้องแก้ (ผู้จัดการวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
-    if(Array.isArray(a.photos)&&a.photos.length) c+='<div class="muted" style="font-size:12px;margin-top:6px">รูปที่ส่งไปก่อนหน้า</div>'+thumbsHtml(a.photos);
-    c+='<div id="fxth_'+a.id+'" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>'
-      +'<label class="btn2" style="display:inline-block;cursor:pointer">📷 ถ่ายรูปที่แก้แล้ว<input type="file" accept="image/*" capture="environment" id="fxc_'+a.id+'" style="display:none"></label>'
+    c+='<div class="muted" style="font-size:12px;margin-top:8px">รูปของงานนี้ (รูปเดิมอยู่ครบ — ลบรูปที่ผิดออก แล้วถ่ายรูปที่แก้แล้วเพิ่ม)</div>'
+      +'<div id="fxth_'+a.id+'" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>'
+      +'<div id="fxc_cnt_'+a.id+'" class="muted" style="font-size:12px;margin-bottom:6px"></div>'
+      +'<label class="btn2" style="display:inline-block;cursor:pointer">📷 ถ่ายรูปที่แก้แล้ว<input type="file" accept="image/*" capture="environment" multiple id="fxc_'+a.id+'" style="display:none"></label>'
       +'<input type="text" id="fxn_'+a.id+'" placeholder="หมายเหตุถึงผู้จัดการ (ถ้ามี)" style="margin:8px 0">'
       +'<button class="btn" data-fixsub="'+a.id+'">ส่งงานที่แก้แล้ว</button></div>';
     return c;
@@ -475,7 +476,10 @@ function renderFixTasksHTML(rows){
 }
 function wireFixTasks(rows){
   (rows||[]).forEach(a=>{
-    TASK_PHOTOS['fx_'+a.id]=[];
+    // โหลด "รูปเดิม" เข้าชุดแก้ไข → นับรวมกับรูปขั้นต่ำ ไม่ต้องถ่ายใหม่ทั้งหมด (ลบเฉพาะรูปที่ผิดได้)
+    TASK_PHOTOS['fx_'+a.id]=(Array.isArray(a.photos)?a.photos.slice():[]);
+    FIX_MIN['fx_'+a.id]=Number(a.min_photos||0);
+    renderFixThumbs(a.id);
     const inp=document.getElementById('fxc_'+a.id);
     if(inp) inp.onchange=async e=>{
       if(!inp.files||!inp.files.length) return;
@@ -490,17 +494,26 @@ function wireFixTasks(rows){
   document.querySelectorAll('[data-fixsub]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.fixsub);
     const photos=TASK_PHOTOS['fx_'+id]||[];
-    if(!photos.length){ toast('err','ถ่ายรูปที่แก้แล้วก่อนส่ง'); return; }
+    const min=FIX_MIN['fx_'+id]||0;
+    if(!photos.length){ toast('err','ต้องมีรูปอย่างน้อย 1 รูป'); return; }
+    if(min && photos.length<min){ toast('err','งานนี้ต้องมีรูปอย่างน้อย '+min+' รูป (ตอนนี้ '+photos.length+' รูป)'); return; }
     const note=(document.getElementById('fxn_'+id)||{}).value||'';
     b.innerHTML='<span class="spin"></span>';
     try{ await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); toast('ok','ส่งงานที่แก้แล้ว — รอผู้จัดการตรวจซ้ำ'); openM2(); }
     catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงานที่แก้แล้ว'; }
   });
 }
+let FIX_MIN={};   // จำนวนรูปขั้นต่ำของงานที่ถูกตีกลับ (ต่อใบ)
 function renderFixThumbs(id){
   const box=document.getElementById('fxth_'+id); if(!box) return;
   const arr=TASK_PHOTOS['fx_'+id]||[];
-  box.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="TASK_PHOTOS[\'fx_'+id+'\'].splice('+i+',1);renderFixThumbs('+id+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join('');
+  box.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="TASK_PHOTOS[\'fx_'+id+'\'].splice('+i+',1);renderFixThumbs('+id+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join('');
+  const cnt=document.getElementById('fxc_cnt_'+id);
+  if(cnt){
+    const min=FIX_MIN['fx_'+id]||0;
+    const ok=!min || arr.length>=min;
+    cnt.innerHTML='แนบแล้ว <b>'+arr.length+'</b> รูป'+(min?(' · ต้องมีอย่างน้อย '+min+' รูป '+(ok?'<span style="color:#16a34a">✓ ครบแล้ว</span>':'<span style="color:#dc2626">ยังขาดอีก '+(min-arr.length)+' รูป</span>')):'');
+  }
 }
 function fmtD(d){ try{ return beDate(d); }catch(e){ return d||''; } }
 

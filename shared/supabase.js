@@ -1084,10 +1084,15 @@
     const shIds=[...new Set(rows.map(r=>r.shift_id).concat(rows.map(r=>r.fix_shift_id)).filter(Boolean))];
     let shName={};
     if(shIds.length){ const {data:sh}=await sb.from('shifts').select('shift_id,name').in('shift_id',shIds); (sh||[]).forEach(s=>{ shName[s.shift_id]=s.name||s.shift_id; }); }
+    // จำนวนรูปขั้นต่ำของงานนั้น (หน้าเว็บจะได้เตือนก่อนกดส่ง แทนที่จะโดนเด้งตอนส่ง)
+    const defIds=[...new Set(rows.map(r=>r.task_def_id).filter(Boolean))];
+    let minP={};
+    if(defIds.length){ const {data:df}=await sb.from('task_defs').select('id,min_photos').in('id',defIds); (df||[]).forEach(d=>{ minP[d.id]=d.min_photos||0; }); }
     return { emp, rows: rows.map(r=>({
       ...r,
       shift_name: shName[r.shift_id]||r.shift_id||'',
       fix_shift_name: shName[r.fix_shift_id]||r.fix_shift_id||'',
+      min_photos: minP[r.task_def_id]||0,
       i_was_checker: r.checked_by_emp===emp.emp_id && r.emp_id!==emp.emp_id,   // ฉันเป็นคนตรวจผ่าน → ฉันต้องแก้
     })) };
   }
