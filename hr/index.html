@@ -376,6 +376,7 @@
   <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
   <button class="tab" id="tab_goods"><span class="tabicon">🎁</span>รับสินค้า</button>
+  <button class="tab" id="tab_poster"><span class="tabicon">🖼️</span>สร้างสื่อ</button>
   <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
   <button class="tab" id="tab_submissions"><span class="tabicon">📥</span>ข้อมูลรอตรวจ</button>
   <button class="tab" id="tab_activity"><span class="tabicon">🕘</span>บันทึกกิจกรรม</button>
@@ -941,6 +942,67 @@
 </div>
 
 <!-- Goods receiving: คลัง + รับสินค้า -->
+<div id="view_poster" class="container" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">🖼️ สร้างสื่อ / โปสเตอร์อินโฟกราฟิก (ธีม 7-Eleven)</h3></div>
+  <div class="card" style="padding:14px;margin-bottom:14px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="field" style="max-width:220px"><label>ประเภทสื่อ</label>
+        <select id="po_kind">
+          <option value="steps">โปสเตอร์สอนงาน (แจกแจงขั้นตอน)</option>
+          <option value="dos">ควรทำ / ห้ามทำ</option>
+          <option value="announce">ประกาศ / แจ้งพนักงาน</option>
+          <option value="report">อินโฟกราฟิกสรุปข้อมูล (กราฟ)</option>
+        </select>
+      </div>
+      <div class="field" style="flex:1;min-width:240px"><label>หัวข้อ</label><input id="po_topic" type="text" placeholder="เช่น ขั้นตอนการจัดเรียงสินค้าหน้าชั้น / การทำความสะอาดพื้นที่ขาย"></div>
+    </div>
+    <div class="field" style="margin-top:10px"><label>รายละเอียดเพิ่มเติม (ไม่บังคับ)</label><textarea id="po_notes" rows="2" placeholder="ระบุจุดที่อยากเน้น เช่น ต้องหันหน้าสินค้าออก · เช็ควันหมดอายุก่อนเติม"></textarea></div>
+
+    <div id="po_reportbox" style="display:none;border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+        <div class="field" style="max-width:200px"><label>ข้อมูลกราฟ</label>
+          <select id="po_metric">
+            <option value="late">มาสาย (ครั้ง) รายพนักงาน</option>
+            <option value="absent">ขาดงาน (วัน) รายพนักงาน</option>
+            <option value="sent_back">งานถูกตีกลับ (ครั้ง) รายพนักงาน</option>
+            <option value="ot">ชั่วโมง OT รายพนักงาน</option>
+          </select>
+        </div>
+        <div class="field" style="max-width:200px"><label>สาขา</label><select id="po_branch"></select></div>
+        <div class="field" style="max-width:170px"><label>ตั้งแต่</label><input id="po_start" type="date"></div>
+        <div class="field" style="max-width:170px"><label>ถึง</label><input id="po_end" type="date"></div>
+      </div>
+      <div class="hint" style="margin-top:6px">ระบบจะดึงตัวเลขจริงจากฐานข้อมูล (Top 8) มาวาดเป็นกราฟแท่ง แล้วให้นิดาเขียนหัวเรื่อง + ข้อสังเกตให้</div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn btn-pri" id="po_gen">✨ ให้นิดาร่าง + สร้างรูป</button>
+      <button class="btn btn-sec" id="po_redraw" style="display:none">🎨 วาดใหม่ (สลับสีธีม)</button>
+    </div>
+    <div id="po_status" class="hint" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card" id="po_result" style="display:none;padding:14px">
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div style="flex:0 0 auto"><canvas id="po_canvas" width="1080" height="1350" style="width:280px;max-width:100%;border:1px solid var(--line);border-radius:10px;background:#fff"></canvas></div>
+      <div style="flex:1;min-width:250px">
+        <div style="font-weight:600;font-size:14px;margin-bottom:6px">แก้ข้อความก่อนส่ง</div>
+        <div class="field"><label>หัวเรื่อง</label><input id="po_t" type="text"></div>
+        <div class="field"><label>คำโปรย</label><input id="po_s" type="text"></div>
+        <div class="field"><label>เนื้อหา (1 บรรทัด = 1 ข้อ · ใช้ | คั่นหัวข้อกับรายละเอียด)</label><textarea id="po_items" rows="7" style="font-size:12.5px"></textarea></div>
+        <div class="field"><label>บรรทัดปิดท้าย</label><input id="po_f" type="text"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn btn-sec btn-sm" id="po_apply">↻ อัปเดตรูป</button>
+          <button class="btn btn-pri btn-sm" id="po_dl">⬇️ ดาวน์โหลด PNG</button>
+          <button class="btn btn-sec btn-sm" id="po_chat">💬 ส่งเข้าแชททุกสาขา</button>
+          <button class="btn btn-sec btn-sm" id="po_line">🟩 ส่งเข้ากลุ่ม LINE</button>
+        </div>
+        <div class="hint" style="margin-top:8px">ดาวน์โหลดแล้วส่งต่อในไลน์กลุ่มพนักงานได้เลย · หรือกด "ส่งเข้ากลุ่ม LINE" ให้ระบบยิงรูปเข้ากลุ่มสาขาให้อัตโนมัติ</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="view_goods" class="container" style="display:none">
   <div class="toolbar">
     <h3 style="flex:1; font-size:15px; font-weight:600">คลัง (ใช้ร่วมทุกสาขา)</h3>
@@ -1523,7 +1585,7 @@ async function mgrTryLogin(){
 $('mgrLoginBtn') && ($('mgrLoginBtn').onclick = mgrTryLogin);
 
 // ================= แชทสาขา HR ↔ ผจก. (real-time) =================
-let CHAT={ open:false, view:'list', branch:null, rows:[], ch:null, branches:[] };
+let CHAT={ open:false, view:'list', mode:'hr', branch:null, room:null, peer:null, rows:[], ch:null, pch:null, branches:[] };
 function chatSb(){ return (window.HR&&window.HR.sb)?window.HR.sb:null; }
 function chatSide(){ return MGR_MODE?'mgr':'hr'; }
 function chatMine(role){ return MGR_MODE ? (role==='mgr') : (role==='hr'||role==='nida'); }
@@ -1547,20 +1609,100 @@ function chatSubscribe(){
   const sb=chatSb(); if(!sb||CHAT.ch) return;
   try{ const opts={ event:'INSERT', schema:'public', table:'mgr_chat' }; if(MGR_MODE) opts.filter='branch_id=eq.'+MGR_BRANCH;
     CHAT.ch=sb.channel('mgrchat').on('postgres_changes', opts, (p)=>chatOnInsert(p&&p.new)).subscribe(); }catch(e){}
+  // ผจก.: ฟังข้อความ 1:1 จากสาขาอื่นที่ส่งมาหาเรา (สำหรับ badge/รายการห้อง)
+  if(MGR_MODE && !CHAT.pch){
+    try{ CHAT.pch=sb.channel('peerinbox').on('postgres_changes',{event:'INSERT',schema:'public',table:'mgr_peer_chat',filter:'to_branch=eq.'+MGR_BRANCH},()=>{
+      if(CHAT.open && CHAT.mode==='peer') return; // ห้องที่เปิดอยู่มีช่องของตัวเอง
+      chatRefreshBadge(); if(CHAT.open && CHAT.view==='list') chatLoadMgrList();
+    }).subscribe(); }catch(e){}
+  }
 }
 function chatOnInsert(m){
   if(!m) return;
-  if(CHAT.open && CHAT.view==='thread' && String(CHAT.branch)===String(m.branch_id)){ chatLoadThread(CHAT.branch,true); }
-  else { chatRefreshBadge(); if(CHAT.open && CHAT.view==='list') chatLoadList(); }
+  if(CHAT.open && CHAT.view==='thread' && CHAT.mode!=='peer' && String(CHAT.branch)===String(m.branch_id)){ chatLoadThread(CHAT.branch,true); }
+  else { chatRefreshBadge(); if(CHAT.open && CHAT.view==='list'){ if(MGR_MODE) chatLoadMgrList(); else chatLoadList(); } }
 }
 async function chatRefreshBadge(){
   try{
-    if(MGR_MODE){ const r=await post({ action:'hr_chat_list', password:pwd, branch:MGR_BRANCH });
-      if(r&&r.ok){ const lr=r.mgr_read; chatSetBadge((r.rows||[]).filter(m=>(m.sender_role==='hr'||m.sender_role==='nida')&&(!lr||m.created_at>lr)).length); } }
+    if(MGR_MODE){
+      const [r,p]=await Promise.all([
+        post({ action:'hr_chat_list', password:pwd, branch:MGR_BRANCH }),
+        post({ action:'hr_peer_branches', password:pwd, branch:MGR_BRANCH }),
+      ]);
+      let n=0;
+      if(r&&r.ok){ const lr=r.mgr_read; n+=(r.rows||[]).filter(m=>(m.sender_role==='hr'||m.sender_role==='nida')&&(!lr||m.created_at>lr)).length; }
+      if(p&&p.ok) n+=(p.total_unread||0);
+      chatSetBadge(n);
+    }
     else { const r=await post({ action:'hr_chat_branches', password:pwd }); if(r&&r.ok){ CHAT.branches=r.rows||[]; chatSetBadge(r.total_unread||0); } }
   }catch(e){}
 }
-function chatOpen(){ chatEnsureDom(); CHAT.open=true; $('chatOverlay').classList.add('show'); if(MGR_MODE) chatOpenThread(MGR_BRANCH); else chatLoadList(); }
+function chatOpen(){ chatEnsureDom(); CHAT.open=true; $('chatOverlay').classList.add('show'); if(MGR_MODE) chatLoadMgrList(); else chatLoadList(); }
+// ---- ผจก.: รายการห้อง = HR + ผจก.สาขาอื่น (1:1) ----
+async function chatLoadMgrList(){
+  CHAT.view='list'; CHAT.mode='hr';
+  $('chatHead').innerHTML='<div style="font-weight:700;flex:1;font-size:15px">💬 แชท</div><button class="close" id="chatX" style="position:static">×</button>';
+  $('chatFoot').style.display='none'; $('chatBody').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  $('chatX').onclick=chatClose;
+  const [hrR,pR]=await Promise.all([
+    post({ action:'hr_chat_list', password:pwd, branch:MGR_BRANCH }),
+    post({ action:'hr_peer_branches', password:pwd, branch:MGR_BRANCH }),
+  ]);
+  const lr=(hrR&&hrR.mgr_read)||null; const hrRows=(hrR&&hrR.rows)||[];
+  const hrUnread=hrRows.filter(m=>(m.sender_role==='hr'||m.sender_role==='nida')&&(!lr||m.created_at>lr)).length;
+  const lastHr=hrRows.length?hrRows[hrRows.length-1]:null;
+  const peers=(pR&&pR.rows)||[];
+  chatSetBadge(hrUnread+((pR&&pR.total_unread)||0));
+  const bdg=n=>n>0?'<span style="min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center">'+n+'</span>':'';
+  let h='<div data-chathr="1" style="display:flex;gap:10px;align-items:center;padding:11px 10px;border-bottom:1px solid var(--line);cursor:pointer;'+(hrUnread>0?'background:#eff6ff':'')+'">'
+    +'<div style="width:38px;height:38px;border-radius:50%;background:#0369a1;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex:none">HR</div>'
+    +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13.5px">สำนักงาน / HR</div><div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc((lastHr&&lastHr.text)||'ยังไม่มีข้อความ')+'</div></div>'
+    +'<div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px"><span style="font-size:10.5px;color:var(--muted)">'+(lastHr?chatTime(lastHr.created_at):'')+'</span>'+bdg(hrUnread)+'</div></div>'
+    +'<div style="font-size:11.5px;color:var(--muted);padding:9px 10px 4px;font-weight:600">ผจก. สาขาอื่น</div>';
+  h+=peers.map(b=>'<div data-chatpeer="'+esc(b.room_key)+'" data-peerbr="'+esc(b.branch_id)+'" data-peernm="'+esc(b.name||b.branch_id)+'" style="display:flex;gap:10px;align-items:center;padding:11px 10px;border-bottom:1px solid var(--line);cursor:pointer;'+(b.unread>0?'background:#eff6ff':'')+'">'
+    +'<div style="width:38px;height:38px;border-radius:50%;background:#e2e8f0;color:#475569;display:flex;align-items:center;justify-content:center;font-size:12px;flex:none">'+esc(String(b.name||b.branch_id).slice(0,2))+'</div>'
+    +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13.5px">ผจก. '+esc(b.name||b.branch_id)+'</div><div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(b.last_text||'เริ่มคุยได้เลย')+'</div></div>'
+    +'<div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px"><span style="font-size:10.5px;color:var(--muted)">'+(b.last_at?chatTime(b.last_at):'')+'</span>'+bdg(b.unread)+'</div></div>').join('')||'<div class="empty" style="padding:10px">ยังไม่มีสาขาอื่น</div>';
+  $('chatBody').innerHTML=h;
+  const hrEl=$('chatBody').querySelector('[data-chathr]'); if(hrEl) hrEl.onclick=()=>chatOpenThread(MGR_BRANCH);
+  $('chatBody').querySelectorAll('[data-chatpeer]').forEach(el=>el.onclick=()=>chatOpenPeer(el.dataset.chatpeer, el.dataset.peerbr, el.dataset.peernm));
+}
+function chatOpenPeer(roomKey, peerBranch, peerName){
+  CHAT.view='thread'; CHAT.mode='peer'; CHAT.room=roomKey; CHAT.peer=peerBranch;
+  $('chatHead').innerHTML='<button class="btn btn-sec btn-sm" id="chatBack" style="flex:none">‹</button><div style="font-weight:700;flex:1;font-size:14.5px">ผจก. '+esc(peerName)+'</div><button class="close" id="chatX" style="position:static">×</button>';
+  chatFooterUI();
+  $('chatX').onclick=chatClose; $('chatBack').onclick=chatLoadMgrList;
+  chatTypingSubscribe('peer:'+roomKey); chatPeerSubscribe(roomKey);
+  chatLoadPeerThread(roomKey,true);
+}
+let CHAT_PEER_CH=null;
+function chatPeerSubscribe(roomKey){
+  const sb=chatSb(); if(!sb) return;
+  if(CHAT_PEER_CH){ try{ sb.removeChannel(CHAT_PEER_CH); }catch(e){} CHAT_PEER_CH=null; }
+  try{ CHAT_PEER_CH=sb.channel('peer:'+roomKey).on('postgres_changes',{event:'INSERT',schema:'public',table:'mgr_peer_chat',filter:'room_key=eq.'+roomKey},()=>{
+    if(CHAT.open&&CHAT.mode==='peer'&&CHAT.room===roomKey) chatLoadPeerThread(roomKey,true); else chatRefreshBadge();
+  }).subscribe(); }catch(e){}
+}
+async function chatLoadPeerThread(roomKey, markRead){
+  const r=await post({ action:'hr_peer_list', password:pwd, room_key:roomKey });
+  const rows=(r&&r.rows)||[]; const reads=(r&&r.reads)||{};
+  const otherRead=reads[CHAT.peer]||null;
+  const body=$('chatBody'); if(!body) return;
+  body.innerHTML=rows.map(m=>{
+    const mine=String(m.from_branch)===String(MGR_BRANCH);
+    const bg=mine?'background:#0369a1;color:#fff':'background:#fff;border:1px solid var(--line)';
+    const align=mine?'flex-end':'flex-start';
+    const readTick=(mine&&otherRead&&String(m.created_at)<=String(otherRead))?'<span style="font-size:10px;color:#2563eb">✓✓ อ่านแล้ว</span>':(mine?'<span style="font-size:10px;color:var(--muted)">ส่งแล้ว</span>':'');
+    let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%">';
+    if(!mine) c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||'ผจก.')+'</div>';
+    c+='<div style="'+bg+';border-radius:12px;padding:8px 11px;font-size:13px;line-height:1.5;white-space:pre-wrap">'+esc(m.text||'')+'</div>';
+    if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:70px;height:70px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+    c+='<div style="text-align:'+(mine?'right':'left')+';margin-top:2px;font-size:10px;color:var(--muted)">'+chatTime(m.created_at)+' '+readTick+'</div>';
+    return c+'</div></div>';
+  }).join('')||'<div class="empty">เริ่มบทสนทนากับ ผจก.สาขานี้ได้เลย</div>';
+  body.scrollTop=body.scrollHeight;
+  if(markRead){ try{ await post({ action:'hr_peer_read', password:pwd, room_key:roomKey, branch:MGR_BRANCH }); }catch(e){} chatRefreshBadge(); }
+}
 function chatClose(){ CHAT.open=false; $('chatOverlay').classList.remove('show'); chatRefreshBadge(); }
 async function chatLoadList(){
   CHAT.view='list';
@@ -1580,19 +1722,60 @@ async function chatLoadList(){
 }
 function chatBranchName(branch){ const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(branch)); return b?b.name:branch; }
 function chatOpenThread(branch){
-  CHAT.view='thread'; CHAT.branch=branch;
-  $('chatHead').innerHTML=(MGR_MODE?'':'<button class="btn btn-sec btn-sm" id="chatBack" style="flex:none">‹</button>')+'<div style="font-weight:700;flex:1;font-size:14.5px">'+esc(MGR_MODE?'สำนักงาน / HR':('สาขา '+chatBranchName(branch)))+'</div><button class="close" id="chatX" style="position:static">×</button>';
+  CHAT.view='thread'; CHAT.mode='hr'; CHAT.branch=branch;
+  $('chatHead').innerHTML='<button class="btn btn-sec btn-sm" id="chatBack" style="flex:none">‹</button><div style="font-weight:700;flex:1;font-size:14.5px">'+esc(MGR_MODE?'สำนักงาน / HR':('สาขา '+chatBranchName(branch)))+'</div><button class="close" id="chatX" style="position:static">×</button>';
+  chatFooterUI();
+  $('chatBack').onclick=()=>{ if(MGR_MODE) chatLoadMgrList(); else chatLoadList(); };
+  chatTypingSubscribe(branch);
+  chatLoadThread(branch,true);
+}
+function chatFooterUI(){
   $('chatFoot').style.display='';
-  $('chatFoot').innerHTML='<div id="chatThumbs" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px"></div>'
-    +'<div style="display:flex;gap:8px;align-items:center">'
-    +'<label class="btn btn-sec btn-sm" style="flex:none;cursor:pointer;margin:0">📷<input type="file" accept="image/*" multiple id="chatFile" style="display:none"></label>'
-    +'<input id="chatInput" type="text" placeholder="พิมพ์ข้อความ…" style="flex:1;padding:9px 12px;border:1.5px solid var(--line2);border-radius:999px;font:inherit;font-size:13.5px">'
+  $('chatFoot').innerHTML='<div id="chatTyping" style="display:none;font-size:11.5px;color:var(--muted);margin-bottom:4px">กำลังพิมพ์…</div>'
+    +'<div id="chatThumbs" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px"></div>'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+    +'<label class="btn btn-sec btn-sm" style="flex:none;cursor:pointer;margin:0" title="แนบรูป">📷<input type="file" accept="image/*" multiple id="chatFile" style="display:none"></label>'
+    +'<button class="btn btn-sec btn-sm" id="chatDraw" style="flex:none" title="วาด / ชี้จุดบนรูป">✏️</button>'
+    +'<input id="chatInput" type="text" placeholder="พิมพ์ข้อความ…" style="flex:1;min-width:0;padding:9px 12px;border:1.5px solid var(--line2);border-radius:999px;font:inherit;font-size:13.5px">'
     +'<button class="btn btn-pri btn-sm" id="chatSend" style="flex:none">ส่ง</button></div>';
-  $('chatX').onclick=chatClose; if($('chatBack')) $('chatBack').onclick=chatLoadList;
-  $('chatSend').onclick=chatDoSend; $('chatInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); chatDoSend(); } });
+  $('chatX').onclick=chatClose;
+  $('chatSend').onclick=chatDoSend;
+  $('chatInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); chatDoSend(); } });
+  $('chatInput').addEventListener('input', chatSendTyping);
   CHAT_PHOTOS=[]; chatRenderThumbs();
   $('chatFile').addEventListener('change',async(e)=>{ const fs=[...(e.target.files||[])]; for(const f of fs){ try{ CHAT_PHOTOS.push(await chatFileToData(f)); }catch(_e){} } e.target.value=''; chatRenderThumbs(); });
-  chatLoadThread(branch,true);
+  $('chatDraw').onclick=chatOpenDraw;
+}
+// ---- เครื่องมือวาดในแชท (reuse ตัววาดเดิม) ----
+async function chatOpenDraw(){
+  const hasPhoto=CHAT_PHOTOS.length>0;
+  const target = hasPhoto ? [CHAT_PHOTOS[CHAT_PHOTOS.length-1]] : [mtBlankCanvas()];
+  await openMarkupEditor({ id:'chat', photos:target });
+  if(MK) MK.reviewFn=async(note,out)=>{
+    if(out&&out.length){ if(hasPhoto) CHAT_PHOTOS[CHAT_PHOTOS.length-1]=out[0]; else CHAT_PHOTOS.push(out[0]); chatRenderThumbs(); }
+    const inp=$('chatInput'); if(note && inp && !inp.value) inp.value=note;
+  };
+}
+// ---- สถานะ "กำลังพิมพ์…" (Realtime broadcast — ไม่เก็บลง DB) ----
+let CHAT_TYPE_CH=null, CHAT_TYPING_T=null, CHAT_TYPING_SENT=0;
+// ในห้อง peer ทั้งสองฝั่งเป็น 'mgr' เหมือนกัน → ใช้รหัสสาขาเป็นตัวแยกฝั่งแทน
+function chatTypeSide(){ return CHAT.mode==='peer' ? ('br'+MGR_BRANCH) : chatSide(); }
+function chatTypingSubscribe(branch){
+  const sb=chatSb(); if(!sb) return;
+  if(CHAT_TYPE_CH){ try{ sb.removeChannel(CHAT_TYPE_CH); }catch(e){} CHAT_TYPE_CH=null; }
+  try{
+    CHAT_TYPE_CH=sb.channel('typing:'+branch, { config:{ broadcast:{ self:false } } })
+      .on('broadcast', { event:'typing' }, (p)=>{ const s=p&&p.payload&&p.payload.side; if(s && s!==chatTypeSide()) chatShowTyping(); })
+      .subscribe();
+  }catch(e){}
+}
+function chatSendTyping(){
+  const now=Date.now(); if(now-CHAT_TYPING_SENT<1500) return; CHAT_TYPING_SENT=now;
+  try{ CHAT_TYPE_CH && CHAT_TYPE_CH.send({ type:'broadcast', event:'typing', payload:{ side:chatTypeSide() } }); }catch(e){}
+}
+function chatShowTyping(){
+  const el=$('chatTyping'); if(!el) return; el.style.display='block';
+  clearTimeout(CHAT_TYPING_T); CHAT_TYPING_T=setTimeout(()=>{ el.style.display='none'; }, 3000);
 }
 let CHAT_PHOTOS=[];
 function chatFileToData(file){
@@ -1626,7 +1809,7 @@ async function chatLoadThread(branch, markRead){
     return c+'</div></div>';
   }).join('')||'<div class="empty">เริ่มบทสนทนาได้เลย</div>';
   body.scrollTop=body.scrollHeight;
-  if(markRead){ try{ await post({ action:'hr_chat_read', password:pwd, branch, side:chatSide() }); }catch(e){} chatSetBadge(0); }
+  if(markRead){ try{ await post({ action:'hr_chat_read', password:pwd, branch, side:chatSide() }); }catch(e){} if(MGR_MODE) chatRefreshBadge(); else chatSetBadge(0); }
 }
 async function chatDoSend(){
   const inp=$('chatInput'); if(!inp) return; const text=(inp.value||'').trim();
@@ -1634,7 +1817,15 @@ async function chatDoSend(){
   if(!text && !photos.length) return;
   inp.value=''; CHAT_PHOTOS=[]; chatRenderThumbs();
   const btn=$('chatSend'); if(btn) btn.innerHTML='<span class="spin"></span>';
-  const r=await post({ action:'hr_chat_send', password:pwd, data:{ branch_id:CHAT.branch, text, photos, role:chatSide(), emp_id:MGR_MODE?MGR_EMP:null } });
+  let r;
+  if(CHAT.mode==='peer'){
+    r=await post({ action:'hr_peer_send', password:pwd, data:{ from_branch:MGR_BRANCH, to_branch:CHAT.peer, text, photos, emp_id:MGR_EMP, sender_name:'ผจก. '+chatBranchName(MGR_BRANCH) } });
+    if(btn) btn.textContent='ส่ง';
+    if(r&&r.ok){ chatFirePush(); chatLoadPeerThread(CHAT.room,true); }
+    else { toast('err',(r&&r.error)||'ส่งไม่สำเร็จ'); inp.value=text; CHAT_PHOTOS=photos; chatRenderThumbs(); }
+    return;
+  }
+  r=await post({ action:'hr_chat_send', password:pwd, data:{ branch_id:CHAT.branch, text, photos, role:chatSide(), emp_id:MGR_MODE?MGR_EMP:null } });
   if(btn) btn.textContent='ส่ง';
   if(r&&r.ok){ chatFirePush(); if(MGR_MODE) chatFireNidaReply(CHAT.branch); chatLoadThread(CHAT.branch,true); }
   else { toast('err',(r&&r.error)||'ส่งไม่สำเร็จ'); inp.value=text; CHAT_PHOTOS=photos; chatRenderThumbs(); }
@@ -3547,7 +3738,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); loadMdailyDash(); }
@@ -3569,6 +3760,7 @@ showTab = function(name){
   else if(name==='schedule') loadSchedule();
   else if(name==='branches') loadBranches();
   else if(name==='goods') loadGoodsTab();
+  else if(name==='poster') loadPosterTab();
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
@@ -3650,6 +3842,201 @@ $('ga_csv').onclick=()=>{ if(!GA_ROWS.length){ toast('err','ไม่มีข�
   const R=GA_ROWS.map(g=>[g.branch_name,((g.warehouse_code?('['+g.warehouse_code+'] '):'')+g.warehouse_name),g.range_in||0,g.range_return||0,g.range_docs||0,g.range_diff_docs||0,g.range_diff_sum||0,g.outstanding||0]);
   gdDownload('goods_audit.csv', gdToCsv(H,R)); };
 
+// ================= สร้างสื่อ / โปสเตอร์อินโฟกราฟิก (ธีม 7-Eleven) =================
+const PO_THEME={ green:{main:'#008061',soft:'#e8f5f0',dark:'#00614a'}, orange:{main:'#f68121',soft:'#fef1e5',dark:'#c9631a'}, red:{main:'#ee3124',soft:'#fdeceb',dark:'#c0261b'} };
+const PO_FONT="'Sarabun','Noto Sans Thai','Prompt',system-ui,-apple-system,'Segoe UI',sans-serif";
+let POSTER={ spec:null, url:'' };
+
+function loadPosterTab(){
+  const bs=$('po_branch'); if(bs && !bs.dataset.filled){ bs.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); bs.dataset.filled='1'; }
+  if(!$('po_start').value){ const t=new Date(Date.now()+7*3600*1000); const e=t.toISOString().slice(0,10); const s=new Date(t.getTime()-29*86400000).toISOString().slice(0,10); $('po_start').value=s; $('po_end').value=e; }
+  poKindUI();
+}
+function poKindUI(){ $('po_reportbox').style.display = $('po_kind').value==='report' ? 'block' : 'none'; }
+$('po_kind').onchange=poKindUI;
+
+// ---- ดึงตัวเลขจริงจากฐานข้อมูลสำหรับโหมดกราฟ ----
+async function poFetchBars(){
+  const metric=$('po_metric').value;
+  const r=await post({ action:'hr_analytics', password:pwd, data:{ branch:$('po_branch').value, start:$('po_start').value, end:$('po_end').value } });
+  if(!r||!r.ok) throw new Error((r&&r.error)||'ดึงข้อมูลไม่สำเร็จ');
+  const key={ late:'late_count', absent:'absent', sent_back:'sent_back', ot:'ot_hours' }[metric];
+  const unit={ late:'ครั้ง', absent:'วัน', sent_back:'ครั้ง', ot:'ชม.' }[metric];
+  const name={ late:'มาสาย', absent:'ขาดงาน', sent_back:'งานถูกตีกลับ', ot:'ชั่วโมง OT' }[metric];
+  const bars=(r.rows||[]).map(x=>({ label:(x.nickname||x.name||x.emp_id), value:Math.round(Number(x[key]||0)*10)/10 }))
+    .filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,8);
+  return { bars, unit, metric_name:name, period:($('po_start').value+' – '+$('po_end').value), branch:($('po_branch').selectedOptions[0]||{}).text||'ทุกสาขา' };
+}
+
+$('po_gen').onclick=async()=>{
+  const kind=$('po_kind').value, topic=$('po_topic').value.trim(), notes=$('po_notes').value.trim();
+  if(!topic && kind!=='report'){ toast('err','กรอกหัวข้อก่อน'); return; }
+  const btn=$('po_gen'); btn.innerHTML='<span class="spin"></span> นิดากำลังร่าง…'; $('po_status').textContent='';
+  try{
+    let data=null, useTopic=topic;
+    if(kind==='report'){
+      data=await poFetchBars();
+      if(!data.bars.length) throw new Error('ช่วงเวลานี้ไม่มีข้อมูลให้ทำกราฟ');
+      if(!useTopic) useTopic='สรุป'+data.metric_name+' '+data.branch;
+    }
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+    const res=await fetch(base+'/functions/v1/poster-gen',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ password:pwd, kind, topic:useTopic, notes, data }) });
+    const j=await res.json().catch(()=>({}));
+    if(!j.ok) throw new Error(j.error||'สร้างไม่สำเร็จ');
+    POSTER.spec=j.spec; POSTER.spec.kind=kind;
+    if(kind==='report'){ POSTER.spec.bars=data.bars; POSTER.spec.unit=data.unit; }
+    poFillEditor(); await poDraw();
+    $('po_result').style.display='block'; $('po_redraw').style.display='';
+    toast('ok','สร้างรูปแล้ว');
+  }catch(e){ toast('err',String(e.message||e)); $('po_status').textContent='⚠️ '+String(e.message||e); }
+  btn.innerHTML='✨ ให้นิดาร่าง + สร้างรูป';
+};
+$('po_redraw').onclick=async()=>{ if(!POSTER.spec) return; const o=['green','orange','red']; POSTER.spec.accent=o[(o.indexOf(POSTER.spec.accent)+1)%3]; await poDraw(); };
+
+function poFillEditor(){
+  const s=POSTER.spec||{};
+  $('po_t').value=s.title||''; $('po_s').value=s.subtitle||''; $('po_f').value=s.footer||'';
+  let txt='';
+  if(s.kind==='dos') txt=(s.dos||[]).map(x=>'+ '+x).concat((s.donts||[]).map(x=>'- '+x)).join('\n');
+  else if(s.kind==='report') txt=(s.insights||[]).join('\n');
+  else txt=(s.steps||[]).map(x=>(x.head||'')+' | '+(x.detail||'')).join('\n');
+  $('po_items').value=txt;
+}
+function poReadEditor(){
+  const s=POSTER.spec||{}; s.title=$('po_t').value.trim(); s.subtitle=$('po_s').value.trim(); s.footer=$('po_f').value.trim();
+  const lines=$('po_items').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  if(s.kind==='dos'){ s.dos=lines.filter(l=>l.startsWith('+')).map(l=>l.replace(/^\+\s*/,'')); s.donts=lines.filter(l=>l.startsWith('-')).map(l=>l.replace(/^-\s*/,'')); }
+  else if(s.kind==='report'){ s.insights=lines; }
+  else { s.steps=lines.map(l=>{ const i=l.indexOf('|'); return i<0?{head:l,detail:''}:{ head:l.slice(0,i).trim(), detail:l.slice(i+1).trim() }; }); }
+}
+$('po_apply').onclick=async()=>{ if(!POSTER.spec) return; poReadEditor(); await poDraw(); toast('ok','อัปเดตรูปแล้ว'); };
+
+// ---- ตัวช่วยวาด ----
+function poRR(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+// ตัดบรรทัดภาษาไทย (ไม่มีเว้นวรรค → ตัดทีละอักขระ แต่ห้ามแยกสระ/วรรณยุกต์ออกจากพยัญชนะ)
+function poComb(ch){ const c=ch.codePointAt(0); return c===0x0E31 || (c>=0x0E34&&c<=0x0E3A) || (c>=0x0E47&&c<=0x0E4E); }
+function poLead(ch){ const c=ch.codePointAt(0); return c>=0x0E40 && c<=0x0E44; }   // เ แ โ ใ ไ ต้องอยู่หน้าพยัญชนะเสมอ
+function poWrap(c,text,maxW){
+  const out=[]; let line=''; const arr=[...String(text||'')];
+  for(let i=0;i<arr.length;i++){
+    const ch=arr[i];
+    if(ch==='\n'){ out.push(line); line=''; continue; }
+    const t=line+ch;
+    if(line && c.measureText(t).width>maxW && !poComb(ch)){
+      let cut=line, carry=(ch===' '?'':ch);
+      while(cut.length>1 && poLead(cut[cut.length-1])){ carry=cut[cut.length-1]+carry; cut=cut.slice(0,-1); }
+      out.push(cut); line=carry;
+    } else line=t;
+  }
+  if(line) out.push(line);
+  return out;
+}
+function poText(c,text,x,y,maxW,lh,maxLines){
+  const ls=poWrap(c,text,maxW); const n=maxLines||ls.length;
+  for(let i=0;i<Math.min(ls.length,n);i++){ let t=ls[i]; if(i===n-1&&ls.length>n) t=t.slice(0,-1)+'…'; c.fillText(t,x,y+i*lh); }
+  return y+Math.min(ls.length,n)*lh;
+}
+async function poDraw(){
+  const s=POSTER.spec; if(!s) return;
+  try{ if(document.fonts&&document.fonts.ready) await document.fonts.ready; }catch(e){}
+  const cv=$('po_canvas'), c=cv.getContext('2d'), W=1080, H=1350;
+  const TH=PO_THEME[s.accent]||PO_THEME.green;
+  c.fillStyle='#fff'; c.fillRect(0,0,W,H);
+
+  // หัวโปสเตอร์
+  c.fillStyle=TH.main; c.fillRect(0,0,W,250);
+  c.fillStyle=TH.dark; c.fillRect(0,250,W,8);
+  // แถบ 3 สี 7-Eleven
+  const bars=[['#ee3124',0],['#f68121',1],['#008061',2]];
+  bars.forEach(([col,i])=>{ c.fillStyle=col; c.fillRect(i*(W/3),258,W/3,14); });
+
+  c.textBaseline='top'; c.textAlign='left';
+  c.fillStyle='rgba(255,255,255,.85)'; c.font='700 30px '+PO_FONT;
+  c.fillText('7-ELEVEN · สื่อภายในร้าน', 56, 40);
+  c.fillStyle='#fff'; c.font='800 62px '+PO_FONT;
+  let y=poText(c, s.title||'', 56, 92, W-112, 70, 2);
+  if(s.subtitle){ c.font='400 32px '+PO_FONT; c.fillStyle='rgba(255,255,255,.92)'; poText(c, s.subtitle, 56, Math.min(y+6,196), W-112, 38, 1); }
+
+  y=316;
+  if(s.kind==='dos'){
+    const colW=(W-56*2-24)/2, x2=56+colW+24;
+    [[ 'ควรทำ ✓', s.dos||[], '#008061', '#e8f5f0', 56 ], [ 'ห้ามทำ ✕', s.donts||[], '#ee3124', '#fdeceb', x2 ]].forEach(([head,list,col,soft,x])=>{
+      const h=H-y-160;
+      c.fillStyle=soft; poRR(c,x,y,colW,h,20); c.fill();
+      c.fillStyle=col; poRR(c,x,y,colW,68,20); c.fill(); c.fillRect(x,y+40,colW,28);
+      c.fillStyle='#fff'; c.font='800 34px '+PO_FONT; c.fillText(head, x+22, y+16);
+      let yy=y+96; c.font='400 30px '+PO_FONT;
+      (list||[]).forEach(it=>{ c.fillStyle=col; c.beginPath(); c.arc(x+30,yy+16,8,0,7); c.fill(); c.fillStyle='#1f2937'; yy=poText(c,it,x+50,yy,colW-72,40,3)+18; });
+    });
+  } else if(s.kind==='report'){
+    const list=(s.bars||[]).slice(0,8), max=Math.max(1,...list.map(b=>Number(b.value)||0));
+    const bw=W-56*2-220;
+    c.font='700 28px '+PO_FONT;
+    list.forEach(b=>{
+      c.fillStyle='#334155'; c.textAlign='right'; c.fillText(String(b.label).slice(0,12), 56+150, y+8); c.textAlign='left';
+      const w=Math.max(8, Math.round(bw*(Number(b.value)||0)/max));
+      c.fillStyle=TH.soft; poRR(c,56+170,y,bw,44,10); c.fill();
+      c.fillStyle=TH.main; poRR(c,56+170,y,w,44,10); c.fill();
+      c.fillStyle='#0f172a'; c.font='700 26px '+PO_FONT;
+      c.fillText(String(b.value)+' '+(s.unit||''), 56+170+w+12, y+8);
+      c.font='700 28px '+PO_FONT;
+      y+=62;
+    });
+    if((s.insights||[]).length){
+      y+=14; c.fillStyle=TH.soft; poRR(c,56,y,W-112,H-y-160,20); c.fill();
+      c.fillStyle=TH.dark; c.font='800 32px '+PO_FONT; c.fillText('ข้อสังเกต', 82, y+22);
+      let yy=y+76; c.font='400 29px '+PO_FONT;
+      (s.insights||[]).forEach(it=>{ c.fillStyle=TH.main; c.beginPath(); c.arc(90,yy+16,7,0,7); c.fill(); c.fillStyle='#1f2937'; yy=poText(c,it,110,yy,W-112-90,40,3)+14; });
+    }
+  } else {
+    const list=(s.steps||[]).slice(0,6);
+    const avail=H-y-150, gap=16, ch=Math.min(160, Math.floor((avail-gap*(list.length-1))/Math.max(1,list.length)));
+    list.forEach((st,i)=>{
+      c.fillStyle=TH.soft; poRR(c,56,y,W-112,ch,18); c.fill();
+      c.fillStyle=TH.main; c.beginPath(); c.arc(112,y+ch/2,36,0,7); c.fill();
+      c.fillStyle='#fff'; c.font='800 40px '+PO_FONT; c.textAlign='center'; c.textBaseline='middle';
+      c.fillText(String(i+1), 112, y+ch/2+2);
+      c.textAlign='left'; c.textBaseline='top';
+      c.fillStyle='#0f172a'; c.font='800 34px '+PO_FONT;
+      const hy=poText(c, st.head||'', 170, y+ (st.detail?24:ch/2-22), W-112-140, 40, 1);
+      if(st.detail){ c.fillStyle='#475569'; c.font='400 28px '+PO_FONT; poText(c, st.detail, 170, hy+4, W-112-140, 36, 2); }
+      y+=ch+gap;
+    });
+  }
+
+  // ท้ายโปสเตอร์
+  c.fillStyle=TH.main; c.fillRect(0,H-96,W,96);
+  bars.forEach(([col,i])=>{ c.fillStyle=col; c.fillRect(i*(W/3),H-110,W/3,14); });
+  c.fillStyle='#fff'; c.font='600 30px '+PO_FONT; c.textBaseline='middle';
+  c.fillText(s.footer||'ทีมงาน HR · 7-Eleven', 56, H-46);
+  c.textAlign='right'; c.font='800 30px '+PO_FONT; c.fillText(new Date(Date.now()+7*3600*1000).toLocaleDateString('th-TH'), W-56, H-46);
+  c.textAlign='left'; c.textBaseline='top';
+  POSTER.url=cv.toDataURL('image/png');
+}
+$('po_dl').onclick=()=>{ if(!POSTER.url){ toast('err','ยังไม่มีรูป'); return; }
+  const a=document.createElement('a'); a.href=POSTER.url; a.download='poster_'+Date.now()+'.png'; document.body.appendChild(a); a.click(); a.remove(); };
+$('po_chat').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่มีรูป'); return; }
+  if(!confirm('ส่งโปสเตอร์นี้เข้าห้องแชทของทุกสาขา?')) return;
+  const b=$('po_chat'); b.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_chat_send', password:pwd, data:{ broadcast:true, role:'hr', text:(POSTER.spec&&POSTER.spec.title)||'สื่อใหม่จาก HR', photos:[POSTER.url] } });
+  b.textContent='💬 ส่งเข้าแชททุกสาขา';
+  if(r&&r.ok){ chatFirePush(); toast('ok','ส่งเข้าแชทแล้ว '+(r.sent||0)+' สาขา'); } else toast('err',(r&&r.error)||'ส่งไม่สำเร็จ'); };
+$('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่มีรูป'); return; }
+  if(!confirm('ส่งโปสเตอร์นี้เข้ากลุ่ม LINE ของทุกสาขาที่ตั้งค่าไว้?')) return;
+  const b=$('po_line'); b.innerHTML='<span class="spin"></span>';
+  try{
+    const up=await post({ action:'hr_poster_upload', password:pwd, data_url:POSTER.url });
+    if(!up||!up.ok) throw new Error((up&&up.error)||'อัปโหลดไม่สำเร็จ');
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+    const res=await fetch(base+'/functions/v1/line-image-push',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ password:pwd, image_url:up.url, text:(POSTER.spec&&POSTER.spec.title)||'' }) });
+    const j=await res.json().catch(()=>({}));
+    if(!j.ok) throw new Error(j.error||'ส่ง LINE ไม่สำเร็จ');
+    toast('ok','ส่งเข้ากลุ่ม LINE แล้ว '+(j.sent||0)+'/'+(j.total||0)+' สาขา');
+  }catch(e){ toast('err',String(e.message||e)); }
+  b.textContent='🟩 ส่งเข้ากลุ่ม LINE'; };
+
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
 const NAV_GROUPS=[
   { icon:'📊', label:'ภาพรวม',     tabs:['dashboard','board','analytics'] },
@@ -3657,7 +4044,7 @@ const NAV_GROUPS=[
   { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
   { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'⚠️', label:'วินัย',       tabs:['discipline','score'] },
-  { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','settings','submissions','activity','notifylog'] },
+  { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
 function updateNavActive(name){ document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{ if(NAV_GROUPS[i]) b.classList.toggle('on', NAV_GROUPS[i].tabs.includes(name)); }); }

@@ -193,6 +193,11 @@
         case 'hr_chat_list':         return await hrChatList(p.branch);
         case 'hr_chat_send':         return await hrChatSend(p.data);
         case 'hr_chat_read':         return await hrChatRead(p.branch, p.side);
+        case 'hr_peer_branches':     return await hrPeerBranches(p.branch);
+        case 'hr_peer_list':         return await hrPeerList(p.room_key);
+        case 'hr_peer_send':         return await hrPeerSend(p.data);
+        case 'hr_peer_read':         return await hrPeerRead(p.room_key, p.branch);
+        case 'hr_poster_upload':     return await hrPosterUpload(p.data_url);
         case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_open_tasks':        return await hrOpenTasks();
@@ -1845,6 +1850,64 @@
   async function hrChatRead(branch, side) {
     if (!branch || !['hr', 'mgr'].includes(side)) return { ok: false, error: 'ข้อมูลไม่ครบ' };
     const { error } = await sb().from('mgr_chat_reads').upsert({ branch_id: branch, side, last_read_at: new Date().toISOString() }, { onConflict: 'branch_id,side' });
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- แชท ผจก. ↔ ผจก. (1:1 ข้ามสาขา) ----------
+  function peerRoom(a, b) { return [String(a), String(b)].sort().join('|'); }
+  async function hrPeerBranches(my) {
+    if (!my) return { ok: false, error: 'ไม่ระบุสาขา' };
+    const [brR, msgR, rdR] = await Promise.all([
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('mgr_peer_chat').select('room_key,from_branch,to_branch,sender_name,text,created_at').or('from_branch.eq.' + my + ',to_branch.eq.' + my).order('created_at', { ascending: false }).limit(600),
+      sb().from('mgr_peer_reads').select('room_key,last_read_at').eq('branch_id', my),
+    ]);
+    const read = {}; (rdR.data || []).forEach(r => { read[r.room_key] = r.last_read_at; });
+    const last = {}, unread = {};
+    (msgR.data || []).forEach(m => {
+      if (!last[m.room_key]) last[m.room_key] = m;
+      if (m.to_branch === my) { const lr = read[m.room_key]; if (!lr || m.created_at > lr) unread[m.room_key] = (unread[m.room_key] || 0) + 1; }
+    });
+    const rows = (brR.data || []).filter(b => String(b.branch_id) !== String(my)).map(b => {
+      const rk = peerRoom(my, b.branch_id); const l = last[rk] || {};
+      return { branch_id: b.branch_id, name: b.name, room_key: rk, last_text: l.text || '', last_at: l.created_at || null, last_from: l.from_branch || '', unread: unread[rk] || 0 };
+    }).sort((a, b) => (b.last_at || '').localeCompare(a.last_at || ''));
+    return { ok: true, rows, total_unread: rows.reduce((s, r) => s + r.unread, 0) };
+  }
+  async function hrPeerList(roomKey) {
+    if (!roomKey) return { ok: false, error: 'ไม่ระบุห้อง' };
+    const [msgR, rdR] = await Promise.all([
+      sb().from('mgr_peer_chat').select('*').eq('room_key', roomKey).order('created_at', { ascending: true }).limit(400),
+      sb().from('mgr_peer_reads').select('branch_id,last_read_at').eq('room_key', roomKey),
+    ]);
+    const reads = {}; (rdR.data || []).forEach(r => { reads[r.branch_id] = r.last_read_at; });
+    return { ok: true, rows: msgR.data || [], reads };
+  }
+  async function hrPeerSend(d) {
+    d = d || {};
+    if (!d.from_branch || !d.to_branch) return { ok: false, error: 'ไม่ระบุสาขา' };
+    const text = String(d.text || '').trim();
+    const photoArr = (Array.isArray(d.photos) && d.photos.length) ? await _uploadMany('peer/' + d.from_branch, d.photos) : [];
+    const photos = photoArr.length ? photoArr : null;
+    if (!text && !photos) return { ok: false, error: 'พิมพ์ข้อความก่อน' };
+    const room_key = peerRoom(d.from_branch, d.to_branch);
+    const { error } = await sb().from('mgr_peer_chat').insert({
+      room_key, from_branch: String(d.from_branch), to_branch: String(d.to_branch),
+      sender_emp: d.emp_id || null, sender_name: d.sender_name || 'ผจก.', text: text || null, photos,
+    });
+    if (error) throw error;
+    return { ok: true, room_key };
+  }
+  // อัปโหลดโปสเตอร์ (PNG data URL) ขึ้น storage → คืน public URL (ใช้ส่ง LINE / แชท)
+  async function hrPosterUpload(dataUrl) {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return { ok: false, error: 'ไม่มีรูป' };
+    const url = await window.HR.uploadPhoto('employee-docs', 'posters/poster_' + Date.now() + '.png', dataUrl);
+    return { ok: true, url };
+  }
+  async function hrPeerRead(roomKey, branch) {
+    if (!roomKey || !branch) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    const { error } = await sb().from('mgr_peer_reads').upsert({ room_key: roomKey, branch_id: branch, last_read_at: new Date().toISOString() }, { onConflict: 'room_key,branch_id' });
     if (error) throw error;
     return { ok: true };
   }
