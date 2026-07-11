@@ -478,9 +478,13 @@ function wireFixTasks(rows){
     TASK_PHOTOS['fx_'+a.id]=[];
     const inp=document.getElementById('fxc_'+a.id);
     if(inp) inp.onchange=async e=>{
-      const f=e.target.files&&e.target.files[0]; if(!f) return;
-      try{ const u=await spReadImg(f); TASK_PHOTOS['fx_'+a.id].push(u); renderFixThumbs(a.id); }catch(err){ toast('err','อ่านรูปไม่สำเร็จ'); }
-      e.target.value='';
+      if(!inp.files||!inp.files.length) return;
+      try{
+        const added=await filesToData(inp.files);      // ใช้ตัวอ่านรูปตัวเดียวกับงานในกะ (ย่อ+บีบอัดให้แล้ว)
+        TASK_PHOTOS['fx_'+a.id]=(TASK_PHOTOS['fx_'+a.id]||[]).concat(added);
+        renderFixThumbs(a.id);
+      }catch(err){ toast('err','อ่านรูปไม่สำเร็จ: '+((err&&err.message)||'')); }
+      inp.value='';
     };
   });
   document.querySelectorAll('[data-fixsub]').forEach(b=>b.onclick=async()=>{
