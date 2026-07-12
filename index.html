@@ -140,12 +140,12 @@
 const $=id=>document.getElementById(id);
 
 // ====== บอร์ดข่าวสาร: ประกาศรูปภาพ (สไลด์) ======
-//  · เด้งทันทีที่เปิดหน้าแรก · เลื่อนซ้าย-ขวาได้ · ปิดได้เลย · แสดงวันละครั้งต่อเครื่อง
-//  · ไม่นับยอด "เปิดดูแล้ว" ที่นี่ — นับจากหน้ารับส่งผลัดที่เดียว (เพราะรู้ตัวพนักงานแน่นอน)
+//  · เด้ง "ทุกครั้ง" ที่เปิดหน้าแรก (force) — หน้านี้เป็นบอร์ดข่าวสาร ไม่ได้นับยอด จึงไม่จำกัดวันละครั้ง
+//  · เลื่อนซ้าย-ขวาได้ · ปิดได้เลย · ไม่นับยอด "เปิดดูแล้ว" ที่นี่ (นับจากหน้ารับส่งผลัดที่เดียว)
 (function(){
   var BR=''; try{ BR = localStorage.getItem('nida_emp_branch') || ''; }catch(e){}
   setTimeout(function(){
-    try{ if(window.ANN) window.ANN.show(null, { branchId: BR || null }); }catch(e){}
+    try{ if(window.ANN) window.ANN.show(null, { branchId: BR || null, force: true }); }catch(e){}
   }, 600);
 })();
 function toast(kind,msg){const t=$('toast');t.className='toast show '+kind;t.textContent=msg;setTimeout(()=>t.classList.remove('show'),3500);}
