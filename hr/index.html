@@ -678,18 +678,21 @@
 
 @media print{
   @page{ size:A4 portrait; margin:12mm 12mm 14mm; }
-  body *{visibility:hidden!important}
-  #es_body, #es_body *{visibility:visible!important}
-  #es_body{position:absolute;left:0;top:0;width:100%}
+  /* พิมพ์รายงานสรุปรายบุคคล — ใส่ class print-es ที่ body ตอนกดพิมพ์ */
+  body.print-es *{visibility:hidden!important}
+  body.print-es #es_body, body.print-es #es_body *{visibility:visible!important}
+  body.print-es #es_body{position:absolute;left:0;top:0;width:100%}
   .es-controls, .no-print{display:none!important}
   /* พิมพ์ = เอกสารทางการ · ซ่อนการ์ดบนจอ */
-  .es-report{display:none!important}
+  body.print-es .es-report{display:none!important}
   .es-doc{display:block!important;color:#000;font-size:11.8px}
+  .es-doc-head{position:relative}
   .es-dt{page-break-inside:auto}
   .es-dt tr{page-break-inside:avoid}
   .es-dsec{page-break-after:avoid}
   .es-sign{page-break-inside:avoid}
 }
+.es-doc-head{position:relative}
 </style>
 
 <!-- Analytics: วิเคราะห์เชิงลึก (วินัย + ความรับผิดชอบ รวมกัน) -->
@@ -1253,6 +1256,24 @@
       เดิมระบบมีเกณฑ์ 2 ชุดซ้อนกัน (นับครั้ง กับ คะแนน) ทำให้หน้าวินัยกับหน้าคะแนนขัดกันเอง — ตอนนี้เหลือชุดเดียวคือ <b>คะแนนวินัย</b>
       ตั้งค่าได้ที่หัวข้อ <b>“คะแนนวินัย: กฎการหักคะแนน”</b> และ <b>“ช่วงคะแนน → ผลและการดำเนินการ”</b> ด้านล่างนี้
     </div>
+  </div>
+
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">📄 ส่วนหัวเอกสารทางการ</h3><button class="btn btn-pri btn-sm" id="doc_save">บันทึก</button></div>
+  <div class="card" style="padding:16px">
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div class="field" style="flex:1;min-width:320px"><label>บรรทัดที่ 1 — ชื่อบริษัท / นิติบุคคล</label>
+        <input id="doc_company" placeholder="เช่น บริษัท ซี.พี. ออลล์ จำกัด (มหาชน)"></div>
+      <div class="field" style="flex:1;min-width:320px"><label>บรรทัดที่ 2 — หน่วยงาน / สาขาที่ออกเอกสาร</label>
+        <input id="doc_dept" placeholder="เช่น ร้าน 7-Eleven สาขาถนนสามัคคีชัย หล่มสัก — ฝ่ายทรัพยากรบุคคล"></div>
+      <div class="field" style="flex:1;min-width:320px"><label>บรรทัดที่ 3 — ที่อยู่ / เบอร์ติดต่อ (ไม่บังคับ)</label>
+        <input id="doc_addr" placeholder="เช่น 123 ถ.สามัคคีชัย อ.หล่มสัก จ.เพชรบูรณ์ 67110 · โทร 056-xxx-xxx"></div>
+      <div class="field" style="flex:1;min-width:320px"><label>URL โลโก้ (ไม่บังคับ · แสดงมุมซ้ายบนของเอกสาร)</label>
+        <input id="doc_logo" placeholder="https://... หรือ ../icons/icon-192.png"></div>
+      <div class="field" style="flex:1;min-width:320px"><label>ข้อความท้ายเอกสาร (ไม่บังคับ)</label>
+        <input id="doc_foot" placeholder="เช่น เอกสารนี้เป็นความลับของบริษัท ห้ามเผยแพร่"></div>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);margin-top:10px">ใช้กับทุกเอกสารที่พิมพ์ออกจากระบบ — <b>รายงานสรุปรายบุคคล</b> และ <b>ใบเตือนการทำงาน</b></div>
+    <div id="doc_preview" style="margin-top:14px"></div>
   </div>
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">แจ้งเตือนงาน / ลงเวลา</h3><button class="btn btn-pri btn-sm" id="coGrace_save">บันทึก</button></div>
@@ -2961,36 +2982,57 @@ async function openWarningView(wid){
     ? ('พนักงานกดรับทราบในระบบแล้ว เมื่อ ' + (()=>{ try{ return new Date(w.acknowledged_at).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } })() + (w.ack_note?(' · ความเห็นพนักงาน: '+esc(w.ack_note)):''))
     : 'ยังไม่ได้กดรับทราบในระบบ (จะเด้งบังคับในหน้ารับส่งผลัด)';
 
-  $('w_doc').innerHTML = `
-    <div class="warning-doc">
-      <h1>ใบเตือนการทำงาน</h1>
-      <div class="sub">7-Eleven · ฝ่ายบุคคล</div>
-      <div class="meta">
-        <span>เลขที่: <b>${esc(w.warning_id)}</b></span>
-        <span>วันที่ออก: <b>${beDate(w.issue_date)}</b></span>
-      </div>
-      <div class="row"><div class="lab">ถึง</div><div class="val">${esc(w.emp_name)} ${w.nickname?'("'+esc(w.nickname)+'")':''}</div></div>
-      <div class="row"><div class="lab">รหัสพนักงาน</div><div class="val">${esc(w.emp_id)}</div></div>
-      <div class="row"><div class="lab">กะประจำ</div><div class="val">${esc(shiftName(w.default_shift))}</div></div>
-      <div class="row"><div class="lab">สาขา</div><div class="val">${esc(branchName(w.branch_id))}</div></div>
-      <div class="row"><div class="lab">วันที่เริ่มงาน</div><div class="val">${beDate(w.start_date)||'—'}</div></div>
-      <div class="row"><div class="lab">ระดับใบเตือน</div><div class="val">${esc(w.level_name)} (ระดับ ${w.level})</div></div>
-      <div class="row"><div class="lab">รอบที่ประเมิน</div><div class="val">${beDate(w.cycle_start)} ถึง ${beDate(w.cycle_end)}</div></div>
-      <div class="stats">
-        <b>สรุปการประเมิน</b><br>
-        มาทำงานสาย ${w.late_count} ครั้ง · รวม ${w.late_total} นาที · ขาดงาน ${w.absent_count} วัน
-        ${w.score!=null?('<br>คะแนนวินัยคงเหลือ <b>'+w.score+'</b> คะแนน'+(w.band_label?(' · '+esc(w.band_label)):'')):''}
-      </div>
-      <div><b>รายละเอียดและคำตักเตือน</b></div>
-      <div class="reason">${esc(w.reason).replace(/\n/g,'<br>')}</div>
-      ${prior}
-      <div style="margin-top:12px;font-size:12.5px;color:#444"><b>สถานะการรับทราบในระบบ:</b> ${ackTxt}</div>
-      <p style="margin-top:14px; font-size:14px;">บริษัทจึงออกใบเตือนฉบับนี้ให้พนักงานรับทราบและปรับปรุงพฤติกรรมการทำงาน หากยังพบพฤติกรรมในลักษณะเดิม บริษัทจะพิจารณาดำเนินการตามระเบียบในขั้นต่อไป</p>
-      <div class="sig">
-        <div>ผู้ออกใบเตือน (${esc(w.issued_by||'HR')})</div>
-        <div>ลงชื่อพนักงานรับทราบ</div>
-      </div>
-    </div>`;
+  // เอกสารทางการ — ใช้ส่วนหัวชุดเดียวกับรายงานสรุปรายบุคคล
+  await loadDocSettings();
+  const photoCell = w.photo_url
+    ? '<img src="'+esc(w.photo_url)+'" alt="" style="width:100%;max-width:92px;height:112px;object-fit:cover;display:block;margin:0 auto;border:1px solid #000">'
+    : '<div style="width:92px;height:112px;border:1px dashed #666;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:10px;color:#666">ไม่มีรูปถ่าย</div>';
+
+  $('w_doc').innerHTML =
+    '<div class="es-doc" style="display:block">'
+    + docHeadHTML(DOC_CFG, 'ใบเตือนการทำงาน', 'หนังสือตักเตือนพนักงาน — ' + esc(w.level_name||''),
+        'เลขที่: ' + w.warning_id, 'วันที่ออกเอกสาร: ' + beDate(w.issue_date))
+
+    + '<table class="es-dt">'
+      + '<tr><td rowspan="4" style="width:104px;text-align:center;vertical-align:middle;padding:6px">' + photoCell + '</td>'
+        + '<td class="k" style="width:22%">ถึง (ชื่อ–สกุล)</td><td>' + esc(w.emp_name) + (w.nickname ? (' ("' + esc(w.nickname) + '")') : '') + '</td>'
+        + '<td class="k" style="width:20%">รหัสพนักงาน</td><td>' + esc(w.emp_id) + '</td></tr>'
+      + '<tr><td class="k">สาขา</td><td>' + esc(branchName(w.branch_id)) + '</td>'
+        + '<td class="k">กะประจำ</td><td>' + esc(shiftName(w.default_shift) || '—') + '</td></tr>'
+      + '<tr><td class="k">วันที่เริ่มงาน</td><td>' + (beDate(w.start_date) || '—') + '</td>'
+        + '<td class="k">รอบที่ประเมิน</td><td>' + beDate(w.cycle_start) + ' – ' + beDate(w.cycle_end) + '</td></tr>'
+      + '<tr><td class="k">ระดับใบเตือน</td><td colspan="3" style="font-weight:700">' + esc(w.level_name) + ' (ระดับ ' + w.level + ')</td></tr>'
+      + '</table>'
+
+    + '<div class="es-dsec">ส่วนที่ 1 — ข้อเท็จจริงและสถิติประกอบ</div>'
+    + '<table class="es-dt">'
+      + '<tr><td class="k">มาทำงานสาย</td><td class="n">' + w.late_count + ' ครั้ง</td>'
+        + '<td class="k">รวมเวลามาสาย</td><td class="n">' + w.late_total + ' นาที</td></tr>'
+      + '<tr><td class="k">ขาดงาน</td><td class="n">' + w.absent_count + ' วัน</td>'
+        + '<td class="k">คะแนนวินัยคงเหลือ</td><td class="n">' + (w.score != null ? (w.score + ' คะแนน' + (w.band_label ? (' · ' + esc(w.band_label)) : '')) : '—') + '</td></tr>'
+      + '</table>'
+
+    + '<div class="es-dsec">ส่วนที่ 2 — เหตุแห่งการตักเตือน</div>'
+    + '<table class="es-dt"><tr><td style="padding:8px 10px;line-height:1.7">' + esc(w.reason).replace(/\n/g, '<br>') + '</td></tr></table>'
+
+    + (prior ? ('<div class="es-dsec">ส่วนที่ 3 — ประวัติการดำเนินการก่อนหน้า</div>' + prior) : '')
+
+    + '<div class="es-dsec">ส่วนที่ ' + (prior ? '4' : '3') + ' — คำเตือนและผลของการฝ่าฝืน</div>'
+    + '<div class="es-note" style="line-height:1.8">'
+      + 'บริษัทฯ จึงออกหนังสือตักเตือนฉบับนี้เพื่อให้พนักงานรับทราบและปรับปรุงแก้ไขพฤติกรรมการปฏิบัติงานให้เป็นไปตามระเบียบข้อบังคับเกี่ยวกับการทำงาน '
+      + 'หากพนักงานยังคงกระทำผิดซ้ำในลักษณะเดียวกันหรือลักษณะอื่นใดอีก บริษัทฯ จะพิจารณาดำเนินการทางวินัยในขั้นที่สูงขึ้นตามลำดับ '
+      + 'ซึ่งอาจถึงขั้น<b>เลิกจ้างโดยไม่จ่ายค่าชดเชย</b>ตามพระราชบัญญัติคุ้มครองแรงงาน มาตรา 119 (4)'
+      + '</div>'
+    + '<div class="es-note" style="margin-top:6px"><b>สถานะการรับทราบในระบบ:</b> ' + ackTxt + '</div>'
+
+    + '<div class="es-sign">'
+      + '<div><div class="ln"></div>(............................................)<br>ผู้ออกใบเตือน — ' + esc(w.issued_by || 'ฝ่ายทรัพยากรบุคคล') + '<br>วันที่ ........./........./.........</div>'
+      + '<div><div class="ln"></div>(............................................)<br>พยาน<br>วันที่ ........./........./.........</div>'
+      + '<div><div class="ln"></div>(............................................)<br>พนักงานผู้รับทราบ<br>วันที่ ........./........./.........</div>'
+      + '</div>'
+    + '<div class="es-note" style="margin-top:10px;font-size:10.5px">หมายเหตุ: กรณีพนักงานปฏิเสธการลงลายมือชื่อ ให้พยานลงลายมือชื่อรับรองว่าได้อ่านและแจ้งข้อความในหนังสือฉบับนี้ให้พนักงานทราบแล้ว</div>'
+    + docFootHTML(DOC_CFG, 'เอกสารนี้จัดทำโดยระบบบริหารบุคลากร · ' + w.warning_id, 'ออกเมื่อ ' + beDate(w.issue_date))
+    + '</div>';
   $('viewWarningOverlay').classList.add('show');
 }
 $('wvClose').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
@@ -4785,7 +4827,11 @@ function initEmpSum(){
   if(mode && !mode.dataset.wired){ mode.dataset.wired='1';
     mode.onchange=()=>{ $('es_range').style.display = mode.value==='custom'?'block':'none'; };
     $('es_gen').onclick=genEmpSum;
-    $('es_print').onclick=()=>window.print();
+    $('es_print').onclick=()=>{
+      document.body.classList.add('print-es');
+      window.print();
+      setTimeout(()=>document.body.classList.remove('print-es'), 800);
+    };
   }
 }
 async function genEmpSum(){
@@ -4795,6 +4841,7 @@ async function genEmpSum(){
   if(mode==='custom'){ const s=$('es_start').value, e=$('es_end').value; if(!s||!e){ toast('err','เลือกช่วงวันที่ให้ครบ'); return; } req.data.start=s; req.data.end=e; }
   else req.data.cycle=mode;
   $('es_body').innerHTML='<div class="empty">กำลังสร้างสรุป…</div>'; $('es_print').style.display='none';
+  await loadDocSettings();
   let r; try{ r=await post(req); }catch(e){ $('es_body').innerHTML='<div class="empty">เกิดข้อผิดพลาด</div>'; return; }
   if(!r.ok){ $('es_body').innerHTML='<div class="empty">'+esc(r.error||'ไม่สำเร็จ')+'</div>'; return; }
   ES_DATA=r; renderEmpSum(r); $('es_print').style.display='';
@@ -4806,6 +4853,12 @@ function renderEmpSum(r){
   let h='<div class="es-report">';
   h+='<div class="es-head"><div><div class="es-title">สรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
     +'<div class="es-sub">ช่วง: '+(beDate(r.range.start)+' – '+beDate(r.range.end))+'</div></div><div class="es-org">HR 7-Eleven</div></div>';
+  if(e.photo_url){
+    h+='<div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">'
+      +'<img src="'+esc(e.photo_url)+'" alt="" style="width:70px;height:86px;object-fit:cover;border:1px solid #ddd;border-radius:6px">'
+      +'<div><div style="font-weight:700;font-size:15px">'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</div>'
+      +'<div style="font-size:12.5px;color:#666">รหัส '+esc(e.emp_id)+' · '+esc(e.branch_name)+'</div></div></div>';
+  }
   h+='<table class="es-info"><tr><td>ชื่อ-สกุล</td><td><b>'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</b></td>'
     +'<td>รหัสพนักงาน</td><td>'+esc(e.emp_id)+'</td></tr>'
     +'<tr><td>สาขา</td><td>'+esc(e.branch_name)+'</td><td>กะประจำ</td><td>'+esc(e.shift_name||'-')+'</td></tr>'
@@ -4953,22 +5006,25 @@ function buildEmpSumDoc(r, genTxt){
 
   let h='<div class="es-doc">';
 
-  // ---- หัวเอกสาร ----
-  h+='<div class="es-doc-head">'
-    +'<div class="es-doc-org">บริษัท ซี.พี. ออลล์ · ร้าน 7-Eleven — ฝ่ายทรัพยากรบุคคล</div>'
-    +'<div class="es-doc-title">รายงานสรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
-    +'<div class="es-doc-sub">รอบประเมิน: '+beDate(r.range.start)+' ถึง '+beDate(r.range.end)+'</div>'
-    +'<div class="es-doc-meta"><span>เลขที่เอกสาร: '+esc(docNo)+'</span><span>วันที่ออกเอกสาร: '+esc(genTxt)+'</span></div>'
-    +'</div>';
+  // ---- หัวเอกสาร (ตั้งค่าได้ที่ ระบบ → ตั้งค่า → ส่วนหัวเอกสารทางการ) ----
+  h+=docHeadHTML(DOC_CFG, 'รายงานสรุปผลการปฏิบัติงานและวินัย รายบุคคล',
+       'รอบประเมิน: '+beDate(r.range.start)+' ถึง '+beDate(r.range.end),
+       'เลขที่เอกสาร: '+docNo, 'วันที่ออกเอกสาร: '+genTxt);
 
-  // ---- ข้อมูลพนักงาน ----
+  // ---- ข้อมูลพนักงาน (พร้อมรูปถ่าย) ----
+  const photoCell = e.photo_url
+    ? '<img src="'+esc(e.photo_url)+'" alt="" style="width:100%;max-width:92px;height:112px;object-fit:cover;display:block;margin:0 auto;border:1px solid #000">'
+    : '<div style="width:92px;height:112px;border:1px dashed #666;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:10px;color:#666">ไม่มีรูปถ่าย</div>';
   h+='<table class="es-dt">'
-    +'<tr><td class="k">ชื่อ–สกุล</td><td>'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</td>'
-      +'<td class="k">รหัสพนักงาน</td><td>'+esc(e.emp_id)+'</td></tr>'
+    +'<tr>'
+      +'<td rowspan="4" style="width:104px;text-align:center;vertical-align:middle;padding:6px">'+photoCell+'</td>'
+      +'<td class="k" style="width:22%">ชื่อ–สกุล</td><td>'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</td>'
+      +'<td class="k" style="width:20%">รหัสพนักงาน</td><td>'+esc(e.emp_id)+'</td></tr>'
     +'<tr><td class="k">สาขา</td><td>'+esc(e.branch_name)+'</td>'
       +'<td class="k">กะประจำ</td><td>'+esc(e.shift_name||'—')+'</td></tr>'
     +'<tr><td class="k">วันเริ่มงาน</td><td>'+esDate(e.start_date)+'</td>'
-      +'<td class="k">รอบการประเมิน</td><td>'+beDate(r.range.start)+' – '+beDate(r.range.end)+'</td></tr>'
+      +'<td class="k">เบอร์ติดต่อ</td><td>'+esc(e.phone||'—')+'</td></tr>'
+    +'<tr><td class="k">รอบการประเมิน</td><td colspan="3">'+beDate(r.range.start)+' – '+beDate(r.range.end)+'</td></tr>'
     +'</table>';
 
   // ---- ส่วนที่ 1: การมาปฏิบัติงาน ----
@@ -5084,7 +5140,7 @@ function buildEmpSumDoc(r, genTxt){
     +'<div><div class="ln"></div>(............................................)<br>พนักงานผู้รับทราบ<br>วันที่ ........./........./.........</div>'
     +'</div>';
 
-  h+='<div class="es-doc-foot"><span>เอกสารนี้จัดทำโดยระบบบริหารบุคลากร 7-Eleven · '+esc(docNo)+'</span><span>ออกเมื่อ '+esc(genTxt)+'</span></div>';
+  h+=docFootHTML(DOC_CFG, 'เอกสารนี้จัดทำโดยระบบบริหารบุคลากร · '+docNo, 'ออกเมื่อ '+genTxt);
   h+='</div>';
   return h;
 }
@@ -6173,6 +6229,71 @@ async function loadLeaveTypes(){
 let DR=null;
 async function loadDiscRules(){ /* ไม่ใช้แล้ว — คงฟังก์ชันไว้กันโค้ดเก่าเรียกแล้วพัง */ }
 async function saveDiscRules(){ /* ไม่ใช้แล้ว */ }
+
+// ========== ส่วนหัวเอกสารทางการ (ใช้ร่วมกันทุกเอกสารที่พิมพ์) ==========
+let DOC_CFG=null;
+const DOC_DEFAULT={ company:'บริษัท ซี.พี. ออลล์ จำกัด (มหาชน)', dept:'ร้าน 7-Eleven — ฝ่ายทรัพยากรบุคคล', addr:'', logo:'', foot:'' };
+async function loadDocSettings(force){
+  if(DOC_CFG && !force) return DOC_CFG;
+  try{
+    const r=await post({ action:'hr_settings_get', ...authBody() });
+    const s=(r&&r.settings)||{};
+    DOC_CFG={
+      company: s.doc_company || DOC_DEFAULT.company,
+      dept:    s.doc_dept    || DOC_DEFAULT.dept,
+      addr:    s.doc_addr    || '',
+      logo:    s.doc_logo    || '',
+      foot:    s.doc_foot    || '',
+    };
+  }catch(e){ DOC_CFG={...DOC_DEFAULT}; }
+  // เติมค่าลงฟอร์มตั้งค่า (ถ้าอยู่หน้าตั้งค่า)
+  if($('doc_company')){
+    $('doc_company').value=DOC_CFG.company; $('doc_dept').value=DOC_CFG.dept;
+    $('doc_addr').value=DOC_CFG.addr; $('doc_logo').value=DOC_CFG.logo; $('doc_foot').value=DOC_CFG.foot;
+    renderDocPreview();
+  }
+  return DOC_CFG;
+}
+// หัวเอกสารมาตรฐาน (title = ชื่อเอกสาร, sub = บรรทัดย่อย, meta = [ซ้าย, ขวา])
+function docHeadHTML(cfg, title, sub, metaL, metaR){
+  const c=cfg||DOC_CFG||DOC_DEFAULT;
+  return '<div class="es-doc-head">'
+    + (c.logo?('<img src="'+esc(c.logo)+'" alt="" style="height:44px;position:absolute;left:0;top:0;object-fit:contain">'):'')
+    + '<div class="es-doc-org">'+esc(c.company)+'</div>'
+    + (c.dept?('<div style="font-size:12px;font-weight:600;margin-top:1px">'+esc(c.dept)+'</div>'):'')
+    + (c.addr?('<div style="font-size:10.5px;color:#333;margin-top:1px">'+esc(c.addr)+'</div>'):'')
+    + '<div class="es-doc-title">'+esc(title)+'</div>'
+    + (sub?('<div class="es-doc-sub">'+esc(sub)+'</div>'):'')
+    + ((metaL||metaR)?('<div class="es-doc-meta"><span>'+esc(metaL||'')+'</span><span>'+esc(metaR||'')+'</span></div>'):'')
+    + '</div>';
+}
+function docFootHTML(cfg, left, right){
+  const c=cfg||DOC_CFG||DOC_DEFAULT;
+  return '<div class="es-doc-foot"><span>'+esc(left||'')+(c.foot?(' · '+esc(c.foot)):'')+'</span><span>'+esc(right||'')+'</span></div>';
+}
+function renderDocPreview(){
+  const box=$('doc_preview'); if(!box) return;
+  const c={ company:$('doc_company').value||DOC_DEFAULT.company, dept:$('doc_dept').value, addr:$('doc_addr').value, logo:$('doc_logo').value, foot:$('doc_foot').value };
+  box.innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff;color:#000">'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">ตัวอย่างส่วนหัวเอกสาร</div>'
+    +'<div style="position:relative;text-align:center;border-bottom:2.5px solid #000;padding-bottom:8px">'
+      +(c.logo?('<img src="'+esc(c.logo)+'" alt="" style="height:40px;position:absolute;left:0;top:0;object-fit:contain">'):'')
+      +'<div style="font-size:13px;font-weight:700">'+esc(c.company)+'</div>'
+      +(c.dept?('<div style="font-size:12px;font-weight:600">'+esc(c.dept)+'</div>'):'')
+      +(c.addr?('<div style="font-size:10.5px">'+esc(c.addr)+'</div>'):'')
+      +'<div style="font-size:17px;font-weight:700;margin-top:4px">รายงานสรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
+    +'</div></div>';
+}
+['doc_company','doc_dept','doc_addr','doc_logo','doc_foot'].forEach(id=>{ const el=$(id); if(el) el.oninput=renderDocPreview; });
+$('doc_save') && ($('doc_save').onclick=async()=>{
+  const pairs=[['doc_company',$('doc_company').value.trim()],['doc_dept',$('doc_dept').value.trim()],
+               ['doc_addr',$('doc_addr').value.trim()],['doc_logo',$('doc_logo').value.trim()],['doc_foot',$('doc_foot').value.trim()]];
+  $('doc_save').disabled=true;
+  for(const [k,v] of pairs){ await post({ action:'hr_settings_save', password:pwd, key:k, value:v }); }
+  $('doc_save').disabled=false;
+  DOC_CFG=null; await loadDocSettings(true);
+  toast('ok','บันทึกส่วนหัวเอกสารแล้ว');
+});
 
 // ========== ผ่อนผันก่อนเตือน "ลืมกดออก" ==========
 async function loadCheckoutGrace(){

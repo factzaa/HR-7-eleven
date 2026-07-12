@@ -1047,7 +1047,7 @@
 
   async function hrWarningGet(wid) {
     const { data, error } = await sb().from('warnings')
-      .select('*, employees(name,nickname,default_shift,branch_id,start_date)')
+      .select('*, employees(name,nickname,default_shift,branch_id,start_date,photo_url)')
       .eq('warning_id', wid).maybeSingle();
     if (error) throw error;
     if (!data) return { ok: false, error: 'ไม่พบใบเตือน' };
@@ -1055,6 +1055,7 @@
     const warning = {
       ...data, emp_name: e.name || data.emp_id, nickname: e.nickname || '',
       default_shift: e.default_shift || '', branch_id: e.branch_id || '', start_date: e.start_date || '',
+      photo_url: e.photo_url || '',
     };
     return { ok: true, warning };
   }
@@ -2641,7 +2642,7 @@
     const endEff = end < today ? end : today;
     const [empR, brR, shR, attR, schR, lvR, taR, staR, stR, dvR,
            revR, fixR, ctrlR, leadR, gdR, qaR, shcR, shaR, hoR, mtR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,default_shift').eq('emp_id', p.emp_id).maybeSingle(),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,default_shift,photo_url,phone').eq('emp_id', p.emp_id).maybeSingle(),
       sb().from('branches').select('branch_id,name'),
       sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
       sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min,extend_until').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
@@ -2818,7 +2819,7 @@
     };
     return {
       ok: true,
-      emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '' },
+      emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '', photo_url: emp.photo_url || '', phone: emp.phone || '' },
       range: { start, end, label: rangeLabel, generated: new Date().toISOString() },
       attendance: { days_should, days_worked, absent, late_count, late_total, leave_days, ot_hours, early_out_count, early_out_hours },
       score: {
