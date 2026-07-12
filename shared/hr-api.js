@@ -170,7 +170,10 @@
         case 'hr_rule_status':    return await hrRuleStatus();
         case 'hr_disc_rules_get': return await hrDiscRulesGet();
         case 'hr_disc_rules_save':return await hrDiscRulesSave(p.data);
-        case 'hr_score_get':         return await hrScoreGet(p.cycle);
+        case 'hr_disc_action_add':return await hrDiscActionAdd(p.data);
+        case 'hr_disc_timeline':  return await hrDiscTimeline(p.emp_id);
+        case 'hr_disc_pending':   return await hrDiscPending(p.cycle, p.branch);
+        case 'hr_score_get':         return await hrScoreGet(p.cycle, p.range);
         case 'hr_score_config_get':  return await hrScoreConfigGet();
         case 'hr_score_config_save': return await hrScoreConfigSave(p.data);
         case 'hr_score_rules_save':  return await hrScoreRulesSave(p.data);
@@ -820,18 +823,155 @@
       let absent = 0;
       pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent += dvOf(mySchedMap[d]); });
       absent = Math.round(absent * 10) / 10;
-      const lv = disciplineLevel(late_count, absent, discRules);
+      const lv = disciplineLevel(late_count, absent, discRules);   // เกณฑ์นับครั้ง (เก็บไว้อ้างอิง)
       return {
         emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '', branch_id: e.branch_id || '',
         late_count, late_total, ot_hours, absent,
         early_out_count, early_out_hours: Math.round((early_out_min / 60) * 10) / 10,
         early_out_warn: early_out_count >= earlyWarnDays,
         days_should, days_worked, basis,
-        level: lv.level, level_name: lv.level_name, level_color: lv.level_color,
+        rule_level: lv.level, rule_level_name: lv.level_name,       // ← เกณฑ์เก่า (นับครั้ง) ไว้เทียบเฉย ๆ
       };
-    }).sort((a, b) => b.level - a.level || b.late_total - a.late_total);
+    });
 
-    return { ok: true, employees, cycle: cyc };
+    // ★ ระดับวินัย "ตัดสินจากคะแนน" เพียงตัวเดียว (เลิกใช้ 2 เกณฑ์ซ้อนกันจนตัวเลขขัดกัน)
+    const sc = await hrScoreGet(which, range);
+    const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
+
+    // การดำเนินการที่ทำไปแล้วในรอบนี้ (ตักเตือนวาจา / ใบเตือน ฯลฯ)
+    const { data: acts } = await sb().from('disc_actions').select('*').eq('cycle_start', cyc.start);
+    const actMap = {}; (acts || []).forEach(a => { (actMap[a.emp_id] || (actMap[a.emp_id] = [])).push(a); });
+
+    const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
+    const out = employees.map(e => {
+      const s = scMap[e.emp_id] || {};
+      const mine = (actMap[e.emp_id] || []).sort((a, b) => String(b.performed_at).localeCompare(String(a.performed_at)));
+      const need = s.action_type || null;                       // ต้องทำอะไรตามคะแนน
+      const doneOfNeed = need ? mine.find(a => a.action_type === need) : null;
+      const lastAct = mine[0] || null;
+      const pendingAck = mine.filter(a => a.need_ack && !a.ack_at).length;
+      return {
+        ...e,
+        score: s.score != null ? s.score : null,
+        start_score: s.start != null ? s.start : null,
+        total_deduct: s.total_deduct != null ? s.total_deduct : null,
+        band_label: s.band_label || '',
+        band_color: s.band_color || '#475569',
+        bonus: s.bonus || 0,
+        level: s.warn_level != null ? s.warn_level : (need === 'verbal' ? 1 : (need === 'written' ? 2 : 0)),
+        level_name: s.warn_name || (need ? ACT_LABEL[need] : (s.band_label || 'ปกติ')),
+        level_color: s.band_color || '#16a34a',
+        action_needed: need,
+        action_needed_label: need ? ACT_LABEL[need] : '',
+        action_done: !!doneOfNeed,
+        action_done_at: doneOfNeed ? doneOfNeed.performed_at : null,
+        action_done_by: doneOfNeed ? doneOfNeed.performed_by : null,
+        action_status: !need ? 'none' : (doneOfNeed ? 'done' : 'pending'),
+        last_action: lastAct ? { type: lastAct.action_type, label: ACT_LABEL[lastAct.action_type] || lastAct.action_type, at: lastAct.performed_at, by: lastAct.performed_by, ack_at: lastAct.ack_at } : null,
+        actions_count: mine.length,
+        pending_ack: pendingAck,
+      };
+    }).sort((a, b) => (a.score == null ? 999 : a.score) - (b.score == null ? 999 : b.score));
+
+    return { ok: true, employees: out, cycle: cyc, start_score: sc.start_score, bands: sc.bands || [] };
+  }
+
+  // ---------- เคสวินัย: บันทึกการดำเนินการ (ตักเตือนวาจา / ลายลักษณ์อักษร / คุยปรับพฤติกรรม) ----------
+  // ผู้จัดการสาขา หรือ สำนักงาน ใช้ร่วมกันได้ · สาเหตุเป็นช่องบังคับ
+  async function hrDiscActionAdd(d) {
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุสาเหตุ' };
+    const type = ['verbal', 'written', 'warning', 'coaching', 'note'].includes(d.action_type) ? d.action_type : 'verbal';
+    const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
+
+    const { data: emp } = await sb().from('employees').select('emp_id,name,branch_id').eq('emp_id', String(d.emp_id)).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้' };
+
+    const photos = (Array.isArray(d.photos) && d.photos.length) ? await _uploadMany('disc', d.photos) : null;
+    const needAck = d.need_ack === false ? false : true;
+    const row = {
+      emp_id: emp.emp_id, emp_name: emp.name, branch_id: emp.branch_id || null,
+      action_type: type, level: d.level != null ? Number(d.level) : null, level_name: d.level_name || ACT_LABEL[type],
+      score: d.score != null ? Number(d.score) : null, band_label: d.band_label || null,
+      cycle_start: d.cycle_start || null, cycle_end: d.cycle_end || null,
+      late_count: d.late_count != null ? Number(d.late_count) : null,
+      late_total: d.late_total != null ? Number(d.late_total) : null,
+      absent_count: d.absent_count != null ? Number(d.absent_count) : null,
+      reason: String(d.reason).trim(),
+      detail: d.detail || null,
+      warning_id: d.warning_id || null,
+      performed_by: d.performed_by || 'สำนักงาน (HR)',
+      performed_role: d.performed_role === 'mgr' ? 'mgr' : 'hr',
+      need_ack: needAck,
+      status: needAck ? 'pending_ack' : 'acknowledged',
+      ack_at: needAck ? null : new Date().toISOString(),
+      photos,
+    };
+    const { data: ins, error } = await sb().from('disc_actions').insert(row).select('id').single();
+    if (error) throw error;
+
+    // แจ้งพนักงาน (กล่องแจ้งเตือน) — ตัวประตูรับทราบในหน้ารับส่งผลัดจะดึงจาก disc_actions โดยตรงอีกที
+    if (needAck) {
+      try {
+        await sb().from('emp_notifications').insert({
+          emp_id: emp.emp_id, kind: 'info',
+          title: ACT_LABEL[type],
+          body: String(d.reason).trim().slice(0, 300),
+          ref: 'disc:' + (ins ? ins.id : ''), created_by: row.performed_by,
+        });
+      } catch (_e) { /* ตารางแจ้งเตือนยังไม่มีก็ข้าม */ }
+    }
+    await logAct(ACT_LABEL[type], emp.emp_id, String(d.reason).trim().slice(0, 120));
+    return { ok: true, id: ins ? ins.id : null };
+  }
+
+  // ไทม์ไลน์เคสวินัยรายบุคคล (การดำเนินการ + ใบเตือน รวมกัน เรียงตามเวลา)
+  async function hrDiscTimeline(empId) {
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const [{ data: emp }, { data: acts }, { data: wrs }] = await Promise.all([
+      sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url').eq('emp_id', String(empId)).maybeSingle(),
+      sb().from('disc_actions').select('*').eq('emp_id', String(empId)).order('performed_at', { ascending: false }),
+      sb().from('warnings').select('*').eq('emp_id', String(empId)).order('issue_date', { ascending: false }),
+    ]);
+    const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
+    const linked = new Set((acts || []).map(a => a.warning_id).filter(Boolean));
+    const items = (acts || []).map(a => ({
+      kind: 'action', id: a.id, type: a.action_type, label: ACT_LABEL[a.action_type] || a.action_type,
+      at: a.performed_at, by: a.performed_by, role: a.performed_role,
+      reason: a.reason, detail: a.detail, score: a.score, band: a.band_label,
+      late_count: a.late_count, late_total: a.late_total, absent_count: a.absent_count,
+      warning_id: a.warning_id, need_ack: a.need_ack, ack_at: a.ack_at, ack_note: a.ack_note,
+      status: a.status, photos: a.photos || [],
+    }));
+    // ใบเตือนเก่าที่ยังไม่มีแถวใน disc_actions (ออกก่อนมีระบบนี้)
+    (wrs || []).forEach(w => {
+      if (linked.has(w.warning_id)) return;
+      items.push({
+        kind: 'warning', id: w.warning_id, type: 'warning', label: w.level_name || 'ใบเตือน',
+        at: w.created_at || (w.issue_date + 'T00:00:00Z'), by: w.issued_by, role: 'hr',
+        reason: w.reason, score: w.score, band: w.band_label,
+        late_count: w.late_count, late_total: w.late_total, absent_count: w.absent_count,
+        warning_id: w.warning_id, need_ack: true, ack_at: w.acknowledged_at, status: w.status || 'issued', photos: [],
+      });
+    });
+    items.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    const counts = { verbal: 0, written: 0, warning: 0, coaching: 0, note: 0 };
+    items.forEach(i => { if (counts[i.type] != null) counts[i.type]++; });
+    return { ok: true, emp: emp || { emp_id: empId }, items, counts, pending_ack: items.filter(i => i.need_ack && !i.ack_at).length };
+  }
+
+  // รายการ "ค้างดำเนินการ" + "ค้างรับทราบ" (กรองสาขาได้ — ผจก. เห็นเฉพาะสาขาตัวเอง)
+  async function hrDiscPending(which, branch) {
+    const r = await hrDiscipline(which || 'current', null);
+    if (!r.ok) return r;
+    let list = r.employees;
+    if (branch) list = list.filter(e => String(e.branch_id) === String(branch));
+    return {
+      ok: true, cycle: r.cycle,
+      todo: list.filter(e => e.action_status === 'pending'),
+      waiting_ack: list.filter(e => e.pending_ack > 0),
+    };
   }
 
   // ---------- WARNINGS ----------
@@ -842,19 +982,46 @@
     return { ok: true, rows };
   }
 
-  async function hrWarningIssue(d) {
+  // เลขที่ใบเตือนถัดไป — ยึดจาก "เลขสูงสุดที่เคยออก" ไม่ใช่ count(*)
+  // (เดิมใช้ count(*)+1 → ถ้าเคยลบใบเตือนทิ้ง เลขจะซ้ำแล้ว insert ชน PK แบบเงียบ ๆ)
+  async function _nextWarningId() {
     const year = new Date().getFullYear();
-    const { count } = await sb().from('warnings').select('warning_id', { count: 'exact', head: true }).like('warning_id', 'W-' + year + '-%');
-    const warning_id = 'W-' + year + '-' + String((count || 0) + 1).padStart(4, '0');
+    const pre = 'W-' + year + '-';
+    const { data } = await sb().from('warnings').select('warning_id').like('warning_id', pre + '%').order('warning_id', { ascending: false }).limit(1);
+    let n = 0;
+    if (data && data.length) { const m = String(data[0].warning_id).match(/(\d+)$/); if (m) n = parseInt(m[1], 10) || 0; }
+    return pre + String(n + 1).padStart(4, '0');
+  }
+
+  async function hrWarningIssue(d) {
+    const warning_id = await _nextWarningId();
     const row = {
       warning_id, emp_id: d.emp_id, issue_date: bkkToday(),
       level: parseInt(d.level) || null, level_name: d.level_name,
       cycle_start: d.cycle_start, cycle_end: d.cycle_end,
       late_count: d.late_count, late_total: d.late_total, absent_count: d.absent_count,
-      reason: d.reason, issued_by: 'HR',
+      score: d.score != null ? Number(d.score) : null, band_label: d.band_label || null,
+      follow_up_date: d.follow_up_date || null,
+      status: 'issued', notified_at: new Date().toISOString(), source: d.source || 'manual',
+      reason: d.reason, issued_by: d.issued_by || 'สำนักงาน (HR)',
     };
     const { error } = await sb().from('warnings').insert(row);
     if (error) throw error;
+
+    // ผูกเข้าไทม์ไลน์เคสวินัย + แจ้งพนักงานให้กดรับทราบ
+    try {
+      await hrDiscActionAdd({
+        emp_id: d.emp_id, action_type: 'warning',
+        level: parseInt(d.level) || null, level_name: d.level_name,
+        score: d.score, band_label: d.band_label,
+        cycle_start: d.cycle_start, cycle_end: d.cycle_end,
+        late_count: d.late_count, late_total: d.late_total, absent_count: d.absent_count,
+        reason: d.reason || (d.level_name || 'ออกใบเตือน'),
+        detail: 'เลขที่ใบเตือน ' + warning_id,
+        warning_id, performed_by: d.issued_by || 'สำนักงาน (HR)', performed_role: 'hr',
+      });
+    } catch (_e) { /* ไม่ให้ไทม์ไลน์พังการออกใบเตือน */ }
+
     await logAct('ออกใบเตือน ' + warning_id, d.emp_id, (d.level_name || '') + ' · สาย ' + (d.late_count || 0) + ' ครั้ง · ขาด ' + (d.absent_count || 0) + ' วัน');
     return { ok: true, warning_id };
   }
@@ -1670,19 +1837,24 @@
   // ============================================================
   // SCORE SYSTEM — ระบบคะแนนวินัยรายเดือน (รอบ 21–20)
   // ============================================================
-  async function hrScoreGet(which) {
-    const cyc = cycleRange(which === 'previous' ? 'previous' : 'current');
+  // which: current | previous | prev2 | prev3   · range: {start,end} (กำหนดเอง)
+  // ให้รอบตรงกับหน้าวินัยได้ (เดิมรองรับแค่ current/previous → เทียบกันไม่ได้)
+  async function hrScoreGet(which, range) {
+    const cyc = (range && range.start && range.end)
+      ? { start: range.start, end: range.end, startStr: range.start, endStr: range.end }
+      : cycleRange(cycleBack(which));
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
-    const [cfgR, rulesR, bandsR, empsR, attR, schR, lvR, evR] = await Promise.all([
+    const [cfgR, rulesR, bandsR, empsR, attR, schR, lvR, evR, shR] = await Promise.all([
       sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb().from('score_rules').select('*').order('sort'),
       sb().from('score_bands').select('*').order('sort'),
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true),
-      sb().from('attendance').select('emp_id,work_date,check_in,late_min').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb().from('schedules').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
+      sb().from('shifts').select('shift_id,day_value'),
     ]);
     if (empsR.error) throw empsR.error;
     const start = (cfgR.data && cfgR.data.start_score) || 100;
@@ -1691,8 +1863,11 @@
     const ruleByKind = {};
     rules.forEach(r => { if (r.enabled !== false) ruleByKind[r.kind] = r; });
     const att = attR.data || [], leaves = lvR.data || [], events = evR.data || [];
+    // ถ่วงน้ำหนักครึ่งวัน (ให้ตรงกับหน้าวินัย — เดิมหน้าคะแนนหักขาดครึ่งวันเต็มจำนวน)
+    const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const dvOf = sid => (dvMap[sid] != null ? dvMap[sid] : 1);
     const schByEmp = {};
-    (schR.data || []).forEach(s => { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = new Set())).add(s.work_date); });
+    (schR.data || []).forEach(s => { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; });
     const bandFor = (sc) => bands.find(b => sc >= b.min_score && sc <= b.max_score) || null;
 
     const employees = (empsR.data || []).map(e => {
@@ -1707,19 +1882,26 @@
         { kind: 'auto_late_11_30',  test: m => m >= 11 && m <= 30 },
         { kind: 'auto_late_30plus', test: m => m > 30 },
       ];
+      let late_count = 0, late_total = 0;
       tiers.forEach(t => {
         const r = ruleByKind[t.kind]; if (!r) return;
         const hits = myAtt.filter(a => t.test(a.late_min || 0));
         if (hits.length) { const sum = r.points * hits.length; autoDeduct += sum; items.push({ label: r.label, count: hits.length, points: sum, source: 'auto' }); }
       });
-      // ขาดและไม่แจ้ง (วันที่จัดเวรไว้ ผ่านไปแล้ว ไม่มา ไม่ลา)
+      myAtt.forEach(a => { if ((a.late_min || 0) > 0) { late_count++; late_total += (a.late_min || 0); } });
+
+      // ขาดและไม่แจ้ง (จัดเวรไว้ + ผ่านไปแล้ว + ไม่มา + ไม่ลา) — ถ่วง day_value เหมือนหน้าวินัย
       const ra = ruleByKind['auto_absent_no_notify'];
-      if (ra) {
-        const mySched = [...(schByEmp[e.emp_id] || new Set())].filter(d => d < today);
-        const workedSet = new Set(myAtt.map(a => a.work_date));
-        const absDays = mySched.filter(d => !workedSet.has(d) && !onLeave(d));
-        if (absDays.length) { const sum = ra.points * absDays.length; autoDeduct += sum; items.push({ label: ra.label, count: absDays.length, points: sum, source: 'auto' }); }
+      const mySchedMap = schByEmp[e.emp_id] || {};
+      const workedSet = new Set(myAtt.map(a => a.work_date));
+      const absDays = Object.keys(mySchedMap).filter(d => d < today && !workedSet.has(d) && !onLeave(d));
+      const absWeighted = Math.round(absDays.reduce((s, d) => s + dvOf(mySchedMap[d]), 0) * 10) / 10;
+      if (ra && absWeighted > 0) {
+        const sum = Math.round(ra.points * absWeighted);
+        autoDeduct += sum;
+        items.push({ label: ra.label, count: absWeighted, points: sum, source: 'auto' });
       }
+
       // เหตุการณ์ที่ HR เพิ่มเอง
       const myEv = events.filter(ev => ev.emp_id === e.emp_id);
       let manualDeduct = 0;
@@ -1732,9 +1914,11 @@
         emp_id: e.emp_id, emp_name: e.name, nickname: e.nickname || '', photo_url: e.photo_url || '', branch_id: e.branch_id || '',
         start, score, auto_deduct: autoDeduct, manual_deduct: manualDeduct, total_deduct: autoDeduct + manualDeduct,
         items,
+        late_count, late_total, absent_count: absWeighted,     // สแนปช็อตตัวเลขหลักฐาน (ใช้ตอนออกใบเตือน)
         band_label: band ? band.label : '', band_color: band ? band.color : '#475569',
         bonus: band && band.bonus_amount ? band.bonus_amount : 0,
         warn_level: band ? band.warn_level : null, warn_name: band ? band.warn_name : null,
+        action_type: band ? (band.action_type || null) : null,   // verbal | written | warning | null
       };
     }).sort((a, b) => a.score - b.score);
 
@@ -1844,22 +2028,24 @@
     const { data: existing } = await sb().from('warnings').select('emp_id,level,cycle_start').eq('cycle_start', cyc.start);
     const has = new Set((existing || []).map(w => w.emp_id + '|' + w.level));
     const targets = sc.employees.filter(e => e.warn_level != null);
-    let issued = 0;
+    let issued = 0; const failed = [];
     for (const e of targets) {
       if (has.has(e.emp_id + '|' + e.warn_level)) continue;
-      const year = new Date().getFullYear();
-      const { count } = await sb().from('warnings').select('warning_id', { count: 'exact', head: true }).like('warning_id', 'W-' + year + '-%');
-      const warning_id = 'W-' + year + '-' + String((count || 0) + 1).padStart(4, '0');
-      const { error } = await sb().from('warnings').insert({
-        warning_id, emp_id: e.emp_id, issue_date: bkkToday(),
+      // ★ ใบเตือนต้องพกตัวเลขหลักฐานไปด้วย (เดิมบันทึกเป็น 0 หมด → เอกสารใบเตือนไม่มีหลักฐาน)
+      const r = await hrWarningIssue({
+        emp_id: e.emp_id,
         level: e.warn_level, level_name: e.warn_name,
         cycle_start: cyc.start, cycle_end: cyc.end,
-        late_count: 0, late_total: 0, absent_count: 0,
-        reason: '[ระบบคะแนนวินัย] คะแนนปลายเดือน ' + e.score + '/' + e.start + ' → ' + e.band_label, issued_by: 'HR(คะแนน)',
-      });
-      if (!error) { issued++; has.add(e.emp_id + '|' + e.warn_level); await logAct('ออกใบเตือน ' + warning_id, e.emp_id, '(จากคะแนนวินัย) ' + e.warn_name + ' · คะแนน ' + e.score); }
+        late_count: e.late_count, late_total: e.late_total, absent_count: e.absent_count,
+        score: e.score, band_label: e.band_label,
+        reason: '[ระบบคะแนนวินัย] คะแนน ' + e.score + '/' + e.start + ' → ' + e.band_label
+              + ' · สาย ' + (e.late_count || 0) + ' ครั้ง (' + (e.late_total || 0) + ' นาที) · ขาด ' + (e.absent_count || 0) + ' วัน',
+        issued_by: 'สำนักงาน (HR) · ระบบคะแนน', source: 'score',
+      }).catch(err => ({ ok: false, error: String(err && err.message || err) }));
+      if (r && r.ok) { issued++; has.add(e.emp_id + '|' + e.warn_level); }
+      else failed.push({ emp_id: e.emp_id, error: (r && r.error) || 'ไม่สำเร็จ' });
     }
-    return { ok: true, issued, total: targets.length };
+    return { ok: true, issued, total: targets.length, failed };
   }
 
   // ---------- HANDOVER (ส่ง/รับผลัด) ----------

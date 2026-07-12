@@ -381,6 +381,44 @@
     } catch (e) { console.error('pending announcements', e); return []; }
   }
 
+  // ---------- เคสวินัย: การดำเนินการที่พนักงานต้องกดรับทราบ ----------
+  async function getPendingDiscAcks(empId) {
+    try {
+      const { data } = await sb.from('disc_actions')
+        .select('id,action_type,level_name,reason,detail,score,band_label,late_count,late_total,absent_count,warning_id,performed_by,performed_role,performed_at,photos')
+        .eq('emp_id', String(empId)).eq('need_ack', true).is('ack_at', null)
+        .order('performed_at', { ascending: true });
+      return data || [];
+    } catch (e) { console.error('pending disc acks', e); return []; }
+  }
+
+  // พนักงานกดรับทราบ — เก็บเวลา + อุปกรณ์เป็นหลักฐาน
+  async function ackDiscAction(id, empId, note) {
+    try {
+      const now = new Date().toISOString();
+      const { data: row } = await sb.from('disc_actions').select('id,warning_id,emp_id').eq('id', id).maybeSingle();
+      if (!row) return { ok: false, error: 'ไม่พบรายการนี้' };
+      if (String(row.emp_id) !== String(empId)) return { ok: false, error: 'รายการนี้ไม่ใช่ของคุณ' };
+
+      const { error } = await sb.from('disc_actions').update({
+        ack_at: now, ack_note: (note || '').slice(0, 500), status: 'acknowledged',
+        ack_device: (navigator.userAgent || '').slice(0, 120)
+      }).eq('id', id);
+      if (error) throw error;
+
+      // ถ้าเป็นใบเตือน → อัปเดตสถานะใบเตือนด้วย
+      if (row.warning_id) {
+        try {
+          await sb.from('warnings').update({ status: 'acknowledged', acknowledged_at: now, ack_note: (note || '').slice(0, 500) })
+            .eq('warning_id', row.warning_id);
+        } catch (_e) { /* ข้าม */ }
+      }
+      // หลักฐานเพิ่มเติมใน activity_log
+      try { await sb.from('activity_log').insert({ action: 'รับทราบการดำเนินการทางวินัย', emp_id: String(empId), detail: (note || '').slice(0, 200), actor: String(empId) }); } catch (_e) { }
+      return { ok: true };
+    } catch (e) { console.error('ack disc', e); return { ok: false, error: 'บันทึกไม่สำเร็จ' }; }
+  }
+
   // ประกาศแบบ "รูปภาพ" (สไลด์) ที่ยังแสดงอยู่ — ไม่ต้องกดรับทราบ
   async function getImageAnnouncements(empId, branchId) {
     try {
@@ -1459,5 +1497,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();

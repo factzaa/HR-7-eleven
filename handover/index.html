@@ -214,6 +214,98 @@ async function loadBranches(){ try{ const c=await window.HR.loadConfig(); (c.bra
 function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขาประจำ)'; }
 
 // ======================================================================
+// ประตูรับทราบ "การดำเนินการทางวินัย" — ตักเตือนวาจา / ลายลักษณ์อักษร / ใบเตือน
+// ต้องอ่านและกดรับทราบก่อนใช้งาน (เก็บเวลา + อุปกรณ์เป็นหลักฐาน)
+// ======================================================================
+let DISC_QUEUE=[], DISC_IDX=0, DISC_RESOLVE=null;
+const DISC_LABEL={ verbal:'ตักเตือนด้วยวาจา', written:'ตักเตือนลายลักษณ์อักษร', warning:'ใบเตือน', coaching:'คุยปรับพฤติกรรม', note:'บันทึกเพิ่มเติม' };
+const DISC_COLOR={ verbal:['#fef3c7','#92400e'], written:['#ffedd5','#c2410c'], warning:['#fee2e2','#b91c1c'], coaching:['#e0f2fe','#0369a1'], note:['#f1f5f9','#334155'] };
+
+function ensureDiscOverlay(){
+  if(document.getElementById('discOverlay')) return;
+  const o=document.createElement('div'); o.id='discOverlay';
+  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.97);z-index:100003;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px';
+  o.innerHTML=
+    '<div style="max-width:520px;width:100%;background:var(--card,#fff);border-radius:16px;padding:18px;margin:auto;box-shadow:0 10px 40px rgba(0,0,0,.45)">'
+    +'<div id="discStep" style="font-size:12.5px;color:#64748b;font-weight:600;margin-bottom:6px"></div>'
+    +'<div id="discBadge" style="display:inline-block;padding:4px 12px;border-radius:999px;font-size:13px;font-weight:800;margin-bottom:10px"></div>'
+    +'<div id="discBox" style="border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:12px;margin-bottom:12px">'
+      +'<div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:4px">สาเหตุ</div>'
+      +'<div id="discReason" style="font-size:15px;line-height:1.6;white-space:pre-wrap;font-weight:600"></div>'
+      +'<div id="discDetail" style="font-size:13.5px;line-height:1.6;white-space:pre-wrap;color:#475569;margin-top:8px"></div>'
+      +'<div id="discStats" style="font-size:12.5px;color:#475569;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line,#e2e8f0)"></div>'
+      +'<div id="discPhotos" class="thumbs" style="margin-top:8px"></div>'
+    +'</div>'
+    +'<div id="discBy" style="font-size:12px;color:#94a3b8;margin-bottom:12px"></div>'
+    +'<textarea id="discNote" rows="2" placeholder="ความเห็นของคุณ (ไม่บังคับ)" style="width:100%;padding:9px 11px;border:1.5px solid var(--line,#e2e8f0);border-radius:9px;font:inherit;font-size:14px;resize:vertical;margin-bottom:10px"></textarea>'
+    +'<div id="discErr" style="display:none;color:#dc2626;font-size:13.5px;font-weight:600;margin-bottom:10px"></div>'
+    +'<button id="discAckBtn" style="width:100%;padding:14px;border:0;border-radius:12px;background:#0f172a;color:#fff;font-size:16px;font-weight:800;cursor:pointer">✓ ข้าพเจ้ารับทราบแล้ว</button>'
+    +'<div style="text-align:center;font-size:11.5px;color:#94a3b8;margin-top:10px">ระบบจะบันทึกวันเวลาและอุปกรณ์ที่กดรับทราบไว้เป็นหลักฐาน</div>'
+    +'</div>';
+  document.body.appendChild(o);
+  document.getElementById('discAckBtn').onclick=discDoAck;
+}
+
+function discRender(){
+  const a=DISC_QUEUE[DISC_IDX]; if(!a) return;
+  const c=DISC_COLOR[a.action_type]||DISC_COLOR.note;
+  document.getElementById('discStep').textContent='รายการที่ต้องรับทราบ '+(DISC_IDX+1)+' / '+DISC_QUEUE.length;
+  const bd=document.getElementById('discBadge');
+  bd.textContent = (a.action_type==='warning' ? '📄 ' : '⚠️ ') + (a.level_name || DISC_LABEL[a.action_type] || 'การดำเนินการทางวินัย') + (a.warning_id ? (' · เลขที่ '+a.warning_id) : '');
+  bd.style.background=c[0]; bd.style.color=c[1];
+  document.getElementById('discReason').textContent = a.reason || '—';
+  const dt=document.getElementById('discDetail');
+  dt.textContent = a.detail || ''; dt.style.display = a.detail ? 'block' : 'none';
+
+  const bits=[];
+  if(a.score!=null) bits.push('คะแนน '+a.score+(a.band_label?(' · '+a.band_label):''));
+  if(a.late_count!=null) bits.push('สาย '+a.late_count+' ครั้ง'+(a.late_total?(' ('+a.late_total+' นาที)'):''));
+  if(a.absent_count!=null) bits.push('ขาด '+a.absent_count+' วัน');
+  const st=document.getElementById('discStats');
+  st.textContent = bits.join(' · '); st.style.display = bits.length ? 'block' : 'none';
+
+  const ph=Array.isArray(a.photos)?a.photos:[];
+  document.getElementById('discPhotos').innerHTML = ph.length ? ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)">').join('') : '';
+
+  const who = a.performed_role==='mgr' ? 'ผู้จัดการ' : 'สำนักงาน';
+  document.getElementById('discBy').textContent = 'โดย '+(a.performed_by||who)+' · '+fmt(a.performed_at);
+  document.getElementById('discNote').value='';
+  document.getElementById('discErr').style.display='none';
+  const btn=document.getElementById('discAckBtn');
+  btn.disabled=false; btn.textContent='✓ ข้าพเจ้ารับทราบแล้ว';
+  const o=document.getElementById('discOverlay');
+  o.style.display='flex'; o.scrollTop=0;
+}
+
+async function discDoAck(){
+  const a=DISC_QUEUE[DISC_IDX]; if(!a) return;
+  const btn=document.getElementById('discAckBtn'), err=document.getElementById('discErr');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const r=await window.HR.ackDiscAction(a.id, EMP.emp_id, document.getElementById('discNote').value.trim());
+  if(!r.ok){
+    err.textContent=r.error||'บันทึกไม่สำเร็จ'; err.style.display='block';
+    btn.disabled=false; btn.textContent='✓ ข้าพเจ้ารับทราบแล้ว';
+    return;
+  }
+  DISC_IDX++;
+  if(DISC_IDX>=DISC_QUEUE.length){
+    document.getElementById('discOverlay').style.display='none';
+    const done=DISC_RESOLVE; DISC_RESOLVE=null;
+    toast('ok','บันทึกการรับทราบแล้ว');
+    if(done) done(true);
+  } else discRender();
+}
+
+async function ensureDiscAcked(emp){
+  let pend=[];
+  try{ pend=await window.HR.getPendingDiscAcks(emp.emp_id); }catch(e){ return true; }
+  if(!pend.length) return true;
+  ensureDiscOverlay();
+  DISC_QUEUE=pend; DISC_IDX=0;
+  return new Promise(res=>{ DISC_RESOLVE=res; discRender(); });
+}
+
+// ======================================================================
 // ประตูรับทราบประกาศ — ต้องอ่าน+กดรับทราบก่อนเข้าเมนูรับส่งผลัด
 //   important  = กดรับทราบ
 //   mandatory  = กดรับทราบ + ตอบคำถามยืนยันความเข้าใจให้ถูก
@@ -320,7 +412,9 @@ $('goBtn').onclick=async()=>{
     $('m_nm').textContent=emp.nickname||emp.name;
     $('m_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
     $('goBtn').textContent='เริ่ม';
-    // ★ ประตูรับทราบประกาศ (ข้อความ) — ต้องอ่าน+รับทราบให้ครบก่อนถึงจะเข้าเมนูได้
+    // ★ ประตูที่ 1: การดำเนินการทางวินัย (ตักเตือน/ใบเตือน) — สำคัญที่สุด ต้องรับทราบก่อน
+    await ensureDiscAcked(emp);
+    // ★ ประตูที่ 2: ประกาศ (ข้อความ) — ต้องอ่าน+รับทราบให้ครบก่อนถึงจะเข้าเมนูได้
     await ensureAnnouncementsAcked(emp);
     // ★ ประกาศรูปภาพ — สไลด์ลอยขึ้นมา เลื่อนซ้าย-ขวาได้ ไม่ต้องกดรับทราบ (วันละครั้ง)
     try{ if(window.ANN) await window.ANN.show(emp); }catch(_e){}
