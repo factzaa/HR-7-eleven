@@ -34,6 +34,11 @@
   .topact{display:flex; gap:8px; align-items:center;}
 
   .tabs{background:#fff; border-bottom:1px solid var(--line); padding:0 14px; display:flex; gap:2px; overflow-x:auto; position:sticky; top:65px; z-index:4;}
+
+  /* ===== ตรึงแถบหัว + เมนู ไว้ด้านบนเสมอ (เฉพาะจอคอม) ===== */
+  body.hdr-fixed .stripe{position:fixed; top:0; left:0; right:0; z-index:34;}
+  body.hdr-fixed .topbar{position:fixed; left:0; right:0; z-index:33; box-shadow:0 1px 0 rgba(0,0,0,.04);}
+  body.hdr-fixed .tabs{position:fixed; left:0; right:0; z-index:32; box-shadow:0 2px 8px rgba(0,0,0,.06);}
   .tab{padding:13px 16px; font-size:14px; font-weight:500; color:var(--muted); cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap; background:none; border-top:0; border-left:0; border-right:0;}
   .tab:hover{color:var(--txt);}
   .tab.active{color:var(--green-d); border-bottom-color:var(--green); font-weight:600;}
@@ -322,6 +327,8 @@
 
   @media print{
     body{background:#fff;}
+    body.hdr-fixed{padding-top:0 !important;}
+    .stripe{display:none !important;}
     .topbar, .tabs, .toolbar, .modal-h, .modal-f, .overlay > .modal > .modal-h, .overlay > .modal > .modal-f{display:none !important;}
     .overlay{position:static; background:none; padding:0; display:block !important;}
     .modal{box-shadow:none; border:0; border-radius:0; max-width:100%;}
@@ -4678,8 +4685,35 @@ showTab = function(name){
   if(MGR_MODE && !MGR_TABS.includes(name)) name='dashboard';
   __showTab_base(name);
   if(MGR_MODE) [0,200,500].forEach(ms=>setTimeout(enforceMgrBranch, ms));
+  setTimeout(fixHeader, 0);
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
+
+// ===== ตรึงแถบหัว + เมนู ไว้ด้านบนเสมอ (เฉพาะจอคอม) =====
+// วัดความสูงจริงของ stripe / topbar / tabs แล้วดัน body ลงมาเท่าที่จำเป็น
+// (ของเดิมใช้ position:sticky + top:65px ตายตัว ซึ่งไม่ตรงกับความสูงจริงและหลุดเวลาเลื่อน)
+function fixHeader(){
+  const stripe=document.querySelector('.stripe'), bar=document.querySelector('.topbar'), tabs=$('tabbar');
+  if(!bar) return;
+  if(window.innerWidth <= 900){                       // มือถือใช้ drawer อยู่แล้ว
+    document.body.classList.remove('hdr-fixed');
+    document.body.style.paddingTop='';
+    bar.style.top=''; if(tabs) tabs.style.top='';
+    return;
+  }
+  document.body.classList.add('hdr-fixed');
+  const hs = stripe ? stripe.offsetHeight : 0;
+  bar.style.top = hs+'px';
+  let total = hs + bar.offsetHeight;
+  if(tabs && getComputedStyle(tabs).display!=='none'){
+    tabs.style.top = total+'px';
+    total += tabs.offsetHeight;
+  }
+  document.body.style.paddingTop = total+'px';
+}
+window.addEventListener('resize', fixHeader);
+window.addEventListener('load', fixHeader);
+setTimeout(fixHeader, 0);
 
 // ---------- เมนูมือถือ (Drawer ☰) ----------
 function toggleDrawer(open){
