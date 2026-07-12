@@ -4769,22 +4769,201 @@ function renderEmpSum(r){
       + '</table><div class="es-detail" style="font-size:11px;color:#94a3b8">แถวพื้นส้ม = เกิดขึ้นในรอบที่ประเมินนี้</div>';
   }
 
+  const pf=r.performance||{};
+  const pct=v=>(v==null?'—':v+'%');
   h+='<div class="es-sec">3) ผลงานที่ได้รับมอบหมาย (งานในกะ)</div><div class="es-grid">'
     +esStat('งานทั้งหมด', t.total)+esStat('ผ่าน', t.approved)+esStat('รอตรวจ', t.submitted)
     +esStat('ยังไม่ทำ', t.todo)+esStat('ถูกตีกลับ', t.sent_back, 'รวมโดนตีกลับ '+t.sent_back_total+' ครั้ง')+esStat('อัตราผ่าน', t.pass_rate+'%')+'</div>';
-  if(sp.total>0){ h+='<div class="es-sec">4) งานพิเศษ</div><div class="es-grid">'
-    +esStat('ทั้งหมด', sp.total)+esStat('ผ่าน', sp.approved)+esStat('รอตรวจ', sp.submitted)+esStat('ค้าง', sp.open)+'</div>'; }
+  if(pf.tasks){
+    h+='<div class="es-grid" style="margin-top:8px">'
+      +esStat('ส่งงานหลังหมดกะ', (pf.tasks.late_submit||0), (pf.tasks.late_submit?'ควรส่งก่อนจบกะ':'ตรงเวลาทุกงาน'))
+      +esStat('งานแก้ที่รับผิดชอบ', (pf.fixes?pf.fixes.total:0), (pf.fixes&&pf.fixes.open?('ยังค้าง '+pf.fixes.open+' งาน'):'ส่งกลับครบแล้ว'))
+      +'</div>';
+  }
+
+  // ---- 4) การตรวจงานผลัดก่อนหน้า ----
+  if(pf.review){
+    const rv=pf.review;
+    h+='<div class="es-sec">4) การตรวจงานผลัดก่อนหน้า (คุณภาพการตรวจ)</div><div class="es-grid">'
+      +esStat('งานที่ตรวจให้ผลัดก่อน', rv.total)
+      +esStat('ผจก. ตีกลับหลังคุณตรวจผ่าน', rv.missed, rv.missed?'ตรวจไม่ละเอียด':'ไม่มี')
+      +esStat('ความแม่นยำการตรวจ', pct(rv.accuracy))
+      +'</div>';
+    if(det.review_missed && det.review_missed.length){
+      h+='<div class="es-detail"><b>งานที่ตรวจผ่านแล้วผู้จัดการตีกลับ:</b> '
+        + det.review_missed.map(x=>esDate(x.date)+' — '+esc(x.title)+(x.owner?(' (ของ '+esc(x.owner)+')'):'')).join(' · ')+'</div>';
+    }
+  }
+
+  // ---- 5) หน้าที่พิเศษในกะ ----
+  if(pf.duty){
+    const du=pf.duty, gd=pf.goods||{}, ho=pf.handover||{};
+    h+='<div class="es-sec">5) หน้าที่พิเศษ / ความรับผิดชอบในกะ</div><div class="es-grid">'
+      +esStat('เป็นผู้คุมผลัด', du.controller_days+' ครั้ง')
+      +esStat('เป็นหัวหน้าผลัด', du.leader_days+' ครั้ง')
+      +esStat('ควบกะ (ทำงานเกินกำหนด)', du.extend_shift+' ครั้ง')
+      +esStat('OT (ชม.)', du.ot_hours||0)
+      +'</div>';
+    h+='<div class="es-grid" style="margin-top:8px">'
+      +esStat('บันทึกรับสินค้า', (gd.total||0)+' ใบ', (gd.diff_count?('มีส่วนต่าง '+gd.diff_count+' ใบ'):'ไม่มีส่วนต่าง'))
+      +esStat('ความแม่นยำการคีย์รับสินค้า', pct(gd.accuracy))
+      +esStat('ส่งผลัด', (ho.sent||0)+' ครั้ง', (ho.problem?('มีปัญหา '+ho.problem+' ครั้ง'):'ไม่มีปัญหา'))
+      +esStat('รับผลัด', (ho.received||0)+' ครั้ง')
+      +'</div>';
+    if(det.goods_diff && det.goods_diff.length){
+      h+='<div class="es-detail"><b>ใบรับสินค้าที่มีส่วนต่างลัง:</b> '
+        + det.goods_diff.map(x=>esDate(x.date)+' เลขที่ '+esc(x.ref_no||'-')+' (ส่วนต่าง '+x.diff+')').join(' · ')+'</div>';
+    }
+  }
+
+  // ---- 6) งานอื่น ----
+  const qa=pf.qa||{}, shf=pf.shelf||{}, mt=pf.mgr_tasks||{};
+  if((qa.total||0)+(shf.checks||0)+(mt.total||0)+(sp.total||0) > 0){
+    h+='<div class="es-sec">6) งานอื่นที่รับผิดชอบ</div><div class="es-grid">'
+      +esStat('QA (บันทึกสินค้า)', qa.total||0, (qa.removed?('เก็บออก '+qa.removed+' รายการ'):''))
+      +esStat('ตรวจเชลฟ์', (shf.checks||0)+' วัน', (shf.assigned?('รับผิดชอบ '+shf.assigned+' เชลฟ์'):''))
+      +esStat('เชลฟ์ถูกตีกลับ', shf.sent_back||0)
+      +esStat('งานที่ผู้จัดการมอบ', (mt.done||0)+'/'+(mt.total||0), (mt.overdue?('เลยกำหนด '+mt.overdue):'ไม่มีเลยกำหนด'))
+      +'</div>';
+    if(sp.total>0){ h+='<div class="es-grid" style="margin-top:8px">'
+      +esStat('งานพิเศษทั้งหมด', sp.total)+esStat('ผ่าน', sp.approved)+esStat('รอตรวจ', sp.submitted)+esStat('ค้าง', sp.open)+'</div>'; }
+  }
   h+='<div class="es-sec">รายละเอียด</div>';
   h+='<div class="es-detail"><b>วันมาสาย:</b> '+(det.late.length? det.late.map(x=>esDate(x.date)+' ('+x.min+' น.)').join(', ') : '— ไม่มี —')+'</div>';
   h+='<div class="es-detail"><b>วันขาดงาน:</b> '+(det.absent.length? det.absent.map(x=>esDate(x)).join(', ') : '— ไม่มี —')+'</div>';
   h+='<div class="es-detail"><b>วันที่ออกก่อนเวลา:</b> '+((det.early_out&&det.early_out.length)? det.early_out.map(x=>esDate(x.date)+' ('+x.min+' น.)').join(', ') : '— ไม่มี —')+'</div>';
+  if(det.late_submit_tasks && det.late_submit_tasks.length){
+    h+='<div class="es-detail"><b>งานที่ส่งหลังหมดกะ:</b> '+det.late_submit_tasks.map(x=>esDate(x.date)+' — '+esc(x.title)).join(' · ')+'</div>';
+  }
   if(det.sent_back_tasks.length){
     h+='<div class="es-detail"><b>งานที่ถูกตีกลับ:</b><table class="es-tbl"><tr><th>วันที่</th><th>กะ</th><th>งาน</th><th>ครั้ง</th><th>สถานะ</th><th>หมายเหตุ</th></tr>'
       +det.sent_back_tasks.map(x=>'<tr><td>'+esDate(x.date)+'</td><td>'+esc(x.shift)+'</td><td>'+esc(x.title)+'</td><td style="text-align:center">'+x.count+'</td><td>'+(x.status==='approved'?'ผ่านแล้ว':x.status==='sent_back'?'ตีกลับ':esc(x.status))+'</td><td>'+esc(x.note||'-')+'</td></tr>').join('')+'</table></div>';
   } else h+='<div class="es-detail"><b>งานที่ถูกตีกลับ:</b> — ไม่มี —</div>';
   h+='<div class="es-foot">เอกสารนี้สร้างจากระบบ HR 7-Eleven · '+esc(genTxt)+' &nbsp;&nbsp; ลงชื่อผู้ประเมิน __________________ / ผู้รับทราบ __________________</div>';
   h+='</div>';
+
+  // ---- แผงประเมิน (ไม่พิมพ์ลงเอกสาร) ----
+  h+='<div class="no-print" style="max-width:820px;margin:14px auto 0;display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="btn btn-pri" id="es_ai">🤖 ให้นิดาวิเคราะห์ + แนะนำคะแนนบวก</button>'
+    +'<button class="btn btn-sec" id="es_bonus">➕ บวกคะแนนให้พนักงาน</button>'
+    +'</div>';
+  h+='<div class="no-print" id="es_ai_box" style="max-width:820px;margin:12px auto 0"></div>';
+
   $('es_body').innerHTML=h;
+  $('es_ai') && ($('es_ai').onclick=esAskNida);
+  $('es_bonus') && ($('es_bonus').onclick=()=>openBonusModal(r.emp.emp_id, r.emp.name, null, ''));
+}
+
+// ================= นิดาวิเคราะห์ผลงาน + แนะนำคะแนนบวก =================
+let ES_AI=null;
+async function esAskNida(){
+  if(!ES_DATA) return;
+  const box=$('es_ai_box');
+  box.innerHTML='<div class="card"><div class="card-b"><div class="empty">🤖 นิดากำลังวิเคราะห์…</div></div></div>';
+
+  const r=ES_DATA, a=r.attendance, sc=r.score||{}, pf=r.performance||{}, dh=(r.disc_history||[]).filter(x=>x.in_range);
+  // ส่ง "ข้อมูลสรุป" ให้นิดาโดยตรง (ไม่ต้องให้ไปค้นเอง → เร็วและแม่นกว่า)
+  const facts = {
+    พนักงาน: r.emp.name+' ('+r.emp.emp_id+')', สาขา: r.emp.branch_name,
+    รอบ: r.range.start+' ถึง '+r.range.end,
+    คะแนนวินัย: sc.score, คะแนนเต็ม: sc.start, ช่วงคะแนน: sc.band_label,
+    การมาทำงาน: { วันที่ต้องมา:a.days_should, มาทำงาน:a.days_worked, ขาด:a.absent, ลา:a.leave_days,
+      มาสายครั้ง:a.late_count, สายรวมนาที:a.late_total, ออกก่อนเวลาครั้ง:a.early_out_count, OTชม:a.ot_hours },
+    งานในกะ: pf.tasks, การตรวจงานผลัดก่อน: pf.review, งานแก้: pf.fixes,
+    หน้าที่พิเศษ: pf.duty, รับสินค้า: pf.goods, QA: pf.qa, เชลฟ์: pf.shelf,
+    รับส่งผลัด: pf.handover, งานที่ผจกมอบ: pf.mgr_tasks, งานพิเศษ: pf.special,
+    ประวัติวินัยในรอบนี้: dh.map(x=>x.label+': '+x.reason),
+  };
+
+  const prompt =
+    'นี่คือข้อมูลผลงานจริงของพนักงานคนหนึ่งในรอบประเมิน (JSON) — ห้ามเรียกเครื่องมือใด ๆ ให้วิเคราะห์จากข้อมูลนี้เท่านั้น\n\n'
+    + JSON.stringify(facts, null, 1)
+    + '\n\nช่วยประเมินให้ผู้จัดการ โดยตอบเป็น JSON ล้วน ๆ (ห้ามมีข้อความอื่นนอก JSON) ตามรูปแบบนี้:\n'
+    + '{\n'
+    + ' "สรุป": "สรุปภาพรวม 2-3 ประโยค",\n'
+    + ' "จุดแข็ง": ["ข้อ 1", "ข้อ 2"],\n'
+    + ' "จุดที่ต้องปรับปรุง": ["ข้อ 1", "ข้อ 2"],\n'
+    + ' "ควรบวกคะแนน": true หรือ false,\n'
+    + ' "คะแนนที่แนะนำ": ตัวเลข 0-20,\n'
+    + ' "เหตุผลบวกคะแนน": "เหตุผลสั้น ๆ ใช้เป็นบันทึกได้เลย",\n'
+    + ' "คำแนะนำต่อผู้จัดการ": "ควรทำอะไรต่อ"\n'
+    + '}\n'
+    + 'เกณฑ์การบวกคะแนน: ให้เฉพาะเมื่อมีผลงานดีเด่นจริง เช่น ไม่ขาด-ไม่สาย + อัตราผ่านงาน 100% + ตรวจงานแม่นยำ + รับหน้าที่ผู้คุมผลัด/หัวหน้าผลัดบ่อย + ไม่มีงานค้าง '
+    + '· ถ้ามีขาด/สายเยอะ หรือมีประวัติวินัยในรอบนี้ ให้ตอบ ควรบวกคะแนน = false และคะแนนที่แนะนำ = 0 '
+    + '· คะแนนที่แนะนำต้องสมเหตุสมผล (ดีมาก 10-20, ดี 5-10, พอใช้ 0-5)';
+
+  const {base,key}=asstApiBase();
+  let j=null;
+  try{
+    const res=await fetch(base+'/functions/v1/hr-assistant',{ method:'POST',
+      headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},
+      body:JSON.stringify({ password:pwd, messages:[{role:'user',text:prompt}] }) });
+    j=await res.json();
+  }catch(e){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">เชื่อมต่อนิดาไม่สำเร็จ</div></div></div>'; return; }
+  if(!j || (!j.reply && j.error)){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">'+esc(j&&j.error||'ไม่สำเร็จ')+'</div></div></div>'; return; }
+
+  let o=null;
+  try{ const m=String(j.reply||'').match(/\{[\s\S]*\}/); if(m) o=JSON.parse(m[0]); }catch(e){}
+  if(!o){
+    box.innerHTML='<div class="card"><div class="card-h"><h3>🤖 ความเห็นของนิดา</h3></div><div class="card-b" style="white-space:pre-wrap;font-size:14px;line-height:1.7">'+esc(j.reply||'')+'</div></div>';
+    return;
+  }
+  ES_AI=o;
+  const pts=Math.max(0,Math.min(20,Number(o['คะแนนที่แนะนำ'])||0));
+  const should=!!o['ควรบวกคะแนน'] && pts>0;
+  const list=arr=>(Array.isArray(arr)&&arr.length)?('<ul style="margin:4px 0 0 18px;padding:0">'+arr.map(x=>'<li style="margin-bottom:3px">'+esc(x)+'</li>').join('')+'</ul>'):'<div class="muted" style="font-size:13px">—</div>';
+
+  box.innerHTML='<div class="card">'
+    +'<div class="card-h"><h3>🤖 ความเห็นของนิดา</h3></div>'
+    +'<div class="card-b" style="font-size:14px;line-height:1.7">'
+      +'<div style="margin-bottom:12px">'+esc(o['สรุป']||'')+'</div>'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">'
+        +'<div style="flex:1;min-width:220px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px">'
+          +'<div style="font-weight:700;color:#15803d;font-size:13px">✓ จุดแข็ง</div>'+list(o['จุดแข็ง'])+'</div>'
+        +'<div style="flex:1;min-width:220px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 12px">'
+          +'<div style="font-weight:700;color:#c2410c;font-size:13px">△ ต้องปรับปรุง</div>'+list(o['จุดที่ต้องปรับปรุง'])+'</div>'
+      +'</div>'
+      + (should
+        ? '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;padding:12px 14px">'
+          +'<div style="font-weight:800;color:#1d4ed8;font-size:15px;margin-bottom:4px">💡 แนะนำให้บวกคะแนน +'+pts+' คะแนน</div>'
+          +'<div style="font-size:13.5px;color:#1e3a8a;margin-bottom:10px">'+esc(o['เหตุผลบวกคะแนน']||'')+'</div>'
+          +'<button class="btn btn-pri" id="es_apply_bonus">➕ บวก '+pts+' คะแนนตามที่แนะนำ</button></div>'
+        : '<div style="background:#f8fafc;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px">'
+          +'<div style="font-weight:700;font-size:14px;margin-bottom:4px">ยังไม่แนะนำให้บวกคะแนนในรอบนี้</div>'
+          +'<div style="font-size:13.5px;color:var(--muted)">'+esc(o['เหตุผลบวกคะแนน']||o['คำแนะนำต่อผู้จัดการ']||'')+'</div></div>')
+      +'<div style="margin-top:12px;font-size:13.5px;color:var(--muted)"><b>คำแนะนำต่อผู้จัดการ:</b> '+esc(o['คำแนะนำต่อผู้จัดการ']||'—')+'</div>'
+      +'<div style="margin-top:8px;font-size:11.5px;color:#94a3b8">ความเห็นของ AI เป็นเพียงข้อเสนอแนะ การตัดสินใจสุดท้ายเป็นของผู้จัดการ</div>'
+    +'</div></div>';
+  $('es_apply_bonus') && ($('es_apply_bonus').onclick=()=>openBonusModal(r.emp.emp_id, r.emp.name, pts, o['เหตุผลบวกคะแนน']||''));
+}
+
+// ================= บวกคะแนนให้พนักงาน =================
+function openBonusModal(empId, empName, pts, reason){
+  openModal('➕ บวกคะแนนให้พนักงาน',
+    '<div style="font-weight:800;font-size:16px;margin-bottom:12px">'+esc(empName||'')+' <span class="muted" style="font-size:13px;font-weight:500">· รหัส '+esc(empId)+'</span></div>'
+    +'<div class="field-mini" style="margin-bottom:10px"><label>หัวข้อ</label>'
+      +'<select id="bn_label" style="width:100%">'
+        +'<option>ผลงานดีเด่น</option><option>รับผิดชอบหน้าที่ผู้คุมผลัด</option><option>เป็นหัวหน้าผลัดได้ดี</option>'
+        +'<option>ตรวจงานละเอียด ไม่มีข้อผิดพลาด</option><option>ช่วยงานสาขาอื่น</option><option>ไม่ขาด ไม่สาย ตลอดรอบ</option>'
+        +'<option>ช่วยเหลือเพื่อนร่วมงาน</option><option>ได้รับคำชมจากลูกค้า</option>'
+      +'</select></div>'
+    +'<div class="field-mini" style="margin-bottom:10px"><label>คะแนนที่บวก (สูงสุด 20)</label>'
+      +'<input id="bn_points" type="number" min="1" max="20" value="'+(pts||5)+'" style="width:120px"></div>'
+    +'<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);font-weight:700">เหตุผล (บังคับ · พนักงานจะเห็นข้อความนี้)</label>'
+      +'<textarea id="bn_reason" rows="3" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(reason||'')+'</textarea></div>'
+    +'<button class="btn btn-pri" id="bn_save" style="width:100%;padding:12px">บวกคะแนน</button>');
+  $('bn_save').onclick=async()=>{
+    const points=Number($('bn_points').value)||0, reason=$('bn_reason').value.trim();
+    if(points<1){ toast('err','ใส่คะแนนที่จะบวก'); return; }
+    if(!reason){ toast('err','ต้องระบุเหตุผล'); return; }
+    $('bn_save').disabled=true; $('bn_save').textContent='กำลังบันทึก…';
+    const r=await post({ action:'hr_score_bonus_add', ...authBody(), data:{
+      emp_id:empId, points, label:$('bn_label').value, reason,
+      created_by: MGR_MODE ? ('ผู้จัดการสาขา '+(MGR_BRANCH||'')) : 'สำนักงาน (HR)',
+    }});
+    if(r.ok){ toast('ok','บวก '+r.points+' คะแนนแล้ว · แจ้งพนักงานเรียบร้อย'); closeModal(); genEmpSum(); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('bn_save').disabled=false; $('bn_save').textContent='บวกคะแนน'; }
+  };
 }
 
 // ========== งานพิเศษ (มอบหมายรายบุคคล) ==========

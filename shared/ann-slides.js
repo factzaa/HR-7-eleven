@@ -34,25 +34,25 @@
   const seenToday = (empId, annId) => seenMap()[empId + '|' + annId] === today();
 
   // ---------- สร้าง DOM ครั้งเดียว ----------
+  // ดีไซน์: ไม่มีพื้นหลังดำ · รูปลอยเกือบเต็มจอ · จุดไข่ปลาบอกตำแหน่งภาพด้านล่าง
   function ensureDom() {
     if (document.getElementById('annSlides')) return;
     const o = document.createElement('div');
     o.id = 'annSlides';
-    o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:100002;display:none;align-items:center;justify-content:center;padding:14px;touch-action:pan-y';
+    // พื้นหลังโปร่ง (เบลอเล็กน้อยให้รูปเด่นขึ้น แต่ยังเห็นหน้าเว็บด้านหลัง) · แตะพื้นหลังเพื่อปิด
+    o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.18);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);z-index:100002;display:none;align-items:center;justify-content:center;padding:10px;touch-action:pan-y';
     o.innerHTML =
-      '<div id="annSlWrap" style="position:relative;max-width:560px;width:100%;max-height:92vh;display:flex;flex-direction:column;gap:8px">'
-      + '<div style="display:flex;align-items:center;gap:8px">'
-      + '  <div id="annSlTitle" style="flex:1;color:#fff;font-size:16px;font-weight:800;line-height:1.35;text-shadow:0 1px 4px rgba(0,0,0,.4)"></div>'
-      + '  <button id="annSlClose" style="flex:none;background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:38px;height:38px;font-size:21px;line-height:1;cursor:pointer">×</button>'
-      + '</div>'
-      + '<div id="annSlStage" style="position:relative;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 14px 50px rgba(0,0,0,.45);flex:1;min-height:0;display:flex;align-items:center;justify-content:center">'
-      + '  <img id="annSlImg" alt="" style="width:100%;height:100%;max-height:76vh;object-fit:contain;display:block;background:#fff">'
-      + '  <button id="annSlPrev" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(15,23,42,.55);color:#fff;border:0;border-radius:50%;width:44px;height:44px;font-size:26px;line-height:1;cursor:pointer">‹</button>'
-      + '  <button id="annSlNext" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(15,23,42,.55);color:#fff;border:0;border-radius:50%;width:44px;height:44px;font-size:26px;line-height:1;cursor:pointer">›</button>'
-      + '</div>'
-      + '<div id="annSlDots" style="display:flex;gap:6px;justify-content:center;align-items:center;min-height:14px"></div>'
-      + '<div id="annSlMsg" style="color:#e2e8f0;font-size:13.5px;line-height:1.6;text-align:center;max-height:22vh;overflow-y:auto;white-space:pre-wrap"></div>'
-      + '<button id="annSlDone" style="width:100%;padding:13px;border:0;border-radius:12px;background:#16a34a;color:#fff;font-size:15.5px;font-weight:800;cursor:pointer">ปิด</button>'
+      '<div id="annSlWrap" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;max-width:100%;max-height:100%">'
+      + '  <div id="annSlStage" style="position:relative;display:flex;align-items:center;justify-content:center">'
+      + '    <img id="annSlImg" alt="" style="max-width:94vw;max-height:80vh;width:auto;height:auto;object-fit:contain;display:block;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.35)">'
+      + '    <button id="annSlClose" style="position:absolute;top:-14px;right:-14px;background:#0f172a;color:#fff;border:2px solid #fff;border-radius:50%;width:36px;height:36px;font-size:19px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)">×</button>'
+      + '    <button id="annSlPrev" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(15,23,42,.5);color:#fff;border:0;border-radius:50%;width:42px;height:42px;font-size:25px;line-height:1;cursor:pointer">‹</button>'
+      + '    <button id="annSlNext" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(15,23,42,.5);color:#fff;border:0;border-radius:50%;width:42px;height:42px;font-size:25px;line-height:1;cursor:pointer">›</button>'
+      + '  </div>'
+      + '  <div id="annSlDots" style="display:flex;gap:7px;justify-content:center;align-items:center;min-height:12px"></div>'
+      + '  <div id="annSlTitle" style="color:#0f172a;font-size:14.5px;font-weight:700;line-height:1.4;text-align:center;max-width:94vw;text-shadow:0 1px 6px rgba(255,255,255,.9)"></div>'
+      + '  <div id="annSlMsg" style="color:#334155;font-size:13px;line-height:1.55;text-align:center;max-width:94vw;max-height:14vh;overflow-y:auto;white-space:pre-wrap;text-shadow:0 1px 6px rgba(255,255,255,.9)"></div>'
+      + '  <button id="annSlDone" style="padding:10px 26px;border:0;border-radius:999px;background:#0f172a;color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.25)">ปิด</button>'
       + '</div>';
     document.body.appendChild(o);
   }
@@ -78,8 +78,11 @@
     if (S.s >= imgs.length) S.s = imgs.length - 1;
     if (S.s < 0) S.s = 0;
 
-    const step = S.items.length > 1 ? ' (' + (S.i + 1) + '/' + S.items.length + ')' : '';
-    document.getElementById('annSlTitle').textContent = (a.title || 'ประกาศ') + step;
+    const step = S.items.length > 1 ? ' · ประกาศ ' + (S.i + 1) + '/' + S.items.length : '';
+    const tEl = document.getElementById('annSlTitle');
+    tEl.textContent = (a.title || '') + step;
+    tEl.style.display = (a.title || step) ? 'block' : 'none';
+
     document.getElementById('annSlImg').src = imgs[S.s] || '';
     const msg = (a.message && a.message !== a.title) ? a.message : '';
     const mEl = document.getElementById('annSlMsg');
@@ -88,10 +91,13 @@
     const multi = imgs.length > 1;
     document.getElementById('annSlPrev').style.display = multi ? 'block' : 'none';
     document.getElementById('annSlNext').style.display = multi ? 'block' : 'none';
-    document.getElementById('annSlDots').innerHTML = multi
-      ? imgs.map((_u, k) => '<span data-k="' + k + '" style="width:' + (k === S.s ? 20 : 8) + 'px;height:8px;border-radius:999px;background:' + (k === S.s ? '#fff' : 'rgba(255,255,255,.45)') + ';cursor:pointer;transition:width .18s"></span>').join('')
+    // จุดไข่ปลาบอกว่ากำลังดูภาพที่เท่าไหร่ (กดข้ามไปภาพไหนก็ได้)
+    const dots = document.getElementById('annSlDots');
+    dots.innerHTML = multi
+      ? imgs.map((_u, k) => '<span data-k="' + k + '" style="width:' + (k === S.s ? 22 : 9) + 'px;height:9px;border-radius:999px;background:' + (k === S.s ? '#0f172a' : 'rgba(15,23,42,.28)') + ';cursor:pointer;transition:width .18s;box-shadow:0 1px 4px rgba(255,255,255,.8)"></span>').join('')
       : '';
-    document.getElementById('annSlDots').querySelectorAll('[data-k]').forEach(d => {
+    dots.style.display = multi ? 'flex' : 'none';
+    dots.querySelectorAll('[data-k]').forEach(d => {
       d.onclick = () => { S.s = Number(d.dataset.k); render(); };
     });
 

@@ -180,6 +180,7 @@
         case 'hr_score_rule_delete': return await hrScoreRuleDelete(p.rule_key);
         case 'hr_score_bands_save':  return await hrScoreBandsSave(p.data);
         case 'hr_score_event_add':   return await hrScoreEventAdd(p.data);
+        case 'hr_score_bonus_add':   return await hrScoreBonusAdd(p.data);
         case 'hr_score_event_list':  return await hrScoreEventList(p.emp_id, p.cycle);
         case 'hr_score_event_delete':return await hrScoreEventDelete(p.id);
         case 'hr_score_issue_warnings': return await hrScoreIssueWarnings(p.cycle);
@@ -1977,6 +1978,46 @@
     await logAct('แก้ไขแถบผลคะแนน', null, 'อัปเดต ' + rows.length + ' แถบ');
     return { ok: true };
   }
+  // ---------- บวกคะแนนให้พนักงาน (ผลงานดี) ----------
+  // ต่างจาก hrScoreEventAdd ตรงที่ "คะแนนเป็นบวก" และไม่ต้องผูกกับ score_rules
+  async function hrScoreBonusAdd(d) {
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    let points = Math.abs(Number(d.points) || 0);
+    if (!points) return { ok: false, error: 'ต้องระบุคะแนนที่จะบวก' };
+    const cap = await getSettingNum('score_bonus_max', 20);       // เพดานต่อครั้ง (ตั้งค่าได้)
+    if (points > cap) points = cap;
+    if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุเหตุผลที่บวกคะแนน' };
+
+    const { data: emp } = await sb().from('employees').select('emp_id,name').eq('emp_id', String(d.emp_id)).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้' };
+
+    const label = String(d.label || 'ผลงานดี (บวกคะแนน)').slice(0, 80);
+    const { error } = await sb().from('score_events').insert({
+      emp_id: emp.emp_id,
+      event_date: d.event_date || bkkToday(),
+      rule_key: 'bonus_performance',
+      label,
+      points,                                   // ★ บวก
+      note: String(d.reason).trim().slice(0, 500),
+      created_by: d.created_by || 'สำนักงาน (HR)',
+    });
+    if (error) throw error;
+
+    // แจ้งพนักงานให้รู้ (โปร่งใส — คนถูกหักคะแนนก็ได้รับแจ้ง คนได้บวกก็ควรได้รับแจ้ง)
+    try {
+      await sb().from('emp_notifications').insert({
+        emp_id: emp.emp_id, kind: 'score_add',
+        title: '🎉 ได้รับคะแนนเพิ่ม ' + points + ' คะแนน',
+        body: label + '\n' + String(d.reason).trim().slice(0, 300),
+        ref: 'bonus', created_by: d.created_by || 'สำนักงาน (HR)',
+      });
+    } catch (_e) { /* ข้าม */ }
+
+    await logAct('บวกคะแนนวินัย +' + points, emp.emp_id, label + ' · ' + String(d.reason).trim().slice(0, 120));
+    return { ok: true, points };
+  }
+
   async function hrScoreEventAdd(d) {
     if (!d.emp_id || !d.rule_key) return { ok: false, error: 'ต้องระบุพนักงานและเหตุ' };
     const { data: rule } = await sb().from('score_rules').select('*').eq('rule_key', d.rule_key).maybeSingle();
@@ -2598,17 +2639,34 @@
       rangeLabel = start + ' ถึง ' + end;
     }
     const endEff = end < today ? end : today;
-    const [empR, brR, shR, attR, schR, lvR, taR, staR, stR, dvR] = await Promise.all([
+    const [empR, brR, shR, attR, schR, lvR, taR, staR, stR, dvR,
+           revR, fixR, ctrlR, leadR, gdR, qaR, shcR, shaR, hoR, mtR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,default_shift').eq('emp_id', p.emp_id).maybeSingle(),
       sb().from('branches').select('branch_id,name'),
-      sb().from('shifts').select('shift_id,name,day_value'),
-      sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
+      sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
+      sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min,extend_until').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
       sb().from('schedules').select('work_date,shift_id').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
       sb().from('leaves').select('start_date,end_date,type,status').eq('emp_id', p.emp_id).eq('status', 'approved').lte('start_date', end).gte('end_date', start),
-      sb().from('task_assignments').select('work_date,shift_id,title,status,sent_back_count,review_note,reviewer').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end),
-      sb().from('special_task_assignees').select('task_id,status').eq('emp_id', p.emp_id),
+      // งานในกะของตัวเอง
+      sb().from('task_assignments').select('id,work_date,shift_id,title,status,sent_back_count,review_note,reviewer,submitted_at,needs_mgr,checked_by_name,mgr_result,fix_emp,fix_done_at').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end),
+      sb().from('special_task_assignees').select('task_id,status,submitted_at').eq('emp_id', p.emp_id),
       sb().from('special_tasks').select('*'),
       sb().from('disc_actions').select('*').eq('emp_id', p.emp_id).order('performed_at', { ascending: false }),
+      // ★ งานที่ "เขาเป็นผู้ตรวจ" ให้ผลัดก่อนหน้า (คุณภาพการตรวจ)
+      sb().from('task_assignments').select('id,work_date,shift_id,title,emp_name,status,mgr_result,mgr_checked_at,checked_at,fix_emp').eq('checked_by_emp', p.emp_id).gte('work_date', start).lte('work_date', end),
+      // ★ งานแก้ที่ตกเป็นความรับผิดชอบของเขา
+      sb().from('task_assignments').select('id,work_date,title,emp_name,fix_assigned_at,fix_done_at,status').eq('fix_emp', p.emp_id).gte('work_date', start).lte('work_date', end),
+      // ★ ผู้คุมผลัด · หัวหน้าผลัด
+      sb().from('shift_controllers').select('work_date,branch_id').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end),
+      sb().from('shift_leads').select('work_date,shift_id,branch_id').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end),
+      // ★ รับสินค้า (คนคีย์เก็บใน done_by) · QA · เชลฟ์
+      sb().from('goods_receipts').select('id,work_date,ref_no,crates_in,crates_return,return_expected,diff,warehouse_name').eq('done_by', p.emp_id).gte('work_date', start).lte('work_date', end),
+      sb().from('qa_items').select('id,status,expiry_date,created_at').eq('emp_id', p.emp_id).gte('created_at', start).lte('created_at', end + 'T23:59:59'),
+      sb().from('shelf_checks').select('id,shelf_id,check_date,status,sent_back_count').eq('emp_id', p.emp_id).gte('check_date', start).lte('check_date', end),
+      sb().from('shelf_assignments').select('id,shelf_id,month').eq('emp_id', p.emp_id),
+      // ★ รับส่งผลัด · งานที่ ผจก. มอบให้เขาโดยตรง
+      sb().from('handovers').select('id,work_date,shift_id,status,from_emp_id,to_emp_id,receiver_note').or('from_emp_id.eq.' + p.emp_id + ',to_emp_id.eq.' + p.emp_id).gte('work_date', start).lte('work_date', end),
+      sb().from('mgr_tasks').select('id,title,status,due_date,emp_submitted_at,done_at,created_at').eq('assignee_emp', p.emp_id),
     ]);
     if (empR.error) throw empR.error;
     if (!empR.data) return { ok: false, error: 'ไม่พบพนักงาน' };
@@ -2674,6 +2732,90 @@
     const sentBackTasks = tasks.filter(t => (t.sent_back_count || 0) > 0 || t.status === 'sent_back')
       .map(t => ({ date: t.work_date, shift: shName[t.shift_id] || t.shift_id || '-', title: t.title, note: t.review_note || '', count: t.sent_back_count || 0, status: t.status, reviewer: t.reviewer || '' }))
       .sort((a, b) => a.date < b.date ? -1 : 1);
+
+    // ================= ผลงานรอบด้าน (ใช้ประเมิน + ให้นิดาวิเคราะห์) =================
+    const shEnd = {}; (shR.data || []).forEach(s => { shEnd[s.shift_id] = String(s.end_time || '').slice(0, 5); });
+    const shStart = {}; (shR.data || []).forEach(s => { shStart[s.shift_id] = String(s.start_time || '').slice(0, 5); });
+    const hm2m = hm => { const q = String(hm || '').split(':'); return (parseInt(q[0]) || 0) * 60 + (parseInt(q[1]) || 0); };
+    const addD = (s, n) => { const x = new Date(s + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+
+    // ---- ส่งงานช้า: ส่งหลังหมดกะ (รองรับกะข้ามคืน) ----
+    let t_late_submit = 0; const lateSubmitList = [];
+    tasks.forEach(t => {
+      if (!t.submitted_at || !t.shift_id) return;
+      const en = shEnd[t.shift_id], st = shStart[t.shift_id];
+      if (!en) return;
+      const overnight = !!st && en <= st;
+      const dueDate = overnight ? addD(t.work_date, 1) : t.work_date;
+      const dueMs = new Date(dueDate + 'T' + en + ':00+07:00').getTime();
+      if (new Date(t.submitted_at).getTime() > dueMs) {
+        t_late_submit++;
+        lateSubmitList.push({ date: t.work_date, title: t.title, shift: shName[t.shift_id] || t.shift_id });
+      }
+    });
+
+    // ---- คุณภาพการตรวจงานผลัดก่อนหน้า ----
+    const reviewed = revR.data || [];
+    const rv_total = reviewed.length;
+    // งานที่เขาตรวจผ่าน แล้ว ผจก. ตีกลับทีหลัง = ตรวจไม่ละเอียด
+    const rv_missed = reviewed.filter(t => t.mgr_result === 'sent_back' || String(t.fix_emp || '') === String(p.emp_id)).length;
+    const rv_accuracy = rv_total ? Math.round((rv_total - rv_missed) * 100 / rv_total) : null;
+
+    // ---- งานแก้ที่ตกเป็นความรับผิดชอบของเขา ----
+    const fixes = fixR.data || [];
+    const fx_total = fixes.length;
+    const fx_done = fixes.filter(t => !!t.fix_done_at).length;
+    const fx_open = fx_total - fx_done;
+
+    // ---- ผู้คุมผลัด / หัวหน้าผลัด ----
+    const ctrl_days = (ctrlR.data || []).length;
+    const lead_days = (leadR.data || []).length;
+
+    // ---- รับสินค้า (ความแม่นยำการคีย์: ส่วนต่างลัง ≠ 0 = ผิดพลาด) ----
+    const gds = gdR.data || [];
+    const gd_total = gds.length;
+    const gd_diff = gds.filter(g => Number(g.diff || 0) !== 0).length;
+    const gd_accuracy = gd_total ? Math.round((gd_total - gd_diff) * 100 / gd_total) : null;
+
+    // ---- QA / เชลฟ์ ----
+    const qas = qaR.data || [];
+    const qa_total = qas.length, qa_removed = qas.filter(q => q.status === 'removed').length;
+    const shc = shcR.data || [];
+    const sh_checks = shc.length;
+    const sh_sentback = shc.filter(c => c.status === 'sent_back' || (c.sent_back_count || 0) > 0).length;
+    const cycMonths = [...new Set([start.slice(0, 7), end.slice(0, 7)])];
+    const sh_assigned = (shaR.data || []).filter(a => cycMonths.includes(a.month)).length;
+
+    // ---- รับส่งผลัด ----
+    const hos = hoR.data || [];
+    const ho_sent = hos.filter(h => String(h.from_emp_id || '') === String(p.emp_id)).length;
+    const ho_received = hos.filter(h => String(h.to_emp_id || '') === String(p.emp_id) && h.status === 'received').length;
+    const ho_problem = hos.filter(h => (h.status === 'no_handover' || h.status === 'rejected') && String(h.from_emp_id || '') === String(p.emp_id)).length;
+
+    // ---- งานที่ ผจก. มอบให้โดยตรง ----
+    const mts = (mtR.data || []).filter(t => {
+      const d = String(t.created_at || '').slice(0, 10);
+      return !d || (d >= start && d <= end);
+    });
+    const mt_total = mts.length;
+    const mt_done = mts.filter(t => t.status === 'done' || !!t.emp_submitted_at).length;
+    const mt_overdue = mts.filter(t => t.due_date && !t.emp_submitted_at && t.status !== 'done' && t.due_date < today).length;
+
+    // ---- ทำงานเกินกำหนด (ควบกะ) ----
+    const extend_count = att.filter(a => !!a.extend_until).length;
+
+    const performance = {
+      tasks: { total: t_total, approved: t_approved, submitted: t_submitted, todo: t_todo, sent_back: t_sentback, sent_back_total, pass_rate, late_submit: t_late_submit },
+      review: { total: rv_total, missed: rv_missed, accuracy: rv_accuracy },
+      fixes: { total: fx_total, done: fx_done, open: fx_open },
+      duty: { controller_days: ctrl_days, leader_days: lead_days, extend_shift: extend_count, ot_hours },
+      goods: { total: gd_total, diff_count: gd_diff, accuracy: gd_accuracy },
+      qa: { total: qa_total, removed: qa_removed },
+      shelf: { assigned: sh_assigned, checks: sh_checks, sent_back: sh_sentback },
+      handover: { sent: ho_sent, received: ho_received, problem: ho_problem },
+      mgr_tasks: { total: mt_total, done: mt_done, overdue: mt_overdue },
+      special: { total: sp_total, approved: sp_approved, submitted: sp_submitted, open: sp_open },
+    };
     return {
       ok: true,
       emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '' },
@@ -2694,11 +2836,17 @@
       disc_history,
       tasks: { total: t_total, approved: t_approved, submitted: t_submitted, todo: t_todo, sent_back: t_sentback, sent_back_total, pass_rate },
       special: { total: sp_total, approved: sp_approved, submitted: sp_submitted, open: sp_open },
+      performance,
       details: {
         late: late.map(a => ({ date: a.work_date, min: a.late_min })).sort((x, y) => x.date < y.date ? -1 : 1),
         absent: absentDays,
         early_out: earlyRows.map(a => ({ date: a.work_date, min: a.early_out_min })).sort((x, y) => x.date < y.date ? -1 : 1),
         sent_back_tasks: sentBackTasks,
+        late_submit_tasks: lateSubmitList,
+        review_missed: reviewed.filter(t => t.mgr_result === 'sent_back' || String(t.fix_emp || '') === String(p.emp_id))
+          .map(t => ({ date: t.work_date, title: t.title, owner: t.emp_name || '' })),
+        goods_diff: gds.filter(g => Number(g.diff || 0) !== 0)
+          .map(g => ({ date: g.work_date, ref_no: g.ref_no, diff: g.diff, warehouse: g.warehouse_name || '' })),
       },
     };
   }
