@@ -571,7 +571,7 @@
       <div class="field-mini"><label>พนักงาน</label><select id="r_emp"></select></div>
       <div class="field-mini"><label>สาขา</label><select id="r_branch"></select></div>
       <div class="field-mini"><label>กะ</label><select id="r_shift"></select></div>
-      <div class="field-mini"><label>มุมมอง</label><select id="r_mode"><option value="summary" selected>สรุปต่อคน</option><option value="detail">รายละเอียด</option><option value="coverage">การไปทำแทนสาขา</option></select></div>
+      <div class="field-mini"><label>มุมมอง</label><select id="r_mode"><option value="summary" selected>สรุปต่อคน</option><option value="byshift">สรุปแยกกะ</option><option value="detail">รายละเอียด</option><option value="coverage">การไปทำแทนสาขา</option></select></div>
     </div>
     <div style="display:flex; gap:10px; margin-top:11px; align-items:center; flex-wrap:wrap">
       <label class="check"><input type="checkbox" id="r_late">เฉพาะที่สาย</label>
@@ -2637,7 +2637,59 @@ function renderReport(){
   const mode = $('r_mode').value;
   if(mode==='detail') renderReportDetail();
   else if(mode==='coverage') renderCoverage();
+  else if(mode==='byshift') renderReportByShift();
   else renderReportSummary();
+}
+// ===== สรุปแยกกะ: ใครทำกะไหน กี่วัน + รวมทั้งหมด =====
+//   นับจาก "วันที่ลงเวลาเข้างานจริง" ถ่วงด้วย day_value (กะครึ่งวัน = 0.5)
+//   คนไปทำแทนสาขาอื่นก็นับตามกะที่ไปทำจริง
+function byShiftRows(){
+  const map = {};   // emp_id → { emp, byShift:{shiftName: days}, total }
+  (REPORT.rows||[]).forEach(r=>{
+    if(!r.check_in) return;                       // ไม่ลงเวลา = ไม่นับเป็นวันทำงาน
+    const m = map[r.emp_id] || (map[r.emp_id] = { emp_id:r.emp_id, emp_name:r.emp_name, byShift:{}, total:0, cover:0 });
+    const sh = r.shift_name || r.shift_id || '(ไม่ระบุกะ)';
+    const dv = Number(r.day_value)||1;
+    m.byShift[sh] = Math.round(((m.byShift[sh]||0) + dv)*10)/10;
+    m.total = Math.round((m.total + dv)*10)/10;
+    if(r.is_cover) m.cover = Math.round((m.cover + dv)*10)/10;
+  });
+  // เติมชื่อเล่น/รูป จากสรุปต่อคน
+  const meta = {}; (REPORT.summary||[]).forEach(e=>{ meta[e.emp_id]=e; });
+  return Object.values(map).map(m=>({ ...m, nickname:(meta[m.emp_id]||{}).nickname||'', photo_url:(meta[m.emp_id]||{}).photo_url||'' }))
+    .sort((a,b)=> String(a.emp_id).localeCompare(String(b.emp_id), undefined, {numeric:true}));
+}
+function renderReportByShift(){
+  const rows = byShiftRows();
+  if(!rows.length){ $('r_body').innerHTML='<div class="empty">ไม่มีการลงเวลาในช่วงนี้</div>'; $('r_count').textContent='0 คน'; return; }
+  // คอลัมน์กะ = ทุกกะที่มีคนทำจริงในช่วงนี้ (เรียงตามลำดับกะในระบบ)
+  const order = (DATA.shifts||[]).map(s=>s.name);
+  const shiftSet = new Set(); rows.forEach(r=>Object.keys(r.byShift).forEach(s=>shiftSet.add(s)));
+  const shifts = [...shiftSet].sort((a,b)=>{
+    const ia=order.indexOf(a), ib=order.indexOf(b);
+    return (ia<0?999:ia)-(ib<0?999:ib) || a.localeCompare(b,'th');
+  });
+  const totalByShift = {}; shifts.forEach(s=>{ totalByShift[s] = Math.round(rows.reduce((n,r)=>n+(r.byShift[s]||0),0)*10)/10; });
+  const grand = Math.round(rows.reduce((n,r)=>n+r.total,0)*10)/10;
+
+  $('r_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>พนักงาน</th>${shifts.map(s=>`<th style="text-align:center">${esc(s)}</th>`).join('')}<th style="text-align:center;background:#ecfdf5">รวม (วัน)</th><th style="text-align:center">ไปแทน</th></tr></thead>
+    <tbody>${rows.map(r=>`
+      <tr>
+        <td><div class="name-cell">${r.photo_url?`<div class="thumb"><img src="${esc(r.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(r.nickname||r.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(r.emp_name)}${r.nickname?' ('+esc(r.nickname)+')':''}</span><span class="nick">${esc(r.emp_id)}</span></div></div></td>
+        ${shifts.map(s=>`<td class="mono" style="text-align:center">${r.byShift[s]?`<b>${r.byShift[s]}</b>`:'<span style="color:var(--line2)">–</span>'}</td>`).join('')}
+        <td class="mono" style="text-align:center;background:#ecfdf5;font-weight:800">${r.total}</td>
+        <td class="mono" style="text-align:center">${r.cover?`<span style="color:#c2410c;font-weight:700">${r.cover}</span>`:'<span style="color:var(--line2)">–</span>'}</td>
+      </tr>`).join('')}
+      <tr style="background:#f8fafc;font-weight:800">
+        <td>รวมทุกคน</td>
+        ${shifts.map(s=>`<td class="mono" style="text-align:center">${totalByShift[s]||0}</td>`).join('')}
+        <td class="mono" style="text-align:center;background:#dcfce7">${grand}</td>
+        <td></td>
+      </tr>
+    </tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* นับจากวันที่ลงเวลาเข้างานจริง · กะครึ่งวันนับ 0.5 วัน · “ไปแทน” = วันที่ไปทำสาขาอื่น (นับรวมอยู่ในคอลัมน์กะและยอดรวมแล้ว)${$('r_shift').value?' · กำลังกรองเฉพาะกะที่เลือก — เอาตัวกรองกะออกเพื่อดูครบทุกกะ':''}</div></div>`;
+  $('r_count').textContent = rows.length + ' คน · รวม ' + grand + ' วัน';
 }
 function renderReportDetail(){
   if(!REPORT.rows.length){ $('r_body').innerHTML='<div class="empty">ไม่พบข้อมูล</div>'; $('r_count').textContent='0 รายการ'; return; }
@@ -2743,7 +2795,10 @@ $('r_holiday') && $('r_holiday').addEventListener('change', loadReport);
 $('r_hidezero') && $('r_hidezero').addEventListener('change', renderReport);   // สลับซ่อน/แสดง = เรนเดอร์ใหม่ ไม่ต้องดึงข้อมูลซ้ำ
 $('r_export').onclick = ()=>{
   const mode = $('r_mode').value;
-  const data = mode==='detail' ? REPORT.rows : mode==='coverage' ? ((COVER&&COVER.rows)||[]) : summaryDisplayRows();
+  const data = mode==='detail' ? REPORT.rows
+    : mode==='coverage' ? ((COVER&&COVER.rows)||[])
+    : mode==='byshift' ? byShiftRows().map(r=>{ const o={ รหัส:r.emp_id, ชื่อ:r.emp_name }; Object.keys(r.byShift).forEach(s=>{ o[s]=r.byShift[s]; }); o['รวม (วัน)']=r.total; o['ไปแทน (วัน)']=r.cover; return o; })
+    : summaryDisplayRows();
   if(!data.length){ toast('err','ไม่มีข้อมูลให้ export'); return; }
   const keys = Object.keys(data[0]).filter(k=>typeof data[0][k]!=='object');
   const csv = [keys.join(',')].concat(data.map(r=>keys.map(k=>{
@@ -4014,16 +4069,22 @@ async function rcAct(act, a){
     box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div style="font-weight:700;margin-bottom:8px">✅ รับเข้าทำงาน</div>'
       +'<div class="field"><label>รหัสพนักงาน (ตัวเลขล้วน) *</label><input id="hire_emp" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="เช่น 0874771" autocomplete="off"></div>'
       +'<div class="field"><label>สาขาที่รับเข้า</label><select id="hire_branch">'+opts+'</select></div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">กำหนดรหัสพนักงานเองตามรหัสจริง — ต้องเป็น <b>ตัวเลขล้วน</b> เพราะหน้าลงเวลาเป็นแป้นตัวเลข (พิมพ์ตัวอักษรไม่ได้) · ระบบจะสร้างพนักงานใหม่ + คัดลอกเอกสารจากใบสมัครให้อัตโนมัติ</div>'
+      +'<div class="field"><label>วันที่นัดเริ่มงาน *</label><input id="hire_start" type="date" value="'+(a.start_date||anBkkToday())+'"></div>'
+      +'<div class="field"><label>กะประจำ (ถ้ามี)</label><select id="hire_shift"><option value="">— ยังไม่กำหนด —</option>'
+        +(DATA.shifts||[]).map(s=>'<option value="'+esc(s.shift_id)+'">'+esc(s.name)+'</option>').join('')+'</select></div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">กำหนดรหัสพนักงานเองตามรหัสจริง — ต้องเป็น <b>ตัวเลขล้วน</b> เพราะหน้าลงเวลาเป็นแป้นตัวเลข (พิมพ์ตัวอักษรไม่ได้) · <b>วันที่นัดเริ่มงาน</b> จะถูกบันทึกเป็นวันเริ่มงานในข้อมูลพนักงาน (ใช้คิดอายุงาน/รายงาน) · ระบบจะคัดลอกเอกสารจากใบสมัครให้อัตโนมัติ</div>'
       +'<div id="hire_err" style="color:var(--red);font-size:12.5px;display:none;margin-bottom:6px"></div>'
       +'<button class="btn btn-pri btn-sm" id="hire_go">ยืนยันรับเข้าทำงาน</button></div>';
     $('hire_emp').addEventListener('input',e=>{ e.target.value=e.target.value.replace(/\D/g,''); $('hire_err').style.display='none'; });
     $('hire_go').onclick=async()=>{
       const code=($('hire_emp').value||'').trim();
       if(!/^\d+$/.test(code)){ $('hire_err').textContent='กรุณากรอกรหัสพนักงานเป็นตัวเลขล้วน'; $('hire_err').style.display='block'; $('hire_emp').focus(); return; }
-      if(!confirm('ยืนยันรับ '+a.full_name+' เข้าทำงาน · รหัส '+code+' ?')) return;
+      const sd=($('hire_start').value||'').trim();
+      if(!sd){ $('hire_err').textContent='กรุณาระบุวันที่นัดเริ่มงาน'; $('hire_err').style.display='block'; $('hire_start').focus(); return; }
+      if(!confirm('ยืนยันรับ '+a.full_name+' เข้าทำงาน · รหัส '+code+'\nวันเริ่มงาน '+beDate(sd)+' ?')) return;
       $('hire_go').disabled=true; $('hire_go').innerHTML='<span class="spin"></span>';
-      const r=await post({ action:'hr_applicant_hire', password:pwd, id:a.id, branch_id:$('hire_branch').value, emp_id:code });
+      const r=await post({ action:'hr_applicant_hire', password:pwd, id:a.id, branch_id:$('hire_branch').value, emp_id:code,
+                           start_date:sd, default_shift:$('hire_shift').value||null });
       if(r.ok){ toast('ok','รับเข้าทำงานแล้ว · รหัส '+r.emp_id); closeApplicant(); loadRecruit(); if(typeof loadAll==='function') await loadAll(); }
       else { $('hire_err').textContent=r.error||'ไม่สำเร็จ'; $('hire_err').style.display='block'; toast('err', r.error||'ไม่สำเร็จ'); $('hire_go').disabled=false; $('hire_go').textContent='ยืนยันรับเข้าทำงาน'; }
     };

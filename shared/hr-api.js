@@ -236,7 +236,7 @@
         case 'hr_applicant_stage':   return await hrApplicantStage(p.id, p.status);
         case 'hr_applicant_interview': return await hrApplicantInterview(p.id, p.interview_at, p.note);
         case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason);
-        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id);
+        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id, { start_date: p.start_date, default_shift: p.default_shift });
         case 'hr_positions_list':    return await hrPositionsList();
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
@@ -3215,27 +3215,34 @@
     const endEff = end < today ? end : today;   // ตัดวันอนาคตออกจากการนับ ขาด/มา
     const branch = f.branch || '';
 
-    let qEmp = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift').eq('active', true);
-    let qAtt = sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,branch_id').gte('work_date', start).lte('work_date', endEff);
-    let qSch = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id').gte('work_date', start).lte('work_date', endEff);
-    let qTask = sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id').gte('work_date', start).lte('work_date', end);
-    let qShelf = sb().from('shelf_checks').select('emp_id,check_date,branch_id').gte('check_date', start).lte('check_date', end);
-    let qHand = sb().from('handovers').select('from_emp_id,work_date,status,branch_id').gte('work_date', start).lte('work_date', end);
-    let qQa   = sb().from('qa_items').select('emp_id,branch_id,created_at').gte('created_at', start + 'T00:00:00').lte('created_at', end + 'T23:59:59');
-    if (branch) { qEmp = qEmp.eq('branch_id', branch); qAtt = qAtt.eq('branch_id', branch); qSch = qSch.eq('branch_id', branch); qTask = qTask.eq('branch_id', branch); qShelf = qShelf.eq('branch_id', branch); qHand = qHand.eq('branch_id', branch); qQa = qQa.eq('branch_id', branch); }
+    // ★ กรองสาขา = กรองที่ "สาขาประจำของพนักงาน" เท่านั้น
+    //   ห้ามกรอง attendance/schedules ด้วย branch_id ของแถว เพราะวันที่ไป "ทำแทนสาขาอื่น"
+    //   แถวจะอยู่ที่สาขาปลายทาง → ถูกตัดทิ้ง ทำให้วันทำงานหาย/ตัวเลขเพี้ยน
+    const qEmpBase = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift').eq('active', true);
+    const qEmp = branch ? qEmpBase.eq('branch_id', branch) : qEmpBase;
+    const qAtt = sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,branch_id,shift_id,day_value').gte('work_date', start).lte('work_date', endEff);
+    const qSch = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id').gte('work_date', start).lte('work_date', endEff);
+    const qTask = sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id').gte('work_date', start).lte('work_date', end);
+    const qShelf = sb().from('shelf_checks').select('emp_id,check_date,branch_id').gte('check_date', start).lte('check_date', end);
+    const qHand = sb().from('handovers').select('from_emp_id,work_date,status,branch_id').gte('work_date', start).lte('work_date', end);
+    const qQa   = sb().from('qa_items').select('emp_id,branch_id,created_at').gte('created_at', start + 'T00:00:00').lte('created_at', end + 'T23:59:59');
 
-    const [empR, brR, shR, hdR, attR, schR, lvR, taskR, shelfR, handR, qaR, rules] = await Promise.all([
-      qEmp, sb().from('branches').select('branch_id,name'), sb().from('shifts').select('shift_id,name'),
-      sb().from('holidays').select('date').eq('active', true).gte('date', start).lte('date', end),
+    const [empR, brR, shR, attR, schR, lvR, taskR, shelfR, handR, qaR, scR] = await Promise.all([
+      qEmp, sb().from('branches').select('branch_id,name'),
+      sb().from('shifts').select('shift_id,name,day_value'),
       qAtt, qSch,
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', end).gte('end_date', start),
-      qTask, qShelf, qHand, qQa, loadDisciplineRules(),
+      qTask, qShelf, qHand, qQa,
+      // ★ ระดับวินัยตัดสินจาก "คะแนน" ชุดเดียวกับหน้าวินัย/คะแนน (discipline_rules เลิกใช้แล้ว)
+      hrScoreGet('current', { start, end }),
     ]);
     if (empR.error) throw empR.error;
 
     const emps = empR.data || [];
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
-    const holidaySet = new Set((hdR.data || []).map(h => h.date));
+    const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const dvOf = sid => (dvMap[sid] != null ? dvMap[sid] : 1);
+    const scMap = {}; ((scR && scR.employees) || []).forEach(s => { scMap[s.emp_id] = s; });
     const att = attR.data || [], sch = schR.data || [], leaves = lvR.data || [];
     const tasks = taskR.data || [], shelfChk = shelfR.data || [], handovers = handR.data || [], qaItems = qaR.data || [];
     const otWhole = await getSettingBool('ot_whole_day');
@@ -3255,42 +3262,57 @@
     // ---- สกอร์บอร์ดรายคน (รวมวินัย + ความรับผิดชอบ) ----
     const rows = emps.map(e => {
       const g = byEmp[e.emp_id];
-      const workedSet = new Set(g.att.filter(a => a.check_in).map(a => a.work_date));
+      const workedRows = g.att.filter(a => a.check_in);
+      const workedSet = new Set(workedRows.map(a => a.work_date));
       const onLeave = d => g.leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
       const lateRows = g.att.filter(a => (a.late_min || 0) > 0);
       const late_count = lateRows.length;
       const late_total = lateRows.reduce((s, a) => s + (a.late_min || 0), 0);
       const ot_hours = Math.round(g.att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
-      const schedDates = [...new Set(g.sched.map(s => s.work_date))];
-      const pastSched = schedDates.filter(d => d < today);
-      const days_should = pastSched.length;
-      const days_worked = pastSched.filter(d => workedSet.has(d)).length;
-      const absent = pastSched.filter(d => !workedSet.has(d) && !onLeave(d)).length;
-      const lv = disciplineLevel(late_count, absent, rules);
+
+      // ★ ถ่วงน้ำหนักวันด้วย day_value (กะครึ่งวัน = 0.5) ให้ตรงกับหน้ารายงาน/คะแนน
+      const schMap = {}; g.sched.forEach(s => { schMap[s.work_date] = s.shift_id; });
+      const pastSched = Object.keys(schMap).filter(d => d < today);
+      const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
+      const dvOfRow = a => (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id));
+      const days_worked = Math.round(workedRows.reduce((s, a) => s + dvOfRow(a), 0) * 10) / 10;
+      const absent = Math.round(pastSched.filter(d => !workedSet.has(d) && !onLeave(d))
+        .reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
+
+      // ★ ระดับวินัย = จากคะแนน (score_bands) ไม่ใช่เกณฑ์นับครั้งเดิม
+      const sc = scMap[e.emp_id] || {};
+      const level = sc.warn_level != null ? sc.warn_level
+        : (sc.action_type === 'verbal' ? 1 : sc.action_type === 'written' ? 2 : 0);
+
       const t_total = g.tasks.length;
       const t_approved = g.tasks.filter(t => t.status === 'approved').length;
-      const sent_back = g.tasks.reduce((s, t) => s + (t.sent_back_count || 0), 0)
-        + g.tasks.filter(t => t.status === 'sent_back').length;
+      // ★ ตีกลับ = นับจากตัวนับจริงอย่างเดียว (เดิมบวกซ้ำกับงานที่สถานะยังเป็น sent_back → ตัวเลขบวม)
+      const sent_back = g.tasks.reduce((s, t) => s + (t.sent_back_count || 0), 0);
       const pass_rate = t_total ? Math.round(t_approved / t_total * 100) : null;
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname || '',
         branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '—',
         days_should, days_worked, late_count, late_total, absent, ot_hours,
-        level: lv.level, level_name: lv.level_name, level_color: lv.level_color,
+        score: sc.score != null ? sc.score : null, band_label: sc.band_label || '',
+        level, level_name: sc.warn_name || sc.band_label || 'ปกติ', level_color: sc.band_color || '#16a34a',
         task_total: t_total, task_approved: t_approved, pass_rate, sent_back,
         qa: g.qa, shelf: g.shelf, handover: g.handover,
       };
     }).sort((a, b) => (b.late_total + b.absent * 480) - (a.late_total + a.absent * 480));
 
     // ---- ซีรีส์รายวัน (มา/สาย/ขาด/OT) ----
+    // ★ ต้องจำกัดเฉพาะพนักงานในขอบเขตที่เลือก (att/sch ไม่ได้กรองสาขาแล้ว)
+    const inScope = new Set(emps.map(e => e.emp_id));
+    const attS = att.filter(a => inScope.has(a.emp_id));
+    const schS = sch.filter(s => inScope.has(s.emp_id));
     const dayMap = {};
     const eachDay = (s, e, fn) => { const d = new Date(s + 'T00:00:00'), z = new Date(e + 'T00:00:00'); for (; d <= z; d.setDate(d.getDate() + 1)) fn(iso(d)); };
     eachDay(start, endEff, d => { dayMap[d] = { date: d, present: 0, late: 0, absent: 0, ot: 0 }; });
-    att.forEach(a => { const d = dayMap[a.work_date]; if (!d) return; if (a.check_in) d.present++; if ((a.late_min || 0) > 0) d.late++; d.ot += otAdj(a.ot_hours, otWhole); });
+    attS.forEach(a => { const d = dayMap[a.work_date]; if (!d) return; if (a.check_in) d.present++; if ((a.late_min || 0) > 0) d.late++; d.ot += otAdj(a.ot_hours, otWhole); });
     // ขาดรายวัน: มีเวรวันนั้น(อดีต) แต่ไม่มาและไม่ลา
     const empLeaves = {}; emps.forEach(e => { empLeaves[e.emp_id] = byEmp[e.emp_id].leaves; });
-    const workedByDay = {}; att.forEach(a => { if (a.check_in) (workedByDay[a.work_date] = workedByDay[a.work_date] || new Set()).add(a.emp_id); });
-    sch.forEach(s => {
+    const workedByDay = {}; attS.forEach(a => { if (a.check_in) (workedByDay[a.work_date] = workedByDay[a.work_date] || new Set()).add(a.emp_id); });
+    schS.forEach(s => {
       if (s.work_date >= today) return;
       const d = dayMap[s.work_date]; if (!d) return;
       const worked = workedByDay[s.work_date] && workedByDay[s.work_date].has(s.emp_id);
@@ -3308,7 +3330,7 @@
     });
     const branches = Object.values(brAgg).map(b => ({
       branch_id: b.branch_id, branch_name: b.branch_name, emp: b.emp,
-      late_count: b.late_count, late_total: b.late_total, absent: b.absent,
+      late_count: b.late_count, late_total: b.late_total, absent: Math.round(b.absent * 10) / 10,
       ot: Math.round(b.ot * 10) / 10, pass_rate: b.pass_n ? Math.round(b.pass_sum / b.pass_n) : null,
     })).sort((a, b) => b.late_total - a.late_total);
 
@@ -3316,10 +3338,10 @@
     const passVals = rows.filter(r => r.pass_rate != null).map(r => r.pass_rate);
     const kpis = {
       total_emp: rows.length,
-      worked_days: rows.reduce((s, r) => s + r.days_worked, 0),
+      worked_days: Math.round(rows.reduce((s, r) => s + r.days_worked, 0) * 10) / 10,
       late_count: rows.reduce((s, r) => s + r.late_count, 0),
       late_total: rows.reduce((s, r) => s + r.late_total, 0),
-      absent: rows.reduce((s, r) => s + r.absent, 0),
+      absent: Math.round(rows.reduce((s, r) => s + r.absent, 0) * 10) / 10,
       ot_hours: Math.round(rows.reduce((s, r) => s + r.ot_hours, 0) * 10) / 10,
       sent_back: rows.reduce((s, r) => s + r.sent_back, 0),
       task_total: rows.reduce((s, r) => s + r.task_total, 0),
@@ -3584,7 +3606,8 @@
     return { ok: true };
   }
   // รับเข้าทำงาน → เจนรหัสชั่วคราว NEW-xxxxx + สร้างพนักงาน + ย้ายเอกสาร
-  async function hrApplicantHire(id, branchId, empId) {
+  async function hrApplicantHire(id, branchId, empId, opt) {
+    opt = opt || {};
     if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
     const { data: a } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
     if (!a) return { ok: false, error: 'ไม่พบผู้สมัคร' };
@@ -3598,22 +3621,32 @@
     if (!/^\d+$/.test(code)) return { ok: false, error: 'รหัสพนักงานต้องเป็นตัวเลขล้วน (หน้าลงเวลาพิมพ์ตัวอักษรไม่ได้)' };
     const { data: dup } = await sb().from('employees').select('emp_id,name').eq('emp_id', code).maybeSingle();
     if (dup) return { ok: false, error: 'รหัส ' + code + ' ถูกใช้แล้ว (' + (dup.name || '') + ') กรุณาใช้รหัสอื่น' };
+    // ★ วันเริ่มงาน = "วันที่นัดเริ่มงาน" ที่ HR กรอกตอนรับเข้า (เดิมบันทึกเป็นวันนี้เสมอ → อายุงาน/รายงานเพี้ยน)
+    const startDate = (opt.start_date && /^\d{4}-\d{2}-\d{2}$/.test(String(opt.start_date)))
+      ? String(opt.start_date)
+      : (a.start_date || bkkToday());
+
     const emp = {
       emp_id: code, name: a.full_name, nickname: a.nickname || null,
       phone: a.phone || null, address: a.address || null, id_card: a.id_card || null,
       emergency_name: a.emergency_name || null, emergency_phone: a.emergency_phone || null,
-      branch_id: branch, active: true, start_date: bkkToday(),
+      branch_id: branch, active: true, start_date: startDate,
+      default_shift: opt.default_shift || null,
       photo_url: a.photo_url || null, idcard_url: a.idcard_url || null,
       house_url: a.house_url || null, edu_url: a.edu_url || null,
     };
     const { error: e1 } = await sb().from('employees').insert(emp);
     if (e1) throw e1;
-    const { error: e2 } = await sb().from('applicants').update({
-      status: 'hired', hired_emp_id: code, updated_at: new Date().toISOString(),
-    }).eq('id', id);
-    if (e2) throw e2;
-    await logAct('รับผู้สมัครเข้าทำงาน', code, a.full_name + ' · สาขา ' + branch);
-    return { ok: true, emp_id: code };
+    // เก็บวันเริ่มงานไว้ที่ใบสมัครด้วย (ไว้ตรวจย้อนหลังว่านัดวันไหน)
+    const patch = { status: 'hired', hired_emp_id: code, updated_at: new Date().toISOString() };
+    const { error: e2 } = await sb().from('applicants').update({ ...patch, start_date: startDate }).eq('id', id);
+    if (e2) {
+      // เผื่อคอลัมน์ start_date ยังไม่มีในตาราง applicants — อัปเดตเฉพาะสถานะ
+      const { error: e2b } = await sb().from('applicants').update(patch).eq('id', id);
+      if (e2b) throw e2b;
+    }
+    await logAct('รับผู้สมัครเข้าทำงาน', code, a.full_name + ' · สาขา ' + branch + ' · เริ่มงาน ' + startDate);
+    return { ok: true, emp_id: code, start_date: startDate };
   }
   // ---------- ตำแหน่งงาน (สำหรับหน้าสมัคร) ----------
   async function hrPositionsList() {
