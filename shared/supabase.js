@@ -714,22 +714,57 @@
     const { data } = await sb.from('employees').select('emp_id,name,nickname,active,branch_id,default_shift').eq('emp_id', empId).maybeSingle();
     return data || null;
   }
+  // ★ ดึงข้อมูลที่เคยกรอกไว้ มาแสดงในฟอร์ม (แก้ไขต่อได้ ไม่ต้องพิมพ์ใหม่ทั้งหมด)
+  //   ลำดับความสำคัญ: ใบที่ยังรอผู้จัดการอนุมัติ (ล่าสุด) > ข้อมูลที่อนุมัติแล้วในทะเบียนพนักงาน
+  const PROFILE_FIELDS = ['name', 'nickname', 'phone', 'address', 'emergency_name', 'emergency_phone',
+    'bank_name', 'bank_account', 'id_card', 'photo_url', 'idcard_url', 'bankbook_url', 'house_url', 'edu_url'];
+  async function getMyProfile(empId) {
+    if (!empId) return null;
+    const { data: emp } = await sb.from('employees')
+      .select('emp_id,name,nickname,active,branch_id,' + PROFILE_FIELDS.join(','))
+      .eq('emp_id', String(empId)).maybeSingle();
+    if (!emp) return null;
+
+    const { data: subs } = await sb.from('profile_submissions').select('*')
+      .eq('emp_id', String(empId)).order('submitted_at', { ascending: false }).limit(1);
+    const last = (subs && subs[0]) || null;
+    const pending = last && last.status === 'pending' ? last : null;
+
+    const profile = {};
+    PROFILE_FIELDS.forEach(k => {
+      const fromSub = pending && pending[k] != null && pending[k] !== '' ? pending[k] : null;
+      profile[k] = fromSub != null ? fromSub : (emp[k] != null ? emp[k] : '');
+    });
+    return {
+      emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname, active: emp.active, branch_id: emp.branch_id },
+      profile,
+      pending: !!pending,                                   // มีใบรอผู้จัดการตรวจอยู่
+      pending_at: pending ? pending.submitted_at : null,
+      last_status: last ? last.status : null,               // pending | approved | rejected
+      last_at: last ? last.submitted_at : null,
+      reject_note: last && last.status === 'rejected' ? (last.note || last.review_note || '') : '',
+    };
+  }
+
   async function submitProfile(p) {
     const emp = await lookupEmployee(p.empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้ (ให้ผู้จัดการสร้างรหัสก่อน)');
     if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
     const base = p.empId + '/' + Date.now();
     const up = async (val, name) => val ? await uploadPhoto('employee-docs', base + '_' + name + '.jpg', val) : null;
+    // ★ เอกสารที่ "ไม่ได้ถ่ายใหม่" ให้ยกไฟล์เดิมมาแนบในใบนี้ด้วย (ผู้จัดการจะได้เห็นครบทุกใบ)
+    const keep = p.keep || {};
+    const doc = async (val, name, keepUrl) => (await up(val, name)) || (keepUrl || null);
     const row = {
       emp_id: p.empId, name: p.name || emp.name, nickname: p.nickname || null,
       phone: p.phone || null, address: p.address || null,
       emergency_name: p.emergency_name || null, emergency_phone: p.emergency_phone || null,
       bank_name: p.bank_name || null, bank_account: p.bank_account || null, id_card: p.id_card || null,
-      photo_url: await up(p.photo, 'photo'),
-      idcard_url: await up(p.idcard, 'idcard'),
-      bankbook_url: await up(p.bankbook, 'bankbook'),
-      house_url: await up(p.house, 'house'),
-      edu_url: await up(p.edu, 'edu'),
+      photo_url: await doc(p.photo, 'photo', keep.photo_url),
+      idcard_url: await doc(p.idcard, 'idcard', keep.idcard_url),
+      bankbook_url: await doc(p.bankbook, 'bankbook', keep.bankbook_url),
+      house_url: await doc(p.house, 'house', keep.house_url),
+      edu_url: await doc(p.edu, 'edu', keep.edu_url),
       status: 'pending',
     };
     const { error } = await sb.from('profile_submissions').insert(row);
@@ -1502,5 +1537,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();
