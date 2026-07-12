@@ -630,6 +630,7 @@
     ระบบจะ<u>ไม่</u>เลิกจ้าง ไม่ปิดใช้งานพนักงาน และไม่หยุดจ่ายค่าจ้างโดยอัตโนมัติ · ปลายทางของทุกเคสคือ “มติเสนอ + เอกสารหลักฐาน”
     การเลิกจ้างจริงต้องมีผู้มีอำนาจตัดสินใจและดำเนินการตามกฎหมายแรงงาน (แจ้งล่วงหน้า/ค่าชดเชย/สิทธิ์ชี้แจงของลูกจ้าง)
   </div>
+  <div id="tm_rolebar" style="display:none;background:#eff6ff;border:1.5px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:12px;padding:11px 14px;margin:0 4px 14px;font-size:13px;color:#1e3a8a;line-height:1.7"></div>
   <div class="toolbar">
     <div style="flex:1">
       <div style="font-size:13.5px;color:var(--muted)">รอบที่ประเมิน <b id="tm_cycleinfo">—</b></div>
@@ -1717,7 +1718,7 @@ let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 // ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule','discipline'];
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule','discipline','terminate'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -3190,16 +3191,30 @@ let TERM=null, TERM_CASES=[];
 const TM_SEV={ critical:{t:'ร้ายแรง',c:'#b91c1c',bg:'#fee2e2'}, high:{t:'สูง',c:'#c2410c',bg:'#ffedd5'}, medium:{t:'ปานกลาง',c:'#a16207',bg:'#fef3c7'} };
 const TM_STATUS_COLOR={ proposed:'#c2410c', hr_review:'#1d4ed8', decision:'#7c3aed', closed:'#475569', cancelled:'#94a3b8' };
 
+// สิทธิ์: ผจก.สาขา = เสนอเปิดเคส + บันทึกความเห็นเพิ่ม เท่านั้น (ตรวจซ้ำที่ฝั่ง API ด้วย PIN จริง)
+let TERM_CAN = { propose:true, note:true, view:true, review:true, decide:true, cancel:true, reopen:true, edit:true, rules:true, risk:true };
 async function loadTerm(){
   const cyc=$('tm_cycle').value;
   $('tm_cand').innerHTML='<div class="empty">กำลังตรวจสอบตามเกณฑ์…</div>';
   const [r, rc] = await Promise.all([
-    post({ action:'hr_term_candidates', password:pwd, cycle:cyc }),
-    post({ action:'hr_term_case_list', password:pwd, status:$('tm_filter').value }),
+    post({ action:'hr_term_candidates', ...authBody(), cycle:cyc }),
+    post({ action:'hr_term_case_list', ...authBody(), status:$('tm_filter').value }),
   ]);
   if(!r.ok){ $('tm_cand').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   TERM=r; TERM_CASES=(rc.ok?rc.cases:[])||[];
+  TERM_CAN = r.can || TERM_CAN;
   $('tm_cycleinfo').textContent = beDate(r.cycle.start)+' – '+beDate(r.cycle.end);
+  // ซ่อนปุ่มที่ ผจก. ไม่มีสิทธิ์ + ขึ้นแถบอธิบายขอบเขตสิทธิ์
+  if($('tm_rules')) $('tm_rules').style.display = TERM_CAN.rules ? '' : 'none';
+  const rb=$('tm_rolebar');
+  if(rb){
+    if(r.role==='mgr'){
+      rb.style.display='block';
+      rb.innerHTML='<b>👤 สิทธิ์ผู้จัดการสาขา</b> — ท่าน<b>เสนอเปิดเคส</b>และ<b>บันทึกความเห็นเพิ่ม</b>ได้ '
+        +'· การตรวจสอบ ชี้ขาด ยกเลิก และแก้เกณฑ์ เป็นสิทธิ์ของสำนักงาน (HR) '
+        +'· ท่านเห็นเฉพาะพนักงานและเคสของสาขาตัวเอง';
+    } else rb.style.display='none';
+  }
   renderTermCandidates(); renderTermCases();
 }
 function renderTermCandidates(){
@@ -3238,7 +3253,7 @@ function renderTermCandidates(){
         +(c.open_case
             ? ('<button class="btn btn-sec btn-sm" onclick="openTermCase(\''+c.open_case.id+'\')">📂 ดูเคส '+esc(c.open_case.case_no)+'</button>'
               +'<div style="font-size:11.5px;color:var(--muted);text-align:center">มีเคสอยู่แล้ว</div>')
-            : ('<button class="btn btn-danger btn-sm" onclick="openTermOpenModal(\''+c.emp_id+'\')">⛔ เปิดเคสพิจารณา</button>'))
+            : ('<button class="btn btn-danger btn-sm" onclick="openTermOpenModal(\''+c.emp_id+'\')">⛔ '+(TERM_CAN.review?'เปิดเคสพิจารณา':'เสนอเปิดเคส')+'</button>'))
         +'<button class="btn btn-sec btn-sm" onclick="openDiscTimeline(\''+c.emp_id+'\')">🧾 ไทม์ไลน์วินัย</button>'
       +'</div>'
     +'</div></div>';
@@ -3266,7 +3281,7 @@ function renderTermCases(){
 }
 $('tm_refresh') && ($('tm_refresh').onclick=loadTerm);
 $('tm_cycle')   && ($('tm_cycle').onchange=loadTerm);
-$('tm_filter')  && ($('tm_filter').onchange=async()=>{ const rc=await post({action:'hr_term_case_list',password:pwd,status:$('tm_filter').value}); TERM_CASES=(rc.ok?rc.cases:[])||[]; renderTermCases(); });
+$('tm_filter')  && ($('tm_filter').onchange=async()=>{ const rc=await post({action:'hr_term_case_list', ...authBody(),status:$('tm_filter').value}); TERM_CASES=(rc.ok?rc.cases:[])||[]; renderTermCases(); });
 
 // ---------- เปิดเคส ----------
 function openTermOpenModal(empId){
@@ -3276,9 +3291,10 @@ function openTermOpenModal(empId){
              late_count:c.late_count, late_total:c.late_total, absent:c.absent_count,
              absent_streak:c.absent_streak, absent_streak_dates:c.absent_streak_dates,
              warnings:c.warnings, warning_count:c.warning_count };
-  openModal('⛔ เปิดเคสเสนอพิจารณา — '+c.emp_name,
+  openModal('⛔ '+(TERM_CAN.review?'เปิดเคสเสนอพิจารณา':'เสนอเปิดเคส')+' — '+c.emp_name,
     '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:9px;padding:9px 11px;font-size:12.5px;color:#7c2d12;margin-bottom:12px;line-height:1.6">'
-      +'การเปิดเคสคือการ<b>ตั้งเรื่องเพื่อพิจารณา</b> ไม่ใช่การเลิกจ้าง · พนักงานจะได้รับแจ้งและมีสิทธิ์ชี้แจง</div>'
+      +'การเปิดเคสคือการ<b>ตั้งเรื่องเพื่อพิจารณา</b> ไม่ใช่การเลิกจ้าง · พนักงานจะได้รับแจ้งและมีสิทธิ์ชี้แจง'
+      +(TERM_CAN.review?'':'<br><b>เรื่องจะถูกส่งให้สำนักงาน (HR) ตรวจสอบและชี้ขาด</b> — ท่านไม่มีสิทธิ์ปิดเคสเอง')+'</div>'
     +'<div style="font-size:13px;font-weight:700;margin-bottom:6px">เหตุที่เข้าข่าย (ติ๊กข้อที่จะใช้อ้างอิง)</div>'
     +'<div id="tmo_reasons" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">'
       +c.reasons.map((x,i)=>'<label class="check" style="align-items:flex-start;line-height:1.55"><input type="checkbox" class="tmo_r" data-i="'+i+'" checked style="margin-top:3px">'
@@ -3287,7 +3303,7 @@ function openTermOpenModal(empId){
     +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">พฤติการณ์/รายละเอียดประกอบ (บังคับ)</label>'
     +'<textarea id="tmo_detail" rows="4" placeholder="อธิบายข้อเท็จจริง วัน-เวลา ผลกระทบ และการตักเตือนที่ผ่านมา" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
     +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้เสนอ</label>'
-    +'<input id="tmo_by" value="สำนักงาน (HR)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<input id="tmo_by" value="'+(MGR_MODE?'ผู้จัดการสาขา':'สำนักงาน (HR)')+'"'+(MGR_MODE?' readonly':'')+' style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
     +'<label class="check" style="margin-top:10px"><input type="checkbox" id="tmo_notify" checked>แจ้งพนักงานให้รับทราบและใช้สิทธิ์ชี้แจง (แนะนำ)</label>'
     +'<button class="btn btn-danger" id="tmo_save" style="width:100%;padding:12px;margin-top:14px">เปิดเคสเสนอพิจารณา</button>');
   $('tmo_save').onclick=async()=>{
@@ -3296,7 +3312,7 @@ function openTermOpenModal(empId){
     const detail=$('tmo_detail').value.trim();
     if(!detail){ toast('err','ต้องระบุพฤติการณ์'); return; }
     $('tmo_save').disabled=true; $('tmo_save').textContent='กำลังบันทึก…';
-    const r=await post({ action:'hr_term_case_open', password:pwd, data:{
+    const r=await post({ action:'hr_term_case_open', ...authBody(), data:{
       emp_id:c.emp_id, reasons:picked, evidence:ev, detail,
       opened_by:$('tmo_by').value.trim()||'สำนักงาน (HR)', opened_role:'hr',
       notify_emp:$('tmo_notify').checked } });
@@ -3306,7 +3322,9 @@ function openTermOpenModal(empId){
 }
 // เปิดเคสเอง (ความผิดร้ายแรง — ไม่ต้องรอคะแนน)
 $('tm_manual') && ($('tm_manual').onclick=()=>{
-  const opts=((DATA&&DATA.rows)||[]).filter(e=>e.active!==false)
+  const opts=((DATA&&DATA.rows)||[])
+    .filter(e=>e.active!==false)
+    .filter(e=>!MGR_MODE || String(e.branch_id)===String(MGR_BRANCH))     // ★ ผจก. เลือกได้เฉพาะลูกน้องสาขาตัวเอง
     .map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+' · '+esc(e.emp_id)+'</option>').join('');
   const mrules=(TERM&&TERM.manual_rules&&TERM.manual_rules.length)?TERM.manual_rules:[{key:'gross',name:'ความผิดร้ายแรง',severity:'critical'}];
   openModal('⛔ เปิดเคสเอง (ความผิดร้ายแรง)',
@@ -3320,14 +3338,14 @@ $('tm_manual') && ($('tm_manual').onclick=()=>{
     +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">พฤติการณ์/ข้อเท็จจริง (บังคับ)</label>'
     +'<textarea id="tmm_detail" rows="4" placeholder="วัน-เวลา สถานที่ สิ่งที่เกิดขึ้น ผลกระทบ พยาน/หลักฐาน" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
     +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้เสนอ</label>'
-    +'<input id="tmm_by" value="สำนักงาน (HR)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<input id="tmm_by" value="'+(MGR_MODE?'ผู้จัดการสาขา':'สำนักงาน (HR)')+'"'+(MGR_MODE?' readonly':'')+' style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
     +'<button class="btn btn-danger" id="tmm_save" style="width:100%;padding:12px;margin-top:14px">เปิดเคสเสนอพิจารณา</button>');
   $('tmm_save').onclick=async()=>{
     const detail=$('tmm_detail').value.trim();
     if(!detail){ toast('err','ต้องระบุพฤติการณ์'); return; }
     const sel=$('tmm_rule').selectedOptions[0];
     $('tmm_save').disabled=true;
-    const r=await post({ action:'hr_term_case_open', password:pwd, data:{
+    const r=await post({ action:'hr_term_case_open', ...authBody(), data:{
       emp_id:$('tmm_emp').value,
       reasons:[{ key:sel.value, name:sel.dataset.name, severity:sel.dataset.sev, detail:detail.slice(0,300) }],
       detail, opened_by:$('tmm_by').value.trim()||'สำนักงาน (HR)', opened_role:'hr', notify_emp:true } });
@@ -3339,7 +3357,7 @@ $('tm_manual') && ($('tm_manual').onclick=()=>{
 // ---------- ดูเคส + อนุมัติหลายชั้น ----------
 let TERM_CASE=null;
 async function openTermCase(id){
-  const r=await post({ action:'hr_term_case_get', password:pwd, id });
+  const r=await post({ action:'hr_term_case_get', ...authBody(), id });
   if(!r.ok){ toast('err', r.error||'ไม่พบเคส'); return; }
   TERM_CASE=r;
   const c=r.case, steps=r.steps||[];
@@ -3358,8 +3376,15 @@ async function openTermCase(id){
     +'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">'+esc(s.actor||'')+' · '+fmt(s.at)+'</div></div></div>').join('');
 
   const open = (c.status!=='closed' && c.status!=='cancelled');
+  const CAN = r.can || TERM_CAN;
   let actions='';
-  if(open){
+  if(!CAN.review && !CAN.decide){
+    // ผจก.สาขา — ดูได้ + บันทึกความเห็นเพิ่มได้เท่านั้น
+    actions='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#1e3a8a;line-height:1.6;margin-bottom:8px">'
+      +'เคสอยู่ระหว่างการพิจารณาของสำนักงาน (HR) · ท่านเพิ่มความเห็น/ข้อเท็จจริงประกอบได้ แต่ไม่มีสิทธิ์ชี้ขาดหรือปิดเคส</div>'
+      + (open ? '<button class="btn btn-sec btn-sm" onclick="termStep(\'note\',null)">📝 บันทึกความเห็น/ข้อเท็จจริงเพิ่ม</button>' : '');
+  }
+  else if(open){
     if(c.status==='proposed' || c.status==='hr_review'){
       actions='<div style="display:flex;gap:8px;flex-wrap:wrap">'
         +'<button class="btn btn-pri btn-sm" onclick="termStep(\'hr_review\',\'approve\')">✅ ตรวจสอบแล้ว — ส่งต่อผู้มีอำนาจ</button>'
@@ -3399,7 +3424,7 @@ async function openTermCase(id){
         +(c.decision?('<span class="pill" style="background:'+(c.decision==='terminate_proposed'?'#fee2e2':'#dcfce7')+';color:'+(c.decision==='terminate_proposed'?'#b91c1c':'#15803d')+';font-weight:700">'+esc(c.decision_label||'')+'</span>'):'')+'</div>'
       +'</div>'
       +'<div style="display:flex;flex-direction:column;gap:6px">'
-        +'<button class="btn btn-sec btn-sm" onclick="termAskNida()">🤖 ให้นิดาวิเคราะห์ความเสี่ยง</button>'
+        +(CAN.risk?'<button class="btn btn-sec btn-sm" onclick="termAskNida()">🤖 ให้นิดาวิเคราะห์ความเสี่ยง</button>':'')
         +'<button class="btn btn-sec btn-sm" onclick="printTermDoc()">🖨️ บันทึกเสนอพิจารณา</button>'
       +'</div>'
     +'</div>'
@@ -3434,7 +3459,7 @@ async function termStep(stage, decision){
     const note=$('tms_note').value.trim();
     if(!note){ toast('err','ต้องระบุความเห็น'); return; }
     $('tms_save').disabled=true;
-    const r=await post({ action:'hr_term_case_step', password:pwd, data:{ case_id:c.id, stage, decision, note, actor:$('tms_by').value.trim()||'สำนักงาน (HR)', actor_role:'hr' } });
+    const r=await post({ action:'hr_term_case_step', ...authBody(), data:{ case_id:c.id, stage, decision, note, actor:$('tms_by').value.trim()||'สำนักงาน (HR)', actor_role:'hr' } });
     if(r.ok){ closeModal(); toast('ok','บันทึกแล้ว'); await loadTerm(); openTermCase(c.id); }
     else { toast('err', r.error||'ไม่สำเร็จ'); $('tms_save').disabled=false; }
   };
@@ -3459,7 +3484,7 @@ async function termFinal(final){
     if(!by){ toast('err','ต้องระบุชื่อผู้ให้ความเห็น'); return; }
     $('tmf_save').disabled=true;
     // ★ ขั้นผู้มีอำนาจ = จบเรื่อง — บันทึก "มติ" ลงไทม์ไลน์ตรง ๆ ไม่ใช่ "ส่งต่อ"
-    const r=await post({ action:'hr_term_case_step', password:pwd, data:{ case_id:c.id, stage:'decision', decision:final, final, note, actor:by, actor_role:'exec' } });
+    const r=await post({ action:'hr_term_case_step', ...authBody(), data:{ case_id:c.id, stage:'decision', decision:final, final, note, actor:by, actor_role:'exec' } });
     if(r.ok){ closeModal(); toast('ok','บันทึกมติแล้ว — ปิดเคส'); await loadTerm(); openTermCase(c.id); }
     else { toast('err', r.error||'ไม่สำเร็จ'); $('tmf_save').disabled=false; }
   };
@@ -3484,7 +3509,7 @@ async function termReopen(){
     const note=$('tmr_note').value.trim();
     if(!note){ toast('err','ต้องระบุเหตุผล'); return; }
     $('tmr_save').disabled=true;
-    const r=await post({ action:'hr_term_case_step', password:pwd, data:{
+    const r=await post({ action:'hr_term_case_step', ...authBody(), data:{
       case_id:c.id, stage:'reopen', decision:'reopened', back_to:$('tmr_back').value,
       note, actor:$('tmr_by').value.trim()||'สำนักงาน (HR)', actor_role:'hr' } });
     if(r.ok){ closeModal(); toast('ok','เปิดเคสขึ้นมาใหม่แล้ว'); await loadTerm(); openTermCase(c.id); }
@@ -3511,7 +3536,7 @@ async function termEditClosed(){
     const note=$('tme_note').value.trim();
     if(!note){ toast('err','ต้องระบุเหตุผลที่แก้ไข'); return; }
     $('tme_save').disabled=true;
-    const r=await post({ action:'hr_term_case_step', password:pwd, data:{
+    const r=await post({ action:'hr_term_case_step', ...authBody(), data:{
       case_id:c.id, stage:'edit', decision:'edited',
       detail:$('tme_detail').value.trim(), final:$('tme_final').value||null,
       note, actor:$('tme_by').value.trim()||'สำนักงาน (HR)', actor_role:'hr' } });
@@ -3554,7 +3579,7 @@ async function termAskNida(){
     +'\n\nจุดอ่อนของเคส:\n- '+((o['จุดอ่อนของเคส']||[]).join('\n- ')||'—')
     +'\n\nสิ่งที่ต้องทำก่อนตัดสินใจ:\n- '+((o['สิ่งที่ต้องทำก่อนตัดสินใจ']||[]).join('\n- ')||'—')
     +'\n\nความเห็นนิดา: '+(o['ความเห็น']||'');
-  await post({ action:'hr_term_case_risk', password:pwd, data:{ case_id:c.id, risk_level:lv, risk_note:note } });
+  await post({ action:'hr_term_case_risk', ...authBody(), data:{ case_id:c.id, risk_level:lv, risk_note:note } });
   toast('ok','บันทึกผลวิเคราะห์แล้ว');
   openTermCase(c.id);
 }
@@ -3628,7 +3653,7 @@ async function printTermDoc(){
 
 // ---------- ตั้งค่าเกณฑ์เข้าข่าย ----------
 $('tm_rules') && ($('tm_rules').onclick=async()=>{
-  const r=await post({ action:'hr_term_rules_get', password:pwd });
+  const r=await post({ action:'hr_term_rules_get', ...authBody() });
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
   const KIND={ score_band:'คะแนนต่ำกว่าเกณฑ์', warning_count:'จำนวนใบเตือน', absent_streak:'ขาดติดต่อกัน', absent_total:'ขาดรวมในรอบ', late_total:'สายรวมในรอบ', manual:'เปิดเคสเอง' };
   const paramField=(rule)=>{
@@ -3661,7 +3686,7 @@ $('tm_rules') && ($('tm_rules').onclick=async()=>{
                params, sort:(i+1)*10 };
     });
     $('tmr_save').disabled=true;
-    const rr=await post({ action:'hr_term_rules_save', password:pwd, data:rows });
+    const rr=await post({ action:'hr_term_rules_save', ...authBody(), data:rows });
     if(rr.ok){ closeModal(); toast('ok','บันทึกเกณฑ์แล้ว'); loadTerm(); }
     else { toast('err', rr.error||'ไม่สำเร็จ'); $('tmr_save').disabled=false; }
   };
@@ -6634,1770 +6659,4 @@ function renderSchedule(){
   if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; if($('sc_summary'))$('sc_summary').innerHTML=''; return; }
   $('scEmpty').style.display='none';
   const _optShift = (val)=>'<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}"${s.shift_id===val?' selected':''} title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
-  const _optAdd = '<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}" title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
-  const _optOff = '<option value="">OFF</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}" title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
-  const _optBr = (val)=>'<option value="" title="สาขาประจำ">ประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''} title="${esc(b.name)}">${esc(b.branch_id)}</option>`).join(''));
-  const _selCss='height:26px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:12.5px;background:#fff';
-  $('scBody').innerHTML = emps.map(e=>{
-    const cells = days.map(d=>{
-      const arr = SC.schedules[e.emp_id+'|'+d] || [];
-      let inner;
-      if(MGR_MODE){
-        // ผจก.: ดูอย่างเดียว แก้ไขไม่ได้
-        if(!arr.length) inner = '<span style="color:#dc2626;font-weight:700;font-size:13px">OFF</span>';
-        else inner = arr.map(c=>`<div style="font-weight:700;font-size:14px;${c.is_cover?'color:#ea580c':''}">${esc(shiftCodeOf(c.shift_id))}${c.is_cover?('<div style="font-size:10px;color:#ea580c;font-weight:600">→'+esc(c.branch_id)+'</div>'):''}</div>`).join('');
-      } else if(!arr.length){
-        // ยังไม่มีกะ → แสดง "OFF" (ยังกดเลือกกะเพื่อจัดเวรได้)
-        inner = `<select onchange="if(this.value)scAddShift('${esc(e.emp_id)}','${d}',this.value)" title="OFF — เลือกกะเพื่อจัดเวร" style="${_selCss};width:54px;font-weight:700;text-align:center;color:#dc2626">${_optOff}</select>`;
-      } else {
-        inner = arr.map(c=>{
-          const cover = !!c.is_cover;
-          return `<div style="margin-bottom:3px;${cover?'background:#fff7ed;border-radius:6px;padding-bottom:1px':''}">
-            <div style="display:flex;gap:1px;align-items:center;justify-content:center">
-              <select onchange="scEditShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:54px;font-weight:700;text-align:center">${_optShift(c.shift_id)}</select>
-              <span onclick="scDelShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}')" style="cursor:pointer;color:#d1d5db;font-weight:700;font-size:13px;padding:0 1px" title="ลบกะนี้">×</span>
-            </div>
-            <select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" title="เลือกสาขาที่ให้ไปทำ (เว้น = สาขาประจำ)" style="width:100%;border:0;background:transparent;font:inherit;font-size:10px;height:15px;margin-top:1px;color:#9aa4b2;cursor:pointer;text-align:center;-webkit-appearance:none;appearance:none">${_optBr(cover?c.branch_id:'')}</select>
-          </div>`;
-        }).join('');
-        // มี 1 กะ → ปุ่ม + เขียวมุมขวาบน สำหรับเพิ่มกะที่ 2 (ควบกะ)
-        if(arr.length===1) inner += `<button onclick="this.nextElementSibling.style.display='block';this.style.display='none'" title="เพิ่มกะ (ควบกะ)" style="position:absolute;top:-3px;right:-3px;width:15px;height:15px;border-radius:50%;background:#eef0f2;color:#aeb6c0;border:0;font-size:11px;line-height:13px;cursor:pointer;padding:0">+</button><select onchange="if(this.value){scAddShift('${esc(e.emp_id)}','${d}',this.value)}" style="${_selCss};width:100%;margin-top:2px;display:none">${_optAdd}</select>`;
-      }
-      return `<td style="position:relative;padding:5px 5px;vertical-align:top;text-align:center;min-width:72px">${inner}</td>`;
-    }).join('');
-    return `<tr><td style="text-align:left">
-      <div style="font-weight:700;font-size:14px">${esc(e.nickname||e.name)}</div>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:1px">${esc(e.nickname?e.name:('รหัส '+e.emp_id))} · ประจำ ${esc(branchName(e.branch_id))}</div>
-    </td>${cells}</tr>`;
-  }).join('');
-  // สรุปจำนวนคน/กะ แยกรายวัน
-  const dayShift=days.map(()=>({})); const dayCover=days.map(()=>0);
-  emps.forEach(e=>days.forEach((d,di)=>{ (SC.schedules[e.emp_id+'|'+d]||[]).forEach(c=>{ if(c.shift_id){ dayShift[di][c.shift_id]=(dayShift[di][c.shift_id]||0)+1; if(c.is_cover) dayCover[di]++; } }); }));
-  const usedShifts=(DATA.shifts||[]);   // แสดงครบทุกผลัด แม้บางวันจะ 0
-  const dash='<span style="color:#d1d5db">-</span>';
-  if($('sc_summary')){
-    if(!usedShifts.length){ $('sc_summary').innerHTML=''; }
-    else {
-      const head='<th style="text-align:left;padding:5px 8px;color:var(--muted)">สรุปคน/กะ</th>'+days.map(d=>{const dd=new Date(d+'T00:00:00');return `<th style="padding:5px 8px;text-align:center">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;}).join('');
-      let body=usedShifts.map(s=>`<tr><td style="padding:5px 8px;font-weight:600">${esc(s.name)}</td>${days.map((d,di)=>`<td style="padding:5px 8px;text-align:center">${dayShift[di][s.shift_id]||dash}</td>`).join('')}</tr>`).join('');
-      if(dayCover.some(x=>x)) body+=`<tr><td style="padding:5px 8px;font-weight:600;color:#ea580c">ไปแทนสาขา</td>${days.map((d,di)=>`<td style="padding:5px 8px;text-align:center;color:#ea580c">${dayCover[di]||dash}</td>`).join('')}</tr>`;
-      body+=`<tr style="border-top:1.5px solid var(--line2)"><td style="padding:5px 8px;font-weight:700">รวม</td>${days.map((d,di)=>{const tot=Object.values(dayShift[di]).reduce((a,b)=>a+b,0);return `<td style="padding:5px 8px;text-align:center;font-weight:700">${tot||dash}</td>`;}).join('')}</tr>`;
-      $('sc_summary').innerHTML=`<div class="card" style="margin-bottom:10px;padding:8px 10px"><div style="font-size:13px;font-weight:600;margin:2px 4px 6px">สรุปคน/กะ รายวัน</div><div class="tablewrap"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:560px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`;
-    }
-  }
-}
-function scWeekEmpty(emp){ for(let i=0;i<7;i++){ const a=SC.schedules[emp+'|'+addDaysStr(scWeek,i)]; if(a&&a.length) return false; } return true; }
-async function scAddShift(emp, date, shiftId){
-  if(!shiftId) return;
-  // ถ้าทั้งสัปดาห์ยังว่าง → จัด 1 วัน = เติมทั้งสัปดาห์ (แก้รายวันได้ทีหลัง)
-  if(scWeekEmpty(emp)){
-    const r=await post({ action:'hr_sched_fill_week', password:pwd, data:{ emp_id:emp, start:scWeek, shift_id:shiftId } });
-    if(!r.ok) toast('err', r.error||'ไม่สำเร็จ'); else toast('ok','จัดกะทั้งสัปดาห์ให้แล้ว — แก้รายวันได้');
-  } else {
-    const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'' } });
-    if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
-  }
-  loadSchedule();
-}
-async function scEditShift(emp, date, oldShift, newShift){
-  if(newShift===oldShift) return;
-  await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date, shift_id:oldShift });
-  if(newShift){ const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'' } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
-  loadSchedule();
-}
-async function scEditBranch(emp, date, shiftId, branchId){
-  const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:branchId, note:'' } });
-  if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
-  loadSchedule();
-}
-async function scDelShift(emp, date, shiftId){
-  await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date, shift_id:shiftId });
-  loadSchedule();
-}
-// ---------- สรุปตาราง → ข้อความ / รูป (สำหรับส่ง Line) ----------
-function scFilteredEmps(){ const bf=MGR_MODE?MGR_BRANCH:($('sc_branchfilter')?$('sc_branchfilter').value:''); return ((SC&&SC.employees)||[]).filter(e=>!bf||e.branch_id===bf); }
-function buildScheduleText(){
-  const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
-  const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
-  const emps=scFilteredEmps();
-  let txt='📅 ตารางงาน '+fmtThaiShort(days[0])+' - '+fmtThaiShort(days[6]);
-  if(bf) txt+=' ('+branchName(bf)+')';
-  emps.forEach(e=>{
-    const cells=days.map(d=>{ const arr=SC.schedules[e.emp_id+'|'+d]||[]; if(!arr.length) return 'OFF'; return arr.map(c=>{ let s=shiftCodeOf(c.shift_id); if(c.is_cover) s+='→'+c.branch_id; return s; }).join('+'); });
-    txt+='\n• '+e.name+': '+days.map((d,i)=>TH_DOW_S[new Date(d+'T00:00:00').getDay()]+cells[i]).join('  ');
-  });
-  txt+='\n\n(→ = ไปแทนสาขา)';
-  return txt;
-}
-async function copyScheduleText(){
-  const t=buildScheduleText();
-  try{ await navigator.clipboard.writeText(t); toast('ok','คัดลอกข้อความแล้ว — วางในกลุ่ม Line ได้เลย'); }
-  catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(_){} ta.remove(); toast('ok','คัดลอกข้อความแล้ว'); }
-}
-function buildScheduleCanvas(){
-  const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
-  const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
-  const emps=scFilteredEmps();
-  const nameW=190, colW=82, rowH=48, headTop=70, padX=16;
-  const W=padX*2+nameW+colW*7, H=headTop+rowH*Math.max(1,emps.length)+30;
-  const c=document.createElement('canvas'); c.width=W; c.height=H;
-  const x=c.getContext('2d');
-  x.fillStyle='#fff'; x.fillRect(0,0,W,H);
-  x.textBaseline='middle';
-  x.fillStyle='#15803d'; x.font='700 20px Anuphan,sans-serif'; x.textAlign='left';
-  let title='ตารางงาน '+fmtThaiShort(days[0])+' - '+fmtThaiShort(days[6]); if(bf) title+=' · '+branchName(bf);
-  x.fillText(title, padX, 28);
-  const top=headTop;
-  x.fillStyle='#16a34a'; x.fillRect(padX, top-26, nameW+colW*7, 24);
-  x.fillStyle='#fff'; x.font='600 13px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('พนักงาน', padX+8, top-14);
-  x.textAlign='center';
-  days.forEach((d,i)=>{ const dd=new Date(d+'T00:00:00'); x.fillText(TH_DOW_S[dd.getDay()]+' '+dd.getDate()+'/'+(dd.getMonth()+1), padX+nameW+colW*i+colW/2, top-14); });
-  emps.forEach((e,r)=>{
-    const y=top+rowH*r;
-    if(r%2){ x.fillStyle='#f9fafb'; x.fillRect(padX,y,nameW+colW*7,rowH); }
-    x.textAlign='left'; x.fillStyle='#1f2937'; x.font='600 13px Anuphan,sans-serif'; x.fillText(e.nickname||e.name, padX+8, y+rowH/2-7);
-    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText((e.nickname?e.name:('รหัส '+e.emp_id)), padX+8, y+rowH/2+10);
-    x.textAlign='center';
-    days.forEach((d,i)=>{
-      const cx=padX+nameW+colW*i, arr=SC.schedules[e.emp_id+'|'+d]||[], cover=arr.some(cc=>cc.is_cover);
-      if(cover){ x.fillStyle='#fff7ed'; x.fillRect(cx,y,colW,rowH); }
-      if(arr.length){
-        const codes=arr.map(cc=>shiftCodeOf(cc.shift_id)).join('+');
-        const covers=arr.filter(cc=>cc.is_cover).map(cc=>cc.branch_id);
-        x.fillStyle=cover?'#ea580c':'#111827'; x.font='700 15px Anuphan,sans-serif'; x.fillText(codes, cx+colW/2, y+rowH/2 - (covers.length?7:0));
-        if(covers.length){ x.fillStyle='#ea580c'; x.font='400 9px Anuphan,sans-serif'; x.fillText('→'+covers.join(','), cx+colW/2, y+rowH/2+11); }
-      } else { x.fillStyle='#dc2626'; x.font='700 12px Anuphan,sans-serif'; x.fillText('OFF', cx+colW/2, y+rowH/2); }
-    });
-  });
-  x.strokeStyle='#e5e7eb'; x.lineWidth=1;
-  for(let i=0;i<=7;i++){ const gx=padX+nameW+colW*i; x.beginPath(); x.moveTo(gx,top-2); x.lineTo(gx,top+rowH*emps.length); x.stroke(); }
-  for(let r=0;r<=emps.length;r++){ const gy=top+rowH*r; x.beginPath(); x.moveTo(padX,gy); x.lineTo(padX+nameW+colW*7,gy); x.stroke(); }
-  x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.textAlign='left'; x.fillText('ระบบ HR 7-Eleven · ช่องสีส้ม = ไปแทนสาขา', padX, H-14);
-  return c;
-}
-let _scImgBlob=null;
-function openSchedImage(){
-  if(!scFilteredEmps().length){ toast('err','ไม่มีข้อมูลให้สร้างรูป'); return; }
-  let c;
-  try{ c=buildScheduleCanvas(); }catch(e){ toast('err','สร้างรูปไม่สำเร็จ: '+(e.message||'')); return; }
-  $('sc_imgview').src = c.toDataURL('image/png');
-  _scImgBlob=null;
-  c.toBlob(b=>{ _scImgBlob=b; }, 'image/png');
-  $('scImgOverlay').classList.add('show');
-}
-function downloadSchedImage(){
-  const src=$('sc_imgview').src; if(!src){ return; }
-  const a=document.createElement('a'); a.href=src; a.download='schedule_'+scWeek+'.png'; document.body.appendChild(a); a.click(); a.remove();
-  toast('ok','บันทึกรูปแล้ว นำไปส่งในกลุ่ม Line ได้เลย');
-}
-async function shareSchedImage(){
-  try{
-    if(!_scImgBlob){ const c=buildScheduleCanvas(); _scImgBlob=await new Promise(res=>c.toBlob(res,'image/png')); }
-    const file=new File([_scImgBlob],'schedule_'+scWeek+'.png',{type:'image/png'});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title:'ตารางงาน'});
-    } else {
-      toast('err','อุปกรณ์นี้แชร์ไฟล์ตรงไม่ได้ — กด "บันทึกรูป" แล้วส่งใน Line แทน');
-    }
-  }catch(e){ if(!(e&&e.name==='AbortError')) toast('err','แชร์ไม่สำเร็จ'); }
-}
-
-function scCell(empId, workDate){
-  const e = (SC.employees||[]).find(x=>x.emp_id===empId); if(!e) return;
-  const cur = SC.schedules[empId+'|'+workDate] || null;
-  scEditing = { emp_id:empId, work_date:workDate, home:e.branch_id };
-  $('scTitle').textContent = e.name + ' · ' + fmtThaiShort(workDate);
-  fillSelect($('sc_shift'), DATA.shifts.map(s=>[s.shift_id, s.name]), '— หยุด —');
-  fillSelect($('sc_branch'), DATA.branches.map(b=>[b.branch_id, b.name]), '— สาขาประจำ —');
-  $('sc_shift').value = cur ? (cur.shift_id||'') : (e.default_shift||'');
-  $('sc_branch').value = cur ? (cur.branch_id||'') : (e.branch_id||'');
-  $('sc_note').value = cur ? (cur.note||'') : '';
-  scCoverHint();
-  $('scDelete').style.display = cur ? 'inline-flex' : 'none';
-  $('scOverlay').classList.add('show');
-}
-function scCoverHint(){
-  const b = $('sc_branch').value || (scEditing&&scEditing.home);
-  const cover = !!(b && scEditing && scEditing.home && b !== scEditing.home);
-  $('sc_coverhint').style.display = cover ? 'block' : 'none';
-}
-
-// ========== ตั้งค่ากะ ==========
-let SH=null, shEditing=null;
-async function loadShifts(){
-  $('shRows').innerHTML=''; $('shEmpty').style.display='none';
-  const r = await post({ action:'hr_shift_list', password:pwd });
-  if(!r.ok){ $('shEmpty').style.display='block'; $('shEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
-  SH=r;
-  if(!r.rows.length){ $('shEmpty').style.display='block'; $('shEmpty').textContent='ยังไม่มีกะ'; return; }
-  $('shRows').innerHTML = r.rows.map(s=>`
-    <tr>
-      <td><span class="pill" style="background:#dcfce7;color:#15803d;font-weight:700">${esc(s.code||'—')}</span></td>
-      <td class="mono">${esc(s.shift_id)}</td>
-      <td>${esc(s.name)}${Number(s.day_value)===0.5?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ครึ่งวัน · 0.5</span>':''}${s.no_ot?' <span class="pill" style="background:#eef0ec;color:#6b7280">ไม่คิด OT</span>':''}</td>
-      <td class="mono">${esc((s.start_time||'').slice(0,5))}</td>
-      <td class="mono">${esc((s.end_time||'').slice(0,5))}</td>
-      <td class="mono">${s.grace_min}</td>
-      <td class="mono">${s.emp_count} คน</td>
-      <td style="white-space:nowrap">
-        <button class="btn btn-sec btn-sm" onclick="shEdit('${esc(s.shift_id)}')">แก้ไข</button>
-        <button class="btn btn-danger btn-sm" onclick="shDelete('${esc(s.shift_id)}')">ลบ</button>
-      </td>
-    </tr>`).join('');
-}
-function shOpen(shift){
-  shEditing = shift ? shift.shift_id : null;
-  $('shTitle').textContent = shift ? 'แก้ไขกะ' : 'เพิ่มกะ';
-  $('sh_id').value = shift ? shift.shift_id : '';
-  $('sh_id').disabled = !!shift;
-  $('sh_code').value = shift ? (shift.code||'') : '';
-  $('sh_name').value = shift ? shift.name : '';
-  $('sh_start').value = shift ? (shift.start_time||'').slice(0,5) : '';
-  $('sh_end').value = shift ? (shift.end_time||'').slice(0,5) : '';
-  $('sh_grace').value = shift ? shift.grace_min : 5;
-  const mains=(DATA.shifts||[]).filter(s=>s.main_shift&&s.main_shift===s.shift_id);
-  let opts='<option value="">— พิเศษ (ไม่นับในวงจรตรวจผลัด)</option>';
-  mains.forEach(s=>{ opts+='<option value="'+esc(s.shift_id)+'">'+esc(s.name)+' (ผลัดหลัก)</option>'; });
-  if(shift && !mains.some(s=>s.shift_id===shift.shift_id)) opts+='<option value="'+esc(shift.shift_id)+'">— ตั้งกะนี้เป็นผลัดหลักเอง</option>';
-  $('sh_main').innerHTML=opts;
-  $('sh_main').value = shift ? (shift.main_shift||'') : '';
-  if($('sh_no_ot')) $('sh_no_ot').checked = shift ? (shift.no_ot===true) : false;
-  if($('sh_half')) $('sh_half').checked = shift ? (Number(shift.day_value)===0.5) : false;
-  if($('sh_mgrrev')) $('sh_mgrrev').checked = shift ? (shift.mgr_review!==false) : true;
-  $('shOverlay').classList.add('show');
-}
-function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
-async function shDelete(id){
-  if(!confirm('ลบกะ '+id+' ?')) return;
-  const r = await post({ action:'hr_shift_delete', password:pwd, shift_id:id });
-  if(r.ok){ toast('ok','ลบกะแล้ว'); loadShifts(); loadAll(); }
-  else toast('err', r.error||'ลบไม่สำเร็จ');
-}
-
-// ========== เงื่อนไขการลา ==========
-async function loadLeaveTypes(){
-  const r = await post({ action:'hr_leavetype_list', password:pwd });
-  if(!r.ok){ $('ltRows').innerHTML=''; return; }
-  $('ltRows').innerHTML = r.rows.map((t,i)=>`<tr>
-    <td style="font-weight:600">${esc(t.type)}</td>
-    <td><input type="number" min="0" value="${t.advance_days}" id="lt_adv_${i}" style="width:80px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><input type="number" min="0" value="${t.quota_per_year==null?'':t.quota_per_year}" placeholder="ไม่จำกัด" id="lt_q_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td style="text-align:center"><input type="checkbox" ${t.allow_backdate?'checked':''} id="lt_bd_${i}"></td>
-    <td style="text-align:center"><input type="checkbox" ${t.require_doc?'checked':''} id="lt_doc_${i}"></td>
-    <td><button class="btn btn-pri btn-sm" data-lt="${i}">บันทึก</button></td>
-  </tr>`).join('');
-  document.querySelectorAll('[data-lt]').forEach(b=>b.onclick=async()=>{
-    const i=b.dataset.lt, t=r.rows[i];
-    const data={ type:t.type, advance_days:$('lt_adv_'+i).value, quota_per_year:$('lt_q_'+i).value, allow_backdate:$('lt_bd_'+i).checked, require_doc:$('lt_doc_'+i).checked, sort:t.sort };
-    const rr=await post({ action:'hr_leavetype_save', password:pwd, data });
-    if(rr.ok) toast('ok','บันทึกเงื่อนไข '+t.type); else toast('err', rr.error||'ไม่สำเร็จ');
-  });
-}
-
-// ========== (เลิกใช้) เกณฑ์ใบเตือนแบบนับครั้ง ==========
-// ระดับวินัยตัดสินจาก "คะแนน" อย่างเดียวแล้ว — ตั้งค่าที่ "ช่วงคะแนน → ผล + การดำเนินการ"
-let DR=null;
-async function loadDiscRules(){ /* ไม่ใช้แล้ว — คงฟังก์ชันไว้กันโค้ดเก่าเรียกแล้วพัง */ }
-async function saveDiscRules(){ /* ไม่ใช้แล้ว */ }
-
-// ========== ส่วนหัวเอกสารทางการ (ใช้ร่วมกันทุกเอกสารที่พิมพ์) ==========
-let DOC_CFG=null;
-const DOC_DEFAULT={ company:'บริษัท ซี.พี. ออลล์ จำกัด (มหาชน)', dept:'ร้าน 7-Eleven — ฝ่ายทรัพยากรบุคคล', addr:'', logo:'', foot:'' };
-async function loadDocSettings(force){
-  if(DOC_CFG && !force) return DOC_CFG;
-  try{
-    const r=await post({ action:'hr_settings_get', ...authBody() });
-    const s=(r&&r.settings)||{};
-    DOC_CFG={
-      company: s.doc_company || DOC_DEFAULT.company,
-      dept:    s.doc_dept    || DOC_DEFAULT.dept,
-      addr:    s.doc_addr    || '',
-      logo:    s.doc_logo    || '',
-      foot:    s.doc_foot    || '',
-    };
-  }catch(e){ DOC_CFG={...DOC_DEFAULT}; }
-  // เติมค่าลงฟอร์มตั้งค่า (ถ้าอยู่หน้าตั้งค่า)
-  if($('doc_company')){
-    $('doc_company').value=DOC_CFG.company; $('doc_dept').value=DOC_CFG.dept;
-    $('doc_addr').value=DOC_CFG.addr; $('doc_logo').value=DOC_CFG.logo; $('doc_foot').value=DOC_CFG.foot;
-    renderDocPreview();
-  }
-  return DOC_CFG;
-}
-// หัวเอกสารมาตรฐาน (title = ชื่อเอกสาร, sub = บรรทัดย่อย, meta = [ซ้าย, ขวา])
-function docHeadHTML(cfg, title, sub, metaL, metaR){
-  const c=cfg||DOC_CFG||DOC_DEFAULT;
-  return '<div class="es-doc-head">'
-    + (c.logo?('<img src="'+esc(c.logo)+'" alt="" style="height:44px;position:absolute;left:0;top:0;object-fit:contain">'):'')
-    + '<div class="es-doc-org">'+esc(c.company)+'</div>'
-    + (c.dept?('<div style="font-size:12px;font-weight:600;margin-top:1px">'+esc(c.dept)+'</div>'):'')
-    + (c.addr?('<div style="font-size:10.5px;color:#333;margin-top:1px">'+esc(c.addr)+'</div>'):'')
-    + '<div class="es-doc-title">'+esc(title)+'</div>'
-    + (sub?('<div class="es-doc-sub">'+esc(sub)+'</div>'):'')
-    + ((metaL||metaR)?('<div class="es-doc-meta"><span>'+esc(metaL||'')+'</span><span>'+esc(metaR||'')+'</span></div>'):'')
-    + '</div>';
-}
-function docFootHTML(cfg, left, right){
-  const c=cfg||DOC_CFG||DOC_DEFAULT;
-  return '<div class="es-doc-foot"><span>'+esc(left||'')+(c.foot?(' · '+esc(c.foot)):'')+'</span><span>'+esc(right||'')+'</span></div>';
-}
-function renderDocPreview(){
-  const box=$('doc_preview'); if(!box) return;
-  const c={ company:$('doc_company').value||DOC_DEFAULT.company, dept:$('doc_dept').value, addr:$('doc_addr').value, logo:$('doc_logo').value, foot:$('doc_foot').value };
-  box.innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff;color:#000">'
-    +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">ตัวอย่างส่วนหัวเอกสาร</div>'
-    +'<div style="position:relative;text-align:center;border-bottom:2.5px solid #000;padding-bottom:8px">'
-      +(c.logo?('<img src="'+esc(c.logo)+'" alt="" style="height:40px;position:absolute;left:0;top:0;object-fit:contain">'):'')
-      +'<div style="font-size:13px;font-weight:700">'+esc(c.company)+'</div>'
-      +(c.dept?('<div style="font-size:12px;font-weight:600">'+esc(c.dept)+'</div>'):'')
-      +(c.addr?('<div style="font-size:10.5px">'+esc(c.addr)+'</div>'):'')
-      +'<div style="font-size:17px;font-weight:700;margin-top:4px">รายงานสรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
-    +'</div></div>';
-}
-['doc_company','doc_dept','doc_addr','doc_logo','doc_foot'].forEach(id=>{ const el=$(id); if(el) el.oninput=renderDocPreview; });
-$('doc_save') && ($('doc_save').onclick=async()=>{
-  const pairs=[['doc_company',$('doc_company').value.trim()],['doc_dept',$('doc_dept').value.trim()],
-               ['doc_addr',$('doc_addr').value.trim()],['doc_logo',$('doc_logo').value.trim()],['doc_foot',$('doc_foot').value.trim()]];
-  $('doc_save').disabled=true;
-  for(const [k,v] of pairs){ await post({ action:'hr_settings_save', password:pwd, key:k, value:v }); }
-  $('doc_save').disabled=false;
-  DOC_CFG=null; await loadDocSettings(true);
-  toast('ok','บันทึกส่วนหัวเอกสารแล้ว');
-});
-
-// ========== ผ่อนผันก่อนเตือน "ลืมกดออก" ==========
-async function loadCheckoutGrace(){
-  const r = await post({ action:'hr_settings_get', password:pwd });
-  if(r.ok && r.settings){
-    const s=r.settings;
-    if(s.checkout_grace_min!=null) $('coGrace').value = s.checkout_grace_min;
-    if(s.checkout_autoclose_min!=null && $('coAutoClose')) $('coAutoClose').value = s.checkout_autoclose_min;
-    if(s.ot_start_hour!=null && $('otStartHour')) $('otStartHour').value = s.ot_start_hour;
-    if($('otWholeDay')) $('otWholeDay').checked = String(s.ot_whole_day||'')==='1';
-    if($('pushMgrTaskOff')) $('pushMgrTaskOff').checked = String(s.push_mgr_task_off||'')==='1';
-    if(s.mdaily_remind_hour!=null && $('mdd_remind')) $('mdd_remind').value = s.mdaily_remind_hour;
-    if(s.task_warn_before_min!=null && $('taskWarn')) $('taskWarn').value = s.task_warn_before_min;
-    if(s.checkin_early_min!=null && $('checkinEarly')) $('checkinEarly').value = s.checkin_early_min;
-    if(s.recent_checkout_hours!=null && $('recentCoHrs')) $('recentCoHrs').value = s.recent_checkout_hours;
-    if(s.task_review_grace_min!=null && $('taskReviewGrace')) $('taskReviewGrace').value = s.task_review_grace_min;
-    if(s.task_eod_hour!=null && $('taskEodHour')) $('taskEodHour').value = s.task_eod_hour;
-    if(s.early_out_grace_min!=null && $('earlyOutGrace')) $('earlyOutGrace').value = s.early_out_grace_min;
-    if(s.early_out_warn_days!=null && $('earlyOutWarn')) $('earlyOutWarn').value = s.early_out_warn_days;
-    if($('guardShiftStart')) $('guardShiftStart').checked = (s.guard_shift_start==null || s.guard_shift_start==='1');
-    if($('guardPrevShift'))  $('guardPrevShift').checked  = (s.guard_prev_shift==null  || s.guard_prev_shift==='1');
-  }
-}
-async function saveCheckoutGrace(){
-  const v = Math.max(0, parseInt($('coGrace').value)||0);
-  const ac = Math.max(0, parseInt(($('coAutoClose')||{}).value)||60);
-  const oh = Math.max(1, parseInt(($('otStartHour')||{}).value)||2);
-  const w = Math.max(0, parseInt(($('taskWarn')||{}).value)||30);
-  const ce = Math.max(0, parseInt(($('checkinEarly')||{}).value)||180);
-  const rc = Math.max(0, parseInt(($('recentCoHrs')||{}).value)||8);
-  const trg = Math.max(0, parseInt(($('taskReviewGrace')||{}).value)||30);
-  const eod = Math.min(23, Math.max(0, parseInt(($('taskEodHour')||{}).value)||22));
-  const eog = Math.max(0, parseInt(($('earlyOutGrace')||{}).value)||10);
-  const eow = Math.max(1, parseInt(($('earlyOutWarn')||{}).value)||3);
-  const g1 = ($('guardShiftStart')&&$('guardShiftStart').checked) ? '1':'0';
-  const g2 = ($('guardPrevShift')&&$('guardPrevShift').checked) ? '1':'0';
-  $('coGrace_save').disabled = true;
-  const rs = await Promise.all([
-    post({ action:'hr_settings_save', password:pwd, key:'checkout_grace_min', value:String(v) }),
-    post({ action:'hr_settings_save', password:pwd, key:'checkout_autoclose_min', value:String(ac) }),
-    post({ action:'hr_settings_save', password:pwd, key:'ot_start_hour', value:String(oh) }),
-    post({ action:'hr_settings_save', password:pwd, key:'ot_whole_day', value:(($('otWholeDay')||{}).checked?'1':'0') }),
-    post({ action:'hr_settings_save', password:pwd, key:'push_mgr_task_off', value:(($('pushMgrTaskOff')||{}).checked?'1':'0') }),
-    post({ action:'hr_settings_save', password:pwd, key:'mdaily_remind_hour', value:String(Math.max(0,Math.min(23,parseInt(($('mdd_remind')||{}).value)||20))) }),
-    post({ action:'hr_settings_save', password:pwd, key:'task_warn_before_min', value:String(w) }),
-    post({ action:'hr_settings_save', password:pwd, key:'checkin_early_min', value:String(ce) }),
-    post({ action:'hr_settings_save', password:pwd, key:'recent_checkout_hours', value:String(rc) }),
-    post({ action:'hr_settings_save', password:pwd, key:'task_review_grace_min', value:String(trg) }),
-    post({ action:'hr_settings_save', password:pwd, key:'task_eod_hour', value:String(eod) }),
-    post({ action:'hr_settings_save', password:pwd, key:'early_out_grace_min', value:String(eog) }),
-    post({ action:'hr_settings_save', password:pwd, key:'early_out_warn_days', value:String(eow) }),
-    post({ action:'hr_settings_save', password:pwd, key:'guard_shift_start', value:g1 }),
-    post({ action:'hr_settings_save', password:pwd, key:'guard_prev_shift', value:g2 }),
-  ]);
-  $('coGrace_save').disabled = false;
-  if(rs.every(r=>r.ok)){ toast('ok','บันทึกการตั้งค่าแล้ว'); }
-  else toast('err','บันทึกไม่สำเร็จบางรายการ');
-}
-
-// ========== คะแนนวินัยรายเดือน ==========
-let SCORE=null, SCORE_SETTINGS=null;
-async function loadScore(){
-  $('sc_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r = await post({ action:'hr_score_get', password:pwd, cycle:$('sc_cycle').value });
-  if(!r.ok){ $('sc_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
-  SCORE=r;
-  $('sc_cycleinfo').textContent = r.cycle.start+' ถึง '+r.cycle.end;
-  $('sc_startinfo').textContent = r.start_score;
-  $('sc_legend').innerHTML = (r.bands||[]).slice().sort((a,b)=>b.min_score-a.min_score).map(b=>
-    `<span class="pill" style="background:${esc(b.color)};color:#fff;font-weight:600">${b.min_score}–${b.max_score}: ${esc(b.label)}${b.bonus_amount?(' · ฿'+b.bonus_amount):''}</span>`).join('');
-  if(!r.employees.length){ $('sc_body').innerHTML='<div class="empty">ยังไม่มีพนักงาน</div>'; return; }
-  $('sc_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>พนักงาน</th><th>คะแนน</th><th>ผล</th><th>โบนัส</th><th>หักรวม</th><th></th></tr></thead>
-    <tbody>${r.employees.map(e=>`<tr>
-      <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.nickname||e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
-      <td><span style="font-weight:800;font-size:17px;color:${esc(e.band_color)}">${e.score}</span><span style="color:var(--muted)">/${e.start}</span></td>
-      <td><span class="pill" style="background:${esc(e.band_color)};color:#fff;font-weight:600">${esc(e.band_label||'—')}</span>${e.warn_level!=null?' ⚠️':''}</td>
-      <td class="mono">${e.bonus?('฿'+Number(e.bonus).toLocaleString()):'—'}</td>
-      <td class="mono">${e.total_deduct?('<span style="color:var(--red)">'+e.total_deduct+'</span>'):'0'}</td>
-      <td><button class="btn btn-sec btn-sm" data-scd="${esc(e.emp_id)}">รายละเอียด</button></td>
-    </tr>`).join('')}</tbody></table></div></div>`;
-  document.querySelectorAll('[data-scd]').forEach(b=>b.onclick=()=>openScoreDetail(b.dataset.scd));
-}
-function openScoreDetail(empId){
-  const e = (SCORE&&SCORE.employees||[]).find(x=>x.emp_id===empId); if(!e) return;
-  $('scDetailTitle').textContent = 'คะแนน '+(e.nickname||e.emp_name)+' · '+e.score+'/'+e.start;
-  const items = e.items||[];
-  $('scDetailBody').innerHTML = items.length
-    ? `<table style="width:100%;border-collapse:collapse">${items.map(it=>`<tr style="border-bottom:1px solid var(--line)">
-        <td style="padding:8px 4px">${esc(it.label)}${it.count>1?` ×${it.count}`:''} ${it.source==='manual'?'<span class="pill" style="background:#fee2e2;color:#b91c1c">เพิ่มเอง</span>':'<span class="pill" style="background:#e0f2fe;color:#0369a1">auto</span>'}${it.note?`<div style="font-size:12px;color:var(--muted)">${esc(it.note)}</div>`:''}</td>
-        <td style="padding:8px 4px;text-align:right;font-weight:700;color:var(--red)">${it.points}</td>
-        <td style="padding:8px 4px;text-align:right">${it.source==='manual'&&it.id?`<button class="btn btn-danger btn-sm" data-scev="${it.id}">ลบ</button>`:''}</td>
-      </tr>`).join('')}
-      <tr><td style="padding:10px 4px;font-weight:700">รวมหัก</td><td style="padding:10px 4px;text-align:right;font-weight:800;color:var(--red)">${e.total_deduct}</td><td></td></tr>
-      </table>`
-    : '<div class="empty">ยังไม่มีการตัดคะแนนในรอบนี้ (เต็ม '+e.start+')</div>';
-  document.querySelectorAll('[data-scev]').forEach(b=>b.onclick=async()=>{
-    if(!confirm('ลบรายการตัดคะแนนนี้?')) return;
-    const r=await post({ action:'hr_score_event_delete', password:pwd, id:Number(b.dataset.scev) });
-    if(r.ok){ toast('ok','ลบแล้ว'); $('scDetailOverlay').classList.remove('show'); loadScore(); }
-    else toast('err', r.error||'ลบไม่สำเร็จ');
-  });
-  $('scDetailOverlay').classList.add('show');
-}
-async function openScoreEvent(){
-  if(!SCORE_SETTINGS) await loadScoreSettings(true);
-  $('scEv_emp').innerHTML = (DATA.rows||[]).map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('');
-  const rules = (SCORE_SETTINGS&&SCORE_SETTINGS.rules||[]).filter(r=>r.kind==='manual'&&r.enabled!==false);
-  $('scEv_rule').innerHTML = rules.map(r=>`<option value="${esc(r.rule_key)}">${esc(r.label)} (${r.points}${r.range_min!=null?(' ถึง '+r.range_min):''})</option>`).join('');
-  $('scEv_date').value = new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
-  $('scEv_note').value='';
-  updateScoreEvRange();
-  $('scEventOverlay').classList.add('show');
-}
-function updateScoreEvRange(){
-  const r=(SCORE_SETTINGS&&SCORE_SETTINGS.rules||[]).find(x=>x.rule_key===$('scEv_rule').value);
-  if(!r){ $('scEv_range').textContent=''; return; }
-  if(r.range_min!=null){ $('scEv_range').textContent='(เลือกได้ '+r.points+' ถึง '+r.range_min+')'; }
-  else { $('scEv_range').textContent='(ค่าคงที่ '+r.points+')'; }
-  $('scEv_points').value=r.points;
-}
-async function loadScoreSettings(silent){
-  const r=await post({ action:'hr_score_config_get', password:pwd });
-  if(!r.ok){ if(!silent && $('scRulesRows')) $('scRulesRows').innerHTML=''; return; }
-  SCORE_SETTINGS=r;
-  if($('scCfg_start')) $('scCfg_start').value=r.start_score;
-  renderScoreRulesRows();
-  const ACT_OPTS=[['','— ไม่ต้องทำอะไร —'],['verbal','🗣️ ตักเตือนด้วยวาจา'],['written','📝 ตักเตือนลายลักษณ์อักษร'],['warning','📄 ออกใบเตือน']];
-  if($('scBandsRows')) $('scBandsRows').innerHTML=(r.bands||[]).map((b,i)=>`<tr>
-    <td><input type="number" value="${b.min_score}" id="scb_min_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"> – <input type="number" value="${b.max_score}" id="scb_max_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><input type="text" value="${esc(b.label)}" id="scb_l_${i}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><input type="number" min="0" value="${b.bonus_amount==null?'':b.bonus_amount}" id="scb_b_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><select id="scb_a_${i}" style="width:190px;padding:6px;border:1.5px solid var(--line2);border-radius:7px">${ACT_OPTS.map(([v,l])=>`<option value="${v}"${String(b.action_type||'')===v?' selected':''}>${l}</option>`).join('')}</select></td>
-    <td><input type="number" min="0" value="${b.warn_level==null?'':b.warn_level}" placeholder="—" id="scb_w_${i}" style="width:80px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-  </tr>`).join('');
-}
-async function saveScoreConfig(){
-  const r=await post({ action:'hr_score_config_save', password:pwd, data:{ start_score:$('scCfg_start').value } });
-  if(r.ok){ toast('ok','บันทึกคะแนนเริ่มต้นแล้ว'); SCORE_SETTINGS=null; } else toast('err',r.error||'ไม่สำเร็จ');
-}
-function renderScoreRulesRows(){
-  if(!$('scRulesRows')||!SCORE_SETTINGS) return;
-  $('scRulesRows').innerHTML=(SCORE_SETTINGS.rules||[]).map((x,i)=>`<tr>
-    <td>${x.kind==='manual'
-      ? '<input type="text" value="'+esc(x.label)+'" id="scr_l_'+i+'" style="width:260px;padding:6px;border:1.5px solid var(--line2);border-radius:7px">'
-      : '<span style="font-weight:600">'+esc(x.label)+'</span>'}</td>
-    <td><span class="pill" style="background:${x.kind==='manual'?'#fee2e2':'#e0f2fe'};color:${x.kind==='manual'?'#b91c1c':'#0369a1'}">${x.kind==='manual'?'manual':'auto'}</span></td>
-    <td><input type="number" max="0" value="${x.points}" id="scr_p_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><input type="number" max="0" value="${x.range_min==null?'':x.range_min}" placeholder="—" id="scr_r_${i}" style="width:84px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td style="text-align:center"><input type="checkbox" ${x.enabled!==false?'checked':''} id="scr_e_${i}"></td>
-    <td style="text-align:center">${x.kind==='manual'?('<button class="btn btn-danger btn-sm" data-scdel="'+esc(x.rule_key)+'" title="ลบกฎนี้">🗑</button>'):''}</td>
-  </tr>`).join('');
-  document.querySelectorAll('[data-scdel]').forEach(b=>b.onclick=()=>delScoreRule(b.dataset.scdel));
-}
-function addScoreRule(){
-  if(!SCORE_SETTINGS){ toast('err','ยังโหลดข้อมูลไม่เสร็จ ลองใหม่'); return; }
-  const label=prompt('ชื่อพฤติกรรม (กฎใหม่ · ประเภท manual = HR กดหักเอง):','');
-  if(label===null) return;
-  const lb=(label||'').trim(); if(!lb){ toast('err','กรุณากรอกชื่อพฤติกรรม'); return; }
-  const maxSort=Math.max(0,...(SCORE_SETTINGS.rules||[]).map(r=>r.sort||0));
-  (SCORE_SETTINGS.rules=SCORE_SETTINGS.rules||[]).push({ rule_key:'custom_'+Date.now(), label:lb, kind:'manual', points:-5, range_min:null, enabled:true, sort:maxSort+10 });
-  renderScoreRulesRows();
-  toast('ok','เพิ่มกฎแล้ว — ปรับคะแนนที่หักแล้วกด "บันทึกกฎ"');
-}
-async function delScoreRule(rule_key){
-  if(!confirm('ลบกฎนี้ออกจากระบบ?')) return;
-  const r=await post({ action:'hr_score_rule_delete', password:pwd, rule_key });
-  if(r.ok){ toast('ok','ลบกฎแล้ว'); SCORE_SETTINGS=null; loadScoreSettings(); } else toast('err',r.error||'ลบไม่สำเร็จ');
-}
-async function saveScoreRules(){
-  if(!SCORE_SETTINGS) return;
-  const data=(SCORE_SETTINGS.rules||[]).map((x,i)=>({ rule_key:x.rule_key, label:(x.kind==='manual'&&$('scr_l_'+i))?($('scr_l_'+i).value.trim()||x.label):x.label, kind:x.kind, points:$('scr_p_'+i).value, range_min:$('scr_r_'+i).value, enabled:$('scr_e_'+i).checked, sort:x.sort }));
-  const r=await post({ action:'hr_score_rules_save', password:pwd, data });
-  if(r.ok){ toast('ok','บันทึกกฎแล้ว'); loadScoreSettings(true); } else toast('err',r.error||'ไม่สำเร็จ');
-}
-async function saveScoreBands(){
-  if(!SCORE_SETTINGS) return;
-  const data=(SCORE_SETTINGS.bands||[]).map((b,i)=>({ id:b.id, min_score:$('scb_min_'+i).value, max_score:$('scb_max_'+i).value, label:$('scb_l_'+i).value.trim()||b.label, bonus_amount:$('scb_b_'+i).value, warn_level:$('scb_w_'+i).value, action_type:($('scb_a_'+i)?$('scb_a_'+i).value:(b.action_type||'')), warn_name:b.warn_name, color:b.color, sort:b.sort }));
-  const r=await post({ action:'hr_score_bands_save', password:pwd, data });
-  if(r.ok){ toast('ok','บันทึกเกณฑ์แล้ว'); loadScoreSettings(true); } else toast('err',r.error||'ไม่สำเร็จ');
-}
-$('sc_refresh').onclick = loadScore;
-$('sc_cycle').addEventListener('change', loadScore);
-$('sc_addEvent').onclick = openScoreEvent;
-$('sc_issue').onclick = async()=>{
-  if(!confirm('ออกใบเตือนอัตโนมัติให้พนักงานที่คะแนนตกถึงเกณฑ์ (รอบนี้)?\nระบบจะข้ามคนที่ออกใบเตือนระดับเดียวกันในรอบนี้แล้ว')) return;
-  const r=await post({ action:'hr_score_issue_warnings', password:pwd, cycle:$('sc_cycle').value });
-  if(r.ok){ toast('ok','ออกใบเตือน '+r.issued+' ใบ (เข้าเกณฑ์ '+r.total+' คน)'); loadScore(); }
-  else toast('err', r.error||'ไม่สำเร็จ');
-};
-$('scEvClose').onclick = $('scEvCancel').onclick = ()=>$('scEventOverlay').classList.remove('show');
-$('scEv_rule').addEventListener('change', updateScoreEvRange);
-$('scEvSave').onclick = async()=>{
-  const data={ emp_id:$('scEv_emp').value, rule_key:$('scEv_rule').value, points:$('scEv_points').value, event_date:$('scEv_date').value, note:$('scEv_note').value.trim() };
-  if(!data.emp_id||!data.rule_key){ toast('err','เลือกพนักงานและเหตุ'); return; }
-  const r=await post({ action:'hr_score_event_add', password:pwd, data });
-  if(r.ok){ toast('ok','ตัดคะแนนแล้ว'); $('scEventOverlay').classList.remove('show'); loadScore(); }
-  else toast('err', r.error||'บันทึกไม่สำเร็จ');
-};
-$('scDetailClose').onclick = $('scDetailCloseBtn').onclick = ()=>$('scDetailOverlay').classList.remove('show');
-$('scCfg_save').onclick = saveScoreConfig;
-$('coGrace_save') && ($('coGrace_save').onclick = saveCheckoutGrace);
-$('scRules_save').onclick = saveScoreRules;
-$('scRules_add') && ($('scRules_add').onclick = addScoreRule);
-$('scBands_save').onclick = saveScoreBands;
-
-// ========== ส่ง/รับผลัด ==========
-async function loadHandover(){
-  $('ho_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_handover_list', password:pwd });
-  if(!r.ok){ $('ho_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
-  const c=r.counts||{};
-  $('ho_counts').innerHTML=
-    (c.no_handover?'<span class="pill bad">ไม่ส่งผลัด '+c.no_handover+'</span>':'')
-    +(c.rejected?'<span class="pill warn">ไม่เรียบร้อย '+c.rejected+'</span>':'')
-    +(c.pending?'<span class="pill muted">รอรับ '+c.pending+'</span>':'');
-  if(!r.rows.length){ $('ho_body').innerHTML='<div class="empty">ยังไม่มีการส่ง/รับผลัด</div>'; return; }
-  const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
-  const stPill=s=> s==='no_handover'?'<span class="pill bad">ไม่ส่งผลัด</span>'
-    : s==='rejected'?'<span class="pill warn">ไม่เรียบร้อย</span>'
-    : s==='received'?'<span class="pill ok">รับแล้ว</span>'
-    : '<span class="pill muted">รอรับ</span>';
-  $('ho_body').innerHTML='<div class="card"><div class="tablewrap"><table>'
-    +'<thead><tr><th>วันที่/เวลา</th><th>สาขา</th><th>ผู้ส่ง → ผู้รับ</th><th>เช็กลิสต์</th><th>งานค้าง/ปัญหา</th><th>สถานะ</th><th>รูป</th></tr></thead><tbody>'
-    +r.rows.map(h=>`<tr>
-      <td class="mono" style="white-space:nowrap;font-size:12.5px">${esc(fmt(h.created_at||h.received_at))}</td>
-      <td>${esc(h.branch_name)}</td>
-      <td style="font-size:13px">${esc(h.from_name||'—')} ${h.to_name?('→ '+esc(h.to_name)):'<span style="color:var(--muted)">→ ยังไม่รับ</span>'}</td>
-      <td class="mono">${h.total_count?((h.done_count||0)+'/'+h.total_count):'—'}</td>
-      <td style="font-size:12.5px;max-width:240px">${[h.pending_work?('ค้าง: '+esc(h.pending_work)):'',h.issues?('ปัญหา: '+esc(h.issues)):'',h.receiver_note?('<span style="color:#b45309">หมายเหตุ: '+esc(h.receiver_note)+'</span>'):''].filter(Boolean).join('<br>')||'—'}</td>
-      <td>${stPill(h.status)}</td>
-      <td>${h.photo_url?('<a href="'+esc(h.photo_url)+'" target="_blank">ดูรูป</a>'):'—'}</td>
-    </tr>`).join('')+'</tbody></table></div></div>';
-}
-$('ho_refresh') && ($('ho_refresh').onclick=loadHandover);
-
-// ========== งานในกะ (มอบหมาย/ตรวจ) ==========
-function bkkTodayStr(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
-let TASKDEFS=[];
-let TK_STATUS='';   // ตัวกรองสถานะของ "งานในกะ" (ว่าง = ทุกสถานะ) — กดชิปเพื่อกรอง
-async function loadTaskTab(){
-  if(!$('ta_date').value) $('ta_date').value=bkkTodayStr();
-  if(!$('tk_date').value) $('tk_date').value=bkkTodayStr();
-  $('ta_shift').innerHTML=groupShifts().map(s=>`<option value="${esc(s.shift_id)}">${esc(s.name)}${s.main_shift?'':' (พิเศษ)'}</option>`).join('')||'<option value="">(ไม่มีกะ)</option>';
-  const brOpts=(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
-  if($('ta_branch')) $('ta_branch').innerHTML = brOpts||'<option value="">(ไม่มีสาขา)</option>';
-  if($('tk_branch')) $('tk_branch').innerHTML = '<option value="">ทุกสาขา</option>'+brOpts;
-  if($('tk_shift')) $('tk_shift').innerHTML = '<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join('');
-  const r=await post({ action:'hr_task_defs_get', password:pwd });
-  TASKDEFS=(r.ok?r.rows:[]).filter(d=>d.active!==false);
-  renderAssign();
-  fillTlBranch();
-  if(!$('tl_start').value) $('tl_start').value=bkkTodayStr();
-  if(!$('tl_end').value) $('tl_end').value=bkkTodayStr();
-  loadTaskList();
-}
-function renderAssign(){
-  const shift=$('ta_shift').value;
-  const br=MGR_MODE?MGR_BRANCH:($('ta_branch')?$('ta_branch').value:'');
-  let emps=(DATA.rows||[]).filter(e=>(!br||e.branch_id===br) && grpOf(e.default_shift)===shift);
-  if(!emps.length) emps=(DATA.rows||[]).filter(e=>!br||e.branch_id===br);   // ถ้าไม่มีใครตรงกะ แสดงทุกคนในสาขานั้น
-  $('ta_emp').innerHTML=emps.map(e=>`<option value="${esc(e.emp_id)}">${esc(e.nickname||e.name)} (${esc(e.emp_id)})</option>`).join('')||'<option value="">(ไม่มีพนักงานในสาขา/กะนี้)</option>';
-  const defs=TASKDEFS.filter(d=>!d.shift_id||d.shift_id===shift);
-  $('ta_defs').innerHTML=defs.length
-    ? defs.map(d=>`<label class="check"><input type="checkbox" value="${d.id}" class="tadef">${esc(d.title)}${d.require_photo?' 📷':''}</label>`).join('')
-    : '<span style="color:var(--muted);font-size:13px">กะนี้ยังไม่มีงาน — เพิ่ม/ตั้งกะที่แท็บ "ตั้งค่ากะ"</span>';
-}
-$('ta_shift') && ($('ta_shift').onchange=renderAssign);
-$('ta_branch') && ($('ta_branch').onchange=renderAssign);
-$('ta_assign').onclick=async()=>{
-  const def_ids=[...document.querySelectorAll('.tadef:checked')].map(c=>Number(c.value));
-  if(!def_ids.length){ toast('err','เลือกงานอย่างน้อย 1 รายการ'); return; }
-  const r=await post({ action:'hr_task_assign', password:pwd, data:{ emp_id:$('ta_emp').value, work_date:$('ta_date').value, def_ids, shift_id:$('ta_shift').value } });
-  if(r.ok){ toast('ok','มอบหมาย '+r.added+' งาน'+(r.added===0?' (มอบไว้แล้ว)':'')); document.querySelectorAll('.tadef:checked').forEach(c=>c.checked=false); loadTaskList(); }
-  else toast('err', r.error||'ไม่สำเร็จ');
-};
-async function loadTaskList(){
-  $('tk_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_task_list', password:pwd, date:$('tk_date').value });
-  if(!r.ok){ $('tk_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  if(!r.rows.length){ $('tk_counts').innerHTML=''; $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
-  const fmtDT=t=>{ if(!t) return '—'; try{ return new Date(t).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return '—'; } };
-  const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
-  // ฐานข้อมูลหลังกรอง สาขา + กะ (ยังไม่กรองสถานะ) — ใช้ทั้งนับชิปและแสดงผล
-  const selBr=MGR_MODE?MGR_BRANCH:($('tk_branch')?$('tk_branch').value:'');
-  const selSh=$('tk_shift')?$('tk_shift').value:'';
-  let base=r.rows;
-  if(selBr) base=base.filter(t=>t.branch_id===selBr);
-  if(selSh) base=base.filter(t=>String(t.shift_id||'')===selSh);
-  base=base.filter(t=>!(t.needs_mgr && t.status==='submitted'));   // งานที่รอ ผจก.ตรวจ → แสดงในบอร์ดงาน ผจก. ไม่ซ้ำในคิว HR
-  // ชิปสถานะ = ปุ่มกดกรองได้ (แตะซ้ำ = ยกเลิก) · แสดงครบทุกสถานะรวมถึง "ตีกลับ" · จำนวนอิงตัวกรองสาขา/กะ
-  const c={ submitted:base.filter(t=>t.status==='submitted').length, todo:base.filter(t=>(t.status||'todo')==='todo').length, sent_back:base.filter(t=>t.status==='sent_back').length, approved:base.filter(t=>t.status==='approved').length };
-  const chip=(key,label,cls,n)=>'<span class="pill '+cls+' tkchip" data-st="'+key+'" style="cursor:pointer;'+(TK_STATUS===key?'outline:2.5px solid #0f172a;outline-offset:1px':'opacity:.9')+'">'+label+' '+(n||0)+'</span>';
-  $('tk_counts').innerHTML=chip('submitted','รอตรวจ','warn',c.submitted)+chip('todo','ยังไม่ทำ','muted',c.todo)+chip('sent_back','ตีกลับ','bad',c.sent_back)+chip('approved','ผ่าน','ok',c.approved)+(TK_STATUS?'<span class="pill" data-st="" style="cursor:pointer;background:#e2e8f0;color:#0f172a" title="ล้างตัวกรองสถานะ">✕ ล้างกรอง</span>':'');
-  document.querySelectorAll('#tk_counts [data-st]').forEach(el=>el.onclick=()=>{ const v=el.getAttribute('data-st'); TK_STATUS=(v&&v===TK_STATUS)?'':v; loadTaskList(); });
-  // กรองสถานะ (ถ้าเลือกชิป) แล้วจัดกลุ่ม สาขา → กะ
-  let rows=TK_STATUS?base.filter(t=>(t.status||'todo')===TK_STATUS):base;
-  if(!rows.length){ $('tk_body').innerHTML='<div class="empty">ไม่มีงานตามตัวกรองที่เลือก</div>'; return; }
-  const ord={}; (DATA.shifts||[]).forEach((s,i)=>{ ord[s.shift_id]=i; });
-  const oneTask=t=>{
-    const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-    const imgs=ph.length?'<div style="font-size:11px;color:var(--muted);margin-top:6px">🖼 รูปที่พนักงานส่ง'+(Array.isArray(t.review_markup)&&t.review_markup.length?' (แก้แล้ว)':'')+'</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
-    const mk=(Array.isArray(t.review_markup)&&t.review_markup.length)?'<div style="font-size:11px;color:#dc2626;margin-top:6px;font-weight:600">📍 จุดที่ผู้ตรวจสั่งแก้</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px">'+t.review_markup.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:2px solid #ef4444">').join('')+'</div>':'';
-    const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
-    const aiBtn=ph.length?' <button class="btn btn-sec btn-sm" data-tkai="'+t.id+'">🤖 AI ช่วยดู</button>':'';
-    return '<div style="padding:12px 2px;border-bottom:1px solid var(--line)">'
-      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:150px">'+esc(t.title)+(t.require_photo?' 📷':'')+'</span>'+stP(t.status)+actions+aiBtn+' <button class="btn btn-danger btn-sm" data-tdel="'+t.id+'" title="ลบงานนี้ (ลงผิด/ซ้ำ)">🗑</button></div>'
-      +'<div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.8">'
-        +'👤 ผู้ทำ: <b style="color:var(--txt)">'+esc(t.emp_name||t.emp_id||'—')+'</b><br>'
-        +'📤 ส่งงาน: '+fmtDT(t.submitted_at)+'<br>'
-        +'🔍 ตรวจโดย: '+esc(t.reviewer||'— (ยังไม่ตรวจ)')+(t.reviewed_at?(' · เวลา '+fmtDT(t.reviewed_at)):'')
-        +(t.sent_back_count>0?(' · ⤴ เคยตีกลับ '+t.sent_back_count+' ครั้ง'):'')
-      +'</div>'
-      +(t.review_note?'<div style="font-size:12.5px;color:#b45309;margin-top:4px">↳ หมายเหตุผู้ตรวจ: '+esc(t.review_note)+'</div>':'')
-      +mk+imgs
-      +'<div id="tkai_'+t.id+'" style="font-size:12.5px;white-space:pre-wrap;line-height:1.65;margin-top:6px;color:var(--txt)"></div></div>';
-  };
-  const shiftGroups=ts=>{
-    const groups={}; ts.forEach(t=>{ const k=t.shift_id||'_'; (groups[k]=groups[k]||[]).push(t); });
-    const keys=Object.keys(groups).sort((a,b)=>(ord[a]==null?99:ord[a])-(ord[b]==null?99:ord[b]));
-    return keys.map(k=>{
-      const g2=groups[k];
-      const cc={ approved:g2.filter(x=>x.status==='approved').length, submitted:g2.filter(x=>x.status==='submitted').length, sent_back:g2.filter(x=>x.status==='sent_back').length, todo:g2.filter(x=>x.status==='todo').length };
-      const pct=g2.length?Math.round(cc.approved/g2.length*100):0;
-      const shName=k==='_'?'ไม่ระบุกะ':(shiftName(k)||k);
-      const head='<div class="card-h" style="flex-wrap:wrap;gap:6px"><h3>🕘 กะ '+esc(shName)+'</h3>'
-        +'<span style="font-size:12px;color:var(--muted)">ทั้งหมด '+g2.length+' · ✅ ผ่าน '+cc.approved+' ('+pct+'%)'
-        +(cc.submitted?' · ⏳ รอตรวจ '+cc.submitted:'')+(cc.sent_back?' · ⤴ ตีกลับ '+cc.sent_back:'')+(cc.todo?' · ⬜ ยังไม่ทำ '+cc.todo:'')+'</span></div>';
-      return '<div class="card" style="margin-bottom:14px">'+head+'<div class="card-b" style="padding-top:0">'+g2.map(oneTask).join('')+'</div></div>';
-    }).join('');
-  };
-  const byBr={}; rows.forEach(t=>{ const b=t.branch_id||'_'; (byBr[b]=byBr[b]||[]).push(t); });
-  const brKeys=Object.keys(byBr).sort((a,b)=>String((byBr[a][0]||{}).branch_name||a).localeCompare(String((byBr[b][0]||{}).branch_name||b),'th'));
-  const multiBr=brKeys.length>1;
-  $('tk_body').innerHTML=brKeys.map(bk=>{
-    const brName=(byBr[bk][0]||{}).branch_name||bk;
-    const hdr=multiBr?'<div style="font-weight:700;font-size:15px;margin:10px 2px 8px;padding:9px 13px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:9px">🏪 '+esc(brName)+' <span style="font-weight:400;color:var(--muted);font-size:12px">· '+byBr[bk].length+' งาน</span></div>':'';
-    return hdr+shiftGroups(byBr[bk]);
-  }).join('');
-  const tkmap={}; rows.forEach(t=>{ tkmap[t.id]=t; });
-  document.querySelectorAll('[data-tap]').forEach(b=>b.onclick=()=>taskReview(Number(b.dataset.tap),'approved'));
-  document.querySelectorAll('[data-trb]').forEach(b=>b.onclick=()=>openMarkupEditor(tkmap[Number(b.dataset.trb)]));
-  document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>taskDelete(Number(b.dataset.tdel)));
-  document.querySelectorAll('[data-tkai]').forEach(b=>b.onclick=async()=>{
-    const t=tkmap[b.dataset.tkai]||tkmap[Number(b.dataset.tkai)]; if(!t) return;
-    const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-    if(!photos.length){ toast('err','งานนี้ไม่มีรูปให้ AI ดู'); return; }
-    const out=$('tkai_'+t.id); b.innerHTML='<span class="spin"></span>'; if(out) out.textContent='🤖 AI กำลังดูรูป… (สักครู่)';
-    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
-    try{ const res=await fetch(base+'/functions/v1/ai-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign(authBody(), { title:t.title, photos, task_id:t.id }))}); const j=await res.json().catch(()=>({}));
-      if(out) out.textContent = (j&&j.ok) ? ('🤖 คำแนะนำจาก AI (HR ตัดสินเอง):\n'+(j.advice||'(ไม่มีผล)')) : ('AI ไม่สำเร็จ: '+((j&&j.error)||'ตรวจ deploy/GEMINI_API_KEY'));
-    }catch(e){ if(out) out.textContent='เรียก ai-review ไม่ได้ (deploy edge function แล้วหรือยัง)'; }
-    b.innerHTML='🤖 AI ช่วยดู';
-  });
-}
-async function taskReview(id,status,note,markup){
-  const r=await post({ action:'hr_task_review', password:pwd, id, status, note, markup });
-  if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadTaskList(); } else toast('err', r.error||'ไม่สำเร็จ');
-}
-async function taskDelete(id){
-  if(!confirm('ลบงานนี้ออกจากระบบถาวร?\n(ใช้กับงานที่ลงผิดวัน/ซ้ำ — ลบแล้วกู้คืนไม่ได้)')) return;
-  const r=await post({ action:'hr_task_delete', password:pwd, id });
-  if(r.ok){ toast('ok','ลบงานแล้ว'); loadTaskList(); } else toast('err', r.error||'ลบไม่สำเร็จ');
-}
-
-// ================= เครื่องมือวาดชี้จุดบนรูป (ตอนตีงานกลับ) =================
-let MK=null;
-function ensureMarkupUI(){
-  if(document.getElementById('mkOverlay')) return;
-  const o=document.createElement('div'); o.id='mkOverlay';
-  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.94);z-index:100000;display:none;flex-direction:column;padding:10px;gap:8px;font-family:inherit';
-  o.innerHTML=
-    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#fff">'
-    +'<b style="font-size:14px;margin-right:4px">✏️ วาดชี้จุดที่ต้องแก้</b>'
-    +'<button class="mkt" data-tool="circle">⭕ วงกลม</button>'
-    +'<button class="mkt" data-tool="rect">▭ กรอบ</button>'
-    +'<button class="mkt" data-tool="pen">✎ ปากกา</button>'
-    +'<button id="mkUndo" class="mkt">↶ ย้อน</button>'
-    +'<button id="mkClear" class="mkt">🗑 ล้าง</button>'
-    +'<span style="flex:1"></span>'
-    +'<button id="mkPrev" class="mkt">‹</button><span id="mkNav" style="color:#e2e8f0;font-size:13px">1/1</span><button id="mkNext" class="mkt">›</button>'
-    +'</div>'
-    +'<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:auto"><canvas id="mkCanvas" style="max-width:100%;max-height:100%;background:#000;border-radius:8px;touch-action:none;cursor:crosshair"></canvas></div>'
-    +'<textarea id="mkNote" placeholder="ระบุสิ่งที่ต้องแก้ (พิมพ์อธิบายเพิ่มได้)…" style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:9px;border:0;font:inherit;font-size:14px;min-height:52px;resize:vertical"></textarea>'
-    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
-    +'<button id="mkCancel" class="btn btn-sec">ยกเลิก</button>'
-    +'<button id="mkSend" class="btn btn-warn">⤴ ส่งกลับให้แก้</button></div>';
-  document.body.appendChild(o);
-  const st=document.createElement('style');
-  st.textContent='.mkt{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer}.mkt.on{background:#ef4444}';
-  document.head.appendChild(st);
-  // events
-  o.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{ MK.tool=b.dataset.tool; o.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('on',x===b)); });
-  document.getElementById('mkUndo').onclick=()=>{ const im=MK.imgs[MK.cur]; im.shapes.pop(); mkRedraw(); };
-  document.getElementById('mkClear').onclick=()=>{ MK.imgs[MK.cur].shapes=[]; mkRedraw(); };
-  document.getElementById('mkPrev').onclick=()=>{ if(MK.cur>0){ MK.cur--; mkLoadCur(); } };
-  document.getElementById('mkNext').onclick=()=>{ if(MK.cur<MK.imgs.length-1){ MK.cur++; mkLoadCur(); } };
-  document.getElementById('mkCancel').onclick=()=>{ o.style.display='none'; MK=null; };
-  document.getElementById('mkSend').onclick=mkSend;
-  const cv=document.getElementById('mkCanvas');
-  const pos=e=>{ const r=cv.getBoundingClientRect(); const p=e.touches?e.touches[0]:e; return { x:(p.clientX-r.left)/r.width, y:(p.clientY-r.top)/r.height }; };
-  let drawing=false, cur=null;
-  const down=e=>{ if(!MK) return; drawing=true; const p=pos(e); if(MK.tool==='pen'){ cur={t:'pen',pts:[p]}; } else { cur={t:MK.tool,x:p.x,y:p.y,x2:p.x,y2:p.y}; } MK.imgs[MK.cur].shapes.push(cur); e.preventDefault(); };
-  const move=e=>{ if(!drawing||!MK) return; const p=pos(e); if(cur.t==='pen') cur.pts.push(p); else { cur.x2=p.x; cur.y2=p.y; } mkRedraw(); e.preventDefault(); };
-  const up=()=>{ drawing=false; cur=null; };
-  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
-  cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',up);
-}
-function mkDrawShapes(ctx,shapes,W,H){
-  ctx.strokeStyle='#ef4444'; ctx.lineWidth=Math.max(3,Math.round(W*0.006)); ctx.lineJoin='round'; ctx.lineCap='round';
-  shapes.forEach(s=>{
-    if(s.t==='rect'){ ctx.strokeRect(s.x*W, s.y*H, (s.x2-s.x)*W, (s.y2-s.y)*H); }
-    else if(s.t==='circle'){ ctx.beginPath(); ctx.ellipse((s.x+s.x2)/2*W, (s.y+s.y2)/2*H, Math.abs(s.x2-s.x)/2*W, Math.abs(s.y2-s.y)/2*H, 0, 0, Math.PI*2); ctx.stroke(); }
-    else if(s.t==='pen'){ ctx.beginPath(); s.pts.forEach((p,i)=> i?ctx.lineTo(p.x*W,p.y*H):ctx.moveTo(p.x*W,p.y*H)); ctx.stroke(); }
-  });
-}
-function mkRedraw(){
-  const im=MK.imgs[MK.cur]; if(!im||!im.el) return;
-  const cv=document.getElementById('mkCanvas'); const maxW=Math.min(720, window.innerWidth-24), maxH=window.innerHeight-220;
-  let W=im.el.naturalWidth, H=im.el.naturalHeight; const sc=Math.min(maxW/W, maxH/H, 1); cv.width=Math.round(W*sc); cv.height=Math.round(H*sc);
-  const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(im.el,0,0,cv.width,cv.height);
-  mkDrawShapes(ctx, im.shapes, cv.width, cv.height);
-  document.getElementById('mkNav').textContent=(MK.cur+1)+'/'+MK.imgs.length;
-}
-async function mkLoadCur(){
-  const im=MK.imgs[MK.cur];
-  if(!im.el){
-    const src=/^https?:/i.test(im.src) ? (await loadRemoteBlobUrl(im.src))||im.src : im.src;
-    await new Promise(res=>{ const g=new Image(); g.onload=()=>{ im.el=g; res(); }; g.onerror=()=>res(); g.src=src; });
-  }
-  mkRedraw();
-}
-async function openMarkupEditor(t){
-  if(!t){ toast('err','ไม่พบงาน'); return; }
-  const photos=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-  if(!photos.length){ const note=prompt('งานนี้ไม่มีรูปให้วาด — ระบุสิ่งที่ต้องแก้ (ส่งกลับ):'); if(note===null) return; taskReview(t.id,'sent_back',note); return; }
-  ensureMarkupUI();
-  MK={ task:t, tool:'circle', cur:0, imgs:photos.map(u=>({src:u, el:null, shapes:[]})) };
-  document.querySelector('#mkOverlay [data-tool="circle"]').classList.add('on');
-  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
-  document.getElementById('mkNote').value='';
-  document.getElementById('mkOverlay').style.display='flex';
-  await mkLoadCur();
-}
-async function mkSend(){
-  if(!MK) return;
-  const note=document.getElementById('mkNote').value.trim();
-  const marked=MK.imgs.filter(im=>im.shapes.length && im.el);
-  if(!marked.length && !note){ toast('err','วาดชี้จุด หรือพิมพ์สิ่งที่ต้องแก้ อย่างน้อยอย่างใดอย่างหนึ่ง'); return; }
-  document.getElementById('mkSend').disabled=true;
-  const out=[];
-  for(const im of marked){
-    const W=Math.min(im.el.naturalWidth,1280), H=Math.round(im.el.naturalHeight*(W/im.el.naturalWidth));
-    const c=document.createElement('canvas'); c.width=W; c.height=H; const ctx=c.getContext('2d');
-    ctx.drawImage(im.el,0,0,W,H); mkDrawShapes(ctx, im.shapes, W, H);
-    out.push(c.toDataURL('image/jpeg',0.9));
-  }
-  if(MK.reviewFn) await MK.reviewFn(note,out);   // เชลฟ์ (หรือชนิดอื่น) ส่งผ่าน callback
-  else await taskReview(MK.task.id,'sent_back',note,out);
-  document.getElementById('mkSend').disabled=false;
-  document.getElementById('mkOverlay').style.display='none'; MK=null;
-}
-// กล่องขยายรูป (lightbox) แบบ gallery — เลื่อนซ้าย-ขวา / ปัดนิ้ว / ลูกศร / ตัวนับ
-let LB={imgs:[],idx:0};
-function ensureLightbox(){
-  if(document.getElementById('lightbox')) return;
-  const o=document.createElement('div'); o.id='lightbox';
-  o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:none;align-items:center;justify-content:center;touch-action:pan-y';
-  o.innerHTML='<button id="lbClose" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:50%;width:40px;height:40px;font-size:22px;cursor:pointer">×</button>'
-    +'<button id="lbPrev" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">‹</button>'
-    +'<img id="lightboxImg" style="max-width:92%;max-height:88%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">'
-    +'<button id="lbNext" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">›</button>'
-    +'<div id="lbCount" style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:5px 14px;border-radius:999px;font-size:13px"></div>';
-  document.body.appendChild(o);
-  o.addEventListener('click',e=>{ if(e.target===o) o.style.display='none'; });
-  document.getElementById('lbClose').onclick=()=>{ o.style.display='none'; };
-  document.getElementById('lbPrev').onclick=e=>{ e.stopPropagation(); lbStep(-1); };
-  document.getElementById('lbNext').onclick=e=>{ e.stopPropagation(); lbStep(1); };
-  document.addEventListener('keydown',e=>{ if(o.style.display!=='flex') return; if(e.key==='ArrowLeft') lbStep(-1); else if(e.key==='ArrowRight') lbStep(1); else if(e.key==='Escape') o.style.display='none'; });
-  let sx=0; o.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; },{passive:true});
-  o.addEventListener('touchend',e=>{ const dx=e.changedTouches[0].clientX-sx; if(Math.abs(dx)>40) lbStep(dx<0?1:-1); });
-}
-function lbStep(d){ if(!LB.imgs.length) return; LB.idx=(LB.idx+d+LB.imgs.length)%LB.imgs.length; showLB(); }
-function showLB(){
-  document.getElementById('lightboxImg').src=LB.imgs[LB.idx];
-  const multi=LB.imgs.length>1;
-  document.getElementById('lbPrev').style.display=multi?'':'none';
-  document.getElementById('lbNext').style.display=multi?'':'none';
-  const c=document.getElementById('lbCount'); c.style.display=multi?'':'none'; c.textContent=(LB.idx+1)+' / '+LB.imgs.length;
-}
-function lightbox(imgEl){
-  ensureLightbox();
-  // หา "กลุ่มรูป" = แกลเลอรี · ถ้า parent มีรูปเดียว (เช่นในไทม์ไลน์งาน ผจก. แต่ละรูปถูกห่อ span พร้อมปุ่มแก้ไข)
-  // ให้ขยับขึ้นไปหากลุ่มที่มีหลายรูป เพื่อให้เลื่อนซ้าย-ขวา/ปัดนิ้วเปลี่ยนรูปได้
-  let cont=imgEl.parentElement;
-  if(cont && cont.querySelectorAll('img').length<=1 && cont.parentElement && cont.parentElement.querySelectorAll('img').length>1){
-    cont=cont.parentElement;
-  }
-  LB.imgs=[...cont.querySelectorAll('img')].map(i=>i.src);
-  LB.idx=Math.max(0, LB.imgs.indexOf(imgEl.src));
-  showLB();
-  document.getElementById('lightbox').style.display='flex';
-}
-$('tk_refresh').onclick=loadTaskList;
-$('tk_date').addEventListener('change', loadTaskList);
-$('tk_branch') && $('tk_branch').addEventListener('change', loadTaskList);
-$('tk_shift') && $('tk_shift').addEventListener('change', loadTaskList);
-
-// Log งาน (ย้อนหลัง)
-function fillTlBranch(){ if($('tl_branch')&&!$('tl_branch').innerHTML){ $('tl_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); } }
-async function loadTaskLog(){
-  fillTlBranch();
-  if(!$('tl_start').value) $('tl_start').value=bkkTodayStr();
-  if(!$('tl_end').value) $('tl_end').value=bkkTodayStr();
-  $('tl_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_task_log', password:pwd, filter:{ start:$('tl_start').value, end:$('tl_end').value, branch_id:$('tl_branch').value } });
-  if(!r.ok){ $('tl_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  $('tl_leaders').innerHTML = (r.leaders&&r.leaders.length)
-    ? '<div class="card" style="padding:12px"><b style="font-size:13px">หัวหน้าผลัด/คุมผลัด</b><div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">'
-      + r.leaders.map(l=>`<div style="font-size:13px">${esc(beDate(l.work_date))} · ${esc(l.branch_name)} · กะ ${esc(l.shift_id||'-')} → <b>${esc(l.emp_name||l.emp_id)}</b></div>`).join('')
-      + '</div></div>' : '';
-  const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
-  const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
-  if(!r.rows.length){ $('tl_body').innerHTML='<div class="empty">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
-  $('tl_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>วันที่</th><th>สาขา</th><th>กะ</th><th>งาน</th><th>ผู้ทำ</th><th>สถานะ</th><th>ผู้ตรวจ</th><th>ส่งเมื่อ</th><th>รูป</th></tr></thead><tbody>'
-    + r.rows.map(t=>`<tr>
-      <td class="mono">${esc(beDate(t.work_date))}</td>
-      <td>${esc(t.branch_name)}</td>
-      <td>${esc(t.shift_id||'-')}</td>
-      <td>${esc(t.title)}${t.review_note?('<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>'):''}</td>
-      <td>${esc(t.emp_name||t.emp_id)}</td>
-      <td>${stP(t.status)}</td>
-      <td>${esc(t.reviewer||'—')}</td>
-      <td class="mono" style="white-space:nowrap;font-size:12px">${t.submitted_at?esc(fmt(t.submitted_at)):'—'}</td>
-      <td>${(()=>{const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);const mk=Array.isArray(t.review_markup)?t.review_markup:[];let h='';if(mk.length)h+='<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px" title="จุดที่สั่งแก้">'+mk.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:2px solid #ef4444">').join('')+'</div>';if(ph.length)h+='<div style="display:flex;flex-wrap:wrap;gap:3px;max-width:170px" title="รูปที่ส่ง/แก้แล้ว">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>';return h||'—';})()}</td>
-    </tr>`).join('')+'</tbody></table></div></div>';
-}
-$('tl_go').onclick=loadTaskLog;
-
-// รายงานรับส่งผลัด (รูปภาพ) — แยกจาก Log
-function hThumbs(photos){ if(!photos||!photos.length) return ''; return '<div style="display:flex;gap:6px;overflow-x:auto;margin-top:6px">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="window.open(\''+esc(u)+'\',\'_blank\')" style="height:70px;border-radius:8px;border:1px solid var(--line);cursor:pointer;flex:none">').join('')+'</div>'; }
-async function loadImgReport(){
-  if($('rr_branch')&&!$('rr_branch').innerHTML){ $('rr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); }
-  if($('rr_shift')&&!$('rr_shift').innerHTML){ $('rr_shift').innerHTML='<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join(''); }
-  if(!$('rr_start').value) $('rr_start').value=bkkTodayStr();
-  if(!$('rr_end').value) $('rr_end').value=bkkTodayStr();
-  $('rr_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_task_log', password:pwd, filter:{ start:$('rr_start').value, end:$('rr_end').value, branch_id:$('rr_branch').value } });
-  if(!r.ok){ $('rr_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  let rows=r.rows||[]; const rsh=$('rr_shift')?$('rr_shift').value:''; if(rsh) rows=rows.filter(t=>String(t.shift_id||'')===rsh);
-  if(!rows.length){ $('rr_body').innerHTML='<div class="empty">ไม่มีข้อมูลในช่วงนี้</div>'; return; }
-  const fmt=t=>{ try{ return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
-  const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
-  $('rr_body').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">'+rows.map(t=>
-    '<div class="card" style="padding:12px"><div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><div style="font-weight:600;flex:1;font-size:14px">'+esc(t.title)+'</div>'+stP(t.status)+'</div>'
-    +'<div style="font-size:12px;color:var(--muted)">'+esc(beDate(t.work_date))+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_id||'-')+'</div>'
-    +'<div style="font-size:12.5px;margin-top:2px">ผู้ทำ: '+esc(t.emp_name||t.emp_id||'—')+(t.submitted_at?(' · ส่ง '+esc(fmt(t.submitted_at))):'')+'</div>'
-    +'<div style="font-size:12.5px">ตรวจ: '+esc(t.reviewer||'—')+(t.reviewed_at?(' · '+esc(fmt(t.reviewed_at))):'')+'</div>'
-    +((t.sent_back_count>0)?'<div style="font-size:12px;color:#b45309">ส่งแก้ไข '+t.sent_back_count+' ครั้ง</div>':'')
-    +(t.review_note?'<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>':'')
-    +hThumbs(t.photos)+'</div>'
-  ).join('')+'</div>';
-}
-$('rr_go').onclick=loadImgReport;
-
-// ตั้งค่ารายการงาน (ในแท็บตั้งค่ากะ)
-async function loadTaskDefs(){
-  const r=await post({ action:'hr_task_defs_get', password:pwd });
-  if(!r.ok){ if($('tdRows')) $('tdRows').innerHTML=''; return; }
-  const shOpt=(sel)=>'<option value="">ทุกกะ</option>'+groupShifts().map(s=>'<option value="'+esc(s.shift_id)+'"'+(s.shift_id===sel?' selected':'')+'>'+esc(s.name)+(s.main_shift?'':' (พิเศษ)')+'</option>').join('');
-  $('tdRows').innerHTML=r.rows.length ? r.rows.map(d=>`<tr>
-    <td><input type="text" value="${esc(d.title)}" id="td_t_${d.id}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><select id="td_sh_${d.id}" style="padding:6px;border:1.5px solid var(--line2);border-radius:7px">${shOpt(d.shift_id||'')}</select></td>
-    <td style="text-align:center"><input type="number" min="0" max="9" value="${d.min_photos!=null?d.min_photos:(d.require_photo?1:0)}" id="td_mp_${d.id}" style="width:56px;padding:6px;border:1.5px solid var(--line2);border-radius:7px;text-align:center"></td>
-    <td><input type="number" value="${d.sort||0}" id="td_s_${d.id}" style="width:60px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td style="text-align:center"><input type="checkbox" ${d.active!==false?'checked':''} id="td_a_${d.id}"></td>
-    <td style="text-align:center"><input type="checkbox" ${d.mgr_review?'checked':''} id="td_mgr_${d.id}" title="ให้ ผจก.ตรวจ (ข้าม HR)"></td>
-    <td style="white-space:nowrap"><button class="btn btn-pri btn-sm" data-tdsave="${d.id}">บันทึก</button> <button class="btn btn-danger btn-sm" data-tddel="${d.id}">ลบ</button></td>
-  </tr>`).join('') : '<tr><td colspan="7" style="padding:14px;color:var(--muted)">ยังไม่มีรายการงาน</td></tr>';
-  document.querySelectorAll('[data-tdsave]').forEach(b=>b.onclick=async()=>{
-    const id=Number(b.dataset.tdsave);
-    const data={ id, title:$('td_t_'+id).value, min_photos:$('td_mp_'+id).value, sort:$('td_s_'+id).value, active:$('td_a_'+id).checked, shift_id:$('td_sh_'+id).value, mgr_review:($('td_mgr_'+id)||{}).checked };
-    const r=await post({ action:'hr_task_def_save', password:pwd, data });
-    if(r.ok) toast('ok','บันทึกแล้ว'); else toast('err', r.error||'ไม่สำเร็จ');
-  });
-  document.querySelectorAll('[data-tddel]').forEach(b=>b.onclick=async()=>{
-    if(!confirm('ลบงานนี้?')) return;
-    const r=await post({ action:'hr_task_def_delete', password:pwd, id:Number(b.dataset.tddel) });
-    if(r.ok){ toast('ok','ลบแล้ว'); loadTaskDefs(); } else toast('err', r.error||'ไม่สำเร็จ');
-  });
-}
-$('td_new') && ($('td_new').onclick=async()=>{
-  const title=prompt('ชื่องานใหม่:'); if(!title) return;
-  const r=await post({ action:'hr_task_def_save', password:pwd, data:{ title, require_photo:false, active:true, sort:0 } });
-  if(r.ok){ toast('ok','เพิ่มงานแล้ว'); loadTaskDefs(); } else toast('err', r.error||'ไม่สำเร็จ');
-});
-$('air_go') && ($('air_go').onclick=async()=>{
-  $('air_go').innerHTML='<span class="spin"></span>'; $('air_out').textContent='กำลังวิเคราะห์จากประวัติการตรวจ… (อาจใช้เวลาสักครู่)';
-  const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
-  try{ const res=await fetch(base+'/functions/v1/ai-review-analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})}); const j=await res.json().catch(()=>({}));
-    $('air_out').textContent = (j&&j.ok) ? (j.summary||'(ไม่มีผลวิเคราะห์)') : ('ไม่สำเร็จ: '+((j&&j.error)||'ตรวจการตั้งค่า/deploy'));
-  }catch(e){ $('air_out').textContent='เรียก ai-review-analyze ไม่ได้ (deploy edge function แล้วหรือยัง · ต้องมี GEMINI_API_KEY)'; }
-  $('air_go').textContent='วิเคราะห์จากประวัติ';
-});
-
-// ========== ประวัติแจ้งเตือน + ประกาศถึงพนักงาน ==========
-async function loadNotifyLog(){
-  $('nl_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_notify_history', password:pwd });
-  if(!r.ok){ $('nl_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  renderNotifyLog(r);
-}
-function renderNotifyLog(r){
-  const act=(r.announcements||[]).filter(a=>a.active);
-  $('an_active').innerHTML = act.length ? `<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>ประกาศที่กำลังแสดง (${act.length})</h3></div><div class="card-b" style="display:flex;flex-direction:column;gap:8px">`+
-    act.map(a=>`<div style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
-      <span style="font-size:18px">${a.level==='urgent'?'🚨':a.level==='warn'?'⚠️':'📢'}</span>
-      <div style="flex:1"><div style="font-size:13.5px">${esc(a.message)}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(String(a.at).slice(0,16).replace('T',' '))}${a.expire_date?' · ถึง '+esc(a.expire_date):''}</div></div>
-      <button class="btn btn-sec btn-sm" onclick="anEdit(${a.id})">✏️ แก้ไข</button>
-      <button class="btn btn-danger btn-sm" onclick="delAnnounce(${a.id})">ลบ</button>
-    </div>`).join('')+`</div></div>` : '';
-  if(!r.items.length){ $('nl_body').innerHTML='<div class="empty">ยังไม่มีประวัติแจ้งเตือน</div>'; return; }
-  $('nl_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>เวลา</th><th>ประเภท</th><th>รายละเอียด</th></tr></thead><tbody>'+
-    r.items.map(it=>`<tr>
-      <td class="mono" style="white-space:nowrap">${esc(String(it.at||'').slice(0,16).replace('T',' '))}</td>
-      <td><span class="pill" style="background:${it.color}22;color:${it.color};font-weight:600">${esc(it.label)}</span></td>
-      <td>${it.kind==='announce'?esc(it.message||''):(it.who?esc(it.who):'')}</td>
-    </tr>`).join('')+'</tbody></table></div></div>';
-}
-async function delAnnounce(id){
-  if(!confirm('ลบประกาศนี้?')) return;
-  const r=await post({ action:'hr_announce_delete', password:pwd, id });
-  if(r.ok){ toast('ok','ลบแล้ว'); loadNotifyLog(); } else toast('err', r.error||'ไม่สำเร็จ');
-}
-// ---------- คำถามยืนยันความเข้าใจ (เฉพาะระดับ "บังคับ") ----------
-let AN_OPTS = ['', ''];
-function anRenderOpts(){
-  const box=$('an_qopts'); if(!box) return;
-  box.innerHTML = AN_OPTS.map((v,i)=>
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
-    +'<input type="radio" name="an_qans" value="'+i+'"'+(i===0?' checked':'')+' title="คำตอบที่ถูก">'
-    +'<input class="an_qopt" data-i="'+i+'" value="'+esc(v)+'" placeholder="ตัวเลือกที่ '+(i+1)+'" style="flex:1;padding:8px 10px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13.5px">'
-    +(AN_OPTS.length>2?'<button class="btn btn-sec btn-sm an_qdel" data-i="'+i+'">✕</button>':'')
-    +'</div>').join('');
-  box.querySelectorAll('.an_qopt').forEach(el=>{ el.oninput=()=>{ AN_OPTS[Number(el.dataset.i)]=el.value; }; });
-  box.querySelectorAll('.an_qdel').forEach(el=>{ el.onclick=()=>{ AN_OPTS.splice(Number(el.dataset.i),1); anRenderOpts(); }; });
-}
-$('an_qadd') && ($('an_qadd').onclick=()=>{ if(AN_OPTS.length<6){ AN_OPTS.push(''); anRenderOpts(); } });
-$('an_prio') && ($('an_prio').onchange=()=>{
-  const m = $('an_prio').value==='mandatory';
-  $('an_quizbox').style.display = m ? 'block' : 'none';
-  if(m && !$('an_qopts').innerHTML) anRenderOpts();
-  if($('an_prio').value==='mandatory') $('an_level').value='urgent';
-  else if($('an_prio').value==='important') $('an_level').value='warn';
-});
-
-// ---------- สลับโหมด ข้อความ / รูปภาพ ----------
-let AN_KIND='text', AN_IMGS=[];
-function anSetKind(k){
-  AN_KIND = (k==='image') ? 'image' : 'text';
-  const isImg = AN_KIND==='image';
-  $('an_textbox').style.display = isImg ? 'none' : 'flex';
-  $('an_imgbox').style.display  = isImg ? 'flex' : 'none';
-  document.querySelectorAll('.an_kindbtn').forEach(b=>{
-    const on = b.dataset.kind===AN_KIND;
-    b.classList.toggle('btn-pri', on);
-    b.classList.toggle('btn-sec', !on);
-  });
-  $('an_hint').innerHTML = isImg
-    ? 'ประกาศรูปภาพจะ <b>ลอยขึ้นมาเป็นสไลด์</b> ที่หน้าลงเวลาและหน้ารับส่งผลัด · เลื่อนซ้าย-ขวาได้ · <b>ไม่ต้องกดรับทราบ</b> · แสดงวันละครั้งต่อคน'
-    : 'ระดับ <b>สำคัญ/บังคับ</b> จะบล็อกหน้ารับส่งผลัด — พนักงานต้องกดรับทราบก่อนถึงจะใช้งานได้ · ส่ง Web Push ทันที และเตือนซ้ำอัตโนมัติเมื่อครบ 12/24/48 ชม.';
-  $('an_send').textContent = isImg ? '🖼️ ประกาศรูปภาพ' : '📢 ประกาศ + ส่งแจ้งเตือน';
-}
-document.querySelectorAll('.an_kindbtn').forEach(b=>{ b.onclick=()=>anSetKind(b.dataset.kind); });
-anSetKind('text');
-
-function anRenderImgs(){
-  const box=$('an_imgthumbs'); if(!box) return;
-  $('an_imgcount').textContent = AN_IMGS.length ? ('แนบแล้ว '+AN_IMGS.length+' รูป · ลากจัดลำดับด้วยปุ่ม ◀ ▶') : 'ยังไม่มีรูป';
-  box.innerHTML = AN_IMGS.map((u,i)=>
-    '<div style="position:relative;width:110px">'
-    +'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;display:block">'
-    +'<div style="position:absolute;top:3px;left:3px;background:rgba(0,0,0,.6);color:#fff;border-radius:6px;padding:1px 6px;font-size:11px">'+(i+1)+'</div>'
-    +'<button class="an_imgrm" data-i="'+i+'" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:13px;line-height:1;cursor:pointer">×</button>'
-    +'<div style="display:flex;gap:4px;margin-top:4px">'
-      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="-1" style="flex:1"'+(i===0?' disabled':'')+'>◀</button>'
-      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="1" style="flex:1"'+(i===AN_IMGS.length-1?' disabled':'')+'>▶</button>'
-    +'</div></div>').join('');
-  box.querySelectorAll('.an_imgrm').forEach(b=>{ b.onclick=()=>{ AN_IMGS.splice(Number(b.dataset.i),1); anRenderImgs(); }; });
-  box.querySelectorAll('.an_imgmv').forEach(b=>{ b.onclick=()=>{
-    const i=Number(b.dataset.i), j=i+Number(b.dataset.d);
-    if(j<0||j>=AN_IMGS.length) return;
-    const t=AN_IMGS[i]; AN_IMGS[i]=AN_IMGS[j]; AN_IMGS[j]=t; anRenderImgs();
-  }; });
-}
-$('an_imgadd') && ($('an_imgadd').onclick=()=>$('an_imgfile').click());
-$('an_imgfile') && ($('an_imgfile').onchange=async()=>{
-  const fs=$('an_imgfile').files; if(!fs||!fs.length) return;
-  $('an_imgcount').textContent='กำลังย่อรูป…';
-  for(const f of fs){
-    if(AN_IMGS.length>=8){ toast('err','แนบได้สูงสุด 8 รูป'); break; }
-    try{ AN_IMGS.push(await asstFileToData(f)); }catch(e){}
-  }
-  $('an_imgfile').value=''; anRenderImgs();
-});
-$('an_imgposter') && ($('an_imgposter').onclick=()=>{
-  // ดึงโปสเตอร์ที่เพิ่งสร้างจากแท็บ "สร้างสื่อ" (ถ้ามี)
-  const u = (typeof POSTER!=='undefined' && POSTER && POSTER.url) ? POSTER.url : '';
-  if(!u){ toast('err','ยังไม่มีโปสเตอร์ — ไปสร้างที่แท็บ "สร้างสื่อ" ก่อน แล้วกลับมากดปุ่มนี้'); return; }
-  if(AN_IMGS.length>=8){ toast('err','แนบได้สูงสุด 8 รูป'); return; }
-  AN_IMGS.push(u); anRenderImgs(); toast('ok','ใส่โปสเตอร์แล้ว');
-});
-
-// ---------- แก้ไขประกาศเดิม ----------
-let AN_EDIT_ID = null;
-function anSendLabel(){
-  $('an_send').textContent = AN_EDIT_ID
-    ? '💾 บันทึกการแก้ไข'
-    : (AN_KIND==='image' ? '🖼️ ประกาศรูปภาพ' : '📢 ประกาศ + ส่งแจ้งเตือน');
-}
-function anResetForm(){
-  AN_EDIT_ID=null;
-  $('an_title').value=''; $('an_msg').value=''; $('an_expire').value=''; $('an_qq').value='';
-  if($('anc_branch')) $('anc_branch').value='';
-  if($('an_prio')) { $('an_prio').value='normal'; $('an_prio').onchange && $('an_prio').onchange(); }
-  if($('an_level')) $('an_level').value='info';
-  AN_OPTS=['','']; anRenderOpts();
-  AN_IMGS=[]; anRenderImgs();
-  if($('an_resetacks')) $('an_resetacks').checked=false;
-  $('an_editbar').style.display='none';
-  anSendLabel();
-}
-async function anEdit(id){
-  const r=await post({ action:'hr_announce_get', password:pwd, id });
-  if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
-  const a=r.ann;
-  AN_EDIT_ID = a.id;
-  anSetKind(a.kind==='image' ? 'image' : 'text');
-  $('an_title').value = a.title||'';
-  $('an_msg').value   = a.message||'';
-  $('an_expire').value= a.expire_date||'';
-  if($('anc_branch')) $('anc_branch').value = (a.branch_ids&&a.branch_ids.length===1) ? String(a.branch_ids[0]) : '';
-  if($('an_prio')){ $('an_prio').value = a.priority||'normal'; }
-  if($('an_level')) $('an_level').value = a.level||'info';
-  AN_OPTS = (a.quiz_choices&&a.quiz_choices.length) ? a.quiz_choices.slice() : ['',''];
-  anRenderOpts();
-  if($('an_prio')) $('an_prio').onchange && $('an_prio').onchange();
-  if(a.priority==='mandatory'){
-    $('an_qq').value = a.quiz_q||'';
-    const ai=Number(a.quiz_answer)||0;
-    const radio=document.querySelector('input[name="an_qans"][value="'+ai+'"]'); if(radio) radio.checked=true;
-  }
-  AN_IMGS = (a.images||[]).slice();     // URL เดิม — ส่งกลับได้เลย ไม่ต้องอัปโหลดใหม่
-  anRenderImgs();
-
-  // ประกาศที่มีคนรับทราบไปแล้ว → เตือนก่อนแก้เนื้อหา
-  const needAck = a.kind!=='image' && a.priority!=='normal';
-  $('an_editbar').style.display='block';
-  $('an_edittext').textContent = '✏️ กำลังแก้ไขประกาศ #'+a.id + (r.ack_count ? (' · มีพนักงานกดรับทราบไปแล้ว '+r.ack_count+' คน') : '');
-  $('an_resetwrap').style.display = needAck ? 'flex' : 'none';
-  if($('an_resetacks')) $('an_resetacks').checked=false;
-  anSendLabel();
-  const box=$('an_editbar'); if(box) box.scrollIntoView({behavior:'smooth', block:'center'});
-}
-$('an_editcancel') && ($('an_editcancel').onclick = ()=>{ anResetForm(); toast('ok','ยกเลิกการแก้ไขแล้ว'); });
-
-$('an_send') && ($('an_send').onclick = async ()=>{
-  const isImg = AN_KIND==='image';
-  const msg=$('an_msg').value.trim();
-  const title=$('an_title').value.trim();
-
-  if(isImg){
-    if(!AN_IMGS.length){ toast('err','แนบรูปอย่างน้อย 1 รูป'); return; }
-    if(!title){ toast('err','ใส่หัวข้อด้วย (ใช้ในแจ้งเตือนและให้นิดาอ่านได้)'); return; }
-  } else {
-    if(!msg){ toast('err','ใส่ข้อความก่อน'); return; }
-  }
-
-  const prio = isImg ? 'normal' : $('an_prio').value;
-  const br=$('anc_branch').value;
-  const d={
-    id: AN_EDIT_ID || undefined,                                   // ★ มี id = แก้ไขใบเดิม
-    reset_acks: AN_EDIT_ID && $('an_resetacks') && $('an_resetacks').checked,
-    kind: AN_KIND,
-    title: title,
-    message: isImg ? (msg || title) : msg,
-    images: isImg ? AN_IMGS.slice() : [],
-    level: isImg ? 'info' : $('an_level').value,
-    priority: prio,
-    branch_ids: br ? [br] : [],
-    expire_date: $('an_expire').value||null
-  };
-  if(prio==='mandatory'){
-    const sel=document.querySelector('input[name="an_qans"]:checked');
-    d.quiz_q=$('an_qq').value.trim();
-    d.quiz_choices=AN_OPTS.map(s=>String(s||'').trim()).filter(Boolean);
-    d.quiz_answer=sel?Number(sel.value):0;
-    if(!d.quiz_q){ toast('err','ระดับ "บังคับ" ต้องมีคำถาม'); return; }
-    if(d.quiz_choices.length<2){ toast('err','ต้องมีตัวเลือกอย่างน้อย 2 ข้อ'); return; }
-  }
-  const editing = !!AN_EDIT_ID;
-  const resetAcks = !!d.reset_acks;
-  $('an_send').disabled=true; $('an_send').textContent = editing ? 'กำลังบันทึก…' : 'กำลังส่ง…';
-  const r=await post({ action:'hr_announce_save', password:pwd, data:d });
-  if(r.ok){
-    const base=String(window.SUPABASE_CONFIG.url).replace(/\/$/,'');
-    // ประกาศใหม่ → แจ้งเตือนเสมอ · แก้ไขใบเดิม → แจ้งเตือนใหม่เฉพาะเมื่อสั่งให้รับทราบใหม่ (กันสแปม)
-    if(!editing || resetAcks){
-      try{ await fetch(base+'/functions/v1/hr-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){}
-      if(prio!=='normal'){ try{ await fetch(base+'/functions/v1/announce-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){} }
-    }
-    toast('ok', editing
-      ? ('บันทึกการแก้ไขแล้ว' + (resetAcks ? ' · ล้างประวัติรับทราบ พนักงานต้องกดรับทราบใหม่' : ''))
-      : (isImg ? 'ประกาศรูปภาพแล้ว' : 'ประกาศแล้ว + ส่งแจ้งเตือน'));
-    anResetForm();
-    loadAnnounceStatus(); loadNotifyLog();
-  } else toast('err', r.error||(editing?'บันทึกไม่สำเร็จ':'ส่งไม่สำเร็จ'));
-  $('an_send').disabled=false;
-  anSendLabel();
-});
-$('nl_refresh') && ($('nl_refresh').onclick = loadNotifyLog);
-$('an_refresh') && ($('an_refresh').onclick = ()=>loadAnnounceStatus());
-
-// ========== แดชบอร์ด: ใครอ่านแล้ว / ใครยังไม่อ่าน ==========
-const PRIO_PILL = { normal:['🟢 ทั่วไป','muted'], important:['🟠 สำคัญ','warn'], mandatory:['🔴 บังคับ','bad'] };
-function anBar(pct){
-  const c = pct>=90?'#16a34a' : pct>=60?'#f59e0b' : '#dc2626';
-  return '<div style="background:#e2e8f0;border-radius:999px;height:8px;overflow:hidden;min-width:90px;flex:1">'
-       + '<div style="width:'+pct+'%;height:100%;background:'+c+'"></div></div>';
-}
-async function loadAnnounceStatus(){
-  const box=$('an_list'); if(!box) return;
-  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_announce_list', password:pwd });
-  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  // เติมรายชื่อสาขาในดรอปดาวน์ของ "การ์ดเขียนประกาศ" (id ต้องไม่ชนกับแท็บวิเคราะห์)
-  const sel=$('anc_branch');
-  if(sel && sel.options.length<=1) (r.branches||[]).forEach(b=>{ const o=document.createElement('option'); o.value=b.branch_id; o.textContent=b.name||b.branch_id; sel.appendChild(o); });
-
-  const rows=(r.rows||[]).filter(a=>a.priority!=='normal' || a.kind==='image' || a.active);
-  if(!rows.length){ box.innerHTML='<div class="empty">ยังไม่มีประกาศ</div>'; return; }
-  const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return String(w||'').slice(0,16).replace('T',' '); } };
-  box.innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>ประกาศ</th><th>ระดับ</th><th>สาขา</th><th style="min-width:170px">รับทราบ / เปิดดู</th><th>ค้าง</th><th></th></tr></thead><tbody>'
-    + rows.map(a=>{
-      const isImg = a.kind==='image';
-      const p = isImg ? ['🖼️ รูปภาพ','muted'] : (PRIO_PILL[a.priority]||PRIO_PILL.normal);
-      const scope=a.branch_ids.length?a.branch_ids.map(b=>branchName(b)).join(', '):'ทุกสาขา';
-      const needAck=!isImg && a.priority!=='normal';
-      const thumb = (isImg && (a.images||[]).length) ? '<img src="'+esc(a.images[0])+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:7px;border:1px solid var(--line);cursor:zoom-in;flex:none">' : '';
-      // โหมดรูปภาพ: แสดง "เปิดดูแล้วกี่คน" แทน % รับทราบ
-      const midCell = needAck
-        ? ('<div style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:12.5px;min-width:58px">'+a.acked+'/'+a.total+'</span>'+anBar(a.pct)+'<span class="mono" style="font-size:12px">'+a.pct+'%</span></div>')
-        : (isImg
-            ? ('<div style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:12.5px;min-width:58px">'+a.opened+'/'+a.total+'</span>'+anBar(a.total?Math.round(a.opened*100/a.total):0)+'<span class="muted" style="font-size:11.5px">เปิดดู</span></div>')
-            : '<span class="muted" style="font-size:12.5px">ไม่ต้องรับทราบ</span>');
-      return `<tr${(needAck && a.unread>0 && a.active)?' style="background:#fff7ed"':''}>
-        <td><div style="display:flex;gap:8px;align-items:center">${thumb}
-            <div><div style="font-weight:600">${esc(a.title||String(a.message||'').slice(0,40))}${isImg?(' <span class="muted" style="font-size:11.5px">· '+((a.images||[]).length)+' รูป</span>'):''}</div>
-            <div style="font-size:11.5px;color:var(--muted)">${fmt(a.created_at)}${a.active?'':' · <span style="color:#94a3b8">ปิดแล้ว/หมดอายุ</span>'}</div></div></div></td>
-        <td><span class="pill ${p[1]}">${p[0]}</span></td>
-        <td style="font-size:12.5px">${esc(scope)}</td>
-        <td>${midCell}</td>
-        <td>${needAck?(a.unread>0?('<span class="pill bad">'+a.unread+' คน</span>'):'<span class="pill ok">ครบแล้ว</span>'):'—'}</td>
-        <td style="white-space:nowrap">
-          ${(needAck||isImg)?`<button class="btn btn-sec btn-sm an_detail" data-id="${a.id}">ดูรายชื่อ</button>`:''}
-          <button class="btn btn-sec btn-sm an_edit" data-id="${a.id}">✏️ แก้ไข</button>
-          <button class="btn btn-sec btn-sm an_off" data-id="${a.id}" data-on="${a.active?1:0}">${a.active?'ปิด':'เปิด'}</button>
-        </td></tr>`;
-    }).join('')
-    + '</tbody></table></div></div>';
-
-  box.querySelectorAll('.an_detail').forEach(b=>{ b.onclick=()=>loadAnnounceDetail(Number(b.dataset.id)); });
-  box.querySelectorAll('.an_edit').forEach(b=>{ b.onclick=()=>anEdit(Number(b.dataset.id)); });
-  box.querySelectorAll('.an_off').forEach(b=>{ b.onclick=async()=>{
-    const on=b.dataset.on==='1';
-    const r2=await post({ action:'hr_announce_toggle', password:pwd, data:{ id:Number(b.dataset.id), active:!on } });
-    if(r2.ok){ toast('ok', on?'ปิดประกาศแล้ว':'เปิดประกาศแล้ว'); loadAnnounceStatus(); } else toast('err','ไม่สำเร็จ');
-  }; });
-}
-
-async function loadAnnounceDetail(id){
-  const box=$('an_detail');
-  box.innerHTML='<div class="card"><div class="card-b"><div class="empty">กำลังโหลด…</div></div></div>';
-  const r=await post({ action:'hr_announce_status', password:pwd, id });
-  if(!r.ok){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">'+esc(r.error||'')+'</div></div></div>'; return; }
-  const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return '—'; } };
-  const s=r.summary;
-  const isImg = r.ann.kind==='image';
-  // โหมดรูปภาพ: ไม่ต้องรับทราบ → นับ "เปิดดูแล้ว" แทน
-  const pend = isImg ? r.people.filter(p=>p.status==='none') : r.people.filter(p=>p.status!=='acked');
-  const seen = isImg ? r.people.filter(p=>p.status!=='none').length : s.acked;
-  const seenPct = s.total ? Math.round(seen*100/s.total) : 0;
-  const gallery = isImg && (r.ann.images||[]).length
-    ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
-      + r.ann.images.map((u,i)=>'<div style="position:relative"><img src="'+esc(u)+'" onclick="lightbox(this)" style="width:96px;height:96px;object-fit:cover;border-radius:9px;border:1px solid var(--line);cursor:zoom-in;display:block"><div style="position:absolute;top:3px;left:3px;background:rgba(0,0,0,.6);color:#fff;border-radius:5px;padding:0 5px;font-size:11px">'+(i+1)+'</div></div>').join('')
-      + '</div>'
-    : '';
-
-  box.innerHTML='<div class="card">'
-    +'<div class="card-h"><h3>'+(isImg?'🖼️ ':'📋 ')+esc(r.ann.title||String(r.ann.message||'').slice(0,50))+'</h3>'
-      +'<button class="btn btn-sec btn-sm" id="an_dclose" style="margin-left:auto">ปิด</button></div>'
-    +'<div class="card-b">'
-      + gallery
-      +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">'
-        +'<div><div style="font-size:11.5px;color:var(--muted)">'+(isImg?'เปิดดูแล้ว':'รับทราบแล้ว')+'</div><div style="font-size:22px;font-weight:800;color:#16a34a">'+seen+'<span style="font-size:14px;color:var(--muted);font-weight:500"> / '+s.total+' คน ('+seenPct+'%)</span></div></div>'
-        +'<div><div style="font-size:11.5px;color:var(--muted)">'+(isImg?'ยังไม่เห็น':'ยังไม่รับทราบ')+'</div><div style="font-size:22px;font-weight:800;color:'+(pend.length?'#dc2626':'#16a34a')+'">'+pend.length+'</div></div>'
-      +'</div>'
-      // สรุปรายสาขา
-      +'<div style="margin-bottom:14px">'+r.branches.map(b=>{
-          const bs = isImg ? (b.total - b.pending.length + b.opened) : b.acked;   // รูปภาพ: นับคนที่เปิดดู
-          const bp = b.total ? Math.round(bs*100/b.total) : 0;
-          return '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)">'
-          +'<div style="min-width:120px;font-size:13.5px;font-weight:600">'+esc(b.branch_name)+'</div>'
-          +'<span class="mono" style="font-size:12.5px;min-width:52px">'+bs+'/'+b.total+'</span>'
-          +anBar(bp)
-          +'<span class="mono" style="font-size:12px;min-width:38px;text-align:right">'+bp+'%</span></div>'; }).join('')
-      +'</div>'
-      // รายชื่อค้าง
-      +'<div style="font-weight:700;font-size:14px;margin-bottom:6px">'+(isImg?'ยังไม่เห็นประกาศนี้':'ยังไม่รับทราบ')+' ('+pend.length+' คน)</div>'
-      +(pend.length
-        ? '<div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>สถานะ</th><th>เปิดดูเมื่อ</th></tr></thead><tbody>'
-          + pend.map(p=>`<tr style="background:#fff7ed">
-              <td><div style="font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--muted)">รหัส ${esc(p.emp_id)}</div></td>
-              <td>${esc(p.branch_name)}</td>
-              <td>${isImg?'<span class="pill bad">ยังไม่เห็น</span>':(p.status==='opened'?'<span class="pill warn">เปิดอ่านแล้ว แต่ยังไม่กดรับทราบ</span>':'<span class="pill bad">ยังไม่เปิดอ่าน</span>')}${p.quiz_tries?' <span class="muted" style="font-size:11.5px">· ตอบผิด '+p.quiz_tries+' ครั้ง</span>':''}</td>
-              <td class="mono" style="font-size:12px">${p.opened_at?fmt(p.opened_at):'—'}</td></tr>`).join('')
-          + '</tbody></table></div>'
-        : '<div class="empty">'+(isImg?'ทุกคนเห็นแล้ว 🎉':'รับทราบครบทุกคนแล้ว 🎉')+'</div>')
-      // รายชื่อที่ดู/รับทราบแล้ว
-      +'<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:13.5px">ดูรายชื่อที่'+(isImg?'เปิดดู':'รับทราบ')+'แล้ว ('+seen+' คน)</summary>'
-        +'<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>'+(isImg?'เปิดดูเมื่อ':'รับทราบเมื่อ')+'</th><th>คำถาม</th></tr></thead><tbody>'
-        + r.people.filter(p=> isImg ? p.status!=='none' : p.status==='acked').map(p=>`<tr>
-            <td>${esc(p.name)}</td><td>${esc(p.branch_name)}</td>
-            <td class="mono" style="font-size:12px">${fmt(isImg?p.opened_at:p.acked_at)}</td>
-            <td>${isImg?'—':(p.quiz_ok===true?'<span class="pill ok">ตอบถูก</span>':(p.quiz_ok===false?'<span class="pill bad">ตอบผิด</span>':'—'))}${(!isImg&&p.quiz_tries)?' <span class="muted" style="font-size:11.5px">('+p.quiz_tries+' ครั้ง)</span>':''}</td></tr>`).join('')
-        +'</tbody></table></div></details>'
-    +'</div></div>';
-  $('an_dclose').onclick=()=>{ box.innerHTML=''; };
-  box.scrollIntoView({ behavior:'smooth', block:'nearest' });
-}
-
-// ========== สถานะการรับทราบระเบียบ ==========
-async function loadRuleStatus(){
-  $('ru_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_rule_status', password:pwd });
-  if(!r.ok){ $('ru_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  $('ru_ver').textContent='(ฉบับ '+esc(r.version||'-')+') · ยอมรับแล้ว '+r.counts.accepted+'/'+(r.counts.accepted+r.counts.pending)+' คน';
-  $('ru_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>สถานะ</th><th>เมื่อ</th></tr></thead><tbody>'+
-    r.rows.map(e=>`<tr${e.accepted_at?'':' style="background:#fff7ed"'}>
-      <td><div style="font-weight:600">${esc(e.nickname||e.name)}</div><div style="font-size:11.5px;color:var(--muted)">${esc(e.nickname?e.name:('รหัส '+e.emp_id))}</div></td>
-      <td>${esc(branchName(e.branch_id))}</td>
-      <td>${e.accepted_at?'<span class="pill ok">✓ รับทราบแล้ว</span>':'<span class="pill bad">✗ ยังไม่รับทราบ</span>'}</td>
-      <td class="mono">${e.accepted_at?esc(String(e.accepted_at).slice(0,10)):'—'}</td>
-    </tr>`).join('')+'</tbody></table></div></div>';
-}
-
-// ========== บันทึกกิจกรรม ==========
-async function loadActivity(){
-  $('ac_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_activity', password:pwd });
-  if(!r.ok){ $('ac_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  if(!r.rows.length){ $('ac_body').innerHTML='<div class="empty">ยังไม่มีกิจกรรม</div>'; return; }
-  const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return String(w||'').slice(0,16).replace('T',' '); } };
-  const color=ev=> ev.status==='rejected'?'#dc2626': ev.status==='approved'?'#16a34a': ev.type==='ลงเวลา'?'#0ea5e9': ev.type==='ยอมรับระเบียบ'?'#7c3aed': ev.type==='คำขอลา'?'#d97706':'#475569';
-  $('ac_body').innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>เวลา</th><th>ประเภท</th><th>พนักงาน</th><th>รายละเอียด</th></tr></thead><tbody>'+
-    r.rows.map(ev=>`<tr>
-      <td class="mono" style="white-space:nowrap">${esc(fmt(ev.when))}</td>
-      <td style="white-space:nowrap"><span style="color:${color(ev)};font-weight:600">${ev.icon||''} ${esc(ev.type)}</span></td>
-      <td>${esc(ev.emp)} <span style="color:var(--muted);font-size:11.5px">(${esc(ev.emp_id)})</span></td>
-      <td>${esc(ev.detail)}</td>
-    </tr>`).join('')+'</tbody></table></div></div>';
-}
-
-// ========== คำขอแก้ไขเวลาออก (ลืมกดออก/ควบกะ) ==========
-function coFmtDT(iso){ if(!iso) return '—'; try{ return new Date(iso).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return String(iso); } }
-async function loadCheckoutCorr(){
-  const box=$('coCorrPanel'); if(!box) return;
-  const r=await post({ action:'hr_checkout_corr_list', password:pwd });
-  if(!r.ok){ box.innerHTML=''; return; }
-  const dbr=$('dash_branch')?$('dash_branch').value:'';
-  let pend=r.rows.filter(x=>x.status==='pending');
-  if(dbr) pend=pend.filter(x=>String(x.branch_id)===String(dbr));
-  if(!pend.length){ box.innerHTML=''; return; }
-  box.innerHTML='<div class="card" style="margin-bottom:14px;padding:14px 16px">'
-    +'<div style="font-weight:600;font-size:14px;margin-bottom:8px">🕒 คำขอแก้ไขเวลาออก รออนุมัติ ('+pend.length+')</div>'
-    +pend.map(c=>'<div style="border-top:1px solid var(--line);padding:10px 0">'
-      +'<div style="font-size:14px;font-weight:600">'+esc(c.emp_name||c.emp_id)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(c.branch_name)+' · '+esc(String(c.work_date))+'</span></div>'
-      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">ระบบบันทึกให้ '+coFmtDT(c.system_checkout)+' → แจ้งออกจริง <b style="color:#00582f">'+coFmtDT(c.actual_checkout)+'</b></div>'
-      +'<div style="font-size:12.5px;margin-top:2px">OT ถ้าอนุมัติ: <b>'+(c.ot_if_approved||0)+' ชม.</b>'+(c.reason?(' · เหตุผล: '+esc(c.reason)):'')+'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-pri btn-sm" data-coap="'+c.id+'">อนุมัติ</button><button class="btn btn-sec btn-sm" data-corj="'+c.id+'">ปฏิเสธ</button></div>'
-      +'</div>').join('')+'</div>';
-  box.querySelectorAll('[data-coap]').forEach(b=>b.onclick=async()=>{ const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.coap),status:'approved'}); if(r2.ok){ toast('ok','อนุมัติแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
-  box.querySelectorAll('[data-corj]').forEach(b=>b.onclick=async()=>{ const note=prompt('เหตุผลที่ปฏิเสธ (ถ้ามี):')||''; const r2=await post({action:'hr_checkout_corr_review',password:pwd,id:Number(b.dataset.corj),status:'rejected',note}); if(r2.ok){ toast('ok','ปฏิเสธแล้ว'); loadCheckoutCorr(); } else toast('err',r2.error||'ไม่สำเร็จ'); });
-}
-
-// ========== การ์ดงานค้างข้ามวัน (Dashboard) ==========
-async function loadOpenTasks(){
-  const box=$('openTasksPanel'); if(!box) return;
-  let r; try{ r=await post({ action:'hr_open_tasks', password:pwd }); }catch(e){ box.innerHTML=''; return; }
-  if(!r || !r.ok || !r.groups || !r.groups.length){ box.innerHTML=''; return; }
-  const dbr=$('dash_branch')?$('dash_branch').value:'';
-  const g = dbr ? r.groups.filter(x=>String(x.branch_id)===String(dbr)) : r.groups;
-  if(!g.length){ box.innerHTML=''; return; }
-  const total = g.reduce((s,x)=>s+((x.tasks&&x.tasks.length)||0),0);
-  box.innerHTML='<div class="card" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #e0803a">'
-    +'<div style="font-weight:600;font-size:14px;margin-bottom:8px">⚠️ งานค้างข้ามวัน ('+g.length+' กลุ่ม · '+total+' งาน)</div>'
-    +g.map((x,i)=>'<div style="border-top:1px solid var(--line);padding:10px 0">'
-      +'<div style="font-size:14px;font-weight:600">'+esc(x.branch_name)+' · กะ '+esc(x.shift_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(String(x.work_date))+'</span></div>'
-      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">ยังไม่ทำ '+x.todo+' · ตีกลับ '+x.sent_back+' · <b style="color:#c2410c">รอตรวจ '+x.submitted+'</b></div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-top:4px">'+x.tasks.slice(0,6).map(t=>esc(t.title)+' ('+esc(t.emp_name||'-')+' · '+esc(t.status)+')').join(', ')+(x.tasks.length>6?(' …+'+(x.tasks.length-6)):'')+'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-pri btn-sm" data-closeg="'+i+'">ปิดทั้งกลุ่ม (อนุมัติ)</button></div>'
-      +'</div>').join('')+'</div>';
-  box.querySelectorAll('[data-closeg]').forEach(b=>b.onclick=async()=>{
-    const x=g[Number(b.dataset.closeg)];
-    if(!confirm('ยืนยันปิด (อนุมัติ) งานค้างทั้งกลุ่ม '+x.branch_name+' กะ '+x.shift_name+' วันที่ '+beDate(x.work_date)+' ?')) return;
-    const r2=await post({ action:'hr_task_close_group', password:pwd, data:{ work_date:x.work_date, branch_id:x.branch_id, shift_id:x.shift_id } });
-    if(r2.ok){ toast('ok','ปิดงานค้างแล้ว '+(r2.closed||0)+' งาน'); loadOpenTasks(); } else toast('err',r2.error||'ไม่สำเร็จ');
-  });
-}
-
-// ========== พาเนลบันทึกวันอบรมบน Dashboard (มีตัวกรอง) ==========
-let DUTY_ROWS=[];
-async function loadDutyRecords(){
-  const box=$('dutyPanel'); if(!box) return;
-  const dbr=$('dash_branch')?$('dash_branch').value:'';
-  let r; try{ r=await post({ action:'hr_duty_list', password:pwd, branch:dbr }); }catch(e){ box.innerHTML=''; return; }
-  if(!r||!r.ok){ box.innerHTML=''; return; }
-  DUTY_ROWS=r.rows||[];
-  box.innerHTML='<div class="card" style="margin-bottom:14px">'
-    +'<div class="card-h" style="flex-wrap:wrap;gap:8px"><h3>🎓 บันทึกวันอบรม / ปฏิบัติงานนอกสถานที่</h3>'
-    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-      +'<input id="duty_q" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
-      +'<input id="duty_month" type="month" title="กรองตามเดือน" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
-      +'<button class="btn btn-sec btn-sm" id="duty_clear">ล้างตัวกรอง</button>'
-    +'</div></div>'
-    +'<div class="card-b" id="duty_list" style="padding-top:6px"></div></div>';
-  $('duty_q').oninput=renderDutyList;
-  $('duty_month').onchange=renderDutyList;
-  $('duty_clear').onclick=()=>{ $('duty_q').value=''; $('duty_month').value=''; renderDutyList(); };
-  renderDutyList();
-}
-function renderDutyList(){
-  const el=$('duty_list'); if(!el) return;
-  const q=($('duty_q')?$('duty_q').value:'').trim().toLowerCase();
-  const mo=$('duty_month')?$('duty_month').value:'';
-  const rows=DUTY_ROWS.filter(x=>{
-    if(mo && String(x.work_date).slice(0,7)!==mo) return false;
-    if(q && !((x.emp_id+' '+x.emp_name+' '+(x.nickname||'')).toLowerCase().includes(q))) return false;
-    return true;
-  });
-  if(!rows.length){ el.innerHTML='<div class="empty" style="padding:18px">'+(DUTY_ROWS.length?'ไม่พบรายการตามตัวกรอง':'ยังไม่มีบันทึกวันอบรม/ปฏิบัติงานนอกสถานที่')+'</div>'; return; }
-  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">รวม '+rows.length+' รายการ'+(rows.length!==DUTY_ROWS.length?(' (จากทั้งหมด '+DUTY_ROWS.length+')'):'')+'</div>'
-    +rows.map(x=>'<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-top:1px solid var(--line)">'
-      +'<div style="min-width:100px;flex:none"><div style="font-weight:600;font-size:13px">'+beDate(x.work_date)+'</div><div style="font-size:11px;color:var(--muted)">'+esc(x.shift_name||'')+'</div></div>'
-      +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13.5px">'+esc(x.emp_name)+(x.nickname?' <span style="color:var(--muted);font-weight:400">('+esc(x.nickname)+')</span>':'')+' <span style="color:var(--muted);font-weight:400;font-size:12px">'+esc(x.emp_id)+'</span></div>'
-        +'<div style="font-size:12.5px;color:var(--muted)">🏪 '+esc(x.branch_name)+(x.note?(' · 📋 '+esc(x.note)):' · <span style="color:#9ca3af">ไม่ระบุหัวข้อ</span>')+'</div></div>'
-      +'<button class="icobtn" style="color:#dc2626;flex:none" data-dutydel="'+esc(x.emp_id)+'|'+esc(x.work_date)+'">ลบ</button>'
-      +'</div>').join('');
-  el.querySelectorAll('[data-dutydel]').forEach(b=>b.onclick=async()=>{
-    const parts=b.dataset.dutydel.split('|'); const eid=parts[0], wd=parts[1];
-    if(!confirm('ลบบันทึกวันอบรมวันที่ '+beDate(wd)+' ของ '+eid+' ?')) return;
-    const r=await post({ action:'hr_duty_delete', password:pwd, emp_id:eid, work_date:wd });
-    if(r.ok){ toast('ok','ลบแล้ว'); loadDutyRecords(); } else toast('err',r.error||'ไม่สำเร็จ');
-  });
-}
-
-// ========== วันอบรม / ปฏิบัติงานนอกสถานที่ ==========
-function dutyYmd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
-function initDuty(){
-  if($('duty_emp') && !$('duty_emp').dataset.filled){
-    fillSelect($('duty_emp'), (DATA.rows||[]).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
-    $('duty_emp').dataset.filled='1';
-    $('duty_save').onclick=saveDuty;
-  }
-}
-async function saveDuty(){
-  const emp=$('duty_emp').value, from=$('duty_from').value, to=$('duty_to').value||from;
-  if(!emp){ toast('err','เลือกพนักงาน'); return; }
-  if(!from){ toast('err','เลือกวันที่'); return; }
-  const dates=[]; let d=new Date(from+'T00:00:00'); const end=new Date(to+'T00:00:00');
-  if(end<d){ toast('err','ช่วงวันที่ไม่ถูกต้อง'); return; }
-  while(d<=end && dates.length<62){ dates.push(dutyYmd(d)); d.setDate(d.getDate()+1); }
-  const btn=$('duty_save'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังบันทึก…';
-  const r=await post({ action:'hr_mark_duty', password:pwd, data:{ emp_id:emp, dates, note:$('duty_note').value } });
-  btn.disabled=false; btn.textContent=old;
-  if(r.ok){ toast('ok','บันทึกวันอบรม '+r.count+' วันแล้ว'); $('duty_note').value=''; }
-  else toast('err', r.error||'ไม่สำเร็จ');
-}
-
-// ========== แจ้งเตือนแอดมิน ==========
-async function loadNotifications(){
-  const dbr=$('dash_branch')?$('dash_branch').value:'';
-  const ddt=$('dash_date')?$('dash_date').value:'';
-  const r = await post({ action:'hr_notifications', password:pwd, branch:dbr, date:ddt });
-  if(!r.ok) return;
-  const c = r.counts;
-  const total = c.pending_leaves + c.not_checked_out + c.late_today + c.absent_roster + (c.pending_profiles||0) + (c.new_applicants||0);
-  if(!total){ $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px;color:#16a34a">🔔 ไม่มีรายการที่ต้องดำเนินการวันนี้</div>`; return; }
-  const chip=(n,label,color)=> n>0?`<span class="lvl-pill" style="background:${color}"><span class="lvl-dot"></span> ${label} ${n}</span>`:'';
-  const list=(title,arr,fmt)=> arr.length?`<div style="margin-top:10px"><div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:3px">${title}</div>${arr.map(fmt).join('')}</div>`:'';
-  $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px">
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <b style="font-size:15px">🔔 แจ้งเตือน</b>
-      ${chip(c.new_applicants||0,'🧑‍💼 ใบสมัครใหม่','#0891b2')}
-      ${chip(c.pending_leaves,'ใบลารออนุมัติ','#d97706')}
-      ${chip(c.pending_profiles||0,'ข้อมูลรอตรวจ','#7c3aed')}
-      ${chip(c.absent_roster,'ขาด/ยังไม่มา','#b91c1c')}
-      ${chip(c.late_today,'มาสายวันนี้','#ea580c')}
-      ${chip(c.not_checked_out,'ลืมกดออก (เลยเวลาเลิก)','#0ea5e9')}
-    </div>
-    ${list('🧑‍💼 ใบสมัครงานใหม่ (ไปแท็บ "รับสมัครงาน")', r.new_applicants||[], a=>`<div style="font-size:13px;padding:2px 0;cursor:pointer" onclick="showTab('recruit')">• ${esc(a.full_name)}${a.position?(' · '+esc(a.position)):''}</div>`)}
-    ${list('ใบลารออนุมัติ (ไปแท็บ "ลา & วันหยุด" เพื่ออนุมัติ)', r.pending_leaves, l=>`<div style="font-size:13px;padding:2px 0">• ${esc(l.emp_name)} · ${esc(l.type||'')} ${beDate(l.start_date)}${l.end_date&&l.end_date!==l.start_date?(' – '+beDate(l.end_date)):''} (${l.days} วัน)</div>`)}
-    ${list('ขาด/ยังไม่มาตามตารางวันนี้', r.absent_roster, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · กะ ${esc(shiftName(a.shift_id))}</div>`)}
-    ${list('ลืมกดออกงาน (เลยเวลาเลิกกะแล้ว)', r.not_checked_out, a=>`<div style="font-size:13px;padding:2px 0">• ${esc(a.emp_name)} · เข้า ${esc(a.check_in)}${a.end_time?' · เลิก '+esc(a.end_time):''}</div>`)}
-  </div>`;
-}
-
-// ========== ข้อมูลพนักงานรอตรวจ ==========
-async function loadSubmissions(){
-  $('sub_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r = await post({ action:'hr_submission_list', password:pwd });
-  if(!r.ok){ $('sub_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  if(!r.rows.length){ $('sub_body').innerHTML='<div class="empty">ไม่มีข้อมูลรอตรวจ 🎉</div>'; return; }
-  const docLink=(u,label)=> u?`<a href="${esc(u)}" target="_blank" class="btn btn-sec btn-sm" style="margin:2px 4px 2px 0">${label}</a>`:`<span style="color:#cbd5e1;font-size:12px;margin-right:8px">${label}: —</span>`;
-  $('sub_body').innerHTML = r.rows.map(s=>`
-    <div class="card" style="margin-bottom:12px;padding:16px">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        ${s.photo_url?`<img src="${esc(s.photo_url)}" style="width:48px;height:48px;border-radius:8px;object-fit:cover">`:''}
-        <div style="flex:1;min-width:160px">
-          <div style="font-weight:700">${esc(s.name||s.current_name)} <span style="color:var(--muted);font-weight:400">(${esc(s.emp_id)})</span></div>
-          <div style="font-size:12.5px;color:var(--muted)">ส่งเมื่อ ${esc(String(s.submitted_at||'').slice(0,16).replace('T',' '))}</div>
-        </div>
-        <button class="btn btn-pri btn-sm" data-sapp="${s.id}">อนุมัติ</button>
-        <button class="btn btn-danger btn-sm" data-srej="${s.id}">ปฏิเสธ</button>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-top:10px;font-size:13px">
-        <div>ชื่อเล่น: ${esc(s.nickname||'—')}</div><div>เบอร์: ${esc(s.phone||'—')}</div>
-        <div style="grid-column:1/3">ที่อยู่: ${esc(s.address||'—')}</div>
-        <div>ผู้ติดต่อฉุกเฉิน: ${esc(s.emergency_name||'—')}</div><div>เบอร์ฉุกเฉิน: ${esc(s.emergency_phone||'—')}</div>
-        <div>ธนาคาร: ${esc(s.bank_name||'—')}</div><div>เลขบัญชี: ${esc(s.bank_account||'—')}</div>
-        <div>เลขบัตรประชาชน: ${esc(s.id_card||'—')}</div>
-      </div>
-      <div style="margin-top:10px">${docLink(s.idcard_url,'สำเนาบัตร')}${docLink(s.bankbook_url,'สมุดบัญชี')}${docLink(s.house_url,'ทะเบียนบ้าน')}${docLink(s.edu_url,'วุฒิการศึกษา')}${docLink(s.photo_url,'รูปถ่าย')}</div>
-    </div>`).join('');
-  document.querySelectorAll('[data-sapp]').forEach(b=>b.onclick=async()=>{
-    if(!confirm('อนุมัติและบันทึกข้อมูลนี้เข้าระบบพนักงาน?')) return;
-    const r=await post({ action:'hr_submission_approve', password:pwd, id:b.dataset.sapp });
-    if(r.ok){ toast('ok','อนุมัติและบันทึกแล้ว'); loadSubmissions(); loadAll(); loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
-  });
-  document.querySelectorAll('[data-srej]').forEach(b=>b.onclick=async()=>{
-    if(!confirm('ปฏิเสธรายการนี้?')) return;
-    const r=await post({ action:'hr_submission_reject', password:pwd, id:b.dataset.srej });
-    if(r.ok){ toast('ok','ปฏิเสธแล้ว'); loadSubmissions(); loadNotifications(); } else toast('err', r.error||'ไม่สำเร็จ');
-  });
-}
-
-// ---------- สร้าง modal สาขา + ตารางเวร ----------
-(function buildModals(){
-  const _subRef=$('sub_refresh'); if(_subRef) _subRef.onclick=loadSubmissions;
-  const _ruRef=$('ru_refresh'); if(_ruRef) _ruRef.onclick=loadRuleStatus;
-  const _acRef=$('ac_refresh'); if(_acRef) _acRef.onclick=loadActivity;
-  const br = document.createElement('div'); br.className='overlay'; br.id='brOverlay';
-  br.innerHTML = `<div class="modal" style="max-width:460px">
-    <div class="modal-h"><h2 id="brTitle">เพิ่มสาขา</h2><button class="close" id="brClose">×</button></div>
-    <div class="modal-b">
-      <div class="field"><label>รหัสสาขา<span class="req">*</span></label><input id="br_id" type="text" placeholder="เช่น B003"></div>
-      <div class="field"><label>ชื่อสาขา<span class="req">*</span></label><input id="br_name" type="text"></div>
-      <div class="field"><label>ละติจูด (lat)<span class="req">*</span></label><input id="br_lat" type="text" inputmode="decimal"></div>
-      <div class="field"><label>ลองจิจูด (lng)<span class="req">*</span></label><input id="br_lng" type="text" inputmode="decimal"></div>
-      <div class="field"><label>รัศมี geofence (เมตร)</label><input id="br_radius" type="number" value="80"></div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap">
-        <button type="button" class="btn btn-sec btn-sm" id="br_gps">📍 ดึงพิกัดปัจจุบัน</button>
-        <a class="btn btn-sec btn-sm" id="br_map" target="_blank" href="#">🗺️ ดูบนแผนที่</a>
-      </div>
-      <div class="field" style="margin-top:10px"><label>LINE Group ID (แจ้งรับสินค้าเข้ากลุ่มนี้)</label><input id="br_line" type="text" placeholder="เช่น Cxxxxxxxxxxxxxxxx (ว่าง = ไม่ส่ง LINE)"><div class="hint">ใช้ Channel Token ตัวเดียวร่วมกัน · แยกกลุ่มด้วย Group ID ต่อสาขา</div></div>
-    </div>
-    <div class="modal-f"><button class="btn btn-pri" id="brSave">บันทึก</button></div>
-  </div>`;
-  document.body.appendChild(br);
-
-  const sc = document.createElement('div'); sc.className='overlay'; sc.id='scOverlay';
-  sc.innerHTML = `<div class="modal" style="max-width:420px">
-    <div class="modal-h"><h2 id="scTitle">จัดเวร</h2><button class="close" id="scClose">×</button></div>
-    <div class="modal-b">
-      <div class="field"><label>กะ</label><select id="sc_shift"></select></div>
-      <div class="field"><label>สาขาที่ไปทำ</label><select id="sc_branch"></select></div>
-      <div id="sc_coverhint" style="display:none; font-size:12.5px; color:#ea580c; margin:-4px 0 8px">⚠ ต่างจากสาขาประจำ = บันทึกเป็น "ไปแทน"</div>
-      <div class="field"><label>หมายเหตุ (เช่น แทนใคร)</label><input id="sc_note" type="text" placeholder="เช่น แทนสมชายลาป่วย"></div>
-    </div>
-    <div class="modal-f" style="display:flex; gap:8px; justify-content:space-between">
-      <button class="btn btn-danger" id="scDelete">ลบ / เป็นวันหยุด</button>
-      <button class="btn btn-pri" id="scSave">บันทึก</button>
-    </div>
-  </div>`;
-  document.body.appendChild(sc);
-
-  const sh = document.createElement('div'); sh.className='overlay'; sh.id='shOverlay';
-  sh.innerHTML = `<div class="modal" style="max-width:440px">
-    <div class="modal-h"><h2 id="shTitle">เพิ่มกะ</h2><button class="close" id="shClose">×</button></div>
-    <div class="modal-b">
-      <div class="field"><label>รหัสกะ<span class="req">*</span> (เช่น M, A, N, D)</label><input id="sh_id" type="text"></div>
-      <div class="field"><label>โค้ดคีย์ (ย่อสำหรับพิมพ์ในตาราง เช่น 1,2,3,D)</label><input id="sh_code" type="text" maxlength="3"></div>
-      <div class="field"><label>ชื่อกะ<span class="req">*</span></label><input id="sh_name" type="text"></div>
-      <div style="display:flex; gap:10px">
-        <div class="field" style="flex:1"><label>เวลาเข้า</label><input id="sh_start" type="time"></div>
-        <div class="field" style="flex:1"><label>เวลาออก</label><input id="sh_end" type="time"></div>
-      </div>
-      <div class="field"><label>ผ่อนผันก่อนนับสาย (นาที)</label><input id="sh_grace" type="number" value="5"></div>
-      <div class="field"><label>ผลัดหลัก (ระบบงานผลัด) — กะนี้นับเป็น เช้า/บ่าย/ดึก หรือพิเศษ</label><select id="sh_main"></select></div>
-      <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_no_ot" style="width:18px;height:18px"> ไม่คิด OT สำหรับกะนี้ (เช่น กะ ผจก.)</label></div>
-      <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_half" style="width:18px;height:18px"> <span>กะครึ่งวัน — นับเป็น <b>0.5 วัน</b> (มีผลกับรายงาน/ขาด/วินัย)</span></label></div>
-      <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_mgrrev" style="width:18px;height:18px" checked> <span>กะนี้อยู่ในเวลา ผจก. — ให้ ผจก.ตรวจงานในกะที่ติ๊ก "ผจก.ตรวจ" ได้ (ติ๊กออกสำหรับกะที่ ผจก.ไม่อยู่ เช่น กะดึก → งานจะไป HR ตรวจแทน)</span></label></div>
-    </div>
-    <div class="modal-f"><button class="btn btn-pri" id="shSave">บันทึก</button></div>
-  </div>`;
-  document.body.appendChild(sh);
-  $('shClose').onclick = ()=>$('shOverlay').classList.remove('show');
-  $('shOverlay').addEventListener('click', e=>{ if(e.target===$('shOverlay')) $('shOverlay').classList.remove('show'); });
-  $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
-  $('dr_save') && ($('dr_save').onclick = saveDiscRules);
-  $('shSave').onclick = async ()=>{
-    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked, day_value:($('sh_half')&&$('sh_half').checked)?0.5:1, mgr_review:($('sh_mgrrev')?$('sh_mgrrev').checked:true) };
-    if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
-    $('shSave').innerHTML='<span class="spin"></span>';
-    const r = await post({ action:'hr_shift_save', password:pwd, data });
-    $('shSave').textContent='บันทึก';
-    if(r.ok){ toast('ok','บันทึกกะแล้ว'); $('shOverlay').classList.remove('show'); loadShifts(); loadAll(); }
-    else toast('err', r.error||'บันทึกไม่สำเร็จ');
-  };
-
-  // handlers — สาขา
-  $('brClose').onclick = ()=>$('brOverlay').classList.remove('show');
-  $('brOverlay').addEventListener('click', e=>{ if(e.target===$('brOverlay')) $('brOverlay').classList.remove('show'); });
-  $('br_new') && ($('br_new').onclick = ()=>brOpen(null));
-  $('br_lat').addEventListener('input', brUpdateMap);
-  $('br_lng').addEventListener('input', brUpdateMap);
-  $('br_gps').onclick = ()=>{
-    if(!navigator.geolocation){ toast('err','อุปกรณ์ไม่รองรับ GPS'); return; }
-    $('br_gps').textContent='กำลังหาพิกัด…';
-    navigator.geolocation.getCurrentPosition(p=>{
-      $('br_lat').value = p.coords.latitude.toFixed(6);
-      $('br_lng').value = p.coords.longitude.toFixed(6);
-      $('br_gps').textContent='📍 ดึงพิกัดปัจจุบัน'; brUpdateMap();
-    }, ()=>{ $('br_gps').textContent='📍 ดึงพิกัดปัจจุบัน'; toast('err','ดึงพิกัดไม่สำเร็จ (อนุญาตตำแหน่ง)'); }, { enableHighAccuracy:true, timeout:10000 });
-  };
-  $('brSave').onclick = async ()=>{
-    const data = { branch_id:$('br_id').value.trim(), name:$('br_name').value.trim(), lat:$('br_lat').value.trim(), lng:$('br_lng').value.trim(), radius_m:$('br_radius').value, line_group_id:($('br_line')?$('br_line').value:'') };
-    if(!data.branch_id||!data.name){ toast('err','กรอกรหัสและชื่อสาขา'); return; }
-    $('brSave').innerHTML='<span class="spin"></span>';
-    const r = await post({ action:'hr_branch_save', password:pwd, data });
-    $('brSave').textContent='บันทึก';
-    if(r.ok){ toast('ok', r.action==='created'?'เพิ่มสาขาแล้ว':'บันทึกแล้ว'); $('brOverlay').classList.remove('show'); loadBranches(); loadAll(); }
-    else toast('err', r.error||'บันทึกไม่สำเร็จ');
-  };
-
-  // handlers — ตารางเวร
-  $('scClose').onclick = ()=>$('scOverlay').classList.remove('show');
-  $('scOverlay').addEventListener('click', e=>{ if(e.target===$('scOverlay')) $('scOverlay').classList.remove('show'); });
-  $('sc_branch').addEventListener('change', scCoverHint);
-  $('scSave').onclick = async ()=>{
-    if(!scEditing) return;
-    const data = { emp_id:scEditing.emp_id, work_date:scEditing.work_date, shift_id:$('sc_shift').value, branch_id:$('sc_branch').value, note:$('sc_note').value.trim() };
-    $('scSave').innerHTML='<span class="spin"></span>';
-    const r = await post({ action:'hr_sched_save', password:pwd, data });
-    $('scSave').textContent='บันทึก';
-    if(r.ok){ toast('ok','บันทึกเวรแล้ว'); $('scOverlay').classList.remove('show'); loadSchedule(); }
-    else toast('err', r.error||'บันทึกไม่สำเร็จ');
-  };
-  $('scDelete').onclick = async ()=>{
-    if(!scEditing) return;
-    const r = await post({ action:'hr_sched_delete', password:pwd, emp_id:scEditing.emp_id, work_date:scEditing.work_date });
-    if(r.ok){ toast('ok','ลบเวรแล้ว (เป็นวันหยุด)'); $('scOverlay').classList.remove('show'); loadSchedule(); }
-    else toast('err', r.error||'ลบไม่สำเร็จ');
-  };
-
-  // นำทางสัปดาห์
-  $('sc_prev').onclick = ()=>{ scWeek=addDaysStr(scWeek,-7); loadSchedule(); };
-  $('sc_next').onclick = ()=>{ scWeek=addDaysStr(scWeek,7); loadSchedule(); };
-  $('sc_thisweek').onclick = ()=>{ scWeek=mondayOf(isoLocal(new Date())); loadSchedule(); };
-  if($('sc_branchfilter')) $('sc_branchfilter').onchange = renderSchedule;
-  if($('sc_copytext')) $('sc_copytext').onclick = copyScheduleText;
-  if($('sc_image')) $('sc_image').onclick = openSchedImage;
-  // หน้าต่างพรีวิวรูปตาราง
-  const im = document.createElement('div'); im.className='overlay'; im.id='scImgOverlay';
-  im.innerHTML = `<div class="modal" style="max-width:600px">
-    <div class="modal-h"><h2>รูปสรุปตารางงาน</h2><button class="close" id="scImgClose">×</button></div>
-    <div class="modal-b" style="text-align:center"><img id="sc_imgview" alt="ตารางงาน" style="max-width:100%;border:1px solid var(--line);border-radius:10px"></div>
-    <div class="modal-f" style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-sec" id="scImgShare">📤 แชร์</button>
-      <button class="btn btn-pri" id="scImgDownload">⬇ บันทึกรูป</button>
-    </div>
-  </div>`;
-  document.body.appendChild(im);
-  $('scImgClose').onclick = ()=>$('scImgOverlay').classList.remove('show');
-  $('scImgOverlay').addEventListener('click', e=>{ if(e.target===$('scImgOverlay')) $('scImgOverlay').classList.remove('show'); });
-  $('scImgDownload').onclick = downloadSchedImage;
-  $('scImgShare').onclick = shareSchedImage;
-  $('sc_copy').onclick = async ()=>{
-    if(!confirm('คัดลอกตารางจากสัปดาห์ก่อนหน้า มาวางทับสัปดาห์นี้?')) return;
-    const r = await post({ action:'hr_sched_copy', password:pwd, from_start:addDaysStr(scWeek,-7), to_start:scWeek });
-    if(r.ok){ toast('ok','คัดลอก '+r.copied+' เวร'); loadSchedule(); }
-    else toast('err', r.error||'คัดลอกไม่สำเร็จ');
-  };
-})();
-
-if(pwd) tryLogin(pwd);
-
-</script>
-<script>
-if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js').catch(function(){});});}
-
-// ========== Web Push (แจ้งเตือนฝั่ง HR แม้ปิดแอป) ==========
-(function(){
-  const btn = document.getElementById('pushBtn');
-  if(!btn) return;
-  const supported = ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
-  function setLabel(on){ btn.textContent = on ? '🔔 แจ้งเตือน: เปิด' : '🔔 แจ้งเตือน: ปิด'; btn.style.color = on ? 'var(--green-d)' : ''; }
-  function b64ToU8(base64){
-    const pad='='.repeat((4-base64.length%4)%4);
-    const s=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
-    const raw=atob(s); const out=new Uint8Array(raw.length);
-    for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i);
-    return out;
-  }
-  async function currentSub(){
-    const reg = await navigator.serviceWorker.ready;
-    return reg.pushManager.getSubscription();
-  }
-  async function refresh(){
-    if(!supported){ btn.style.display='none'; return; }
-    try{ const s=await currentSub(); setLabel(!!s); }catch(e){ setLabel(false); }
-  }
-  async function enable(){
-    if(typeof window.VAPID_PUBLIC!=='string' || window.VAPID_PUBLIC.length<20){ toast('err','ยังไม่ได้ตั้งค่า VAPID_PUBLIC ใน config.js'); return; }
-    const perm = await Notification.requestPermission();
-    if(perm!=='granted'){ toast('err','ไม่ได้รับอนุญาตแจ้งเตือน — เปิดสิทธิ์ในเบราว์เซอร์ก่อน'); return; }
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:b64ToU8(window.VAPID_PUBLIC) });
-    const j = sub.toJSON();
-    // โหมด ผจก.: ผูกเครื่องกับสาขาตัวเองอัตโนมัติ (ไม่ต้องถาม)
-    let label, branch_id;
-    if(typeof MGR_MODE!=='undefined' && MGR_MODE){
-      label = prompt('ตั้งชื่ออุปกรณ์นี้', 'มือถือ ผจก.') || 'มือถือ ผจก.';
-      branch_id = MGR_BRANCH;
-    } else {
-      label = prompt('ตั้งชื่ออุปกรณ์นี้ (เช่น โทรศัพท์ร้าน A / มือถือ HR)', 'อุปกรณ์ HR') || 'อุปกรณ์ HR';
-      const brList=(DATA.branches||[]).map(b=>b.branch_id+' = '+b.name).join('\n');
-      branch_id=(prompt('เครื่องนี้รับแจ้งเตือนของสาขาไหน? พิมพ์ "รหัสสาขา"\n(เว้นว่าง = ส่วนกลาง รับทุกสาขา)\n\n'+brList, ($('dash_branch')?$('dash_branch').value:'')||'')||'').trim();
-    }
-    if(branch_id && !(DATA.branches||[]).some(b=>b.branch_id===branch_id)){ toast('err','ไม่พบรหัสสาขา '+branch_id+' — ลองใหม่'); return; }
-    const { error } = await window.HR.sb.from('push_subscriptions').upsert({
-      endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, label, branch_id: branch_id||null
-    }, { onConflict:'endpoint' });
-    if(error){ toast('err','บันทึกไม่สำเร็จ: '+error.message); return; }
-    setLabel(true); toast('ok','เปิดแจ้งเตือนแล้ว'+(branch_id?(' · เฉพาะสาขา '+branch_id):' · ทุกสาขา (ส่วนกลาง)'));
-  }
-  async function disable(){
-    const sub = await currentSub();
-    if(sub){ try{ await window.HR.sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); }catch(e){} await sub.unsubscribe(); }
-    setLabel(false); toast('ok','ปิดแจ้งเตือนอุปกรณ์นี้แล้ว');
-  }
-  btn.onclick = async ()=>{
-    btn.disabled=true;
-    try{ const s=await currentSub(); if(s) await disable(); else await enable(); }
-    catch(e){ toast('err','ทำรายการไม่สำเร็จ: '+(e.message||e)); }
-    btn.disabled=false;
-  };
-  // อัปเดตสถานะปุ่มหลังล็อกอิน (เมื่อ topact แสดง)
-  const obs=new MutationObserver(()=>{ const t=document.getElementById('topact'); if(t && t.style.display!=='none'){ refresh(); } });
-  const topact=document.getElementById('topact'); if(topact) obs.observe(topact,{attributes:true,attributeFilter:['style']});
-  refresh();
-})();
-</script>
-
-<!-- ===== ปุ่มลอยผู้ช่วย AI (น้องนิดา) + ปุ่มลอยแชทสาขา ===== -->
-<style>
-/* กัน horizontal overflow ของทั้งหน้า → ปุ่มลอย fixed ไม่หลุดขอบจอ (ตารางยังเลื่อนในกล่องตัวเองได้) */
-html,body{max-width:100%;overflow-x:hidden;}
-#chatFab{position:fixed;right:18px;bottom:104px;width:56px;height:56px;border-radius:50%;background:#0369a1;color:#fff;border:0;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:860;font-size:24px;display:none;-webkit-tap-highlight-color:transparent}
-body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่มีปุ่มนิดา → ลงมาอยู่มุมล่างปกติ */
-@media(max-width:640px){ #chatFab{right:14px;width:52px;height:52px;font-size:22px;} }
-#asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 8px 16px rgba(0,0,0,.28));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
-body.is-logged #asstFab{display:block}
-body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
-#asstFab img{width:100%;height:100%;object-fit:contain;pointer-events:none;position:relative;z-index:2}
-#asstFab .fbadge{position:absolute;top:2px;right:0;z-index:3;background:#ea580c;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
-#asstFab::before,#asstFab::after{content:"";position:absolute;left:50%;top:56%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;border:3px solid rgba(16,163,74,.6);z-index:0;pointer-events:none;animation:asstRing 2.4s ease-out infinite}
-#asstFab::after{animation-delay:1.2s}
-#asstFab.dragging::before,#asstFab.dragging::after{display:none}
-@keyframes asstRing{0%{transform:scale(.5);opacity:.75}70%{opacity:.18}100%{transform:scale(1.85);opacity:0}}
-#asstFab.dragging{animation:none;cursor:grabbing}
-@keyframes asstBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-#asstPop{position:fixed;right:22px;bottom:118px;width:380px;max-width:92vw;height:70vh;max-height:560px;z-index:61;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.28);display:none;flex-direction:column;overflow:hidden}
-#asstPop.open{display:flex;animation:asstPopIn .18s ease-out}
-@keyframes asstPopIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-#asstPop .ph{background:linear-gradient(135deg,#00582f,#0a7a43);color:#fff;padding:11px 12px;display:flex;align-items:center;gap:10px}
-#asstPop .ph img{width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover;flex:none}
-#asstPop .ph .nm{flex:1;font-weight:700;font-size:15px;line-height:1.15}
-#asstPop .ph .nm small{display:block;font-weight:400;font-size:11px;opacity:.85}
-#asstPop .ph button{background:rgba(255,255,255,.18);border:0;color:#fff;width:32px;height:32px;border-radius:8px;font-size:15px;cursor:pointer;flex:none}
-#asstPop .pb{flex:1;display:flex;flex-direction:column;min-height:0;padding:12px}
-#asstPop #asst_chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-#asstPop #asst_chips .btn{font-size:12px;padding:6px 9px}
-#asstPop #asst_log{flex:1;overflow-y:auto;background:#fbfcfb;border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:9px}
-#asstPop .prow{display:flex;gap:7px;margin-top:9px}
-#asstPop .prow input{flex:1;padding:11px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14.5px}
-#asstPop .prow .btn{white-space:nowrap}
-@media(max-width:640px){#asstPop{right:8px;left:8px;width:auto;bottom:104px;height:74vh}#asstFab{width:74px;height:74px;right:14px;bottom:14px}}
-</style>
-<button id="asstFab" aria-label="ผู้ช่วย AI น้องนิดา"><img src="./assistant-mascot.png" alt="ผู้ช่วย AI"><span class="fbadge">AI</span></button>
-<div id="asstPop">
-  <div class="ph"><img src="./assistant-mascot.png" alt=""><div class="nm">น้องนิดา<small>ผู้ช่วย AI · ฝ่ายบุคคล</small></div><button id="asst_clear" title="ล้างแชท">🗑</button><button id="asstClose" title="ปิด">✕</button></div>
-  <div class="pb">
-    <div id="asst_chips"></div>
-    <div id="asst_log"></div>
-    <div id="asst_thumbs" style="display:none;gap:5px;flex-wrap:wrap;margin:0 0 6px"></div>
-    <div class="prow">
-      <label class="btn btn-sec" style="cursor:pointer;margin:0;flex:none;padding:8px 10px" title="แนบรูปให้นิดาอ่าน (บิล/ตารางเวร/เอกสาร)">📷<input type="file" id="asst_file" accept="image/*" multiple style="display:none"></label>
-      <input id="asst_in" placeholder="พิมพ์คำถาม หรือแนบรูปให้นิดาอ่านข้อมูล"><button class="btn btn-pri" id="asst_send">ส่ง</button>
-    </div>
-  </div>
-</div>
-<script>
-(function initAsstFab(){
-  const fab=document.getElementById('asstFab'), pop=document.getElementById('asstPop'); if(!fab||!pop) return;
-  const g=id=>document.getElementById(id);
-  let sx,sy,ox,oy,moved=false,dragging=false;
-  function openPop(){ pop.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); setTimeout(()=>{ const i=g('asst_in'); if(i) i.focus(); },60); }
-  function closePop(){ pop.classList.remove('open'); }
-  fab.addEventListener('pointerdown',e=>{ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; const r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
-  fab.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; fab.classList.add('dragging'); } if(moved){ let nx=ox+dx, ny=oy+dy; nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4,nx)); ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4,ny)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; } });
-  fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ pop.classList.contains('open')?closePop():openPop(); } });
-  const cl=g('asstClose'); if(cl) cl.onclick=closePop;
-})();
-</script>
-</body>
-</html>
+  const _optAdd = '<option value="">–</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.s

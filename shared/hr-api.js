@@ -187,15 +187,16 @@
         case 'hr_score_event_delete':return await hrScoreEventDelete(p.id);
         case 'hr_score_issue_warnings': return await hrScoreIssueWarnings(p.cycle);
         // ---- พิจารณาเลิกจ้าง (เสนอเท่านั้น ระบบไม่เลิกจ้างเอง) ----
+        // auth = { mgr_emp, mgr_pin } (ผจก.) หรือไม่มี = สำนักงาน (HR)
         case 'hr_term_rules_get':    return await hrTermRulesGet();
-        case 'hr_term_rules_save':   return await hrTermRulesSave(p.data);
-        case 'hr_term_rule_delete':  return await hrTermRuleDelete(p.key);
-        case 'hr_term_candidates':   return await hrTermCandidates(p.cycle);
-        case 'hr_term_case_open':    return await hrTermCaseOpen(p.data);
-        case 'hr_term_case_list':    return await hrTermCaseList(p.status);
-        case 'hr_term_case_get':     return await hrTermCaseGet(p.id);
-        case 'hr_term_case_step':    return await hrTermCaseStep(p.data);
-        case 'hr_term_case_risk':    return await hrTermCaseRisk(p.data);
+        case 'hr_term_rules_save':   return await hrTermRulesSave(p.data, p);
+        case 'hr_term_rule_delete':  return await hrTermRuleDelete(p.key, p);
+        case 'hr_term_candidates':   return await hrTermCandidates(p.cycle, p);
+        case 'hr_term_case_open':    return await hrTermCaseOpen(p.data, p);
+        case 'hr_term_case_list':    return await hrTermCaseList(p.status, p);
+        case 'hr_term_case_get':     return await hrTermCaseGet(p.id, p);
+        case 'hr_term_case_step':    return await hrTermCaseStep(p.data, p);
+        case 'hr_term_case_risk':    return await hrTermCaseRisk(p.data, p);
         case 'hr_handover_list':     return await hrHandoverList();
         case 'hr_task_defs_get':     return await hrTaskDefsGet();
         case 'hr_task_def_save':     return await hrTaskDefSave(p.data);
@@ -2253,12 +2254,30 @@
     training: 'มติ: อบรมแก้ไขพฤติกรรม',
   };
 
+  // ---------- สิทธิ์: ผจก.สาขา ทำได้แค่ "เสนอเปิดเคส" + บันทึกความเห็นเพิ่ม ----------
+  //   ตรวจ PIN กับฐานข้อมูลจริง (rpc mgr_login) ไม่เชื่อค่าที่ส่งมาจากหน้าเว็บ
+  async function _termActor(auth) {
+    auth = auth || {};
+    if (!auth.mgr_emp) return { role: 'hr', branch_id: null, name: auth.actor || 'สำนักงาน (HR)' };
+    const { data } = await sb().rpc('mgr_login', { p_emp_id: String(auth.mgr_emp), p_pin: String(auth.mgr_pin || '') });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !row.branch_id) return { role: 'invalid', branch_id: null, name: '' };
+    return {
+      role: 'mgr', branch_id: String(row.branch_id),
+      emp_id: String(auth.mgr_emp),
+      name: (row.nickname || row.name || 'ผจก.') + ' (ผจก.สาขา)',
+    };
+  }
+  const TERM_MGR_CAN = { propose: true, note: true, view: true, review: false, decide: false, cancel: false, reopen: false, edit: false, rules: false, risk: false };
+
   async function hrTermRulesGet() {
     const { data, error } = await sb().from('termination_rules').select('*').order('sort');
     if (error) throw error;
     return { ok: true, rules: data || [], severity_label: TERM_SEV };
   }
-  async function hrTermRulesSave(arr) {
+  async function hrTermRulesSave(arr, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้นที่แก้เกณฑ์ได้' };
     if (!Array.isArray(arr) || !arr.length) return { ok: false, error: 'ไม่มีข้อมูล' };
     const rows = arr.map((r, i) => ({
       key: String(r.key || '').trim().replace(/[^a-zA-Z0-9_]/g, '') || ('rule_' + Date.now() + '_' + i),
@@ -2275,7 +2294,9 @@
     await logAct('บันทึกเกณฑ์พิจารณาเลิกจ้าง', null, rows.length + ' เกณฑ์');
     return { ok: true, saved: rows.length };
   }
-  async function hrTermRuleDelete(key) {
+  async function hrTermRuleDelete(key, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้นที่ลบเกณฑ์ได้' };
     if (!key) return { ok: false, error: 'ไม่ระบุเกณฑ์' };
     const { error } = await sb().from('termination_rules').delete().eq('key', String(key));
     if (error) throw error;
@@ -2283,7 +2304,9 @@
   }
 
   // ---------- หา "ผู้เข้าข่าย" ตามเกณฑ์ที่เปิดใช้งาน ----------
-  async function hrTermCandidates(which) {
+  async function hrTermCandidates(which, auth) {
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
     const sc = await hrScoreGet(which || 'current');
     if (!sc.ok) return sc;
     const cyc = sc.cycle;
@@ -2334,6 +2357,8 @@
     const handled = [];                                   // คนที่มีเคสอยู่แล้ว (เปิดค้าง หรือ ปิดไปแล้ว)
     (sc.employees || []).forEach(e => {
       const emp = empById[e.emp_id]; if (!emp) return;
+      // ★ ผจก. เห็นเฉพาะพนักงานสาขาตัวเอง
+      if (me.role === 'mgr' && String(emp.branch_id || '') !== me.branch_id) return;
       const st = streakOf(e.emp_id);
       const myWarns = warnByEmp[e.emp_id] || [];
       const reasons = [];
@@ -2395,6 +2420,8 @@
     return {
       ok: true, cycle: cyc, candidates, handled,
       rules, manual_rules: rules.filter(r => r.kind === 'manual'),
+      role: me.role, actor: me.name, branch_id: me.branch_id || null,
+      can: me.role === 'mgr' ? TERM_MGR_CAN : { propose: true, note: true, view: true, review: true, decide: true, cancel: true, reopen: true, edit: true, rules: true, risk: true },
       note: '⚠ รายชื่อนี้คือ "เข้าข่ายให้พิจารณา" ตามเกณฑ์ที่ตั้งไว้ ไม่ใช่คำสั่งเลิกจ้าง — ต้องเปิดเคสและผ่านความเห็นตามลำดับชั้นก่อนเสมอ · คนที่มีเคสอยู่แล้ว (กำลังพิจารณา/ปิดแล้ว) จะไม่แสดงซ้ำ ดูได้ที่ตาราง "เคสที่เปิดแล้ว"',
     };
   }
@@ -2411,14 +2438,19 @@
     return pre + String(max + 1).padStart(3, '0');
   }
 
-  async function hrTermCaseOpen(d) {
+  async function hrTermCaseOpen(d, auth) {
     d = d || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
     if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
     if (!Array.isArray(d.reasons) || !d.reasons.length) return { ok: false, error: 'ต้องระบุเหตุที่เข้าข่ายอย่างน้อย 1 ข้อ' };
     if (!d.detail || !String(d.detail).trim()) return { ok: false, error: 'ต้องระบุพฤติการณ์/รายละเอียดประกอบ' };
 
     const { data: emp } = await sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('emp_id', String(d.emp_id)).maybeSingle();
     if (!emp) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้' };
+    // ★ ผจก. เสนอเปิดเคสได้เฉพาะพนักงานสาขาตัวเอง
+    if (me.role === 'mgr' && String(emp.branch_id || '') !== me.branch_id)
+      return { ok: false, error: 'เสนอเปิดเคสได้เฉพาะพนักงานในสาขาของท่านเท่านั้น' };
 
     const { data: dupRows } = await sb().from('termination_cases').select('id,case_no,status')
       .eq('emp_id', emp.emp_id).not('status', 'in', '("closed","cancelled")').limit(1);
@@ -2433,8 +2465,9 @@
       photo_url: emp.photo_url || null, branch_id: emp.branch_id || null, branch_name: (br && br.name) || null,
       reasons: d.reasons, evidence: d.evidence || null, detail: String(d.detail).trim(),
       status: 'proposed',
-      opened_by: d.opened_by || 'สำนักงาน (HR)',
-      opened_role: d.opened_role === 'mgr' ? 'mgr' : 'hr',
+      // ★ ชื่อผู้เสนอ/บทบาท ยึดจากผลตรวจสิทธิ์จริง ไม่ใช่ค่าที่หน้าเว็บส่งมา
+      opened_by: me.role === 'mgr' ? me.name : (d.opened_by || 'สำนักงาน (HR)'),
+      opened_role: me.role === 'mgr' ? 'mgr' : 'hr',
       notify_emp: d.notify_emp !== false,
       photos,
     };
@@ -2464,8 +2497,11 @@
     return { ok: true, id: ins.id, case_no: ins.case_no };
   }
 
-  async function hrTermCaseList(status) {
+  async function hrTermCaseList(status, auth) {
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
     let q = sb().from('termination_cases').select('*').order('opened_at', { ascending: false });
+    if (me.role === 'mgr') q = q.eq('branch_id', me.branch_id);       // ★ ผจก. เห็นเฉพาะสาขาตัวเอง
     if (status && status !== 'all') {
       if (status === 'open') q = q.not('status', 'in', '("closed","cancelled")');
       else q = q.eq('status', status);
@@ -2474,20 +2510,27 @@
     if (error) throw error;
     return {
       ok: true,
+      role: me.role,
+      can: me.role === 'mgr' ? TERM_MGR_CAN : { propose: true, note: true, view: true, review: true, decide: true, cancel: true, reopen: true, edit: true, rules: true, risk: true },
       cases: (data || []).map(c => ({ ...c, status_label: TERM_STATUS[c.status] || c.status, decision_label: c.decision ? (TERM_DECISION[c.decision] || c.decision) : '' })),
       status_label: TERM_STATUS, decision_label: TERM_DECISION,
     };
   }
 
-  async function hrTermCaseGet(id) {
+  async function hrTermCaseGet(id, auth) {
     if (!id) return { ok: false, error: 'ไม่ระบุเคส' };
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
     const [{ data: c }, { data: steps }] = await Promise.all([
       sb().from('termination_cases').select('*').eq('id', String(id)).maybeSingle(),
       sb().from('termination_steps').select('*').eq('case_id', String(id)).order('at'),
     ]);
     if (!c) return { ok: false, error: 'ไม่พบเคสนี้' };
+    if (me.role === 'mgr' && String(c.branch_id || '') !== me.branch_id) return { ok: false, error: 'เคสนี้ไม่ใช่ของสาขาท่าน' };
     return {
       ok: true,
+      role: me.role,
+      can: me.role === 'mgr' ? TERM_MGR_CAN : { propose: true, note: true, view: true, review: true, decide: true, cancel: true, reopen: true, edit: true, rules: true, risk: true },
       case: { ...c, status_label: TERM_STATUS[c.status] || c.status, decision_label: c.decision ? (TERM_DECISION[c.decision] || c.decision) : '' },
       steps: steps || [],
       status_label: TERM_STATUS, decision_label: TERM_DECISION,
@@ -2496,14 +2539,21 @@
 
   // บันทึกความเห็น/อนุมัติแต่ละชั้น
   //   stage: hr_review (HR ตรวจสอบ) | decision (ผู้มีอำนาจให้ความเห็น) | note (บันทึกเพิ่ม) | cancel (ยกเลิกเคส)
-  async function hrTermCaseStep(d) {
+  async function hrTermCaseStep(d, auth) {
     d = d || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
     if (!d.case_id) return { ok: false, error: 'ไม่ระบุเคส' };
     if (!d.note || !String(d.note).trim()) return { ok: false, error: 'ต้องระบุความเห็น/เหตุผล' };
     const stage = ['hr_review', 'decision', 'note', 'cancel', 'reopen', 'edit'].includes(d.stage) ? d.stage : 'note';
 
+    // ★ ผจก. ทำได้แค่ "บันทึกความเห็นเพิ่ม" — ตรวจสอบ/ชี้ขาด/ยกเลิก/แก้ไข เป็นสิทธิ์ของสำนักงานเท่านั้น
+    if (me.role === 'mgr' && stage !== 'note')
+      return { ok: false, error: 'ผู้จัดการสาขามีสิทธิ์เพียง "เสนอเปิดเคส" และ "บันทึกความเห็นเพิ่ม" เท่านั้น · การตรวจสอบและชี้ขาดเป็นของสำนักงาน (HR)' };
+
     const { data: c } = await sb().from('termination_cases').select('*').eq('id', String(d.case_id)).maybeSingle();
     if (!c) return { ok: false, error: 'ไม่พบเคสนี้' };
+    if (me.role === 'mgr' && String(c.branch_id || '') !== me.branch_id) return { ok: false, error: 'เคสนี้ไม่ใช่ของสาขาท่าน' };
     const isClosed = (c.status === 'closed' || c.status === 'cancelled');
     // ★ เคสที่ปิดแล้ว ยังดึงกลับมาแก้ไข/เปิดใหม่ได้ (แต่ห้ามเดินขั้นตอนปกติซ้ำ)
     if (isClosed && !['reopen', 'edit', 'note'].includes(stage)) {
@@ -2515,7 +2565,8 @@
 
     await sb().from('termination_steps').insert({
       case_id: c.id, stage, seq: (count || 0) + 1,
-      actor: d.actor || 'สำนักงาน (HR)', actor_role: d.actor_role || 'hr',
+      actor: me.role === 'mgr' ? me.name : (d.actor || 'สำนักงาน (HR)'),
+      actor_role: me.role === 'mgr' ? 'mgr' : (d.actor_role || 'hr'),
       decision: d.decision || null, note: String(d.note).trim(), photos,
     });
 
@@ -2551,8 +2602,10 @@
   }
 
   // เก็บผลวิเคราะห์ความเสี่ยงของนิดา (หน้า HR เป็นคนเรียกนิดา แล้วส่งผลมาบันทึก)
-  async function hrTermCaseRisk(d) {
+  async function hrTermCaseRisk(d, auth) {
     d = d || {};
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
     if (!d.case_id) return { ok: false, error: 'ไม่ระบุเคส' };
     const lv = ['low', 'medium', 'high'].includes(d.risk_level) ? d.risk_level : 'medium';
     const { error } = await sb().from('termination_cases').update({
