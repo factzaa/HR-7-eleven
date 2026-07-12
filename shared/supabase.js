@@ -350,6 +350,87 @@
     return data || [];
   }
 
+  // ---------- ระบบยืนยันการรับทราบประกาศ ----------
+  // ประกาศที่ "ค้างรับทราบ" ของพนักงานคนนี้ (important / mandatory ที่ยังไม่กดรับทราบ)
+  //  · normal        = แค่แจ้ง ไม่ต้องรับทราบ (ไม่คืนมาที่นี่)
+  //  · important     = ต้องกดรับทราบ
+  //  · mandatory     = ต้องกดรับทราบ + ตอบคำถามยืนยันความเข้าใจให้ถูก (บล็อกหน้ารับส่งผลัด)
+  async function getPendingAnnouncements(empId, branchId) {
+    try {
+      const today = bangkokDate();
+      const { data: anns } = await sb.from('announcements')
+        .select('id,title,message,level,priority,branch_ids,quiz_q,quiz_choices,quiz_answer,created_at')
+        .eq('active', true).in('priority', ['important', 'mandatory'])
+        .or(`expire_date.is.null,expire_date.gte.${today}`)
+        .order('created_at', { ascending: true });
+      let list = anns || [];
+      // กรองตามสาขา (branch_ids ว่าง = ทุกสาขา)
+      if (branchId) {
+        list = list.filter(a => {
+          const bs = Array.isArray(a.branch_ids) ? a.branch_ids : [];
+          return bs.length === 0 || bs.map(String).includes(String(branchId));
+        });
+      }
+      if (!list.length) return [];
+      const ids = list.map(a => a.id);
+      const { data: acks } = await sb.from('announcement_acks')
+        .select('ann_id,acked_at').eq('emp_id', String(empId)).in('ann_id', ids);
+      const done = {}; (acks || []).forEach(a => { if (a.acked_at) done[a.ann_id] = true; });
+      return list.filter(a => !done[a.id]);
+    } catch (e) { console.error('pending announcements', e); return []; }
+  }
+
+  // บันทึกว่า "เปิดอ่าน" แล้ว (ยังไม่กดรับทราบ)
+  async function markAnnouncementOpened(annId, empId, empName, branchId) {
+    try {
+      const { data: ex } = await sb.from('announcement_acks')
+        .select('ann_id,opened_at').eq('ann_id', annId).eq('emp_id', String(empId)).maybeSingle();
+      if (ex && ex.opened_at) return true;
+      await sb.from('announcement_acks').upsert({
+        ann_id: annId, emp_id: String(empId), emp_name: empName || '', branch_id: branchId ? String(branchId) : null,
+        opened_at: new Date().toISOString(), device: (navigator.userAgent || '').slice(0, 120)
+      }, { onConflict: 'ann_id,emp_id' });
+      return true;
+    } catch (e) { console.error('ann opened', e); return false; }
+  }
+
+  // กดรับทราบ · ถ้ามีคำถาม ต้องส่ง answerIdx มาด้วยและต้องตอบถูก
+  // คืน { ok, error }
+  async function ackAnnouncement(annId, empId, empName, branchId, answerIdx) {
+    try {
+      const { data: a } = await sb.from('announcements')
+        .select('id,quiz_q,quiz_answer').eq('id', annId).maybeSingle();
+      if (!a) return { ok: false, error: 'ไม่พบประกาศนี้' };
+
+      let quizOk = null;
+      if (a.quiz_q) {
+        if (answerIdx === null || answerIdx === undefined || answerIdx === '') return { ok: false, error: 'กรุณาตอบคำถามยืนยันความเข้าใจ' };
+        quizOk = Number(answerIdx) === Number(a.quiz_answer);
+        if (!quizOk) {
+          // นับจำนวนครั้งที่ตอบผิด (เก็บเป็นหลักฐานว่าอ่านจริงหรือกดมั่ว)
+          const { data: cur } = await sb.from('announcement_acks')
+            .select('quiz_tries').eq('ann_id', annId).eq('emp_id', String(empId)).maybeSingle();
+          await sb.from('announcement_acks').upsert({
+            ann_id: annId, emp_id: String(empId), emp_name: empName || '', branch_id: branchId ? String(branchId) : null,
+            quiz_tries: ((cur && cur.quiz_tries) || 0) + 1, quiz_ok: false
+          }, { onConflict: 'ann_id,emp_id' });
+          return { ok: false, error: 'คำตอบยังไม่ถูกต้อง กรุณาอ่านประกาศอีกครั้งแล้วลองใหม่' };
+        }
+      }
+
+      const { data: cur } = await sb.from('announcement_acks')
+        .select('quiz_tries,opened_at').eq('ann_id', annId).eq('emp_id', String(empId)).maybeSingle();
+      await sb.from('announcement_acks').upsert({
+        ann_id: annId, emp_id: String(empId), emp_name: empName || '', branch_id: branchId ? String(branchId) : null,
+        opened_at: (cur && cur.opened_at) || new Date().toISOString(),
+        acked_at: new Date().toISOString(),
+        quiz_ok: quizOk, quiz_tries: (cur && cur.quiz_tries) || 0,
+        device: (navigator.userAgent || '').slice(0, 120)
+      }, { onConflict: 'ann_id,emp_id' });
+      return { ok: true };
+    } catch (e) { console.error('ack announcement', e); return { ok: false, error: 'บันทึกไม่สำเร็จ' }; }
+  }
+
   // บันทึก log ว่าพนักงานรับทราบสถานะแล้ว (หลักฐานตอนออกใบเตือน)
   async function acknowledgeStatus(empId, detail, name) {
     try {
@@ -1357,5 +1438,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, markAnnouncementOpened, ackAnnouncement, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();

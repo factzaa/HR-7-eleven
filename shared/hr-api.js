@@ -261,6 +261,9 @@
         case 'hr_notify_history': return await hrNotifyHistory();
         case 'hr_announce_save':  return await hrAnnounceSave(p.data);
         case 'hr_announce_delete':return await hrAnnounceDelete(p.id);
+        case 'hr_announce_list':  return await hrAnnounceList();
+        case 'hr_announce_status':return await hrAnnounceStatus(p.id);
+        case 'hr_announce_toggle':return await hrAnnounceToggle(p.data);
         case 'hr_submission_list':    return await hrSubmissionList();
         case 'hr_submission_approve': return await hrSubmissionApprove(p.id);
         case 'hr_submission_reject':  return await hrSubmissionReject(p.id);
@@ -1411,13 +1414,136 @@
 
   async function hrAnnounceSave(d) {
     if (!d || !d.message || !d.message.trim()) return { ok: false, error: 'ต้องมีข้อความ' };
-    const row = { message: d.message.trim(), level: d.level || 'info', expire_date: d.expire_date || null, active: true, created_by: 'HR' };
-    const { error } = await sb().from('announcements').insert(row);
+    const prio = ['normal', 'important', 'mandatory'].includes(d.priority) ? d.priority : 'normal';
+    const choices = Array.isArray(d.quiz_choices) ? d.quiz_choices.map(c => String(c || '').trim()).filter(Boolean) : [];
+    if (prio === 'mandatory') {
+      if (!d.quiz_q || !String(d.quiz_q).trim()) return { ok: false, error: 'ระดับ "บังคับ" ต้องมีคำถามยืนยันความเข้าใจ' };
+      if (choices.length < 2) return { ok: false, error: 'ต้องมีตัวเลือกอย่างน้อย 2 ข้อ' };
+      const ai = Number(d.quiz_answer);
+      if (!(ai >= 0 && ai < choices.length)) return { ok: false, error: 'ต้องระบุว่าข้อไหนคือคำตอบที่ถูก' };
+    }
+    const row = {
+      title: (d.title || '').trim() || null,
+      message: d.message.trim(),
+      level: d.level || 'info',
+      priority: prio,
+      branch_ids: (Array.isArray(d.branch_ids) && d.branch_ids.length) ? d.branch_ids.map(String) : null,
+      quiz_q: prio === 'mandatory' ? String(d.quiz_q).trim() : null,
+      quiz_choices: prio === 'mandatory' ? choices : null,
+      quiz_answer: prio === 'mandatory' ? Number(d.quiz_answer) : null,
+      ack_deadline_h: Number(d.ack_deadline_h) > 0 ? Number(d.ack_deadline_h) : 24,
+      expire_date: d.expire_date || null,
+      active: true,
+      created_by: 'HR'
+    };
+    const { data, error } = await sb().from('announcements').insert(row).select('id').single();
     if (error) throw error;
-    return { ok: true };
+    return { ok: true, id: data ? data.id : null };
   }
   async function hrAnnounceDelete(id) {
     const { error } = await sb().from('announcements').delete().eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- สถานะการรับทราบประกาศ ----------
+  // รายชื่อพนักงานที่ยัง "ทำงานอยู่" (ใช้เป็นตัวหารของ %)
+  async function _activeEmployees() {
+    const today = bkkToday();
+    const { data } = await sb().from('employees').select('emp_id,name,nickname,branch_id,active,end_date').eq('active', true);
+    return (data || []).filter(e => !e.end_date || String(e.end_date) >= today);
+  }
+
+  // ภาพรวมประกาศทั้งหมด + % รับทราบ
+  async function hrAnnounceList() {
+    const today = bkkToday();
+    const [{ data: anns }, emps, { data: brs }] = await Promise.all([
+      sb().from('announcements').select('*').order('created_at', { ascending: false }).limit(60),
+      _activeEmployees(),
+      sb().from('branches').select('branch_id,name')
+    ]);
+    const list = anns || [];
+    if (!list.length) return { ok: true, rows: [], branches: brs || [] };
+
+    const ids = list.map(a => a.id);
+    const { data: acks } = await sb().from('announcement_acks').select('ann_id,emp_id,opened_at,acked_at').in('ann_id', ids);
+    const byAnn = {};
+    (acks || []).forEach(a => { (byAnn[a.ann_id] = byAnn[a.ann_id] || []).push(a); });
+
+    const rows = list.map(a => {
+      const scope = Array.isArray(a.branch_ids) ? a.branch_ids.map(String) : [];
+      const targets = scope.length ? emps.filter(e => scope.includes(String(e.branch_id))) : emps;
+      const rec = byAnn[a.id] || [];
+      const ackedSet = new Set(rec.filter(r => r.acked_at).map(r => String(r.emp_id)));
+      const openSet = new Set(rec.filter(r => r.opened_at).map(r => String(r.emp_id)));
+      const total = targets.length;
+      const acked = targets.filter(e => ackedSet.has(String(e.emp_id))).length;
+      const opened = targets.filter(e => openSet.has(String(e.emp_id))).length;
+      const expired = a.expire_date && String(a.expire_date) < today;
+      return {
+        id: a.id, title: a.title, message: a.message, level: a.level,
+        priority: a.priority || 'normal', branch_ids: scope,
+        quiz_q: a.quiz_q, created_at: a.created_at, expire_date: a.expire_date,
+        active: a.active !== false && !expired,
+        total, acked, opened, unread: total - acked,
+        pct: total ? Math.round(acked * 100 / total) : 0
+      };
+    });
+    return { ok: true, rows, branches: brs || [] };
+  }
+
+  // เจาะรายประกาศ — ใครอ่าน ใครยังไม่อ่าน แยกตามสาขา
+  async function hrAnnounceStatus(id) {
+    const { data: a } = await sb().from('announcements').select('*').eq('id', id).maybeSingle();
+    if (!a) return { ok: false, error: 'ไม่พบประกาศนี้' };
+    const [emps, { data: brs }, { data: acks }] = await Promise.all([
+      _activeEmployees(),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('announcement_acks').select('*').eq('ann_id', id)
+    ]);
+    const bmap = {}; (brs || []).forEach(b => bmap[String(b.branch_id)] = b.name);
+    const scope = Array.isArray(a.branch_ids) ? a.branch_ids.map(String) : [];
+    const targets = scope.length ? emps.filter(e => scope.includes(String(e.branch_id))) : emps;
+    const amap = {}; (acks || []).forEach(r => amap[String(r.emp_id)] = r);
+
+    const people = targets.map(e => {
+      const r = amap[String(e.emp_id)] || {};
+      return {
+        emp_id: e.emp_id, name: e.nickname || e.name, full_name: e.name,
+        branch_id: e.branch_id, branch_name: bmap[String(e.branch_id)] || e.branch_id || '-',
+        opened_at: r.opened_at || null, acked_at: r.acked_at || null,
+        quiz_ok: (r.quiz_ok === undefined ? null : r.quiz_ok), quiz_tries: r.quiz_tries || 0,
+        status: r.acked_at ? 'acked' : (r.opened_at ? 'opened' : 'none')
+      };
+    }).sort((x, y) => {
+      const rank = s => s === 'none' ? 0 : (s === 'opened' ? 1 : 2);   // ค้างอยู่บนสุด
+      if (rank(x.status) !== rank(y.status)) return rank(x.status) - rank(y.status);
+      return String(x.branch_id).localeCompare(String(y.branch_id));
+    });
+
+    const byBranch = {};
+    people.forEach(p => {
+      const k = String(p.branch_id || '-');
+      byBranch[k] = byBranch[k] || { branch_id: k, branch_name: p.branch_name, total: 0, acked: 0, opened: 0, pending: [] };
+      byBranch[k].total++;
+      if (p.status === 'acked') byBranch[k].acked++;
+      else { byBranch[k].pending.push(p.name); if (p.status === 'opened') byBranch[k].opened++; }
+    });
+    const branches = Object.values(byBranch).map(b => ({ ...b, pct: b.total ? Math.round(b.acked * 100 / b.total) : 0 }))
+      .sort((x, y) => x.pct - y.pct);
+
+    const total = people.length, acked = people.filter(p => p.status === 'acked').length;
+    return {
+      ok: true,
+      ann: { id: a.id, title: a.title, message: a.message, priority: a.priority || 'normal', level: a.level, created_at: a.created_at, expire_date: a.expire_date, quiz_q: a.quiz_q },
+      summary: { total, acked, unread: total - acked, pct: total ? Math.round(acked * 100 / total) : 0 },
+      branches, people
+    };
+  }
+
+  // ปิด/เปิดประกาศ
+  async function hrAnnounceToggle(d) {
+    const { error } = await sb().from('announcements').update({ active: !!d.active }).eq('id', d.id);
     if (error) throw error;
     return { ok: true };
   }

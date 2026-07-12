@@ -212,6 +212,101 @@ let EMP=null, BRANCHES={};
 async function loadBranches(){ try{ const c=await window.HR.loadConfig(); (c.branches||[]).forEach(b=>BRANCHES[b.branch_id]=b.name); }catch(e){} }
 function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขาประจำ)'; }
 
+// ======================================================================
+// ประตูรับทราบประกาศ — ต้องอ่าน+กดรับทราบก่อนเข้าเมนูรับส่งผลัด
+//   important  = กดรับทราบ
+//   mandatory  = กดรับทราบ + ตอบคำถามยืนยันความเข้าใจให้ถูก
+// ======================================================================
+let ANN_QUEUE=[], ANN_IDX=0, ANN_RESOLVE=null;
+
+function ensureAnnOverlay(){
+  if(document.getElementById('annOverlay')) return;
+  const o=document.createElement('div'); o.id='annOverlay';
+  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.96);z-index:100001;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px';
+  o.innerHTML=
+    '<div style="max-width:520px;width:100%;background:var(--card,#fff);border-radius:16px;padding:18px;margin:auto;box-shadow:0 10px 40px rgba(0,0,0,.4)">'
+    +'<div id="annStep" style="font-size:12.5px;color:#64748b;font-weight:600;margin-bottom:6px"></div>'
+    +'<div id="annBadge" style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:8px"></div>'
+    +'<div id="annTitle" style="font-size:18px;font-weight:800;line-height:1.4;margin-bottom:8px"></div>'
+    +'<div id="annMsg" style="font-size:15px;line-height:1.65;white-space:pre-wrap;margin-bottom:14px"></div>'
+    +'<div id="annQuiz" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;margin-bottom:12px">'
+      +'<div style="font-weight:700;font-size:14px;margin-bottom:8px">❓ คำถามยืนยันความเข้าใจ</div>'
+      +'<div id="annQuizQ" style="font-size:14.5px;margin-bottom:10px"></div>'
+      +'<div id="annQuizOpts"></div>'
+    +'</div>'
+    +'<div id="annErr" style="display:none;color:#dc2626;font-size:13.5px;font-weight:600;margin-bottom:10px"></div>'
+    +'<button id="annAckBtn" style="width:100%;padding:14px;border:0;border-radius:12px;background:#16a34a;color:#fff;font-size:16px;font-weight:800;cursor:pointer">✓ รับทราบแล้ว</button>'
+    +'<div style="text-align:center;font-size:12px;color:#94a3b8;margin-top:10px">ต้องกดรับทราบก่อนจึงจะใช้งานหน้ารับส่งผลัดได้</div>'
+    +'</div>';
+  document.body.appendChild(o);
+  document.getElementById('annAckBtn').onclick=annDoAck;
+}
+
+function annRender(){
+  const a=ANN_QUEUE[ANN_IDX]; if(!a) return;
+  const o=document.getElementById('annOverlay');
+  const mand=a.priority==='mandatory';
+  document.getElementById('annStep').textContent='ประกาศที่ต้องรับทราบ '+(ANN_IDX+1)+' / '+ANN_QUEUE.length;
+  const bd=document.getElementById('annBadge');
+  bd.textContent = mand ? '🔴 บังคับ — ต้องรับทราบ' : '🟠 สำคัญ — ต้องรับทราบ';
+  bd.style.background = mand ? '#fee2e2' : '#ffedd5';
+  bd.style.color      = mand ? '#b91c1c' : '#c2410c';
+  document.getElementById('annTitle').textContent = a.title || 'ประกาศจากผู้จัดการ';
+  document.getElementById('annMsg').textContent   = a.message || '';
+  document.getElementById('annErr').style.display='none';
+
+  const qz=document.getElementById('annQuiz');
+  const choices=Array.isArray(a.quiz_choices)?a.quiz_choices:[];
+  if(a.quiz_q && choices.length){
+    qz.style.display='block';
+    document.getElementById('annQuizQ').textContent=a.quiz_q;
+    document.getElementById('annQuizOpts').innerHTML=choices.map((c,i)=>
+      '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--line,#e2e8f0);border-radius:9px;margin-bottom:6px;cursor:pointer;background:#fff">'
+      +'<input type="radio" name="annq" value="'+i+'" style="margin-top:3px">'
+      +'<span style="font-size:14.5px">'+esc(String(c))+'</span></label>').join('');
+  } else { qz.style.display='none'; document.getElementById('annQuizOpts').innerHTML=''; }
+
+  document.getElementById('annAckBtn').textContent='✓ รับทราบแล้ว';
+  document.getElementById('annAckBtn').disabled=false;
+  o.style.display='flex';
+  o.scrollTop=0;
+  // บันทึกว่าเปิดอ่านแล้ว (แยกจาก "กดรับทราบ")
+  try{ window.HR.markAnnouncementOpened(a.id, EMP.emp_id, EMP.nickname||EMP.name, EMP.branch_id); }catch(_e){}
+}
+
+async function annDoAck(){
+  const a=ANN_QUEUE[ANN_IDX]; if(!a) return;
+  const btn=document.getElementById('annAckBtn');
+  const err=document.getElementById('annErr');
+  const sel=document.querySelector('input[name="annq"]:checked');
+  const hasQuiz=!!(a.quiz_q && Array.isArray(a.quiz_choices) && a.quiz_choices.length);
+  if(hasQuiz && !sel){ err.textContent='กรุณาเลือกคำตอบก่อน'; err.style.display='block'; return; }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const r=await window.HR.ackAnnouncement(a.id, EMP.emp_id, EMP.nickname||EMP.name, EMP.branch_id, sel?Number(sel.value):null);
+  if(!r.ok){
+    err.textContent=r.error||'บันทึกไม่สำเร็จ'; err.style.display='block';
+    btn.disabled=false; btn.textContent='✓ รับทราบแล้ว';
+    return;
+  }
+  ANN_IDX++;
+  if(ANN_IDX>=ANN_QUEUE.length){
+    document.getElementById('annOverlay').style.display='none';
+    const done=ANN_RESOLVE; ANN_RESOLVE=null;
+    toast('ok','รับทราบประกาศครบแล้ว');
+    if(done) done(true);
+  } else annRender();
+}
+
+// คืน true เมื่อรับทราบครบ (หรือไม่มีประกาศค้าง)
+async function ensureAnnouncementsAcked(emp){
+  let pend=[];
+  try{ pend=await window.HR.getPendingAnnouncements(emp.emp_id, emp.branch_id); }catch(e){ return true; }  // โหลดไม่ได้ = ไม่บล็อก
+  if(!pend.length) return true;
+  ensureAnnOverlay();
+  ANN_QUEUE=pend; ANN_IDX=0;
+  return new Promise(res=>{ ANN_RESOLVE=res; annRender(); });
+}
+
 $('goBtn').onclick=async()=>{
   const id=$('empId').value.trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
   $('goBtn').innerHTML='<span class="spin"></span>';
@@ -223,6 +318,9 @@ $('goBtn').onclick=async()=>{
     try{ HRSession.setEmp(emp.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
     $('m_nm').textContent=emp.nickname||emp.name;
     $('m_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
+    $('goBtn').textContent='เริ่ม';
+    // ★ ประตูรับทราบประกาศ — ต้องอ่าน+รับทราบให้ครบก่อนถึงจะเข้าเมนูได้
+    await ensureAnnouncementsAcked(emp);
     show('step_menu');
     refreshGoodsBtn();       // แสดงปุ่มรับสินค้าเฉพาะผู้คุมผลัด / ปุ่มกดรับตอนยังว่าง
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"

@@ -382,7 +382,7 @@
   <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
   <button class="tab" id="tab_submissions"><span class="tabicon">📥</span>ข้อมูลรอตรวจ</button>
   <button class="tab" id="tab_activity"><span class="tabicon">🕘</span>บันทึกกิจกรรม</button>
-  <button class="tab" id="tab_notifylog"><span class="tabicon">🔔</span>ประวัติแจ้งเตือน</button>
+  <button class="tab" id="tab_notifylog"><span class="tabicon">📢</span>ประกาศ &amp; แจ้งเตือน</button>
 </div>
 
 <div class="login" id="loginView">
@@ -1091,17 +1091,43 @@
   <div class="card" style="margin-bottom:14px">
     <div class="card-h"><h3>📢 เขียนประกาศถึงพนักงาน</h3></div>
     <div class="card-b" style="display:flex;flex-direction:column;gap:10px">
+      <input id="an_title" placeholder="หัวข้อ (เช่น เปลี่ยนเวลาส่งของ)" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px">
       <textarea id="an_msg" rows="3" placeholder="ข้อความประกาศ เช่น พรุ่งนี้ประชุมพนักงาน 9 โมงเช้า ห้ามขาด" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px;resize:vertical"></textarea>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <div class="field-mini"><label>ระดับ</label><select id="an_level"><option value="info">ทั่วไป</option><option value="warn">สำคัญ</option><option value="urgent">ด่วน</option></select></div>
-        <div class="field-mini"><label>แสดงถึงวันที่ (เว้นว่าง = ไม่หมดอายุ)</label><input id="an_expire" type="date"></div>
-        <button class="btn btn-pri" id="an_send" style="margin-left:auto">📢 ประกาศ + ส่งแจ้งเตือน</button>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field-mini" style="min-width:230px"><label>ระดับการรับทราบ</label>
+          <select id="an_prio">
+            <option value="normal">🟢 ทั่วไป — แค่แจ้ง ไม่ต้องรับทราบ</option>
+            <option value="important">🟠 สำคัญ — ต้องกดรับทราบ</option>
+            <option value="mandatory">🔴 บังคับ — ต้องรับทราบ + ตอบคำถาม</option>
+          </select>
+        </div>
+        <div class="field-mini"><label>สี/ความเด่น</label><select id="an_level"><option value="info">ทั่วไป</option><option value="warn">สำคัญ</option><option value="urgent">ด่วน</option></select></div>
+        <div class="field-mini"><label>สาขา</label><select id="an_branch"><option value="">ทุกสาขา</option></select></div>
+        <div class="field-mini"><label>แสดงถึงวันที่ (ว่าง = ไม่หมดอายุ)</label><input id="an_expire" type="date"></div>
       </div>
-      <div style="font-size:12px;color:var(--muted)">พนักงานจะเห็นเป็นแบนเนอร์บนหน้าลงเวลา + เด้งในป๊อปอัพหลังเช็กอิน และส่ง Web Push ไปยังอุปกรณ์ที่เปิดแจ้งเตือน</div>
+
+      <div id="an_quizbox" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;display:none">
+        <div style="font-weight:700;font-size:13.5px;margin-bottom:8px">❓ คำถามยืนยันความเข้าใจ (กันการกดรับทราบโดยไม่อ่าน)</div>
+        <input id="an_qq" placeholder="คำถาม เช่น ของจะมาส่งกี่โมง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;margin-bottom:8px">
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">ตัวเลือก — ติ๊กวงกลมหน้าข้อที่เป็นคำตอบที่ถูก</div>
+        <div id="an_qopts"></div>
+        <button class="btn btn-sec btn-sm" id="an_qadd" style="margin-top:6px">+ เพิ่มตัวเลือก</button>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="font-size:12px;color:var(--muted);flex:1">ระดับ <b>สำคัญ/บังคับ</b> จะบล็อกหน้ารับส่งผลัด — พนักงานต้องกดรับทราบก่อนถึงจะใช้งานได้ · ส่ง Web Push ทันที และเตือนซ้ำอัตโนมัติเมื่อครบ 12/24/48 ชม.</div>
+        <button class="btn btn-pri" id="an_send">📢 ประกาศ + ส่งแจ้งเตือน</button>
+      </div>
     </div>
   </div>
+
+  <div class="toolbar" style="margin-top:6px"><h3 style="flex:1; font-size:15px; font-weight:600">📊 สถานะการรับทราบ</h3><button class="btn btn-sec btn-sm" id="an_refresh">รีเฟรช</button></div>
+  <div id="an_list"><div class="empty">กำลังโหลด…</div></div>
+  <div id="an_detail" style="margin-top:12px"></div>
+
   <div id="an_active"></div>
-  <div class="toolbar" style="margin-top:6px"><h3 style="flex:1; font-size:15px; font-weight:600">ประวัติการแจ้งเตือน</h3><button class="btn btn-sec btn-sm" id="nl_refresh">รีเฟรช</button></div>
+  <div class="toolbar" style="margin-top:14px"><h3 style="flex:1; font-size:15px; font-weight:600">ประวัติการแจ้งเตือน</h3><button class="btn btn-sec btn-sm" id="nl_refresh">รีเฟรช</button></div>
   <div id="nl_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
@@ -3951,7 +3977,7 @@ showTab = function(name){
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
-  else if(name==='notifylog') loadNotifyLog();
+  else if(name==='notifylog'){ loadNotifyLog(); loadAnnounceStatus(); }
   if(typeof updateNavActive==='function') updateNavActive(name);
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
@@ -6193,21 +6219,161 @@ async function delAnnounce(id){
   const r=await post({ action:'hr_announce_delete', password:pwd, id });
   if(r.ok){ toast('ok','ลบแล้ว'); loadNotifyLog(); } else toast('err', r.error||'ไม่สำเร็จ');
 }
+// ---------- คำถามยืนยันความเข้าใจ (เฉพาะระดับ "บังคับ") ----------
+let AN_OPTS = ['', ''];
+function anRenderOpts(){
+  const box=$('an_qopts'); if(!box) return;
+  box.innerHTML = AN_OPTS.map((v,i)=>
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
+    +'<input type="radio" name="an_qans" value="'+i+'"'+(i===0?' checked':'')+' title="คำตอบที่ถูก">'
+    +'<input class="an_qopt" data-i="'+i+'" value="'+esc(v)+'" placeholder="ตัวเลือกที่ '+(i+1)+'" style="flex:1;padding:8px 10px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13.5px">'
+    +(AN_OPTS.length>2?'<button class="btn btn-sec btn-sm an_qdel" data-i="'+i+'">✕</button>':'')
+    +'</div>').join('');
+  box.querySelectorAll('.an_qopt').forEach(el=>{ el.oninput=()=>{ AN_OPTS[Number(el.dataset.i)]=el.value; }; });
+  box.querySelectorAll('.an_qdel').forEach(el=>{ el.onclick=()=>{ AN_OPTS.splice(Number(el.dataset.i),1); anRenderOpts(); }; });
+}
+$('an_qadd') && ($('an_qadd').onclick=()=>{ if(AN_OPTS.length<6){ AN_OPTS.push(''); anRenderOpts(); } });
+$('an_prio') && ($('an_prio').onchange=()=>{
+  const m = $('an_prio').value==='mandatory';
+  $('an_quizbox').style.display = m ? 'block' : 'none';
+  if(m && !$('an_qopts').innerHTML) anRenderOpts();
+  if($('an_prio').value==='mandatory') $('an_level').value='urgent';
+  else if($('an_prio').value==='important') $('an_level').value='warn';
+});
+
 $('an_send') && ($('an_send').onclick = async ()=>{
   const msg=$('an_msg').value.trim();
   if(!msg){ toast('err','ใส่ข้อความก่อน'); return; }
+  const prio=$('an_prio').value;
+  const br=$('an_branch').value;
+  const d={
+    title: $('an_title').value.trim(),
+    message: msg,
+    level: $('an_level').value,
+    priority: prio,
+    branch_ids: br ? [br] : [],
+    expire_date: $('an_expire').value||null
+  };
+  if(prio==='mandatory'){
+    const sel=document.querySelector('input[name="an_qans"]:checked');
+    d.quiz_q=$('an_qq').value.trim();
+    d.quiz_choices=AN_OPTS.map(s=>String(s||'').trim()).filter(Boolean);
+    d.quiz_answer=sel?Number(sel.value):0;
+    if(!d.quiz_q){ toast('err','ระดับ "บังคับ" ต้องมีคำถาม'); return; }
+    if(d.quiz_choices.length<2){ toast('err','ต้องมีตัวเลือกอย่างน้อย 2 ข้อ'); return; }
+  }
   $('an_send').disabled=true; $('an_send').textContent='กำลังส่ง…';
-  const r=await post({ action:'hr_announce_save', password:pwd, data:{ message:msg, level:$('an_level').value, expire_date:$('an_expire').value||null } });
+  const r=await post({ action:'hr_announce_save', password:pwd, data:d });
   if(r.ok){
     // ยิง Web Push ทันที (เรียก Edge Function) — ถ้าพลาด cron จะตามส่งให้ภายหลัง
-    try{ await fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){}
+    const base=String(window.SUPABASE_CONFIG.url).replace(/\/$/,'');
+    try{ await fetch(base+'/functions/v1/hr-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){}
+    // ประกาศระดับ สำคัญ/บังคับ → ส่ง push ถึงเครื่องพนักงานทุกคนที่เข้าข่าย + เริ่มนับเวลาเตือนซ้ำ
+    if(prio!=='normal'){ try{ await fetch(base+'/functions/v1/announce-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){} }
     toast('ok','ประกาศแล้ว + ส่งแจ้งเตือน');
-    $('an_msg').value=''; $('an_expire').value='';
-    loadNotifyLog();
+    $('an_title').value=''; $('an_msg').value=''; $('an_expire').value=''; $('an_qq').value='';
+    AN_OPTS=['','']; anRenderOpts();
+    loadAnnounceStatus(); loadNotifyLog();
   } else toast('err', r.error||'ส่งไม่สำเร็จ');
   $('an_send').disabled=false; $('an_send').textContent='📢 ประกาศ + ส่งแจ้งเตือน';
 });
 $('nl_refresh') && ($('nl_refresh').onclick = loadNotifyLog);
+$('an_refresh') && ($('an_refresh').onclick = ()=>loadAnnounceStatus());
+
+// ========== แดชบอร์ด: ใครอ่านแล้ว / ใครยังไม่อ่าน ==========
+const PRIO_PILL = { normal:['🟢 ทั่วไป','muted'], important:['🟠 สำคัญ','warn'], mandatory:['🔴 บังคับ','bad'] };
+function anBar(pct){
+  const c = pct>=90?'#16a34a' : pct>=60?'#f59e0b' : '#dc2626';
+  return '<div style="background:#e2e8f0;border-radius:999px;height:8px;overflow:hidden;min-width:90px;flex:1">'
+       + '<div style="width:'+pct+'%;height:100%;background:'+c+'"></div></div>';
+}
+async function loadAnnounceStatus(){
+  const box=$('an_list'); if(!box) return;
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_announce_list', password:pwd });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+  // เติมรายชื่อสาขาในดรอปดาวน์
+  const sel=$('an_branch');
+  if(sel && sel.options.length<=1) (r.branches||[]).forEach(b=>{ const o=document.createElement('option'); o.value=b.branch_id; o.textContent=b.name||b.branch_id; sel.appendChild(o); });
+
+  const rows=(r.rows||[]).filter(a=>a.priority!=='normal' || a.active);
+  if(!rows.length){ box.innerHTML='<div class="empty">ยังไม่มีประกาศ</div>'; return; }
+  const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return String(w||'').slice(0,16).replace('T',' '); } };
+  box.innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>ประกาศ</th><th>ระดับ</th><th>สาขา</th><th style="min-width:170px">รับทราบแล้ว</th><th>ค้าง</th><th></th></tr></thead><tbody>'
+    + rows.map(a=>{
+      const p=PRIO_PILL[a.priority]||PRIO_PILL.normal;
+      const scope=a.branch_ids.length?a.branch_ids.map(b=>branchName(b)).join(', '):'ทุกสาขา';
+      const needAck=a.priority!=='normal';
+      return `<tr${(needAck && a.unread>0 && a.active)?' style="background:#fff7ed"':''}>
+        <td><div style="font-weight:600">${esc(a.title||String(a.message||'').slice(0,40))}</div>
+            <div style="font-size:11.5px;color:var(--muted)">${fmt(a.created_at)}${a.active?'':' · <span style="color:#94a3b8">ปิดแล้ว/หมดอายุ</span>'}</div></td>
+        <td><span class="pill ${p[1]}">${p[0]}</span></td>
+        <td style="font-size:12.5px">${esc(scope)}</td>
+        <td>${needAck?('<div style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:12.5px;min-width:58px">'+a.acked+'/'+a.total+'</span>'+anBar(a.pct)+'<span class="mono" style="font-size:12px">'+a.pct+'%</span></div>'):'<span class="muted" style="font-size:12.5px">ไม่ต้องรับทราบ</span>'}</td>
+        <td>${needAck?(a.unread>0?('<span class="pill bad">'+a.unread+' คน</span>'):'<span class="pill ok">ครบแล้ว</span>'):'—'}</td>
+        <td style="white-space:nowrap">
+          ${needAck?`<button class="btn btn-sec btn-sm an_detail" data-id="${a.id}">ดูรายชื่อ</button>`:''}
+          <button class="btn btn-sec btn-sm an_off" data-id="${a.id}" data-on="${a.active?1:0}">${a.active?'ปิด':'เปิด'}</button>
+        </td></tr>`;
+    }).join('')
+    + '</tbody></table></div></div>';
+
+  box.querySelectorAll('.an_detail').forEach(b=>{ b.onclick=()=>loadAnnounceDetail(Number(b.dataset.id)); });
+  box.querySelectorAll('.an_off').forEach(b=>{ b.onclick=async()=>{
+    const on=b.dataset.on==='1';
+    const r2=await post({ action:'hr_announce_toggle', password:pwd, data:{ id:Number(b.dataset.id), active:!on } });
+    if(r2.ok){ toast('ok', on?'ปิดประกาศแล้ว':'เปิดประกาศแล้ว'); loadAnnounceStatus(); } else toast('err','ไม่สำเร็จ');
+  }; });
+}
+
+async function loadAnnounceDetail(id){
+  const box=$('an_detail');
+  box.innerHTML='<div class="card"><div class="card-b"><div class="empty">กำลังโหลด…</div></div></div>';
+  const r=await post({ action:'hr_announce_status', password:pwd, id });
+  if(!r.ok){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">'+esc(r.error||'')+'</div></div></div>'; return; }
+  const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return '—'; } };
+  const s=r.summary;
+  const pend = r.people.filter(p=>p.status!=='acked');
+
+  box.innerHTML='<div class="card">'
+    +'<div class="card-h"><h3>📋 '+esc(r.ann.title||String(r.ann.message||'').slice(0,50))+'</h3>'
+      +'<button class="btn btn-sec btn-sm" id="an_dclose" style="margin-left:auto">ปิด</button></div>'
+    +'<div class="card-b">'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">'
+        +'<div><div style="font-size:11.5px;color:var(--muted)">รับทราบแล้ว</div><div style="font-size:22px;font-weight:800;color:#16a34a">'+s.acked+'<span style="font-size:14px;color:var(--muted);font-weight:500"> / '+s.total+' คน ('+s.pct+'%)</span></div></div>'
+        +'<div><div style="font-size:11.5px;color:var(--muted)">ยังไม่รับทราบ</div><div style="font-size:22px;font-weight:800;color:'+(s.unread?'#dc2626':'#16a34a')+'">'+s.unread+'</div></div>'
+      +'</div>'
+      // สรุปรายสาขา
+      +'<div style="margin-bottom:14px">'+r.branches.map(b=>
+          '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)">'
+          +'<div style="min-width:120px;font-size:13.5px;font-weight:600">'+esc(b.branch_name)+'</div>'
+          +'<span class="mono" style="font-size:12.5px;min-width:52px">'+b.acked+'/'+b.total+'</span>'
+          +anBar(b.pct)
+          +'<span class="mono" style="font-size:12px;min-width:38px;text-align:right">'+b.pct+'%</span></div>').join('')
+      +'</div>'
+      // รายชื่อค้าง
+      +'<div style="font-weight:700;font-size:14px;margin-bottom:6px">ยังไม่รับทราบ ('+pend.length+' คน)</div>'
+      +(pend.length
+        ? '<div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>สถานะ</th><th>เปิดอ่านเมื่อ</th></tr></thead><tbody>'
+          + pend.map(p=>`<tr style="background:#fff7ed">
+              <td><div style="font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--muted)">รหัส ${esc(p.emp_id)}</div></td>
+              <td>${esc(p.branch_name)}</td>
+              <td>${p.status==='opened'?'<span class="pill warn">เปิดอ่านแล้ว แต่ยังไม่กดรับทราบ</span>':'<span class="pill bad">ยังไม่เปิดอ่าน</span>'}${p.quiz_tries?' <span class="muted" style="font-size:11.5px">· ตอบผิด '+p.quiz_tries+' ครั้ง</span>':''}</td>
+              <td class="mono" style="font-size:12px">${p.opened_at?fmt(p.opened_at):'—'}</td></tr>`).join('')
+          + '</tbody></table></div>'
+        : '<div class="empty">รับทราบครบทุกคนแล้ว 🎉</div>')
+      // รายชื่อที่รับทราบแล้ว
+      +'<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:13.5px">ดูรายชื่อที่รับทราบแล้ว ('+s.acked+' คน)</summary>'
+        +'<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>รับทราบเมื่อ</th><th>คำถาม</th></tr></thead><tbody>'
+        + r.people.filter(p=>p.status==='acked').map(p=>`<tr>
+            <td>${esc(p.name)}</td><td>${esc(p.branch_name)}</td>
+            <td class="mono" style="font-size:12px">${fmt(p.acked_at)}</td>
+            <td>${p.quiz_ok===true?'<span class="pill ok">ตอบถูก</span>':(p.quiz_ok===false?'<span class="pill bad">ตอบผิด</span>':'—')}${p.quiz_tries?' <span class="muted" style="font-size:11.5px">('+p.quiz_tries+' ครั้ง)</span>':''}</td></tr>`).join('')
+        +'</tbody></table></div></details>'
+    +'</div></div>';
+  $('an_dclose').onclick=()=>{ box.innerHTML=''; };
+  box.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
 
 // ========== สถานะการรับทราบระเบียบ ==========
 async function loadRuleStatus(){
