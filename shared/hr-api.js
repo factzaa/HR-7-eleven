@@ -2598,22 +2598,26 @@
       rangeLabel = start + ' ถึง ' + end;
     }
     const endEff = end < today ? end : today;
-    const [empR, brR, shR, attR, schR, lvR, taR, staR, stR] = await Promise.all([
+    const [empR, brR, shR, attR, schR, lvR, taR, staR, stR, dvR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,default_shift').eq('emp_id', p.emp_id).maybeSingle(),
       sb().from('branches').select('branch_id,name'),
-      sb().from('shifts').select('shift_id,name'),
-      sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
+      sb().from('shifts').select('shift_id,name,day_value'),
+      sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
       sb().from('schedules').select('work_date,shift_id').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
       sb().from('leaves').select('start_date,end_date,type,status').eq('emp_id', p.emp_id).eq('status', 'approved').lte('start_date', end).gte('end_date', start),
       sb().from('task_assignments').select('work_date,shift_id,title,status,sent_back_count,review_note,reviewer').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end),
       sb().from('special_task_assignees').select('task_id,status').eq('emp_id', p.emp_id),
       sb().from('special_tasks').select('*'),
+      sb().from('disc_actions').select('*').eq('emp_id', p.emp_id).order('performed_at', { ascending: false }),
     ]);
     if (empR.error) throw empR.error;
     if (!empR.data) return { ok: false, error: 'ไม่พบพนักงาน' };
     const emp = empR.data;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const shName = {}; (shR.data || []).forEach(s => { shName[s.shift_id] = s.name; });
+    // ★ ถ่วงน้ำหนักครึ่งวัน (day_value) ให้ตรงกับหน้าวินัย — เดิมหน้านี้นับเป็นวันเต็มหมด
+    const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const dvOf = sid => (dvMap[sid] != null ? dvMap[sid] : 1);
     const att = attR.data || [], leaves = lvR.data || [];
     const onLeave = d => leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
     const workedSet = new Set(att.filter(a => a.check_in).map(a => a.work_date));
@@ -2621,16 +2625,38 @@
     const late_count = late.length, late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
     const otWhole = await getSettingBool('ot_whole_day');
     const ot_hours = Math.round(att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
-    const mySched = [...new Set((schR.data || []).filter(s => s.shift_id).map(s => s.work_date))];
-    const pastSched = mySched.filter(d => d < today);
-    const days_should = pastSched.length;
-    const days_worked = pastSched.filter(d => workedSet.has(d)).length;
+    // ออกก่อนเวลา (เกินเวลาผ่อนผัน) — เดิมเอกสารนี้ไม่มีเลย
+    const earlyGrace = await getSettingNum('early_out_grace_min', 10);
+    const earlyRows = att.filter(a => a.early_out_min != null && a.early_out_min > earlyGrace);
+    const early_out_count = earlyRows.length;
+    const early_out_hours = Math.round((earlyRows.reduce((s, a) => s + (a.early_out_min || 0), 0) / 60) * 10) / 10;
+
+    const schMap = {}; (schR.data || []).forEach(s => { if (s.shift_id) schMap[s.work_date] = s.shift_id; });
+    const pastSched = Object.keys(schMap).filter(d => d < today);
+    // ★ ใช้ฐานเดียวกับหน้าวินัยเป๊ะ ๆ: มาทำงาน = ทุกวันที่มี check_in (รวมวันที่ไม่ได้จัดเวร เช่น ไปช่วยสาขาอื่น)
+    const attDV = {}; att.forEach(a => { if (a.check_in) attDV[a.work_date] = (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });
+    const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
+    const days_worked = Math.round([...workedSet].reduce((s, d) => s + (attDV[d] || 1), 0) * 10) / 10;
     const absentDays = pastSched.filter(d => !workedSet.has(d) && !onLeave(d)).sort();
-    const absent = absentDays.length;
+    const absent = Math.round(absentDays.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
     let leave_days = 0;
     leaves.forEach(l => { const s = l.start_date < start ? start : l.start_date; const e = (l.end_date || l.start_date) > end ? end : (l.end_date || l.start_date); if (s <= e) leave_days += Math.round((new Date(e + 'T00:00:00') - new Date(s + 'T00:00:00')) / 86400000) + 1; });
-    const rules = await loadDisciplineRules();
-    const lv = disciplineLevel(late_count, absent, rules);
+
+    // ★ ระดับวินัย = ตัดสินจาก "คะแนน" อย่างเดียว (ให้ตรงกับหน้าวินัย/หน้าคะแนน)
+    const scAll = await hrScoreGet(p.cycle === 'previous' ? 'previous' : 'current', (p.cycle === 'current' || p.cycle === 'previous') ? null : { start, end });
+    const me = (scAll.employees || []).find(x => String(x.emp_id) === String(p.emp_id)) || {};
+    const lv = {
+      level: me.warn_level != null ? me.warn_level : (me.action_type === 'verbal' ? 1 : (me.action_type === 'written' ? 2 : 0)),
+      level_name: me.band_label || 'ปกติ',
+      level_color: me.band_color || '#16a34a',
+    };
+    // ประวัติการดำเนินการทางวินัย (ตักเตือนวาจา / ลายลักษณ์อักษร / ใบเตือน) — หลักฐานประกอบเอกสาร
+    const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
+    const disc_history = (dvR.data || []).map(a => ({
+      at: a.performed_at, type: a.action_type, label: ACT_LABEL[a.action_type] || a.action_type,
+      reason: a.reason, detail: a.detail, by: a.performed_by, role: a.performed_role,
+      warning_id: a.warning_id, ack_at: a.ack_at, need_ack: a.need_ack, in_range: (String(a.performed_at || '').slice(0, 10) >= start && String(a.performed_at || '').slice(0, 10) <= end),
+    }));
     // งานที่ได้รับมอบหมาย (task_assignments)
     const tasks = taR.data || [];
     const tCount = st => tasks.filter(t => t.status === st).length;
@@ -2652,13 +2678,26 @@
       ok: true,
       emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '' },
       range: { start, end, label: rangeLabel, generated: new Date().toISOString() },
-      attendance: { days_should, days_worked, absent, late_count, late_total, leave_days, ot_hours },
+      attendance: { days_should, days_worked, absent, late_count, late_total, leave_days, ot_hours, early_out_count, early_out_hours },
+      score: {
+        score: me.score != null ? me.score : null,
+        start: me.start != null ? me.start : null,
+        total_deduct: me.total_deduct != null ? me.total_deduct : null,
+        band_label: me.band_label || '',
+        band_color: me.band_color || '#475569',
+        bonus: me.bonus || 0,
+        action_needed: me.action_type || null,
+        action_needed_label: me.action_type ? ACT_LABEL[me.action_type] : '',
+        items: me.items || [],
+      },
       discipline: { level: lv.level, level_name: lv.level_name, level_color: lv.level_color },
+      disc_history,
       tasks: { total: t_total, approved: t_approved, submitted: t_submitted, todo: t_todo, sent_back: t_sentback, sent_back_total, pass_rate },
       special: { total: sp_total, approved: sp_approved, submitted: sp_submitted, open: sp_open },
       details: {
         late: late.map(a => ({ date: a.work_date, min: a.late_min })).sort((x, y) => x.date < y.date ? -1 : 1),
         absent: absentDays,
+        early_out: earlyRows.map(a => ({ date: a.work_date, min: a.early_out_min })).sort((x, y) => x.date < y.date ? -1 : 1),
         sent_back_tasks: sentBackTasks,
       },
     };

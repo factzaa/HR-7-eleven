@@ -4735,18 +4735,49 @@ function renderEmpSum(r){
     +'<td>รหัสพนักงาน</td><td>'+esc(e.emp_id)+'</td></tr>'
     +'<tr><td>สาขา</td><td>'+esc(e.branch_name)+'</td><td>กะประจำ</td><td>'+esc(e.shift_name||'-')+'</td></tr>'
     +'<tr><td>เริ่มงาน</td><td>'+esDate(e.start_date)+'</td><td>ออกเอกสาร</td><td>'+esc(genTxt)+'</td></tr></table>';
+  const sc=r.score||{};
   h+='<div class="es-sec">1) สรุปวินัย / การมาทำงาน</div><div class="es-grid">'
     +esStat('วันที่ต้องมา', a.days_should)+esStat('มาทำงาน', a.days_worked)+esStat('ขาดงาน', a.absent)
-    +esStat('ลา (วัน)', a.leave_days)+esStat('มาสาย (ครั้ง)', a.late_count, 'รวม '+a.late_total+' นาที')+esStat('OT (ชม.)', a.ot_hours)+'</div>';
-  h+='<div class="es-level" style="border-color:'+d.level_color+';color:'+d.level_color+'">ระดับวินัยปัจจุบัน: <b>'+esc(d.level_name)+'</b> (ระดับ '+d.level+')</div>';
-  h+='<div class="es-sec">2) ผลงานที่ได้รับมอบหมาย (งานในกะ)</div><div class="es-grid">'
+    +esStat('ลา (วัน)', a.leave_days)+esStat('มาสาย (ครั้ง)', a.late_count, 'รวม '+a.late_total+' นาที')
+    +esStat('ออกก่อนเวลา', (a.early_out_count||0), (a.early_out_count?('รวม '+(a.early_out_hours||0)+' ชม.'):''))
+    +esStat('OT (ชม.)', a.ot_hours)+'</div>';
+  // คะแนนวินัย = ตัวตัดสินระดับ (ต้องอยู่ในเอกสารเพื่อให้ตรวจสอบย้อนกลับได้)
+  if(sc.score!=null){
+    h+='<div class="es-grid" style="margin-top:8px">'
+      +esStat('คะแนนวินัย', sc.score+'<span style="font-size:13px;font-weight:500;color:#64748b">/'+(sc.start||100)+'</span>', 'หักรวม '+(sc.total_deduct||0))
+      +esStat('ผลช่วงคะแนน', '<span style="font-size:15px;color:'+sc.band_color+'">'+esc(sc.band_label||'-')+'</span>', sc.bonus?('โบนัส ฿'+sc.bonus):'')
+      +'</div>';
+    if((sc.items||[]).length){
+      h+='<div class="es-detail" style="margin-top:6px"><b>ที่มาของคะแนนที่ถูกหัก:</b> '
+        + sc.items.map(x=>esc(x.label)+' × '+x.count+' = '+x.points).join(' · ') + '</div>';
+    }
+  }
+  h+='<div class="es-level" style="border-color:'+d.level_color+';color:'+d.level_color+'">ระดับวินัยปัจจุบัน: <b>'+esc(d.level_name)+'</b>'
+    +(sc.action_needed_label?(' · ต้องดำเนินการ: <b>'+esc(sc.action_needed_label)+'</b>'):'')+'</div>';
+
+  // ประวัติการดำเนินการทางวินัย (หลักฐานประกอบการพิจารณา)
+  const dh=(r.disc_history||[]);
+  h+='<div class="es-sec">2) ประวัติการดำเนินการทางวินัย</div>';
+  if(!dh.length) h+='<div class="es-detail">— ยังไม่เคยมีการตักเตือนหรือออกใบเตือน —</div>';
+  else {
+    h+='<table class="es-tbl"><tr><th>วันที่</th><th>การดำเนินการ</th><th>สาเหตุ</th><th>โดย</th><th>พนักงานรับทราบ</th></tr>'
+      + dh.map(x=>{
+          const dt=(()=>{ try{ return new Date(x.at).toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'}); }catch(e){ return '—'; } })();
+          const ack = !x.need_ack ? '—' : (x.ack_at ? ('✓ '+(()=>{ try{ return new Date(x.ack_at).toLocaleDateString('th-TH',{day:'2-digit',month:'short'}); }catch(e){ return 'แล้ว'; } })()) : 'ยังไม่รับทราบ');
+          return '<tr'+(x.in_range?' style="background:#fff7ed"':'')+'><td>'+dt+'</td><td>'+esc(x.label)+(x.warning_id?(' ('+esc(x.warning_id)+')'):'')+'</td><td>'+esc(x.reason||'-')+'</td><td>'+esc(x.by||'-')+'</td><td>'+ack+'</td></tr>';
+        }).join('')
+      + '</table><div class="es-detail" style="font-size:11px;color:#94a3b8">แถวพื้นส้ม = เกิดขึ้นในรอบที่ประเมินนี้</div>';
+  }
+
+  h+='<div class="es-sec">3) ผลงานที่ได้รับมอบหมาย (งานในกะ)</div><div class="es-grid">'
     +esStat('งานทั้งหมด', t.total)+esStat('ผ่าน', t.approved)+esStat('รอตรวจ', t.submitted)
     +esStat('ยังไม่ทำ', t.todo)+esStat('ถูกตีกลับ', t.sent_back, 'รวมโดนตีกลับ '+t.sent_back_total+' ครั้ง')+esStat('อัตราผ่าน', t.pass_rate+'%')+'</div>';
-  if(sp.total>0){ h+='<div class="es-sec">3) งานพิเศษ</div><div class="es-grid">'
+  if(sp.total>0){ h+='<div class="es-sec">4) งานพิเศษ</div><div class="es-grid">'
     +esStat('ทั้งหมด', sp.total)+esStat('ผ่าน', sp.approved)+esStat('รอตรวจ', sp.submitted)+esStat('ค้าง', sp.open)+'</div>'; }
   h+='<div class="es-sec">รายละเอียด</div>';
   h+='<div class="es-detail"><b>วันมาสาย:</b> '+(det.late.length? det.late.map(x=>esDate(x.date)+' ('+x.min+' น.)').join(', ') : '— ไม่มี —')+'</div>';
   h+='<div class="es-detail"><b>วันขาดงาน:</b> '+(det.absent.length? det.absent.map(x=>esDate(x)).join(', ') : '— ไม่มี —')+'</div>';
+  h+='<div class="es-detail"><b>วันที่ออกก่อนเวลา:</b> '+((det.early_out&&det.early_out.length)? det.early_out.map(x=>esDate(x.date)+' ('+x.min+' น.)').join(', ') : '— ไม่มี —')+'</div>';
   if(det.sent_back_tasks.length){
     h+='<div class="es-detail"><b>งานที่ถูกตีกลับ:</b><table class="es-tbl"><tr><th>วันที่</th><th>กะ</th><th>งาน</th><th>ครั้ง</th><th>สถานะ</th><th>หมายเหตุ</th></tr>'
       +det.sent_back_tasks.map(x=>'<tr><td>'+esDate(x.date)+'</td><td>'+esc(x.shift)+'</td><td>'+esc(x.title)+'</td><td style="text-align:center">'+x.count+'</td><td>'+(x.status==='approved'?'ผ่านแล้ว':x.status==='sent_back'?'ตีกลับ':esc(x.status))+'</td><td>'+esc(x.note||'-')+'</td></tr>').join('')+'</table></div>';
