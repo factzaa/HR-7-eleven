@@ -1226,6 +1226,17 @@
         <div class="field-mini"><label>แสดงถึงวันที่ (ว่าง = ไม่หมดอายุ)</label><input id="an_expire" type="date"></div>
       </div>
 
+      <!-- แถบโหมดแก้ไข -->
+      <div id="an_editbar" style="display:none;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:12px;padding:10px 12px">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1;font-size:13px;color:#78350f;font-weight:600" id="an_edittext">กำลังแก้ไขประกาศ</div>
+          <button class="btn btn-sec btn-sm" id="an_editcancel">ยกเลิกการแก้ไข</button>
+        </div>
+        <label class="check" style="margin-top:8px;font-size:12.5px;color:#78350f" id="an_resetwrap">
+          <input type="checkbox" id="an_resetacks">ให้พนักงานกดรับทราบใหม่ทั้งหมด (ล้างประวัติรับทราบเดิม — ใช้เมื่อแก้เนื้อหาสาระสำคัญ)
+        </label>
+      </div>
+
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <div style="font-size:12px;color:var(--muted);flex:1" id="an_hint">ระดับ <b>สำคัญ/บังคับ</b> จะบล็อกหน้ารับส่งผลัด — พนักงานต้องกดรับทราบก่อนถึงจะใช้งานได้ · ส่ง Web Push ทันที และเตือนซ้ำอัตโนมัติเมื่อครบ 12/24/48 ชม.</div>
         <button class="btn btn-pri" id="an_send">📢 ประกาศ + ส่งแจ้งเตือน</button>
@@ -7465,6 +7476,7 @@ function renderNotifyLog(r){
     act.map(a=>`<div style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
       <span style="font-size:18px">${a.level==='urgent'?'🚨':a.level==='warn'?'⚠️':'📢'}</span>
       <div style="flex:1"><div style="font-size:13.5px">${esc(a.message)}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(String(a.at).slice(0,16).replace('T',' '))}${a.expire_date?' · ถึง '+esc(a.expire_date):''}</div></div>
+      <button class="btn btn-sec btn-sm" onclick="anEdit(${a.id})">✏️ แก้ไข</button>
       <button class="btn btn-danger btn-sm" onclick="delAnnounce(${a.id})">ลบ</button>
     </div>`).join('')+`</div></div>` : '';
   if(!r.items.length){ $('nl_body').innerHTML='<div class="empty">ยังไม่มีประวัติแจ้งเตือน</div>'; return; }
@@ -7559,6 +7571,59 @@ $('an_imgposter') && ($('an_imgposter').onclick=()=>{
   AN_IMGS.push(u); anRenderImgs(); toast('ok','ใส่โปสเตอร์แล้ว');
 });
 
+// ---------- แก้ไขประกาศเดิม ----------
+let AN_EDIT_ID = null;
+function anSendLabel(){
+  $('an_send').textContent = AN_EDIT_ID
+    ? '💾 บันทึกการแก้ไข'
+    : (AN_KIND==='image' ? '🖼️ ประกาศรูปภาพ' : '📢 ประกาศ + ส่งแจ้งเตือน');
+}
+function anResetForm(){
+  AN_EDIT_ID=null;
+  $('an_title').value=''; $('an_msg').value=''; $('an_expire').value=''; $('an_qq').value='';
+  if($('anc_branch')) $('anc_branch').value='';
+  if($('an_prio')) { $('an_prio').value='normal'; $('an_prio').onchange && $('an_prio').onchange(); }
+  if($('an_level')) $('an_level').value='info';
+  AN_OPTS=['','']; anRenderOpts();
+  AN_IMGS=[]; anRenderImgs();
+  if($('an_resetacks')) $('an_resetacks').checked=false;
+  $('an_editbar').style.display='none';
+  anSendLabel();
+}
+async function anEdit(id){
+  const r=await post({ action:'hr_announce_get', password:pwd, id });
+  if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
+  const a=r.ann;
+  AN_EDIT_ID = a.id;
+  anSetKind(a.kind==='image' ? 'image' : 'text');
+  $('an_title').value = a.title||'';
+  $('an_msg').value   = a.message||'';
+  $('an_expire').value= a.expire_date||'';
+  if($('anc_branch')) $('anc_branch').value = (a.branch_ids&&a.branch_ids.length===1) ? String(a.branch_ids[0]) : '';
+  if($('an_prio')){ $('an_prio').value = a.priority||'normal'; }
+  if($('an_level')) $('an_level').value = a.level||'info';
+  AN_OPTS = (a.quiz_choices&&a.quiz_choices.length) ? a.quiz_choices.slice() : ['',''];
+  anRenderOpts();
+  if($('an_prio')) $('an_prio').onchange && $('an_prio').onchange();
+  if(a.priority==='mandatory'){
+    $('an_qq').value = a.quiz_q||'';
+    const ai=Number(a.quiz_answer)||0;
+    const radio=document.querySelector('input[name="an_qans"][value="'+ai+'"]'); if(radio) radio.checked=true;
+  }
+  AN_IMGS = (a.images||[]).slice();     // URL เดิม — ส่งกลับได้เลย ไม่ต้องอัปโหลดใหม่
+  anRenderImgs();
+
+  // ประกาศที่มีคนรับทราบไปแล้ว → เตือนก่อนแก้เนื้อหา
+  const needAck = a.kind!=='image' && a.priority!=='normal';
+  $('an_editbar').style.display='block';
+  $('an_edittext').textContent = '✏️ กำลังแก้ไขประกาศ #'+a.id + (r.ack_count ? (' · มีพนักงานกดรับทราบไปแล้ว '+r.ack_count+' คน') : '');
+  $('an_resetwrap').style.display = needAck ? 'flex' : 'none';
+  if($('an_resetacks')) $('an_resetacks').checked=false;
+  anSendLabel();
+  const box=$('an_editbar'); if(box) box.scrollIntoView({behavior:'smooth', block:'center'});
+}
+$('an_editcancel') && ($('an_editcancel').onclick = ()=>{ anResetForm(); toast('ok','ยกเลิกการแก้ไขแล้ว'); });
+
 $('an_send') && ($('an_send').onclick = async ()=>{
   const isImg = AN_KIND==='image';
   const msg=$('an_msg').value.trim();
@@ -7574,6 +7639,8 @@ $('an_send') && ($('an_send').onclick = async ()=>{
   const prio = isImg ? 'normal' : $('an_prio').value;
   const br=$('anc_branch').value;
   const d={
+    id: AN_EDIT_ID || undefined,                                   // ★ มี id = แก้ไขใบเดิม
+    reset_acks: AN_EDIT_ID && $('an_resetacks') && $('an_resetacks').checked,
     kind: AN_KIND,
     title: title,
     message: isImg ? (msg || title) : msg,
@@ -7591,22 +7658,25 @@ $('an_send') && ($('an_send').onclick = async ()=>{
     if(!d.quiz_q){ toast('err','ระดับ "บังคับ" ต้องมีคำถาม'); return; }
     if(d.quiz_choices.length<2){ toast('err','ต้องมีตัวเลือกอย่างน้อย 2 ข้อ'); return; }
   }
-  $('an_send').disabled=true; $('an_send').textContent='กำลังส่ง…';
+  const editing = !!AN_EDIT_ID;
+  const resetAcks = !!d.reset_acks;
+  $('an_send').disabled=true; $('an_send').textContent = editing ? 'กำลังบันทึก…' : 'กำลังส่ง…';
   const r=await post({ action:'hr_announce_save', password:pwd, data:d });
   if(r.ok){
-    // ยิง Web Push ทันที (เรียก Edge Function) — ถ้าพลาด cron จะตามส่งให้ภายหลัง
     const base=String(window.SUPABASE_CONFIG.url).replace(/\/$/,'');
-    try{ await fetch(base+'/functions/v1/hr-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){}
-    // ประกาศระดับ สำคัญ/บังคับ → ส่ง push ถึงเครื่องพนักงานทุกคนที่เข้าข่าย + เริ่มนับเวลาเตือนซ้ำ
-    if(prio!=='normal'){ try{ await fetch(base+'/functions/v1/announce-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){} }
-    toast('ok', isImg ? 'ประกาศรูปภาพแล้ว' : 'ประกาศแล้ว + ส่งแจ้งเตือน');
-    $('an_title').value=''; $('an_msg').value=''; $('an_expire').value=''; $('an_qq').value='';
-    AN_OPTS=['','']; anRenderOpts();
-    AN_IMGS=[]; anRenderImgs();
+    // ประกาศใหม่ → แจ้งเตือนเสมอ · แก้ไขใบเดิม → แจ้งเตือนใหม่เฉพาะเมื่อสั่งให้รับทราบใหม่ (กันสแปม)
+    if(!editing || resetAcks){
+      try{ await fetch(base+'/functions/v1/hr-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){}
+      if(prio!=='normal'){ try{ await fetch(base+'/functions/v1/announce-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){} }
+    }
+    toast('ok', editing
+      ? ('บันทึกการแก้ไขแล้ว' + (resetAcks ? ' · ล้างประวัติรับทราบ พนักงานต้องกดรับทราบใหม่' : ''))
+      : (isImg ? 'ประกาศรูปภาพแล้ว' : 'ประกาศแล้ว + ส่งแจ้งเตือน'));
+    anResetForm();
     loadAnnounceStatus(); loadNotifyLog();
-  } else toast('err', r.error||'ส่งไม่สำเร็จ');
+  } else toast('err', r.error||(editing?'บันทึกไม่สำเร็จ':'ส่งไม่สำเร็จ'));
   $('an_send').disabled=false;
-  $('an_send').textContent = (AN_KIND==='image') ? '🖼️ ประกาศรูปภาพ' : '📢 ประกาศ + ส่งแจ้งเตือน';
+  anSendLabel();
 });
 $('nl_refresh') && ($('nl_refresh').onclick = loadNotifyLog);
 $('an_refresh') && ($('an_refresh').onclick = ()=>loadAnnounceStatus());
@@ -7653,12 +7723,14 @@ async function loadAnnounceStatus(){
         <td>${needAck?(a.unread>0?('<span class="pill bad">'+a.unread+' คน</span>'):'<span class="pill ok">ครบแล้ว</span>'):'—'}</td>
         <td style="white-space:nowrap">
           ${(needAck||isImg)?`<button class="btn btn-sec btn-sm an_detail" data-id="${a.id}">ดูรายชื่อ</button>`:''}
+          <button class="btn btn-sec btn-sm an_edit" data-id="${a.id}">✏️ แก้ไข</button>
           <button class="btn btn-sec btn-sm an_off" data-id="${a.id}" data-on="${a.active?1:0}">${a.active?'ปิด':'เปิด'}</button>
         </td></tr>`;
     }).join('')
     + '</tbody></table></div></div>';
 
   box.querySelectorAll('.an_detail').forEach(b=>{ b.onclick=()=>loadAnnounceDetail(Number(b.dataset.id)); });
+  box.querySelectorAll('.an_edit').forEach(b=>{ b.onclick=()=>anEdit(Number(b.dataset.id)); });
   box.querySelectorAll('.an_off').forEach(b=>{ b.onclick=async()=>{
     const on=b.dataset.on==='1';
     const r2=await post({ action:'hr_announce_toggle', password:pwd, data:{ id:Number(b.dataset.id), active:!on } });

@@ -276,6 +276,7 @@
         case 'hr_notify_history': return await hrNotifyHistory();
         case 'hr_announce_save':  return await hrAnnounceSave(p.data);
         case 'hr_announce_delete':return await hrAnnounceDelete(p.id);
+        case 'hr_announce_get':   return await hrAnnounceGet(p.id);
         case 'hr_announce_list':  return await hrAnnounceList();
         case 'hr_announce_status':return await hrAnnounceStatus(p.id);
         case 'hr_announce_toggle':return await hrAnnounceToggle(p.data);
@@ -1626,6 +1627,22 @@
   async function hrAnnounceSave(d) {
     d = d || {};
     const kind = (d.kind === 'image') ? 'image' : 'text';
+    const editId = d.id || null;                       // ★ มี id = แก้ไขประกาศเดิม
+
+    // เขียนลงตาราง: มี id → update · ไม่มี → insert
+    const _write = async (row) => {
+      if (editId) {
+        const { error } = await sb().from('announcements').update(row).eq('id', editId);
+        if (error) throw error;
+        // แก้เนื้อหาแล้วอยากให้ทุกคนกดรับทราบใหม่ → ล้างประวัติรับทราบของประกาศนี้
+        if (d.reset_acks) { try { await sb().from('announcement_acks').delete().eq('ann_id', editId); } catch (_e) { /* ข้าม */ } }
+        await logAct('แก้ไขประกาศ #' + editId, null, String(row.title || row.message || '').slice(0, 120));
+        return { ok: true, id: editId, updated: true, reset_acks: !!d.reset_acks };
+      }
+      const { data, error } = await sb().from('announcements').insert(row).select('id').single();
+      if (error) throw error;
+      return { ok: true, id: data ? data.id : null };
+    };
 
     // ---------- ประกาศแบบรูปภาพ (สไลด์) ----------
     if (kind === 'image') {
@@ -1647,9 +1664,8 @@
         active: true,
         created_by: 'HR'
       };
-      const { data, error } = await sb().from('announcements').insert(row).select('id').single();
-      if (error) throw error;
-      return { ok: true, id: data ? data.id : null, images: urls.length };
+      const r = await _write(row);
+      return { ...r, images: urls.length };
     }
 
     // ---------- ประกาศแบบข้อความ ----------
@@ -1662,6 +1678,7 @@
         .select('id,message,expire_date,kind')
         .eq('active', true).eq('kind', 'text').limit(200);
       const same = (dup || []).find(a =>
+        String(a.id) !== String(editId || '') &&                    // ★ ตอนแก้ไข ไม่นับใบตัวเอง
         String(a.message || '').trim() === d.message.trim() &&
         (!a.expire_date || String(a.expire_date) >= todayD)
       );
@@ -1691,9 +1708,25 @@
       active: true,
       created_by: 'HR'
     };
-    const { data, error } = await sb().from('announcements').insert(row).select('id').single();
+    return await _write(row);
+  }
+  // ดึงประกาศ 1 ใบ (ไว้เติมลงฟอร์มตอนกดแก้ไข)
+  async function hrAnnounceGet(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุประกาศ' };
+    const { data, error } = await sb().from('announcements').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
-    return { ok: true, id: data ? data.id : null };
+    if (!data) return { ok: false, error: 'ไม่พบประกาศนี้' };
+    const { count } = await sb().from('announcement_acks').select('id', { count: 'exact', head: true }).eq('ann_id', id);
+    return {
+      ok: true,
+      ann: {
+        ...data,
+        branch_ids: Array.isArray(data.branch_ids) ? data.branch_ids.map(String) : [],
+        images: Array.isArray(data.images) ? data.images : [],
+        quiz_choices: Array.isArray(data.quiz_choices) ? data.quiz_choices : [],
+      },
+      ack_count: count || 0,     // มีคนกดรับทราบไปแล้วกี่คน (ไว้เตือนตอนแก้เนื้อหา)
+    };
   }
   async function hrAnnounceDelete(id) {
     const { error } = await sb().from('announcements').delete().eq('id', id);
