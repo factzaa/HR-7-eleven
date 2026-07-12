@@ -271,12 +271,47 @@ function annStyle(level){
   if(level==='warn')   return {bg:'#fff7ed', bd:'var(--orange)', fg:'#c2410c', ic:'⚠️'};
   return {bg:'var(--green-soft)', bd:'var(--green)', fg:'var(--green-d)', ic:'📢'};
 }
+// แบนเนอร์ประกาศ — กะทัดรัด ไม่กินพื้นที่จนดันช่องกรอกรหัสตกจอ
+//  · ตัดข้อความยาวเหลือ 2 บรรทัด กด "อ่านเพิ่ม" เพื่อกาง
+//  · แสดงสูงสุด 2 ใบ ที่เหลือซ่อนไว้ใต้ปุ่ม "ดูประกาศทั้งหมด"
+//  · ตัดใบที่ข้อความซ้ำกันออก (กันเคสโพสต์ซ้ำ)
+let ANN_ALL_OPEN = false;
+const ANN_MAX = 2;
+function annCardHTML(a, i){
+  const s=annStyle(a.level);
+  const txt=String(a.message||'');
+  const long = txt.length > 110;
+  return `<div style="background:${s.bg};border:1.5px solid ${s.bd};border-radius:12px;padding:8px 11px;font-size:13px;color:${s.fg};font-weight:500;display:flex;gap:7px;align-items:flex-start">
+    <span style="flex:none;line-height:1.5">${s.ic}</span>
+    <div style="flex:1;min-width:0">
+      <div class="annTxt" data-i="${i}" style="line-height:1.5;${long?'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;':''}">${escH(txt)}</div>
+      ${long?`<button class="annMore" data-i="${i}" style="background:none;border:0;padding:2px 0 0;color:inherit;font:inherit;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer">อ่านเพิ่ม</button>`:''}
+    </div></div>`;
+}
 async function loadAnnouncements(){
   try{ ANNOUNCE = await HR.getAnnouncements(); }catch(e){ ANNOUNCE=[]; }
+  // ตัดข้อความซ้ำ (เก็บใบล่าสุดใบเดียว)
+  const seen=new Set();
+  ANNOUNCE = ANNOUNCE.filter(a=>{ const k=String(a.message||'').trim(); if(seen.has(k)) return false; seen.add(k); return true; });
+
   const b=$('annBanner');
   if(!ANNOUNCE.length){ b.style.display='none'; b.innerHTML=''; return; }
   b.style.display='flex'; b.style.flexDirection='column'; b.style.gap='6px';
-  b.innerHTML = ANNOUNCE.map(a=>{ const s=annStyle(a.level); return `<div style="background:${s.bg};border:1.5px solid ${s.bd};border-radius:12px;padding:9px 12px;font-size:13px;color:${s.fg};font-weight:500;display:flex;gap:7px"><span>${s.ic}</span><span>${escH(a.message)}</span></div>`; }).join('');
+
+  const shown = ANN_ALL_OPEN ? ANNOUNCE : ANNOUNCE.slice(0, ANN_MAX);
+  const rest  = ANNOUNCE.length - shown.length;
+  b.innerHTML = shown.map((a,i)=>annCardHTML(a,i)).join('')
+    + (rest>0 ? `<button id="annShowAll" style="background:none;border:0;padding:2px;color:var(--muted);font:inherit;font-size:12.5px;font-weight:700;text-decoration:underline;cursor:pointer">ดูประกาศทั้งหมด (อีก ${rest} รายการ)</button>` : '')
+    + (ANN_ALL_OPEN && ANNOUNCE.length>ANN_MAX ? `<button id="annShowLess" style="background:none;border:0;padding:2px;color:var(--muted);font:inherit;font-size:12.5px;font-weight:700;text-decoration:underline;cursor:pointer">ย่อ</button>` : '');
+
+  b.querySelectorAll('.annMore').forEach(btn=>{ btn.onclick=()=>{
+    const el=b.querySelector('.annTxt[data-i="'+btn.dataset.i+'"]');
+    const open = el.style.webkitLineClamp==='';
+    if(open){ el.style.cssText='line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;'; btn.textContent='อ่านเพิ่ม'; }
+    else    { el.style.cssText='line-height:1.5;'; btn.textContent='ย่อ'; }
+  }; });
+  const sa=$('annShowAll'); if(sa) sa.onclick=()=>{ ANN_ALL_OPEN=true; loadAnnouncements(); };
+  const sl=$('annShowLess'); if(sl) sl.onclick=()=>{ ANN_ALL_OPEN=false; loadAnnouncements(); };
 }
 
 async function loadConfig(){

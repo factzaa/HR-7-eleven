@@ -1443,6 +1443,20 @@
 
     // ---------- ประกาศแบบข้อความ ----------
     if (!d.message || !d.message.trim()) return { ok: false, error: 'ต้องมีข้อความ' };
+
+    // กันโพสต์ซ้ำ — ถ้ามีประกาศข้อความเดียวกันแสดงอยู่แล้ว (ยัง active + ไม่หมดอายุ) ไม่ให้ซ้ำ
+    if (!d.allow_dup) {
+      const todayD = bkkToday();
+      const { data: dup } = await sb().from('announcements')
+        .select('id,message,expire_date,kind')
+        .eq('active', true).eq('kind', 'text').limit(200);
+      const same = (dup || []).find(a =>
+        String(a.message || '').trim() === d.message.trim() &&
+        (!a.expire_date || String(a.expire_date) >= todayD)
+      );
+      if (same) return { ok: false, error: 'มีประกาศข้อความนี้แสดงอยู่แล้ว (#' + same.id + ') — ถ้าต้องการประกาศซ้ำจริง ให้ลบ/ปิดใบเดิมก่อน' };
+    }
+
     const prio = ['normal', 'important', 'mandatory'].includes(d.priority) ? d.priority : 'normal';
     const choices = Array.isArray(d.quiz_choices) ? d.quiz_choices.map(c => String(c || '').trim()).filter(Boolean) : [];
     if (prio === 'mandatory') {
