@@ -1495,6 +1495,13 @@
       <div style="background:#fafbf9; padding:14px; border-radius:11px; margin-bottom:12px" id="w_target"></div>
       <div id="w_summary" style="font-size:14px; color:var(--muted); margin-bottom:14px"></div>
       <input type="hidden" id="w_emp_id"><input type="hidden" id="w_pkg"><input type="hidden" id="w_level"><input type="hidden" id="w_level_name">
+      <div class="field"><label>ระดับใบเตือน</label>
+        <select id="w_levelsel">
+          <option value="3|ใบเตือนระดับ 1">ใบเตือนระดับ 1 (ครั้งที่ 1)</option>
+          <option value="4|ใบเตือนระดับ 2">ใบเตือนระดับ 2 (ครั้งที่ 2 · พิจารณาตามขั้นตอน)</option>
+        </select>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px" id="w_lvhint"></div>
+      </div>
       <div class="field"><label>เหตุผล/รายละเอียด</label><textarea id="w_reason" rows="4"></textarea></div>
     </div>
     <div class="modal-f">
@@ -2746,7 +2753,7 @@ function renderDiscipline(){
           <td>${actPill(x)}</td>
           <td class="rowact" style="white-space:nowrap">
             <button class="btn btn-sec btn-sm" data-dact="${esc(x.emp_id)}">＋ บันทึกดำเนินการ</button>
-            ${(!MGR_MODE && x.action_needed==='warning')?`<button class="btn btn-warn btn-sm" data-warn="${esc(x.emp_id)}">ออกใบเตือน</button>`:''}
+            ${!MGR_MODE?`<button class="btn ${x.action_needed==='warning'?'btn-warn':'btn-sec'} btn-sm" data-warn="${esc(x.emp_id)}" title="${x.action_needed==='warning'?'คะแนนเข้าเกณฑ์ออกใบเตือน':'ออกใบเตือนกรณีความผิดร้ายแรง (ไม่ต้องรอคะแนน)'}">📄 ออกใบเตือน</button>`:''}
             <button class="btn btn-sec btn-sm" data-dtl="${esc(x.emp_id)}">ไทม์ไลน์</button>
           </td>
         </tr>`).join('')}</tbody></table></div></div>`;
@@ -2888,10 +2895,21 @@ function openIssueWarning(empId){
   const x = DISC.employees.find(e=>String(e.emp_id)===String(empId)); if(!x) return;
   $('w_emp_id').value = empId;
   $('w_target').innerHTML = `<div class="name-cell">${x.photo_url?`<div class="thumb"><img src="${esc(x.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(x.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(x.emp_name)}</span><span class="nick">รหัส ${esc(x.emp_id)}</span></div></div>`;
-  $('w_summary').innerHTML = `<div class="stats">รอบ <b>${beDate(DISC.cycle.startStr)} ถึง ${beDate(DISC.cycle.endStr)}</b><br>สาย ${x.late_count} ครั้ง รวม ${x.late_total} นาที · ขาดงาน ${x.absent} วัน · OT ${fmtOT(x.ot_hours)}</div>`;
-  $('w_level_name').value = x.level_name;
-  $('w_level').value = x.level;
-  $('w_reason').value = 'มาทำงานสาย '+x.late_count+' ครั้ง รวม '+x.late_total+' นาทีในรอบ' + (x.absent>0?(' และขาดงาน '+x.absent+' วัน'):'') + ' ซึ่งเข้าข่ายระดับ "'+x.level_name+'" ตามระเบียบบริษัท';
+  $('w_summary').innerHTML = `<div class="stats">รอบ <b>${beDate(DISC.cycle.startStr)} ถึง ${beDate(DISC.cycle.endStr)}</b><br>คะแนน <b>${x.score!=null?x.score:'—'}</b> · ${esc(x.band_label||'')}<br>สาย ${x.late_count} ครั้ง รวม ${x.late_total} นาที · ขาดงาน ${x.absent} วัน · OT ${fmtOT(x.ot_hours)}</div>`;
+  // ระดับใบเตือน: เลือกได้เอง (ค่าเริ่มต้นตามคะแนน · ถ้าคะแนนยังไม่ถึงเกณฑ์ = ออกกรณีความผิดร้ายแรง)
+  const sel=$('w_levelsel');
+  sel.value = (x.level>=4) ? '4|ใบเตือนระดับ 2' : '3|ใบเตือนระดับ 1';
+  const syncLv=()=>{ const p=sel.value.split('|'); $('w_level').value=p[0]; $('w_level_name').value=p[1]; };
+  sel.onchange=syncLv; syncLv();
+  $('w_lvhint').textContent = (x.action_needed==='warning')
+    ? 'คะแนน '+x.score+' เข้าเกณฑ์ออกใบเตือนตามระเบียบ'
+    : 'คะแนน '+(x.score!=null?x.score:'—')+' ยังไม่เข้าเกณฑ์ออกใบเตือน (ปัจจุบัน: '+(x.band_label||'-')+') — ใช้กรณีความผิดร้ายแรง เช่น ทุจริต ทะเลาะวิวาท ละทิ้งหน้าที่';
+
+  const base = 'มาทำงานสาย '+x.late_count+' ครั้ง รวม '+x.late_total+' นาทีในรอบ' + (x.absent>0?(' และขาดงาน '+x.absent+' วัน'):'');
+  $('w_reason').value = (x.action_needed==='warning')
+    ? (base + ' · คะแนนวินัยคงเหลือ '+x.score+'/'+(x.start_score||100)+' ซึ่งเข้าข่าย "'+(x.band_label||'')+'" ตามระเบียบบริษัท')
+    : '';
+  $('w_reason').placeholder = 'ระบุเหตุแห่งการออกใบเตือน (บังคับ) เช่น ละทิ้งหน้าที่ระหว่างกะเมื่อวันที่ ...';
   $('w_pkg') ['ctx'] = x;
   $('issueOverlay').classList.add('show');
 }
@@ -2899,6 +2917,7 @@ $('issueClose').onclick = ()=>$('issueOverlay').classList.remove('show');
 $('issueCancel').onclick = ()=>$('issueOverlay').classList.remove('show');
 $('issueSave').onclick = async ()=>{
   const x = $('w_pkg').ctx;
+  if(!$('w_reason').value.trim()){ toast('err','ต้องระบุเหตุผลในการออกใบเตือน'); return; }
   $('issueSave').innerHTML='<span class="spin"></span>';
   const r = await post({ action:'hr_warning_issue', password:pwd, data:{
     emp_id: $('w_emp_id').value, level: $('w_level').value, level_name: $('w_level_name').value,
@@ -2916,6 +2935,32 @@ async function openWarningView(wid){
   const r = await post({ action:'hr_warning_get', password:pwd, warning_id:wid });
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
   const w = r.warning;
+  // ประวัติการดำเนินการก่อนหน้า = หลักฐานว่าบริษัททำตามขั้นตอนแล้ว (มีน้ำหนักทางกฎหมาย)
+  let prior='';
+  try{
+    const tl = await post({ action:'hr_disc_timeline', password:pwd, emp_id:w.emp_id });
+    if(tl.ok){
+      const before = (tl.items||[]).filter(i=> i.warning_id!==w.warning_id && String(i.at||'') < String(w.created_at||(w.issue_date+'T23:59:59')));
+      if(before.length){
+        const fmtd=v=>{ try{ return new Date(v).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'}); }catch(e){ return '—'; } };
+        prior = '<div style="margin-top:14px"><b>ประวัติการดำเนินการก่อนหน้า</b></div>'
+          + '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:5px">'
+          + '<tr><th style="border:1px solid #000;padding:4px 6px;background:#eee">ครั้งที่</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">วันที่</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">การดำเนินการ</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">สาเหตุ</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">การรับทราบ</th></tr>'
+          + before.slice().reverse().map((i,k)=>'<tr>'
+              +'<td style="border:1px solid #000;padding:4px 6px;text-align:center">'+(k+1)+'</td>'
+              +'<td style="border:1px solid #000;padding:4px 6px;text-align:center">'+fmtd(i.at)+'</td>'
+              +'<td style="border:1px solid #000;padding:4px 6px">'+esc(i.label)+'</td>'
+              +'<td style="border:1px solid #000;padding:4px 6px">'+esc(i.reason||'—')+'</td>'
+              +'<td style="border:1px solid #000;padding:4px 6px;text-align:center">'+(i.ack_at?('รับทราบแล้ว '+fmtd(i.ack_at)):(i.need_ack?'ยังไม่รับทราบ':'—'))+'</td></tr>').join('')
+          + '</table>'
+          + '<p style="font-size:12.5px;margin-top:5px">บริษัทได้ดำเนินการตักเตือนตามลำดับขั้นมาก่อนหน้านี้แล้ว แต่พนักงานยังมิได้ปรับปรุงพฤติกรรม</p>';
+      }
+    }
+  }catch(e){}
+  const ackTxt = w.acknowledged_at
+    ? ('พนักงานกดรับทราบในระบบแล้ว เมื่อ ' + (()=>{ try{ return new Date(w.acknowledged_at).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } })() + (w.ack_note?(' · ความเห็นพนักงาน: '+esc(w.ack_note)):''))
+    : 'ยังไม่ได้กดรับทราบในระบบ (จะเด้งบังคับในหน้ารับส่งผลัด)';
+
   $('w_doc').innerHTML = `
     <div class="warning-doc">
       <h1>ใบเตือนการทำงาน</h1>
@@ -2934,9 +2979,12 @@ async function openWarningView(wid){
       <div class="stats">
         <b>สรุปการประเมิน</b><br>
         มาทำงานสาย ${w.late_count} ครั้ง · รวม ${w.late_total} นาที · ขาดงาน ${w.absent_count} วัน
+        ${w.score!=null?('<br>คะแนนวินัยคงเหลือ <b>'+w.score+'</b> คะแนน'+(w.band_label?(' · '+esc(w.band_label)):'')):''}
       </div>
       <div><b>รายละเอียดและคำตักเตือน</b></div>
       <div class="reason">${esc(w.reason).replace(/\n/g,'<br>')}</div>
+      ${prior}
+      <div style="margin-top:12px;font-size:12.5px;color:#444"><b>สถานะการรับทราบในระบบ:</b> ${ackTxt}</div>
       <p style="margin-top:14px; font-size:14px;">บริษัทจึงออกใบเตือนฉบับนี้ให้พนักงานรับทราบและปรับปรุงพฤติกรรมการทำงาน หากยังพบพฤติกรรมในลักษณะเดิม บริษัทจะพิจารณาดำเนินการตามระเบียบในขั้นต่อไป</p>
       <div class="sig">
         <div>ผู้ออกใบเตือน (${esc(w.issued_by||'HR')})</div>
