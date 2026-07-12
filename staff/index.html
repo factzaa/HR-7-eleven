@@ -36,6 +36,11 @@
   .toast.err{background:#dc2626}.toast.ok{background:#16a34a}
   .done{text-align:center;padding:20px}
   .done .big{font-size:40px}
+  .note{display:none;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:10px}
+  .note.ok{background:#dcfce7;border:1px solid #86efac;color:#14532d}
+  .note.warn{background:#fef3c7;border:1px solid #fcd34d;color:#78350f}
+  .note.err{background:#fee2e2;border:1px solid #fca5a5;color:#7f1d1d}
+  .doc .old{font-size:11.5px;color:var(--muted);display:block;margin-top:6px}
 </style>
 </head>
 <body>
@@ -56,6 +61,7 @@
 
   <div class="card" id="step2" style="display:none">
     <div class="who" id="who"></div>
+    <div class="note" id="statusNote"></div>
 
     <div class="sec">ข้อมูลส่วนตัว</div>
     <label>ชื่อ-นามสกุล</label><input id="f_name" type="text">
@@ -79,6 +85,7 @@
     <label>เลขบัตรประชาชน</label><input id="f_idcard" type="text" inputmode="numeric">
 
     <div class="sec">แนบเอกสาร (ถ่ายรูป/เลือกไฟล์ภาพ)</div>
+    <div class="hint" style="margin-bottom:6px">เอกสารที่เคยส่งไว้แล้วจะแสดงให้เห็นด้านล่าง — <b>ไม่ต้องถ่ายใหม่</b> ถ้าไม่มีอะไรเปลี่ยน · ถ่ายใหม่เฉพาะใบที่ต้องการแก้</div>
     <label>รูปถ่ายพนักงาน</label>
     <div class="doc"><label for="d_photo">เลือก/ถ่ายรูป</label><input id="d_photo" type="file" accept="image/*" capture="user"><img id="p_photo"></div>
     <label>สำเนาบัตรประชาชน</label>
@@ -116,17 +123,56 @@ const $ = id => document.getElementById(id);
 const docs = { photo:null, idcard:null, bankbook:null, house:null, edu:null };
 function toast(kind, msg){ const t=$('toast'); t.className='toast show '+kind; t.textContent=msg; setTimeout(()=>t.classList.remove('show'), 3500); }
 
+// ★ เอกสารเดิมที่เคยส่งไว้ (ถ้าไม่ถ่ายใหม่ ระบบจะใช้ไฟล์เดิมต่อ)
+const keepDocs = { photo_url:null, idcard_url:null, bankbook_url:null, house_url:null, edu_url:null };
+
 $('checkBtn').onclick = async ()=>{
   const id = $('empId').value.trim();
   if(!id){ toast('err','กรอกรหัสพนักงานก่อน'); return; }
   $('checkBtn').disabled=true; $('checkBtn').textContent='กำลังตรวจ…';
   try{
-    const emp = await HR.lookupEmployee(id);
-    if(!emp){ toast('err','ไม่พบรหัสนี้ — ให้ผู้จัดการสร้างรหัสก่อน'); return; }
+    const r = await HR.getMyProfile(id);
+    if(!r){ toast('err','ไม่พบรหัสนี้ — ให้ผู้จัดการสร้างรหัสก่อน'); return; }
+    const emp = r.emp, p = r.profile || {};
     if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); return; }
     try{ HRSession.setEmp(emp.emp_id||id); }catch(_e){}   // จำรหัสข้ามหน้า
     $('who').textContent = 'พนักงาน: '+emp.name+' ('+id+')';
-    $('f_name').value = emp.name||''; $('f_nickname').value = emp.nickname||'';
+
+    // ★ ดึงข้อมูลที่เคยกรอกไว้มาแสดง — แก้เฉพาะจุดที่ต้องการได้เลย
+    $('f_name').value     = p.name || emp.name || '';
+    $('f_nickname').value = p.nickname || '';
+    $('f_phone').value    = p.phone || '';
+    $('f_address').value  = p.address || '';
+    $('f_em_name').value  = p.emergency_name || '';
+    $('f_em_phone').value = p.emergency_phone || '';
+    $('f_bank').value     = p.bank_name || '';
+    $('f_acct').value     = p.bank_account || '';
+    $('f_idcard').value   = p.id_card || '';
+
+    // เอกสารเดิม: โชว์รูป + จำ URL ไว้ ถ้าไม่ถ่ายใหม่จะใช้ของเดิม
+    [['photo_url','p_photo'],['idcard_url','p_idcard'],['bankbook_url','p_bankbook'],['house_url','p_house'],['edu_url','p_edu']]
+      .forEach(([k,prev])=>{
+        keepDocs[k] = p[k] || null;
+        if(p[k]){ const el=$(prev); el.src=p[k]; el.style.display='block'; }
+      });
+
+    // แจ้งสถานะใบล่าสุด
+    const note = $('statusNote');
+    if(note){
+      if(r.pending){
+        note.style.display='block'; note.className='note warn';
+        note.textContent = '⏳ คุณมีข้อมูลที่ส่งไปแล้วและกำลังรอผู้จัดการตรวจสอบ — ด้านล่างคือข้อมูลชุดนั้น แก้ไขแล้วส่งใหม่ได้';
+      } else if(r.last_status==='rejected'){
+        note.style.display='block'; note.className='note err';
+        note.textContent = '❌ ข้อมูลชุดก่อนไม่ผ่านการตรวจสอบ' + (r.reject_note?(' — '+r.reject_note):'') + ' กรุณาแก้ไขแล้วส่งใหม่';
+      } else if(r.last_status==='approved'){
+        note.style.display='block'; note.className='note ok';
+        note.textContent = '✅ ข้อมูลของคุณได้รับการอนุมัติแล้ว — ด้านล่างคือข้อมูลปัจจุบัน หากมีอะไรเปลี่ยนแปลง แก้แล้วส่งใหม่ได้';
+      } else {
+        note.style.display='none';
+      }
+    }
+
     $('step1').style.display='none'; $('step2').style.display='block';
   }catch(e){ toast('err', e.message||'ตรวจสอบไม่สำเร็จ'); }
   $('checkBtn').disabled=false; $('checkBtn').textContent='ถัดไป';
@@ -154,6 +200,7 @@ $('submitBtn').onclick = async ()=>{
     emergency_name:$('f_em_name').value.trim(), emergency_phone:$('f_em_phone').value.trim(),
     bank_name:$('f_bank').value.trim(), bank_account:$('f_acct').value.trim(), id_card:$('f_idcard').value.trim(),
     photo:docs.photo, idcard:docs.idcard, bankbook:docs.bankbook, house:docs.house, edu:docs.edu,
+    keep:keepDocs,          // ★ เอกสารที่ไม่ได้ถ่ายใหม่ = ใช้ไฟล์เดิมต่อ ไม่ต้องถ่ายซ้ำทุกครั้ง
   };
   if(!p.name){ toast('err','กรอกชื่อ-นามสกุล'); return; }
   if(!$('agreeRules').checked){ toast('err','กรุณาติ๊กยอมรับระเบียบการทำงานก่อน'); return; }
