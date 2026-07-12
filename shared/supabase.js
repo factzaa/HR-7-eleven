@@ -1392,6 +1392,11 @@
     let rid=id;
     if(id){ const {error}=await sb.from('goods_receipts').update(row).eq('id',id); if(error) throw error; }
     else { const {data,error}=await sb.from('goods_receipts').insert(row).select('id').single(); if(error) throw error; rid=data&&data.id; }
+
+    // ★ คำนวณ "ควรคืน/ส่วนต่าง" ใหม่ทั้งสายของสาขา×คลังนี้
+    //   (กันตัวเลขเพี้ยนเป็นลูกโซ่เมื่อมีการแก้ใบย้อนหลัง หรือแก้ยอดตั้งต้น)
+    try{ await sb.rpc('recalc_goods_chain', { p_branch: branch, p_wh: Number(warehouse_id) }); }catch(e){ console.warn('recalc_goods_chain', e); }
+
     // ยิง Flex เข้ากลุ่ม LINE ของสาขา (fire-and-forget · edge function กันซ้ำด้วย line_notified)
     try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(base&&rid) fetch(base+'/functions/v1/line-goods-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid})}); }catch(e){}
     return { ok:true, id:rid };

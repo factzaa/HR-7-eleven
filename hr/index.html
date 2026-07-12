@@ -1110,7 +1110,17 @@
     <tbody id="gqRows"></tbody>
   </table></div><div class="empty" id="gqEmpty" style="display:none">ไม่มีข้อมูล</div></div>
 
-  <div class="toolbar" style="margin-top:18px"><h3 style="flex:1; font-size:15px; font-weight:600">สรุปออดิทลังคงค้าง (ต่อสาขา × คลัง)</h3><button class="btn btn-sec btn-sm" id="ga_csv">⬇ CSV ออดิท</button></div>
+  <div class="toolbar" style="margin-top:18px"><h3 style="flex:1; font-size:15px; font-weight:600">สรุปออดิทลังคงค้าง (ต่อสาขา × คลัง)</h3>
+    <button class="btn btn-sec btn-sm" id="ga_recalc" title="ไล่คำนวณ ควรคืน/ส่วนต่าง ใหม่ทุกใบ — ใช้เมื่อเคยแก้ใบย้อนหลัง">🔄 คำนวณใหม่</button>
+    <button class="btn btn-sec btn-sm" id="ga_csv">⬇ CSV ออดิท</button></div>
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 13px;margin-bottom:10px;font-size:12.5px;color:#1e3a8a;line-height:1.7">
+    <b>อ่านตารางนี้ยังไง</b><br>
+    <b>ใบ</b> = จำนวนใบรับสินค้าที่บันทึกในช่วงวันที่ที่เลือก ·
+    <b>ใบมีส่วนต่าง</b> = ในจำนวนนั้น มีกี่ใบที่คืนลังไม่ตรงกับที่ควรคืน ·
+    <b>ส่วนต่างสะสม</b> = ผลรวมส่วนต่างทุกใบ (+ คืนเกิน / − คืนขาด) ·
+    <b>คงค้างล่าสุด</b> = ลังที่ยังอยู่ที่สาขาตอนนี้<br>
+    <b>สูตร "ควรคืน"</b> = ยอดตั้งต้น + Σลังเข้า − Σลังคืน (ทุกใบก่อนหน้า) — ถ้าคืนครบทุกรอบ ค่านี้จะเท่ากับ <b>ลังที่รับเข้าครั้งก่อน</b> พอดี · ถ้ารอบก่อนคืนไม่ครบ ส่วนที่ขาดจะถูกยกยอดมารวมด้วย (ลังไม่หายไปไหน)
+  </div>
   <div class="card"><div class="tablewrap"><table>
     <thead><tr><th>สาขา</th><th>คลัง</th><th>ลังเข้า (ช่วง)</th><th>ลังคืน (ช่วง)</th><th>ใบ</th><th>ใบมีส่วนต่าง</th><th>ส่วนต่างสะสม</th><th>คงค้างล่าสุด</th></tr></thead>
     <tbody id="gaRows"></tbody>
@@ -4336,6 +4346,14 @@ $('gq_csv').onclick=()=>{ if(!GQ_ROWS.length){ toast('err','ไม่มีข�
   const H=['วันที่','สาขา','คลัง','เลขที่เอกสาร','ลังเข้า','ลังคืน','ควรคืน','ส่วนต่าง','ผู้คุม','หมายเหตุ'];
   const R=GQ_ROWS.map(x=>[x.work_date,x.branch_name,(x.warehouse_name||x.warehouse_id),x.ref_no||'',x.crates_in||0,x.crates_return||0,x.return_expected||0,x.diff||0,(x.done_name||x.done_by||''),x.note||'']);
   gdDownload('goods_receipts.csv', gdToCsv(H,R)); };
+$('ga_recalc') && ($('ga_recalc').onclick=async()=>{
+  if(!confirm('ไล่คำนวณ "ควรคืน / ส่วนต่าง" ใหม่ทุกใบรับสินค้า?\n(ใช้เมื่อเคยแก้ใบย้อนหลังแล้วตัวเลขเพี้ยน — ไม่แตะจำนวนลังเข้า/ลังคืนที่คีย์ไว้)')) return;
+  const b=$('ga_recalc'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_goods_recalc', password:pwd, filter:{} });
+  b.disabled=false; b.textContent='🔄 คำนวณใหม่';
+  if(r.ok){ toast('ok','คำนวณใหม่แล้ว '+r.chains+' คลัง'); loadGoodsTab(); }
+  else toast('err', r.error||'ไม่สำเร็จ');
+});
 $('ga_csv').onclick=()=>{ if(!GA_ROWS.length){ toast('err','ไม่มีข้อมูลให้ export'); return; }
   const H=['สาขา','คลัง','ลังเข้า(ช่วง)','ลังคืน(ช่วง)','ใบ','ใบมีส่วนต่าง','ส่วนต่างสะสม','คงค้างล่าสุด'];
   const R=GA_ROWS.map(g=>[g.branch_name,((g.warehouse_code?('['+g.warehouse_code+'] '):'')+g.warehouse_name),g.range_in||0,g.range_return||0,g.range_docs||0,g.range_diff_docs||0,g.range_diff_sum||0,g.outstanding||0]);

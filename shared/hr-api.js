@@ -163,6 +163,7 @@
         case 'hr_goods_audit':    return await hrGoodsAudit(p.filter);
         case 'hr_goods_opening_list': return await hrGoodsOpeningList();
         case 'hr_goods_opening_save': return await hrGoodsOpeningSave(p.data);
+        case 'hr_goods_recalc':   return await hrGoodsRecalc(p.filter);
         case 'hr_leave_status':   return await hrLeaveStatus(p.leave_id, p.status, p.note);
         case 'hr_leave_propose':  return await hrLeaveProposeConditional(p.leave_id, p.message);
         case 'hr_leavetype_list': return await hrLeaveTypeList();
@@ -1392,7 +1393,28 @@
     const row = { branch_id: String(d.branch_id), warehouse_id: Number(d.warehouse_id), opening: Math.max(0, parseInt(d.opening) || 0), updated_at: new Date().toISOString() };
     const { error } = await sb().from('goods_opening').upsert(row, { onConflict: 'branch_id,warehouse_id' });
     if (error) throw error;
+    // ★ ยอดตั้งต้นเปลี่ยน = "ควรคืน/ส่วนต่าง" ของทุกใบในคลังนี้เปลี่ยนตาม → คำนวณใหม่ทั้งสาย
+    try { await sb().rpc('recalc_goods_chain', { p_branch: row.branch_id, p_wh: row.warehouse_id }); } catch (e) { console.warn('recalc_goods_chain', e); }
+    await logAct('แก้ยอดลังตั้งต้น', null, 'สาขา ' + row.branch_id + ' · คลัง #' + row.warehouse_id + ' = ' + row.opening);
     return { ok: true };
+  }
+
+  // ปุ่ม "คำนวณใหม่ทั้งระบบ" — ใช้กรณีข้อมูลเก่าเพี้ยน หรือหลังแก้ไขย้อนหลังหลายใบ
+  async function hrGoodsRecalc(f) {
+    f = f || {};
+    let q = sb().from('goods_receipts').select('branch_id,warehouse_id').limit(5000);
+    if (f.branch_id) q = q.eq('branch_id', f.branch_id);
+    const { data, error } = await q;
+    if (error) throw error;
+    const chains = {};
+    (data || []).forEach(r => { if (r.branch_id && r.warehouse_id != null) chains[r.branch_id + '|' + r.warehouse_id] = [r.branch_id, r.warehouse_id]; });
+    let n = 0;
+    for (const k of Object.keys(chains)) {
+      const [b, w] = chains[k];
+      try { await sb().rpc('recalc_goods_chain', { p_branch: String(b), p_wh: Number(w) }); n++; } catch (e) { console.warn('recalc', k, e); }
+    }
+    await logAct('คำนวณลังคงค้างใหม่', null, 'คำนวณใหม่ ' + n + ' คลัง');
+    return { ok: true, chains: n };
   }
 
   // ---------- LEAVE APPROVAL (อนุมัติ/ปฏิเสธใบลา + เหตุผล) ----------
