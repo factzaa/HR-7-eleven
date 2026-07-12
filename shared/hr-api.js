@@ -636,6 +636,7 @@
     // ตารางเวร + ใบลา ในช่วง (ใช้คำนวณ "ขาดงาน" และ "ลา" สำหรับ payroll)
     let sq = sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', f.start).lte('work_date', f.end);
     if (f.emp_id) sq = sq.eq('emp_id', f.emp_id);
+    if (f.shift_id) sq = sq.eq('shift_id', f.shift_id);   // ★ กรองกะด้วย ไม่งั้นขาด/ลา จะนับมาจากกะอื่น
     let lq = sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', f.end).gte('end_date', f.start);
     if (f.emp_id) lq = lq.eq('emp_id', f.emp_id);
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงานให้ถูก แม้ไปทำแทนสาขาอื่น
@@ -747,13 +748,22 @@
     Object.keys(lvByEmp).forEach(emp => {
       if (f.emp_id && emp !== f.emp_id) return;
       if (!inBranch(emp)) return;
+      // ★ ถ้ากรอง "กะ" ไว้ ห้ามดึงคนที่ไม่เกี่ยวกับกะนี้กลับเข้ามาในสรุป
+      if (f.shift_id && !map[emp] && !schByEmp[emp]) return;
       const m = ensureM(emp);
       let ld = 0;
-      lvByEmp[emp].forEach(l => {
-        const s = l.start_date < f.start ? f.start : l.start_date;
-        const e = (l.end_date || l.start_date) > f.end ? f.end : (l.end_date || l.start_date);
-        if (s <= e) ld += daysBetween(s, e);
-      });
+      if (f.shift_id) {
+        // นับเฉพาะวันลาที่ตรงกับวันที่ถูกจัด "กะนี้" ไว้
+        const myDates = Object.keys(schByEmp[emp] || {});
+        myDates.forEach(d => { if (onLeave(emp, d)) ld += dvOf(schByEmp[emp][d]); });
+        ld = Math.round(ld * 10) / 10;
+      } else {
+        lvByEmp[emp].forEach(l => {
+          const s = l.start_date < f.start ? f.start : l.start_date;
+          const e = (l.end_date || l.start_date) > f.end ? f.end : (l.end_date || l.start_date);
+          if (s <= e) ld += daysBetween(s, e);
+        });
+      }
       m.leave_days = ld;
     });
     // ถ้าติ๊กตัวกรอง (เฉพาะที่สาย / มี OT / วันไปแทน) → สรุปต่อคนต้องเหลือเฉพาะคนที่เข้าเงื่อนไขจริง
