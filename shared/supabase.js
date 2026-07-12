@@ -385,10 +385,17 @@
   async function getPendingDiscAcks(empId) {
     try {
       const { data } = await sb.from('disc_actions')
-        .select('id,action_type,level_name,reason,detail,score,band_label,late_count,late_total,absent_count,warning_id,performed_by,performed_role,performed_at,photos')
+        .select('id,action_type,level_name,reason,detail,score,band_label,late_count,late_total,absent_count,warning_id,performed_by,performed_role,performed_at,photos,status')
         .eq('emp_id', String(empId)).eq('need_ack', true).is('ack_at', null)
         .order('performed_at', { ascending: true });
-      return data || [];
+      const rows = (data || []).filter(a => a.status !== 'cancelled');
+      if (!rows.length) return [];
+      // ★ ใบเตือนที่ถูกลบ/ยกเลิกไปแล้ว ต้องไม่บังคับให้พนักงานกดรับทราบอีก
+      const wids = [...new Set(rows.map(a => a.warning_id).filter(Boolean))];
+      if (!wids.length) return rows;
+      const { data: ws } = await sb.from('warnings').select('warning_id,status').in('warning_id', wids);
+      const live = new Set((ws || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
+      return rows.filter(a => !a.warning_id || live.has(String(a.warning_id)));
     } catch (e) { console.error('pending disc acks', e); return []; }
   }
 

@@ -138,6 +138,7 @@
         case 'hr_warning_get':    return await hrWarningGet(p.warning_id);
         case 'hr_warning_update': return await hrWarningUpdate(p.data);
         case 'hr_warning_delete': return await hrWarningDelete(p.warning_id);
+        case 'hr_warning_void':   return await hrWarningVoid(p.data);
         case 'hr_leaves_list':    return await hrLeavesList();
         case 'hr_leaves_save':    return await hrLeavesSave(p.data);
         case 'hr_leaves_delete':  return await hrLeavesDelete(p.leave_id);
@@ -862,7 +863,15 @@
     const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
 
     // การดำเนินการที่ทำไปแล้วในรอบนี้ (ตักเตือนวาจา / ใบเตือน ฯลฯ)
-    const { data: acts } = await sb().from('disc_actions').select('*').eq('cycle_start', cyc.start);
+    // ★ ตัดแถวที่ถูกยกเลิก และแถวที่ผูกกับใบเตือนที่ถูกลบ/ยกเลิกไปแล้วออก
+    const [{ data: actsRaw }, { data: wAll }] = await Promise.all([
+      sb().from('disc_actions').select('*').eq('cycle_start', cyc.start),
+      sb().from('warnings').select('warning_id,status'),
+    ]);
+    const liveWarn = new Set((wAll || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
+    const acts = (actsRaw || [])
+      .filter(a => a.status !== 'cancelled')
+      .filter(a => !a.warning_id || liveWarn.has(String(a.warning_id)));
     const actMap = {}; (acts || []).forEach(a => { (actMap[a.emp_id] || (actMap[a.emp_id] = [])).push(a); });
 
     const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
@@ -958,8 +967,13 @@
       sb().from('warnings').select('*').eq('emp_id', String(empId)).order('issue_date', { ascending: false }),
     ]);
     const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
-    const linked = new Set((acts || []).map(a => a.warning_id).filter(Boolean));
-    const items = (acts || []).map(a => ({
+    // ★ ใบเตือนที่ถูกลบ/ยกเลิก → แถวการดำเนินการที่ผูกกับใบนั้นต้องไม่โผล่ในไทม์ไลน์
+    const liveWarn = new Set((wrs || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
+    const actsLive = (acts || [])
+      .filter(a => a.status !== 'cancelled')
+      .filter(a => !a.warning_id || liveWarn.has(String(a.warning_id)));
+    const linked = new Set(actsLive.map(a => a.warning_id).filter(Boolean));
+    const items = actsLive.map(a => ({
       kind: 'action', id: a.id, type: a.action_type, label: ACT_LABEL[a.action_type] || a.action_type,
       at: a.performed_at, by: a.performed_by, role: a.performed_role,
       reason: a.reason, detail: a.detail, score: a.score, band: a.band_label,
@@ -969,6 +983,7 @@
     }));
     // ใบเตือนเก่าที่ยังไม่มีแถวใน disc_actions (ออกก่อนมีระบบนี้)
     (wrs || []).forEach(w => {
+      if (w.status === 'cancelled') return;              // ★ ใบที่ยกเลิกแล้ว ไม่แสดง
       if (linked.has(w.warning_id)) return;
       items.push({
         kind: 'warning', id: w.warning_id, type: 'warning', label: w.level_name || 'ใบเตือน',
@@ -1061,9 +1076,38 @@
   }
   async function hrWarningDelete(wid) {
     const { data: w } = await sb().from('warnings').select('emp_id').eq('warning_id', wid).maybeSingle();
+    // ★ ลบแถวการดำเนินการที่ผูกกับใบนี้ด้วย ไม่งั้นไทม์ไลน์วินัยจะอ้างใบเตือนที่ไม่มีอยู่แล้ว
+    try { await sb().from('disc_actions').delete().eq('warning_id', wid); } catch (_e) { /* ข้าม */ }
     const { error } = await sb().from('warnings').delete().eq('warning_id', wid);
     if (error) throw error;
-    await logAct('ลบใบเตือน ' + wid, w ? w.emp_id : null, 'ลบใบเตือนออกจากระบบ');
+    await logAct('ลบใบเตือน ' + wid, w ? w.emp_id : null, 'ลบใบเตือนออกจากระบบถาวร');
+    return { ok: true };
+  }
+  // ★ ยกเลิกใบเตือน (แนะนำให้ใช้แทนการลบ) — ใบยังอยู่ในระบบเป็นหลักฐาน แต่ไม่มีผลบังคับ
+  async function hrWarningVoid(d) {
+    d = d || {};
+    const wid = String(d.warning_id || '').trim();
+    if (!wid) return { ok: false, error: 'ไม่ระบุเลขที่ใบเตือน' };
+    if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุเหตุผลที่ยกเลิก' };
+    const reason = String(d.reason).trim().slice(0, 500);
+    const { data: w } = await sb().from('warnings').select('warning_id,emp_id,status').eq('warning_id', wid).maybeSingle();
+    if (!w) return { ok: false, error: 'ไม่พบใบเตือนนี้' };
+    if (w.status === 'cancelled') return { ok: false, error: 'ใบเตือนนี้ถูกยกเลิกไปแล้ว' };
+    const { error } = await sb().from('warnings').update({
+      status: 'cancelled', cancel_reason: reason,
+      cancelled_at: new Date().toISOString(), cancelled_by: d.by || 'สำนักงาน (HR)',
+    }).eq('warning_id', wid);
+    if (error) throw error;
+    try { await sb().from('disc_actions').update({ status: 'cancelled' }).eq('warning_id', wid); } catch (_e) { /* ข้าม */ }
+    try {
+      await sb().from('emp_notifications').insert({
+        emp_id: w.emp_id, kind: 'info',
+        title: 'ยกเลิกใบเตือน ' + wid,
+        body: 'บริษัทได้ยกเลิกใบเตือนฉบับนี้แล้ว · เหตุผล: ' + reason,
+        ref: 'warning:' + wid, created_by: d.by || 'สำนักงาน (HR)',
+      });
+    } catch (_e) { /* ข้าม */ }
+    await logAct('ยกเลิกใบเตือน ' + wid, w.emp_id, reason.slice(0, 120));
     return { ok: true };
   }
 
@@ -2226,12 +2270,16 @@
     const [rulesR, empR, wrR, caseR] = await Promise.all([
       sb().from('termination_rules').select('*').eq('enabled', true).order('sort'),
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true),
-      sb().from('warnings').select('warning_id,emp_id,level,level_name,issue_date,reason').order('issue_date', { ascending: false }),
-      sb().from('termination_cases').select('id,case_no,emp_id,status,decision,opened_at').not('status', 'in', '("closed","cancelled")'),
+      // ★ ใบเตือนที่ถูกยกเลิกแล้ว ไม่นับเป็นหลักฐานเข้าข่ายพิจารณา
+      sb().from('warnings').select('warning_id,emp_id,level,level_name,issue_date,reason,status')
+        .or('status.is.null,status.neq.cancelled').order('issue_date', { ascending: false }),
+      // ★ ดึงทุกเคส (รวมที่ปิดแล้ว) — คนที่มีเคสอยู่แล้วต้องไม่โผล่ในรายชื่อ "เข้าข่าย" ซ้ำอีก
+      sb().from('termination_cases').select('id,case_no,emp_id,status,decision,decision_note,opened_at,closed_at')
+        .neq('status', 'cancelled').order('opened_at', { ascending: false }),
     ]);
     const rules = rulesR.data || [];
     const empById = {}; (empR.data || []).forEach(e => { empById[e.emp_id] = e; });
-    const openCase = {}; (caseR.data || []).forEach(c => { openCase[c.emp_id] = c; });
+    const openCase = {}; (caseR.data || []).forEach(c => { if (!openCase[c.emp_id]) openCase[c.emp_id] = c; });   // เอาเคสล่าสุดของแต่ละคน
 
     // ใบเตือนในกรอบเวลาที่กำหนดของแต่ละเกณฑ์
     const warnByEmp = {}; (wrR.data || []).forEach(w => { (warnByEmp[w.emp_id] || (warnByEmp[w.emp_id] = [])).push(w); });
@@ -2261,6 +2309,7 @@
     const monthsAgo = (n) => new Date(new Date(today + 'T00:00:00').getTime() - n * 30.5 * 86400000).toISOString().slice(0, 10);
 
     const candidates = [];
+    const handled = [];                                   // คนที่มีเคสอยู่แล้ว (เปิดค้าง หรือ ปิดไปแล้ว)
     (sc.employees || []).forEach(e => {
       const emp = empById[e.emp_id]; if (!emp) return;
       const st = streakOf(e.emp_id);
@@ -2295,6 +2344,17 @@
       });
       if (!reasons.length) return;
 
+      // ★ มีเคสอยู่แล้ว (กำลังพิจารณา หรือ ปิดไปแล้ว) → ไม่ต้องโชว์ในรายชื่อ "เข้าข่าย" ซ้ำ
+      const ec = openCase[e.emp_id];
+      if (ec) {
+        handled.push({
+          emp_id: e.emp_id, emp_name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '',
+          score: e.score, reasons,
+          case: { id: ec.id, case_no: ec.case_no, status: ec.status, decision: ec.decision || null, closed_at: ec.closed_at || null },
+        });
+        return;
+      }
+
       const worst = reasons.some(x => x.severity === 'critical') ? 'critical' : 'high';
       candidates.push({
         emp_id: e.emp_id, emp_name: emp.name, nickname: emp.nickname || '', photo_url: emp.photo_url || '',
@@ -2311,9 +2371,9 @@
     candidates.sort((a, b) => (a.severity === b.severity ? (a.score || 0) - (b.score || 0) : (a.severity === 'critical' ? -1 : 1)));
 
     return {
-      ok: true, cycle: cyc, candidates,
+      ok: true, cycle: cyc, candidates, handled,
       rules, manual_rules: rules.filter(r => r.kind === 'manual'),
-      note: '⚠ รายชื่อนี้คือ "เข้าข่ายให้พิจารณา" ตามเกณฑ์ที่ตั้งไว้ ไม่ใช่คำสั่งเลิกจ้าง — ต้องเปิดเคสและผ่านความเห็นตามลำดับชั้นก่อนเสมอ',
+      note: '⚠ รายชื่อนี้คือ "เข้าข่ายให้พิจารณา" ตามเกณฑ์ที่ตั้งไว้ ไม่ใช่คำสั่งเลิกจ้าง — ต้องเปิดเคสและผ่านความเห็นตามลำดับชั้นก่อนเสมอ · คนที่มีเคสอยู่แล้ว (กำลังพิจารณา/ปิดแล้ว) จะไม่แสดงซ้ำ ดูได้ที่ตาราง "เคสที่เปิดแล้ว"',
     };
   }
 
@@ -2418,11 +2478,15 @@
     d = d || {};
     if (!d.case_id) return { ok: false, error: 'ไม่ระบุเคส' };
     if (!d.note || !String(d.note).trim()) return { ok: false, error: 'ต้องระบุความเห็น/เหตุผล' };
-    const stage = ['hr_review', 'decision', 'note', 'cancel'].includes(d.stage) ? d.stage : 'note';
+    const stage = ['hr_review', 'decision', 'note', 'cancel', 'reopen', 'edit'].includes(d.stage) ? d.stage : 'note';
 
     const { data: c } = await sb().from('termination_cases').select('*').eq('id', String(d.case_id)).maybeSingle();
     if (!c) return { ok: false, error: 'ไม่พบเคสนี้' };
-    if (c.status === 'closed' || c.status === 'cancelled') return { ok: false, error: 'เคสนี้ปิดไปแล้ว' };
+    const isClosed = (c.status === 'closed' || c.status === 'cancelled');
+    // ★ เคสที่ปิดแล้ว ยังดึงกลับมาแก้ไข/เปิดใหม่ได้ (แต่ห้ามเดินขั้นตอนปกติซ้ำ)
+    if (isClosed && !['reopen', 'edit', 'note'].includes(stage)) {
+      return { ok: false, error: 'เคสนี้ปิดแล้ว — ถ้าต้องการดำเนินการต่อ ให้กด "เปิดเคสขึ้นมาใหม่" ก่อน' };
+    }
 
     const { count } = await sb().from('termination_steps').select('id', { count: 'exact', head: true }).eq('case_id', c.id);
     const photos = (Array.isArray(d.photos) && d.photos.length) ? await _uploadMany('term', d.photos) : null;
@@ -2433,6 +2497,7 @@
       decision: d.decision || null, note: String(d.note).trim(), photos,
     });
 
+    const DECS = ['terminate_proposed', 'not_terminate', 'probation', 'transfer', 'training'];
     const patch = {};
     if (stage === 'hr_review') {
       if (d.decision === 'approve') patch.status = 'decision';                  // ส่งต่อผู้มีอำนาจ
@@ -2440,12 +2505,20 @@
       else patch.status = 'hr_review';                                          // need_more = ขอข้อมูลเพิ่ม
     } else if (stage === 'decision') {
       // ★ ปลายทางของระบบ = "มติเสนอ" เท่านั้น — ไม่มีการปิดใช้งานพนักงานอัตโนมัติ
-      const dec = ['terminate_proposed', 'not_terminate', 'probation', 'transfer', 'training'].includes(d.final) ? d.final : 'not_terminate';
+      const dec = DECS.includes(d.final) ? d.final : 'not_terminate';
       patch.status = 'closed'; patch.decision = dec; patch.decision_note = String(d.note).trim();
       patch.closed_by = d.actor || 'ผู้มีอำนาจ'; patch.closed_at = new Date().toISOString();
     } else if (stage === 'cancel') {
       patch.status = 'cancelled'; patch.decision_note = String(d.note).trim();
       patch.closed_by = d.actor || 'HR'; patch.closed_at = new Date().toISOString();
+    } else if (stage === 'reopen') {
+      // ★ ดึงเคสที่ปิดแล้วกลับมาพิจารณาใหม่ (มติเดิมถูกล้าง แต่ไทม์ไลน์ยังอยู่ครบเป็นหลักฐาน)
+      patch.status = ['proposed', 'hr_review', 'decision'].includes(d.back_to) ? d.back_to : 'decision';
+      patch.decision = null; patch.decision_note = null; patch.closed_by = null; patch.closed_at = null;
+    } else if (stage === 'edit') {
+      // ★ แก้ไขเนื้อหา/มติ ของเคสที่ปิดแล้ว (เช่น พิมพ์ผิด หรือเปลี่ยนมติ)
+      if (d.detail != null && String(d.detail).trim()) patch.detail = String(d.detail).trim();
+      if (d.final && DECS.includes(d.final)) { patch.decision = d.final; patch.decision_note = String(d.note).trim(); }
     }
     if (Object.keys(patch).length) {
       const { error } = await sb().from('termination_cases').update(patch).eq('id', c.id);
@@ -3087,11 +3160,18 @@
     };
     // ประวัติการดำเนินการทางวินัย (ตักเตือนวาจา / ลายลักษณ์อักษร / ใบเตือน) — หลักฐานประกอบเอกสาร
     const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
-    const disc_history = (dvR.data || []).map(a => ({
-      at: a.performed_at, type: a.action_type, label: ACT_LABEL[a.action_type] || a.action_type,
-      reason: a.reason, detail: a.detail, by: a.performed_by, role: a.performed_role,
-      warning_id: a.warning_id, ack_at: a.ack_at, need_ack: a.need_ack, in_range: (String(a.performed_at || '').slice(0, 10) >= start && String(a.performed_at || '').slice(0, 10) <= end),
-    }));
+    // ★ ใบเตือนที่ถูก "ลบ" หรือ "ยกเลิก" ต้องไม่ค้างอยู่ในประวัติ
+    //   (แถวใน disc_actions ผูกกับ warning_id — ถ้าใบหายไปแล้วต้องไม่แสดง)
+    const { data: wAll } = await sb().from('warnings').select('warning_id,status').eq('emp_id', p.emp_id);
+    const liveWarn = new Set((wAll || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
+    const disc_history = (dvR.data || [])
+      .filter(a => a.status !== 'cancelled')                                  // การดำเนินการที่ถูกยกเลิก
+      .filter(a => !a.warning_id || liveWarn.has(String(a.warning_id)))       // ใบเตือนถูกลบ/ยกเลิกไปแล้ว
+      .map(a => ({
+        at: a.performed_at, type: a.action_type, label: ACT_LABEL[a.action_type] || a.action_type,
+        reason: a.reason, detail: a.detail, by: a.performed_by, role: a.performed_role,
+        warning_id: a.warning_id, ack_at: a.ack_at, need_ack: a.need_ack, in_range: (String(a.performed_at || '').slice(0, 10) >= start && String(a.performed_at || '').slice(0, 10) <= end),
+      }));
     // งานที่ได้รับมอบหมาย (task_assignments)
     const tasks = taR.data || [];
     const tCount = st => tasks.filter(t => t.status === st).length;

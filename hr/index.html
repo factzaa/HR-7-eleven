@@ -3002,17 +3002,31 @@ async function loadWarningsTable(){
   if(!r.ok) return;
   if(!r.rows.length){ $('d_warnings').innerHTML='<div class="empty">ยังไม่มีใบเตือน</div>'; return; }
   $('d_warnings').innerHTML = `<div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>เลขที่</th><th>วันที่</th><th>พนักงาน</th><th>ระดับ</th><th>สาย</th><th>ขาด</th><th></th></tr></thead>
-    <tbody>${r.rows.map(w=>`
-      <tr>
+    <thead><tr><th>เลขที่</th><th>วันที่</th><th>พนักงาน</th><th>ระดับ</th><th>สาย</th><th>ขาด</th><th>สถานะ</th><th></th></tr></thead>
+    <tbody>${r.rows.map(w=>{
+      const voided = w.status==='cancelled';
+      return `
+      <tr${voided?' style="opacity:.62;background:#f8fafc"':''}>
         <td class="mono">${esc(w.warning_id)}</td>
         <td class="mono">${beDate(w.issue_date)}</td>
         <td><div class="ntext"><span class="nm">${esc(w.emp_name)}</span><span class="nick">${esc(w.emp_id)}</span></div></td>
-        <td>${esc(w.level_name)}</td>
+        <td${voided?' style="text-decoration:line-through"':''}>${esc(w.level_name)}</td>
         <td class="mono">${w.late_count} ครั้ง · ${w.late_total} นาที</td>
         <td class="mono">${w.absent_count}</td>
-        <td class="rowact" style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-wview="${esc(w.warning_id)}">พรีวิว</button> <button class="btn btn-sec btn-sm" data-wedit="${esc(w.warning_id)}">แก้ไข</button> <button class="btn btn-danger btn-sm" data-wdel="${esc(w.warning_id)}" data-wemp="${esc(w.emp_id)}">ลบ</button></td>
-      </tr>`).join('')}</tbody></table></div></div>`;
+        <td>${voided
+              ? `<span class="pill" style="background:#e2e8f0;color:#475569;font-weight:700" title="${esc(w.cancel_reason||'')}">🚫 ยกเลิกแล้ว</span>`
+              : (w.acknowledged_at ? '<span class="pill ok">รับทราบแล้ว</span>' : '<span class="pill warn">รอรับทราบ</span>')}</td>
+        <td class="rowact" style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-wview="${esc(w.warning_id)}">พรีวิว</button> <button class="btn btn-sec btn-sm" data-wedit="${esc(w.warning_id)}">แก้ไข</button> ${voided?'':`<button class="btn btn-sec btn-sm" data-wvoid="${esc(w.warning_id)}">🚫 ยกเลิก</button>`} <button class="btn btn-danger btn-sm" data-wdel="${esc(w.warning_id)}" data-wemp="${esc(w.emp_id)}">ลบถาวร</button></td>
+      </tr>`;}).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* แนะนำให้ใช้ <b>ยกเลิก</b> แทนการลบถาวร — ใบยังอยู่ในระบบเป็นหลักฐานว่าเคยออกและถูกยกเลิกเพราะอะไร · ใบที่ยกเลิกจะไม่ถูกนับเป็นใบเตือนที่มีผลอีกต่อไป</div></div>`;
+  document.querySelectorAll('[data-wvoid]').forEach(b=>b.onclick=async()=>{
+    const wid=b.dataset.wvoid;
+    const reason=prompt('ยกเลิกใบเตือน '+wid+'\nระบุเหตุผล (บังคับ · จะแจ้งให้พนักงานทราบด้วย):','');
+    if(reason===null) return;
+    if(!reason.trim()){ toast('err','ต้องระบุเหตุผล'); return; }
+    const rr=await post({ action:'hr_warning_void', password:pwd, data:{ warning_id:wid, reason, by:'สำนักงาน (HR)' } });
+    if(rr.ok){ toast('ok','ยกเลิกใบเตือนแล้ว'); loadWarningsTable(); loadDiscipline(); } else toast('err', rr.error||'ไม่สำเร็จ');
+  });
   document.querySelectorAll('[data-wview]').forEach(b=>b.onclick=()=>openWarningView(b.dataset.wview));
   document.querySelectorAll('[data-wedit]').forEach(b=>b.onclick=async()=>{
     const wid=b.dataset.wedit, w=(r.rows||[]).find(x=>x.warning_id===wid);
@@ -3023,7 +3037,7 @@ async function loadWarningsTable(){
   });
   document.querySelectorAll('[data-wdel]').forEach(b=>b.onclick=async()=>{
     const wid=b.dataset.wdel;
-    if(!confirm('ลบใบเตือน '+wid+' ?\n(จะถูกบันทึกในบันทึกกิจกรรม)')) return;
+    if(!confirm('⚠️ ลบใบเตือน '+wid+' ออกจากระบบ "ถาวร" ?\n\nกู้คืนไม่ได้ และไทม์ไลน์วินัยของพนักงานจะไม่มีใบนี้อีก\nถ้าต้องการเก็บไว้เป็นหลักฐาน ให้กด "ยกเลิก" แทน\n\n(การลบจะถูกบันทึกในบันทึกกิจกรรม)')) return;
     const rr=await post({ action:'hr_warning_delete', password:pwd, warning_id:wid });
     if(rr.ok){ toast('ok','ลบใบเตือนแล้ว'); loadWarningsTable(); } else toast('err', rr.error||'ไม่สำเร็จ');
   });
@@ -3179,8 +3193,20 @@ async function loadTerm(){
 }
 function renderTermCandidates(){
   const list=TERM.candidates||[];
-  if(!list.length){ $('tm_cand').innerHTML='<div class="card"><div class="card-b"><div class="empty">✅ ไม่มีพนักงานเข้าข่ายตามเกณฑ์ในรอบนี้</div></div></div>'; return; }
-  $('tm_cand').innerHTML = list.map(c=>{
+  const done=TERM.handled||[];
+  // แถบบอกว่ามีคนเข้าเกณฑ์แต่ "มีเคสอยู่แล้ว" กี่คน (ไม่แสดงซ้ำในรายชื่อเข้าข่าย)
+  const doneBar = done.length
+    ? '<div style="background:#f1f5f9;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;color:#475569;line-height:1.6">'
+      +'ℹ️ อีก <b>'+done.length+'</b> คนเข้าเกณฑ์แต่<b>มีเคสอยู่แล้ว</b> จึงไม่แสดงซ้ำ — '
+      +done.map(h=>'<a href="javascript:void(0)" onclick="openTermCase(\''+h.case.id+'\')" style="color:#1d4ed8;font-weight:600">'
+        +esc(h.emp_name)+' ('+esc(h.case.case_no)+' · '+(h.case.status==='closed'?'ปิดแล้ว':h.case.status==='cancelled'?'ยกเลิก':'กำลังพิจารณา')+')</a>').join(' · ')
+      +'</div>'
+    : '';
+  if(!list.length){
+    $('tm_cand').innerHTML = doneBar + '<div class="card"><div class="card-b"><div class="empty">✅ ไม่มีพนักงานเข้าข่ายรายใหม่ในรอบนี้</div></div></div>';
+    return;
+  }
+  $('tm_cand').innerHTML = doneBar + list.map(c=>{
     const sv=TM_SEV[c.severity]||TM_SEV.high;
     return '<div class="card" style="margin-bottom:10px;border-left:5px solid '+sv.c+'"><div class="card-b" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">'
       +'<div class="name-cell" style="min-width:210px">'
@@ -3307,13 +3333,16 @@ async function openTermCase(id){
   TERM_CASE=r;
   const c=r.case, steps=r.steps||[];
   const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
-  const STAGE={ propose:'เสนอเรื่อง', hr_review:'HR ตรวจสอบ', decision:'ผู้มีอำนาจให้ความเห็น', note:'บันทึกเพิ่มเติม', cancel:'ยกเลิกเคส' };
-  const DEC={ agree:'เห็นด้วย', disagree:'ไม่เห็นด้วย', need_more:'ขอข้อมูลเพิ่ม', approve:'ส่งต่อผู้มีอำนาจ', reject:'ยุติเรื่อง', hold:'ชะลอไว้ก่อน' };
+  const STAGE={ propose:'เสนอเรื่อง', hr_review:'HR ตรวจสอบ', decision:'ผู้มีอำนาจให้ความเห็น', note:'บันทึกเพิ่มเติม', cancel:'ยกเลิกเคส', reopen:'เปิดเคสขึ้นมาใหม่', edit:'แก้ไขเคส' };
+  // ★ ขั้น "ผู้มีอำนาจ" = จบเรื่อง ต้องแสดงเป็น "มติ" ไม่ใช่ "ส่งต่อ"
+  const DEC={ agree:'เห็นด้วย', disagree:'ไม่เห็นด้วย', need_more:'ขอข้อมูลเพิ่ม', approve:'ส่งต่อผู้มีอำนาจ', reject:'ยุติเรื่อง', hold:'ชะลอไว้ก่อน',
+    terminate_proposed:'มติ: เห็นควรเสนอเลิกจ้าง', not_terminate:'มติ: ไม่เห็นควรเลิกจ้าง', probation:'มติ: ให้โอกาส / คุมประพฤติ',
+    transfer:'มติ: ย้ายสาขา/หน้าที่', training:'มติ: อบรมแก้ไข', reopened:'เปิดพิจารณาใหม่', edited:'แก้ไขข้อมูล' };
   const ev=c.evidence||{};
 
   const timeline = steps.map((s,i)=>'<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)">'
-    +'<div style="width:26px;height:26px;border-radius:50%;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none">'+(i+1)+'</div>'
-    +'<div style="flex:1"><div style="font-weight:700;font-size:13.5px">'+esc(STAGE[s.stage]||s.stage)+(s.decision?(' · <span style="color:#1d4ed8">'+esc(DEC[s.decision]||s.decision)+'</span>'):'')+'</div>'
+    +'<div style="width:26px;height:26px;border-radius:50%;background:'+(s.stage==='decision'?'#7c3aed':s.stage==='reopen'?'#c2410c':'#0f766e')+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none">'+(i+1)+'</div>'
+    +'<div style="flex:1"><div style="font-weight:700;font-size:13.5px">'+esc(STAGE[s.stage]||s.stage)+(s.decision?(' · <span style="color:'+(s.stage==='decision'?'#7c3aed':'#1d4ed8')+'">'+esc(DEC[s.decision]||s.decision)+'</span>'):'')+(s.stage==='decision'?' <span class="pill ok" style="font-size:10.5px">จบเรื่อง</span>':'')+'</div>'
     +'<div style="font-size:12.5px;color:#374151;line-height:1.6;margin-top:2px">'+esc(s.note||'').replace(/\n/g,'<br>')+'</div>'
     +'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">'+esc(s.actor||'')+' · '+fmt(s.at)+'</div></div></div>').join('');
 
@@ -3337,6 +3366,16 @@ async function openTermCase(id){
     actions+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
       +'<button class="btn btn-sec btn-sm" onclick="termStep(\'note\',null)">📝 บันทึกความเห็นเพิ่ม</button>'
       +'<button class="btn btn-sec btn-sm" onclick="termStep(\'cancel\',null)">🗑 ยกเลิกเคส</button></div>';
+  } else {
+    // ★ เคสปิดแล้ว — ยังแก้ไขหรือดึงกลับมาพิจารณาใหม่ได้
+    actions='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--muted);margin-bottom:8px">'
+      +(c.status==='cancelled' ? 'เคสนี้ถูกยกเลิก' : 'เคสนี้จบขั้นตอนแล้ว — ผู้มีอำนาจลงความเห็นเรียบร้อย')
+      +' · ถ้าข้อมูลผิดหรือมีข้อเท็จจริงใหม่ สามารถแก้ไขหรือเปิดพิจารณาใหม่ได้ (ไทม์ไลน์เดิมยังถูกเก็บไว้เป็นหลักฐาน)</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn btn-sec btn-sm" onclick="termEditClosed()">✏️ แก้ไขมติ / รายละเอียด</button>'
+      +'<button class="btn btn-sec btn-sm" onclick="termReopen()">↩️ เปิดเคสขึ้นมาใหม่</button>'
+      +'<button class="btn btn-sec btn-sm" onclick="termStep(\'note\',null)">📝 บันทึกเพิ่มเติม</button>'
+      +'</div>';
   }
 
   openModal('📂 เคส '+esc(c.case_no||'')+' — '+esc(c.emp_name||''),
@@ -3408,9 +3447,65 @@ async function termFinal(final){
     if(!note){ toast('err','ต้องระบุเหตุผล'); return; }
     if(!by){ toast('err','ต้องระบุชื่อผู้ให้ความเห็น'); return; }
     $('tmf_save').disabled=true;
-    const r=await post({ action:'hr_term_case_step', password:pwd, data:{ case_id:c.id, stage:'decision', decision:'approve', final, note, actor:by, actor_role:'exec' } });
-    if(r.ok){ closeModal(); toast('ok','บันทึกมติแล้ว'); await loadTerm(); openTermCase(c.id); }
+    // ★ ขั้นผู้มีอำนาจ = จบเรื่อง — บันทึก "มติ" ลงไทม์ไลน์ตรง ๆ ไม่ใช่ "ส่งต่อ"
+    const r=await post({ action:'hr_term_case_step', password:pwd, data:{ case_id:c.id, stage:'decision', decision:final, final, note, actor:by, actor_role:'exec' } });
+    if(r.ok){ closeModal(); toast('ok','บันทึกมติแล้ว — ปิดเคส'); await loadTerm(); openTermCase(c.id); }
     else { toast('err', r.error||'ไม่สำเร็จ'); $('tmf_save').disabled=false; }
+  };
+}
+// ↩️ ดึงเคสที่ปิดแล้วกลับมาพิจารณาใหม่
+async function termReopen(){
+  const c=TERM_CASE.case;
+  openModal('↩️ เปิดเคส '+esc(c.case_no||'')+' ขึ้นมาใหม่',
+    '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#7c2d12;margin-bottom:12px;line-height:1.6">'
+      +'มติเดิมจะถูกล้าง และเคสกลับเข้าสู่ขั้นตอนพิจารณาอีกครั้ง · ไทม์ไลน์เดิมยังเก็บไว้ครบเป็นหลักฐาน</div>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">กลับไปที่ขั้นตอน</label>'
+    +'<select id="tmr_back" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+      +'<option value="decision">รอผู้มีอำนาจให้ความเห็นใหม่</option>'
+      +'<option value="hr_review">ให้ HR ตรวจสอบใหม่</option>'
+    +'</select>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">เหตุผลที่เปิดใหม่ (บังคับ)</label>'
+    +'<textarea id="tmr_note" rows="3" placeholder="เช่น มีข้อเท็จจริงใหม่ · พนักงานยื่นคำชี้แจงเพิ่มเติม · มติเดิมผิดพลาด" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้บันทึก</label>'
+    +'<input id="tmr_by" value="สำนักงาน (HR)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<button class="btn btn-pri" id="tmr_save" style="width:100%;padding:12px;margin-top:14px">เปิดเคสขึ้นมาใหม่</button>');
+  $('tmr_save').onclick=async()=>{
+    const note=$('tmr_note').value.trim();
+    if(!note){ toast('err','ต้องระบุเหตุผล'); return; }
+    $('tmr_save').disabled=true;
+    const r=await post({ action:'hr_term_case_step', password:pwd, data:{
+      case_id:c.id, stage:'reopen', decision:'reopened', back_to:$('tmr_back').value,
+      note, actor:$('tmr_by').value.trim()||'สำนักงาน (HR)', actor_role:'hr' } });
+    if(r.ok){ closeModal(); toast('ok','เปิดเคสขึ้นมาใหม่แล้ว'); await loadTerm(); openTermCase(c.id); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('tmr_save').disabled=false; }
+  };
+}
+// ✏️ แก้ไขมติ / รายละเอียด ของเคสที่ปิดแล้ว
+async function termEditClosed(){
+  const c=TERM_CASE.case;
+  const DECOPT=[['','— ไม่เปลี่ยนมติ —'],['terminate_proposed','เห็นควรเสนอเลิกจ้าง'],['not_terminate','ไม่เห็นควรเลิกจ้าง'],
+    ['probation','ให้โอกาส / คุมประพฤติ'],['transfer','ย้ายสาขา/เปลี่ยนหน้าที่'],['training','อบรมแก้ไข']];
+  openModal('✏️ แก้ไขเคส '+esc(c.case_no||''),
+    '<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">พฤติการณ์ / รายละเอียด</label>'
+    +'<textarea id="tme_detail" rows="4" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'+esc(c.detail||'')+'</textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">เปลี่ยนมติ (ถ้าต้องการ)</label>'
+    +'<select id="tme_final" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+      +DECOPT.map(([v,l])=>'<option value="'+v+'"'+(v===c.decision?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">เหตุผลที่แก้ไข (บังคับ · เก็บลงไทม์ไลน์)</label>'
+    +'<textarea id="tme_note" rows="3" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้แก้ไข</label>'
+    +'<input id="tme_by" value="สำนักงาน (HR)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<button class="btn btn-pri" id="tme_save" style="width:100%;padding:12px;margin-top:14px">บันทึกการแก้ไข</button>');
+  $('tme_save').onclick=async()=>{
+    const note=$('tme_note').value.trim();
+    if(!note){ toast('err','ต้องระบุเหตุผลที่แก้ไข'); return; }
+    $('tme_save').disabled=true;
+    const r=await post({ action:'hr_term_case_step', password:pwd, data:{
+      case_id:c.id, stage:'edit', decision:'edited',
+      detail:$('tme_detail').value.trim(), final:$('tme_final').value||null,
+      note, actor:$('tme_by').value.trim()||'สำนักงาน (HR)', actor_role:'hr' } });
+    if(r.ok){ closeModal(); toast('ok','บันทึกการแก้ไขแล้ว'); await loadTerm(); openTermCase(c.id); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('tme_save').disabled=false; }
   };
 }
 // นิดาวิเคราะห์ความเสี่ยง (ทางกฎหมาย/ความเป็นธรรม) ก่อนตัดสินใจ
