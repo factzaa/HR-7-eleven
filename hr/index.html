@@ -2864,6 +2864,17 @@ function renderDiscipline(){
     </div>` : '';
 
   const actPill = x=>{
+    const tc = x.term_case;
+    // ★ ผ่านมติเคสพิจารณาแล้ว → ไม่ต้องเร่งออกใบเตือนอีก แสดงมติแทน
+    if(x.action_status==='case_closed' && tc){
+      return `<span class="pill" style="background:${tc.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'};color:${tc.decision==='terminate_proposed'?'#b91c1c':'#15803d'};font-weight:700">⚖️ ผ่านมติแล้ว</span>`
+        + `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(tc.decision_label||'')}</div>`
+        + `<a href="javascript:void(0)" onclick="showTab('terminate');setTimeout(()=>openTermCase('${tc.id}'),400)" style="font-size:11px;color:#1d4ed8">${esc(tc.case_no||'')} · ดูเคส</a>`;
+    }
+    if(x.action_status==='case_open' && tc){
+      return `<span class="pill" style="background:#fef3c7;color:#a16207;font-weight:700">⚖️ อยู่ระหว่างพิจารณา</span>`
+        + `<a href="javascript:void(0)" onclick="showTab('terminate');setTimeout(()=>openTermCase('${tc.id}'),400)" style="display:block;font-size:11px;color:#1d4ed8;margin-top:2px">${esc(tc.case_no||'')} · ดูเคส</a>`;
+    }
     if(x.action_status==='none') return '<span style="color:var(--muted);font-size:12.5px">—</span>';
     if(x.action_status==='done'){
       const ackTxt = x.pending_ack>0 ? '<div style="font-size:11px;color:#1d4ed8;margin-top:2px">รอพนักงานรับทราบ</div>' : '';

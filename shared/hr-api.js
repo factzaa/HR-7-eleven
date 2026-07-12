@@ -874,9 +874,23 @@
       .filter(a => !a.warning_id || liveWarn.has(String(a.warning_id)));
     const actMap = {}; (acts || []).forEach(a => { (actMap[a.emp_id] || (actMap[a.emp_id] = [])).push(a); });
 
+    // ★ เคสพิจารณาเลิกจ้าง — คนที่ผ่านมติแล้ว ไม่ต้องเร่งให้ออกใบเตือนซ้ำ แค่เปลี่ยนสถานะให้เห็น
+    const TERM_DEC_LABEL = {
+      terminate_proposed: 'เห็นควรเสนอเลิกจ้าง', not_terminate: 'ไม่เห็นควรเลิกจ้าง',
+      probation: 'ให้โอกาส / คุมประพฤติ', transfer: 'ย้ายสาขา/หน้าที่', training: 'อบรมแก้ไข',
+    };
+    const termMap = {};
+    try {
+      const { data: tcs } = await sb().from('termination_cases')
+        .select('id,case_no,emp_id,status,decision,opened_at,closed_at')
+        .neq('status', 'cancelled').order('opened_at', { ascending: false });
+      (tcs || []).forEach(c => { if (!termMap[c.emp_id]) termMap[c.emp_id] = c; });   // เคสล่าสุดของแต่ละคน
+    } catch (_e) { /* ยังไม่ได้รัน termination.sql ก็ข้าม */ }
+
     const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
     const out = employees.map(e => {
       const s = scMap[e.emp_id] || {};
+      const tc = termMap[e.emp_id] || null;
       const mine = (actMap[e.emp_id] || []).sort((a, b) => String(b.performed_at).localeCompare(String(a.performed_at)));
       const need = s.action_type || null;                       // ต้องทำอะไรตามคะแนน
       const doneOfNeed = need ? mine.find(a => a.action_type === need) : null;
@@ -898,7 +912,15 @@
         action_done: !!doneOfNeed,
         action_done_at: doneOfNeed ? doneOfNeed.performed_at : null,
         action_done_by: doneOfNeed ? doneOfNeed.performed_by : null,
-        action_status: !need ? 'none' : (doneOfNeed ? 'done' : 'pending'),
+        // ★ ถ้ามีเคสพิจารณาที่ "ปิดแล้ว" = ผ่านมติ ไม่ต้องเร่งให้ออกใบเตือนอีก
+        action_status: (tc && tc.status === 'closed') ? 'case_closed'
+          : (tc ? 'case_open' : (!need ? 'none' : (doneOfNeed ? 'done' : 'pending'))),
+        term_case: tc ? {
+          id: tc.id, case_no: tc.case_no, status: tc.status,
+          decision: tc.decision || null,
+          decision_label: tc.decision ? (TERM_DEC_LABEL[tc.decision] || tc.decision) : '',
+          closed_at: tc.closed_at || null,
+        } : null,
         last_action: lastAct ? { type: lastAct.action_type, label: ACT_LABEL[lastAct.action_type] || lastAct.action_type, at: lastAct.performed_at, by: lastAct.performed_by, ack_at: lastAct.ack_at } : null,
         actions_count: mine.length,
         pending_ack: pendingAck,
