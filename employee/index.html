@@ -261,6 +261,7 @@ async function init(){
   await startCamera();
   await loadModels();
   startGeo();
+  showImageAnnouncements();   // ★ สไลด์ประกาศรูปภาพ — เด้งทันทีที่เปิดหน้า (ก่อนกรอกรหัส)
   detectLoop();
 }
 
@@ -271,6 +272,18 @@ function annStyle(level){
   if(level==='warn')   return {bg:'#fff7ed', bd:'var(--orange)', fg:'#c2410c', ic:'⚠️'};
   return {bg:'var(--green-soft)', bd:'var(--green)', fg:'var(--green-d)', ic:'📢'};
 }
+// ====== ประกาศรูปภาพ (สไลด์) — เด้งทันทีที่เปิดหน้า ก่อนกรอกรหัส ======
+//  · ยังไม่รู้ว่าใคร → ใช้สาขาจาก GPS · ถ้า GPS ยังไม่จับ รอสูงสุด 4 วิ แล้วแสดงเฉพาะประกาศ "ทุกสาขา"
+//  · พอพนักงานกรอกรหัส ค่อยผูกยอด "เปิดดูแล้ว" เข้ากับตัวเขา (ANN.claim)
+let ANN_SLIDES_DONE = false;
+async function showImageAnnouncements(){
+  if(ANN_SLIDES_DONE || !window.ANN) return;
+  ANN_SLIDES_DONE = true;
+  // รอ GPS จับสาขาสูงสุด 4 วินาที (ไม่บล็อกนาน — ถ้าไม่ได้ก็แสดงเฉพาะ "ทุกสาขา")
+  for(let i=0;i<8 && !gps.branch;i++){ await new Promise(r=>setTimeout(r,500)); }
+  try{ await window.ANN.show(null, { branchId: gps.branch || null }); }catch(_e){}
+}
+
 // แบนเนอร์ประกาศ — กะทัดรัด ไม่กินพื้นที่จนดันช่องกรอกรหัสตกจอ
 //  · ตัดข้อความยาวเหลือ 2 บรรทัด กด "อ่านเพิ่ม" เพื่อกาง
 //  · แสดงสูงสุด 2 ใบ ที่เหลือซ่อนไว้ใต้ปุ่ม "ดูประกาศทั้งหมด"
@@ -627,7 +640,7 @@ function showToast(kind,msg){
 $('toast').onclick = ()=>$('toast').classList.remove('show');
 
 // ====== events ======
-let ANN_SHOWN_FOR = null;   // กันเด้งซ้ำระหว่างพิมพ์รหัส
+let ANN_CLAIMED_FOR = null;   // ผูกยอด "เปิดดูแล้ว" กับพนักงานครั้งเดียวพอ
 $('empId').addEventListener('input', e=>{
   e.target.value = e.target.value.replace(/\D/g,'');
   empMatch = lookupEmp(e.target.value);
@@ -636,10 +649,11 @@ $('empId').addEventListener('input', e=>{
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();
   refreshCoCard();
-  // ★ ประกาศรูปภาพ — สไลด์ลอยขึ้นมาเมื่อกรอกรหัสถูก (วันละครั้งต่อประกาศ)
-  if(empMatch && window.ANN && ANN_SHOWN_FOR !== empMatch.emp_id){
-    ANN_SHOWN_FOR = empMatch.emp_id;
-    try{ window.ANN.show(empMatch); }catch(_e){}
+  // ★ สไลด์เด้งไปตั้งแต่เปิดหน้าแล้ว (ยังไม่รู้ว่าใคร) — พอรู้ตัวค่อยผูกยอด "เปิดดูแล้ว" เข้ากับเขา
+  //   ไม่เด้งซ้ำ เพื่อไม่ให้พนักงานมัวปิดประกาศจนลืมกดลงเวลา
+  if(empMatch && window.ANN && ANN_CLAIMED_FOR !== empMatch.emp_id){
+    ANN_CLAIMED_FOR = empMatch.emp_id;
+    try{ window.ANN.claim(empMatch); }catch(_e){}
   }
 });
 $('btnIn').onclick  = ()=>submit('checkin');

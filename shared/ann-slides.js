@@ -5,11 +5,15 @@
  * ไม่ต้องกดรับทราบ ปิดได้เลย · แสดง "วันละครั้งต่อคนต่อประกาศ" (จำด้วย localStorage)
  * ระบบยังบันทึกให้ว่าใครเปิดดูแล้ว (announcement_acks.opened_at)
  *
- * ใช้งาน:  await window.ANN.show(emp)          // emp = { emp_id, branch_id, name, nickname }
- *          window.ANN.show(emp, { force:true }) // บังคับแสดงซ้ำ (ไม่สนใจว่าเคยดูวันนี้แล้ว)
+ * ใช้งาน:
+ *   window.ANN.show(emp)                        → รู้ตัวพนักงานแล้ว (หน้ารับส่งผลัด)
+ *   window.ANN.show(null, { branchId })         → ยังไม่รู้ว่าใคร (หน้าลงเวลา — เด้งทันทีที่เปิดหน้า)
+ *   window.ANN.claim(emp)                       → ผูกยอด "เปิดดูแล้ว" กับพนักงานภายหลัง (ตอนกรอกรหัส)
+ *   window.ANN.show(emp, { force:true })        → บังคับแสดงซ้ำ
  * ============================================================ */
 (function () {
-  const LS_KEY = 'ann_slides_seen';       // { "<empId>|<annId>": "YYYY-MM-DD" }
+  const LS_KEY = 'ann_slides_seen';       // { "<empId|dev>|<annId>": "YYYY-MM-DD" }
+  const DEV = 'dev';                      // คีย์ระดับเครื่อง (ใช้ตอนยังไม่รู้ว่าใคร)
 
   const today = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -54,7 +58,19 @@
   }
 
   // ---------- สถานะ ----------
-  const S = { items: [], i: 0, s: 0, emp: null, done: null };   // i = ประกาศที่เท่าไหร่ · s = สไลด์ที่เท่าไหร่
+  // i = ประกาศที่เท่าไหร่ · s = สไลด์ที่เท่าไหร่ · key = empId หรือ 'dev'
+  // viewed = id ประกาศที่ถูกเปิดดูในรอบนี้ (ไว้ผูกกับพนักงานทีหลังผ่าน claim())
+  const S = { items: [], i: 0, s: 0, emp: null, key: DEV, done: null, viewed: [] };
+
+  // บันทึกว่าเปิดดูแล้ว — ถ้ายังไม่รู้ว่าใคร ให้จำ id ไว้ก่อน แล้วค่อยผูกทีหลัง
+  function noteViewed(a) {
+    if (!a) return;
+    markSeen(S.key, a.id);
+    if (S.viewed.indexOf(a.id) < 0) S.viewed.push(a.id);
+    if (S.emp && S.emp.emp_id) {
+      try { window.HR.markAnnouncementOpened(a.id, S.emp.emp_id, S.emp.nickname || S.emp.name, S.emp.branch_id); } catch (_e) { }
+    }
+  }
 
   function render() {
     const a = S.items[S.i]; if (!a) return closeAll();
@@ -92,23 +108,13 @@
   }
 
   function nextAnn() {
-    // บันทึกว่าดูประกาศใบนี้แล้ว
-    const a = S.items[S.i];
-    if (a && S.emp) {
-      markSeen(S.emp.emp_id, a.id);
-      try { window.HR.markAnnouncementOpened(a.id, S.emp.emp_id, S.emp.nickname || S.emp.name, S.emp.branch_id); } catch (_e) { }
-    }
+    noteViewed(S.items[S.i]);                       // ดูใบนี้จบแล้ว
     if (S.i < S.items.length - 1) { S.i++; S.s = 0; render(); }
     else closeAll();
   }
 
   function closeAll() {
-    // ปิดกลางคัน — บันทึกใบที่กำลังดูอยู่ด้วย
-    const a = S.items[S.i];
-    if (a && S.emp && !seenToday(S.emp.emp_id, a.id)) {
-      markSeen(S.emp.emp_id, a.id);
-      try { window.HR.markAnnouncementOpened(a.id, S.emp.emp_id, S.emp.nickname || S.emp.name, S.emp.branch_id); } catch (_e) { }
-    }
+    noteViewed(S.items[S.i]);                       // ปิดกลางคัน — นับใบที่กำลังดูอยู่ด้วย
     const o = document.getElementById('annSlides');
     if (o) o.style.display = 'none';
     document.removeEventListener('keydown', onKey);
@@ -146,22 +152,39 @@
   }
 
   // ---------- API ----------
+  // show(emp)                     → รู้ตัวพนักงานแล้ว
+  // show(null, { branchId })      → ยังไม่รู้ว่าใคร (หน้าลงเวลา) · ใช้สาขาจาก GPS
   // คืน Promise ที่ resolve เมื่อผู้ใช้ปิดสไลด์ (หรือไม่มีประกาศให้แสดง)
   async function show(emp, opt) {
     opt = opt || {};
-    if (!emp || !emp.emp_id || !window.HR || !window.HR.getImageAnnouncements) return true;
+    if (!window.HR || !window.HR.getImageAnnouncements) return true;
+    const key = (emp && emp.emp_id) ? String(emp.emp_id) : DEV;
+    const branchId = opt.branchId || (emp && emp.branch_id) || null;
+
     let list = [];
-    try { list = await window.HR.getImageAnnouncements(emp.emp_id, emp.branch_id); } catch (_e) { return true; }
-    if (!opt.force) list = list.filter(a => !seenToday(emp.emp_id, a.id));
+    try { list = await window.HR.getImageAnnouncements(key, branchId); } catch (_e) { return true; }
+    // ยังไม่รู้สาขา (GPS ยังไม่จับ) → แสดงเฉพาะประกาศ "ทุกสาขา" ไปก่อน
+    if (!branchId) list = list.filter(a => !Array.isArray(a.branch_ids) || !a.branch_ids.length);
+    if (!opt.force) list = list.filter(a => !seenToday(key, a.id));
     if (!list.length) return true;
 
     ensureDom(); wire();
-    S.items = list; S.i = 0; S.s = 0; S.emp = emp;
+    S.items = list; S.i = 0; S.s = 0; S.emp = (emp && emp.emp_id) ? emp : null; S.key = key;
     document.getElementById('annSlides').style.display = 'flex';
     document.addEventListener('keydown', onKey);
     render();
     return new Promise(res => { S.done = res; });
   }
 
-  window.ANN = { show, _esc: esc };
+  // ผูกยอด "เปิดดูแล้ว" กับพนักงาน หลังจากเขากรอกรหัส (กรณีสไลด์เด้งไปก่อนที่จะรู้ว่าเป็นใคร)
+  function claim(emp) {
+    if (!emp || !emp.emp_id || !S.viewed.length) return;
+    S.viewed.forEach(id => {
+      markSeen(emp.emp_id, id);
+      try { window.HR.markAnnouncementOpened(id, emp.emp_id, emp.nickname || emp.name, emp.branch_id); } catch (_e) { }
+    });
+    S.viewed = [];
+  }
+
+  window.ANN = { show, claim, _esc: esc };
 })();
