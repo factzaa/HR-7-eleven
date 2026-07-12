@@ -656,12 +656,39 @@
 .es-tbl th{background:#f0f2f4}
 .es-foot{margin-top:24px;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:8px}
 @media (max-width:700px){ .es-grid{grid-template-columns:repeat(3,1fr)} }
+
+/* ===== เอกสารทางการ (ใช้เฉพาะตอนสั่งพิมพ์) ===== */
+.es-doc{display:none}
+.es-doc-head{text-align:center;border-bottom:2.5px solid #000;padding-bottom:8px;margin-bottom:10px}
+.es-doc-org{font-size:13px;font-weight:700;letter-spacing:.5px}
+.es-doc-title{font-size:17px;font-weight:700;margin-top:4px}
+.es-doc-sub{font-size:12px;margin-top:2px}
+.es-doc-meta{display:flex;justify-content:space-between;font-size:11px;margin-top:6px}
+.es-dt{width:100%;border-collapse:collapse;font-size:11.8px;margin-bottom:10px}
+.es-dt th,.es-dt td{border:1px solid #000;padding:4px 7px;vertical-align:top}
+.es-dt th{background:#e9edf0;font-weight:700;text-align:center}
+.es-dt td.k{background:#f5f6f7;font-weight:600;width:34%}
+.es-dt td.n{text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.es-dsec{font-size:13px;font-weight:700;margin:12px 0 5px;padding:3px 7px;background:#e9edf0;border-left:4px solid #000}
+.es-note{font-size:11px;margin:4px 0 8px;line-height:1.55}
+.es-sign{margin-top:26px;display:flex;gap:26px;justify-content:space-between;font-size:11.5px;text-align:center}
+.es-sign > div{flex:1}
+.es-sign .ln{border-bottom:1px dotted #000;height:36px;margin-bottom:5px}
+.es-doc-foot{margin-top:16px;border-top:1px solid #000;padding-top:5px;font-size:10px;display:flex;justify-content:space-between}
+
 @media print{
+  @page{ size:A4 portrait; margin:12mm 12mm 14mm; }
   body *{visibility:hidden!important}
   #es_body, #es_body *{visibility:visible!important}
   #es_body{position:absolute;left:0;top:0;width:100%}
-  .es-controls{display:none!important}
-  .es-grid{grid-template-columns:repeat(6,1fr)!important}
+  .es-controls, .no-print{display:none!important}
+  /* พิมพ์ = เอกสารทางการ · ซ่อนการ์ดบนจอ */
+  .es-report{display:none!important}
+  .es-doc{display:block!important;color:#000;font-size:11.8px}
+  .es-dt{page-break-inside:auto}
+  .es-dt tr{page-break-inside:avoid}
+  .es-dsec{page-break-after:avoid}
+  .es-sign{page-break-inside:avoid}
 }
 </style>
 
@@ -4842,6 +4869,9 @@ function renderEmpSum(r){
   h+='<div class="es-foot">เอกสารนี้สร้างจากระบบ HR 7-Eleven · '+esc(genTxt)+' &nbsp;&nbsp; ลงชื่อผู้ประเมิน __________________ / ผู้รับทราบ __________________</div>';
   h+='</div>';
 
+  // ================= เวอร์ชันเอกสารทางการ (แสดงเฉพาะตอนสั่งพิมพ์) =================
+  h+=buildEmpSumDoc(r, genTxt);
+
   // ---- แผงประเมิน (ไม่พิมพ์ลงเอกสาร) ----
   h+='<div class="no-print" style="max-width:820px;margin:14px auto 0;display:flex;gap:8px;flex-wrap:wrap">'
     +'<button class="btn btn-pri" id="es_ai">🤖 ให้นิดาวิเคราะห์ + แนะนำคะแนนบวก</button>'
@@ -4852,6 +4882,163 @@ function renderEmpSum(r){
   $('es_body').innerHTML=h;
   $('es_ai') && ($('es_ai').onclick=esAskNida);
   $('es_bonus') && ($('es_bonus').onclick=()=>openBonusModal(r.emp.emp_id, r.emp.name, null, ''));
+}
+
+// ================= เอกสารทางการ (สำหรับสั่งพิมพ์) =================
+function buildEmpSumDoc(r, genTxt){
+  const e=r.emp, a=r.attendance, d=r.discipline, t=r.tasks, sp=r.special, det=r.details;
+  const sc=r.score||{}, pf=r.performance||{}, dh=(r.disc_history||[]);
+  const n=v=>(v==null?'—':v);
+  const pctv=v=>(v==null?'—':v+'%');
+  const docNo='EMP-'+e.emp_id+'-'+String(r.range.start).replace(/-/g,'');
+  // ตาราง 2 คอลัมน์: รายการ | ค่า  (จับคู่ 2 ชุดต่อแถวเพื่อประหยัดหน้า)
+  const rows2=(pairs)=>{
+    let out='';
+    for(let i=0;i<pairs.length;i+=2){
+      const p1=pairs[i], p2=pairs[i+1];
+      out+='<tr><td class="k">'+esc(p1[0])+'</td><td class="n">'+p1[1]+'</td>'
+         + (p2? ('<td class="k">'+esc(p2[0])+'</td><td class="n">'+p2[1]+'</td>') : '<td class="k"></td><td class="n"></td>')
+         + '</tr>';
+    }
+    return out;
+  };
+
+  let h='<div class="es-doc">';
+
+  // ---- หัวเอกสาร ----
+  h+='<div class="es-doc-head">'
+    +'<div class="es-doc-org">บริษัท ซี.พี. ออลล์ · ร้าน 7-Eleven — ฝ่ายทรัพยากรบุคคล</div>'
+    +'<div class="es-doc-title">รายงานสรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
+    +'<div class="es-doc-sub">รอบประเมิน: '+beDate(r.range.start)+' ถึง '+beDate(r.range.end)+'</div>'
+    +'<div class="es-doc-meta"><span>เลขที่เอกสาร: '+esc(docNo)+'</span><span>วันที่ออกเอกสาร: '+esc(genTxt)+'</span></div>'
+    +'</div>';
+
+  // ---- ข้อมูลพนักงาน ----
+  h+='<table class="es-dt">'
+    +'<tr><td class="k">ชื่อ–สกุล</td><td>'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</td>'
+      +'<td class="k">รหัสพนักงาน</td><td>'+esc(e.emp_id)+'</td></tr>'
+    +'<tr><td class="k">สาขา</td><td>'+esc(e.branch_name)+'</td>'
+      +'<td class="k">กะประจำ</td><td>'+esc(e.shift_name||'—')+'</td></tr>'
+    +'<tr><td class="k">วันเริ่มงาน</td><td>'+esDate(e.start_date)+'</td>'
+      +'<td class="k">รอบการประเมิน</td><td>'+beDate(r.range.start)+' – '+beDate(r.range.end)+'</td></tr>'
+    +'</table>';
+
+  // ---- ส่วนที่ 1: การมาปฏิบัติงาน ----
+  h+='<div class="es-dsec">ส่วนที่ 1 — สถิติการมาปฏิบัติงาน</div>';
+  h+='<table class="es-dt">'+rows2([
+      ['วันที่ต้องมาปฏิบัติงาน (วัน)', n(a.days_should)],
+      ['มาปฏิบัติงานจริง (วัน)', n(a.days_worked)],
+      ['ขาดงาน (วัน)', n(a.absent)],
+      ['ลา (วัน)', n(a.leave_days)],
+      ['มาสาย (ครั้ง)', n(a.late_count)],
+      ['รวมเวลามาสาย (นาที)', n(a.late_total)],
+      ['ออกก่อนเวลา (ครั้ง)', n(a.early_out_count)],
+      ['รวมเวลาออกก่อน (ชั่วโมง)', n(a.early_out_hours)],
+      ['ทำงานล่วงเวลา OT (ชั่วโมง)', n(a.ot_hours)],
+      ['ควบกะ / ทำงานเกินกำหนด (ครั้ง)', n(pf.duty?pf.duty.extend_shift:0)],
+    ])+'</table>';
+
+  // ---- ส่วนที่ 2: คะแนนวินัย ----
+  h+='<div class="es-dsec">ส่วนที่ 2 — คะแนนวินัยและระดับผลการประเมิน</div>';
+  h+='<table class="es-dt">'
+    +'<tr><td class="k">คะแนนตั้งต้น</td><td class="n">'+n(sc.start)+'</td>'
+      +'<td class="k">คะแนนที่ถูกหักรวม</td><td class="n">'+n(sc.total_deduct)+'</td></tr>'
+    +'<tr><td class="k">คะแนนคงเหลือ</td><td class="n" style="font-weight:700;font-size:14px">'+n(sc.score)+' / '+n(sc.start)+'</td>'
+      +'<td class="k">ผลตามช่วงคะแนน</td><td class="n" style="font-weight:700">'+esc(sc.band_label||'—')+'</td></tr>'
+    +'<tr><td class="k">โบนัสความรับผิดชอบ</td><td class="n">'+(sc.bonus?('฿'+sc.bonus):'—')+'</td>'
+      +'<td class="k">การดำเนินการที่ต้องทำ</td><td class="n" style="font-weight:700">'+esc(sc.action_needed_label||'— ไม่มี —')+'</td></tr>'
+    +'</table>';
+  if((sc.items||[]).length){
+    h+='<table class="es-dt"><tr><th style="width:60%">รายการที่มีผลต่อคะแนน</th><th>จำนวน</th><th>คะแนน</th></tr>'
+      + sc.items.map(x=>'<tr><td>'+esc(x.label)+'</td><td class="n">'+x.count+'</td><td class="n">'+x.points+'</td></tr>').join('')
+      + '<tr><td style="text-align:right;font-weight:700">รวม</td><td class="n"></td><td class="n" style="font-weight:700">'+n(sc.total_deduct)+'</td></tr>'
+      + '</table>';
+  }
+
+  // ---- ส่วนที่ 3: ประวัติการดำเนินการทางวินัย ----
+  h+='<div class="es-dsec">ส่วนที่ 3 — ประวัติการดำเนินการทางวินัย</div>';
+  if(!dh.length) h+='<div class="es-note">— ไม่ปรากฏประวัติการตักเตือนหรือการออกใบเตือน —</div>';
+  else {
+    h+='<table class="es-dt"><tr><th>ลำดับ</th><th>วันที่</th><th>การดำเนินการ</th><th>สาเหตุ</th><th>ผู้ดำเนินการ</th><th>การรับทราบ</th></tr>'
+      + dh.map((x,i)=>{
+          const dt=(()=>{ try{ return new Date(x.at).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'}); }catch(e){ return '—'; } })();
+          const ack = !x.need_ack ? '—' : (x.ack_at ? ('รับทราบแล้ว '+(()=>{ try{ return new Date(x.ack_at).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'}); }catch(e){ return ''; } })()) : 'ยังไม่รับทราบ');
+          return '<tr><td class="n">'+(i+1)+'</td><td class="n">'+dt+'</td><td>'+esc(x.label)+(x.warning_id?('<br><span style="font-size:10px">เลขที่ '+esc(x.warning_id)+'</span>'):'')+'</td><td>'+esc(x.reason||'—')+'</td><td>'+esc(x.by||'—')+'</td><td class="n">'+ack+'</td></tr>';
+        }).join('')
+      + '</table>';
+  }
+
+  // ---- ส่วนที่ 4: ผลการปฏิบัติงาน ----
+  h+='<div class="es-dsec">ส่วนที่ 4 — ผลการปฏิบัติงานตามหน้าที่ที่ได้รับมอบหมาย</div>';
+  const rv=pf.review||{}, fx=pf.fixes||{};
+  h+='<table class="es-dt">'
+    +'<tr><th colspan="4">ก. งานในกะ</th></tr>'
+    + rows2([
+      ['งานที่ได้รับมอบหมายทั้งหมด (งาน)', n(t.total)],
+      ['งานที่ผ่านการตรวจ (งาน)', n(t.approved)],
+      ['งานที่รอตรวจ (งาน)', n(t.submitted)],
+      ['งานที่ยังไม่ดำเนินการ (งาน)', n(t.todo)],
+      ['งานที่ถูกตีกลับ (งาน)', n(t.sent_back)+' (รวม '+n(t.sent_back_total)+' ครั้ง)'],
+      ['อัตราการผ่าน (%)', n(t.pass_rate)+'%'],
+      ['ส่งงานหลังหมดกะ (งาน)', n(pf.tasks?pf.tasks.late_submit:0)],
+      ['งานแก้ที่รับผิดชอบ (งาน)', n(fx.total)+(fx.open?(' · ค้าง '+fx.open):'')],
+    ])
+    +'<tr><th colspan="4">ข. การตรวจงานของผลัดก่อนหน้า</th></tr>'
+    + rows2([
+      ['จำนวนงานที่ตรวจให้ผลัดก่อน (งาน)', n(rv.total)],
+      ['ผู้จัดการตีกลับภายหลังการตรวจผ่าน (งาน)', n(rv.missed)],
+      ['ความแม่นยำในการตรวจ (%)', pctv(rv.accuracy)],
+      ['', ''],
+    ])
+    +'</table>';
+
+  // ---- ส่วนที่ 5: หน้าที่พิเศษ ----
+  const du=pf.duty||{}, gd=pf.goods||{}, ho=pf.handover||{}, qa=pf.qa||{}, shf=pf.shelf||{}, mt=pf.mgr_tasks||{};
+  h+='<div class="es-dsec">ส่วนที่ 5 — ความรับผิดชอบพิเศษและงานอื่น</div>';
+  h+='<table class="es-dt">'+rows2([
+      ['ปฏิบัติหน้าที่ผู้คุมผลัด (ครั้ง)', n(du.controller_days)],
+      ['ปฏิบัติหน้าที่หัวหน้าผลัด (ครั้ง)', n(du.leader_days)],
+      ['บันทึกรับสินค้าจากคลัง (ใบ)', n(gd.total)],
+      ['ความแม่นยำในการคีย์รับสินค้า (%)', pctv(gd.accuracy)],
+      ['ส่งมอบผลัด (ครั้ง)', n(ho.sent)+(ho.problem?(' · มีปัญหา '+ho.problem):'')],
+      ['รับมอบผลัด (ครั้ง)', n(ho.received)],
+      ['บันทึกสินค้า QA (รายการ)', n(qa.total)],
+      ['ตรวจเชลฟ์ (วัน)', n(shf.checks)+(shf.assigned?(' / รับผิดชอบ '+shf.assigned+' เชลฟ์'):'')],
+      ['งานที่ผู้จัดการมอบหมายโดยตรง', n(mt.done)+' / '+n(mt.total)+(mt.overdue?(' · เลยกำหนด '+mt.overdue):'')],
+      ['งานพิเศษ', n(sp.approved)+' / '+n(sp.total)+(sp.open?(' · ค้าง '+sp.open):'')],
+    ])+'</table>';
+
+  // ---- ส่วนที่ 6: รายละเอียดประกอบ ----
+  h+='<div class="es-dsec">ส่วนที่ 6 — รายละเอียดประกอบการพิจารณา</div>';
+  h+='<div class="es-note"><b>1. วันที่มาสาย:</b> '+(det.late.length? det.late.map(x=>esDate(x.date)+' ('+x.min+' นาที)').join(', ') : '— ไม่มี —')+'</div>';
+  h+='<div class="es-note"><b>2. วันที่ขาดงาน:</b> '+(det.absent.length? det.absent.map(x=>esDate(x)).join(', ') : '— ไม่มี —')+'</div>';
+  h+='<div class="es-note"><b>3. วันที่ออกก่อนเวลา:</b> '+((det.early_out&&det.early_out.length)? det.early_out.map(x=>esDate(x.date)+' ('+x.min+' นาที)').join(', ') : '— ไม่มี —')+'</div>';
+  h+='<div class="es-note"><b>4. งานที่ส่งหลังหมดกะ:</b> '+((det.late_submit_tasks&&det.late_submit_tasks.length)? det.late_submit_tasks.map(x=>esDate(x.date)+' — '+esc(x.title)).join('; ') : '— ไม่มี —')+'</div>';
+  if(det.sent_back_tasks && det.sent_back_tasks.length){
+    h+='<div class="es-note"><b>5. งานที่ถูกตีกลับ:</b></div>'
+      +'<table class="es-dt"><tr><th>วันที่</th><th>กะ</th><th>งาน</th><th>ครั้ง</th><th>สถานะ</th><th>หมายเหตุการตรวจ</th></tr>'
+      + det.sent_back_tasks.map(x=>'<tr><td class="n">'+esDate(x.date)+'</td><td class="n">'+esc(x.shift)+'</td><td>'+esc(x.title)+'</td><td class="n">'+x.count+'</td><td class="n">'+(x.status==='approved'?'แก้ไขแล้ว':x.status==='sent_back'?'รอแก้ไข':esc(x.status))+'</td><td>'+esc(x.note||'—')+'</td></tr>').join('')
+      +'</table>';
+  } else h+='<div class="es-note"><b>5. งานที่ถูกตีกลับ:</b> — ไม่มี —</div>';
+  if(det.goods_diff && det.goods_diff.length){
+    h+='<div class="es-note"><b>6. ใบรับสินค้าที่มีส่วนต่างจำนวนลัง:</b> '
+      + det.goods_diff.map(x=>esDate(x.date)+' เลขที่ '+esc(x.ref_no||'-')+' (ส่วนต่าง '+x.diff+')').join('; ')+'</div>';
+  }
+
+  // ---- ส่วนที่ 7: ความเห็น + ลงนาม ----
+  h+='<div class="es-dsec">ส่วนที่ 7 — ความเห็นผู้ประเมินและการลงนาม</div>';
+  h+='<table class="es-dt"><tr><td style="height:52px"><b>ความเห็น / ข้อเสนอแนะของผู้บังคับบัญชา:</b></td></tr>'
+    +'<tr><td style="height:52px"><b>มติ / การดำเนินการ:</b> &nbsp; ☐ ไม่มีการดำเนินการ &nbsp; ☐ ตักเตือนด้วยวาจา &nbsp; ☐ ตักเตือนเป็นลายลักษณ์อักษร &nbsp; ☐ ออกใบเตือน &nbsp; ☐ พิจารณาตามขั้นตอน</td></tr>'
+    +'</table>';
+  h+='<div class="es-sign">'
+    +'<div><div class="ln"></div>(............................................)<br>ผู้จัดการร้าน / ผู้ประเมิน<br>วันที่ ........./........./.........</div>'
+    +'<div><div class="ln"></div>(............................................)<br>ฝ่ายทรัพยากรบุคคล<br>วันที่ ........./........./.........</div>'
+    +'<div><div class="ln"></div>(............................................)<br>พนักงานผู้รับทราบ<br>วันที่ ........./........./.........</div>'
+    +'</div>';
+
+  h+='<div class="es-doc-foot"><span>เอกสารนี้จัดทำโดยระบบบริหารบุคลากร 7-Eleven · '+esc(docNo)+'</span><span>ออกเมื่อ '+esc(genTxt)+'</span></div>';
+  h+='</div>';
+  return h;
 }
 
 // ================= นิดาวิเคราะห์ผลงาน + แนะนำคะแนนบวก =================
