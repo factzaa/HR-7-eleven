@@ -185,6 +185,16 @@
         case 'hr_score_event_list':  return await hrScoreEventList(p.emp_id, p.cycle);
         case 'hr_score_event_delete':return await hrScoreEventDelete(p.id);
         case 'hr_score_issue_warnings': return await hrScoreIssueWarnings(p.cycle);
+        // ---- พิจารณาเลิกจ้าง (เสนอเท่านั้น ระบบไม่เลิกจ้างเอง) ----
+        case 'hr_term_rules_get':    return await hrTermRulesGet();
+        case 'hr_term_rules_save':   return await hrTermRulesSave(p.data);
+        case 'hr_term_rule_delete':  return await hrTermRuleDelete(p.key);
+        case 'hr_term_candidates':   return await hrTermCandidates(p.cycle);
+        case 'hr_term_case_open':    return await hrTermCaseOpen(p.data);
+        case 'hr_term_case_list':    return await hrTermCaseList(p.status);
+        case 'hr_term_case_get':     return await hrTermCaseGet(p.id);
+        case 'hr_term_case_step':    return await hrTermCaseStep(p.data);
+        case 'hr_term_case_risk':    return await hrTermCaseRisk(p.data);
         case 'hr_handover_list':     return await hrHandoverList();
         case 'hr_task_defs_get':     return await hrTaskDefsGet();
         case 'hr_task_def_save':     return await hrTaskDefSave(p.data);
@@ -2121,6 +2131,307 @@
       else failed.push({ emp_id: e.emp_id, error: (r && r.error) || 'ไม่สำเร็จ' });
     }
     return { ok: true, issued, total: targets.length, failed };
+  }
+
+  // ============================================================
+  // พิจารณาเลิกจ้าง (Termination Review)
+  // ⚠ ระบบนี้ "เสนอเพื่อพิจารณา" เท่านั้น — ไม่เลิกจ้าง ไม่ปิดใช้งานพนักงานเอง
+  //   ผลลัพธ์สุดท้าย = มติเสนอ + เอกสาร + หลักฐาน · การสั่งเลิกจ้างจริงต้องทำนอกระบบตามกฎหมายแรงงาน
+  // ============================================================
+  const TERM_SEV = { critical: 'ร้ายแรง', high: 'สูง', medium: 'ปานกลาง' };
+  const TERM_STATUS = {
+    proposed: 'เสนอเรื่อง — รอ HR ตรวจสอบ',
+    hr_review: 'HR กำลังตรวจสอบ',
+    decision: 'รอผู้มีอำนาจให้ความเห็น',
+    closed: 'ปิดเคสแล้ว',
+    cancelled: 'ยกเลิกเคส',
+  };
+  const TERM_DECISION = {
+    terminate_proposed: 'มติ: เห็นควรเสนอเลิกจ้าง',
+    not_terminate: 'มติ: ไม่เห็นควรเลิกจ้าง',
+    probation: 'มติ: ให้โอกาส / คุมประพฤติ',
+    transfer: 'มติ: ย้ายสาขา / เปลี่ยนหน้าที่',
+    training: 'มติ: อบรมแก้ไขพฤติกรรม',
+  };
+
+  async function hrTermRulesGet() {
+    const { data, error } = await sb().from('termination_rules').select('*').order('sort');
+    if (error) throw error;
+    return { ok: true, rules: data || [], severity_label: TERM_SEV };
+  }
+  async function hrTermRulesSave(arr) {
+    if (!Array.isArray(arr) || !arr.length) return { ok: false, error: 'ไม่มีข้อมูล' };
+    const rows = arr.map((r, i) => ({
+      key: String(r.key || '').trim().replace(/[^a-zA-Z0-9_]/g, '') || ('rule_' + Date.now() + '_' + i),
+      name: String(r.name || '').trim() || 'เกณฑ์ใหม่',
+      kind: ['score_band', 'warning_count', 'absent_streak', 'absent_total', 'late_total', 'manual'].includes(r.kind) ? r.kind : 'manual',
+      params: (r.params && typeof r.params === 'object') ? r.params : {},
+      severity: ['critical', 'high', 'medium'].includes(r.severity) ? r.severity : 'high',
+      note: r.note || null,
+      enabled: r.enabled !== false,
+      sort: Number(r.sort) || (i + 1) * 10,
+    }));
+    const { error } = await sb().from('termination_rules').upsert(rows, { onConflict: 'key' });
+    if (error) throw error;
+    await logAct('บันทึกเกณฑ์พิจารณาเลิกจ้าง', null, rows.length + ' เกณฑ์');
+    return { ok: true, saved: rows.length };
+  }
+  async function hrTermRuleDelete(key) {
+    if (!key) return { ok: false, error: 'ไม่ระบุเกณฑ์' };
+    const { error } = await sb().from('termination_rules').delete().eq('key', String(key));
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---------- หา "ผู้เข้าข่าย" ตามเกณฑ์ที่เปิดใช้งาน ----------
+  async function hrTermCandidates(which) {
+    const sc = await hrScoreGet(which || 'current');
+    if (!sc.ok) return sc;
+    const cyc = sc.cycle;
+    const today = bkkToday();
+
+    const [rulesR, empR, wrR, caseR] = await Promise.all([
+      sb().from('termination_rules').select('*').eq('enabled', true).order('sort'),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true),
+      sb().from('warnings').select('warning_id,emp_id,level,level_name,issue_date,reason').order('issue_date', { ascending: false }),
+      sb().from('termination_cases').select('id,case_no,emp_id,status,decision,opened_at').not('status', 'in', '("closed","cancelled")'),
+    ]);
+    const rules = rulesR.data || [];
+    const empById = {}; (empR.data || []).forEach(e => { empById[e.emp_id] = e; });
+    const openCase = {}; (caseR.data || []).forEach(c => { openCase[c.emp_id] = c; });
+
+    // ใบเตือนในกรอบเวลาที่กำหนดของแต่ละเกณฑ์
+    const warnByEmp = {}; (wrR.data || []).forEach(w => { (warnByEmp[w.emp_id] || (warnByEmp[w.emp_id] = [])).push(w); });
+
+    // ---- ขาดงานติดต่อกัน (นับ "วันที่ถูกจัดเวรติดกัน" ที่ไม่มา + ไม่ลา) ----
+    const back = new Date(new Date(today + 'T00:00:00').getTime() - 90 * 86400000).toISOString().slice(0, 10);
+    const [schR, attR, lvR] = await Promise.all([
+      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', back).lte('work_date', today),
+      sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', back).lte('work_date', today),
+      sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').gte('end_date', back),
+    ]);
+    const workedBy = {}; (attR.data || []).forEach(a => { (workedBy[a.emp_id] || (workedBy[a.emp_id] = new Set())).add(a.work_date); });
+    const lvBy = {}; (lvR.data || []).forEach(l => { (lvBy[l.emp_id] || (lvBy[l.emp_id] = [])).push(l); });
+    const onLv = (emp, d) => (lvBy[emp] || []).some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+    const schBy = {}; (schR.data || []).forEach(s => { if (s.shift_id) (schBy[s.emp_id] || (schBy[s.emp_id] = [])).push(s.work_date); });
+    const streakOf = (emp) => {
+      const dates = (schBy[emp] || []).filter(d => d < today).sort();
+      const worked = workedBy[emp] || new Set();
+      let best = 0, cur = 0, bestDates = [], curDates = [];
+      dates.forEach(d => {
+        if (!worked.has(d) && !onLv(emp, d)) { cur++; curDates.push(d); if (cur > best) { best = cur; bestDates = curDates.slice(); } }
+        else { cur = 0; curDates = []; }
+      });
+      return { days: best, dates: bestDates };
+    };
+
+    const monthsAgo = (n) => new Date(new Date(today + 'T00:00:00').getTime() - n * 30.5 * 86400000).toISOString().slice(0, 10);
+
+    const candidates = [];
+    (sc.employees || []).forEach(e => {
+      const emp = empById[e.emp_id]; if (!emp) return;
+      const st = streakOf(e.emp_id);
+      const myWarns = warnByEmp[e.emp_id] || [];
+      const reasons = [];
+
+      rules.forEach(r => {
+        const p = r.params || {};
+        if (r.kind === 'score_band') {
+          const max = Number(p.max_score != null ? p.max_score : 25);
+          if (e.score != null && e.score <= max)
+            reasons.push({ key: r.key, name: r.name, severity: r.severity, detail: 'คะแนนวินัยรอบนี้ ' + e.score + '/' + e.start + ' (' + (e.band_label || '') + ') ≤ เกณฑ์ ' + max });
+        } else if (r.kind === 'warning_count') {
+          const need = Number(p.count || 2), months = Number(p.months || 12);
+          const since = monthsAgo(months);
+          const hits = myWarns.filter(w => String(w.issue_date) >= since);
+          if (hits.length >= need)
+            reasons.push({ key: r.key, name: r.name, severity: r.severity, detail: 'มีใบเตือน ' + hits.length + ' ใบใน ' + months + ' เดือน (เกณฑ์ ' + need + ') · ' + hits.map(w => w.warning_id).join(', ') });
+        } else if (r.kind === 'absent_streak') {
+          const need = Number(p.days || 3);
+          if (st.days >= need)
+            reasons.push({ key: r.key, name: r.name, severity: r.severity, detail: 'ขาดงานติดต่อกัน ' + st.days + ' วัน (' + st.dates.join(', ') + ') โดยไม่มีใบลา' });
+        } else if (r.kind === 'absent_total') {
+          const need = Number(p.days || 5);
+          if ((e.absent_count || 0) >= need)
+            reasons.push({ key: r.key, name: r.name, severity: r.severity, detail: 'ขาดงานรวมในรอบ ' + e.absent_count + ' วัน (เกณฑ์ ' + need + ')' });
+        } else if (r.kind === 'late_total') {
+          const need = Number(p.count || 15);
+          if ((e.late_count || 0) >= need)
+            reasons.push({ key: r.key, name: r.name, severity: r.severity, detail: 'มาสายรวมในรอบ ' + e.late_count + ' ครั้ง (เกณฑ์ ' + need + ')' });
+        }
+      });
+      if (!reasons.length) return;
+
+      const worst = reasons.some(x => x.severity === 'critical') ? 'critical' : 'high';
+      candidates.push({
+        emp_id: e.emp_id, emp_name: emp.name, nickname: emp.nickname || '', photo_url: emp.photo_url || '',
+        branch_id: emp.branch_id || '',
+        score: e.score, start_score: e.start, band_label: e.band_label,
+        late_count: e.late_count, late_total: e.late_total, absent_count: e.absent_count,
+        absent_streak: st.days, absent_streak_dates: st.dates,
+        warnings: myWarns.slice(0, 5).map(w => ({ id: w.warning_id, level: w.level, name: w.level_name, date: w.issue_date, reason: w.reason })),
+        warning_count: myWarns.length,
+        reasons, severity: worst,
+        open_case: openCase[e.emp_id] ? { id: openCase[e.emp_id].id, case_no: openCase[e.emp_id].case_no, status: openCase[e.emp_id].status } : null,
+      });
+    });
+    candidates.sort((a, b) => (a.severity === b.severity ? (a.score || 0) - (b.score || 0) : (a.severity === 'critical' ? -1 : 1)));
+
+    return {
+      ok: true, cycle: cyc, candidates,
+      rules, manual_rules: rules.filter(r => r.kind === 'manual'),
+      note: '⚠ รายชื่อนี้คือ "เข้าข่ายให้พิจารณา" ตามเกณฑ์ที่ตั้งไว้ ไม่ใช่คำสั่งเลิกจ้าง — ต้องเปิดเคสและผ่านความเห็นตามลำดับชั้นก่อนเสมอ',
+    };
+  }
+
+  async function _nextCaseNo() {
+    const { data } = await sb().from('termination_cases').select('case_no');
+    const yr = new Date().getFullYear() + 543;
+    const pre = 'TC-' + yr + '-';
+    let max = 0;
+    (data || []).forEach(c => {
+      const s = String(c.case_no || '');
+      if (s.startsWith(pre)) { const n = parseInt(s.slice(pre.length), 10); if (isFinite(n) && n > max) max = n; }
+    });
+    return pre + String(max + 1).padStart(3, '0');
+  }
+
+  async function hrTermCaseOpen(d) {
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    if (!Array.isArray(d.reasons) || !d.reasons.length) return { ok: false, error: 'ต้องระบุเหตุที่เข้าข่ายอย่างน้อย 1 ข้อ' };
+    if (!d.detail || !String(d.detail).trim()) return { ok: false, error: 'ต้องระบุพฤติการณ์/รายละเอียดประกอบ' };
+
+    const { data: emp } = await sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('emp_id', String(d.emp_id)).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้' };
+
+    const { data: dupRows } = await sb().from('termination_cases').select('id,case_no,status')
+      .eq('emp_id', emp.emp_id).not('status', 'in', '("closed","cancelled")').limit(1);
+    if (dupRows && dupRows.length) return { ok: false, error: 'พนักงานคนนี้มีเคสที่ยังไม่ปิดอยู่แล้ว (' + dupRows[0].case_no + ')' };
+
+    const { data: br } = await sb().from('branches').select('name').eq('branch_id', emp.branch_id || '').maybeSingle();
+    const photos = (Array.isArray(d.photos) && d.photos.length) ? await _uploadMany('term', d.photos) : null;
+    const case_no = await _nextCaseNo();
+
+    const row = {
+      case_no, emp_id: emp.emp_id, emp_name: emp.name, nickname: emp.nickname || null,
+      photo_url: emp.photo_url || null, branch_id: emp.branch_id || null, branch_name: (br && br.name) || null,
+      reasons: d.reasons, evidence: d.evidence || null, detail: String(d.detail).trim(),
+      status: 'proposed',
+      opened_by: d.opened_by || 'สำนักงาน (HR)',
+      opened_role: d.opened_role === 'mgr' ? 'mgr' : 'hr',
+      notify_emp: d.notify_emp !== false,
+      photos,
+    };
+    const { data: ins, error } = await sb().from('termination_cases').insert(row).select('id,case_no').single();
+    if (error) throw error;
+
+    await sb().from('termination_steps').insert({
+      case_id: ins.id, stage: 'propose', seq: 1,
+      actor: row.opened_by, actor_role: row.opened_role, decision: 'agree',
+      note: 'เปิดเคสเสนอพิจารณา — ' + row.detail.slice(0, 300),
+    });
+
+    // แจ้งพนักงาน (สิทธิ์รับทราบ + ชี้แจง) — โปร่งใส ไม่ลับหลัง
+    if (row.notify_emp) {
+      try {
+        await sb().from('emp_notifications').insert({
+          emp_id: emp.emp_id, kind: 'warn',
+          title: 'แจ้งการตั้งเรื่องพิจารณาทางวินัย (' + case_no + ')',
+          body: 'บริษัทได้ตั้งเรื่องเพื่อพิจารณาตามระเบียบวินัย เนื่องจาก: '
+              + d.reasons.map(x => x.name).join(' · ')
+              + '\nท่านมีสิทธิ์ชี้แจงข้อเท็จจริงต่อผู้บังคับบัญชาก่อนการพิจารณา',
+          ref: 'term:' + ins.id, created_by: row.opened_by,
+        });
+      } catch (_e) { /* ข้าม */ }
+    }
+    await logAct('เปิดเคสพิจารณาเลิกจ้าง ' + case_no, emp.emp_id, row.detail.slice(0, 120));
+    return { ok: true, id: ins.id, case_no: ins.case_no };
+  }
+
+  async function hrTermCaseList(status) {
+    let q = sb().from('termination_cases').select('*').order('opened_at', { ascending: false });
+    if (status && status !== 'all') {
+      if (status === 'open') q = q.not('status', 'in', '("closed","cancelled")');
+      else q = q.eq('status', status);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    return {
+      ok: true,
+      cases: (data || []).map(c => ({ ...c, status_label: TERM_STATUS[c.status] || c.status, decision_label: c.decision ? (TERM_DECISION[c.decision] || c.decision) : '' })),
+      status_label: TERM_STATUS, decision_label: TERM_DECISION,
+    };
+  }
+
+  async function hrTermCaseGet(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุเคส' };
+    const [{ data: c }, { data: steps }] = await Promise.all([
+      sb().from('termination_cases').select('*').eq('id', String(id)).maybeSingle(),
+      sb().from('termination_steps').select('*').eq('case_id', String(id)).order('at'),
+    ]);
+    if (!c) return { ok: false, error: 'ไม่พบเคสนี้' };
+    return {
+      ok: true,
+      case: { ...c, status_label: TERM_STATUS[c.status] || c.status, decision_label: c.decision ? (TERM_DECISION[c.decision] || c.decision) : '' },
+      steps: steps || [],
+      status_label: TERM_STATUS, decision_label: TERM_DECISION,
+    };
+  }
+
+  // บันทึกความเห็น/อนุมัติแต่ละชั้น
+  //   stage: hr_review (HR ตรวจสอบ) | decision (ผู้มีอำนาจให้ความเห็น) | note (บันทึกเพิ่ม) | cancel (ยกเลิกเคส)
+  async function hrTermCaseStep(d) {
+    d = d || {};
+    if (!d.case_id) return { ok: false, error: 'ไม่ระบุเคส' };
+    if (!d.note || !String(d.note).trim()) return { ok: false, error: 'ต้องระบุความเห็น/เหตุผล' };
+    const stage = ['hr_review', 'decision', 'note', 'cancel'].includes(d.stage) ? d.stage : 'note';
+
+    const { data: c } = await sb().from('termination_cases').select('*').eq('id', String(d.case_id)).maybeSingle();
+    if (!c) return { ok: false, error: 'ไม่พบเคสนี้' };
+    if (c.status === 'closed' || c.status === 'cancelled') return { ok: false, error: 'เคสนี้ปิดไปแล้ว' };
+
+    const { count } = await sb().from('termination_steps').select('id', { count: 'exact', head: true }).eq('case_id', c.id);
+    const photos = (Array.isArray(d.photos) && d.photos.length) ? await _uploadMany('term', d.photos) : null;
+
+    await sb().from('termination_steps').insert({
+      case_id: c.id, stage, seq: (count || 0) + 1,
+      actor: d.actor || 'สำนักงาน (HR)', actor_role: d.actor_role || 'hr',
+      decision: d.decision || null, note: String(d.note).trim(), photos,
+    });
+
+    const patch = {};
+    if (stage === 'hr_review') {
+      if (d.decision === 'approve') patch.status = 'decision';                  // ส่งต่อผู้มีอำนาจ
+      else if (d.decision === 'reject') { patch.status = 'closed'; patch.decision = 'not_terminate'; patch.decision_note = String(d.note).trim(); patch.closed_by = d.actor || 'HR'; patch.closed_at = new Date().toISOString(); }
+      else patch.status = 'hr_review';                                          // need_more = ขอข้อมูลเพิ่ม
+    } else if (stage === 'decision') {
+      // ★ ปลายทางของระบบ = "มติเสนอ" เท่านั้น — ไม่มีการปิดใช้งานพนักงานอัตโนมัติ
+      const dec = ['terminate_proposed', 'not_terminate', 'probation', 'transfer', 'training'].includes(d.final) ? d.final : 'not_terminate';
+      patch.status = 'closed'; patch.decision = dec; patch.decision_note = String(d.note).trim();
+      patch.closed_by = d.actor || 'ผู้มีอำนาจ'; patch.closed_at = new Date().toISOString();
+    } else if (stage === 'cancel') {
+      patch.status = 'cancelled'; patch.decision_note = String(d.note).trim();
+      patch.closed_by = d.actor || 'HR'; patch.closed_at = new Date().toISOString();
+    }
+    if (Object.keys(patch).length) {
+      const { error } = await sb().from('termination_cases').update(patch).eq('id', c.id);
+      if (error) throw error;
+    }
+    await logAct('เคสพิจารณาเลิกจ้าง ' + c.case_no + ' · ' + stage, c.emp_id, String(d.note).trim().slice(0, 120));
+    return { ok: true, status: patch.status || c.status, decision: patch.decision || c.decision || null };
+  }
+
+  // เก็บผลวิเคราะห์ความเสี่ยงของนิดา (หน้า HR เป็นคนเรียกนิดา แล้วส่งผลมาบันทึก)
+  async function hrTermCaseRisk(d) {
+    d = d || {};
+    if (!d.case_id) return { ok: false, error: 'ไม่ระบุเคส' };
+    const lv = ['low', 'medium', 'high'].includes(d.risk_level) ? d.risk_level : 'medium';
+    const { error } = await sb().from('termination_cases').update({
+      risk_level: lv, risk_note: String(d.risk_note || '').slice(0, 4000), risk_at: new Date().toISOString(),
+    }).eq('id', String(d.case_id));
+    if (error) throw error;
+    return { ok: true };
   }
 
   // ---------- HANDOVER (ส่ง/รับผลัด) ----------

@@ -375,6 +375,7 @@
   <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
+  <button class="tab" id="tab_terminate"><span class="tabicon">⛔</span>พิจารณาเลิกจ้าง</button>
   <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
   <button class="tab" id="tab_analytics"><span class="tabicon">📈</span>วิเคราะห์</button>
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
@@ -620,6 +621,39 @@
   </div>
   <div id="sc_legend" style="display:flex; flex-wrap:wrap; gap:8px; margin:0 4px 14px"></div>
   <div id="sc_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- พิจารณาเลิกจ้าง (เสนอพิจารณาเท่านั้น ระบบไม่เลิกจ้างเอง) -->
+<div id="view_terminate" class="container" style="display:none">
+  <div style="background:#fff7ed;border:1.5px solid #fdba74;border-left:5px solid #ea580c;border-radius:12px;padding:12px 14px;margin:0 4px 14px;font-size:13.5px;color:#7c2d12;line-height:1.65">
+    <b>⚠ ระบบนี้ทำหน้าที่ “เสนอเพื่อพิจารณา” เท่านั้น</b><br>
+    ระบบจะ<u>ไม่</u>เลิกจ้าง ไม่ปิดใช้งานพนักงาน และไม่หยุดจ่ายค่าจ้างโดยอัตโนมัติ · ปลายทางของทุกเคสคือ “มติเสนอ + เอกสารหลักฐาน”
+    การเลิกจ้างจริงต้องมีผู้มีอำนาจตัดสินใจและดำเนินการตามกฎหมายแรงงาน (แจ้งล่วงหน้า/ค่าชดเชย/สิทธิ์ชี้แจงของลูกจ้าง)
+  </div>
+  <div class="toolbar">
+    <div style="flex:1">
+      <div style="font-size:13.5px;color:var(--muted)">รอบที่ประเมิน <b id="tm_cycleinfo">—</b></div>
+    </div>
+    <select id="tm_cycle" style="padding:8px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;">
+      <option value="current">รอบปัจจุบัน</option>
+      <option value="previous">รอบที่แล้ว</option>
+    </select>
+    <button class="btn btn-sec btn-sm" id="tm_rules">⚙️ เกณฑ์เข้าข่าย</button>
+    <button class="btn btn-sec btn-sm" id="tm_manual">＋ เปิดเคสเอง (ความผิดร้ายแรง)</button>
+    <button class="btn btn-sec" id="tm_refresh">รีเฟรช</button>
+  </div>
+  <h3 style="margin:6px 4px 10px;font-size:14px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase">รายชื่อเข้าข่ายพิจารณา</h3>
+  <div id="tm_cand"><div class="empty">กำลังโหลด…</div></div>
+  <h3 style="margin:22px 4px 10px;font-size:14px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase">เคสที่เปิดแล้ว</h3>
+  <div style="margin:0 4px 10px">
+    <select id="tm_filter" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
+      <option value="open">ที่ยังไม่ปิด</option>
+      <option value="all">ทั้งหมด</option>
+      <option value="closed">ปิดแล้ว</option>
+      <option value="cancelled">ยกเลิก</option>
+    </select>
+  </div>
+  <div id="tm_cases"><div class="empty">—</div></div>
 </div>
 
 <!-- สรุปผลการทำงาน + วินัย รายบุคคล (พิมพ์เป็นเอกสารได้) -->
@@ -3050,11 +3084,416 @@ async function openWarningView(wid){
     + '<div class="es-note" style="margin-top:10px;font-size:10.5px">หมายเหตุ: กรณีพนักงานปฏิเสธการลงลายมือชื่อ ให้พยานลงลายมือชื่อรับรองว่าได้อ่านและแจ้งข้อความในหนังสือฉบับนี้ให้พนักงานทราบแล้ว</div>'
     + docFootHTML(DOC_CFG, 'เอกสารนี้จัดทำโดยระบบบริหารบุคลากร · ' + w.warning_id, 'ออกเมื่อ ' + beDate(w.issue_date))
     + '</div>';
+  const _wh=document.querySelector('#viewWarningOverlay .modal-h h2'); if(_wh) _wh.textContent='พรีวิวใบเตือน';
   $('viewWarningOverlay').classList.add('show');
 }
 $('wvClose').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
 $('wvCloseBtn').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
 $('wvPrint').onclick = ()=>window.print();
+
+/* ============================================================
+   พิจารณาเลิกจ้าง (Termination Review)
+   ⚠ ระบบ "เสนอเพื่อพิจารณา" เท่านั้น — ไม่เลิกจ้าง/ไม่ปิดใช้งานพนักงานเอง
+   ============================================================ */
+let TERM=null, TERM_CASES=[];
+const TM_SEV={ critical:{t:'ร้ายแรง',c:'#b91c1c',bg:'#fee2e2'}, high:{t:'สูง',c:'#c2410c',bg:'#ffedd5'}, medium:{t:'ปานกลาง',c:'#a16207',bg:'#fef3c7'} };
+const TM_STATUS_COLOR={ proposed:'#c2410c', hr_review:'#1d4ed8', decision:'#7c3aed', closed:'#475569', cancelled:'#94a3b8' };
+
+async function loadTerm(){
+  const cyc=$('tm_cycle').value;
+  $('tm_cand').innerHTML='<div class="empty">กำลังตรวจสอบตามเกณฑ์…</div>';
+  const [r, rc] = await Promise.all([
+    post({ action:'hr_term_candidates', password:pwd, cycle:cyc }),
+    post({ action:'hr_term_case_list', password:pwd, status:$('tm_filter').value }),
+  ]);
+  if(!r.ok){ $('tm_cand').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  TERM=r; TERM_CASES=(rc.ok?rc.cases:[])||[];
+  $('tm_cycleinfo').textContent = beDate(r.cycle.start)+' – '+beDate(r.cycle.end);
+  renderTermCandidates(); renderTermCases();
+}
+function renderTermCandidates(){
+  const list=TERM.candidates||[];
+  if(!list.length){ $('tm_cand').innerHTML='<div class="card"><div class="card-b"><div class="empty">✅ ไม่มีพนักงานเข้าข่ายตามเกณฑ์ในรอบนี้</div></div></div>'; return; }
+  $('tm_cand').innerHTML = list.map(c=>{
+    const sv=TM_SEV[c.severity]||TM_SEV.high;
+    return '<div class="card" style="margin-bottom:10px;border-left:5px solid '+sv.c+'"><div class="card-b" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">'
+      +'<div class="name-cell" style="min-width:210px">'
+        +(c.photo_url?('<div class="thumb"><img src="'+esc(c.photo_url)+'"></div>'):('<div class="thumb">'+esc(pickInitial(c.nickname||c.emp_name))+'</div>'))
+        +'<div class="ntext"><span class="nm">'+esc(c.emp_name)+(c.nickname?(' ('+esc(c.nickname)+')'):'')+'</span>'
+        +'<span class="nick">'+esc(c.emp_id)+' · '+esc(branchName(c.branch_id))+'</span></div></div>'
+      +'<div style="flex:1;min-width:260px">'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+          +'<span class="pill" style="background:'+sv.bg+';color:'+sv.c+';font-weight:700">ระดับ'+sv.t+'</span>'
+          +'<span class="pill" style="background:#f1f5f9;color:#334155">คะแนน '+(c.score!=null?c.score:'—')+'/'+(c.start_score||100)+'</span>'
+          +'<span class="pill" style="background:#f1f5f9;color:#334155">ใบเตือน '+(c.warning_count||0)+' ใบ</span>'
+          +(c.absent_streak>0?('<span class="pill" style="background:#fee2e2;color:#b91c1c">ขาดติดกัน '+c.absent_streak+' วัน</span>'):'')
+        +'</div>'
+        +'<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.75;color:#374151">'
+          +c.reasons.map(x=>'<li><b>'+esc(x.name)+'</b> — '+esc(x.detail)+'</li>').join('')
+        +'</ul></div>'
+      +'<div style="display:flex;flex-direction:column;gap:6px;min-width:150px">'
+        +(c.open_case
+            ? ('<button class="btn btn-sec btn-sm" onclick="openTermCase(\''+c.open_case.id+'\')">📂 ดูเคส '+esc(c.open_case.case_no)+'</button>'
+              +'<div style="font-size:11.5px;color:var(--muted);text-align:center">มีเคสอยู่แล้ว</div>')
+            : ('<button class="btn btn-danger btn-sm" onclick="openTermOpenModal(\''+c.emp_id+'\')">⛔ เปิดเคสพิจารณา</button>'))
+        +'<button class="btn btn-sec btn-sm" onclick="openDiscTimeline(\''+c.emp_id+'\')">🧾 ไทม์ไลน์วินัย</button>'
+      +'</div>'
+    +'</div></div>';
+  }).join('')
+  + '<div style="font-size:12px;color:var(--muted);padding:4px 6px">* '+esc(TERM.note||'')+'</div>';
+}
+function renderTermCases(){
+  if(!TERM_CASES.length){ $('tm_cases').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีเคส</div></div></div>'; return; }
+  $('tm_cases').innerHTML='<div class="card"><div class="tablewrap"><table>'
+    +'<thead><tr><th>เลขที่เคส</th><th>พนักงาน</th><th>สาขา</th><th>เหตุ</th><th>สถานะ</th><th>ความเสี่ยง</th><th>เปิดเมื่อ</th><th></th></tr></thead><tbody>'
+    +TERM_CASES.map(c=>{
+      const col=TM_STATUS_COLOR[c.status]||'#475569';
+      const risk=c.risk_level?('<span class="pill" style="background:'+(c.risk_level==='high'?'#fee2e2':c.risk_level==='medium'?'#fef3c7':'#dcfce7')+';color:'+(c.risk_level==='high'?'#b91c1c':c.risk_level==='medium'?'#a16207':'#15803d')+'">'+(c.risk_level==='high'?'สูง':c.risk_level==='medium'?'ปานกลาง':'ต่ำ')+'</span>'):'—';
+      return '<tr><td class="mono"><b>'+esc(c.case_no||'')+'</b></td>'
+        +'<td><div class="ntext"><span class="nm">'+esc(c.emp_name||'')+'</span><span class="nick">'+esc(c.emp_id)+'</span></div></td>'
+        +'<td>'+esc(c.branch_name||branchName(c.branch_id))+'</td>'
+        +'<td style="font-size:12.5px;max-width:240px">'+esc((c.reasons||[]).map(x=>x.name).join(' · '))+'</td>'
+        +'<td><span class="pill" style="background:#f1f5f9;color:'+col+';font-weight:700">'+esc(c.status_label||c.status)+'</span>'
+          +(c.decision?('<div style="font-size:11.5px;margin-top:3px;color:'+(c.decision==='terminate_proposed'?'#b91c1c':'#15803d')+'">'+esc(c.decision_label||'')+'</div>'):'')+'</td>'
+        +'<td>'+risk+'</td>'
+        +'<td class="mono" style="font-size:12px">'+beDate(String(c.opened_at||'').slice(0,10))+'</td>'
+        +'<td><button class="btn btn-sec btn-sm" onclick="openTermCase(\''+c.id+'\')">เปิดดู</button></td></tr>';
+    }).join('')
+    +'</tbody></table></div></div>';
+}
+$('tm_refresh') && ($('tm_refresh').onclick=loadTerm);
+$('tm_cycle')   && ($('tm_cycle').onchange=loadTerm);
+$('tm_filter')  && ($('tm_filter').onchange=async()=>{ const rc=await post({action:'hr_term_case_list',password:pwd,status:$('tm_filter').value}); TERM_CASES=(rc.ok?rc.cases:[])||[]; renderTermCases(); });
+
+// ---------- เปิดเคส ----------
+function openTermOpenModal(empId){
+  const c=(TERM.candidates||[]).find(x=>x.emp_id===empId);
+  if(!c){ toast('err','ไม่พบข้อมูล'); return; }
+  const ev={ cycle:TERM.cycle, score:c.score, start_score:c.start_score, band:c.band_label,
+             late_count:c.late_count, late_total:c.late_total, absent:c.absent_count,
+             absent_streak:c.absent_streak, absent_streak_dates:c.absent_streak_dates,
+             warnings:c.warnings, warning_count:c.warning_count };
+  openModal('⛔ เปิดเคสเสนอพิจารณา — '+c.emp_name,
+    '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:9px;padding:9px 11px;font-size:12.5px;color:#7c2d12;margin-bottom:12px;line-height:1.6">'
+      +'การเปิดเคสคือการ<b>ตั้งเรื่องเพื่อพิจารณา</b> ไม่ใช่การเลิกจ้าง · พนักงานจะได้รับแจ้งและมีสิทธิ์ชี้แจง</div>'
+    +'<div style="font-size:13px;font-weight:700;margin-bottom:6px">เหตุที่เข้าข่าย (ติ๊กข้อที่จะใช้อ้างอิง)</div>'
+    +'<div id="tmo_reasons" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">'
+      +c.reasons.map((x,i)=>'<label class="check" style="align-items:flex-start;line-height:1.55"><input type="checkbox" class="tmo_r" data-i="'+i+'" checked style="margin-top:3px">'
+        +'<span><b>'+esc(x.name)+'</b><br><span style="font-size:12px;color:var(--muted)">'+esc(x.detail)+'</span></span></label>').join('')
+    +'</div>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">พฤติการณ์/รายละเอียดประกอบ (บังคับ)</label>'
+    +'<textarea id="tmo_detail" rows="4" placeholder="อธิบายข้อเท็จจริง วัน-เวลา ผลกระทบ และการตักเตือนที่ผ่านมา" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้เสนอ</label>'
+    +'<input id="tmo_by" value="สำนักงาน (HR)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<label class="check" style="margin-top:10px"><input type="checkbox" id="tmo_notify" checked>แจ้งพนักงานให้รับทราบและใช้สิทธิ์ชี้แจง (แนะนำ)</label>'
+    +'<button class="btn btn-danger" id="tmo_save" style="width:100%;padding:12px;margin-top:14px">เปิดเคสเสนอพิจารณา</button>');
+  $('tmo_save').onclick=async()=>{
+    const picked=[...document.querySelectorAll('.tmo_r:checked')].map(el=>c.reasons[Number(el.dataset.i)]);
+    if(!picked.length){ toast('err','เลือกเหตุอย่างน้อย 1 ข้อ'); return; }
+    const detail=$('tmo_detail').value.trim();
+    if(!detail){ toast('err','ต้องระบุพฤติการณ์'); return; }
+    $('tmo_save').disabled=true; $('tmo_save').textContent='กำลังบันทึก…';
+    const r=await post({ action:'hr_term_case_open', password:pwd, data:{
+      emp_id:c.emp_id, reasons:picked, evidence:ev, detail,
+      opened_by:$('tmo_by').value.trim()||'สำนักงาน (HR)', opened_role:'hr',
+      notify_emp:$('tmo_notify').checked } });
+    if(r.ok){ closeModal(); toast('ok','เปิดเคส '+r.case_no+' แล้ว'); await loadTerm(); openTermCase(r.id); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('tmo_save').disabled=false; $('tmo_save').textContent='เปิดเคสเสนอพิจารณา'; }
+  };
+}
+// เปิดเคสเอง (ความผิดร้ายแรง — ไม่ต้องรอคะแนน)
+$('tm_manual') && ($('tm_manual').onclick=()=>{
+  const opts=((DATA&&DATA.rows)||[]).filter(e=>e.active!==false)
+    .map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+' · '+esc(e.emp_id)+'</option>').join('');
+  const mrules=(TERM&&TERM.manual_rules&&TERM.manual_rules.length)?TERM.manual_rules:[{key:'gross',name:'ความผิดร้ายแรง',severity:'critical'}];
+  openModal('⛔ เปิดเคสเอง (ความผิดร้ายแรง)',
+    '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:9px 11px;font-size:12.5px;color:#7f1d1d;margin-bottom:12px;line-height:1.6">'
+      +'ใช้กับความผิดร้ายแรง เช่น ทุจริต · ลงเวลาแทนกัน · จงใจทำให้บริษัทเสียหาย — ต้องมีข้อเท็จจริงและหลักฐานชัดเจน</div>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">พนักงาน</label>'
+    +'<select id="tmm_emp" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'+opts+'</select>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ประเภทความผิด</label>'
+    +'<select id="tmm_rule" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+      +mrules.map(r=>'<option value="'+esc(r.key)+'" data-name="'+esc(r.name)+'" data-sev="'+esc(r.severity||'critical')+'">'+esc(r.name)+'</option>').join('')+'</select>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">พฤติการณ์/ข้อเท็จจริง (บังคับ)</label>'
+    +'<textarea id="tmm_detail" rows="4" placeholder="วัน-เวลา สถานที่ สิ่งที่เกิดขึ้น ผลกระทบ พยาน/หลักฐาน" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้เสนอ</label>'
+    +'<input id="tmm_by" value="สำนักงาน (HR)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<button class="btn btn-danger" id="tmm_save" style="width:100%;padding:12px;margin-top:14px">เปิดเคสเสนอพิจารณา</button>');
+  $('tmm_save').onclick=async()=>{
+    const detail=$('tmm_detail').value.trim();
+    if(!detail){ toast('err','ต้องระบุพฤติการณ์'); return; }
+    const sel=$('tmm_rule').selectedOptions[0];
+    $('tmm_save').disabled=true;
+    const r=await post({ action:'hr_term_case_open', password:pwd, data:{
+      emp_id:$('tmm_emp').value,
+      reasons:[{ key:sel.value, name:sel.dataset.name, severity:sel.dataset.sev, detail:detail.slice(0,300) }],
+      detail, opened_by:$('tmm_by').value.trim()||'สำนักงาน (HR)', opened_role:'hr', notify_emp:true } });
+    if(r.ok){ closeModal(); toast('ok','เปิดเคส '+r.case_no+' แล้ว'); await loadTerm(); openTermCase(r.id); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('tmm_save').disabled=false; }
+  };
+});
+
+// ---------- ดูเคส + อนุมัติหลายชั้น ----------
+let TERM_CASE=null;
+async function openTermCase(id){
+  const r=await post({ action:'hr_term_case_get', password:pwd, id });
+  if(!r.ok){ toast('err', r.error||'ไม่พบเคส'); return; }
+  TERM_CASE=r;
+  const c=r.case, steps=r.steps||[];
+  const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
+  const STAGE={ propose:'เสนอเรื่อง', hr_review:'HR ตรวจสอบ', decision:'ผู้มีอำนาจให้ความเห็น', note:'บันทึกเพิ่มเติม', cancel:'ยกเลิกเคส' };
+  const DEC={ agree:'เห็นด้วย', disagree:'ไม่เห็นด้วย', need_more:'ขอข้อมูลเพิ่ม', approve:'ส่งต่อผู้มีอำนาจ', reject:'ยุติเรื่อง', hold:'ชะลอไว้ก่อน' };
+  const ev=c.evidence||{};
+
+  const timeline = steps.map((s,i)=>'<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)">'
+    +'<div style="width:26px;height:26px;border-radius:50%;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none">'+(i+1)+'</div>'
+    +'<div style="flex:1"><div style="font-weight:700;font-size:13.5px">'+esc(STAGE[s.stage]||s.stage)+(s.decision?(' · <span style="color:#1d4ed8">'+esc(DEC[s.decision]||s.decision)+'</span>'):'')+'</div>'
+    +'<div style="font-size:12.5px;color:#374151;line-height:1.6;margin-top:2px">'+esc(s.note||'').replace(/\n/g,'<br>')+'</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">'+esc(s.actor||'')+' · '+fmt(s.at)+'</div></div></div>').join('');
+
+  const open = (c.status!=='closed' && c.status!=='cancelled');
+  let actions='';
+  if(open){
+    if(c.status==='proposed' || c.status==='hr_review'){
+      actions='<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +'<button class="btn btn-pri btn-sm" onclick="termStep(\'hr_review\',\'approve\')">✅ ตรวจสอบแล้ว — ส่งต่อผู้มีอำนาจ</button>'
+        +'<button class="btn btn-sec btn-sm" onclick="termStep(\'hr_review\',\'need_more\')">📋 ขอข้อมูล/หลักฐานเพิ่ม</button>'
+        +'<button class="btn btn-sec btn-sm" onclick="termStep(\'hr_review\',\'reject\')">🛑 ยุติเรื่อง (ไม่เห็นควรเลิกจ้าง)</button>'
+        +'</div>';
+    } else if(c.status==='decision'){
+      actions='<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +'<button class="btn btn-danger btn-sm" onclick="termFinal(\'terminate_proposed\')">⛔ มติ: เห็นควรเสนอเลิกจ้าง</button>'
+        +'<button class="btn btn-sec btn-sm" onclick="termFinal(\'probation\')">⏳ ให้โอกาส / คุมประพฤติ</button>'
+        +'<button class="btn btn-sec btn-sm" onclick="termFinal(\'transfer\')">🔁 ย้ายสาขา/หน้าที่</button>'
+        +'<button class="btn btn-sec btn-sm" onclick="termFinal(\'not_terminate\')">✅ ไม่เห็นควรเลิกจ้าง</button>'
+        +'</div>';
+    }
+    actions+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+      +'<button class="btn btn-sec btn-sm" onclick="termStep(\'note\',null)">📝 บันทึกความเห็นเพิ่ม</button>'
+      +'<button class="btn btn-sec btn-sm" onclick="termStep(\'cancel\',null)">🗑 ยกเลิกเคส</button></div>';
+  }
+
+  openModal('📂 เคส '+esc(c.case_no||'')+' — '+esc(c.emp_name||''),
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:12px">'
+      +(c.photo_url?('<img src="'+esc(c.photo_url)+'" style="width:74px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">'):'')
+      +'<div style="flex:1;min-width:220px;font-size:13px;line-height:1.75">'
+        +'<div><b>'+esc(c.emp_name||'')+'</b> · '+esc(c.emp_id)+'</div>'
+        +'<div style="color:var(--muted)">'+esc(c.branch_name||branchName(c.branch_id))+'</div>'
+        +'<div style="margin-top:5px"><span class="pill" style="background:#f1f5f9;color:'+(TM_STATUS_COLOR[c.status]||'#475569')+';font-weight:700">'+esc(c.status_label||c.status)+'</span> '
+        +(c.decision?('<span class="pill" style="background:'+(c.decision==='terminate_proposed'?'#fee2e2':'#dcfce7')+';color:'+(c.decision==='terminate_proposed'?'#b91c1c':'#15803d')+';font-weight:700">'+esc(c.decision_label||'')+'</span>'):'')+'</div>'
+      +'</div>'
+      +'<div style="display:flex;flex-direction:column;gap:6px">'
+        +'<button class="btn btn-sec btn-sm" onclick="termAskNida()">🤖 ให้นิดาวิเคราะห์ความเสี่ยง</button>'
+        +'<button class="btn btn-sec btn-sm" onclick="printTermDoc()">🖨️ บันทึกเสนอพิจารณา</button>'
+      +'</div>'
+    +'</div>'
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">เหตุที่เข้าข่าย</div>'
+    +'<ul style="margin:6px 0 12px;padding-left:18px;font-size:13px;line-height:1.75">'
+      +(c.reasons||[]).map(x=>'<li><b>'+esc(x.name)+'</b> — '+esc(x.detail||'')+'</li>').join('')+'</ul>'
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">พฤติการณ์</div>'
+    +'<div style="font-size:13px;line-height:1.75;margin:6px 0 12px;white-space:pre-wrap">'+esc(c.detail||'')+'</div>'
+    +(ev.score!=null?('<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">หลักฐานสถิติ ณ วันเปิดเคส</div>'
+      +'<div style="font-size:13px;line-height:1.8;margin:6px 0 12px">'
+      +'คะแนนวินัย <b>'+ev.score+'</b>/'+(ev.start_score||100)+' ('+esc(ev.band||'')+') · มาสาย '+(ev.late_count||0)+' ครั้ง ('+(ev.late_total||0)+' นาที) · ขาด '+(ev.absent||0)+' วัน'
+      +(ev.absent_streak?(' · ขาดติดต่อกัน '+ev.absent_streak+' วัน'):'')
+      +' · ใบเตือนสะสม '+(ev.warning_count||0)+' ใบ</div>'):'')
+    +(c.risk_note?('<div class="es-dsec" style="background:#fef3c7;border-left:4px solid #d97706">นิดาวิเคราะห์ความเสี่ยง ('+(c.risk_level==='high'?'สูง':c.risk_level==='medium'?'ปานกลาง':'ต่ำ')+')</div>'
+      +'<div id="tm_risk" style="font-size:13px;line-height:1.75;margin:6px 0 12px;white-space:pre-wrap">'+esc(c.risk_note)+'</div>')
+      :'<div id="tm_risk"></div>')
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">ไทม์ไลน์ความเห็น/อนุมัติ</div>'
+    +'<div style="margin:6px 0 14px">'+(timeline||'<div class="empty">—</div>')+'</div>'
+    +actions);
+}
+async function termStep(stage, decision){
+  const c=TERM_CASE.case;
+  const label={ hr_review:{ approve:'ส่งต่อผู้มีอำนาจพิจารณา', need_more:'ขอข้อมูล/หลักฐานเพิ่ม', reject:'ยุติเรื่อง — ไม่เห็นควรเลิกจ้าง' }, note:{}, cancel:{} };
+  const title=(label[stage]&&label[stage][decision])||(stage==='note'?'บันทึกความเห็นเพิ่มเติม':'ยกเลิกเคส');
+  openModal(title,
+    '<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">ความเห็น/เหตุผล (บังคับ)</label>'
+    +'<textarea id="tms_note" rows="4" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้บันทึก</label>'
+    +'<input id="tms_by" value="สำนักงาน (HR)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<button class="btn btn-pri" id="tms_save" style="width:100%;padding:12px;margin-top:14px">บันทึก</button>');
+  $('tms_save').onclick=async()=>{
+    const note=$('tms_note').value.trim();
+    if(!note){ toast('err','ต้องระบุความเห็น'); return; }
+    $('tms_save').disabled=true;
+    const r=await post({ action:'hr_term_case_step', password:pwd, data:{ case_id:c.id, stage, decision, note, actor:$('tms_by').value.trim()||'สำนักงาน (HR)', actor_role:'hr' } });
+    if(r.ok){ closeModal(); toast('ok','บันทึกแล้ว'); await loadTerm(); openTermCase(c.id); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('tms_save').disabled=false; }
+  };
+}
+async function termFinal(final){
+  const c=TERM_CASE.case;
+  const NAME={ terminate_proposed:'เห็นควรเสนอเลิกจ้าง', not_terminate:'ไม่เห็นควรเลิกจ้าง', probation:'ให้โอกาส / คุมประพฤติ', transfer:'ย้ายสาขา/เปลี่ยนหน้าที่', training:'อบรมแก้ไข' };
+  openModal('มติ: '+NAME[final],
+    (final==='terminate_proposed'
+      ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#7f1d1d;margin-bottom:12px;line-height:1.65">'
+        +'<b>⚠ ระบบจะบันทึกเป็น “มติเสนอ” เท่านั้น</b><br>ระบบจะไม่ปิดใช้งานพนักงาน ไม่หยุดจ่ายค่าจ้าง และไม่ส่งหนังสือเลิกจ้างให้ · '
+        +'การเลิกจ้างจริงต้องมีผู้มีอำนาจสั่งการ และดำเนินการตามกฎหมายแรงงาน (สิทธิ์ชี้แจง · แจ้งล่วงหน้า · ค่าชดเชย)</div>'
+      : '')
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">เหตุผลประกอบมติ (บังคับ)</label>'
+    +'<textarea id="tmf_note" rows="4" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">ผู้ให้ความเห็น (ผู้มีอำนาจ)</label>'
+    +'<input id="tmf_by" placeholder="ชื่อ–ตำแหน่ง" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<button class="btn '+(final==='terminate_proposed'?'btn-danger':'btn-pri')+'" id="tmf_save" style="width:100%;padding:12px;margin-top:14px">บันทึกมติ</button>');
+  $('tmf_save').onclick=async()=>{
+    const note=$('tmf_note').value.trim(), by=$('tmf_by').value.trim();
+    if(!note){ toast('err','ต้องระบุเหตุผล'); return; }
+    if(!by){ toast('err','ต้องระบุชื่อผู้ให้ความเห็น'); return; }
+    $('tmf_save').disabled=true;
+    const r=await post({ action:'hr_term_case_step', password:pwd, data:{ case_id:c.id, stage:'decision', decision:'approve', final, note, actor:by, actor_role:'exec' } });
+    if(r.ok){ closeModal(); toast('ok','บันทึกมติแล้ว'); await loadTerm(); openTermCase(c.id); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('tmf_save').disabled=false; }
+  };
+}
+// นิดาวิเคราะห์ความเสี่ยง (ทางกฎหมาย/ความเป็นธรรม) ก่อนตัดสินใจ
+async function termAskNida(){
+  const c=TERM_CASE.case, box=$('tm_risk');
+  if(box) box.innerHTML='<div class="empty">🤖 นิดากำลังวิเคราะห์ความเสี่ยง…</div>';
+  const facts={ เลขที่เคส:c.case_no, พนักงาน:c.emp_name+' ('+c.emp_id+')', สาขา:c.branch_name,
+    เหตุที่เข้าข่าย:(c.reasons||[]).map(x=>x.name+': '+(x.detail||'')), พฤติการณ์:c.detail, หลักฐานสถิติ:c.evidence||{} };
+  const prompt='นี่คือเคส "เสนอพิจารณาเลิกจ้าง" ของพนักงาน (JSON) — ห้ามเรียกเครื่องมือใด ๆ ให้วิเคราะห์จากข้อมูลนี้เท่านั้น\n\n'
+    +JSON.stringify(facts,null,1)
+    +'\n\nประเมินให้ฝ่ายบุคคลแบบตรงไปตรงมา ตอบเป็น JSON ล้วน ๆ (ห้ามมีข้อความอื่นนอก JSON):\n'
+    +'{\n "ความเสี่ยง": "low หรือ medium หรือ high",\n'
+    +' "สรุปความเสี่ยง": "ความเสี่ยงที่บริษัทจะถูกฟ้องว่าเลิกจ้างไม่เป็นธรรม 2-3 ประโยค",\n'
+    +' "หลักฐานที่มีน้ำหนัก": ["ข้อ 1","ข้อ 2"],\n'
+    +' "จุดอ่อนของเคส": ["สิ่งที่ยังขาด เช่น ไม่เคยตักเตือนเป็นลายลักษณ์อักษร พนักงานยังไม่ได้ชี้แจง"],\n'
+    +' "สิ่งที่ต้องทำก่อนตัดสินใจ": ["ข้อ 1","ข้อ 2"],\n'
+    +' "ความเห็น": "เห็นควรเสนอเลิกจ้าง / ยังไม่ควร ให้ทำขั้นตอนใดก่อน"\n}\n'
+    +'เกณฑ์: ถ้ายังไม่เคยออกใบเตือนเป็นลายลักษณ์อักษร หรือพนักงานยังไม่ได้ใช้สิทธิ์ชี้แจง หรือหลักฐานเป็นเพียงสถิติสาย/ขาดโดยไม่มีเอกสาร '
+    +'→ ความเสี่ยง = high และให้ตอบว่ายังไม่ควรเลิกจ้าง ต้องทำขั้นตอนให้ครบก่อน · ห้ามให้ความเห็นทางกฎหมายเด็ดขาด ให้แนะนำปรึกษาผู้เชี่ยวชาญด้านแรงงานเสมอ';
+
+  const {base,key}=asstApiBase();
+  let j=null;
+  try{
+    const res=await fetch(base+'/functions/v1/hr-assistant',{ method:'POST',
+      headers:{ 'Content-Type':'application/json', apikey:key, Authorization:'Bearer '+key },
+      body: JSON.stringify({ message:prompt, history:[] }) });
+    j=await res.json();
+  }catch(e){ if(box) box.innerHTML='<div class="empty">เชื่อมต่อนิดาไม่สำเร็จ</div>'; return; }
+  let txt=(j&&(j.reply||j.text||j.message))||'';
+  let o=null; try{ o=JSON.parse(txt.replace(/```json|```/g,'').trim()); }catch(e){}
+  if(!o){ if(box) box.innerHTML='<div class="empty">'+esc(txt||'นิดาตอบไม่ได้ในตอนนี้')+'</div>'; return; }
+  const lv=({low:'low',medium:'medium',high:'high'})[String(o['ความเสี่ยง']||'').toLowerCase()]||'high';
+  const note='['+(lv==='high'?'ความเสี่ยงสูง':lv==='medium'?'ความเสี่ยงปานกลาง':'ความเสี่ยงต่ำ')+'] '+(o['สรุปความเสี่ยง']||'')
+    +'\n\nหลักฐานที่มีน้ำหนัก:\n- '+((o['หลักฐานที่มีน้ำหนัก']||[]).join('\n- ')||'—')
+    +'\n\nจุดอ่อนของเคส:\n- '+((o['จุดอ่อนของเคส']||[]).join('\n- ')||'—')
+    +'\n\nสิ่งที่ต้องทำก่อนตัดสินใจ:\n- '+((o['สิ่งที่ต้องทำก่อนตัดสินใจ']||[]).join('\n- ')||'—')
+    +'\n\nความเห็นนิดา: '+(o['ความเห็น']||'');
+  await post({ action:'hr_term_case_risk', password:pwd, data:{ case_id:c.id, risk_level:lv, risk_note:note } });
+  toast('ok','บันทึกผลวิเคราะห์แล้ว');
+  openTermCase(c.id);
+}
+// เอกสาร "บันทึกเสนอพิจารณาทางวินัย" (ทางการ · ใช้ส่วนหัวที่ตั้งค่าไว้)
+async function printTermDoc(){
+  const c=TERM_CASE.case, steps=TERM_CASE.steps||[];
+  await loadDocSettings();
+  const ev=c.evidence||{};
+  const fmt=v=>{ try{ return new Date(v).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'}); }catch(e){ return '—'; } };
+  const STAGE={ propose:'เสนอเรื่อง', hr_review:'HR ตรวจสอบ', decision:'ผู้มีอำนาจให้ความเห็น', note:'บันทึกเพิ่มเติม', cancel:'ยกเลิกเคส' };
+  const photoCell = c.photo_url
+    ? '<img src="'+esc(c.photo_url)+'" alt="" style="width:100%;max-width:92px;height:112px;object-fit:cover;display:block;margin:0 auto;border:1px solid #000">'
+    : '<div style="width:92px;height:112px;border:1px dashed #666;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:10px;color:#666">ไม่มีรูปถ่าย</div>';
+
+  $('w_doc').innerHTML='<div class="es-doc" style="display:block">'
+    + docHeadHTML(DOC_CFG, 'บันทึกเสนอพิจารณาทางวินัย', 'เรื่อง เสนอพิจารณาโทษทางวินัยตามระเบียบข้อบังคับเกี่ยวกับการทำงาน',
+        'เลขที่เคส: '+(c.case_no||'—'), 'วันที่: '+beDate(String(c.opened_at||'').slice(0,10)))
+    + '<table class="es-dt">'
+      + '<tr><td rowspan="3" style="width:104px;text-align:center;vertical-align:middle;padding:6px">'+photoCell+'</td>'
+        + '<td class="k" style="width:22%">ชื่อ–สกุล</td><td>'+esc(c.emp_name||'')+(c.nickname?(' ("'+esc(c.nickname)+'")'):'')+'</td>'
+        + '<td class="k" style="width:20%">รหัสพนักงาน</td><td>'+esc(c.emp_id)+'</td></tr>'
+      + '<tr><td class="k">สาขา</td><td>'+esc(c.branch_name||branchName(c.branch_id))+'</td>'
+        + '<td class="k">ผู้เสนอเรื่อง</td><td>'+esc(c.opened_by||'')+'</td></tr>'
+      + '<tr><td class="k">สถานะเคส</td><td>'+esc(c.status_label||c.status)+'</td>'
+        + '<td class="k">รอบที่ประเมิน</td><td>'+(ev.cycle?(beDate(ev.cycle.start)+' – '+beDate(ev.cycle.end)):'—')+'</td></tr>'
+      + '</table>'
+    + '<div class="es-dsec">ส่วนที่ 1 — เหตุที่เข้าข่ายพิจารณา</div>'
+    + '<table class="es-dt"><tr><th style="width:36%">เกณฑ์</th><th>ข้อเท็จจริงประกอบ</th></tr>'
+      + (c.reasons||[]).map(x=>'<tr><td>'+esc(x.name)+'</td><td>'+esc(x.detail||'')+'</td></tr>').join('')
+      + '</table>'
+    + '<div class="es-dsec">ส่วนที่ 2 — พฤติการณ์</div>'
+    + '<table class="es-dt"><tr><td style="padding:8px 10px;line-height:1.7">'+esc(c.detail||'').replace(/\n/g,'<br>')+'</td></tr></table>'
+    + (ev.score!=null?('<div class="es-dsec">ส่วนที่ 3 — สถิติและหลักฐานประกอบ</div>'
+      + '<table class="es-dt">'
+      + '<tr><td class="k">คะแนนวินัยคงเหลือ</td><td class="n">'+ev.score+' / '+(ev.start_score||100)+' ('+esc(ev.band||'')+')</td>'
+      + '<td class="k">ใบเตือนสะสม</td><td class="n">'+(ev.warning_count||0)+' ใบ</td></tr>'
+      + '<tr><td class="k">มาทำงานสาย</td><td class="n">'+(ev.late_count||0)+' ครั้ง ('+(ev.late_total||0)+' นาที)</td>'
+      + '<td class="k">ขาดงาน</td><td class="n">'+(ev.absent||0)+' วัน'+(ev.absent_streak?(' · ติดต่อกัน '+ev.absent_streak+' วัน'):'')+'</td></tr>'
+      + ((ev.warnings&&ev.warnings.length)?('<tr><td class="k">ใบเตือนที่ออกแล้ว</td><td colspan="3">'
+          + ev.warnings.map(w=>esc(w.id)+' · '+beDate(w.date)+' · '+esc(w.name||'')).join('<br>')+'</td></tr>'):'')
+      + '</table>'):'')
+    + '<div class="es-dsec">ส่วนที่ 4 — ความเห็นตามลำดับชั้น</div>'
+    + '<table class="es-dt"><tr><th style="width:14%">ลำดับ</th><th style="width:24%">ขั้นตอน</th><th>ความเห็น</th><th style="width:22%">ผู้ให้ความเห็น / วันที่</th></tr>'
+      + steps.map((s,i)=>'<tr><td class="n">'+(i+1)+'</td><td>'+esc(STAGE[s.stage]||s.stage)+'</td>'
+        +'<td>'+esc(s.note||'').replace(/\n/g,'<br>')+'</td>'
+        +'<td>'+esc(s.actor||'')+'<br>'+fmt(s.at)+'</td></tr>').join('')
+      + '</table>'
+    + (c.risk_note?('<div class="es-dsec">ส่วนที่ 5 — ข้อสังเกตด้านความเสี่ยง (ผู้ช่วยฝ่ายบริหาร)</div>'
+      + '<div class="es-note" style="line-height:1.75;white-space:pre-wrap">'+esc(c.risk_note)+'</div>'):'')
+    + '<div class="es-dsec">มติ</div>'
+    + '<div class="es-note" style="line-height:1.85;font-size:12px">'
+      + (c.decision
+          ? ('<b>'+esc(c.decision_label||'')+'</b><br>'+esc(c.decision_note||'').replace(/\n/g,'<br>')
+             + (c.decision==='terminate_proposed'
+                ? '<br><br><b>หมายเหตุสำคัญ:</b> เอกสารฉบับนี้เป็น “มติเสนอ” เพื่อประกอบการพิจารณาของผู้มีอำนาจเท่านั้น มิใช่หนังสือเลิกจ้าง '
+                  + 'การเลิกจ้างต้องดำเนินการตามพระราชบัญญัติคุ้มครองแรงงาน โดยให้สิทธิ์พนักงานชี้แจง และพิจารณาเรื่องการบอกกล่าวล่วงหน้า/ค่าชดเชยตามกฎหมาย'
+                : ''))
+          : 'อยู่ระหว่างพิจารณา — ยังไม่มีมติ')
+      + '</div>'
+    + '<div class="es-sign">'
+      + '<div><div class="ln"></div>(............................................)<br>ผู้เสนอเรื่อง — '+esc(c.opened_by||'')+'<br>วันที่ ........./........./.........</div>'
+      + '<div><div class="ln"></div>(............................................)<br>ฝ่ายทรัพยากรบุคคล<br>วันที่ ........./........./.........</div>'
+      + '<div><div class="ln"></div>(............................................)<br>ผู้มีอำนาจพิจารณา<br>วันที่ ........./........./.........</div>'
+      + '</div>'
+    + '<div class="es-note" style="margin-top:10px;font-size:10.5px">เอกสารนี้เป็นเอกสารภายในเพื่อประกอบการพิจารณา · พนักงานมีสิทธิ์ชี้แจงข้อเท็จจริงก่อนการพิจารณาทุกกรณี</div>'
+    + docFootHTML(DOC_CFG, 'เอกสารภายใน · '+(c.case_no||''), 'พิมพ์เมื่อ '+beDate(new Date().toISOString().slice(0,10)))
+    + '</div>';
+  document.querySelector('#viewWarningOverlay .modal-h h2').textContent='บันทึกเสนอพิจารณาทางวินัย';
+  $('viewWarningOverlay').classList.add('show');
+}
+
+// ---------- ตั้งค่าเกณฑ์เข้าข่าย ----------
+$('tm_rules') && ($('tm_rules').onclick=async()=>{
+  const r=await post({ action:'hr_term_rules_get', password:pwd });
+  if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
+  const KIND={ score_band:'คะแนนต่ำกว่าเกณฑ์', warning_count:'จำนวนใบเตือน', absent_streak:'ขาดติดต่อกัน', absent_total:'ขาดรวมในรอบ', late_total:'สายรวมในรอบ', manual:'เปิดเคสเอง' };
+  const paramField=(rule)=>{
+    const p=rule.params||{};
+    if(rule.kind==='score_band')   return 'คะแนนไม่เกิน <input class="tmr_p" data-k="max_score" type="number" value="'+(p.max_score!=null?p.max_score:25)+'" style="width:70px;padding:5px;border:1.5px solid var(--line2);border-radius:7px"> คะแนน';
+    if(rule.kind==='warning_count')return 'ใบเตือนตั้งแต่ <input class="tmr_p" data-k="count" type="number" value="'+(p.count||2)+'" style="width:60px;padding:5px;border:1.5px solid var(--line2);border-radius:7px"> ใบ ภายใน <input class="tmr_p" data-k="months" type="number" value="'+(p.months||12)+'" style="width:60px;padding:5px;border:1.5px solid var(--line2);border-radius:7px"> เดือน';
+    if(rule.kind==='absent_streak')return 'ขาดติดต่อกันตั้งแต่ <input class="tmr_p" data-k="days" type="number" value="'+(p.days||3)+'" style="width:60px;padding:5px;border:1.5px solid var(--line2);border-radius:7px"> วัน';
+    if(rule.kind==='absent_total') return 'ขาดรวมในรอบตั้งแต่ <input class="tmr_p" data-k="days" type="number" value="'+(p.days||5)+'" style="width:60px;padding:5px;border:1.5px solid var(--line2);border-radius:7px"> วัน';
+    if(rule.kind==='late_total')   return 'สายรวมในรอบตั้งแต่ <input class="tmr_p" data-k="count" type="number" value="'+(p.count||15)+'" style="width:60px;padding:5px;border:1.5px solid var(--line2);border-radius:7px"> ครั้ง';
+    return '<span style="color:var(--muted)">ไม่คำนวณอัตโนมัติ — HR/ผจก. เปิดเคสเองเมื่อพบความผิด</span>';
+  };
+  openModal('⚙️ เกณฑ์ "เข้าข่ายพิจารณาเลิกจ้าง"',
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.6">เกณฑ์เหล่านี้ใช้ <b>คัดกรองรายชื่อให้พิจารณา</b> เท่านั้น ไม่ได้สั่งเลิกจ้าง · แก้ตัวเลข เปิด/ปิด หรือเพิ่มเกณฑ์ใหม่ได้</div>'
+    + r.rules.map(rl=>'<div class="tmr_row" data-key="'+esc(rl.key)+'" data-kind="'+esc(rl.kind)+'" style="border:1.5px solid var(--line2);border-radius:10px;padding:11px 12px;margin-bottom:9px">'
+        +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
+          +'<label class="check" style="flex:none"><input type="checkbox" class="tmr_on" '+(rl.enabled!==false?'checked':'')+'></label>'
+          +'<input class="tmr_name" value="'+esc(rl.name)+'" style="flex:1;padding:6px 8px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13.5px;font-weight:600">'
+          +'<select class="tmr_sev" style="padding:6px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:12.5px">'
+            +['critical','high','medium'].map(s=>'<option value="'+s+'" '+(rl.severity===s?'selected':'')+'>'+(s==='critical'?'ร้ายแรง':s==='high'?'สูง':'ปานกลาง')+'</option>').join('')
+          +'</select></div>'
+        +'<div style="font-size:12.5px;color:#374151">'+esc(KIND[rl.kind]||rl.kind)+' — '+paramField(rl)+'</div>'
+        +(rl.note?('<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'+esc(rl.note)+'</div>'):'')
+      +'</div>').join('')
+    +'<button class="btn btn-pri" id="tmr_save" style="width:100%;padding:12px;margin-top:6px">บันทึกเกณฑ์</button>');
+  $('tmr_save').onclick=async()=>{
+    const rows=[...document.querySelectorAll('.tmr_row')].map((el,i)=>{
+      const params={}; el.querySelectorAll('.tmr_p').forEach(p=>{ params[p.dataset.k]=Number(p.value)||0; });
+      return { key:el.dataset.key, kind:el.dataset.kind, name:el.querySelector('.tmr_name').value.trim(),
+               severity:el.querySelector('.tmr_sev').value, enabled:el.querySelector('.tmr_on').checked,
+               params, sort:(i+1)*10 };
+    });
+    $('tmr_save').disabled=true;
+    const rr=await post({ action:'hr_term_rules_save', password:pwd, data:rows });
+    if(rr.ok){ closeModal(); toast('ok','บันทึกเกณฑ์แล้ว'); loadTerm(); }
+    else { toast('err', rr.error||'ไม่สำเร็จ'); $('tmr_save').disabled=false; }
+  };
+});
 
 // ========== LEAVES & HOLIDAYS ==========
 let LEAVES_ROWS=[];
@@ -4247,7 +4686,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); loadMdailyDash(); }
@@ -4259,6 +4698,7 @@ showTab = function(name){
   else if(name==='report') loadReport();
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
+  else if(name==='terminate') loadTerm();
   else if(name==='empsum') initEmpSum();
   else if(name==='analytics') loadAnalytics();
   else if(name==='handover'){ loadTaskTab(); }
@@ -4643,7 +5083,7 @@ const NAV_GROUPS=[
   { icon:'👥', label:'พนักงาน',    tabs:['employees','empsum','recruit'] },
   { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
   { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
-  { icon:'⚠️', label:'วินัย',       tabs:['discipline','score'] },
+  { icon:'⚠️', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
