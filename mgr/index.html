@@ -15,11 +15,7 @@
   a{color:#00582f}
 </style>
 <!-- ผู้จัดการสาขาเข้าทางนี้ — ไม่ต้องผ่านหน้าเข้าระบบของ HR -->
-<script>
-  // จำโหมดไว้ใน session ด้วย เผื่อ query string หายระหว่างทาง (PWA / redirect / cache)
-  try{ sessionStorage.setItem('login_mode','mgr'); }catch(e){}
-  location.replace('../hr/?mgr=1');
-</script>
+<script>location.replace('../hr/?mgr=1');</script>
 </head>
 <body>
   <div class="box">

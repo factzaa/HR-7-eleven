@@ -1767,8 +1767,8 @@ $('logoutBtn').onclick = ()=>{
   pwd='';
   sessionStorage.removeItem('hr_pwd'); sessionStorage.removeItem('mgr_branch');
   sessionStorage.removeItem('mgr_emp'); sessionStorage.removeItem('mgr_pin');   // ★ เดิมลืมลบ PIN
+  try{ sessionStorage.removeItem('login_mode'); }catch(e){}
   // ★ ผจก. ออกจากระบบ → กลับไปหน้าเข้าระบบของ ผจก. ไม่ใช่หน้า HR
-  if(!wasMgr){ try{ sessionStorage.removeItem('login_mode'); }catch(e){} }
   location.href = wasMgr ? (location.pathname + '?mgr=1') : location.pathname;
 };
 
@@ -1779,18 +1779,19 @@ $('toMgr') && ($('toMgr').onclick = e=>{ e.preventDefault(); showMgrLogin(); });
 $('toHR')  && ($('toHR').onclick  = e=>{ e.preventDefault(); showHrLogin(); });
 // เข้าจากปุ่ม "งานผู้จัดการ" หน้าแรก → เด้งฟอร์ม ผจก. ทันที ไม่ต้องเห็นช่องรหัส HR เลย
 // รองรับหลายทาง: /mgr/ · ?mgr=1 · #mgr · หรือค่าที่จำไว้ใน session (กัน query หายจาก PWA/redirect/cache)
+// ★ ดูจาก URL เท่านั้น — ห้ามจำโหมดไว้ใน session
+//   (เดิมจำไว้ พอกดปุ่ม "ฝ่าย HR" จากหน้าแรกซึ่งเปิด hr/ เปล่า ๆ ก็ยังเด้งเป็นฟอร์ม ผจก.)
 function isMgrEntry(){
   try{
     const p=new URLSearchParams(location.search);
     if(p.get('mgr')==='1') return true;
     if((location.hash||'').toLowerCase()==='#mgr') return true;
-    if(sessionStorage.getItem('login_mode')==='mgr') return true;
   }catch(e){}
   return false;
 }
 (function initLoginMode(){
+  try{ sessionStorage.removeItem('login_mode'); }catch(e){}   // ล้างของเก่าที่เคยจำไว้
   if(!isMgrEntry()) return;
-  try{ sessionStorage.setItem('login_mode','mgr'); }catch(e){}
   showMgrLogin();
   const h=document.querySelector('#loginView h2'); if(h) h.textContent='งานผู้จัดการ';
   const t1=document.querySelector('.htext .t1'), t2=document.querySelector('.htext .t2');
