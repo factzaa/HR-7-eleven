@@ -134,9 +134,20 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./shared/config.js"></script>
 <script src="./shared/supabase.js"></script>
+<script src="./shared/ann-slides.js"></script>
 <script src="./shared/session.js"></script>
 <script>
 const $=id=>document.getElementById(id);
+
+// ====== บอร์ดข่าวสาร: ประกาศรูปภาพ (สไลด์) ======
+//  · เด้งทันทีที่เปิดหน้าแรก · เลื่อนซ้าย-ขวาได้ · ปิดได้เลย · แสดงวันละครั้งต่อเครื่อง
+//  · ไม่นับยอด "เปิดดูแล้ว" ที่นี่ — นับจากหน้ารับส่งผลัดที่เดียว (เพราะรู้ตัวพนักงานแน่นอน)
+(function(){
+  var BR=''; try{ BR = localStorage.getItem('nida_emp_branch') || ''; }catch(e){}
+  setTimeout(function(){
+    try{ if(window.ANN) window.ANN.show(null, { branchId: BR || null }); }catch(e){}
+  }, 600);
+})();
 function toast(kind,msg){const t=$('toast');t.className='toast show '+kind;t.textContent=msg;setTimeout(()=>t.classList.remove('show'),3500);}
 const ovl=$('leaveOvl');
 let LRULES=null, LUSAGE={};

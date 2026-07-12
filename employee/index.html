@@ -12,7 +12,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
-<script src="../shared/ann-slides.js"></script>
 <script src="../shared/session.js"></script>
 <style>
   :root{
@@ -261,7 +260,6 @@ async function init(){
   await startCamera();
   await loadModels();
   startGeo();
-  showImageAnnouncements();   // ★ สไลด์ประกาศรูปภาพ — เด้งทันทีที่เปิดหน้า (ก่อนกรอกรหัส)
   detectLoop();
 }
 
@@ -272,17 +270,9 @@ function annStyle(level){
   if(level==='warn')   return {bg:'#fff7ed', bd:'var(--orange)', fg:'#c2410c', ic:'⚠️'};
   return {bg:'var(--green-soft)', bd:'var(--green)', fg:'var(--green-d)', ic:'📢'};
 }
-// ====== ประกาศรูปภาพ (สไลด์) — เด้งทันทีที่เปิดหน้า ก่อนกรอกรหัส ======
-//  · ยังไม่รู้ว่าใคร → ใช้สาขาจาก GPS · ถ้า GPS ยังไม่จับ รอสูงสุด 4 วิ แล้วแสดงเฉพาะประกาศ "ทุกสาขา"
-//  · พอพนักงานกรอกรหัส ค่อยผูกยอด "เปิดดูแล้ว" เข้ากับตัวเขา (ANN.claim)
-let ANN_SLIDES_DONE = false;
-async function showImageAnnouncements(){
-  if(ANN_SLIDES_DONE || !window.ANN) return;
-  ANN_SLIDES_DONE = true;
-  // รอ GPS จับสาขาสูงสุด 4 วินาที (ไม่บล็อกนาน — ถ้าไม่ได้ก็แสดงเฉพาะ "ทุกสาขา")
-  for(let i=0;i<8 && !gps.branch;i++){ await new Promise(r=>setTimeout(r,500)); }
-  try{ await window.ANN.show(null, { branchId: gps.branch || null }); }catch(_e){}
-}
+// หมายเหตุ: ประกาศแบบ "รูปภาพ" (สไลด์) ไม่แสดงที่หน้าลงเวลา — กันพนักงานมัวปิดประกาศจนลืมกดลงเวลา
+//   · หน้าแรก (index)      = บอร์ดข่าวสาร แสดงสไลด์ให้ดู ไม่นับยอด
+//   · หน้ารับส่งผลัด        = จุดเดียวที่นับ "เปิดดูแล้ว" เพราะรู้ตัวพนักงานแน่นอน
 
 // แบนเนอร์ประกาศ — กะทัดรัด ไม่กินพื้นที่จนดันช่องกรอกรหัสตกจอ
 //  · ตัดข้อความยาวเหลือ 2 บรรทัด กด "อ่านเพิ่ม" เพื่อกาง
@@ -640,7 +630,6 @@ function showToast(kind,msg){
 $('toast').onclick = ()=>$('toast').classList.remove('show');
 
 // ====== events ======
-let ANN_CLAIMED_FOR = null;   // ผูกยอด "เปิดดูแล้ว" กับพนักงานครั้งเดียวพอ
 $('empId').addEventListener('input', e=>{
   e.target.value = e.target.value.replace(/\D/g,'');
   empMatch = lookupEmp(e.target.value);
@@ -649,12 +638,6 @@ $('empId').addEventListener('input', e=>{
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();
   refreshCoCard();
-  // ★ สไลด์เด้งไปตั้งแต่เปิดหน้าแล้ว (ยังไม่รู้ว่าใคร) — พอรู้ตัวค่อยผูกยอด "เปิดดูแล้ว" เข้ากับเขา
-  //   ไม่เด้งซ้ำ เพื่อไม่ให้พนักงานมัวปิดประกาศจนลืมกดลงเวลา
-  if(empMatch && window.ANN && ANN_CLAIMED_FOR !== empMatch.emp_id){
-    ANN_CLAIMED_FOR = empMatch.emp_id;
-    try{ window.ANN.claim(empMatch); }catch(_e){}
-  }
 });
 $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');
