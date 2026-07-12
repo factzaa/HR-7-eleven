@@ -1760,23 +1760,45 @@ async function tryLogin(p){
 }
 $('loginBtn').onclick = ()=>tryLogin($('pwd').value.trim());
 $('pwd').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(e.target.value.trim()); });
-$('logoutBtn').onclick = ()=>{ pwd=''; sessionStorage.removeItem('hr_pwd'); sessionStorage.removeItem('mgr_branch'); sessionStorage.removeItem('mgr_emp'); location.reload(); };
+$('logoutBtn').onclick = ()=>{
+  const wasMgr = MGR_MODE;
+  pwd='';
+  sessionStorage.removeItem('hr_pwd'); sessionStorage.removeItem('mgr_branch');
+  sessionStorage.removeItem('mgr_emp'); sessionStorage.removeItem('mgr_pin');   // ★ เดิมลืมลบ PIN
+  // ★ ผจก. ออกจากระบบ → กลับไปหน้าเข้าระบบของ ผจก. ไม่ใช่หน้า HR
+  if(!wasMgr){ try{ sessionStorage.removeItem('login_mode'); }catch(e){} }
+  location.href = wasMgr ? (location.pathname + '?mgr=1') : location.pathname;
+};
 
 // ---------- สลับโหมด HR / ผจก. ----------
 function showMgrLogin(){ $('loginHR').style.display='none'; $('loginMgr').style.display='block'; setTimeout(()=>$('mgr_emp').focus(),50); }
 function showHrLogin(){ $('loginMgr').style.display='none'; $('loginHR').style.display='block'; setTimeout(()=>$('pwd').focus(),50); }
 $('toMgr') && ($('toMgr').onclick = e=>{ e.preventDefault(); showMgrLogin(); });
 $('toHR')  && ($('toHR').onclick  = e=>{ e.preventDefault(); showHrLogin(); });
-// เข้าจากปุ่ม "งานผู้จัดการ" หน้าแรก (?mgr=1) → เด้งฟอร์ม ผจก. ทันที ไม่ต้องผ่านหน้า HR
-(function initLoginMode(){
+// เข้าจากปุ่ม "งานผู้จัดการ" หน้าแรก → เด้งฟอร์ม ผจก. ทันที ไม่ต้องเห็นช่องรหัส HR เลย
+// รองรับหลายทาง: /mgr/ · ?mgr=1 · #mgr · หรือค่าที่จำไว้ใน session (กัน query หายจาก PWA/redirect/cache)
+function isMgrEntry(){
   try{
     const p=new URLSearchParams(location.search);
-    if(p.get('mgr')==='1'){
-      showMgrLogin();
-      const h=document.querySelector('#loginView h2'); if(h) h.textContent='งานผู้จัดการ';
-    }
+    if(p.get('mgr')==='1') return true;
+    if((location.hash||'').toLowerCase()==='#mgr') return true;
+    if(sessionStorage.getItem('login_mode')==='mgr') return true;
   }catch(e){}
+  return false;
+}
+(function initLoginMode(){
+  if(!isMgrEntry()) return;
+  try{ sessionStorage.setItem('login_mode','mgr'); }catch(e){}
+  showMgrLogin();
+  const h=document.querySelector('#loginView h2'); if(h) h.textContent='งานผู้จัดการ';
+  const t1=document.querySelector('.htext .t1'), t2=document.querySelector('.htext .t2');
+  if(t1) t1.textContent='สำหรับผู้จัดการสาขา';
+  if(t2) t2.textContent='ระบบงานผู้จัดการ';
+  document.title='ระบบงานผู้จัดการ - 7-Eleven';
+  const back=$('toHR'); if(back) back.style.display='none';     // ผจก. ไม่ต้องเห็นทางเข้า HR
 })();
+// สลับไป HR = ล้างโหมดที่จำไว้
+$('toHR') && ($('toHR').addEventListener('click', ()=>{ try{ sessionStorage.removeItem('login_mode'); }catch(e){} }));
 
 async function mgrTryLogin(){
   const emp=$('mgr_emp').value.trim(), pin=$('mgr_pin').value.trim();
@@ -1791,6 +1813,7 @@ async function mgrTryLogin(){
   $('tabbar').style.display='flex'; $('topact').style.display='flex';
   document.body.classList.add('is-logged');
   await loadAll();
+  buildGroupedNav();          // ★ ผจก. ก็ใช้เมนูแบบกลุ่มเหมือนกัน (เดิมไม่ได้เรียก → เมนูหลุดรูป)
   applyManagerMode();
   showTab('mgrtasks');
   chatInit();
@@ -5296,6 +5319,7 @@ function buildGroupedNav(){
   const used=new Set();
   const groups=NAV_GROUPS.map(g=>{
     const grp=document.createElement('div'); grp.className='navgrp';
+    grp.dataset.tabs = g.tabs.join(',');                       // ★ จำไว้ว่ากลุ่มนี้มีแท็บอะไรบ้าง
     const btn=document.createElement('button'); btn.className='navgrp-btn'; btn.type='button';
     btn.innerHTML='<span class="tabicon">'+g.icon+'</span>'+g.label+'<span class="caret">▾</span>';
     const menu=document.createElement('div'); menu.className='navgrp-menu';
@@ -5312,14 +5336,31 @@ function buildGroupedNav(){
   // ปิดเมนูเมื่อคลิกที่แท็บ หรือคลิกนอกเมนู
   bar.querySelectorAll('.navgrp-menu .tab').forEach(t=>t.addEventListener('click', closeAllNavGroups));
   document.addEventListener('click', e=>{ if(!e.target.closest('.navgrp')) closeAllNavGroups(); });
+  applyNavVisibility();                                        // ★ ซ่อนกลุ่มที่โหมดปัจจุบันไม่มีสิทธิ์
+}
+// ★ ซ่อน "ปุ่มกลุ่มเมนู" ที่ไม่มีแท็บใดใช้ได้เลยในโหมดนี้
+//   (เดิมซ่อนแค่แท็บย่อย ปุ่มกลุ่มของ HR เลยยังโผล่ในหน้า ผจก.)
+function applyNavVisibility(){
+  const bar=$('tabbar'); if(!bar || !bar.dataset.grouped) return;
+  bar.querySelectorAll('.navgrp').forEach(grp=>{
+    const tabs=(grp.dataset.tabs||'').split(',').filter(Boolean);
+    const visible = tabs.some(k => !MGR_MODE || MGR_TABS.includes(k));
+    grp.style.display = visible ? '' : 'none';
+  });
 }
 
 // ---------- โหมด ผจก.สาขา: ล็อกเมนู + ล็อกสาขา ----------
 function applyManagerMode(){
   if(!MGR_MODE) return;
   document.body.classList.add('mgr-mode');
-  // แสดงเฉพาะ 5 เมนู ที่อนุญาต
+  // แสดงเฉพาะเมนูที่อนุญาต (แท็บย่อย)
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.style.display = MGR_TABS.includes(n) ? '' : 'none'; });
+  applyNavVisibility();                       // ★ + ซ่อนปุ่มกลุ่มเมนูของ HR ที่ไม่มีสิทธิ์ทั้งกลุ่ม
+  // ★ เปลี่ยนหัวเรื่องให้เป็นหน้าของ ผจก. (เดิมยังขึ้นว่า "สำหรับฝ่ายบุคคล")
+  const t1=document.querySelector('.htext .t1'), t2=document.querySelector('.htext .t2');
+  if(t1) t1.textContent='สำหรับผู้จัดการสาขา';
+  if(t2) t2.textContent='ระบบงานผู้จัดการ';
+  document.title='ระบบงานผู้จัดการ - 7-Eleven';
   // เปลี่ยนป้ายหัวเป็นสาขาของ ผจก.
   const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
   const badge=$('mgrBadge');

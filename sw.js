@@ -3,12 +3,13 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v2';
+const CACHE = 'hr7-eleven-v3';       // ★ ขึ้นเวอร์ชัน = ล้าง cache เก่าที่ทำให้หน้า ผจก. เด้งเป็นหน้า HR
 const ASSETS = [
   './',
   './index.html',
   './employee/index.html',
   './hr/index.html',
+  './mgr/index.html',
   './shared/config.js',
   './shared/supabase.js',
   './shared/hr-api.js',

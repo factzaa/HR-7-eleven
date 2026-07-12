@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ระบบงานผู้จัดการ - 7-Eleven</title>
+<link rel="icon" href="../icons/icon-192.png">
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       font-family:system-ui,-apple-system,"Segoe UI","Sarabun",sans-serif;background:#f4f6f8;color:#0f172a}
+  .box{text-align:center}
+  .spin{width:34px;height:34px;border:3px solid #cbd5e1;border-top-color:#00582f;border-radius:50%;
+        animation:s .8s linear infinite;margin:0 auto 12px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  a{color:#00582f}
+</style>
+<!-- ผู้จัดการสาขาเข้าทางนี้ — ไม่ต้องผ่านหน้าเข้าระบบของ HR -->
+<script>
+  // จำโหมดไว้ใน session ด้วย เผื่อ query string หายระหว่างทาง (PWA / redirect / cache)
+  try{ sessionStorage.setItem('login_mode','mgr'); }catch(e){}
+  location.replace('../hr/?mgr=1');
+</script>
+</head>
+<body>
+  <div class="box">
+    <div class="spin"></div>
+    <div>กำลังเข้าสู่ระบบงานผู้จัดการ…</div>
+    <div style="margin-top:8px;font-size:13px"><a href="../hr/?mgr=1">กดที่นี่ถ้าไม่เปลี่ยนหน้าอัตโนมัติ</a></div>
+  </div>
+</body>
+</html>
