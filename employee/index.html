@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/ann-slides.js"></script>
 <script src="../shared/session.js"></script>
 <style>
   :root{
@@ -591,6 +592,7 @@ function showToast(kind,msg){
 $('toast').onclick = ()=>$('toast').classList.remove('show');
 
 // ====== events ======
+let ANN_SHOWN_FOR = null;   // กันเด้งซ้ำระหว่างพิมพ์รหัส
 $('empId').addEventListener('input', e=>{
   e.target.value = e.target.value.replace(/\D/g,'');
   empMatch = lookupEmp(e.target.value);
@@ -599,6 +601,11 @@ $('empId').addEventListener('input', e=>{
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();
   refreshCoCard();
+  // ★ ประกาศรูปภาพ — สไลด์ลอยขึ้นมาเมื่อกรอกรหัสถูก (วันละครั้งต่อประกาศ)
+  if(empMatch && window.ANN && ANN_SHOWN_FOR !== empMatch.emp_id){
+    ANN_SHOWN_FOR = empMatch.emp_id;
+    try{ window.ANN.show(empMatch); }catch(_e){}
+  }
 });
 $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');

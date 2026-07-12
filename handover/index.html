@@ -125,6 +125,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/ann-slides.js"></script>
 <script src="../shared/session.js"></script>
 <script>
 const $=id=>document.getElementById(id);
@@ -319,8 +320,10 @@ $('goBtn').onclick=async()=>{
     $('m_nm').textContent=emp.nickname||emp.name;
     $('m_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
     $('goBtn').textContent='เริ่ม';
-    // ★ ประตูรับทราบประกาศ — ต้องอ่าน+รับทราบให้ครบก่อนถึงจะเข้าเมนูได้
+    // ★ ประตูรับทราบประกาศ (ข้อความ) — ต้องอ่าน+รับทราบให้ครบก่อนถึงจะเข้าเมนูได้
     await ensureAnnouncementsAcked(emp);
+    // ★ ประกาศรูปภาพ — สไลด์ลอยขึ้นมา เลื่อนซ้าย-ขวาได้ ไม่ต้องกดรับทราบ (วันละครั้ง)
+    try{ if(window.ANN) await window.ANN.show(emp); }catch(_e){}
     show('step_menu');
     refreshGoodsBtn();       // แสดงปุ่มรับสินค้าเฉพาะผู้คุมผลัด / ปุ่มกดรับตอนยังว่าง
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"

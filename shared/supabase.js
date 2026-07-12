@@ -344,10 +344,11 @@
   // ประกาศที่ HR เขียนถึงพนักงาน (active + ยังไม่หมดอายุ)
   async function getAnnouncements() {
     const today = bangkokDate();
-    const { data } = await sb.from('announcements').select('id,message,level,created_at')
+    const { data } = await sb.from('announcements').select('id,message,level,created_at,kind')
       .eq('active', true).or(`expire_date.is.null,expire_date.gte.${today}`)
       .order('created_at', { ascending: false });
-    return data || [];
+    // ประกาศรูปภาพแสดงเป็นสไลด์แยกต่างหาก ไม่เอามาปนกับแบนเนอร์ข้อความ
+    return (data || []).filter(a => (a.kind || 'text') !== 'image');
   }
 
   // ---------- ระบบยืนยันการรับทราบประกาศ ----------
@@ -378,6 +379,26 @@
       const done = {}; (acks || []).forEach(a => { if (a.acked_at) done[a.ann_id] = true; });
       return list.filter(a => !done[a.id]);
     } catch (e) { console.error('pending announcements', e); return []; }
+  }
+
+  // ประกาศแบบ "รูปภาพ" (สไลด์) ที่ยังแสดงอยู่ — ไม่ต้องกดรับทราบ
+  async function getImageAnnouncements(empId, branchId) {
+    try {
+      const today = bangkokDate();
+      const { data } = await sb.from('announcements')
+        .select('id,title,message,images,branch_ids,created_at')
+        .eq('active', true).eq('kind', 'image')
+        .or(`expire_date.is.null,expire_date.gte.${today}`)
+        .order('created_at', { ascending: false });
+      let list = (data || []).filter(a => Array.isArray(a.images) && a.images.length);
+      if (branchId) {
+        list = list.filter(a => {
+          const bs = Array.isArray(a.branch_ids) ? a.branch_ids : [];
+          return bs.length === 0 || bs.map(String).includes(String(branchId));
+        });
+      }
+      return list;
+    } catch (e) { console.error('image announcements', e); return []; }
   }
 
   // บันทึกว่า "เปิดอ่าน" แล้ว (ยังไม่กดรับทราบ)
@@ -1438,5 +1459,5 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, markAnnouncementOpened, ackAnnouncement, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
 })();

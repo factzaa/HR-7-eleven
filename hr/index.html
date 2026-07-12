@@ -1091,32 +1091,62 @@
   <div class="card" style="margin-bottom:14px">
     <div class="card-h"><h3>📢 เขียนประกาศถึงพนักงาน</h3></div>
     <div class="card-b" style="display:flex;flex-direction:column;gap:10px">
+
+      <!-- เลือกรูปแบบประกาศ -->
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sec an_kindbtn" data-kind="text"  id="an_kind_text"  style="flex:1">📝 ประกาศข้อความ</button>
+        <button class="btn btn-sec an_kindbtn" data-kind="image" id="an_kind_image" style="flex:1">🖼️ ประกาศรูปภาพ (สไลด์)</button>
+      </div>
+
       <input id="an_title" placeholder="หัวข้อ (เช่น เปลี่ยนเวลาส่งของ)" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px">
-      <textarea id="an_msg" rows="3" placeholder="ข้อความประกาศ เช่น พรุ่งนี้ประชุมพนักงาน 9 โมงเช้า ห้ามขาด" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px;resize:vertical"></textarea>
+
+      <!-- โหมดข้อความ -->
+      <div id="an_textbox" style="display:flex;flex-direction:column;gap:10px">
+        <textarea id="an_msg" rows="3" placeholder="ข้อความประกาศ เช่น พรุ่งนี้ประชุมพนักงาน 9 โมงเช้า ห้ามขาด" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px;resize:vertical"></textarea>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div class="field-mini" style="min-width:230px"><label>ระดับการรับทราบ</label>
+            <select id="an_prio">
+              <option value="normal">🟢 ทั่วไป — แค่แจ้ง ไม่ต้องรับทราบ</option>
+              <option value="important">🟠 สำคัญ — ต้องกดรับทราบ</option>
+              <option value="mandatory">🔴 บังคับ — ต้องรับทราบ + ตอบคำถาม</option>
+            </select>
+          </div>
+          <div class="field-mini"><label>สี/ความเด่น</label><select id="an_level"><option value="info">ทั่วไป</option><option value="warn">สำคัญ</option><option value="urgent">ด่วน</option></select></div>
+        </div>
+        <div id="an_quizbox" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;display:none">
+          <div style="font-weight:700;font-size:13.5px;margin-bottom:8px">❓ คำถามยืนยันความเข้าใจ (กันการกดรับทราบโดยไม่อ่าน)</div>
+          <input id="an_qq" placeholder="คำถาม เช่น ของจะมาส่งกี่โมง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;margin-bottom:8px">
+          <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">ตัวเลือก — ติ๊กวงกลมหน้าข้อที่เป็นคำตอบที่ถูก</div>
+          <div id="an_qopts"></div>
+          <button class="btn btn-sec btn-sm" id="an_qadd" style="margin-top:6px">+ เพิ่มตัวเลือก</button>
+        </div>
+      </div>
+
+      <!-- โหมดรูปภาพ -->
+      <div id="an_imgbox" style="display:none;flex-direction:column;gap:10px">
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px">
+          <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">🖼️ ประกาศแบบรูปภาพ</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.6">
+            แนบได้หลายรูป · พนักงานจะเห็นเป็น <b>สไลด์ลอยขึ้นมาเต็มจอ เลื่อนซ้าย-ขวาได้</b> ทั้งที่หน้าลงเวลาและหน้ารับส่งผลัด
+            · <b>ไม่ต้องกดรับทราบ</b> ปิดได้เลย (ระบบยังบันทึกให้ว่าใครเปิดดูแล้ว)
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="file" id="an_imgfile" accept="image/*" multiple style="display:none">
+          <button class="btn btn-sec" id="an_imgadd">+ เพิ่มรูป</button>
+          <button class="btn btn-sec" id="an_imgposter" title="ดึงโปสเตอร์ที่สร้างจากแท็บ 'สร้างสื่อ' มาใช้">🎨 ใช้โปสเตอร์ที่สร้างไว้</button>
+          <span class="count" id="an_imgcount" style="margin-left:auto">ยังไม่มีรูป</span>
+        </div>
+        <div id="an_imgthumbs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div class="field-mini" style="min-width:230px"><label>ระดับการรับทราบ</label>
-          <select id="an_prio">
-            <option value="normal">🟢 ทั่วไป — แค่แจ้ง ไม่ต้องรับทราบ</option>
-            <option value="important">🟠 สำคัญ — ต้องกดรับทราบ</option>
-            <option value="mandatory">🔴 บังคับ — ต้องรับทราบ + ตอบคำถาม</option>
-          </select>
-        </div>
-        <div class="field-mini"><label>สี/ความเด่น</label><select id="an_level"><option value="info">ทั่วไป</option><option value="warn">สำคัญ</option><option value="urgent">ด่วน</option></select></div>
-        <div class="field-mini"><label>สาขา</label><select id="an_branch"><option value="">ทุกสาขา</option></select></div>
+        <div class="field-mini"><label>สาขา</label><select id="anc_branch"><option value="">ทุกสาขา</option></select></div>
         <div class="field-mini"><label>แสดงถึงวันที่ (ว่าง = ไม่หมดอายุ)</label><input id="an_expire" type="date"></div>
       </div>
 
-      <div id="an_quizbox" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;display:none">
-        <div style="font-weight:700;font-size:13.5px;margin-bottom:8px">❓ คำถามยืนยันความเข้าใจ (กันการกดรับทราบโดยไม่อ่าน)</div>
-        <input id="an_qq" placeholder="คำถาม เช่น ของจะมาส่งกี่โมง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;margin-bottom:8px">
-        <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">ตัวเลือก — ติ๊กวงกลมหน้าข้อที่เป็นคำตอบที่ถูก</div>
-        <div id="an_qopts"></div>
-        <button class="btn btn-sec btn-sm" id="an_qadd" style="margin-top:6px">+ เพิ่มตัวเลือก</button>
-      </div>
-
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <div style="font-size:12px;color:var(--muted);flex:1">ระดับ <b>สำคัญ/บังคับ</b> จะบล็อกหน้ารับส่งผลัด — พนักงานต้องกดรับทราบก่อนถึงจะใช้งานได้ · ส่ง Web Push ทันที และเตือนซ้ำอัตโนมัติเมื่อครบ 12/24/48 ชม.</div>
+        <div style="font-size:12px;color:var(--muted);flex:1" id="an_hint">ระดับ <b>สำคัญ/บังคับ</b> จะบล็อกหน้ารับส่งผลัด — พนักงานต้องกดรับทราบก่อนถึงจะใช้งานได้ · ส่ง Web Push ทันที และเตือนซ้ำอัตโนมัติเมื่อครบ 12/24/48 ชม.</div>
         <button class="btn btn-pri" id="an_send">📢 ประกาศ + ส่งแจ้งเตือน</button>
       </div>
     </div>
@@ -6241,15 +6271,83 @@ $('an_prio') && ($('an_prio').onchange=()=>{
   else if($('an_prio').value==='important') $('an_level').value='warn';
 });
 
+// ---------- สลับโหมด ข้อความ / รูปภาพ ----------
+let AN_KIND='text', AN_IMGS=[];
+function anSetKind(k){
+  AN_KIND = (k==='image') ? 'image' : 'text';
+  const isImg = AN_KIND==='image';
+  $('an_textbox').style.display = isImg ? 'none' : 'flex';
+  $('an_imgbox').style.display  = isImg ? 'flex' : 'none';
+  document.querySelectorAll('.an_kindbtn').forEach(b=>{
+    const on = b.dataset.kind===AN_KIND;
+    b.classList.toggle('btn-pri', on);
+    b.classList.toggle('btn-sec', !on);
+  });
+  $('an_hint').innerHTML = isImg
+    ? 'ประกาศรูปภาพจะ <b>ลอยขึ้นมาเป็นสไลด์</b> ที่หน้าลงเวลาและหน้ารับส่งผลัด · เลื่อนซ้าย-ขวาได้ · <b>ไม่ต้องกดรับทราบ</b> · แสดงวันละครั้งต่อคน'
+    : 'ระดับ <b>สำคัญ/บังคับ</b> จะบล็อกหน้ารับส่งผลัด — พนักงานต้องกดรับทราบก่อนถึงจะใช้งานได้ · ส่ง Web Push ทันที และเตือนซ้ำอัตโนมัติเมื่อครบ 12/24/48 ชม.';
+  $('an_send').textContent = isImg ? '🖼️ ประกาศรูปภาพ' : '📢 ประกาศ + ส่งแจ้งเตือน';
+}
+document.querySelectorAll('.an_kindbtn').forEach(b=>{ b.onclick=()=>anSetKind(b.dataset.kind); });
+anSetKind('text');
+
+function anRenderImgs(){
+  const box=$('an_imgthumbs'); if(!box) return;
+  $('an_imgcount').textContent = AN_IMGS.length ? ('แนบแล้ว '+AN_IMGS.length+' รูป · ลากจัดลำดับด้วยปุ่ม ◀ ▶') : 'ยังไม่มีรูป';
+  box.innerHTML = AN_IMGS.map((u,i)=>
+    '<div style="position:relative;width:110px">'
+    +'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;display:block">'
+    +'<div style="position:absolute;top:3px;left:3px;background:rgba(0,0,0,.6);color:#fff;border-radius:6px;padding:1px 6px;font-size:11px">'+(i+1)+'</div>'
+    +'<button class="an_imgrm" data-i="'+i+'" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:13px;line-height:1;cursor:pointer">×</button>'
+    +'<div style="display:flex;gap:4px;margin-top:4px">'
+      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="-1" style="flex:1"'+(i===0?' disabled':'')+'>◀</button>'
+      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="1" style="flex:1"'+(i===AN_IMGS.length-1?' disabled':'')+'>▶</button>'
+    +'</div></div>').join('');
+  box.querySelectorAll('.an_imgrm').forEach(b=>{ b.onclick=()=>{ AN_IMGS.splice(Number(b.dataset.i),1); anRenderImgs(); }; });
+  box.querySelectorAll('.an_imgmv').forEach(b=>{ b.onclick=()=>{
+    const i=Number(b.dataset.i), j=i+Number(b.dataset.d);
+    if(j<0||j>=AN_IMGS.length) return;
+    const t=AN_IMGS[i]; AN_IMGS[i]=AN_IMGS[j]; AN_IMGS[j]=t; anRenderImgs();
+  }; });
+}
+$('an_imgadd') && ($('an_imgadd').onclick=()=>$('an_imgfile').click());
+$('an_imgfile') && ($('an_imgfile').onchange=async()=>{
+  const fs=$('an_imgfile').files; if(!fs||!fs.length) return;
+  $('an_imgcount').textContent='กำลังย่อรูป…';
+  for(const f of fs){
+    if(AN_IMGS.length>=8){ toast('err','แนบได้สูงสุด 8 รูป'); break; }
+    try{ AN_IMGS.push(await asstFileToData(f)); }catch(e){}
+  }
+  $('an_imgfile').value=''; anRenderImgs();
+});
+$('an_imgposter') && ($('an_imgposter').onclick=()=>{
+  // ดึงโปสเตอร์ที่เพิ่งสร้างจากแท็บ "สร้างสื่อ" (ถ้ามี)
+  const u = (typeof POSTER!=='undefined' && POSTER && POSTER.url) ? POSTER.url : '';
+  if(!u){ toast('err','ยังไม่มีโปสเตอร์ — ไปสร้างที่แท็บ "สร้างสื่อ" ก่อน แล้วกลับมากดปุ่มนี้'); return; }
+  if(AN_IMGS.length>=8){ toast('err','แนบได้สูงสุด 8 รูป'); return; }
+  AN_IMGS.push(u); anRenderImgs(); toast('ok','ใส่โปสเตอร์แล้ว');
+});
+
 $('an_send') && ($('an_send').onclick = async ()=>{
+  const isImg = AN_KIND==='image';
   const msg=$('an_msg').value.trim();
-  if(!msg){ toast('err','ใส่ข้อความก่อน'); return; }
-  const prio=$('an_prio').value;
-  const br=$('an_branch').value;
+  const title=$('an_title').value.trim();
+
+  if(isImg){
+    if(!AN_IMGS.length){ toast('err','แนบรูปอย่างน้อย 1 รูป'); return; }
+    if(!title){ toast('err','ใส่หัวข้อด้วย (ใช้ในแจ้งเตือนและให้นิดาอ่านได้)'); return; }
+  } else {
+    if(!msg){ toast('err','ใส่ข้อความก่อน'); return; }
+  }
+
+  const prio = isImg ? 'normal' : $('an_prio').value;
+  const br=$('anc_branch').value;
   const d={
-    title: $('an_title').value.trim(),
-    message: msg,
-    level: $('an_level').value,
+    kind: AN_KIND,
+    title: title,
+    message: isImg ? (msg || title) : msg,
+    images: isImg ? AN_IMGS.slice() : [],
+    level: isImg ? 'info' : $('an_level').value,
     priority: prio,
     branch_ids: br ? [br] : [],
     expire_date: $('an_expire').value||null
@@ -6270,12 +6368,14 @@ $('an_send') && ($('an_send').onclick = async ()=>{
     try{ await fetch(base+'/functions/v1/hr-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){}
     // ประกาศระดับ สำคัญ/บังคับ → ส่ง push ถึงเครื่องพนักงานทุกคนที่เข้าข่าย + เริ่มนับเวลาเตือนซ้ำ
     if(prio!=='normal'){ try{ await fetch(base+'/functions/v1/announce-notify', { method:'POST', headers:{'Content-Type':'application/json'} }); }catch(e){} }
-    toast('ok','ประกาศแล้ว + ส่งแจ้งเตือน');
+    toast('ok', isImg ? 'ประกาศรูปภาพแล้ว' : 'ประกาศแล้ว + ส่งแจ้งเตือน');
     $('an_title').value=''; $('an_msg').value=''; $('an_expire').value=''; $('an_qq').value='';
     AN_OPTS=['','']; anRenderOpts();
+    AN_IMGS=[]; anRenderImgs();
     loadAnnounceStatus(); loadNotifyLog();
   } else toast('err', r.error||'ส่งไม่สำเร็จ');
-  $('an_send').disabled=false; $('an_send').textContent='📢 ประกาศ + ส่งแจ้งเตือน';
+  $('an_send').disabled=false;
+  $('an_send').textContent = (AN_KIND==='image') ? '🖼️ ประกาศรูปภาพ' : '📢 ประกาศ + ส่งแจ้งเตือน';
 });
 $('nl_refresh') && ($('nl_refresh').onclick = loadNotifyLog);
 $('an_refresh') && ($('an_refresh').onclick = ()=>loadAnnounceStatus());
@@ -6292,27 +6392,36 @@ async function loadAnnounceStatus(){
   box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_announce_list', password:pwd });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  // เติมรายชื่อสาขาในดรอปดาวน์
-  const sel=$('an_branch');
+  // เติมรายชื่อสาขาในดรอปดาวน์ของ "การ์ดเขียนประกาศ" (id ต้องไม่ชนกับแท็บวิเคราะห์)
+  const sel=$('anc_branch');
   if(sel && sel.options.length<=1) (r.branches||[]).forEach(b=>{ const o=document.createElement('option'); o.value=b.branch_id; o.textContent=b.name||b.branch_id; sel.appendChild(o); });
 
-  const rows=(r.rows||[]).filter(a=>a.priority!=='normal' || a.active);
+  const rows=(r.rows||[]).filter(a=>a.priority!=='normal' || a.kind==='image' || a.active);
   if(!rows.length){ box.innerHTML='<div class="empty">ยังไม่มีประกาศ</div>'; return; }
   const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return String(w||'').slice(0,16).replace('T',' '); } };
-  box.innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>ประกาศ</th><th>ระดับ</th><th>สาขา</th><th style="min-width:170px">รับทราบแล้ว</th><th>ค้าง</th><th></th></tr></thead><tbody>'
+  box.innerHTML='<div class="card"><div class="tablewrap"><table><thead><tr><th>ประกาศ</th><th>ระดับ</th><th>สาขา</th><th style="min-width:170px">รับทราบ / เปิดดู</th><th>ค้าง</th><th></th></tr></thead><tbody>'
     + rows.map(a=>{
-      const p=PRIO_PILL[a.priority]||PRIO_PILL.normal;
+      const isImg = a.kind==='image';
+      const p = isImg ? ['🖼️ รูปภาพ','muted'] : (PRIO_PILL[a.priority]||PRIO_PILL.normal);
       const scope=a.branch_ids.length?a.branch_ids.map(b=>branchName(b)).join(', '):'ทุกสาขา';
-      const needAck=a.priority!=='normal';
+      const needAck=!isImg && a.priority!=='normal';
+      const thumb = (isImg && (a.images||[]).length) ? '<img src="'+esc(a.images[0])+'" onclick="lightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:7px;border:1px solid var(--line);cursor:zoom-in;flex:none">' : '';
+      // โหมดรูปภาพ: แสดง "เปิดดูแล้วกี่คน" แทน % รับทราบ
+      const midCell = needAck
+        ? ('<div style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:12.5px;min-width:58px">'+a.acked+'/'+a.total+'</span>'+anBar(a.pct)+'<span class="mono" style="font-size:12px">'+a.pct+'%</span></div>')
+        : (isImg
+            ? ('<div style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:12.5px;min-width:58px">'+a.opened+'/'+a.total+'</span>'+anBar(a.total?Math.round(a.opened*100/a.total):0)+'<span class="muted" style="font-size:11.5px">เปิดดู</span></div>')
+            : '<span class="muted" style="font-size:12.5px">ไม่ต้องรับทราบ</span>');
       return `<tr${(needAck && a.unread>0 && a.active)?' style="background:#fff7ed"':''}>
-        <td><div style="font-weight:600">${esc(a.title||String(a.message||'').slice(0,40))}</div>
-            <div style="font-size:11.5px;color:var(--muted)">${fmt(a.created_at)}${a.active?'':' · <span style="color:#94a3b8">ปิดแล้ว/หมดอายุ</span>'}</div></td>
+        <td><div style="display:flex;gap:8px;align-items:center">${thumb}
+            <div><div style="font-weight:600">${esc(a.title||String(a.message||'').slice(0,40))}${isImg?(' <span class="muted" style="font-size:11.5px">· '+((a.images||[]).length)+' รูป</span>'):''}</div>
+            <div style="font-size:11.5px;color:var(--muted)">${fmt(a.created_at)}${a.active?'':' · <span style="color:#94a3b8">ปิดแล้ว/หมดอายุ</span>'}</div></div></div></td>
         <td><span class="pill ${p[1]}">${p[0]}</span></td>
         <td style="font-size:12.5px">${esc(scope)}</td>
-        <td>${needAck?('<div style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:12.5px;min-width:58px">'+a.acked+'/'+a.total+'</span>'+anBar(a.pct)+'<span class="mono" style="font-size:12px">'+a.pct+'%</span></div>'):'<span class="muted" style="font-size:12.5px">ไม่ต้องรับทราบ</span>'}</td>
+        <td>${midCell}</td>
         <td>${needAck?(a.unread>0?('<span class="pill bad">'+a.unread+' คน</span>'):'<span class="pill ok">ครบแล้ว</span>'):'—'}</td>
         <td style="white-space:nowrap">
-          ${needAck?`<button class="btn btn-sec btn-sm an_detail" data-id="${a.id}">ดูรายชื่อ</button>`:''}
+          ${(needAck||isImg)?`<button class="btn btn-sec btn-sm an_detail" data-id="${a.id}">ดูรายชื่อ</button>`:''}
           <button class="btn btn-sec btn-sm an_off" data-id="${a.id}" data-on="${a.active?1:0}">${a.active?'ปิด':'เปิด'}</button>
         </td></tr>`;
     }).join('')
@@ -6333,42 +6442,54 @@ async function loadAnnounceDetail(id){
   if(!r.ok){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">'+esc(r.error||'')+'</div></div></div>'; return; }
   const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return '—'; } };
   const s=r.summary;
-  const pend = r.people.filter(p=>p.status!=='acked');
+  const isImg = r.ann.kind==='image';
+  // โหมดรูปภาพ: ไม่ต้องรับทราบ → นับ "เปิดดูแล้ว" แทน
+  const pend = isImg ? r.people.filter(p=>p.status==='none') : r.people.filter(p=>p.status!=='acked');
+  const seen = isImg ? r.people.filter(p=>p.status!=='none').length : s.acked;
+  const seenPct = s.total ? Math.round(seen*100/s.total) : 0;
+  const gallery = isImg && (r.ann.images||[]).length
+    ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+      + r.ann.images.map((u,i)=>'<div style="position:relative"><img src="'+esc(u)+'" onclick="lightbox(this)" style="width:96px;height:96px;object-fit:cover;border-radius:9px;border:1px solid var(--line);cursor:zoom-in;display:block"><div style="position:absolute;top:3px;left:3px;background:rgba(0,0,0,.6);color:#fff;border-radius:5px;padding:0 5px;font-size:11px">'+(i+1)+'</div></div>').join('')
+      + '</div>'
+    : '';
 
   box.innerHTML='<div class="card">'
-    +'<div class="card-h"><h3>📋 '+esc(r.ann.title||String(r.ann.message||'').slice(0,50))+'</h3>'
+    +'<div class="card-h"><h3>'+(isImg?'🖼️ ':'📋 ')+esc(r.ann.title||String(r.ann.message||'').slice(0,50))+'</h3>'
       +'<button class="btn btn-sec btn-sm" id="an_dclose" style="margin-left:auto">ปิด</button></div>'
     +'<div class="card-b">'
+      + gallery
       +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">'
-        +'<div><div style="font-size:11.5px;color:var(--muted)">รับทราบแล้ว</div><div style="font-size:22px;font-weight:800;color:#16a34a">'+s.acked+'<span style="font-size:14px;color:var(--muted);font-weight:500"> / '+s.total+' คน ('+s.pct+'%)</span></div></div>'
-        +'<div><div style="font-size:11.5px;color:var(--muted)">ยังไม่รับทราบ</div><div style="font-size:22px;font-weight:800;color:'+(s.unread?'#dc2626':'#16a34a')+'">'+s.unread+'</div></div>'
+        +'<div><div style="font-size:11.5px;color:var(--muted)">'+(isImg?'เปิดดูแล้ว':'รับทราบแล้ว')+'</div><div style="font-size:22px;font-weight:800;color:#16a34a">'+seen+'<span style="font-size:14px;color:var(--muted);font-weight:500"> / '+s.total+' คน ('+seenPct+'%)</span></div></div>'
+        +'<div><div style="font-size:11.5px;color:var(--muted)">'+(isImg?'ยังไม่เห็น':'ยังไม่รับทราบ')+'</div><div style="font-size:22px;font-weight:800;color:'+(pend.length?'#dc2626':'#16a34a')+'">'+pend.length+'</div></div>'
       +'</div>'
       // สรุปรายสาขา
-      +'<div style="margin-bottom:14px">'+r.branches.map(b=>
-          '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)">'
+      +'<div style="margin-bottom:14px">'+r.branches.map(b=>{
+          const bs = isImg ? (b.total - b.pending.length + b.opened) : b.acked;   // รูปภาพ: นับคนที่เปิดดู
+          const bp = b.total ? Math.round(bs*100/b.total) : 0;
+          return '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)">'
           +'<div style="min-width:120px;font-size:13.5px;font-weight:600">'+esc(b.branch_name)+'</div>'
-          +'<span class="mono" style="font-size:12.5px;min-width:52px">'+b.acked+'/'+b.total+'</span>'
-          +anBar(b.pct)
-          +'<span class="mono" style="font-size:12px;min-width:38px;text-align:right">'+b.pct+'%</span></div>').join('')
+          +'<span class="mono" style="font-size:12.5px;min-width:52px">'+bs+'/'+b.total+'</span>'
+          +anBar(bp)
+          +'<span class="mono" style="font-size:12px;min-width:38px;text-align:right">'+bp+'%</span></div>'; }).join('')
       +'</div>'
       // รายชื่อค้าง
-      +'<div style="font-weight:700;font-size:14px;margin-bottom:6px">ยังไม่รับทราบ ('+pend.length+' คน)</div>'
+      +'<div style="font-weight:700;font-size:14px;margin-bottom:6px">'+(isImg?'ยังไม่เห็นประกาศนี้':'ยังไม่รับทราบ')+' ('+pend.length+' คน)</div>'
       +(pend.length
-        ? '<div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>สถานะ</th><th>เปิดอ่านเมื่อ</th></tr></thead><tbody>'
+        ? '<div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>สถานะ</th><th>เปิดดูเมื่อ</th></tr></thead><tbody>'
           + pend.map(p=>`<tr style="background:#fff7ed">
               <td><div style="font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--muted)">รหัส ${esc(p.emp_id)}</div></td>
               <td>${esc(p.branch_name)}</td>
-              <td>${p.status==='opened'?'<span class="pill warn">เปิดอ่านแล้ว แต่ยังไม่กดรับทราบ</span>':'<span class="pill bad">ยังไม่เปิดอ่าน</span>'}${p.quiz_tries?' <span class="muted" style="font-size:11.5px">· ตอบผิด '+p.quiz_tries+' ครั้ง</span>':''}</td>
+              <td>${isImg?'<span class="pill bad">ยังไม่เห็น</span>':(p.status==='opened'?'<span class="pill warn">เปิดอ่านแล้ว แต่ยังไม่กดรับทราบ</span>':'<span class="pill bad">ยังไม่เปิดอ่าน</span>')}${p.quiz_tries?' <span class="muted" style="font-size:11.5px">· ตอบผิด '+p.quiz_tries+' ครั้ง</span>':''}</td>
               <td class="mono" style="font-size:12px">${p.opened_at?fmt(p.opened_at):'—'}</td></tr>`).join('')
           + '</tbody></table></div>'
-        : '<div class="empty">รับทราบครบทุกคนแล้ว 🎉</div>')
-      // รายชื่อที่รับทราบแล้ว
-      +'<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:13.5px">ดูรายชื่อที่รับทราบแล้ว ('+s.acked+' คน)</summary>'
-        +'<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>รับทราบเมื่อ</th><th>คำถาม</th></tr></thead><tbody>'
-        + r.people.filter(p=>p.status==='acked').map(p=>`<tr>
+        : '<div class="empty">'+(isImg?'ทุกคนเห็นแล้ว 🎉':'รับทราบครบทุกคนแล้ว 🎉')+'</div>')
+      // รายชื่อที่ดู/รับทราบแล้ว
+      +'<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:13.5px">ดูรายชื่อที่'+(isImg?'เปิดดู':'รับทราบ')+'แล้ว ('+seen+' คน)</summary>'
+        +'<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>พนักงาน</th><th>สาขา</th><th>'+(isImg?'เปิดดูเมื่อ':'รับทราบเมื่อ')+'</th><th>คำถาม</th></tr></thead><tbody>'
+        + r.people.filter(p=> isImg ? p.status!=='none' : p.status==='acked').map(p=>`<tr>
             <td>${esc(p.name)}</td><td>${esc(p.branch_name)}</td>
-            <td class="mono" style="font-size:12px">${fmt(p.acked_at)}</td>
-            <td>${p.quiz_ok===true?'<span class="pill ok">ตอบถูก</span>':(p.quiz_ok===false?'<span class="pill bad">ตอบผิด</span>':'—')}${p.quiz_tries?' <span class="muted" style="font-size:11.5px">('+p.quiz_tries+' ครั้ง)</span>':''}</td></tr>`).join('')
+            <td class="mono" style="font-size:12px">${fmt(isImg?p.opened_at:p.acked_at)}</td>
+            <td>${isImg?'—':(p.quiz_ok===true?'<span class="pill ok">ตอบถูก</span>':(p.quiz_ok===false?'<span class="pill bad">ตอบผิด</span>':'—'))}${(!isImg&&p.quiz_tries)?' <span class="muted" style="font-size:11.5px">('+p.quiz_tries+' ครั้ง)</span>':''}</td></tr>`).join('')
         +'</tbody></table></div></details>'
     +'</div></div>';
   $('an_dclose').onclick=()=>{ box.innerHTML=''; };

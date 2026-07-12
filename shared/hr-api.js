@@ -1413,7 +1413,36 @@
   }
 
   async function hrAnnounceSave(d) {
-    if (!d || !d.message || !d.message.trim()) return { ok: false, error: 'ต้องมีข้อความ' };
+    d = d || {};
+    const kind = (d.kind === 'image') ? 'image' : 'text';
+
+    // ---------- ประกาศแบบรูปภาพ (สไลด์) ----------
+    if (kind === 'image') {
+      const raw = Array.isArray(d.images) ? d.images.filter(Boolean).slice(0, 8) : [];
+      if (!raw.length) return { ok: false, error: 'ต้องแนบรูปอย่างน้อย 1 รูป' };
+      const title = String(d.title || '').trim();
+      if (!title) return { ok: false, error: 'ต้องมีหัวข้อ (ใช้ในแจ้งเตือน และให้นิดาอ่านได้)' };
+      const urls = await _uploadMany('announce', raw);   // data URL → storage · URL เดิมส่งผ่านตรง
+      if (!urls.length) return { ok: false, error: 'อัปโหลดรูปไม่สำเร็จ' };
+      const row = {
+        kind: 'image',
+        title,
+        message: String(d.message || title).trim(),
+        images: urls,
+        level: 'info',
+        priority: 'normal',                              // รูปภาพไม่บังคับรับทราบ
+        branch_ids: (Array.isArray(d.branch_ids) && d.branch_ids.length) ? d.branch_ids.map(String) : null,
+        expire_date: d.expire_date || null,
+        active: true,
+        created_by: 'HR'
+      };
+      const { data, error } = await sb().from('announcements').insert(row).select('id').single();
+      if (error) throw error;
+      return { ok: true, id: data ? data.id : null, images: urls.length };
+    }
+
+    // ---------- ประกาศแบบข้อความ ----------
+    if (!d.message || !d.message.trim()) return { ok: false, error: 'ต้องมีข้อความ' };
     const prio = ['normal', 'important', 'mandatory'].includes(d.priority) ? d.priority : 'normal';
     const choices = Array.isArray(d.quiz_choices) ? d.quiz_choices.map(c => String(c || '').trim()).filter(Boolean) : [];
     if (prio === 'mandatory') {
@@ -1423,6 +1452,7 @@
       if (!(ai >= 0 && ai < choices.length)) return { ok: false, error: 'ต้องระบุว่าข้อไหนคือคำตอบที่ถูก' };
     }
     const row = {
+      kind: 'text',
       title: (d.title || '').trim() || null,
       message: d.message.trim(),
       level: d.level || 'info',
@@ -1482,6 +1512,7 @@
       const expired = a.expire_date && String(a.expire_date) < today;
       return {
         id: a.id, title: a.title, message: a.message, level: a.level,
+        kind: a.kind || 'text', images: Array.isArray(a.images) ? a.images : [],
         priority: a.priority || 'normal', branch_ids: scope,
         quiz_q: a.quiz_q, created_at: a.created_at, expire_date: a.expire_date,
         active: a.active !== false && !expired,
@@ -1535,7 +1566,7 @@
     const total = people.length, acked = people.filter(p => p.status === 'acked').length;
     return {
       ok: true,
-      ann: { id: a.id, title: a.title, message: a.message, priority: a.priority || 'normal', level: a.level, created_at: a.created_at, expire_date: a.expire_date, quiz_q: a.quiz_q },
+      ann: { id: a.id, title: a.title, message: a.message, kind: a.kind || 'text', images: Array.isArray(a.images) ? a.images : [], priority: a.priority || 'normal', level: a.level, created_at: a.created_at, expire_date: a.expire_date, quiz_q: a.quiz_q },
       summary: { total, acked, unread: total - acked, pct: total ? Math.round(acked * 100 / total) : 0 },
       branches, people
     };
