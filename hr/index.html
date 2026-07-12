@@ -1220,14 +1220,12 @@
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">เช่น ลากิจ ต้องลาล่วงหน้า ≥ 2 วัน · ลาป่วย แนบใบรับรองแพทย์ ลาย้อนหลังได้</div>
 
-  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">เกณฑ์ใบเตือน / วินัย</h3><button class="btn btn-pri btn-sm" id="dr_save">บันทึกเกณฑ์</button></div>
-  <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>ระดับ</th><th>ชื่อระดับ</th><th>มาสาย ≥ (ครั้ง)<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ใช้</span></th><th>ขาดงาน ≥ (วัน)<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ใช้</span></th><th>เปิดใช้</th></tr></thead>
-    <tbody id="drRows"></tbody>
-  </table></div></div>
-  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">
-    ระบบจะให้ใบเตือน <b>ระดับสูงสุด</b> ที่เข้าเกณฑ์ โดยใช้ "มาสาย <b>หรือ</b> ขาดงาน" อย่างใดอย่างหนึ่งถึงเกณฑ์ก็ได้ ·
-    การนับขาดงานอ้างอิงเฉพาะวันที่จัดเวรไว้และผ่านไปแล้ว · แก้แล้วกด "บันทึกเกณฑ์" จากนั้นไปแท็บ "วินัย &amp; ใบเตือน" กดรีเฟรช
+  <div style="margin-top:24px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:12px 14px">
+    <div style="font-weight:800;font-size:14px;color:#1e40af;margin-bottom:4px">ℹ️ ระดับวินัยตัดสินจาก "คะแนน" อย่างเดียว</div>
+    <div style="font-size:12.5px;color:#1e3a8a;line-height:1.65">
+      เดิมระบบมีเกณฑ์ 2 ชุดซ้อนกัน (นับครั้ง กับ คะแนน) ทำให้หน้าวินัยกับหน้าคะแนนขัดกันเอง — ตอนนี้เหลือชุดเดียวคือ <b>คะแนนวินัย</b>
+      ตั้งค่าได้ที่หัวข้อ <b>“คะแนนวินัย: กฎการหักคะแนน”</b> และ <b>“ช่วงคะแนน → ผลและการดำเนินการ”</b> ด้านล่างนี้
+    </div>
   </div>
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">แจ้งเตือนงาน / ลงเวลา</h3><button class="btn btn-pri btn-sm" id="coGrace_save">บันทึก</button></div>
@@ -1262,9 +1260,9 @@
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px"><b>auto</b> = ระบบหักให้เองจากข้อมูลลงเวลา/ตารางเวร · <b>manual</b> = HR กดเพิ่มในแท็บคะแนนวินัย · คะแนนเป็นค่าลบ เช่น -3</div>
 
-  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">เกณฑ์ผลลัพธ์ปลายเดือน + โบนัส</h3><button class="btn btn-pri btn-sm" id="scBands_save">บันทึกเกณฑ์</button></div>
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">ช่วงคะแนน → ผล + การดำเนินการ</h3><button class="btn btn-pri btn-sm" id="scBands_save">บันทึกเกณฑ์</button></div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>คะแนน (ต่ำ–สูง)</th><th>ผลที่ได้</th><th>โบนัส (บาท)</th><th>ออกใบเตือนระดับ<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ออก</span></th></tr></thead>
+    <thead><tr><th>คะแนน (ต่ำ–สูง)</th><th>ผลที่ได้</th><th>โบนัส (บาท)</th><th>ต้องดำเนินการ<br><span style="font-weight:400;color:var(--muted)">ขั้นวินัย</span></th><th>ออกใบเตือนระดับ<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ออก</span></th></tr></thead>
     <tbody id="scBandsRows"></tbody>
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">โบนัส "ความรับผิดชอบ" แสดงผล/คำนวณสิทธิให้ (ระบบไม่จ่ายเงินจริง) · ระดับใบเตือน 3=ครั้งที่ 1, 4=ครั้งที่ 2 (ใช้กับปุ่ม "ออกใบเตือนตามคะแนน")</div>
@@ -5725,33 +5723,11 @@ async function loadLeaveTypes(){
   });
 }
 
-// ========== เกณฑ์ใบเตือน / วินัย ==========
+// ========== (เลิกใช้) เกณฑ์ใบเตือนแบบนับครั้ง ==========
+// ระดับวินัยตัดสินจาก "คะแนน" อย่างเดียวแล้ว — ตั้งค่าที่ "ช่วงคะแนน → ผล + การดำเนินการ"
 let DR=null;
-async function loadDiscRules(){
-  const r = await post({ action:'hr_disc_rules_get', password:pwd });
-  if(!r.ok){ $('drRows').innerHTML=''; return; }
-  DR = r.rules.slice().sort((a,b)=>a.level-b.level);
-  const num=(v)=>v==null?'':v;
-  $('drRows').innerHTML = DR.map((d,i)=>`<tr>
-    <td><span class="pill" style="background:${esc(d.level_color)};color:#fff;font-weight:700">${d.level}</span></td>
-    <td><input type="text" value="${esc(d.level_name)}" id="dr_name_${i}" style="width:180px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><input type="number" min="0" value="${num(d.late_min)}" placeholder="ไม่ใช้" id="dr_late_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td><input type="number" min="0" value="${num(d.absent_min)}" placeholder="ไม่ใช้" id="dr_abs_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
-    <td style="text-align:center"><input type="checkbox" ${d.enabled!==false?'checked':''} id="dr_en_${i}"></td>
-  </tr>`).join('');
-}
-async function saveDiscRules(){
-  if(!DR) return;
-  const data = DR.map((d,i)=>({
-    level:d.level, level_color:d.level_color,
-    level_name:$('dr_name_'+i).value.trim()||d.level_name,
-    late_min:$('dr_late_'+i).value, absent_min:$('dr_abs_'+i).value,
-    enabled:$('dr_en_'+i).checked,
-  }));
-  const r = await post({ action:'hr_disc_rules_save', password:pwd, data });
-  if(r.ok){ toast('ok','บันทึกเกณฑ์ใบเตือนแล้ว · ไปแท็บวินัยแล้วกดรีเฟรช'); loadDiscRules(); }
-  else toast('err', r.error||'บันทึกไม่สำเร็จ');
-}
+async function loadDiscRules(){ /* ไม่ใช้แล้ว — คงฟังก์ชันไว้กันโค้ดเก่าเรียกแล้วพัง */ }
+async function saveDiscRules(){ /* ไม่ใช้แล้ว */ }
 
 // ========== ผ่อนผันก่อนเตือน "ลืมกดออก" ==========
 async function loadCheckoutGrace(){
@@ -5879,10 +5855,12 @@ async function loadScoreSettings(silent){
   SCORE_SETTINGS=r;
   if($('scCfg_start')) $('scCfg_start').value=r.start_score;
   renderScoreRulesRows();
+  const ACT_OPTS=[['','— ไม่ต้องทำอะไร —'],['verbal','🗣️ ตักเตือนด้วยวาจา'],['written','📝 ตักเตือนลายลักษณ์อักษร'],['warning','📄 ออกใบเตือน']];
   if($('scBandsRows')) $('scBandsRows').innerHTML=(r.bands||[]).map((b,i)=>`<tr>
     <td><input type="number" value="${b.min_score}" id="scb_min_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"> – <input type="number" value="${b.max_score}" id="scb_max_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td><input type="text" value="${esc(b.label)}" id="scb_l_${i}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td><input type="number" min="0" value="${b.bonus_amount==null?'':b.bonus_amount}" id="scb_b_${i}" style="width:96px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
+    <td><select id="scb_a_${i}" style="width:190px;padding:6px;border:1.5px solid var(--line2);border-radius:7px">${ACT_OPTS.map(([v,l])=>`<option value="${v}"${String(b.action_type||'')===v?' selected':''}>${l}</option>`).join('')}</select></td>
     <td><input type="number" min="0" value="${b.warn_level==null?'':b.warn_level}" placeholder="—" id="scb_w_${i}" style="width:80px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
   </tr>`).join('');
 }
@@ -5927,7 +5905,7 @@ async function saveScoreRules(){
 }
 async function saveScoreBands(){
   if(!SCORE_SETTINGS) return;
-  const data=(SCORE_SETTINGS.bands||[]).map((b,i)=>({ id:b.id, min_score:$('scb_min_'+i).value, max_score:$('scb_max_'+i).value, label:$('scb_l_'+i).value.trim()||b.label, bonus_amount:$('scb_b_'+i).value, warn_level:$('scb_w_'+i).value, warn_name:b.warn_name, color:b.color, sort:b.sort }));
+  const data=(SCORE_SETTINGS.bands||[]).map((b,i)=>({ id:b.id, min_score:$('scb_min_'+i).value, max_score:$('scb_max_'+i).value, label:$('scb_l_'+i).value.trim()||b.label, bonus_amount:$('scb_b_'+i).value, warn_level:$('scb_w_'+i).value, action_type:($('scb_a_'+i)?$('scb_a_'+i).value:(b.action_type||'')), warn_name:b.warn_name, color:b.color, sort:b.sort }));
   const r=await post({ action:'hr_score_bands_save', password:pwd, data });
   if(r.ok){ toast('ok','บันทึกเกณฑ์แล้ว'); loadScoreSettings(true); } else toast('err',r.error||'ไม่สำเร็จ');
 }

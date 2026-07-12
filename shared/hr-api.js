@@ -1970,6 +1970,7 @@
       label: b.label, bonus_amount: (b.bonus_amount === '' || b.bonus_amount == null) ? 0 : Number(b.bonus_amount),
       warn_level: (b.warn_level === '' || b.warn_level == null) ? null : Number(b.warn_level),
       warn_name: b.warn_name || null, color: b.color || '#475569', sort: Number(b.sort) || 0,
+      action_type: (b.action_type === '' || b.action_type == null) ? null : String(b.action_type),   // null | verbal | written | warning
     }));
     const { error } = await sb().from('score_bands').upsert(rows, { onConflict: 'id' });
     if (error) throw error;
