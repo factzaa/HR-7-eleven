@@ -726,6 +726,19 @@
   body.print-es *{visibility:hidden!important}
   body.print-es #es_body, body.print-es #es_body *{visibility:visible!important}
   body.print-es #es_body{position:absolute;left:0;top:0;width:100%}
+
+  /* ★ พิมพ์เอกสารในหน้าต่างพรีวิว (ใบเตือน / บันทึกเสนอพิจารณา) — ใส่ class print-doc ที่ body
+     เดิมพิมพ์ออกมาเป็นกระดาษเปล่า เพราะ .overlay เป็น position:fixed + .modal-b มี max-height/overflow
+     เบราว์เซอร์จึงตัดเนื้อหาทิ้งตอนพิมพ์ */
+  body.print-doc *{visibility:hidden!important}
+  body.print-doc #w_doc, body.print-doc #w_doc *{visibility:visible!important}
+  body.print-doc .overlay{position:static!important; display:block!important; background:none!important;
+                          backdrop-filter:none!important; overflow:visible!important; padding:0!important; z-index:auto!important}
+  body.print-doc .modal{max-width:none!important; width:100%!important; border-radius:0!important;
+                        border-top:0!important; box-shadow:none!important; overflow:visible!important}
+  body.print-doc .modal-b{max-height:none!important; overflow:visible!important; padding:0!important}
+  body.print-doc .modal-h, body.print-doc .modal-f{display:none!important}
+  body.print-doc #w_doc{position:absolute; left:0; top:0; width:100%}
   .es-controls, .no-print{display:none!important}
   /* พิมพ์ = เอกสารทางการ · ซ่อนการ์ดบนจอ */
   body.print-es .es-report{display:none!important}
@@ -2223,6 +2236,7 @@ async function loadDashboard(){
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
           <span class="pill" style="background:${esc(e.level_color||'#999')}1f;color:${esc(e.level_color||'#666')};font-weight:600">${esc(e.level_name||('ระดับ '+e.level))}</span>
+          ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}">⚖️ ${e.term_case.status==='closed'?'มีมติแล้ว':'พิจารณาอยู่'}</span>` : ''}
           <span class="stats">สาย ${e.late_count} · ขาด ${e.absent}</span>
         </div>
       </div>`).join('') : '<div class="empty" style="padding:24px">ยังไม่มีใครเข้าเกณฑ์ใบเตือนในรอบนี้ 🎉</div>');
@@ -2250,6 +2264,33 @@ async function loadDashboard(){
       <div class="stats">${b.count} คน · สาย ${b.late}</div>
     </div>`).join('') : '<div class="empty" style="padding:24px">ยังไม่มีคนลงเวลาวันนี้</div>';
 
+  // ---- ★ เคสพิจารณาเลิกจ้าง ----
+  const tOpen = r.term_cases || [], tDone = r.term_recent || [];
+  const tCaseRow = (t, closed)=>{
+    const bad = t.decision==='terminate_proposed';
+    return `<div class="shift-row" style="cursor:pointer" onclick="showTab('terminate');setTimeout(()=>openTermCase('${t.id}'),400)">
+      <div style="flex:1">
+        <div class="nm">${esc(t.emp_name||t.emp_id)} <span style="color:var(--muted);font-weight:400;font-size:12px">${esc(t.branch_name||'')}</span></div>
+        <div style="font-size:11.5px;color:var(--muted)">${esc(t.case_no||'')} · เสนอโดย ${esc(t.opened_by||'')}</div>
+      </div>
+      <div style="text-align:right">
+        <span class="pill" style="background:${closed?(bad?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${closed?(bad?'#b91c1c':'#15803d'):'#a16207'};font-weight:700">${closed?'⚖️ มีมติแล้ว':'⚖️ '+esc(t.status_label||'')}</span>
+        ${closed?`<div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(t.decision_label||'')}</div>`:''}
+      </div>
+    </div>`;
+  };
+  const termCard = (tOpen.length || tDone.length) ? `
+    <div class="dash-grid-2" style="margin-top:12px">
+      <div class="card"${tOpen.length?' style="border-left:5px solid #ea580c"':''}>
+        <div class="card-h"><h3>⛔ เคสพิจารณาเลิกจ้าง</h3>
+          <span style="font-size:12px;color:var(--muted)">${tOpen.length?('ค้าง '+tOpen.length+' เคส'):'ไม่มีเคสค้าง'}</span></div>
+        <div class="card-b">
+          ${tOpen.length ? tOpen.map(t=>tCaseRow(t,false)).join('') : '<div class="empty" style="padding:18px">ไม่มีเคสที่รอพิจารณา 🎉</div>'}
+          ${tDone.length ? '<div style="font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:700">มติล่าสุด</div>'+tDone.map(t=>tCaseRow(t,true)).join('') : ''}
+        </div>
+      </div>
+    </div>` : '';
+
   const _isToday = !ddt || ddt===bkkTodayStr();
   const _dayLbl = _isToday ? 'วันนี้' : beDate(ddt);
   $('dash_body').innerHTML = `
@@ -2258,6 +2299,7 @@ async function loadDashboard(){
       <div class="kpi" style="cursor:pointer" onclick="dashList('checked_in')"><div class="lbl">ลงเวลาแล้ว (${_dayLbl}) ›</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
       <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="lbl">มาสาย (${_dayLbl}) ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
       <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
+      ${(c.term_open>0) ? `<div class="kpi bad" style="cursor:pointer" onclick="showTab('terminate')"><div class="lbl">เคสพิจารณาเลิกจ้าง ›</div><div class="val">${c.term_open}<span class="sm"> เคส</span></div><div class="delta">${c.term_wait_hr?('รอ HR ตรวจสอบ '+c.term_wait_hr):'รอผู้มีอำนาจชี้ขาด'}</div></div>` : ''}
       <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${beDate(c.cycle_start)}<br>ถึง ${beDate(c.cycle_end)}</div></div>
     </div>
     ${scorecard}
@@ -2271,6 +2313,7 @@ async function loadDashboard(){
         <div class="card-b">${shiftRows}</div>
       </div>
     </div>
+    ${termCard}
     <div class="dash-grid-2" style="margin-top:12px">
       <div class="card">
         <div class="card-h"><h3>📅 การลาที่จะถึง (14 วัน)</h3></div>
@@ -3207,7 +3250,15 @@ async function openWarningView(wid){
 }
 $('wvClose').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
 $('wvCloseBtn').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
-$('wvPrint').onclick = ()=>window.print();
+// ★ พิมพ์เอกสารในหน้าต่างพรีวิว — ต้องใส่ class print-doc ก่อน ไม่งั้นได้กระดาษเปล่า
+//   (overlay เป็น position:fixed + modal-b มี max-height/overflow → เบราว์เซอร์ตัดเนื้อหาทิ้งตอนพิมพ์)
+function printDocOverlay(){
+  document.body.classList.add('print-doc');
+  window.print();
+  setTimeout(()=>document.body.classList.remove('print-doc'), 800);
+}
+window.addEventListener('afterprint', ()=>document.body.classList.remove('print-doc'));
+$('wvPrint').onclick = printDocOverlay;
 
 /* ============================================================
    พิจารณาเลิกจ้าง (Termination Review)
@@ -7094,6 +7145,18 @@ async function saveCheckoutGrace(){
 
 // ========== คะแนนวินัยรายเดือน ==========
 let SCORE=null, SCORE_SETTINGS=null;
+// ★ ช่อง "เคสพิจารณาเลิกจ้าง" ในตารางคะแนน
+function scTermCell(e){
+  const tc=e.term_case;
+  if(!tc) return '<span style="color:var(--muted);font-size:12.5px">—</span>';
+  const link='<a href="javascript:void(0)" onclick="showTab(\'terminate\');setTimeout(()=>openTermCase(\''+tc.id+'\'),400)" style="display:block;font-size:11px;color:#1d4ed8;margin-top:2px">'+esc(tc.case_no||'')+' · ดูเคส</a>';
+  if(tc.closed){
+    const bad = tc.decision==='terminate_proposed';
+    return '<span class="pill" style="background:'+(bad?'#fee2e2':'#dcfce7')+';color:'+(bad?'#b91c1c':'#15803d')+';font-weight:700">⚖️ ผ่านมติแล้ว</span>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+esc(tc.decision_label||'')+'</div>'+link;
+  }
+  return '<span class="pill" style="background:#fef3c7;color:#a16207;font-weight:700">⚖️ อยู่ระหว่างพิจารณา</span>'+link;
+}
 async function loadScore(){
   $('sc_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r = await post({ action:'hr_score_get', password:pwd, cycle:$('sc_cycle').value });
@@ -7105,15 +7168,17 @@ async function loadScore(){
     `<span class="pill" style="background:${esc(b.color)};color:#fff;font-weight:600">${b.min_score}–${b.max_score}: ${esc(b.label)}${b.bonus_amount?(' · ฿'+b.bonus_amount):''}</span>`).join('');
   if(!r.employees.length){ $('sc_body').innerHTML='<div class="empty">ยังไม่มีพนักงาน</div>'; return; }
   $('sc_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>พนักงาน</th><th>คะแนน</th><th>ผล</th><th>โบนัส</th><th>หักรวม</th><th></th></tr></thead>
+    <thead><tr><th>พนักงาน</th><th>คะแนน</th><th>ผล</th><th>เคสพิจารณา</th><th>โบนัส</th><th>หักรวม</th><th></th></tr></thead>
     <tbody>${r.employees.map(e=>`<tr>
       <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.nickname||e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
       <td><span style="font-weight:800;font-size:17px;color:${esc(e.band_color)}">${e.score}</span><span style="color:var(--muted)">/${e.start}</span></td>
       <td><span class="pill" style="background:${esc(e.band_color)};color:#fff;font-weight:600">${esc(e.band_label||'—')}</span>${e.warn_level!=null?' ⚠️':''}</td>
+      <td>${scTermCell(e)}</td>
       <td class="mono">${e.bonus?('฿'+Number(e.bonus).toLocaleString()):'—'}</td>
       <td class="mono">${e.total_deduct?('<span style="color:var(--red)">'+e.total_deduct+'</span>'):'0'}</td>
       <td><button class="btn btn-sec btn-sm" data-scd="${esc(e.emp_id)}">รายละเอียด</button></td>
-    </tr>`).join('')}</tbody></table></div></div>`;
+    </tr>`).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* คอลัมน์ “เคสพิจารณา” = สถานะเคสพิจารณาเลิกจ้าง · คนที่มีมติแล้วไม่ต้องเร่งออกใบเตือนซ้ำ · กดที่เลขเคสเพื่อเปิดดู</div></div>`;
   document.querySelectorAll('[data-scd]').forEach(b=>b.onclick=()=>openScoreDetail(b.dataset.scd));
 }
 function openScoreDetail(empId){

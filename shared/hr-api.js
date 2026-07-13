@@ -472,7 +472,30 @@
         days: Math.round((new Date(e) - new Date(l.start_date)) / 86400000) + 1 };
     }).sort((a, b) => a.start_date < b.start_date ? -1 : 1);
 
-    return { ok: true, cards, lists, shifts, trend, top_late, branches, upcoming_leaves };
+    // ★ เคสพิจารณาเลิกจ้าง — ที่ยังไม่ปิด (งานค้างของ HR) + ที่เพิ่งมีมติ
+    let term_cases = [], term_recent = [];
+    try {
+      let tq = sb().from('termination_cases')
+        .select('id,case_no,emp_id,emp_name,branch_id,branch_name,status,decision,opened_at,closed_at,opened_by')
+        .order('opened_at', { ascending: false }).limit(30);
+      if (branch) tq = tq.eq('branch_id', branch);
+      const { data: tcs } = await tq;
+      const DEC = { terminate_proposed: 'เห็นควรเสนอเลิกจ้าง', not_terminate: 'ไม่เห็นควรเลิกจ้าง', probation: 'ให้โอกาส / คุมประพฤติ', transfer: 'ย้ายสาขา/หน้าที่', training: 'อบรมแก้ไข' };
+      const ST = { proposed: 'รอ HR ตรวจสอบ', hr_review: 'HR กำลังตรวจสอบ', decision: 'รอผู้มีอำนาจให้ความเห็น', closed: 'ปิดเคสแล้ว', cancelled: 'ยกเลิก' };
+      const rows = (tcs || []).map(c => ({
+        id: c.id, case_no: c.case_no, emp_id: c.emp_id, emp_name: c.emp_name,
+        branch_name: c.branch_name || brName[c.branch_id] || c.branch_id || '',
+        status: c.status, status_label: ST[c.status] || c.status,
+        decision: c.decision || null, decision_label: c.decision ? (DEC[c.decision] || c.decision) : '',
+        opened_at: c.opened_at, closed_at: c.closed_at, opened_by: c.opened_by,
+      }));
+      term_cases = rows.filter(c => c.status !== 'closed' && c.status !== 'cancelled');
+      term_recent = rows.filter(c => c.status === 'closed').slice(0, 5);          // มติล่าสุด
+    } catch (_e) { /* ยังไม่ได้รัน termination.sql ก็ข้าม */ }
+    cards.term_open = term_cases.length;
+    cards.term_wait_hr = term_cases.filter(c => c.status === 'proposed' || c.status === 'hr_review').length;
+
+    return { ok: true, cards, lists, shifts, trend, top_late, branches, upcoming_leaves, term_cases, term_recent };
   }
 
   // ---------- BOARD: บอร์ดวันนี้ (สาขา × กะ × คน + สถานะ) ----------
@@ -2065,6 +2088,24 @@
         action_type: band ? (band.action_type || null) : null,   // verbal | written | warning | null
       };
     }).sort((a, b) => a.score - b.score);
+
+    // ★ ผนวกสถานะ "เคสพิจารณาเลิกจ้าง" ให้หน้าคะแนนเห็นด้วย (คนที่ผ่านมติแล้วจะไม่ถูกเร่งออกใบเตือนซ้ำ)
+    try {
+      const { data: tcs } = await sb().from('termination_cases')
+        .select('id,case_no,emp_id,status,decision,closed_at,opened_at')
+        .neq('status', 'cancelled').order('opened_at', { ascending: false });
+      const DEC = { terminate_proposed: 'เห็นควรเสนอเลิกจ้าง', not_terminate: 'ไม่เห็นควรเลิกจ้าง', probation: 'ให้โอกาส / คุมประพฤติ', transfer: 'ย้ายสาขา/หน้าที่', training: 'อบรมแก้ไข' };
+      const tmap = {}; (tcs || []).forEach(c => { if (!tmap[c.emp_id]) tmap[c.emp_id] = c; });
+      employees.forEach(e => {
+        const c = tmap[e.emp_id];
+        e.term_case = c ? {
+          id: c.id, case_no: c.case_no, status: c.status,
+          closed: c.status === 'closed',
+          decision: c.decision || null,
+          decision_label: c.decision ? (DEC[c.decision] || c.decision) : '',
+        } : null;
+      });
+    } catch (_e) { /* ยังไม่ได้รัน termination.sql ก็ข้าม */ }
 
     return { ok: true, cycle: cyc, start_score: start, bands: bandsR.data || [], employees };
   }
