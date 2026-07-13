@@ -197,6 +197,19 @@
         case 'hr_term_case_get':     return await hrTermCaseGet(p.id, p);
         case 'hr_term_case_step':    return await hrTermCaseStep(p.data, p);
         case 'hr_term_case_risk':    return await hrTermCaseRisk(p.data, p);
+        // ---- เบิกเงินล่วงหน้า ----
+        case 'hr_advance_config_get': return await hrAdvanceConfigGet();
+        case 'hr_advance_config_save':return await hrAdvanceConfigSave(p.data);
+        case 'hr_advance_cap_set':    return await hrAdvanceCapSet(p.data);
+        case 'hr_advance_list':       return await hrAdvanceList(p);
+        case 'hr_advance_review':     return await hrAdvanceReview(p.data, p);
+        case 'hr_advance_pay':        return await hrAdvancePay(p.data, p);
+        case 'hr_advance_payroll':    return await hrAdvancePayroll(p.month, p);
+        case 'hr_advance_deduct':     return await hrAdvanceDeduct(p.data, p);
+        case 'hr_advance_timeline':   return await hrAdvanceTimeline(p.id);
+        case 'hr_advance_window_open':   return await hrAdvanceWindowOpen(p.data, p);
+        case 'hr_advance_window_list':   return await hrAdvanceWindowList(p);
+        case 'hr_advance_window_revoke': return await hrAdvanceWindowRevoke(p.data, p);
         case 'hr_handover_list':     return await hrHandoverList();
         case 'hr_task_defs_get':     return await hrTaskDefsGet();
         case 'hr_task_def_save':     return await hrTaskDefSave(p.data);
@@ -2653,6 +2666,362 @@
       risk_level: lv, risk_note: String(d.risk_note || '').slice(0, 4000), risk_at: new Date().toISOString(),
     }).eq('id', String(d.case_id));
     if (error) throw error;
+    return { ok: true };
+  }
+
+  // ============================================================
+  // เบิกเงินล่วงหน้า (Salary Advance) — ฝั่ง HR / ผจก.
+  //   HR: อนุมัติ · ปรับยอด · ปฏิเสธ · บันทึกการโอน · สรุปหักเงินเดือน · ตั้งค่า
+  //   ผจก.: ดูของสาขาตัวเอง (อ่านอย่างเดียว) + เปิดสิทธิ์เบิกฉุกเฉินให้ลูกน้อง (ไม่มีสิทธิ์อนุมัติเงิน)
+  // ============================================================
+  const ADV_STATUS = { submitted: 'รอ HR อนุมัติ', approved: 'อนุมัติแล้ว — รอโอน', paid: 'โอนแล้ว', rejected: 'ไม่อนุมัติ', cancelled: 'พนักงานยกเลิก' };
+
+  async function _advCfgHr() {
+    const { data } = await sb().from('advance_config').select('*').eq('id', 1).maybeSingle();
+    return data || {};
+  }
+  async function hrAdvanceConfigGet() {
+    const [{ data: cfg }, { data: caps }, { data: bands }] = await Promise.all([
+      sb().from('advance_config').select('*').eq('id', 1).maybeSingle(),
+      sb().from('advance_emp_cap').select('*'),
+      sb().from('score_bands').select('min_score,max_score,label,action_type,advance_factor').order('sort'),
+    ]);
+    return { ok: true, config: cfg || {}, emp_caps: caps || [], bands: bands || [] };
+  }
+  async function hrAdvanceConfigSave(d) {
+    d = d || {};
+    const num = (v, dv) => (v === '' || v == null || !isFinite(Number(v))) ? dv : Number(v);
+    const row = {
+      id: 1,
+      enabled: d.enabled !== false,
+      max_amount: num(d.max_amount, 3000), rate_per_day: num(d.rate_per_day, 150),
+      min_amount: num(d.min_amount, 0), round_to: num(d.round_to, 100), min_request: num(d.min_request, 100),
+      window_start: num(d.window_start, 10), window_end: num(d.window_end, 12),
+      approve_day: num(d.approve_day, 15), payout_start: num(d.payout_start, 20), payout_end: num(d.payout_end, 22),
+      min_reason_len: num(d.min_reason_len, 20), min_service_days: num(d.min_service_days, 0),
+      require_face: d.require_face !== false, allow_cancel: d.allow_cancel !== false,
+      emergency_enabled: d.emergency_enabled !== false,
+      emergency_max_per_year: num(d.emergency_max_per_year, 2),
+      emergency_window_hours: num(d.emergency_window_hours, 24),
+      emergency_pay_days: num(d.emergency_pay_days, 2),
+      emergency_count_in_cap: d.emergency_count_in_cap !== false,
+      emergency_require_evidence: d.emergency_require_evidence !== false,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('advance_config').upsert(row, { onConflict: 'id' });
+    if (error) throw error;
+    // ตัวคูณวินัยรายช่วงคะแนน
+    if (Array.isArray(d.factors)) {
+      for (const f of d.factors) {
+        if (!f || f.min_score == null) continue;
+        await sb().from('score_bands').update({ advance_factor: Number(f.advance_factor) || 0 }).eq('min_score', f.min_score);
+      }
+    }
+    await logAct('บันทึกตั้งค่าเบิกเงินล่วงหน้า', null, 'เพดาน ' + row.max_amount + ' · อัตรา/วัน ' + row.rate_per_day);
+    return { ok: true };
+  }
+  // เพดานเฉพาะบุคคล (override)
+  async function hrAdvanceCapSet(d) {
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    if (d.max_amount === '' || d.max_amount == null) {
+      await sb().from('advance_emp_cap').delete().eq('emp_id', String(d.emp_id));
+      await logAct('ล้างเพดานเบิกเฉพาะบุคคล', d.emp_id, '');
+      return { ok: true, cleared: true };
+    }
+    const { error } = await sb().from('advance_emp_cap').upsert({
+      emp_id: String(d.emp_id), max_amount: Math.max(0, parseInt(d.max_amount) || 0),
+      note: d.note || null, set_by: d.by || 'สำนักงาน (HR)', updated_at: new Date().toISOString(),
+    }, { onConflict: 'emp_id' });
+    if (error) throw error;
+    await logAct('ตั้งเพดานเบิกเฉพาะบุคคล', d.emp_id, String(d.max_amount) + ' บาท · ' + (d.note || ''));
+    return { ok: true };
+  }
+
+  // รายการคำขอ (HR เห็นทุกสาขา · ผจก. เห็นสาขาตัวเอง อ่านอย่างเดียว)
+  async function hrAdvanceList(p) {
+    p = p || {};
+    const me = await _termActor(p);                    // ใช้ตัวตรวจสิทธิ์ตัวเดียวกับระบบพิจารณาเลิกจ้าง
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    const month = p.month || bkkToday().slice(0, 7);
+    let q = sb().from('advance_requests').select('*').eq('cycle_month', month).order('keyed_at', { ascending: false });
+    if (me.role === 'mgr') q = q.eq('branch_id', me.branch_id);
+    if (p.status && p.status !== 'all') q = q.eq('status', p.status);
+    const { data, error } = await q;
+    if (error) throw error;
+    const rows = (data || []).map(r => ({ ...r, status_label: ADV_STATUS[r.status] || r.status }));
+    const sum = (arr) => arr.reduce((s, r) => s + Number(r.approved_amount != null ? r.approved_amount : r.amount), 0);
+    return {
+      ok: true, month, role: me.role,
+      can: { review: me.role === 'hr', pay: me.role === 'hr', config: me.role === 'hr', open_window: true },
+      rows,
+      summary: {
+        submitted: rows.filter(r => r.status === 'submitted').length,
+        submitted_amount: sum(rows.filter(r => r.status === 'submitted')),
+        approved: rows.filter(r => r.status === 'approved').length,
+        approved_amount: sum(rows.filter(r => r.status === 'approved')),
+        paid: rows.filter(r => r.status === 'paid').length,
+        paid_amount: sum(rows.filter(r => r.status === 'paid')),
+        emergency: rows.filter(r => r.kind === 'emergency').length,
+      },
+      status_label: ADV_STATUS,
+    };
+  }
+
+  // ---- วันครบกำหนดจ่าย (ฉุกเฉิน: N วันทำการ ไม่นับ ส-อา และวันหยุดบริษัท) ----
+  async function _payDueDate(fromDate, workDays) {
+    const { data: hol } = await sb().from('holidays').select('date').eq('active', true).gte('date', fromDate);
+    const holi = new Set((hol || []).map(h => h.date));
+    let d = new Date(fromDate + 'T00:00:00'), left = Math.max(1, Number(workDays) || 2);
+    while (left > 0) {
+      d.setDate(d.getDate() + 1);
+      const iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const dow = d.getDay();
+      if (dow === 0 || dow === 6 || holi.has(iso)) continue;   // ข้ามเสาร์-อาทิตย์ + วันหยุดบริษัท
+      left--;
+    }
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  // ★ HR อนุมัติ / ปรับยอด / ปฏิเสธ  (ผจก. ทำไม่ได้)
+  async function hrAdvanceReview(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้นที่อนุมัติคำขอเบิกได้' };
+    d = d || {};
+    const ids = Array.isArray(d.ids) ? d.ids : (d.id ? [d.id] : []);
+    if (!ids.length) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const action = ['approve', 'reject'].includes(d.action) ? d.action : 'approve';
+    if (action === 'reject' && (!d.note || !String(d.note).trim())) return { ok: false, error: 'ไม่อนุมัติ ต้องระบุเหตุผล' };
+
+    const cfg = await _advCfgHr();
+    const who = d.by || 'สำนักงาน (HR)';
+    const now = new Date().toISOString();
+    let done = 0; const failed = [];
+
+    for (const id of ids) {
+      const { data: r } = await sb().from('advance_requests').select('*').eq('id', id).maybeSingle();
+      if (!r) { failed.push({ id, error: 'ไม่พบคำขอ' }); continue; }
+      if (r.status !== 'submitted') { failed.push({ id, error: 'คำขอนี้ถูกพิจารณาไปแล้ว (' + (ADV_STATUS[r.status] || r.status) + ')' }); continue; }
+
+      if (action === 'reject') {
+        await sb().from('advance_requests').update({
+          status: 'rejected', reviewed_by: who, reviewed_at: now, review_note: String(d.note).trim(),
+        }).eq('id', id);
+        await sb().from('advance_events').insert({ request_id: id, emp_id: r.emp_id, event: 'reject', actor: who, role: 'hr', note: String(d.note).trim(), amount_before: r.amount });
+        try {
+          await sb().from('emp_notifications').insert({
+            emp_id: r.emp_id, kind: 'warn', title: 'คำขอเบิกเงิน ' + r.req_no + ' ไม่ได้รับอนุมัติ',
+            body: 'เหตุผล: ' + String(d.note).trim(), ref: 'advance:' + id, created_by: who,
+          });
+        } catch (_e) { }
+        done++; continue;
+      }
+
+      // อนุมัติ (ปรับยอดได้ แต่ห้ามเกินที่ขอ)
+      let amt = d.approved_amount != null && ids.length === 1 ? Math.floor(Number(d.approved_amount) || 0) : Number(r.amount);
+      if (amt <= 0) { failed.push({ id, error: 'ยอดอนุมัติต้องมากกว่า 0' }); continue; }
+      if (amt > Number(r.amount)) { failed.push({ id, error: 'อนุมัติเกินยอดที่ขอไม่ได้' }); continue; }
+
+      const due = r.kind === 'emergency'
+        ? await _payDueDate(bkkToday(), cfg.emergency_pay_days || 2)      // ฉุกเฉิน: จ่ายภายใน N วันทำการ
+        : (r.cycle_month + '-' + String(cfg.payout_start || 20).padStart(2, '0'));
+
+      await sb().from('advance_requests').update({
+        status: 'approved', approved_amount: amt, reviewed_by: who, reviewed_at: now,
+        review_note: d.note ? String(d.note).trim() : null, payout_due_date: due,
+      }).eq('id', id);
+      await sb().from('advance_events').insert({
+        request_id: id, emp_id: r.emp_id, event: amt !== Number(r.amount) ? 'adjust' : 'approve', actor: who, role: 'hr',
+        note: (d.note ? String(d.note).trim() : '') + (amt !== Number(r.amount) ? ' [ปรับยอดจาก ' + r.amount + ' → ' + amt + ']' : ''),
+        amount_before: r.amount, amount_after: amt,
+      });
+      try {
+        await sb().from('emp_notifications').insert({
+          emp_id: r.emp_id, kind: 'info', title: '✅ อนุมัติคำขอเบิกเงิน ' + r.req_no + ' · ' + amt.toLocaleString() + ' บาท',
+          body: (amt !== Number(r.amount) ? ('อนุมัติ ' + amt.toLocaleString() + ' บาท (ขอมา ' + Number(r.amount).toLocaleString() + ')\n') : '')
+            + 'กำหนดโอนเงิน: ' + due + (r.kind === 'emergency' ? ' (เบิกฉุกเฉิน)' : ''),
+          ref: 'advance:' + id, created_by: who,
+        });
+      } catch (_e) { }
+      done++;
+    }
+    await logAct(action === 'approve' ? 'อนุมัติคำขอเบิกเงิน' : 'ไม่อนุมัติคำขอเบิกเงิน', null, done + ' รายการ');
+    return { ok: true, done, failed };
+  }
+
+  // ★ บันทึกการโอนเงิน (HR เท่านั้น)
+  async function hrAdvancePay(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const { data: r } = await sb().from('advance_requests').select('*').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    if (r.status !== 'approved') return { ok: false, error: 'จ่ายได้เฉพาะคำขอที่อนุมัติแล้ว' };
+    if (!d.payout_ref || !String(d.payout_ref).trim()) return { ok: false, error: 'ต้องระบุเลขอ้างอิงการโอน' };
+
+    let slip = null;
+    if (d.slip) { const u = await _uploadMany('advance', [d.slip]); slip = u[0] || null; }
+    const who = d.by || 'สำนักงาน (HR)';
+    const { error } = await sb().from('advance_requests').update({
+      status: 'paid', paid_at: new Date().toISOString(), paid_by: who,
+      payout_method: 'transfer', payout_ref: String(d.payout_ref).trim(), payout_slip_url: slip,
+    }).eq('id', d.id);
+    if (error) throw error;
+    await sb().from('advance_events').insert({
+      request_id: d.id, emp_id: r.emp_id, event: 'pay', actor: who, role: 'hr',
+      note: 'โอนเข้าบัญชี ' + (r.bank_name || '') + ' ' + (r.bank_account || '') + ' · อ้างอิง ' + String(d.payout_ref).trim(),
+      amount_after: r.approved_amount != null ? r.approved_amount : r.amount,
+    });
+    try {
+      await sb().from('emp_notifications').insert({
+        emp_id: r.emp_id, kind: 'info', title: '💸 โอนเงินเบิกล่วงหน้าแล้ว ' + Number(r.approved_amount != null ? r.approved_amount : r.amount).toLocaleString() + ' บาท',
+        body: 'เลขที่คำขอ ' + r.req_no + '\nโอนเข้าบัญชี ' + (r.bank_name || '') + ' ' + (r.bank_account || '') + '\nอ้างอิง ' + String(d.payout_ref).trim()
+          + '\n\n⚠️ ยอดนี้จะถูกหักคืนจากเงินเดือนรอบ ' + (r.deduct_month || '-') + ' ครั้งเดียวเต็มจำนวน',
+        ref: 'advance:' + d.id, created_by: who,
+      });
+    } catch (_e) { }
+    await logAct('โอนเงินเบิกล่วงหน้า ' + r.req_no, r.emp_id, String(d.payout_ref).trim());
+    return { ok: true };
+  }
+
+  // ★ สรุปสำหรับระบบเงินเดือน — ยอดที่ต้องหักคืนในเดือนที่ระบุ
+  async function hrAdvancePayroll(month, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    const m = month || bkkToday().slice(0, 7);
+    const { data } = await sb().from('advance_requests').select('*').eq('deduct_month', m).eq('status', 'paid').order('emp_id');
+    const rows = (data || []).map(r => ({
+      req_no: r.req_no, emp_id: r.emp_id, emp_name: r.emp_name, branch_name: r.branch_name,
+      cycle_month: r.cycle_month, amount: Number(r.approved_amount != null ? r.approved_amount : r.amount),
+      paid_at: r.paid_at, payout_ref: r.payout_ref,
+      bank_name: r.bank_name, bank_account: r.bank_account,
+      deduct_month: r.deduct_month, deducted: !!r.deducted, deducted_at: r.deducted_at, payroll_ref: r.payroll_ref,
+      kind: r.kind, id: r.id,
+    }));
+    const byEmp = {};
+    rows.forEach(r => {
+      const e = byEmp[r.emp_id] || (byEmp[r.emp_id] = { emp_id: r.emp_id, emp_name: r.emp_name, branch_name: r.branch_name, total: 0, count: 0, deducted: true });
+      e.total += r.amount; e.count++; if (!r.deducted) e.deducted = false;
+    });
+    return {
+      ok: true, month: m, rows, by_emp: Object.values(byEmp),
+      total: rows.reduce((s, r) => s + r.amount, 0),
+      pending: rows.filter(r => !r.deducted).reduce((s, r) => s + r.amount, 0),
+      note: 'ยอดเหล่านี้ต้องหักคืนจากเงินเดือนรอบ ' + m + ' ครั้งเดียวเต็มจำนวน',
+    };
+  }
+  // ทำเครื่องหมายว่าหักคืนจากเงินเดือนแล้ว
+  async function hrAdvanceDeduct(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    const ids = Array.isArray(d.ids) ? d.ids : (d.id ? [d.id] : []);
+    if (!ids.length) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const who = d.by || 'สำนักงาน (HR)';
+    const { error } = await sb().from('advance_requests').update({
+      deducted: true, deducted_at: new Date().toISOString(), deducted_by: who, payroll_ref: d.payroll_ref || null,
+    }).in('id', ids);
+    if (error) throw error;
+    for (const id of ids) await sb().from('advance_events').insert({ request_id: id, event: 'deduct', actor: who, role: 'hr', note: 'หักคืนจากเงินเดือนแล้ว' + (d.payroll_ref ? (' · อ้างอิง ' + d.payroll_ref) : '') });
+    await logAct('บันทึกหักคืนเงินเบิก', null, ids.length + ' รายการ');
+    return { ok: true, done: ids.length };
+  }
+
+  // ---- ไทม์ไลน์คำขอ ----
+  async function hrAdvanceTimeline(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const [{ data: r }, { data: ev }] = await Promise.all([
+      sb().from('advance_requests').select('*').eq('id', String(id)).maybeSingle(),
+      sb().from('advance_events').select('*').eq('request_id', String(id)).order('at'),
+    ]);
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    return { ok: true, request: { ...r, status_label: ADV_STATUS[r.status] || r.status }, events: ev || [] };
+  }
+
+  // ============ สิทธิ์เบิกฉุกเฉิน (ผจก. เปิดให้ · ไม่มีสิทธิ์อนุมัติเงิน) ============
+  async function hrAdvanceWindowOpen(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุเหตุผลที่เปิดสิทธิ์ให้' };
+
+    const cfg = await _advCfgHr();
+    if (cfg.emergency_enabled === false) return { ok: false, error: 'ระบบเบิกฉุกเฉินปิดใช้งานอยู่' };
+
+    const { data: emp } = await sb().from('employees').select('emp_id,name,nickname,branch_id,active').eq('emp_id', String(d.emp_id)).maybeSingle();
+    if (!emp || emp.active === false) return { ok: false, error: 'ไม่พบพนักงาน หรือถูกปิดใช้งาน' };
+    if (me.role === 'mgr' && String(emp.branch_id || '') !== me.branch_id)
+      return { ok: false, error: 'เปิดสิทธิ์ได้เฉพาะพนักงานในสาขาของท่าน' };
+
+    // มีสิทธิ์เปิดค้างอยู่แล้ว?
+    const nowIso = new Date().toISOString();
+    const { data: open } = await sb().from('advance_windows').select('id,expires_at')
+      .eq('emp_id', emp.emp_id).eq('status', 'open').gt('expires_at', nowIso).limit(1);
+    if (open && open.length) return { ok: false, error: 'พนักงานคนนี้มีสิทธิ์เบิกฉุกเฉินที่ยังไม่หมดอายุอยู่แล้ว' };
+
+    // โควตาต่อปี
+    const yr = bkkToday().slice(0, 4);
+    const { data: used } = await sb().from('advance_requests').select('id,status')
+      .eq('emp_id', emp.emp_id).eq('kind', 'emergency').gte('cycle_month', yr + '-01').lte('cycle_month', yr + '-12');
+    const cnt = (used || []).filter(r => ['submitted', 'approved', 'paid'].includes(r.status)).length;
+    if (cnt >= Number(cfg.emergency_max_per_year || 2))
+      return { ok: false, error: 'พนักงานคนนี้ใช้สิทธิ์เบิกฉุกเฉินครบ ' + cfg.emergency_max_per_year + ' ครั้งในปีนี้แล้ว' };
+
+    const hours = Number(cfg.emergency_window_hours || 24);
+    const expires = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+    const { data: ins, error } = await sb().from('advance_windows').insert({
+      emp_id: emp.emp_id, emp_name: emp.nickname || emp.name, branch_id: emp.branch_id || null,
+      opened_by: me.role === 'mgr' ? me.name : (d.by || 'สำนักงาน (HR)'),
+      opened_emp: me.role === 'mgr' ? me.emp_id : null,
+      expires_at: expires, reason: String(d.reason).trim(), status: 'open',
+    }).select('id,expires_at').single();
+    if (error) throw error;
+
+    await sb().from('advance_events').insert({
+      window_id: ins.id, emp_id: emp.emp_id, event: 'window_open',
+      actor: me.role === 'mgr' ? me.name : (d.by || 'HR'), role: me.role,
+      note: String(d.reason).trim(),
+    });
+    try {
+      await sb().from('emp_notifications').insert({
+        emp_id: emp.emp_id, kind: 'info', title: '🚨 เปิดสิทธิ์เบิกฉุกเฉินให้แล้ว',
+        body: 'กดปุ่ม "เบิกฉุกเฉิน" ในหน้าลงเวลา (ใส่รหัสพนักงาน) ภายใน ' + hours + ' ชั่วโมง\nต้องระบุเหตุฉุกเฉิน + แนบหลักฐาน',
+        ref: 'advwin:' + ins.id, created_by: 'ระบบ',
+      });
+    } catch (_e) { }
+    await logAct('เปิดสิทธิ์เบิกฉุกเฉิน', emp.emp_id, String(d.reason).trim().slice(0, 120));
+    return { ok: true, id: ins.id, expires_at: ins.expires_at, hours };
+  }
+  async function hrAdvanceWindowList(p) {
+    p = p || {};
+    const me = await _termActor(p);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    let q = sb().from('advance_windows').select('*').order('opened_at', { ascending: false }).limit(50);
+    if (me.role === 'mgr') q = q.eq('branch_id', me.branch_id);
+    const { data } = await q;
+    const now = Date.now();
+    const rows = (data || []).map(w => ({
+      ...w,
+      expired: w.status === 'open' && new Date(w.expires_at).getTime() <= now,
+    }));
+    return { ok: true, rows, role: me.role };
+  }
+  async function hrAdvanceWindowRevoke(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุสิทธิ์' };
+    const { data: w } = await sb().from('advance_windows').select('*').eq('id', d.id).maybeSingle();
+    if (!w) return { ok: false, error: 'ไม่พบสิทธิ์นี้' };
+    if (me.role === 'mgr' && String(w.branch_id || '') !== me.branch_id) return { ok: false, error: 'ไม่ใช่สาขาของท่าน' };
+    if (w.status !== 'open') return { ok: false, error: 'สิทธิ์นี้ถูกใช้/หมดอายุแล้ว' };
+    const { error } = await sb().from('advance_windows').update({
+      status: 'revoked', revoked_by: me.role === 'mgr' ? me.name : 'สำนักงาน (HR)', revoked_at: new Date().toISOString(),
+    }).eq('id', d.id);
+    if (error) throw error;
+    await sb().from('advance_events').insert({ window_id: d.id, emp_id: w.emp_id, event: 'window_revoke', actor: me.role === 'mgr' ? me.name : 'HR', role: me.role, note: d.note || '' });
     return { ok: true };
   }
 

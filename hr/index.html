@@ -378,6 +378,7 @@
   <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
   <button class="tab" id="tab_terminate"><span class="tabicon">⛔</span>พิจารณาเลิกจ้าง</button>
+  <button class="tab" id="tab_advance"><span class="tabicon">💵</span>เบิกเงินล่วงหน้า</button>
   <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
   <button class="tab" id="tab_analytics"><span class="tabicon">📈</span>วิเคราะห์</button>
   <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
@@ -657,6 +658,33 @@
     </select>
   </div>
   <div id="tm_cases"><div class="empty">—</div></div>
+</div>
+
+<!-- เบิกเงินล่วงหน้า -->
+<div id="view_advance" class="container" style="display:none">
+  <div id="adv_rolebar" style="display:none;background:#eff6ff;border:1.5px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:12px;padding:11px 14px;margin:0 4px 14px;font-size:13px;color:#1e3a8a;line-height:1.7"></div>
+  <div class="toolbar">
+    <div style="flex:1">
+      <div style="font-size:13.5px;color:var(--muted)">รอบเบิก <b id="adv_monthinfo">—</b></div>
+    </div>
+    <input id="adv_month" type="month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="adv_filter" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <option value="all">ทุกสถานะ</option>
+      <option value="submitted">รออนุมัติ</option>
+      <option value="approved">อนุมัติแล้ว — รอโอน</option>
+      <option value="paid">โอนแล้ว</option>
+      <option value="rejected">ไม่อนุมัติ</option>
+      <option value="cancelled">ยกเลิก</option>
+    </select>
+    <button class="btn btn-sec btn-sm" id="adv_emgbtn">🚨 เปิดสิทธิ์เบิกฉุกเฉิน</button>
+    <button class="btn btn-sec btn-sm" id="adv_payrollbtn">📊 สรุปหักเงินเดือน</button>
+    <button class="btn btn-sec btn-sm" id="adv_cfgbtn">⚙️ ตั้งค่า</button>
+    <button class="btn btn-sec" id="adv_refresh">รีเฟรช</button>
+  </div>
+  <div id="adv_kpi" class="kpi-grid" style="margin-bottom:14px"></div>
+  <div id="adv_body"><div class="empty">กำลังโหลด…</div></div>
+  <h3 style="margin:22px 4px 10px;font-size:14px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase">สิทธิ์เบิกฉุกเฉินที่เปิดไว้</h3>
+  <div id="adv_windows"></div>
 </div>
 
 <!-- สรุปผลการทำงาน + วินัย รายบุคคล (พิมพ์เป็นเอกสารได้) -->
@@ -1733,7 +1761,7 @@ let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 // ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule','discipline','terminate'];
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule','discipline','terminate','advance'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -3769,6 +3797,311 @@ $('tm_rules') && ($('tm_rules').onclick=async()=>{
   };
 });
 
+/* ============================================================
+   เบิกเงินล่วงหน้า (Salary Advance)
+   HR: อนุมัติ · ปรับยอด · ปฏิเสธ · บันทึกการโอน · สรุปหักเงินเดือน · ตั้งค่า
+   ผจก.: ดูของสาขาตัวเอง (อ่านอย่างเดียว) + เปิดสิทธิ์เบิกฉุกเฉิน
+   ============================================================ */
+let ADV=null, ADV_CAN={ review:true, pay:true, config:true, open_window:true };
+const advB = n => Number(n||0).toLocaleString('th-TH');
+const ADV_ST = { submitted:['รออนุมัติ','#fef3c7','#a16207'], approved:['อนุมัติแล้ว — รอโอน','#dbeafe','#1d4ed8'],
+                 paid:['โอนแล้ว','#dcfce7','#166534'], rejected:['ไม่อนุมัติ','#fee2e2','#b91c1c'], cancelled:['ยกเลิก','#f1f5f9','#64748b'] };
+
+async function loadAdvance(){
+  if($('adv_month') && !$('adv_month').value) $('adv_month').value = bkkTodayStr().slice(0,7);
+  const month=$('adv_month').value, status=$('adv_filter').value;
+  $('adv_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const [r, w] = await Promise.all([
+    post({ action:'hr_advance_list', ...authBody(), month, status }),
+    post({ action:'hr_advance_window_list', ...authBody() }),
+  ]);
+  if(!r.ok){ $('adv_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  ADV=r; ADV_CAN=r.can||ADV_CAN;
+  $('adv_monthinfo').textContent = month;
+  const rb=$('adv_rolebar');
+  if(rb){
+    if(r.role==='mgr'){
+      rb.style.display='block';
+      rb.innerHTML='<b>👤 สิทธิ์ผู้จัดการสาขา</b> — ท่านดูคำขอของสาขาตัวเองได้ และ<b>เปิดสิทธิ์เบิกฉุกเฉิน</b>ให้ลูกน้องได้ · '
+        +'การอนุมัติและการโอนเงินเป็นสิทธิ์ของสำนักงาน (HR) เท่านั้น';
+    } else rb.style.display='none';
+  }
+  ['adv_payrollbtn','adv_cfgbtn'].forEach(id=>{ const b=$(id); if(b) b.style.display = ADV_CAN.config ? '' : 'none'; });
+
+  const s=r.summary;
+  $('adv_kpi').innerHTML =
+     `<div class="kpi ${s.submitted?'warn':''}"><div class="lbl">รออนุมัติ</div><div class="val">${s.submitted}<span class="sm"> คำขอ</span></div><div class="delta">${advB(s.submitted_amount)} บาท</div></div>
+      <div class="kpi ${s.approved?'bad':''}"><div class="lbl">รอโอนเงิน</div><div class="val">${s.approved}<span class="sm"> คำขอ</span></div><div class="delta">${advB(s.approved_amount)} บาท</div></div>
+      <div class="kpi ok"><div class="lbl">โอนแล้ว</div><div class="val">${s.paid}<span class="sm"> คำขอ</span></div><div class="delta">${advB(s.paid_amount)} บาท</div></div>
+      <div class="kpi"><div class="lbl">เบิกฉุกเฉิน</div><div class="val">${s.emergency}<span class="sm"> คำขอ</span></div></div>`;
+
+  renderAdvRows(); renderAdvWindows((w&&w.ok)?w.rows:[]);
+}
+function renderAdvRows(){
+  const rows=ADV.rows||[];
+  if(!rows.length){ $('adv_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีคำขอเบิกในรอบนี้</div></div></div>'; return; }
+  const pend = rows.filter(r=>r.status==='submitted');
+  const bulk = (ADV_CAN.review && pend.length)
+    ? `<div style="display:flex;gap:8px;align-items:center;margin:0 4px 10px;flex-wrap:wrap">
+         <button class="btn btn-pri btn-sm" id="adv_approveall">✅ อนุมัติทั้งหมดที่รออยู่ (${pend.length} คำขอ · ${advB(pend.reduce((s,r)=>s+Number(r.amount),0))} บาท)</button>
+         <span style="font-size:12px;color:var(--muted)">* อนุมัติเต็มยอดที่ขอ · ถ้าต้องการปรับยอด ให้กดรายคน</span>
+       </div>` : '';
+  $('adv_body').innerHTML = bulk + `<div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>สาขา</th><th>ยอดขอ</th><th>วงเงิน (ที่มา)</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead>
+    <tbody>${rows.map(r=>{
+      const st=ADV_ST[r.status]||['—','#f1f5f9','#64748b'];
+      const amt=r.approved_amount!=null?r.approved_amount:r.amount;
+      return `<tr${r.status==='submitted'?' style="background:#fffbeb"':''}>
+        <td class="mono"><b>${esc(r.req_no||'')}</b>${r.kind==='emergency'?'<div><span class="pill bad" style="font-size:10.5px">🚨 ฉุกเฉิน</span></div>':''}</td>
+        <td><div class="ntext"><span class="nm">${esc(r.emp_name||'')}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
+        <td style="font-size:12.5px">${esc(r.branch_name||branchName(r.branch_id))}</td>
+        <td class="mono"><b style="font-size:15px">${advB(r.amount)}</b>${r.approved_amount!=null&&r.approved_amount!==r.amount?`<div style="font-size:11.5px;color:#1d4ed8">อนุมัติ ${advB(r.approved_amount)}</div>`:''}</td>
+        <td style="font-size:11.5px;color:var(--muted);line-height:1.6">ทำงาน ${r.days_worked} วัน × ${advB(r.rate_per_day)}<br>คะแนน ${r.score} × ${r.advance_factor} → <b>${advB(r.cap_calculated)}</b></td>
+        <td style="font-size:12.5px;max-width:230px">${esc(r.reason_category||'')}${r.reason_category?' · ':''}${esc(String(r.reason||'').slice(0,90))}${(r.photos&&r.photos.length)?`<div>${(r.photos||[]).map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:38px;height:38px;object-fit:cover;border-radius:6px;margin-top:4px;margin-right:4px;cursor:zoom-in">').join('')}</div>`:''}</td>
+        <td><span class="pill" style="background:${st[1]};color:${st[2]};font-weight:700">${st[0]}</span>
+            ${r.payout_due_date?`<div style="font-size:11px;color:var(--muted);margin-top:2px">กำหนดโอน ${beDate(r.payout_due_date)}</div>`:''}
+            ${r.paid_at?`<div style="font-size:11px;color:#166534;margin-top:2px">อ้างอิง ${esc(r.payout_ref||'')}</div>`:''}
+            ${r.review_note?`<div style="font-size:11px;color:#b91c1c;margin-top:2px">${esc(r.review_note)}</div>`:''}</td>
+        <td style="white-space:nowrap">
+          ${(ADV_CAN.review && r.status==='submitted')?`<button class="btn btn-pri btn-sm" data-advok="${r.id}">อนุมัติ</button> <button class="btn btn-sec btn-sm" data-advno="${r.id}">ไม่อนุมัติ</button>`:''}
+          ${(ADV_CAN.pay && r.status==='approved')?`<button class="btn btn-pri btn-sm" data-advpay="${r.id}">💸 บันทึกโอน</button>`:''}
+          <button class="btn btn-sec btn-sm" data-advtl="${r.id}">ไทม์ไลน์</button>
+        </td></tr>`;
+    }).join('')}</tbody></table></div>
+    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* วงเงิน = อัตราต่อวัน × วันทำงานจริงในรอบ × ตัวคูณวินัย (ไม่เกินเพดานสูงสุด) · ยอดที่โอนจะถูกหักคืนจากเงินเดือนรอบถัดไปครั้งเดียวเต็มจำนวน</div></div>`;
+
+  document.querySelectorAll('[data-advok]').forEach(b=>b.onclick=()=>advApprove(b.dataset.advok));
+  document.querySelectorAll('[data-advno]').forEach(b=>b.onclick=()=>advReject(b.dataset.advno));
+  document.querySelectorAll('[data-advpay]').forEach(b=>b.onclick=()=>advPay(b.dataset.advpay));
+  document.querySelectorAll('[data-advtl]').forEach(b=>b.onclick=()=>advTimeline(b.dataset.advtl));
+  $('adv_approveall') && ($('adv_approveall').onclick=async()=>{
+    if(!confirm('อนุมัติคำขอที่รออยู่ทั้งหมด '+pend.length+' รายการ (เต็มยอดที่ขอ)?')) return;
+    const r=await post({ action:'hr_advance_review', ...authBody(), data:{ ids:pend.map(x=>x.id), action:'approve', by:'สำนักงาน (HR)' } });
+    if(r.ok){ toast('ok','อนุมัติแล้ว '+r.done+' รายการ'); loadAdvance(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+}
+function advFind(id){ return (ADV.rows||[]).find(x=>String(x.id)===String(id)); }
+
+async function advApprove(id){
+  const r=advFind(id); if(!r) return;
+  openModal('✅ อนุมัติคำขอเบิก '+esc(r.req_no||''),
+    '<div style="font-size:13px;line-height:1.8;margin-bottom:10px">'
+      +'<b>'+esc(r.emp_name||'')+'</b> ('+esc(r.emp_id)+') · '+esc(r.branch_name||'')+'<br>'
+      +'ขอเบิก <b>'+advB(r.amount)+' บาท</b> · วงเงินที่คำนวณได้ '+advB(r.cap_calculated)+' บาท<br>'
+      +'<span style="color:var(--muted)">ทำงาน '+r.days_worked+' วัน × '+advB(r.rate_per_day)+' · คะแนน '+r.score+' ('+esc(r.band_label||'')+') × '+r.advance_factor+'</span><br>'
+      +'บัญชีโอน: '+esc(r.bank_name||'—')+' '+esc(r.bank_account||'')
+    +'</div>'
+    +'<div style="background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:12.5px;line-height:1.6;margin-bottom:12px">📝 '+esc(r.reason||'')+'</div>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">ยอดที่อนุมัติ (ปรับลดได้)</label>'
+    +'<input id="adv_amt" type="number" value="'+r.amount+'" max="'+r.amount+'" min="1" style="width:100%;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:18px;text-align:center;font-weight:700">'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">หมายเหตุ (ถ้ามี)</label>'
+    +'<input id="adv_note" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +'<button class="btn btn-pri" id="adv_ok" style="width:100%;padding:12px;margin-top:14px">อนุมัติ</button>');
+  $('adv_ok').onclick=async()=>{
+    const amt=Math.floor(Number($('adv_amt').value)||0);
+    if(!amt||amt>Number(r.amount)){ toast('err','ยอดอนุมัติต้องมากกว่า 0 และไม่เกินยอดที่ขอ'); return; }
+    $('adv_ok').disabled=true;
+    const rr=await post({ action:'hr_advance_review', ...authBody(), data:{ id:r.id, action:'approve', approved_amount:amt, note:$('adv_note').value.trim()||null, by:'สำนักงาน (HR)' } });
+    if(rr.ok && rr.done){ closeModal(); toast('ok','อนุมัติแล้ว'); loadAdvance(); }
+    else { toast('err', (rr.failed&&rr.failed[0]&&rr.failed[0].error)||rr.error||'ไม่สำเร็จ'); $('adv_ok').disabled=false; }
+  };
+}
+async function advReject(id){
+  const r=advFind(id); if(!r) return;
+  const note=prompt('ไม่อนุมัติคำขอ '+r.req_no+'\nระบุเหตุผล (บังคับ · พนักงานจะได้รับแจ้ง):','');
+  if(note===null) return;
+  if(!note.trim()){ toast('err','ต้องระบุเหตุผล'); return; }
+  const rr=await post({ action:'hr_advance_review', ...authBody(), data:{ id:r.id, action:'reject', note, by:'สำนักงาน (HR)' } });
+  if(rr.ok && rr.done){ toast('ok','บันทึกไม่อนุมัติแล้ว'); loadAdvance(); } else toast('err', rr.error||'ไม่สำเร็จ');
+}
+async function advPay(id){
+  const r=advFind(id); if(!r) return;
+  const amt=r.approved_amount!=null?r.approved_amount:r.amount;
+  openModal('💸 บันทึกการโอนเงิน — '+esc(r.req_no||''),
+    '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.8;margin-bottom:12px">'
+      +'โอนให้ <b>'+esc(r.emp_name||'')+'</b> จำนวน <b style="font-size:16px">'+advB(amt)+' บาท</b><br>'
+      +'บัญชี: <b>'+esc(r.bank_name||'—')+' '+esc(r.bank_account||'')+'</b>'
+    +'</div>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">เลขอ้างอิงการโอน (บังคับ)</label>'
+    +'<input id="adv_ref" placeholder="เช่น เลขที่รายการโอน / เลขสลิป" style="width:100%;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">แนบสลิป (ถ้ามี)</label>'
+    +'<input id="adv_slip" type="file" accept="image/*">'
+    +'<div id="adv_slipprev" style="margin-top:8px"></div>'
+    +'<button class="btn btn-pri" id="adv_paygo" style="width:100%;padding:12px;margin-top:14px">บันทึกว่าโอนแล้ว</button>');
+  let slip=null;
+  $('adv_slip').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ slip=rd.result; $('adv_slipprev').innerHTML='<img src="'+slip+'" style="max-width:100%;max-height:150px;border-radius:8px">'; }; rd.readAsDataURL(f); };
+  $('adv_paygo').onclick=async()=>{
+    const ref=$('adv_ref').value.trim();
+    if(!ref){ toast('err','ต้องระบุเลขอ้างอิงการโอน'); return; }
+    $('adv_paygo').disabled=true;
+    const rr=await post({ action:'hr_advance_pay', ...authBody(), data:{ id:r.id, payout_ref:ref, slip, by:'สำนักงาน (HR)' } });
+    if(rr.ok){ closeModal(); toast('ok','บันทึกการโอนแล้ว'); loadAdvance(); } else { toast('err', rr.error||'ไม่สำเร็จ'); $('adv_paygo').disabled=false; }
+  };
+}
+async function advTimeline(id){
+  const r=await post({ action:'hr_advance_timeline', ...authBody(), id });
+  if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
+  const q=r.request, ev=r.events||[];
+  const EV={ submit:'พนักงานยื่นคำขอ', cancel:'พนักงานยกเลิก', approve:'HR อนุมัติ', adjust:'HR อนุมัติ (ปรับยอด)', reject:'HR ไม่อนุมัติ', pay:'โอนเงินแล้ว', deduct:'หักคืนจากเงินเดือนแล้ว', window_open:'ผจก. เปิดสิทธิ์ฉุกเฉิน', window_revoke:'ยกเลิกสิทธิ์ฉุกเฉิน' };
+  const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
+  openModal('🧾 คำขอ '+esc(q.req_no||''),
+    '<div style="font-size:13px;line-height:1.9;margin-bottom:12px">'
+      +'<b>'+esc(q.emp_name||'')+'</b> ('+esc(q.emp_id)+') · '+esc(q.branch_name||'')+'<br>'
+      +'ยอดขอ <b>'+advB(q.amount)+'</b>'+(q.approved_amount!=null?(' · อนุมัติ <b>'+advB(q.approved_amount)+'</b>'):'')+' บาท · '+esc(q.status_label||'')+'<br>'
+      +'<span style="color:var(--muted)">วงเงินตอนคีย์ '+advB(q.cap_calculated)+' (ทำงาน '+q.days_worked+' วัน × '+advB(q.rate_per_day)+' × คะแนน '+q.score+' ตัวคูณ '+q.advance_factor+')</span><br>'
+      +'บัญชี '+esc(q.bank_name||'—')+' '+esc(q.bank_account||'')+'<br>'
+      +'หักคืนรอบเงินเดือน <b>'+esc(q.deduct_month||'—')+'</b> '+(q.deducted?'<span class="pill ok">หักแล้ว</span>':'<span class="pill warn">ยังไม่หัก</span>')
+    +'</div>'
+    +'<div style="background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:13px;line-height:1.7;margin-bottom:12px">📝 '+esc(q.reason||'')+'</div>'
+    +((q.photos&&q.photos.length)?('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+q.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:78px;height:78px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>'):'')
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">ไทม์ไลน์</div>'
+    +'<div style="margin-top:6px">'+ev.map((e,i)=>'<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)">'
+        +'<div style="width:24px;height:24px;border-radius:50%;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none">'+(i+1)+'</div>'
+        +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+esc(EV[e.event]||e.event)+(e.amount_after!=null?(' · '+advB(e.amount_after)+' บาท'):'')+'</div>'
+        +(e.note?('<div style="font-size:12.5px;color:#374151">'+esc(e.note)+'</div>'):'')
+        +'<div style="font-size:11.5px;color:var(--muted)">'+esc(e.actor||'')+' · '+fmt(e.at)+'</div></div></div>').join('')+'</div>');
+}
+
+// ---------- สิทธิ์เบิกฉุกเฉิน ----------
+function renderAdvWindows(rows){
+  if(!rows || !rows.length){ $('adv_windows').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีสิทธิ์เบิกฉุกเฉินที่เปิดไว้</div></div></div>'; return; }
+  const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return '—'; } };
+  const ST={ open:['เปิดอยู่','#fef3c7','#a16207'], used:['ใช้แล้ว','#dcfce7','#166534'], revoked:['ยกเลิก','#f1f5f9','#64748b'], expired:['หมดอายุ','#f1f5f9','#64748b'] };
+  $('adv_windows').innerHTML='<div class="card"><div class="tablewrap"><table>'
+    +'<thead><tr><th>พนักงาน</th><th>สาขา</th><th>เหตุผลที่เปิดสิทธิ์</th><th>เปิดโดย</th><th>หมดอายุ</th><th>สถานะ</th><th></th></tr></thead><tbody>'
+    + rows.map(w=>{
+      const st = w.expired ? ST.expired : (ST[w.status]||ST.open);
+      return '<tr><td>'+esc(w.emp_name||w.emp_id)+'</td><td style="font-size:12.5px">'+esc(branchName(w.branch_id))+'</td>'
+        +'<td style="font-size:12.5px;max-width:250px">'+esc(w.reason||'')+'</td>'
+        +'<td style="font-size:12.5px">'+esc(w.opened_by||'')+'</td>'
+        +'<td class="mono" style="font-size:12px">'+fmt(w.expires_at)+'</td>'
+        +'<td><span class="pill" style="background:'+st[1]+';color:'+st[2]+';font-weight:700">'+st[0]+'</span></td>'
+        +'<td>'+((w.status==='open'&&!w.expired)?('<button class="btn btn-sec btn-sm" data-advwrev="'+w.id+'">ยกเลิกสิทธิ์</button>'):'')+'</td></tr>';
+    }).join('')
+    +'</tbody></table></div></div>';
+  document.querySelectorAll('[data-advwrev]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ยกเลิกสิทธิ์เบิกฉุกเฉินนี้?')) return;
+    const r=await post({ action:'hr_advance_window_revoke', ...authBody(), data:{ id:b.dataset.advwrev } });
+    if(r.ok){ toast('ok','ยกเลิกสิทธิ์แล้ว'); loadAdvance(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+}
+$('adv_emgbtn') && ($('adv_emgbtn').onclick=()=>{
+  const opts=((DATA&&DATA.rows)||[]).filter(e=>e.active!==false)
+    .filter(e=>!MGR_MODE || String(e.branch_id)===String(MGR_BRANCH))
+    .map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+' · '+esc(e.emp_id)+'</option>').join('');
+  openModal('🚨 เปิดสิทธิ์เบิกฉุกเฉิน',
+    '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#7c2d12;line-height:1.65;margin-bottom:12px">'
+      +'เปิดสิทธิ์ให้พนักงาน<b>เบิกนอกรอบ</b>ได้ 1 ครั้ง · พนักงานจะเห็นปุ่ม "เบิกฉุกเฉิน" ใน<b>หน้าลงเวลา</b>หลังใส่รหัสพนักงาน<br>'
+      +'ท่านเป็นผู้<b>เปิดสิทธิ์</b> — การอนุมัติเงินเป็นของสำนักงาน (HR) เท่านั้น</div>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">พนักงาน</label>'
+    +'<select id="advw_emp" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'+opts+'</select>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">เหตุผลที่เปิดสิทธิ์ให้ (บังคับ)</label>'
+    +'<textarea id="advw_reason" rows="3" placeholder="เช่น ลูกป่วยเข้าโรงพยาบาลฉุกเฉิน แจ้งด้วยตนเองที่สาขาแล้ว" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></textarea>'
+    +'<button class="btn btn-pri" id="advw_go" style="width:100%;padding:12px;margin-top:14px">เปิดสิทธิ์</button>');
+  $('advw_go').onclick=async()=>{
+    const reason=$('advw_reason').value.trim();
+    if(!reason){ toast('err','ต้องระบุเหตุผล'); return; }
+    $('advw_go').disabled=true;
+    const r=await post({ action:'hr_advance_window_open', ...authBody(), data:{ emp_id:$('advw_emp').value, reason, by:'สำนักงาน (HR)' } });
+    if(r.ok){ closeModal(); toast('ok','เปิดสิทธิ์แล้ว — พนักงานเบิกได้ภายใน '+r.hours+' ชม.'); loadAdvance(); }
+    else { toast('err', r.error||'ไม่สำเร็จ'); $('advw_go').disabled=false; }
+  };
+});
+
+// ---------- สรุปหักเงินเดือน ----------
+$('adv_payrollbtn') && ($('adv_payrollbtn').onclick=async()=>{
+  const m=prompt('สรุปยอดที่ต้องหักคืนจากเงินเดือน — ระบุรอบเงินเดือน (YYYY-MM):', bkkTodayStr().slice(0,7));
+  if(!m) return;
+  const r=await post({ action:'hr_advance_payroll', ...authBody(), month:m });
+  if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
+  const rows=r.rows||[];
+  openModal('📊 หักคืนเงินเบิก — รอบเงินเดือน '+esc(m),
+    '<div style="font-size:13px;line-height:1.8;margin-bottom:10px">ทั้งหมด <b>'+rows.length+'</b> รายการ · รวม <b>'+advB(r.total)+' บาท</b> · ยังไม่หัก <b style="color:#b91c1c">'+advB(r.pending)+' บาท</b></div>'
+    +(rows.length?('<div class="tablewrap"><table><thead><tr><th>พนักงาน</th><th>เลขที่</th><th>ยอด</th><th>สถานะ</th></tr></thead><tbody>'
+      +rows.map(x=>'<tr><td>'+esc(x.emp_name||x.emp_id)+'</td><td class="mono">'+esc(x.req_no)+'</td><td class="mono">'+advB(x.amount)+'</td>'
+        +'<td>'+(x.deducted?'<span class="pill ok">หักแล้ว</span>':'<span class="pill warn">ยังไม่หัก</span>')+'</td></tr>').join('')
+      +'</tbody></table></div>'
+      +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+        +'<button class="btn btn-sec btn-sm" id="adv_csv">⬇ Export CSV (เข้าระบบเงินเดือน)</button>'
+        +(r.pending>0?'<button class="btn btn-pri btn-sm" id="adv_markded">✅ บันทึกว่าหักคืนแล้วทั้งหมด</button>':'')
+      +'</div>'):'<div class="empty">ไม่มีรายการต้องหักคืนในรอบนี้</div>'));
+  $('adv_csv') && ($('adv_csv').onclick=()=>{
+    const keys=['req_no','emp_id','emp_name','branch_name','amount','cycle_month','deduct_month','paid_at','payout_ref','bank_name','bank_account','deducted'];
+    const csv=[keys.join(',')].concat(rows.map(x=>keys.map(k=>{ let v=x[k]; if(v==null)v=''; v=String(v).replace(/"/g,'""'); return /[,"\n]/.test(v)?('"'+v+'"'):v; }).join(','))).join('\n');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+    a.download='advance_deduct_'+m+'.csv'; a.click();
+  });
+  $('adv_markded') && ($('adv_markded').onclick=async()=>{
+    const ref=prompt('เลขอ้างอิงรอบเงินเดือน (ถ้ามี):','')||null;
+    const ids=rows.filter(x=>!x.deducted).map(x=>x.id);
+    const rr=await post({ action:'hr_advance_deduct', ...authBody(), data:{ ids, payroll_ref:ref, by:'สำนักงาน (HR)' } });
+    if(rr.ok){ closeModal(); toast('ok','บันทึกหักคืนแล้ว '+rr.done+' รายการ'); } else toast('err', rr.error||'ไม่สำเร็จ');
+  });
+});
+
+// ---------- ตั้งค่า ----------
+$('adv_cfgbtn') && ($('adv_cfgbtn').onclick=async()=>{
+  const r=await post({ action:'hr_advance_config_get', password:pwd });
+  if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
+  const c=r.config||{}, bands=r.bands||[];
+  const num=(id,label,val,hint)=>'<div style="flex:1;min-width:130px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">'+label+'</label>'
+    +'<input id="'+id+'" type="number" value="'+(val==null?'':val)+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit">'
+    +(hint?('<div style="font-size:11px;color:var(--muted);margin-top:2px">'+hint+'</div>'):'')+'</div>';
+  openModal('⚙️ ตั้งค่าระบบเบิกเงินล่วงหน้า',
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.6">วงเงิน = <b>อัตราต่อวัน × วันทำงานจริงในรอบ × ตัวคูณวินัย</b> (ปัดลง · ไม่เกินเพดานสูงสุด)</div>'
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">วงเงิน</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">'
+      +num('acf_max','เพดานสูงสุด (บาท/เดือน)',c.max_amount)
+      +num('acf_rate','อัตราต่อวันทำงาน (บาท)',c.rate_per_day)
+      +num('acf_round','ปัดวงเงินลงหลัก',c.round_to)
+      +num('acf_minreq','ขอขั้นต่ำต่อครั้ง',c.min_request)
+    +'</div>'
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">ตัวคูณวินัย (ตามช่วงคะแนน)</div>'
+    +'<div style="margin:8px 0 12px">'+bands.map((b,i)=>
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
+      +'<div style="flex:1;font-size:13px">'+b.min_score+'–'+b.max_score+' · '+esc(b.label||'')+'</div>'
+      +'<input class="acf_fac" data-min="'+b.min_score+'" type="number" step="0.05" min="0" max="1" value="'+(b.advance_factor==null?1:b.advance_factor)+'" style="width:90px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:center">'
+      +'</div>').join('')+'</div>'
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">รอบเวลา</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">'
+      +num('acf_ws','วันเปิดคีย์',c.window_start)+num('acf_we','วันปิดคีย์',c.window_end)
+      +num('acf_ap','วันอนุมัติ',c.approve_day)
+      +num('acf_ps','เริ่มจ่าย',c.payout_start)+num('acf_pe','สิ้นสุดจ่าย',c.payout_end)
+    +'</div>'
+    +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">เงื่อนไข</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 6px">'
+      +num('acf_rlen','เหตุผลขั้นต่ำ (ตัวอักษร)',c.min_reason_len)
+      +num('acf_svc','ต้องทำงานครบ (วัน)',c.min_service_days)
+      +num('acf_emgmax','เบิกฉุกเฉินได้ (ครั้ง/ปี)',c.emergency_max_per_year)
+      +num('acf_emghr','สิทธิ์ฉุกเฉินอายุ (ชม.)',c.emergency_window_hours)
+      +num('acf_emgpay','จ่ายฉุกเฉินภายใน (วันทำการ)',c.emergency_pay_days)
+    +'</div>'
+    +'<label class="check" style="margin-top:6px"><input type="checkbox" id="acf_face" '+(c.require_face?'checked':'')+'>บังคับสแกนใบหน้าก่อนส่งคำขอ (ถ้าเปิด ต้องเบิกผ่านหน้าลงเวลาเท่านั้น)</label>'
+    +'<label class="check"><input type="checkbox" id="acf_cancel" '+(c.allow_cancel!==false?'checked':'')+'>พนักงานยกเลิกคำขอเองได้ก่อน HR อนุมัติ</label>'
+    +'<label class="check"><input type="checkbox" id="acf_emgev" '+(c.emergency_require_evidence!==false?'checked':'')+'>เบิกฉุกเฉินต้องแนบหลักฐาน</label>'
+    +'<label class="check"><input type="checkbox" id="acf_on" '+(c.enabled!==false?'checked':'')+'>เปิดใช้งานระบบเบิกเงิน</label>'
+    +'<button class="btn btn-pri" id="acf_save" style="width:100%;padding:12px;margin-top:14px">บันทึกตั้งค่า</button>');
+  $('acf_save').onclick=async()=>{
+    const factors=[...document.querySelectorAll('.acf_fac')].map(el=>({ min_score:Number(el.dataset.min), advance_factor:Number(el.value)||0 }));
+    const d={
+      enabled:$('acf_on').checked,
+      max_amount:$('acf_max').value, rate_per_day:$('acf_rate').value, round_to:$('acf_round').value, min_request:$('acf_minreq').value,
+      window_start:$('acf_ws').value, window_end:$('acf_we').value, approve_day:$('acf_ap').value,
+      payout_start:$('acf_ps').value, payout_end:$('acf_pe').value,
+      min_reason_len:$('acf_rlen').value, min_service_days:$('acf_svc').value,
+      emergency_max_per_year:$('acf_emgmax').value, emergency_window_hours:$('acf_emghr').value, emergency_pay_days:$('acf_emgpay').value,
+      require_face:$('acf_face').checked, allow_cancel:$('acf_cancel').checked, emergency_require_evidence:$('acf_emgev').checked,
+      factors,
+    };
+    $('acf_save').disabled=true;
+    const rr=await post({ action:'hr_advance_config_save', password:pwd, data:d });
+    if(rr.ok){ closeModal(); toast('ok','บันทึกตั้งค่าแล้ว'); loadAdvance(); } else { toast('err', rr.error||'ไม่สำเร็จ'); $('acf_save').disabled=false; }
+  };
+});
+$('adv_refresh') && ($('adv_refresh').onclick=loadAdvance);
+$('adv_month')   && ($('adv_month').onchange=loadAdvance);
+$('adv_filter')  && ($('adv_filter').onchange=loadAdvance);
+
 // ========== LEAVES & HOLIDAYS ==========
 let LEAVES_ROWS=[];
 // บรรทัดตัวอย่างข้อความแบบสั้น (คลิปบรรทัดเดียว + tooltip) — กันคอลัมน์สถานะบวมจากข้อความยาว
@@ -4966,7 +5299,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','empsum','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); loadMdailyDash(); }
@@ -4979,6 +5312,7 @@ showTab = function(name){
   else if(name==='discipline') loadDiscipline();
   else if(name==='score') loadScore();
   else if(name==='terminate') loadTerm();
+  else if(name==='advance') loadAdvance();
   else if(name==='empsum') initEmpSum();
   else if(name==='analytics') loadAnalytics();
   else if(name==='handover'){ loadTaskTab(); }
@@ -5364,6 +5698,7 @@ const NAV_GROUPS=[
   { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
   { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'⚠️', label:'วินัย',       tabs:['discipline','score','terminate'] },
+  { icon:'💵', label:'เบิกเงิน',    tabs:['advance'] },
   { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }

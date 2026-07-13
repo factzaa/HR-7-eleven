@@ -779,6 +779,250 @@
     return { ok: true };
   }
 
+  // ============================================================
+  // เบิกเงินล่วงหน้า (Salary Advance) — ฝั่งพนักงาน
+  //   วงเงิน = อัตราต่อวัน × วันทำงานจริงในรอบ × ตัวคูณวินัย (ไม่เกินเพดานสูงสุด)
+  //   คำนวณสดฝั่งเซิร์ฟเวอร์ทุกครั้ง — ไม่เชื่อค่าที่หน้าเว็บส่งมา
+  // ============================================================
+  async function _advCfg() {
+    const { data } = await sb.from('advance_config').select('*').eq('id', 1).maybeSingle();
+    return data || {
+      enabled: true, max_amount: 3000, rate_per_day: 150, min_amount: 0, round_to: 100, min_request: 100,
+      window_start: 10, window_end: 12, approve_day: 15, payout_start: 20, payout_end: 22,
+      min_reason_len: 20, min_service_days: 0, require_face: true, allow_cancel: true,
+      emergency_enabled: true, emergency_max_per_year: 2, emergency_window_hours: 24,
+      emergency_pay_days: 2, emergency_count_in_cap: true, emergency_require_evidence: true,
+    };
+  }
+  const _advMonth = () => bangkokDate().slice(0, 7);          // YYYY-MM ของเดือนที่เบิก
+
+  // สิทธิ์เบิกฉุกเฉินที่ ผจก. เปิดให้ (ยังไม่หมดอายุ / ยังไม่ถูกใช้)
+  async function getAdvanceWindow(empId) {
+    if (!empId) return null;
+    const nowIso = new Date().toISOString();
+    const { data } = await sb.from('advance_windows').select('*')
+      .eq('emp_id', String(empId)).eq('status', 'open').gt('expires_at', nowIso)
+      .order('opened_at', { ascending: false }).limit(1);
+    return (data && data[0]) || null;
+  }
+
+  // ★ คำนวณ "วงเงินเบิก" — แสดงให้พนักงานเห็นทันทีที่เปิดหน้า (ไม่ต้องรออนุมัติ)
+  async function getAdvanceQuota(empId) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
+
+    const cfg = await _advCfg();
+    const today = bangkokDate();
+    const day = Number(today.slice(8, 10));
+    const month = _advMonth();
+    const cyc = cycleRange21();
+    const endEff = cyc.end < today ? cyc.end : today;
+
+    const [attR, shR, scCfgR, scRulesR, scBandsR, scEvR, capR, reqR, win, empFull] = await Promise.all([
+      sb.from('attendance').select('work_date,check_in,late_min,day_value,shift_id')
+        .eq('emp_id', emp.emp_id).gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('shifts').select('shift_id,day_value'),
+      sb.from('score_config').select('start_score').eq('id', 1).maybeSingle(),
+      sb.from('score_rules').select('*'),
+      sb.from('score_bands').select('*'),
+      sb.from('score_events').select('points').eq('emp_id', emp.emp_id).gte('event_date', cyc.start).lte('event_date', cyc.end),
+      sb.from('advance_emp_cap').select('*').eq('emp_id', emp.emp_id).maybeSingle(),
+      sb.from('advance_requests').select('amount,approved_amount,status,kind')
+        .eq('emp_id', emp.emp_id).eq('cycle_month', month),
+      getAdvanceWindow(emp.emp_id),
+      sb.from('employees').select('start_date,bank_name,bank_account,branch_id,nickname,name').eq('emp_id', emp.emp_id).maybeSingle(),
+    ]);
+
+    // ---- วันทำงานจริงในรอบ (ถ่วงกะครึ่งวัน) ----
+    const dv = {}; (shR.data || []).forEach(s => { dv[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const att = (attR.data || []).filter(a => a.check_in);
+    const days_worked = Math.round(att.reduce((s, a) => s + (a.day_value != null ? Number(a.day_value) : (dv[a.shift_id] != null ? dv[a.shift_id] : 1)), 0) * 10) / 10;
+
+    // ---- คะแนนวินัยรอบนี้ (สูตรเดียวกับหน้า HR) ----
+    const start = (scCfgR.data && scCfgR.data.start_score) || 100;
+    const rules = {}; (scRulesR.data || []).forEach(r => { if (r.enabled !== false) rules[r.kind] = r; });
+    let deduct = 0;
+    const lateRows = (attR.data || []).filter(a => (a.late_min || 0) > 0);
+    [['auto_late_1_10', m => m >= 1 && m <= 10], ['auto_late_11_30', m => m >= 11 && m <= 30], ['auto_late_30plus', m => m > 30]]
+      .forEach(([k, test]) => { const r = rules[k]; if (r) deduct += r.points * lateRows.filter(a => test(a.late_min || 0)).length; });
+    // ขาดงาน (จัดเวรแล้วไม่มา + ไม่ลา) — ถ่วงครึ่งวัน
+    const [schR, lvR] = await Promise.all([
+      sb.from('schedules').select('work_date,shift_id').eq('emp_id', emp.emp_id).gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('leaves').select('start_date,end_date').eq('emp_id', emp.emp_id).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
+    ]);
+    const worked = new Set(att.map(a => a.work_date));
+    const onLv = d => (lvR.data || []).some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+    let absent = 0;
+    (schR.data || []).forEach(s => { if (s.work_date < today && !worked.has(s.work_date) && !onLv(s.work_date)) absent += (dv[s.shift_id] != null ? dv[s.shift_id] : 1); });
+    absent = Math.round(absent * 10) / 10;
+    const ra = rules['auto_absent_no_notify'];
+    if (ra && absent > 0) deduct += Math.round(ra.points * absent);
+    (scEvR.data || []).forEach(e => { deduct += e.points; });
+    let score = start + deduct; if (score < 0) score = 0;
+
+    const bands = (scBandsR.data || []).slice().sort((a, b) => b.min_score - a.min_score);
+    const band = bands.find(b => score >= b.min_score && score <= b.max_score) || null;
+    const factor = band && band.advance_factor != null ? Number(band.advance_factor) : 1;
+
+    // ---- วงเงิน ----
+    const roundTo = Number(cfg.round_to) || 1;
+    let cap = Math.floor((Number(cfg.rate_per_day) * days_worked * factor) / roundTo) * roundTo;
+    if (cfg.min_amount && cap > 0 && cap < cfg.min_amount) cap = Number(cfg.min_amount);
+    if (cap > Number(cfg.max_amount)) cap = Number(cfg.max_amount);
+    const override = capR.data && capR.data.max_amount != null ? Number(capR.data.max_amount) : null;
+    if (override != null) cap = Math.min(override, Number(cfg.max_amount));
+    if (cap < 0) cap = 0;
+
+    // ---- ใช้ไปแล้วในเดือนนี้ (นับคำขอที่ยังไม่ถูกปฏิเสธ/ยกเลิก) ----
+    const live = (reqR.data || []).filter(r => ['submitted', 'approved', 'paid'].includes(r.status));
+    const used = live.reduce((s, r) => s + Number(r.approved_amount != null ? r.approved_amount : r.amount), 0);
+    const remaining = Math.max(0, cap - used);
+
+    // ---- เปิดให้คีย์ได้ไหม ----
+    const inWindow = day >= Number(cfg.window_start) && day <= Number(cfg.window_end);
+    const emergency = !!win;
+    const svcDays = (empFull.data && empFull.data.start_date) ? _diffDays(String(empFull.data.start_date), today) : 9999;
+    const passService = svcDays >= Number(cfg.min_service_days || 0);
+
+    let blocked = null;
+    if (!cfg.enabled) blocked = 'ระบบเบิกเงินปิดใช้งานชั่วคราว';
+    else if (!inWindow && !emergency) blocked = 'คีย์เบิกได้เฉพาะวันที่ ' + cfg.window_start + '–' + cfg.window_end + ' ของเดือนเท่านั้น';
+    else if (!passService) blocked = 'ต้องทำงานครบ ' + cfg.min_service_days + ' วันก่อนจึงจะเบิกได้ (ปัจจุบัน ' + svcDays + ' วัน)';
+    else if (remaining <= 0) blocked = cap <= 0 ? 'วงเงินของคุณเดือนนี้เป็น 0 (ยังไม่มีวันทำงานในรอบ หรือคะแนนวินัยต่ำ)' : 'คุณเบิกเต็มวงเงินของเดือนนี้แล้ว';
+
+    return {
+      ok: true,
+      emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '' },
+      cycle: cyc, month, today, day,
+      config: {
+        window_start: cfg.window_start, window_end: cfg.window_end, approve_day: cfg.approve_day,
+        payout_start: cfg.payout_start, payout_end: cfg.payout_end,
+        min_reason_len: cfg.min_reason_len, min_request: cfg.min_request,
+        require_face: cfg.require_face, allow_cancel: cfg.allow_cancel,
+        emergency_require_evidence: cfg.emergency_require_evidence,
+      },
+      calc: {
+        rate_per_day: Number(cfg.rate_per_day), days_worked,
+        score, band_label: band ? band.label : '', advance_factor: factor,
+        max_amount: Number(cfg.max_amount), cap_override: override,
+      },
+      cap, used, remaining,
+      in_window: inWindow,
+      emergency_window: win ? { id: win.id, expires_at: win.expires_at, reason: win.reason, opened_by: win.opened_by } : null,
+      can_request: !blocked,
+      blocked,
+      bank: { bank_name: (empFull.data && empFull.data.bank_name) || '', bank_account: (empFull.data && empFull.data.bank_account) || '' },
+    };
+  }
+
+  // ★ ยื่นคำขอเบิก (ตรวจทุกเงื่อนไขซ้ำฝั่งเซิร์ฟเวอร์)
+  async function submitAdvance({ empId, amount, reason, reason_category, photos, face_verified, kind }) {
+    const q = await getAdvanceQuota(empId);
+    const cfg = await _advCfg();
+    const isEmg = kind === 'emergency';
+
+    if (isEmg) {
+      if (!cfg.emergency_enabled) throw new Error('ระบบเบิกฉุกเฉินปิดใช้งานอยู่');
+      if (!q.emergency_window) throw new Error('คุณยังไม่มีสิทธิ์เบิกฉุกเฉิน — ต้องให้ผู้จัดการเปิดสิทธิ์ให้ก่อน');
+      if (cfg.emergency_require_evidence && !(Array.isArray(photos) && photos.length)) throw new Error('เบิกฉุกเฉินต้องแนบหลักฐานอย่างน้อย 1 รูป');
+      // โควตาต่อปี
+      const yr = q.today.slice(0, 4);
+      const { data: used } = await sb.from('advance_requests').select('id,status,cycle_month')
+        .eq('emp_id', q.emp.emp_id).eq('kind', 'emergency').gte('cycle_month', yr + '-01').lte('cycle_month', yr + '-12');
+      const cnt = (used || []).filter(r => ['submitted', 'approved', 'paid'].includes(r.status)).length;
+      if (cnt >= Number(cfg.emergency_max_per_year)) throw new Error('ใช้สิทธิ์เบิกฉุกเฉินครบ ' + cfg.emergency_max_per_year + ' ครั้งในปีนี้แล้ว');
+    } else {
+      if (!q.in_window) throw new Error('คีย์เบิกได้เฉพาะวันที่ ' + cfg.window_start + '–' + cfg.window_end + ' ของเดือนเท่านั้น');
+    }
+    if (cfg.require_face && !face_verified) throw new Error('ต้องสแกนใบหน้ายืนยันตัวตนก่อนส่งคำขอ');
+
+    const amt = Math.floor(Number(amount) || 0);
+    if (amt < Number(cfg.min_request)) throw new Error('ขอเบิกขั้นต่ำ ' + cfg.min_request + ' บาท');
+    if (amt > q.remaining) throw new Error('เกินวงเงินที่เบิกได้ (เหลือ ' + q.remaining + ' บาท)');
+
+    const rs = String(reason || '').trim();
+    if (rs.length < Number(cfg.min_reason_len)) throw new Error('กรุณาระบุเหตุผลอย่างน้อย ' + cfg.min_reason_len + ' ตัวอักษร (ตอนนี้ ' + rs.length + ')');
+
+    // อัปโหลดหลักฐาน
+    const urls = [];
+    for (const p of (photos || [])) {
+      if (!p) continue;
+      if (typeof p === 'string' && /^https?:/i.test(p)) urls.push(p);
+      else urls.push(await uploadPhoto('employee-docs', 'advance/' + q.emp.emp_id + '_' + Date.now() + '_' + urls.length + '.jpg', p));
+    }
+
+    // เลขที่คำขอ AD-<พ.ศ.>-#### (อิงเลขสูงสุด ไม่ใช่ count)
+    const yrBE = new Date().getFullYear() + 543;
+    const pre = 'AD-' + yrBE + '-';
+    const { data: all } = await sb.from('advance_requests').select('req_no').like('req_no', pre + '%');
+    let mx = 0; (all || []).forEach(r => { const n = parseInt(String(r.req_no).slice(pre.length), 10); if (isFinite(n) && n > mx) mx = n; });
+    const req_no = pre + String(mx + 1).padStart(4, '0');
+
+    const { data: br } = await sb.from('branches').select('name').eq('branch_id', q.emp.branch_id || '').maybeSingle();
+    const row = {
+      req_no, emp_id: q.emp.emp_id, emp_name: q.emp.name, nickname: q.emp.nickname || null,
+      branch_id: q.emp.branch_id || null, branch_name: (br && br.name) || null,
+      kind: isEmg ? 'emergency' : 'normal',
+      cycle_month: q.month, amount: amt,
+      reason_category: reason_category || null, reason: rs,
+      photos: urls.length ? urls : null,
+      bank_name: q.bank.bank_name || null, bank_account: q.bank.bank_account || null,
+      days_worked: q.calc.days_worked, score: q.calc.score, band_label: q.calc.band_label,
+      advance_factor: q.calc.advance_factor, rate_per_day: q.calc.rate_per_day,
+      cap_calculated: q.cap, cap_used_before: q.used,
+      face_verified: !!face_verified,
+      device: (navigator.userAgent || '').slice(0, 200),
+      status: 'submitted',
+      deduct_month: _nextMonth(q.month),                 // หักคืนครั้งเดียวในรอบเงินเดือนถัดไป
+      window_id: isEmg ? q.emergency_window.id : null,
+      emergency_opened_by: isEmg ? q.emergency_window.opened_by : null,
+      emergency_opened_at: isEmg ? q.emergency_window.opened_at : null,
+    };
+    const { data: ins, error } = await sb.from('advance_requests').insert(row).select('id,req_no').single();
+    if (error) throw error;
+
+    if (isEmg) {
+      await sb.from('advance_windows').update({ status: 'used', used_request_id: ins.id }).eq('id', q.emergency_window.id);
+    }
+    await sb.from('advance_events').insert({
+      request_id: ins.id, emp_id: q.emp.emp_id, event: 'submit', actor: q.emp.nickname || q.emp.name, role: 'emp',
+      note: (isEmg ? '[ฉุกเฉิน] ' : '') + rs.slice(0, 200), amount_after: amt,
+    });
+    return { ok: true, id: ins.id, req_no: ins.req_no, amount: amt };
+  }
+  function _nextMonth(m) {
+    const [y, mo] = String(m).split('-').map(Number);
+    const d = new Date(y, mo, 1);                        // mo (1-based) → เดือนถัดไป
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  // คำขอของฉัน
+  async function myAdvances(empId) {
+    if (!empId) return [];
+    const { data } = await sb.from('advance_requests').select('*')
+      .eq('emp_id', String(empId)).order('keyed_at', { ascending: false }).limit(24);
+    return data || [];
+  }
+
+  // ★ พนักงานยกเลิกคำขอเอง (ได้เฉพาะก่อน HR อนุมัติ)
+  async function cancelAdvance(id, empId) {
+    const cfg = await _advCfg();
+    if (!cfg.allow_cancel) throw new Error('ระบบไม่อนุญาตให้ยกเลิกคำขอเอง');
+    const { data: r } = await sb.from('advance_requests').select('*').eq('id', id).maybeSingle();
+    if (!r) throw new Error('ไม่พบคำขอนี้');
+    if (String(r.emp_id) !== String(empId)) throw new Error('คำขอนี้ไม่ใช่ของคุณ');
+    if (r.status !== 'submitted') throw new Error('ยกเลิกได้เฉพาะคำขอที่ยังไม่ถูกพิจารณา');
+    const { error } = await sb.from('advance_requests').update({ status: 'cancelled' }).eq('id', id);
+    if (error) throw error;
+    // ถ้าเป็นเคสฉุกเฉิน คืนสิทธิ์ให้ (ยังไม่หมดอายุ)
+    if (r.window_id) {
+      try { await sb.from('advance_windows').update({ status: 'open', used_request_id: null }).eq('id', r.window_id).gt('expires_at', new Date().toISOString()); } catch (_e) { }
+    }
+    await sb.from('advance_events').insert({ request_id: id, emp_id: r.emp_id, event: 'cancel', actor: r.nickname || r.emp_name, role: 'emp', note: 'พนักงานยกเลิกคำขอเอง', amount_before: r.amount });
+    return { ok: true };
+  }
+
   // ---------- รับสมัครงาน (สาธารณะ) ----------
   async function getPositions() {
     const { data } = await sb.from('positions').select('name').eq('active', true).order('sort');
@@ -1544,5 +1788,6 @@
   }
 
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication };
+  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

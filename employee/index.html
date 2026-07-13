@@ -173,6 +173,8 @@
       </div>
       <div class="lockmsg" id="lockMsg"></div>
       <div id="coCard" style="margin-top:10px"></div>
+      <!-- 🚨 เบิกฉุกเฉิน — โผล่เฉพาะคนที่ ผจก. เปิดสิทธิ์ให้ และยังไม่หมดอายุ -->
+      <div id="advEmgCard" style="margin-top:10px"></div>
     </div>
   </div>
 </div>
@@ -638,9 +640,110 @@ $('empId').addEventListener('input', e=>{
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();
   refreshCoCard();
+  refreshAdvEmg();          // ★ เช็คสิทธิ์เบิกฉุกเฉินของรหัสนี้
 });
 $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');
+
+// ============================================================
+// 🚨 เบิกฉุกเฉิน — โผล่เฉพาะคนที่ ผจก. เปิดสิทธิ์ให้ (นับถอยหลังหมดอายุ)
+//    ต้องระบุเหตุฉุกเฉิน + แนบหลักฐาน + ยืนยันตัวตนด้วยใบหน้า (หน้านี้มีกล้อง/ระบบใบหน้าอยู่แล้ว)
+// ============================================================
+let ADV_EMG=null, ADV_TICK=null, ADV_PHOTOS=[];
+const advMoney = n => Number(n||0).toLocaleString('th-TH');
+function advLeftTxt(exp){
+  const ms=new Date(exp).getTime()-Date.now();
+  if(ms<=0) return null;
+  const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
+  return (h>0?(h+' ชม. '):'')+m+' นาที';
+}
+async function refreshAdvEmg(){
+  const box=$('advEmgCard'); if(!box) return;
+  if(ADV_TICK){ clearInterval(ADV_TICK); ADV_TICK=null; }
+  ADV_EMG=null; box.innerHTML='';
+  if(!empMatch || empMatch.unknown) return;
+  let q; try{ q = await HR.getAdvanceQuota(empMatch.emp_id); }catch(e){ return; }
+  if(!q.emergency_window) return;                    // ไม่มีสิทธิ์ = ไม่มีปุ่ม
+  ADV_EMG=q;
+  const render=()=>{
+    const left=advLeftTxt(q.emergency_window.expires_at);
+    if(!left){ box.innerHTML=''; if(ADV_TICK) clearInterval(ADV_TICK); return; }
+    box.innerHTML='<div style="border:1.5px solid #ea580c;background:#fff7ed;border-radius:14px;padding:12px 14px">'
+      +'<div style="font-weight:800;color:#9a3412;font-size:14px">🚨 คุณมีสิทธิ์เบิกฉุกเฉิน</div>'
+      +'<div style="font-size:12.5px;color:#7c2d12;margin-top:2px">ผู้จัดการเปิดสิทธิ์ให้ · เหลือเวลาอีก <b>'+left+'</b></div>'
+      +'<div style="font-size:12.5px;color:#7c2d12;margin-top:2px">วงเงินที่เบิกได้ <b>'+advMoney(q.remaining)+' บาท</b></div>'
+      +'<button type="button" id="advEmgBtn" style="width:100%;margin-top:9px;padding:11px;border:0;border-radius:11px;background:#ea580c;color:#fff;font-weight:700;font-size:15px;cursor:pointer">เบิกฉุกเฉิน</button>'
+      +'</div>';
+    const b=$('advEmgBtn'); if(b) b.onclick=openAdvEmg;
+  };
+  render();
+  ADV_TICK=setInterval(render, 30000);
+}
+// ยืนยันใบหน้า (ใช้กล้อง + โมเดลเดียวกับการลงเวลา)
+async function advVerifyFace(){
+  const descriptor = await getDescriptor();
+  if(!descriptor) throw new Error('ไม่พบใบหน้าชัดเจน — หันหน้าเข้ากล้องแล้วลองใหม่');
+  const m = matchFace(descriptor, empMatch);           // true=ตรง / false=ไม่ตรง / null=ยังไม่ลงทะเบียน
+  if(m===null) throw new Error('คุณยังไม่ได้ลงทะเบียนใบหน้า — ให้ผู้จัดการลงทะเบียนให้ก่อน จึงจะเบิกฉุกเฉินได้');
+  return m===true;
+}
+function openAdvEmg(){
+  const q=ADV_EMG; if(!q) return;
+  ADV_PHOTOS=[];
+  const ov=document.createElement('div');
+  ov.id='advEmgOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">🚨 เบิกฉุกเฉิน</h2>'
+      +'<button type="button" id="advEmgX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
+    +'<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:9px 11px;font-size:12.5px;color:#7c2d12;line-height:1.6;margin-bottom:10px">'
+      +'ต้องระบุเหตุฉุกเฉินให้ชัดเจน + <b>แนบหลักฐานอย่างน้อย 1 รูป</b> + ยืนยันใบหน้า<br>HR เป็นผู้อนุมัติ · จ่ายภายใน 2 วันทำการหลังอนุมัติ</div>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin-bottom:4px">จำนวนเงิน (เบิกได้สูงสุด '+advMoney(q.remaining)+' บาท)</label>'
+    +'<input id="advEmgAmt" type="number" inputmode="numeric" min="0" step="100" max="'+q.remaining+'" style="width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;font-size:20px;text-align:center;font-weight:700;box-sizing:border-box">'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">เหตุฉุกเฉิน (อย่างน้อย '+q.config.min_reason_len+' ตัวอักษร)</label>'
+    +'<textarea id="advEmgReason" rows="3" placeholder="เช่น ลูกป่วยต้องเข้าโรงพยาบาลวันนี้ ต้องสำรองค่ารักษา" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box"></textarea>'
+    +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">หลักฐาน (บังคับ)</label>'
+    +'<label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 แนบรูป<input type="file" accept="image/*" multiple id="advEmgFile" style="display:none"></label>'
+    +'<div id="advEmgThumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>'
+    +'<button type="button" id="advEmgSend" style="width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#ea580c;color:#fff;font-weight:700;font-size:15px;cursor:pointer">ยืนยันใบหน้า + ส่งคำขอ</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  $('advEmgX').onclick=close;
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  $('advEmgFile').addEventListener('change', async e=>{
+    const files=[...(e.target.files||[])];
+    for(const f of files){
+      const d=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>res(null); r.readAsDataURL(f); });
+      if(d) ADV_PHOTOS.push(d);
+    }
+    e.target.value='';
+    $('advEmgThumbs').innerHTML=ADV_PHOTOS.map(u=>'<img src="'+u+'" style="width:58px;height:58px;object-fit:cover;border-radius:8px">').join('');
+  });
+  $('advEmgSend').onclick=async()=>{
+    const amt=Math.floor(Number($('advEmgAmt').value)||0);
+    if(!amt){ showToast('err','ระบุจำนวนเงิน'); return; }
+    if(amt>q.remaining){ showToast('err','เกินวงเงิน (สูงสุด '+advMoney(q.remaining)+' บาท)'); return; }
+    const reason=$('advEmgReason').value.trim();
+    if(reason.length<q.config.min_reason_len){ showToast('err','ระบุเหตุฉุกเฉินอย่างน้อย '+q.config.min_reason_len+' ตัวอักษร'); return; }
+    if(!ADV_PHOTOS.length){ showToast('err','ต้องแนบหลักฐานอย่างน้อย 1 รูป'); return; }
+
+    const btn=$('advEmgSend'); btn.disabled=true; btn.textContent='กำลังยืนยันใบหน้า…';
+    // ★ ยืนยันตัวตนด้วยใบหน้า (ใช้กล้อง/โมเดลเดียวกับการลงเวลา)
+    let faceOk=false;
+    try{ faceOk = await advVerifyFace(); }
+    catch(e){ showToast('err', e.message||'ยืนยันใบหน้าไม่สำเร็จ'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; return; }
+    if(!faceOk){ showToast('err','ใบหน้าไม่ตรงกับที่ลงทะเบียนไว้'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; return; }
+
+    btn.textContent='กำลังส่งคำขอ…';
+    try{
+      const r=await HR.submitAdvance({ empId: empMatch.emp_id, amount: amt, reason,
+        reason_category:'ฉุกเฉิน', photos: ADV_PHOTOS.slice(), face_verified:true, kind:'emergency' });
+      showToast('ok','ส่งคำขอเบิกฉุกเฉินแล้ว · เลขที่ '+r.req_no);
+      close(); refreshAdvEmg();
+    }catch(e){ showToast('err', e.message||'ส่งไม่สำเร็จ'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; }
+  };
+}
 
 // ====== การ์ดเตือนกดออก / ควบกะต่อ / ยื่นแก้ไขเวลาออก ======
 const CO_GRACE_MIN = 15;

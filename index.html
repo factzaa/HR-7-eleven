@@ -68,6 +68,12 @@
       <a class="banner" href="./mgr/"><img src="banners/manager.png?v=1" alt="งานผู้จัดการ · บริหารทีม สาขา และผลลัพธ์"></a>
       <a class="banner" href="./qa/"><img src="banners/qa.png?v=3" alt="QA สินค้า · ตรวจวันหมดอายุ"></a>
       <a class="banner" href="./shelf/"><img src="banners/shelf.png?v=1" alt="ดูแลเชลฟ์ประจำเดือน"></a>
+      <!-- ปุ่มเบิกเงินล่วงหน้า — โผล่เฉพาะวันที่ 10–12 ของเดือน -->
+      <button id="advBtn" style="display:none;align-items:center;gap:12px;margin:0 0 10px;padding:14px 16px;border:1.5px solid #16a34a;border-radius:16px;background:#f0fdf4;cursor:pointer;width:100%;text-align:left;color:var(--ink);box-shadow:0 4px 14px rgba(22,163,74,.12)">
+        <span style="width:42px;height:42px;border-radius:12px;background:#dcfce7;display:grid;place-items:center;font-size:21px;flex:none">💵</span>
+        <span style="flex:1"><span style="display:block;font-size:15px;font-weight:700">เบิกเงินล่วงหน้า</span><span id="advBtnSub" style="display:block;font-size:12.5px;color:#15803d;margin-top:1px">เปิดรอบเบิกแล้ววันนี้ — กดเพื่อดูวงเงินของคุณ</span></span>
+        <span style="font-size:22px;color:#16a34a">›</span>
+      </button>
       <div class="bgrid">
         <button class="banner" id="leaveBtn"><img src="banners/leave.png?v=2" alt="ยื่นคำขอลางาน"></button>
         <a class="banner" href="./staff/"><img src="banners/profile.png?v=2" alt="กรอกข้อมูล/เอกสาร"></a>
@@ -129,6 +135,42 @@
       <div id="lvMine" style="font-size:12.5px;margin-top:10px"></div>
     </div>
   </div>
+
+  <!-- ===== เบิกเงินล่วงหน้า (เปิดเฉพาะวันที่ 10–12) ===== -->
+  <div class="ovl" id="advOvl">
+    <div class="modal">
+      <button class="mx" id="advClose">×</button>
+      <h2>💵 เบิกเงินล่วงหน้า</h2>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:6px">กรอกรหัสพนักงานของคุณ — ระบบจะคำนวณวงเงินให้ทันที</p>
+      <label>รหัสพนักงาน</label>
+      <input id="advEmp" type="text" inputmode="numeric" placeholder="เช่น 0874771">
+      <div id="advQuota" style="margin-top:10px"></div>
+      <div id="advForm" style="display:none">
+        <label>จำนวนเงินที่ขอเบิก (บาท)</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="advAmt" type="number" inputmode="numeric" min="0" step="100" style="flex:1;font-size:20px;text-align:center;font-weight:700">
+          <button class="mbtn" id="advMax" style="width:auto;padding:10px 14px;margin:0;white-space:nowrap">เต็มวงเงิน</button>
+        </div>
+        <div id="advAmtErr" style="display:none;color:#dc2626;font-size:12.5px;margin-top:4px"></div>
+        <label>เหตุผลที่ต้องใช้เงิน</label>
+        <select id="advCat">
+          <option value="">— เลือกหมวด —</option>
+          <option>ค่ารักษาพยาบาล</option>
+          <option>ค่าเล่าเรียนบุตร</option>
+          <option>ค่าเช่าบ้าน / ค่าน้ำค่าไฟ</option>
+          <option>ค่าเดินทาง / ซ่อมรถ</option>
+          <option>เหตุจำเป็นในครอบครัว</option>
+          <option>อื่น ๆ</option>
+        </select>
+        <label>รายละเอียด <span style="color:#dc2626">*</span></label>
+        <textarea id="advReason" rows="3" placeholder="อธิบายให้ชัดเจนว่าต้องใช้เงินทำอะไร" style="width:100%;padding:11px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit"></textarea>
+        <div id="advReasonHint" style="font-size:12px;color:#6b7280;margin-top:3px"></div>
+        <button class="mbtn" id="advSubmit">ส่งคำขอเบิก</button>
+      </div>
+      <div id="advMine" style="font-size:12.5px;margin-top:12px"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -478,6 +520,136 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
       .then(function(){ cp.textContent='✓ คัดลอกแล้ว'; setTimeout(function(){ cp.textContent='📋 คัดลอกลิงก์'; },1800); })
       .catch(function(){ var t=document.createElement('textarea'); t.value=applyUrl; document.body.appendChild(t); t.select(); try{document.execCommand('copy');}catch(_){}; t.remove(); cp.textContent='✓ คัดลอกแล้ว'; setTimeout(function(){ cp.textContent='📋 คัดลอกลิงก์'; },1800); });
   };
+})();
+</script>
+
+<!-- ===== เบิกเงินล่วงหน้า (แสดงปุ่มเฉพาะวันที่ 10–12 · วงเงินคำนวณให้ทันที) ===== -->
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const advOvl=$('advOvl');
+  let ADVQ=null;                       // ผลคำนวณวงเงินล่าสุด
+
+  const bkDay = ()=> Number(HR.bangkokDate().slice(8,10));
+  const money = n => Number(n||0).toLocaleString('th-TH');
+
+  // ปุ่มโผล่เฉพาะช่วงคีย์ (อ่านค่าจากตั้งค่าจริงในระบบ · ถ้าอ่านไม่ได้ใช้ 10–12)
+  (async function initAdvBtn(){
+    let ws=10, we=12, on=true;
+    try{
+      const { data } = await HR.sb.from('advance_config').select('enabled,window_start,window_end').eq('id',1).maybeSingle();
+      if(data){ ws=Number(data.window_start)||10; we=Number(data.window_end)||12; on=data.enabled!==false; }
+    }catch(e){}
+    const d=bkDay();
+    const btn=$('advBtn'); if(!btn) return;
+    if(on && d>=ws && d<=we){
+      btn.style.display='flex';
+      $('advBtnSub').textContent='เปิดรอบเบิกแล้ววันนี้ (วันที่ '+ws+'–'+we+') — กดเพื่อดูวงเงินของคุณ';
+    }
+  })();
+
+  function advClose(){ advOvl.classList.remove('show'); }
+  $('advBtn') && ($('advBtn').onclick=async()=>{
+    advOvl.classList.add('show');
+    try{ if(!$('advEmp').value && window.HRSession){ const s=HRSession.getEmp(); if(s) $('advEmp').value=s; } }catch(e){}
+    if($('advEmp').value.trim()) loadQuota();
+  });
+  $('advClose').onclick=advClose;
+  advOvl.addEventListener('click', e=>{ if(e.target===advOvl) advClose(); });
+  $('advEmp').addEventListener('change', loadQuota);
+
+  async function loadQuota(){
+    const id=$('advEmp').value.trim();
+    $('advForm').style.display='none'; $('advMine').innerHTML='';
+    if(!id){ $('advQuota').innerHTML=''; return; }
+    try{ if(window.HRSession) HRSession.setEmp(id); }catch(e){}
+    $('advQuota').innerHTML='<div style="color:#6b7280;font-size:13px">กำลังคำนวณวงเงิน…</div>';
+    let q;
+    try{ q = await HR.getAdvanceQuota(id); }
+    catch(e){ $('advQuota').innerHTML='<div style="color:#dc2626;font-size:13px">'+(e.message||'ไม่พบรหัสพนักงาน')+'</div>'; return; }
+    ADVQ=q;
+
+    // ---- การ์ดวงเงิน: บอกที่มาให้ครบ ไม่ต้องเดา ----
+    const c=q.calc;
+    $('advQuota').innerHTML =
+      '<div style="border:1.5px solid #16a34a;background:#f0fdf4;border-radius:14px;padding:13px 15px">'
+      +'<div style="font-size:13px;color:#15803d;font-weight:700">💵 วงเงินเบิกของคุณเดือนนี้</div>'
+      +'<div style="font-size:30px;font-weight:800;color:#166534;line-height:1.2">'+money(q.cap)+' <span style="font-size:15px;font-weight:600">บาท</span></div>'
+      +'<div style="font-size:12.5px;color:#166534;line-height:1.8;margin-top:6px;border-top:1px dashed #86efac;padding-top:6px">'
+        +'• ทำงานแล้ว <b>'+c.days_worked+' วัน</b> × '+money(c.rate_per_day)+' = '+money(Math.round(c.rate_per_day*c.days_worked))+'<br>'
+        +'• คะแนนวินัย <b>'+c.score+'</b>'+(c.band_label?(' ('+c.band_label+')'):'')+' × <b>'+c.advance_factor+'</b>'
+          +(c.advance_factor<1?' → ลดวงเงิน':'')+'<br>'
+        +'• เบิกไปแล้วเดือนนี้ '+money(q.used)+' บาท'
+        +(c.cap_override!=null?('<br>• HR กำหนดเพดานเฉพาะบุคคล '+money(c.cap_override)):'')
+      +'</div>'
+      +'<div style="margin-top:8px;font-size:16px;font-weight:800;color:'+(q.remaining>0?'#166534':'#b91c1c')+'">👉 เบิกได้อีก '+money(q.remaining)+' บาท</div>'
+      +(q.blocked?('<div style="margin-top:7px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:8px 10px;font-size:12.5px">⛔ '+q.blocked+'</div>'):'')
+      +'<div style="margin-top:7px;font-size:11.5px;color:#6b7280">อนุมัติวันที่ '+q.config.approve_day+' · โอนเงินวันที่ '+q.config.payout_start+'–'+q.config.payout_end+' · หักคืนจากเงินเดือนรอบถัดไปครั้งเดียวเต็มจำนวน</div>'
+      +'</div>';
+
+    if(q.can_request){
+      $('advForm').style.display='block';
+      $('advAmt').max=q.remaining;
+      $('advReasonHint').textContent='ต้องมีอย่างน้อย '+q.config.min_reason_len+' ตัวอักษร';
+    }
+    renderMine(id);
+  }
+
+  $('advMax').onclick=()=>{ if(ADVQ){ $('advAmt').value=ADVQ.remaining; checkAmt(); } };
+  $('advAmt').addEventListener('input', checkAmt);
+  function checkAmt(){
+    if(!ADVQ) return true;
+    const v=Math.floor(Number($('advAmt').value)||0);
+    const err=$('advAmtErr');
+    if(v>ADVQ.remaining){ err.style.display='block'; err.textContent='⚠️ เกินวงเงิน — เบิกได้สูงสุด '+money(ADVQ.remaining)+' บาท'; return false; }
+    if(v && v<ADVQ.config.min_request){ err.style.display='block'; err.textContent='⚠️ ขอเบิกขั้นต่ำ '+money(ADVQ.config.min_request)+' บาท'; return false; }
+    err.style.display='none'; return true;
+  }
+
+  $('advSubmit').onclick=async()=>{
+    if(!ADVQ) return;
+    if(!checkAmt()) return;
+    const amt=Math.floor(Number($('advAmt').value)||0);
+    if(!amt){ toast('err','ระบุจำนวนเงินที่ขอเบิก'); return; }
+    const reason=$('advReason').value.trim();
+    if(reason.length < ADVQ.config.min_reason_len){ toast('err','ระบุเหตุผลอย่างน้อย '+ADVQ.config.min_reason_len+' ตัวอักษร'); return; }
+    if(!confirm('ยืนยันส่งคำขอเบิก '+money(amt)+' บาท?\n\nยอดนี้จะถูกหักคืนจากเงินเดือนรอบถัดไปครั้งเดียวเต็มจำนวน')) return;
+    const btn=$('advSubmit'); btn.disabled=true; btn.textContent='กำลังส่ง…';
+    try{
+      // หมายเหตุ: ถ้าเปิด require_face ในตั้งค่า ต้องยืนยันใบหน้าที่หน้าลงเวลา (ระบบจะแจ้งให้ทราบ)
+      const r=await HR.submitAdvance({ empId:$('advEmp').value.trim(), amount:amt, reason,
+        reason_category:$('advCat').value||null, face_verified:false, kind:'normal' });
+      toast('ok','ส่งคำขอแล้ว · เลขที่ '+r.req_no);
+      $('advAmt').value=''; $('advReason').value='';
+      await loadQuota();
+    }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); }
+    btn.disabled=false; btn.textContent='ส่งคำขอเบิก';
+  };
+
+  async function renderMine(id){
+    let rows=[]; try{ rows=await HR.myAdvances(id); }catch(e){ return; }
+    if(!rows.length){ $('advMine').innerHTML=''; return; }
+    const S={ submitted:['รอ HR อนุมัติ','#fef3c7','#a16207'], approved:['อนุมัติแล้ว — รอโอน','#dbeafe','#1d4ed8'],
+              paid:['โอนแล้ว','#dcfce7','#166534'], rejected:['ไม่อนุมัติ','#fee2e2','#b91c1c'], cancelled:['ยกเลิกแล้ว','#f1f5f9','#64748b'] };
+    $('advMine').innerHTML='<div style="font-weight:700;margin:6px 0">คำขอของฉัน</div>'
+      + rows.slice(0,6).map(r=>{
+        const s=S[r.status]||['—','#f1f5f9','#64748b'];
+        const amt=r.approved_amount!=null?r.approved_amount:r.amount;
+        return '<div style="border:1px solid #eceef1;border-radius:11px;padding:9px 11px;margin-bottom:6px">'
+          +'<div style="display:flex;gap:8px;align-items:center">'
+            +'<div style="flex:1"><b>'+money(amt)+' บาท</b> <span style="color:#6b7280;font-size:12px">· '+r.req_no+(r.kind==='emergency'?' 🚨':'')+'</span></div>'
+            +'<span style="background:'+s[1]+';color:'+s[2]+';padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">'+s[0]+'</span>'
+          +'</div>'
+          +(r.review_note?('<div style="font-size:12px;color:#b91c1c;margin-top:3px">'+r.review_note+'</div>'):'')
+          +(r.status==='submitted'?('<button type="button" data-advcancel="'+r.id+'" style="margin-top:6px;padding:6px 12px;border:1.5px solid #fecaca;background:#fff;color:#dc2626;border-radius:9px;font-weight:600;cursor:pointer;font-size:12.5px">ยกเลิกคำขอ</button>'):'')
+          +'</div>';
+      }).join('');
+    document.querySelectorAll('[data-advcancel]').forEach(b=>b.onclick=async()=>{
+      if(!confirm('ยกเลิกคำขอนี้?')) return;
+      try{ await HR.cancelAdvance(b.dataset.advcancel, $('advEmp').value.trim()); toast('ok','ยกเลิกแล้ว'); loadQuota(); }
+      catch(e){ toast('err', e.message||'ยกเลิกไม่สำเร็จ'); }
+    });
+  }
 })();
 </script>
 
