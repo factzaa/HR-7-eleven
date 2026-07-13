@@ -4056,6 +4056,14 @@ $('adv_cfgbtn') && ($('adv_cfgbtn').onclick=async()=>{
       +num('acf_round','ปัดวงเงินลงหลัก',c.round_to)
       +num('acf_minreq','ขอขั้นต่ำต่อครั้ง',c.min_request)
     +'</div>'
+    +'<div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:11px 13px;margin-bottom:12px">'
+      +'<div style="font-weight:700;font-size:13px;color:#7c2d12;margin-bottom:6px">🔧 ช่วงเปลี่ยนผ่าน (ระบบเพิ่งเริ่มใช้ ข้อมูลลงเวลายังไม่ครบ)</div>'
+      +'<label class="check" style="color:#7c2d12"><input type="checkbox" id="acf_usedays" '+(c.use_days!==false?'checked':'')+'>คิดวงเงินตาม<b>วันทำงานจริง</b> (เอาเครื่องหมายออก = ไม่คิดวันทำงาน ใช้เพดานสูงสุด × ตัวคูณวินัย)</label>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+        +num('acf_assume','วันทำงานขั้นต่ำที่ใช้คำนวณ', (c.assume_days==null?0:c.assume_days), 'ถ้าในระบบมีน้อยกว่านี้ จะใช้ค่านี้แทน · 0 = ไม่ใช้')
+      +'</div>'
+      +'<div style="font-size:11.5px;color:#7c2d12;margin-top:6px;line-height:1.6">ตัวอย่าง: ตั้ง 20 → คนที่ระบบเห็นว่าทำงาน 5 วัน (เพราะเพิ่งเริ่มบันทึก) จะถูกคิดเป็น 20 วัน → 150×20×ตัวคูณ</div>'
+    +'</div>'
     +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">ตัวคูณวินัย (ตามช่วงคะแนน)</div>'
     +'<div style="margin:8px 0 12px">'+bands.map((b,i)=>
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
@@ -4086,6 +4094,7 @@ $('adv_cfgbtn') && ($('adv_cfgbtn').onclick=async()=>{
     const d={
       enabled:$('acf_on').checked,
       max_amount:$('acf_max').value, rate_per_day:$('acf_rate').value, round_to:$('acf_round').value, min_request:$('acf_minreq').value,
+      use_days:$('acf_usedays').checked, assume_days:$('acf_assume').value,
       window_start:$('acf_ws').value, window_end:$('acf_we').value, approve_day:$('acf_ap').value,
       payout_start:$('acf_ps').value, payout_end:$('acf_pe').value,
       min_reason_len:$('acf_rlen').value, min_service_days:$('acf_svc').value,

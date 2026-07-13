@@ -866,8 +866,17 @@
     const factor = band && band.advance_factor != null ? Number(band.advance_factor) : 1;
 
     // ---- วงเงิน ----
+    // ★ ช่วงเปลี่ยนผ่าน (ระบบเพิ่งเริ่มใช้ ข้อมูลลงเวลายังไม่ครบ):
+    //   use_days=false → ไม่คิดตามวันทำงานเลย ใช้เพดานสูงสุด × ตัวคูณวินัย
+    //   assume_days>0  → ถ้าวันทำงานในระบบน้อยกว่าค่านี้ ให้ใช้ค่านี้แทน (กันวงเงินต่ำผิดจริง)
+    const useDays = cfg.use_days !== false;
+    const assume = Number(cfg.assume_days) || 0;
+    const daysForCalc = useDays ? Math.max(days_worked, assume) : null;
+
     const roundTo = Number(cfg.round_to) || 1;
-    let cap = Math.floor((Number(cfg.rate_per_day) * days_worked * factor) / roundTo) * roundTo;
+    let cap = useDays
+      ? Math.floor((Number(cfg.rate_per_day) * daysForCalc * factor) / roundTo) * roundTo
+      : Math.floor((Number(cfg.max_amount) * factor) / roundTo) * roundTo;
     if (cfg.min_amount && cap > 0 && cap < cfg.min_amount) cap = Number(cfg.min_amount);
     if (cap > Number(cfg.max_amount)) cap = Number(cfg.max_amount);
     const override = capR.data && capR.data.max_amount != null ? Number(capR.data.max_amount) : null;
@@ -904,6 +913,7 @@
       },
       calc: {
         rate_per_day: Number(cfg.rate_per_day), days_worked,
+        use_days: useDays, assume_days: assume, days_used: daysForCalc,   // ★ วันที่ใช้คำนวณจริง
         score, band_label: band ? band.label : '', advance_factor: factor,
         max_amount: Number(cfg.max_amount), cap_override: override,
       },

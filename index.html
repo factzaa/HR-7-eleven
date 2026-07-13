@@ -576,7 +576,11 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
       +'<div style="font-size:13px;color:#15803d;font-weight:700">💵 วงเงินเบิกของคุณเดือนนี้</div>'
       +'<div style="font-size:30px;font-weight:800;color:#166534;line-height:1.2">'+money(q.cap)+' <span style="font-size:15px;font-weight:600">บาท</span></div>'
       +'<div style="font-size:12.5px;color:#166534;line-height:1.8;margin-top:6px;border-top:1px dashed #86efac;padding-top:6px">'
-        +'• ทำงานแล้ว <b>'+c.days_worked+' วัน</b> × '+money(c.rate_per_day)+' = '+money(Math.round(c.rate_per_day*c.days_worked))+'<br>'
+        +(c.use_days===false
+            ? ('• คิดจากเพดานสูงสุด '+money(c.max_amount)+' บาท (ช่วงเปลี่ยนผ่าน — ยังไม่คิดตามวันทำงาน)<br>')
+            : ('• ทำงานแล้ว <b>'+c.days_worked+' วัน</b>'
+               +((c.assume_days>0 && c.days_used>c.days_worked) ? (' <span style="color:#a16207">(ระบบคิดให้ '+c.days_used+' วัน — ช่วงเปลี่ยนผ่าน)</span>') : '')
+               +' × '+money(c.rate_per_day)+' = '+money(Math.round(c.rate_per_day*(c.days_used!=null?c.days_used:c.days_worked)))+'<br>'))
         +'• คะแนนวินัย <b>'+c.score+'</b>'+(c.band_label?(' ('+c.band_label+')'):'')+' × <b>'+c.advance_factor+'</b>'
           +(c.advance_factor<1?' → ลดวงเงิน':'')+'<br>'
         +'• เบิกไปแล้วเดือนนี้ '+money(q.used)+' บาท'

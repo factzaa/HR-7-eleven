@@ -2696,6 +2696,8 @@
       enabled: d.enabled !== false,
       max_amount: num(d.max_amount, 3000), rate_per_day: num(d.rate_per_day, 150),
       min_amount: num(d.min_amount, 0), round_to: num(d.round_to, 100), min_request: num(d.min_request, 100),
+      // ★ ช่วงเปลี่ยนผ่าน: ปิดการคิดตามวันทำงาน / กำหนดวันทำงานขั้นต่ำที่ใช้คำนวณ
+      use_days: d.use_days !== false, assume_days: num(d.assume_days, 0),
       window_start: num(d.window_start, 10), window_end: num(d.window_end, 12),
       approve_day: num(d.approve_day, 15), payout_start: num(d.payout_start, 20), payout_end: num(d.payout_end, 22),
       min_reason_len: num(d.min_reason_len, 20), min_service_days: num(d.min_service_days, 0),
