@@ -280,6 +280,7 @@
         case 'hr_shelf_assignments': return await hrShelfAssignments(p.month, p.branch);
         case 'hr_shelf_assign_delete': return await hrShelfAssignDelete(p.id);
         case 'hr_shelf_checks':      return await hrShelfChecks(p.shelf_id, p.month);
+        case 'hr_shelf_pending':     return await hrShelfPending(p);
         case 'hr_shelf_check_review':return await hrShelfCheckReview(p.id, p.status, p.note, p.markup);
         case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
         case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note);
@@ -4711,6 +4712,48 @@
     const empName = {}; (empR.data || []).forEach(x => { empName[x.emp_id] = x.nickname || x.name; });
     const rows = (ckR.data || []).map(c => ({ ...c, emp_name: empName[c.emp_id] || c.emp_id }));
     return { ok: true, month, rows };
+  }
+
+  // ★ กล่อง "รอตรวจ" — รวมการตรวจเชลฟ์ที่พนักงานส่งมาแต่ยังไม่ตรวจ (ทุกเชลฟ์/ทุกสาขา)
+  //   เดิมต้องเปิดทีละเชลฟ์แล้วเลื่อนหา → ตรวจยากมากบนมือถือ
+  async function hrShelfPending(p) {
+    p = p || {};
+    const me = await _termActor(p);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    const days = Number(p.days) || 14;
+    const today = bkkToday();
+    const since = new Date(new Date(today + 'T00:00:00').getTime() - days * 86400000).toISOString().slice(0, 10);
+
+    let q = sb().from('shelf_checks').select('*').eq('status', 'submitted').gte('check_date', since).order('check_date', { ascending: false });
+    const branch = me.role === 'mgr' ? me.branch_id : (p.branch || '');
+    if (branch) q = q.eq('branch_id', branch);
+
+    const [{ data: cks }, { data: emps }, { data: shs }, { data: brs }] = await Promise.all([
+      q,
+      sb().from('employees').select('emp_id,name,nickname,photo_url'),
+      sb().from('shelves').select('id,shelf_code,name,branch_id'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    const em = {}; (emps || []).forEach(e => { em[e.emp_id] = e; });
+    const sh = {}; (shs || []).forEach(s => { sh[s.id] = s; });
+    const bn = {}; (brs || []).forEach(b => { bn[b.branch_id] = b.name; });
+
+    const rows = (cks || []).map(c => {
+      const s = sh[c.shelf_id] || {};
+      const e = em[c.emp_id] || {};
+      const items = Array.isArray(c.items) ? c.items : [];
+      return {
+        id: c.id, check_date: c.check_date, shelf_id: c.shelf_id,
+        shelf_name: s.name || ('เชลฟ์ #' + c.shelf_id), shelf_code: s.shelf_code || '',
+        branch_id: c.branch_id, branch_name: bn[c.branch_id] || c.branch_id || '',
+        emp_id: c.emp_id, emp_name: e.nickname || e.name || c.emp_id, photo_url: e.photo_url || '',
+        items, done: items.filter(i => i.done).length, total: items.length,
+        note: c.note || '', photos: Array.isArray(c.photos) ? c.photos : [],
+        sent_back_count: c.sent_back_count || 0,
+        late: c.check_date < today,          // ค้างข้ามวัน
+      };
+    });
+    return { ok: true, role: me.role, count: rows.length, rows, today };
   }
 
   // ตรวจการดูแลเชลฟ์รายวัน: ผ่าน / ตีกลับ (แบบเดียวกับงานในกะ)

@@ -940,8 +940,20 @@
 
 <!-- เชลฟ์ประจำเดือน (Shelf Care) -->
 <div id="view_shelf" class="container" style="display:none">
+  <!-- ★ กล่องรอตรวจ (บนสุด — ตรวจจบได้ในหน้าเดียว ไม่ต้องเลื่อนหา) -->
+  <div class="toolbar">
+    <h3 style="flex:1;font-size:15px;font-weight:600">📥 การตรวจเชลฟ์ที่รอตรวจ <span id="shp_count" class="pill bad" style="display:none">0</span></h3>
+    <select id="shp_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <button class="btn btn-sec btn-sm" id="shp_refresh">รีเฟรช</button>
+  </div>
+  <div id="shp_body"><div class="empty">กำลังโหลด…</div></div>
+
+  <details id="shp_admin" style="margin-top:22px">
+    <summary style="cursor:pointer;font-size:15px;font-weight:700;padding:10px 12px;background:#f8fafc;border:1.5px solid var(--line2);border-radius:12px;list-style:none">
+      ⚙️ ตั้งค่าเชลฟ์ &amp; มอบหมาย (กดเพื่อเปิด)
+    </summary>
   <!-- A: ทะเบียนเชลฟ์ -->
-  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">🗄️ ทะเบียนเชลฟ์</h3></div>
+  <div class="toolbar" style="margin-top:14px"><h3 style="flex:1; font-size:15px; font-weight:600">🗄️ ทะเบียนเชลฟ์</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">รหัสเชลฟ์ *</label>
@@ -997,6 +1009,7 @@
     <select id="sh_view_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-sec btn-sm" id="sh_view_refresh">แสดง</button></div>
   <div id="sh_asg_list"><div class="empty">เลือกเดือนแล้วกด "แสดง"</div></div>
+  </details>
 </div>
 
 <!-- Leaves -->
@@ -6716,9 +6729,86 @@ function loadShelfTab(){
   }
   if(!$('sh_asg_month').value) $('sh_asg_month').value=shCurMonth();
   if(!$('sh_view_month').value) $('sh_view_month').value=shCurMonth();
+  // ★ กล่องรอตรวจ (บนสุด)
+  if($('shp_branch') && !$('shp_branch').dataset.wired){
+    fillSelect($('shp_branch'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+    $('shp_branch').onchange=loadShelfPending;
+    $('shp_refresh').onclick=loadShelfPending;
+    $('shp_branch').dataset.wired='1';
+  }
+  if(MGR_MODE && $('shp_branch')) $('shp_branch').style.display='none';   // ผจก. เห็นเฉพาะสาขาตัวเองอยู่แล้ว
+  loadShelfPending();
   renderShEmpList();
   loadShelves();
   loadShAssignments();
+}
+
+// ============================================================
+// ★ กล่อง "รอตรวจ" การดูแลเชลฟ์ — ตรวจจบในหน้าเดียว (ออกแบบให้ใช้ง่ายบนมือถือ)
+//    เดิม: ต้องเลื่อนลงไปหาเชลฟ์ → กดเปิดโมดัล → หาแถววันที่ → ถึงจะตรวจได้
+// ============================================================
+let SHP_ROWS=[];
+async function loadShelfPending(){
+  const box=$('shp_body'); if(!box) return;
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_shelf_pending', ...authBody(), branch: (MGR_MODE?'':($('shp_branch')?$('shp_branch').value:'')) });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  SHP_ROWS=r.rows||[];
+  const cnt=$('shp_count');
+  if(cnt){ if(SHP_ROWS.length){ cnt.style.display=''; cnt.textContent=SHP_ROWS.length+' รายการ'; } else cnt.style.display='none'; }
+  if(!SHP_ROWS.length){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">✅ ตรวจครบแล้ว ไม่มีรายการค้าง</div></div></div>'; return; }
+
+  box.innerHTML = SHP_ROWS.map(c=>{
+    const items=(c.items||[]);
+    const miss=items.filter(i=>!i.done);
+    return `<div class="card" style="margin-bottom:10px;border-left:5px solid ${c.late?'#dc2626':'#f59e0b'}">
+      <div class="card-b">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="name-cell" style="flex:1;min-width:180px">
+            ${c.photo_url?`<div class="thumb"><img src="${esc(c.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(c.emp_name))}</div>`}
+            <div class="ntext"><span class="nm">🗄️ ${esc(c.shelf_name)}${c.shelf_code?(' ['+esc(c.shelf_code)+']'):''}</span>
+              <span class="nick">${esc(c.emp_name)} · ${esc(c.branch_name)} · ${beDate(c.check_date)}${c.late?' <b style="color:#dc2626">(ค้างข้ามวัน)</b>':''}</span></div>
+          </div>
+          <span class="pill ${miss.length?'bad':'ok'}">เช็กลิสต์ ${c.done}/${c.total}</span>
+        </div>
+        ${miss.length?`<div style="font-size:12.5px;color:#b91c1c;margin-top:6px">ยังไม่ติ๊ก: ${miss.map(i=>esc(i.label)).join(' · ')}</div>`:''}
+        ${c.note?`<div style="font-size:12.5px;color:var(--muted);margin-top:4px">📝 ${esc(c.note)}</div>`:''}
+        ${(c.photos&&c.photos.length)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${c.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:84px;height:84px;object-fit:cover;border-radius:9px;cursor:zoom-in">').join('')}</div>`:'<div style="font-size:12px;color:#b91c1c;margin-top:6px">⚠️ ไม่มีรูปแนบ</div>'}
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-pri" data-shpok="${c.id}" style="flex:1;padding:11px">✅ ผ่าน</button>
+          <button class="btn btn-warn" data-shpno="${c.id}" style="flex:1;padding:11px">⤴ ตีกลับ</button>
+        </div>
+      </div></div>`;
+  }).join('')
+  + '<div style="font-size:12px;color:var(--muted);padding:4px 6px">* ตรวจผ่าน = งานหายจากกล่องนี้ทันที · ตีกลับ = พนักงานเห็นในหน้างานของฉันพร้อมจุดที่ต้องแก้</div>';
+
+  box.querySelectorAll('[data-shpok]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    const r=await post({ action:'hr_shelf_check_review', ...authBody(), id:Number(b.dataset.shpok), status:'approved' });
+    if(r.ok){ toast('ok','ผ่านแล้ว'); loadShelfPending(); } else { toast('err', r.error||'ไม่สำเร็จ'); b.disabled=false; b.textContent='✅ ผ่าน'; }
+  });
+  box.querySelectorAll('[data-shpno]').forEach(b=>b.onclick=()=>{
+    const c=SHP_ROWS.find(x=>String(x.id)===String(b.dataset.shpno)); if(!c) return;
+    shpSendBack(c);
+  });
+}
+// ตีกลับ: มีรูป → เปิดเครื่องมือวาดชี้จุด · ไม่มีรูป → ถามเหตุผลอย่างเดียว
+function shpSendBack(c){
+  const done=async(note,markup)=>{
+    const r=await post({ action:'hr_shelf_check_review', ...authBody(), id:Number(c.id), status:'sent_back', note, markup });
+    if(r.ok){ toast('ok','ตีกลับแล้ว'); loadShelfPending(); } else toast('err', r.error||'ไม่สำเร็จ');
+  };
+  if(!(c.photos&&c.photos.length)){
+    const note=prompt('เหตุผลที่ตีกลับ (พนักงานจะเห็น):','');
+    if(note===null) return;
+    if(!note.trim()){ toast('err','ต้องระบุเหตุผล'); return; }
+    done(note, null); return;
+  }
+  ensureMarkupUI();
+  MK={ task:{id:c.id}, tool:'circle', cur:0, imgs:c.photos.map(u=>({src:u, el:null, shapes:[]})), reviewFn:(note,out)=>done(note,out) };
+  document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
+  document.getElementById('mkNote').value=''; document.getElementById('mkOverlay').style.display='flex';
+  mkLoadCur();
 }
 // --- ทะเบียนเชลฟ์ ---
 async function shSave(){

@@ -531,9 +531,10 @@ async function openM2(){
   show('step_m2'); $('my_nm').textContent=EMP.nickname||EMP.name;
   $('my_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
   // งานพิเศษ (อิสระจากกะ) โหลดแยก เพื่อให้เห็นแม้วันนี้ไม่มีกะ
-  let sp={rows:[]}; try{ sp=await window.HR.getSpecialTasks(EMP.emp_id); }catch(e){}
+  let sp={rows:[],done_today:[]}; try{ sp=await window.HR.getSpecialTasks(EMP.emp_id); }catch(e){}
   let mt={rows:[]}; try{ mt=await window.HR.getMyMgrTasks(EMP.emp_id); }catch(e){}
   let fx={rows:[]}; try{ fx=await window.HR.getMyFixTasks(EMP.emp_id); }catch(e){}
+  let shv={rows:[]}; try{ shv=await window.HR.getMyShelves(EMP.emp_id); }catch(e){}   // ★ เชลฟ์ที่รับผิดชอบเดือนนี้
   let r=null, shiftErr='';
   try{ r=await window.HR.getMyAssignments(EMP.emp_id); }catch(e){ shiftErr=e.message||''; }
   // กันงานซ้ำ: ถ้างานที่ต้องแก้เป็นงานของกะ/วันนี้ของเราอยู่แล้ว (โผล่ใน "งานของฉัน") ไม่ต้องโชว์ซ้ำในกล่องงานแก้
@@ -549,6 +550,15 @@ async function openM2(){
   html += renderMgrTasksHTML(mt.rows||[]);
   // ===== งานพิเศษจากผู้จัดการ =====
   html += renderSpecialHTML(sp.rows||[]);
+  // ★ งานพิเศษที่เพิ่งตรวจผ่านวันนี้ (แสดงเป็นบรรทัดสั้น ๆ แล้วหายไปเอง — ไม่ค้างเป็นการ์ดใหญ่)
+  if((sp.done_today||[]).length){
+    html += '<div class="card" style="border-left:3px solid #16a34a;background:#f0fdf4;padding:9px 11px">'
+      + '<div style="font-size:13px;color:#166534;font-weight:700">✅ งานพิเศษที่ตรวจผ่านแล้ววันนี้ ('+sp.done_today.length+')</div>'
+      + sp.done_today.map(a=>'<div style="font-size:12.5px;color:#166534;margin-top:2px">• '+esc(a.title)+'</div>').join('')
+      + '</div>';
+  }
+  // ===== เชลฟ์ที่รับผิดชอบเดือนนี้ =====
+  html += renderMyShelvesHTML(shv);
   // ===== งานตามกะ =====
   if(r){
   html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3>';
@@ -598,6 +608,8 @@ async function openM2(){
   // ===== wire งานพิเศษ + badge =====
   wireSpecial(sp.rows||[]);
   updateSpBadge(sp.rows||[]);
+  // ===== wire เชลฟ์ที่รับผิดชอบ =====
+  wireMyShelves();
   // ===== wire งานตามกะ =====
   if(r){
     r.mine.forEach(a=>{ if(a.status==='todo'||a.status==='sent_back'||a.status==='submitted'){
@@ -691,6 +703,84 @@ function updateSpBadge(rows){
   if(n>0){ b.textContent=n>99?'99+':n; b.style.display=''; } else b.style.display='none';
 }
 async function refreshSpBadge(){ try{ const sp=await window.HR.getSpecialTasks(EMP.emp_id); updateSpBadge(sp.rows||[]); }catch(e){} }
+
+// ============================================================
+// 🗄️ เชลฟ์ที่รับผิดชอบเดือนนี้ — แสดงในหน้า "งานของฉัน" (เดิมต้องเข้าอีกหน้าแยก)
+//    ตรวจ + ถ่ายรูป + ส่งได้จากหน้านี้เลย
+// ============================================================
+let SHV_DATA=null;
+function shvPill(c){
+  if(!c) return '<span class="pill muted2">ยังไม่ตรวจวันนี้</span>';
+  if(c.status==='approved')  return '<span class="pill ok">ผ่านแล้ว</span>';
+  if(c.status==='sent_back') return '<span class="pill bad">ตีกลับ — ต้องแก้</span>';
+  return '<span class="pill warn">รอตรวจ</span>';
+}
+function renderMyShelvesHTML(shv){
+  SHV_DATA=shv;
+  const rows=(shv&&shv.rows)||[];
+  if(!rows.length) return '';
+  const todo = rows.filter(r=>!r.today_check || r.today_check.status==='sent_back').length;
+  let h='<h3 class="sec">🗄️ เชลฟ์ที่ฉันดูแล (เดือนนี้)'+(todo?(' <span class="pill bad">ยังไม่ตรวจ '+todo+'</span>'):' <span class="pill ok">ตรวจครบแล้ววันนี้</span>')+'</h3>';
+  h+=rows.map(r=>{
+    const c=r.today_check;
+    const canDo = !c || c.status==='sent_back';
+    let s='<div class="card" style="border-left:3px solid #7c3aed">'
+      +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
+        +'<div style="font-weight:700;flex:1">'+esc(r.name)+(r.shelf_code?(' <span class="muted" style="font-weight:400">['+esc(r.shelf_code)+']</span>'):'')+'</div>'
+        +shvPill(c)
+      +'</div>';
+    if(r.detail) s+='<div class="muted" style="font-size:12.5px;margin-bottom:4px">'+esc(r.detail)+'</div>';
+    if(c && c.status==='sent_back' && c.review_note) s+='<div style="color:#b91c1c;font-size:13px;margin:6px 0">⚠️ ตีกลับ: '+esc(c.review_note)+(c.reviewer?(' (โดย '+esc(c.reviewer)+')'):'')+'</div>';
+    if(c && c.status==='sent_back' && Array.isArray(c.review_markup) && c.review_markup.length) s+=thumbsHtml(c.review_markup);
+    if(!canDo){
+      if(c && c.photos && c.photos.length) s+='<div class="muted" style="font-size:12px;margin-top:6px">รูปที่คุณส่ง</div>'+thumbsHtml(c.photos);
+      if(c && c.status==='submitted') s+='<div class="muted" style="margin-top:4px">⏳ รอผู้จัดการ/HR ตรวจ</div>';
+    } else {
+      s+='<div style="border-top:1px dashed var(--line);margin-top:8px;padding-top:8px">'
+        +(r.checklist||[]).map((it,i)=>'<label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px;font-size:13.5px">'
+          +'<input type="checkbox" class="shvck_'+r.shelf_id+'" data-label="'+esc(it)+'" style="margin-top:3px">'+esc(it)+'</label>').join('')
+        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:6px;display:inline-block">📷 ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" multiple id="shvfc_'+r.shelf_id+'" style="display:none"></label>'
+        +'<div class="thumbs" id="shvt_'+r.shelf_id+'" style="margin:6px 0 4px"></div>'
+        +'<input type="text" id="shvn_'+r.shelf_id+'" placeholder="หมายเหตุ (ถ้ามี)" style="margin-bottom:8px">'
+        +'<button class="btn btn-pri" data-shvsub="'+r.shelf_id+'">ส่งการตรวจเชลฟ์</button>'
+        +'</div>';
+    }
+    return s+'</div>';
+  }).join('');
+  return h;
+}
+function renderShvThumbs(id){
+  const arr=TASK_PHOTOS['shv_'+id]||[]; const t=$('shvt_'+id);
+  if(t) t.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmShvPhoto('+id+','+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
+}
+function rmShvPhoto(id,i){ if(TASK_PHOTOS['shv_'+id]){ TASK_PHOTOS['shv_'+id].splice(i,1); renderShvThumbs(id); } }
+function wireMyShelves(){
+  const rows=(SHV_DATA&&SHV_DATA.rows)||[];
+  rows.forEach(r=>{
+    const c=r.today_check;
+    if(c && c.status!=='sent_back') return;
+    TASK_PHOTOS['shv_'+r.shelf_id]=[];
+    const inp=$('shvfc_'+r.shelf_id);
+    if(inp) inp.addEventListener('change', async()=>{
+      if(!inp.files||!inp.files.length) return;
+      const picked=inp.files.length;
+      const a=await filesToData(inp.files);
+      TASK_PHOTOS['shv_'+r.shelf_id]=(TASK_PHOTOS['shv_'+r.shelf_id]||[]).concat(a);
+      inp.value=''; renderShvThumbs(r.shelf_id);
+      if(a.length) toast('ok','แนบรูปแล้ว '+a.length+'/'+picked+' รูป');
+    });
+  });
+  document.querySelectorAll('[data-shvsub]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.shvsub);
+    const photos=TASK_PHOTOS['shv_'+id]||[];
+    if(!photos.length){ toast('err','ต้องแนบรูปอย่างน้อย 1 รูป'); return; }
+    const items=[...document.querySelectorAll('.shvck_'+id)].map(el=>({ label:el.dataset.label, done:el.checked }));
+    const note=($('shvn_'+id)||{}).value||'';
+    b.innerHTML='<span class="spin"></span>';
+    try{ await window.HR.submitShelfCheck({ empId:EMP.emp_id, shelf_id:id, items, note, photos }); toast('ok','ส่งการตรวจเชลฟ์แล้ว'); openM2(); }
+    catch(e){ toast('err', e.message||'ไม่สำเร็จ'); b.textContent='ส่งการตรวจเชลฟ์'; }
+  });
+}
 
 // ============ ลำดับขั้นการตรวจงานในกะ (กันพนักงานเข้าใจผิดว่าไม่ต้องตรวจผลัดก่อนหน้า) ============
 // ส่งงาน → หัวหน้าผลัดถัดไปตรวจ → (ถ้าเป็นงานที่ ผจก.ต้องตรวจ) ผู้จัดการตรวจซ้ำ

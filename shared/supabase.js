@@ -1552,16 +1552,23 @@
     const ids=[...new Set(asg.map(a=>a.task_id))];
     const { data: tasks } = await sb.from('special_tasks').select('*').in('id', ids);
     const tById={}; (tasks||[]).forEach(t=>{ tById[t.id]=t; });
-    const rows = asg.filter(a=>{ const t=tById[a.task_id]; return t && t.active!==false; }).map(a=>{
+    const all = asg.filter(a=>{ const t=tById[a.task_id]; return t && t.active!==false; }).map(a=>{
       const t=tById[a.task_id];
       return {
         id:a.id, task_id:a.task_id, title:t.title, detail:t.detail, deadline:t.deadline,
         hr_photos:t.hr_photos||[], hr_note:t.hr_note,
         status:a.status, photos:a.photos||[], emp_note:a.emp_note,
-        review_note:a.review_note, review_markup:a.review_markup||null, reviewer:a.reviewer, submitted_at:a.submitted_at,
+        review_note:a.review_note, review_markup:a.review_markup||null, reviewer:a.reviewer,
+        submitted_at:a.submitted_at, reviewed_at:a.reviewed_at||null,
       };
     });
-    return { emp, rows };
+    // ★ งานที่ "ตรวจผ่านแล้ว" ต้องหายจากหน้างานของพนักงาน (เดิมค้างอยู่ตลอด)
+    //   เหลือไว้เฉพาะที่เพิ่งผ่านภายในวันนี้ ในรายการแยก (แสดงเป็นบรรทัดสั้น ๆ ให้รู้ว่าผ่านแล้ว)
+    const today = bangkokDate();
+    const isToday = ts => !!ts && String(ts).slice(0,10) === today;
+    const rows = all.filter(a => a.status !== 'approved');
+    const done_today = all.filter(a => a.status === 'approved' && isToday(a.reviewed_at));
+    return { emp, rows, done_today, done_count: all.filter(a=>a.status==='approved').length };
   }
   async function submitSpecialTask({ assignee_id, empId, photos, note }){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
