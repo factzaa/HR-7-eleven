@@ -763,10 +763,8 @@
   /* ★ พิมพ์เอกสารในหน้าต่างพรีวิว (ใบเตือน / บันทึกเสนอพิจารณา) — ใส่ class print-doc ที่ body
      เดิมพิมพ์ออกมาเป็นกระดาษเปล่า เพราะ .overlay เป็น position:fixed + .modal-b มี max-height/overflow
      เบราว์เซอร์จึงตัดเนื้อหาทิ้งตอนพิมพ์ */
-  /* ★ วิธีที่ชัวร์ที่สุด: ตอนกดพิมพ์ JS จะ "ย้ายสำเนาเอกสาร" มาไว้ใน #printArea (ลูกตรงของ body)
-     แล้วซ่อนทุกอย่างที่เหลือด้วย display:none (visibility:hidden ยังกินพื้นที่ → เกิดหน้าเปล่าเป็นพรืด) */
-  body.print-doc > *{display:none!important}
-  body.print-doc > #printArea{display:block!important; margin:0!important; padding:0!important; width:100%!important}
+  /* หมายเหตุ: เอกสารทางการ (ใบเตือน / บันทึกเสนอพิจารณา) พิมพ์ผ่าน iframe แยก (ดู printDocOverlay)
+     จึงไม่ต้องมีกฎซ่อนหน้าเว็บสำหรับ print-doc อีกต่อไป */
   .es-controls, .no-print{display:none!important}
 
   /* ★ ตอนพิมพ์: ห้ามมีแถบเลื่อน (scrollbar) ติดไปในกระดาษ
@@ -787,7 +785,7 @@
 
   /* ★ เอกสารกินเต็มหน้า A4 · ระยะขอบคุมด้วย padding ของตัวเอกสารเอง (12/12/14 มม.)
      ทำแบบนี้เพื่อให้ผลลัพธ์เหมือนกันไม่ว่าผู้ใช้จะตั้ง "ขอบกระดาษ" ในหน้าต่างพิมพ์เป็นค่าใด */
-  #printArea .es-doc, .es-doc{
+  .es-doc{
     display:block!important; color:#000;
     width:100%!important; max-width:none!important;
     margin:0!important; padding:12mm 12mm 14mm!important;
@@ -3428,24 +3426,72 @@ $('wvChat') && ($('wvChat').onclick=()=>sendWarningToChat(WV_CUR));
 
 // ★ พิมพ์เอกสารในหน้าต่างพรีวิว — ต้องใส่ class print-doc ก่อน ไม่งั้นได้กระดาษเปล่า
 //   (overlay เป็น position:fixed + modal-b มี max-height/overflow → เบราว์เซอร์ตัดเนื้อหาทิ้งตอนพิมพ์)
+// ★ พิมพ์เอกสารผ่าน iframe แยก (มี CSS ของตัวเอง ไม่ยุ่งกับ CSS ของหน้า)
+//   เหตุผล: วิธีซ่อน/ย้าย DOM ในหน้าเดิมเจอปัญหาไม่จบ (กระดาษเปล่า · หน้าเปล่าพรืด · แถบเลื่อนติดมา)
+//   iframe คุมได้ 100% ว่ากระดาษมีอะไรบ้าง
+const DOC_PRINT_CSS = `
+  @page{ size:A4 portrait; margin:0; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#fff; color:#000;
+             font-family:"Anuphan","Sarabun","Noto Sans Thai",system-ui,sans-serif; }
+  .es-doc{ width:210mm; min-height:297mm; padding:12mm 12mm 14mm; margin:0 auto;
+           font-size:11px; line-height:1.45;
+           -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .es-doc img{ max-width:100%; height:auto; }
+  .es-doc-head{ position:relative; text-align:center; border-bottom:2.5px solid #000; padding-bottom:6px; margin-bottom:8px; }
+  .es-doc-org{ font-size:13px; font-weight:700; letter-spacing:.5px; }
+  .es-doc-title{ font-size:16px; font-weight:700; margin-top:4px; }
+  .es-doc-sub{ font-size:11px; margin-top:2px; }
+  .es-doc-meta{ display:flex; justify-content:space-between; font-size:10.5px; margin-top:4px; }
+  table{ width:100%; table-layout:fixed; border-collapse:collapse; word-wrap:break-word; }
+  .es-dt{ font-size:10.8px; margin-bottom:7px; }
+  .es-dt th,.es-dt td{ border:1px solid #000; padding:3px 5px; vertical-align:top; }
+  .es-dt th{ background:#e9edf0; font-weight:700; text-align:center; }
+  .es-dt td.k{ background:#f5f6f7; font-weight:600; width:34%; }
+  .es-dt td.n{ text-align:center; white-space:nowrap; }
+  .es-dsec{ font-size:12px; font-weight:700; margin:9px 0 4px; padding:2px 6px; background:#e9edf0; border-left:4px solid #000; }
+  .es-note{ font-size:10.2px; margin:3px 0 6px; line-height:1.45; }
+  .es-sign{ margin-top:16px; display:flex; gap:14px; justify-content:space-between; font-size:10.5px; text-align:center; }
+  .es-sign > div{ flex:1; }
+  .es-sign .ln{ border-bottom:1px dotted #000; height:26px; margin-bottom:5px; }
+  .es-doc-foot{ margin-top:10px; border-top:1px solid #000; padding-top:4px; font-size:9.5px; display:flex; justify-content:space-between; }
+  .es-dt tr{ page-break-inside:avoid; break-inside:avoid; }
+  .es-dsec{ page-break-after:avoid; break-after:avoid; }
+  .es-sign{ page-break-inside:avoid; break-inside:avoid; }
+`;
 function printDocOverlay(){
   const src=document.querySelector('#w_doc .es-doc');
   if(!src){ toast('err','ยังไม่ได้เปิดเอกสาร'); return; }
-  cleanPrintArea();
-  // ★ ย้ายสำเนาเอกสารออกมาไว้เป็นลูกโดยตรงของ body → คุมหน้ากระดาษได้แน่นอน ไม่มีหน้าเปล่า
-  const area=document.createElement('div');
-  area.id='printArea';
-  area.appendChild(src.cloneNode(true));
-  document.body.appendChild(area);
-  document.body.classList.add('print-doc');
-  window.print();
-  setTimeout(cleanPrintArea, 1000);
+  const old=document.getElementById('docPrintFrame'); if(old) old.remove();
+
+  const fr=document.createElement('iframe');
+  fr.id='docPrintFrame';
+  fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(fr);
+
+  const d=fr.contentWindow.document;
+  d.open();
+  d.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
+    +'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap">'
+    +'<style>'+DOC_PRINT_CSS+'</style></head><body>'
+    + '<div class="es-doc" style="display:block">' + src.innerHTML + '</div>'
+    +'</body></html>');
+  d.close();
+
+  const go=()=>{
+    try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast('err','พิมพ์ไม่สำเร็จ'); }
+    setTimeout(()=>{ const f=document.getElementById('docPrintFrame'); if(f) f.remove(); }, 60000);
+  };
+  // รอให้รูป (รูปพนักงาน/โลโก้) โหลดเสร็จก่อน ไม่งั้นพิมพ์ออกมารูปหาย
+  const imgs=[...d.images];
+  if(!imgs.length) setTimeout(go, 350);
+  else {
+    let left=imgs.length, done=false;
+    const fire=()=>{ if(!done && --left<=0){ done=true; setTimeout(go, 250); } };
+    imgs.forEach(im=>{ if(im.complete) fire(); else { im.onload=fire; im.onerror=fire; } });
+    setTimeout(()=>{ if(!done){ done=true; go(); } }, 3000);   // กันรูปค้าง
+  }
 }
-function cleanPrintArea(){
-  document.body.classList.remove('print-doc');
-  const a=document.getElementById('printArea'); if(a) a.remove();
-}
-window.addEventListener('afterprint', cleanPrintArea);
 $('wvPrint').onclick = printDocOverlay;
 
 /* ============================================================
