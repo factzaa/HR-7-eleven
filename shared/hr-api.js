@@ -4724,7 +4724,9 @@
     const today = bkkToday();
     const since = new Date(new Date(today + 'T00:00:00').getTime() - days * 86400000).toISOString().slice(0, 10);
 
-    let q = sb().from('shelf_checks').select('*').eq('status', 'submitted').gte('check_date', since).order('check_date', { ascending: false });
+    // ★ ดึงทุกสถานะในช่วงนี้ (รอตรวจ / ผ่านแล้ว / ตีกลับ) เพื่อให้เห็นงานที่ตรวจไปแล้วด้วย
+    let q = sb().from('shelf_checks').select('*').gte('check_date', since)
+      .order('check_date', { ascending: false }).order('reviewed_at', { ascending: false });
     const branch = me.role === 'mgr' ? me.branch_id : (p.branch || '');
     if (branch) q = q.eq('branch_id', branch);
 
@@ -4738,22 +4740,30 @@
     const sh = {}; (shs || []).forEach(s => { sh[s.id] = s; });
     const bn = {}; (brs || []).forEach(b => { bn[b.branch_id] = b.name; });
 
-    const rows = (cks || []).map(c => {
+    const all = (cks || []).map(c => {
       const s = sh[c.shelf_id] || {};
       const e = em[c.emp_id] || {};
       const items = Array.isArray(c.items) ? c.items : [];
       return {
-        id: c.id, check_date: c.check_date, shelf_id: c.shelf_id,
+        id: c.id, check_date: c.check_date, shelf_id: c.shelf_id, status: c.status || 'submitted',
         shelf_name: s.name || ('เชลฟ์ #' + c.shelf_id), shelf_code: s.shelf_code || '',
         branch_id: c.branch_id, branch_name: bn[c.branch_id] || c.branch_id || '',
         emp_id: c.emp_id, emp_name: e.nickname || e.name || c.emp_id, photo_url: e.photo_url || '',
         items, done: items.filter(i => i.done).length, total: items.length,
         note: c.note || '', photos: Array.isArray(c.photos) ? c.photos : [],
         sent_back_count: c.sent_back_count || 0,
-        late: c.check_date < today,          // ค้างข้ามวัน
+        reviewer: c.reviewer || '', reviewed_at: c.reviewed_at || null, review_note: c.review_note || '',
+        late: c.status === 'submitted' && c.check_date < today,          // ค้างข้ามวัน
       };
     });
-    return { ok: true, role: me.role, count: rows.length, rows, today };
+    const rows = all.filter(c => c.status === 'submitted');              // รอตรวจ
+    const approved = all.filter(c => c.status === 'approved');           // ★ ตรวจผ่านแล้ว
+    const sent_back = all.filter(c => c.status === 'sent_back');         // ตีกลับ รอพนักงานแก้
+    return {
+      ok: true, role: me.role, today, days,
+      count: rows.length, rows, approved, sent_back,
+      approved_today: approved.filter(c => c.check_date === today).length,
+    };
   }
 
   // ตรวจการดูแลเชลฟ์รายวัน: ผ่าน / ตีกลับ (แบบเดียวกับงานในกะ)

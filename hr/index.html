@@ -6747,16 +6747,49 @@ function loadShelfTab(){
 // ★ กล่อง "รอตรวจ" การดูแลเชลฟ์ — ตรวจจบในหน้าเดียว (ออกแบบให้ใช้ง่ายบนมือถือ)
 //    เดิม: ต้องเลื่อนลงไปหาเชลฟ์ → กดเปิดโมดัล → หาแถววันที่ → ถึงจะตรวจได้
 // ============================================================
-let SHP_ROWS=[];
+let SHP_ROWS=[], SHP_ALL=null;
+// แถวสรุปแบบกะทัดรัด (ใช้กับ "ตรวจผ่านแล้ว" / "ตีกลับ รอแก้")
+function shpDoneRow(c, kind){
+  const col = kind==='ok' ? '#16a34a' : '#dc2626';
+  const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
+  return '<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px dashed var(--line)">'
+    +(c.photos&&c.photos.length ? '<img src="'+esc(c.photos[0])+'" onclick="lightbox(this)" style="width:46px;height:46px;object-fit:cover;border-radius:8px;cursor:zoom-in;flex:none">' : '<div style="width:46px;height:46px;border-radius:8px;background:#f1f5f9;flex:none"></div>')
+    +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:13.5px;font-weight:600">🗄️ '+esc(c.shelf_name)+(c.shelf_code?(' ['+esc(c.shelf_code)+']'):'')+'</div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">'+esc(c.emp_name)+' · '+esc(c.branch_name)+' · '+beDate(c.check_date)
+        +(c.reviewed_at?(' · ตรวจเมื่อ '+fmt(c.reviewed_at)):'')+'</div>'
+      +(kind==='no'&&c.review_note?('<div style="font-size:12px;color:#b91c1c">⤴ '+esc(c.review_note)+'</div>'):'')
+    +'</div>'
+    +'<span class="pill" style="background:'+(kind==='ok'?'#dcfce7':'#fee2e2')+';color:'+col+';font-weight:700;flex:none">'+(kind==='ok'?'✅ ผ่าน':'⤴ ตีกลับ')+'</span>'
+    +'<span class="mono" style="font-size:12px;color:var(--muted);flex:none">'+c.done+'/'+c.total+'</span>'
+    +'</div>';
+}
+// กล่องพับได้ (ประวัติที่ตรวจแล้ว)
+function shpFoldBox(title, color, rows, kind){
+  if(!rows || !rows.length) return '';
+  return '<details style="margin-top:12px">'
+    +'<summary style="cursor:pointer;font-weight:700;font-size:14px;padding:10px 12px;background:#f8fafc;border:1.5px solid var(--line2);border-left:5px solid '+color+';border-radius:12px;list-style:none">'
+      +title+' <span class="pill" style="background:#e2e8f0;color:#475569">'+rows.length+'</span></summary>'
+    +'<div class="card" style="margin-top:8px"><div class="card-b">'+rows.map(c=>shpDoneRow(c,kind)).join('')+'</div></div>'
+    +'</details>';
+}
 async function loadShelfPending(){
   const box=$('shp_body'); if(!box) return;
   box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_shelf_pending', ...authBody(), branch: (MGR_MODE?'':($('shp_branch')?$('shp_branch').value:'')) });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
-  SHP_ROWS=r.rows||[];
+  SHP_ALL=r; SHP_ROWS=r.rows||[];
+  const approved=r.approved||[], sentBack=r.sent_back||[];
+  const history = shpFoldBox('✅ ตรวจผ่านแล้ว (14 วันล่าสุด)', '#16a34a', approved, 'ok')
+                + shpFoldBox('⤴ ตีกลับ — รอพนักงานแก้', '#dc2626', sentBack, 'no');
+
   const cnt=$('shp_count');
   if(cnt){ if(SHP_ROWS.length){ cnt.style.display=''; cnt.textContent=SHP_ROWS.length+' รายการ'; } else cnt.style.display='none'; }
-  if(!SHP_ROWS.length){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">✅ ตรวจครบแล้ว ไม่มีรายการค้าง</div></div></div>'; return; }
+  if(!SHP_ROWS.length){
+    box.innerHTML='<div class="card"><div class="card-b"><div class="empty">✅ ตรวจครบแล้ว ไม่มีรายการค้าง'
+      +(approved.length?(' · ผ่านแล้ววันนี้ '+(r.approved_today||0)+' รายการ'):'')+'</div></div></div>' + history;
+    return;
+  }
 
   box.innerHTML = SHP_ROWS.map(c=>{
     const items=(c.items||[]);
@@ -6780,7 +6813,8 @@ async function loadShelfPending(){
         </div>
       </div></div>`;
   }).join('')
-  + '<div style="font-size:12px;color:var(--muted);padding:4px 6px">* ตรวจผ่าน = งานหายจากกล่องนี้ทันที · ตีกลับ = พนักงานเห็นในหน้างานของฉันพร้อมจุดที่ต้องแก้</div>';
+  + '<div style="font-size:12px;color:var(--muted);padding:4px 6px">* ตรวจผ่าน = งานหายจากกล่องรอตรวจ (ดูย้อนหลังได้ที่ปุ่ม "ตรวจผ่านแล้ว" ด้านล่าง) · ตีกลับ = พนักงานเห็นในหน้างานของฉันพร้อมจุดที่ต้องแก้</div>'
+  + history;
 
   box.querySelectorAll('[data-shpok]').forEach(b=>b.onclick=async()=>{
     b.disabled=true; b.innerHTML='<span class="spin"></span>';
