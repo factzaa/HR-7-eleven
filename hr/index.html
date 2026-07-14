@@ -2189,6 +2189,31 @@ function dashList(key){
 }
 ['dlClose','dlCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('dashListOverlay').classList.remove('show'); });
 $('dashListOverlay') && $('dashListOverlay').addEventListener('click', e=>{ if(e.target.id==='dashListOverlay') $('dashListOverlay').classList.remove('show'); });
+// ★ ไทม์ไลน์ย่อ "รอบนี้โดนอะไรมาแล้วบ้าง" — ให้ HR ตัดสินใจได้ว่าขั้นต่อไปควรทำอะไร
+const DISC_ICON = { verbal:'🗣️', written:'📝', warning:'📄', coaching:'💬', note:'🗒️' };
+function discMiniTimeline(e){
+  const tl = e.timeline || [];
+  const dOnly = s => { try{ return new Date(s).toLocaleDateString('th-TH',{day:'numeric',month:'short'}); }catch(_){ return ''; } };
+  const steps = tl.map((t,i)=>{
+    const acked = !t.need_ack || !!t.ack_at;
+    const bg = acked ? '#dcfce7' : '#fef3c7', fg = acked ? '#166534' : '#a16207';
+    return `<span class="pill" style="background:${bg};color:${fg};font-weight:600;white-space:nowrap"
+              title="${esc(t.reason||'')}${t.warning_id?(' · '+esc(t.warning_id)):''}${t.by?(' · โดย '+esc(t.by)):''}">
+              ${DISC_ICON[t.type]||'•'} ${esc(t.label)} ${dOnly(t.at)} ${acked?'✓':'⏳'}</span>`;
+  });
+  // ขั้นต่อไปที่เกณฑ์คะแนนบอกว่าควรทำ (ถ้ายังไม่ได้ทำ)
+  let next = '';
+  if(!e.term_case && e.action_status==='pending' && e.action_needed_label)
+    next = `<span class="pill" style="background:#fee2e2;color:#b91c1c;font-weight:700;white-space:nowrap">➡️ ขั้นต่อไป: ${esc(e.action_needed_label)}</span>`;
+  if(!steps.length && !next)
+    return '<div style="font-size:11.5px;color:var(--muted)">ยังไม่มีการดำเนินการในรอบนี้</div>';
+  return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11.5px;padding-left:2px">
+      <span style="color:var(--muted)">รอบนี้:</span>
+      ${steps.join('<span style="color:#cbd5e1">→</span>')}
+      ${next}
+    </div>`;
+}
+
 // ★ ป้ายบอก "สถานะการดำเนินการ" ในกลุ่มเสี่ยงวินัย
 //   เดิมเห็นแต่ระดับตามคะแนน (เช่น "ใบเตือนระดับ 2") แยกไม่ออกว่าออกใบไปแล้วหรือยัง / พนักงานรับทราบหรือยัง
 function discActionPill(e){
@@ -2284,20 +2309,23 @@ async function loadDashboard(){
     </div>`;
 
   const risk = demps.filter(e=>e.level>=1).slice(0,6);
-  // (ป้ายสถานะการดำเนินการอยู่ที่ discActionPill ด้านล่าง)
   const watch = !dr.ok ? '<div class="empty" style="padding:24px">โหลดข้อมูลวินัยไม่ได้</div>'
     : (risk.length ? risk.map(e=>`
-      <div class="shift-row">
-        <div class="name-cell" style="flex:1">
-          ${e.photo_url ? `<div class="thumb"><img src="${esc(e.photo_url)}"></div>` : `<div class="thumb">${esc(pickInitial(e.emp_name))}</div>`}
-          <div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div>
+      <div class="shift-row" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="name-cell" style="flex:1;min-width:150px">
+            ${e.photo_url ? `<div class="thumb"><img src="${esc(e.photo_url)}"></div>` : `<div class="thumb">${esc(pickInitial(e.emp_name))}</div>`}
+            <div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)} · คะแนน ${e.score!=null?e.score:'—'}</span></div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+            <span class="pill" style="background:${esc(e.level_color||'#999')}1f;color:${esc(e.level_color||'#666')};font-weight:600" title="ระดับตามคะแนนวินัย">${esc(e.level_name||('ระดับ '+e.level))}</span>
+            ${discActionPill(e)}
+            ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}">⚖️ ${e.term_case.status==='closed'?'มีมติแล้ว':'พิจารณาอยู่'}</span>` : ''}
+            <span class="stats">สาย ${e.late_count} · ขาด ${e.absent}</span>
+            <button class="btn btn-sec btn-sm" onclick="openDiscTimeline('${esc(e.emp_id)}')" title="ดูไทม์ไลน์วินัยทั้งหมด">🧾</button>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          <span class="pill" style="background:${esc(e.level_color||'#999')}1f;color:${esc(e.level_color||'#666')};font-weight:600" title="ระดับตามคะแนนวินัย">${esc(e.level_name||('ระดับ '+e.level))}</span>
-          ${discActionPill(e)}
-          ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}">⚖️ ${e.term_case.status==='closed'?'มีมติแล้ว':'พิจารณาอยู่'}</span>` : ''}
-          <span class="stats">สาย ${e.late_count} · ขาด ${e.absent}</span>
-        </div>
+        ${discMiniTimeline(e)}
       </div>`).join('') : '<div class="empty" style="padding:24px">ยังไม่มีใครเข้าเกณฑ์ใบเตือนในรอบนี้ 🎉</div>');
 
   // ---- การลาที่จะถึง (14 วัน) ----

@@ -962,6 +962,17 @@
         last_action: lastAct ? { type: lastAct.action_type, label: ACT_LABEL[lastAct.action_type] || lastAct.action_type, at: lastAct.performed_at, by: lastAct.performed_by, ack_at: lastAct.ack_at } : null,
         actions_count: mine.length,
         pending_ack: pendingAck,
+        // ★ ไทม์ไลน์การดำเนินการ "ในรอบนี้" (เรียงเก่า→ใหม่) — ใช้ดูว่าคนนี้โดนอะไรมาแล้วบ้าง ควรทำอะไรต่อ
+        timeline: mine.slice().reverse().map(a => ({
+          type: a.action_type,
+          label: ACT_LABEL[a.action_type] || a.action_type,
+          at: a.performed_at,
+          by: a.performed_by,
+          reason: a.reason || '',
+          warning_id: a.warning_id || null,
+          need_ack: !!a.need_ack,
+          ack_at: a.ack_at || null,
+        })),
       };
     }).sort((a, b) => (a.score == null ? 999 : a.score) - (b.score == null ? 999 : b.score));
 
