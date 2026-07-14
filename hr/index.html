@@ -2189,6 +2189,22 @@ function dashList(key){
 }
 ['dlClose','dlCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('dashListOverlay').classList.remove('show'); });
 $('dashListOverlay') && $('dashListOverlay').addEventListener('click', e=>{ if(e.target.id==='dashListOverlay') $('dashListOverlay').classList.remove('show'); });
+// ★ ป้ายบอก "สถานะการดำเนินการ" ในกลุ่มเสี่ยงวินัย
+//   เดิมเห็นแต่ระดับตามคะแนน (เช่น "ใบเตือนระดับ 2") แยกไม่ออกว่าออกใบไปแล้วหรือยัง / พนักงานรับทราบหรือยัง
+function discActionPill(e){
+  const pill=(txt,bg,fg,title)=>`<span class="pill" style="background:${bg};color:${fg};font-weight:700" title="${esc(title||'')}">${txt}</span>`;
+  if(e.term_case) return '';                                   // มีเคสพิจารณาแล้ว → ป้ายเคสจะบอกเอง
+  if(e.action_status==='pending')
+    return pill('🔴 ยังไม่ได้ '+esc(e.action_needed_label||'ดำเนินการ'), '#fee2e2', '#b91c1c', 'ยังไม่ได้ออกใบเตือน/ตักเตือน');
+  if(e.action_status==='done'){
+    if(e.pending_ack>0)
+      return pill('🟡 ออกแล้ว · รอพนักงานรับทราบ', '#fef3c7', '#a16207', 'ระบบจะบังคับให้กดรับทราบในหน้ารับส่งผลัด');
+    return pill('🟢 ' + esc(e.action_needed_label||'ดำเนินการ') + 'แล้ว · รับทราบแล้ว', '#dcfce7', '#166534',
+                (e.last_action&&e.last_action.at) ? ('รับทราบเมื่อ ' + (e.last_action.ack_at||'-')) : '');
+  }
+  if(e.pending_ack>0) return pill('🟡 รอพนักงานรับทราบ', '#fef3c7', '#a16207', '');
+  return '';
+}
 async function loadDashboard(){
   if($('dash_branch') && !$('dash_branch').dataset.filled){
     $('dash_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
@@ -2268,6 +2284,7 @@ async function loadDashboard(){
     </div>`;
 
   const risk = demps.filter(e=>e.level>=1).slice(0,6);
+  // (ป้ายสถานะการดำเนินการอยู่ที่ discActionPill ด้านล่าง)
   const watch = !dr.ok ? '<div class="empty" style="padding:24px">โหลดข้อมูลวินัยไม่ได้</div>'
     : (risk.length ? risk.map(e=>`
       <div class="shift-row">
@@ -2276,7 +2293,8 @@ async function loadDashboard(){
           <div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          <span class="pill" style="background:${esc(e.level_color||'#999')}1f;color:${esc(e.level_color||'#666')};font-weight:600">${esc(e.level_name||('ระดับ '+e.level))}</span>
+          <span class="pill" style="background:${esc(e.level_color||'#999')}1f;color:${esc(e.level_color||'#666')};font-weight:600" title="ระดับตามคะแนนวินัย">${esc(e.level_name||('ระดับ '+e.level))}</span>
+          ${discActionPill(e)}
           ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}">⚖️ ${e.term_case.status==='closed'?'มีมติแล้ว':'พิจารณาอยู่'}</span>` : ''}
           <span class="stats">สาย ${e.late_count} · ขาด ${e.absent}</span>
         </div>
