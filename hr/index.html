@@ -768,6 +768,20 @@
   body.print-doc .modal-h, body.print-doc .modal-f{display:none!important}
   body.print-doc #w_doc{position:absolute; left:0; top:0; width:100%}
   .es-controls, .no-print{display:none!important}
+
+  /* ★ ตอนพิมพ์: ห้ามมีแถบเลื่อน (scrollbar) ติดไปในกระดาษ
+     ต้นเหตุ: .modal-b / .tablewrap / overlay มี overflow:auto → เบราว์เซอร์วาดแถบเลื่อนลงในหน้าพิมพ์ */
+  html, body{overflow:visible!important; height:auto!important}
+  body.print-doc *, body.print-es *{
+    overflow:visible!important;
+    scrollbar-width:none!important;          /* Firefox */
+    -ms-overflow-style:none!important;       /* IE/Edge เก่า */
+  }
+  body.print-doc *::-webkit-scrollbar, body.print-es *::-webkit-scrollbar{
+    display:none!important; width:0!important; height:0!important;   /* Chrome/Safari */
+  }
+  body.print-doc .tablewrap, body.print-es .tablewrap{overflow:visible!important}
+
   /* พิมพ์ = เอกสารทางการ · ซ่อนการ์ดบนจอ */
   body.print-es .es-report{display:none!important}
 
