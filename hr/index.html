@@ -1658,6 +1658,7 @@
     <div class="modal-b" id="w_doc"></div>
     <div class="modal-f">
       <button class="btn btn-sec" id="wvCloseBtn">ปิด</button>
+      <button class="btn btn-sec" id="wvChat">💬 ส่งเข้าแชท ผจก.</button>
       <button class="btn btn-pri" id="wvPrint">🖨 พิมพ์</button>
     </div>
   </div>
@@ -3184,9 +3185,17 @@ async function loadWarningsTable(){
         <td>${voided
               ? `<span class="pill" style="background:#e2e8f0;color:#475569;font-weight:700" title="${esc(w.cancel_reason||'')}">🚫 ยกเลิกแล้ว</span>`
               : (w.acknowledged_at ? '<span class="pill ok">รับทราบแล้ว</span>' : '<span class="pill warn">รอรับทราบ</span>')}</td>
-        <td class="rowact" style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-wview="${esc(w.warning_id)}">พรีวิว</button> <button class="btn btn-sec btn-sm" data-wedit="${esc(w.warning_id)}">แก้ไข</button> ${voided?'':`<button class="btn btn-sec btn-sm" data-wvoid="${esc(w.warning_id)}">🚫 ยกเลิก</button>`} <button class="btn btn-danger btn-sm" data-wdel="${esc(w.warning_id)}" data-wemp="${esc(w.emp_id)}">ลบถาวร</button></td>
+        <td class="rowact" style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-wview="${esc(w.warning_id)}">พรีวิว</button> ${voided?'':`<button class="btn btn-sec btn-sm" data-wchat="${esc(w.warning_id)}" title="ส่งเอกสารเข้าห้องแชทของ ผจก. สาขานั้น">💬 ส่งแชท ผจก.</button>`} <button class="btn btn-sec btn-sm" data-wedit="${esc(w.warning_id)}">แก้ไข</button> ${voided?'':`<button class="btn btn-sec btn-sm" data-wvoid="${esc(w.warning_id)}">🚫 ยกเลิก</button>`} <button class="btn btn-danger btn-sm" data-wdel="${esc(w.warning_id)}" data-wemp="${esc(w.emp_id)}">ลบถาวร</button></td>
       </tr>`;}).join('')}</tbody></table></div>
     <div style="font-size:12px;color:var(--muted);padding:8px 12px">* แนะนำให้ใช้ <b>ยกเลิก</b> แทนการลบถาวร — ใบยังอยู่ในระบบเป็นหลักฐานว่าเคยออกและถูกยกเลิกเพราะอะไร · ใบที่ยกเลิกจะไม่ถูกนับเป็นใบเตือนที่มีผลอีกต่อไป</div></div>`;
+  // ★ ส่งใบเตือนเข้าแชท ผจก. จากตารางได้เลย (เปิดพรีวิวให้อัตโนมัติ แล้วแปลงเป็นรูปส่ง)
+  document.querySelectorAll('[data-wchat]').forEach(b=>b.onclick=async()=>{
+    const wid=b.dataset.wchat;
+    b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    await openWarningView(wid);                 // เรนเดอร์เอกสารก่อน (จำเป็นต่อการแปลงเป็นรูป)
+    await sendWarningToChat(WV_CUR);
+    b.disabled=false; b.textContent='💬 ส่งแชท ผจก.';
+  });
   document.querySelectorAll('[data-wvoid]').forEach(b=>b.onclick=async()=>{
     const wid=b.dataset.wvoid;
     const reason=prompt('ยกเลิกใบเตือน '+wid+'\nระบุเหตุผล (บังคับ · จะแจ้งให้พนักงานทราบด้วย):','');
@@ -3255,6 +3264,7 @@ async function openWarningView(wid){
   const r = await post({ action:'hr_warning_get', password:pwd, warning_id:wid });
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
   const w = r.warning;
+  WV_CUR = w;                                   // ★ จำใบที่กำลังพรีวิว (ใช้ตอนส่งเข้าแชท ผจก.)
   // ประวัติการดำเนินการก่อนหน้า = หลักฐานว่าบริษัททำตามขั้นตอนแล้ว (มีน้ำหนักทางกฎหมาย)
   let prior='';
   try{
@@ -3337,6 +3347,38 @@ async function openWarningView(wid){
 }
 $('wvClose').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
 $('wvCloseBtn').onclick = ()=>$('viewWarningOverlay').classList.remove('show');
+// ============================================================
+// 💬 ส่งใบเตือนเข้าห้องแชทของ ผจก. สาขานั้น
+//    แปลงเอกสารเป็นรูป (html2canvas) แล้วส่งเป็นรูปในแชท → ผจก. เปิดดู/ปริ้นต์/ส่งต่อได้ทันที
+// ============================================================
+let WV_CUR=null;                        // ใบเตือนที่กำลังพรีวิวอยู่
+async function sendWarningToChat(w){
+  if(!w){ toast('err','ไม่พบใบเตือน'); return; }
+  const branch = w.branch_id || '';
+  if(!branch){ toast('err','ไม่ทราบสาขาของพนักงานคนนี้'); return; }
+  const btn=$('wvChat'); const old=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
+  try{
+    const el=document.querySelector('#w_doc .es-doc');
+    if(!el) throw new Error('ยังไม่ได้เปิดเอกสาร');
+    const h2c=await poLoadH2C();
+    const canvas=await h2c(el, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false });
+    const img=canvas.toDataURL('image/jpeg', 0.92);
+    const txt='📄 ใบเตือน '+(w.warning_id||'')+' — '+(w.emp_name||'')+' ('+(w.emp_id||'')+')\n'
+      +'ระดับ: '+(w.level_name||'')+' · ออกวันที่ '+beDate(w.issue_date)+'\n'
+      +'เหตุ: '+String(w.reason||'').slice(0,200)+'\n\n'
+      +'⚠️ ให้ผู้จัดการพิมพ์เอกสารนี้ ให้พนักงานอ่านและลงลายมือชื่อรับทราบ '
+      +'(พนักงานต้องกดรับทราบในระบบด้วย — จะเด้งบังคับที่หน้ารับส่งผลัด)';
+    const r=await post({ action:'hr_chat_send', password:pwd, data:{ branch_id:branch, text:txt, photos:[img], role:'hr', emp_id:w.emp_id } });
+    if(r&&r.ok){
+      try{ if(typeof chatFirePush==='function') chatFirePush(); }catch(_e){}
+      toast('ok','ส่งใบเตือนเข้าแชท ผจก. '+branchName(branch)+' แล้ว');
+    } else toast('err',(r&&r.error)||'ส่งไม่สำเร็จ');
+  }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); }
+  if(btn){ btn.disabled=false; btn.textContent=old||'💬 ส่งเข้าแชท ผจก.'; }
+}
+$('wvChat') && ($('wvChat').onclick=()=>sendWarningToChat(WV_CUR));
+
 // ★ พิมพ์เอกสารในหน้าต่างพรีวิว — ต้องใส่ class print-doc ก่อน ไม่งั้นได้กระดาษเปล่า
 //   (overlay เป็น position:fixed + modal-b มี max-height/overflow → เบราว์เซอร์ตัดเนื้อหาทิ้งตอนพิมพ์)
 function printDocOverlay(){
