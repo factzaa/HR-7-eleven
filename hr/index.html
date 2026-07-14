@@ -770,12 +770,39 @@
   .es-controls, .no-print{display:none!important}
   /* พิมพ์ = เอกสารทางการ · ซ่อนการ์ดบนจอ */
   body.print-es .es-report{display:none!important}
-  .es-doc{display:block!important;color:#000;font-size:11.8px}
-  .es-doc-head{position:relative}
+
+  /* ★ จัดเอกสารให้พอดีหน้า A4 (พื้นที่พิมพ์จริง 186 × 271 มม. หลังหักขอบ 12/12/14) */
+  .es-doc{
+    display:block!important; color:#000;
+    width:186mm!important; max-width:186mm!important;
+    margin:0 auto!important; padding:0!important;
+    box-sizing:border-box;
+    font-size:11px; line-height:1.45;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;   /* คงพื้นหลังหัวตาราง/แถบหัวข้อ */
+  }
+  .es-doc *{box-sizing:border-box; max-width:100%}
+  .es-doc img{max-width:100%; height:auto}
+  .es-doc-head{position:relative; padding-bottom:6px; margin-bottom:8px}
+  .es-doc-title{font-size:16px}
+  .es-doc-sub{font-size:11px}
+  .es-doc-meta{font-size:10.5px; margin-top:4px}
+
+  /* ตาราง: บีบให้อยู่ในความกว้างกระดาษเสมอ ไม่ล้นออกนอกหน้า */
+  .es-doc table{width:100%!important; table-layout:fixed; border-collapse:collapse; word-wrap:break-word}
+  .es-dt{font-size:10.8px; margin-bottom:7px}
+  .es-dt th,.es-dt td{padding:3px 5px}
+  .es-dsec{font-size:12px; margin:9px 0 4px; padding:2px 6px}
+  .es-note{font-size:10.2px; margin:3px 0 6px; line-height:1.45}
+  .es-sign{margin-top:16px; gap:14px; font-size:10.5px}
+  .es-sign .ln{height:26px}
+  .es-doc-foot{margin-top:10px; font-size:9.5px; padding-top:4px}
+
+  /* คุมการขึ้นหน้าใหม่ — อย่าให้ตาราง/ช่องเซ็นชื่อถูกตัดครึ่ง */
   .es-dt{page-break-inside:auto}
-  .es-dt tr{page-break-inside:avoid}
-  .es-dsec{page-break-after:avoid}
-  .es-sign{page-break-inside:avoid}
+  .es-dt tr{page-break-inside:avoid; break-inside:avoid}
+  .es-dsec{page-break-after:avoid; break-after:avoid}
+  .es-sign{page-break-inside:avoid; break-inside:avoid}
+  .es-doc-head{page-break-after:avoid; break-after:avoid}
 }
 .es-doc-head{position:relative}
 </style>
@@ -3362,7 +3389,12 @@ async function sendWarningToChat(w){
     const el=document.querySelector('#w_doc .es-doc');
     if(!el) throw new Error('ยังไม่ได้เปิดเอกสาร');
     const h2c=await poLoadH2C();
-    const canvas=await h2c(el, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false });
+    // ★ บังคับความกว้างเท่ากระดาษ A4 (794px @96dpi) ตอนแปลงเป็นรูป → สัดส่วนเหมือนที่พิมพ์ออกมาจริง
+    const prevW=el.style.width, prevP=el.style.padding, prevBg=el.style.background;
+    el.style.width='794px'; el.style.padding='38px 34px'; el.style.background='#fff';
+    let canvas;
+    try{ canvas=await h2c(el, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false, windowWidth:900 }); }
+    finally{ el.style.width=prevW; el.style.padding=prevP; el.style.background=prevBg; }
     const img=canvas.toDataURL('image/jpeg', 0.92);
     const txt='📄 ใบเตือน '+(w.warning_id||'')+' — '+(w.emp_name||'')+' ('+(w.emp_id||'')+')\n'
       +'ระดับ: '+(w.level_name||'')+' · ออกวันที่ '+beDate(w.issue_date)+'\n'
