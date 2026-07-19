@@ -3897,7 +3897,7 @@ async function termAskNida(){
   try{
     const res=await fetch(base+'/functions/v1/hr-assistant',{ method:'POST',
       headers:{ 'Content-Type':'application/json', apikey:key, Authorization:'Bearer '+key },
-      body: JSON.stringify({ message:prompt, history:[] }) });
+      body: JSON.stringify({ password:pwd, messages:[{ role:'user', text:prompt }] }) });
     j=await res.json();
   }catch(e){ if(box) box.innerHTML='<div class="empty">เชื่อมต่อนิดาไม่สำเร็จ</div>'; return; }
   let txt=(j&&(j.reply||j.text||j.message))||'';
