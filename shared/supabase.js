@@ -1239,12 +1239,16 @@
     return { ok: true, emp, shift, branch_id: emp.branch_id || '' };
   }
   // เพิ่มคนเข้ากะวันนี้เฉพาะกิจ (กรณียังไม่จัดตารางเวร) = สร้างแถวตารางเวรของวันนี้
-  async function addShiftMember({ branchId, shiftId, empId, workDate }) {
+  // by* = คนที่กดเพิ่ม (หัวหน้าผลัด) เพื่อบันทึกลง log ให้ตามรอยได้ว่ากะนี้ใครเพิ่ม
+  async function addShiftMember({ branchId, shiftId, empId, workDate, byEmpId, byName }) {
     const e = await lookupEmployee(empId);
     if (!e) throw new Error('ไม่พบรหัสพนักงานที่จะเพิ่ม');
     const today = workDate || bangkokDate();   // อิงวันทำงานของกะ (รองรับกะข้ามคืน)
-    const { error } = await sb.from('schedules').upsert({ emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: branchId || e.branch_id || null, is_cover: false, note: 'เพิ่มเข้ากะเฉพาะกิจ' }, { onConflict: 'emp_id,work_date,shift_id' });
+    const br = branchId || e.branch_id || null;
+    const { error } = await sb.from('schedules').upsert({ emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br, is_cover: false, note: 'เพิ่มเข้ากะเฉพาะกิจ' }, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
+    // บันทึก log — ให้รู้ว่ากะที่ "โผล่เพิ่มเอง" จริง ๆ มาจากหัวหน้าผลัดกดเพิ่มคนเข้ากะ
+    try { await sb.from('activity_log').insert({ action: 'เพิ่มคนเข้ากะ (เฉพาะกิจ)', emp_id: e.emp_id, detail: 'เพิ่ม ' + (e.nickname || e.name) + ' เข้ากะ ' + (shiftId || '-') + ' วันที่ ' + today + ' สาขา ' + (br || '-'), actor: byName || (byEmpId ? ('รหัส ' + byEmpId) : 'หัวหน้าผลัด/แอปพนักงาน') }); } catch (_) {}
     return { ok: true, name: e.nickname || e.name };
   }
   // หางาน assignment เดิมของ (สาขา+วัน+กะ+งาน)

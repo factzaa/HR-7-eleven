@@ -1311,6 +1311,8 @@
     };
     const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
+    // log ทุกการบันทึกกะ เพื่อให้ตามรอยได้ว่าใคร/เมื่อไร เพิ่ม-เปลี่ยนกะ (กันเคส "กะเพิ่มเอง")
+    await logAct('บันทึกกะ', d.emp_id, d.work_date + ' · ' + (d.shift_id || 'หยุด') + (is_cover ? (' · ไปแทนสาขา ' + branch_id) : '') + (d.note ? (' · ' + d.note) : ''), d.actor || 'HR');
     // ---- ซิงค์กะให้ "แถวลงเวลา" ตามตารางเวรที่เพิ่งจัด ----
     // แก้ปัญหา: HR เปลี่ยนกะหลังพนักงานเช็กอินแล้ว → attendance.shift_id ยังค้างกะเดิม
     // ทำให้รายงาน(กรองกะ)/แจ้งเตือน "เลยเวลาเลิกกะ" เพี้ยน
@@ -1347,9 +1349,12 @@
     for (let i = 0; i < 7; i++) rows.push({ emp_id: d.emp_id, work_date: addDays(d.start, i), shift_id: d.shift_id, branch_id: home, is_cover: false, note: null });
     const { error } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
+    await logAct('จัดกะทั้งสัปดาห์', d.emp_id, 'สัปดาห์ ' + d.start + ' · กะ ' + d.shift_id, d.actor || 'HR');
     return { ok: true, count: rows.length };
   }
   // คัดลอกตารางทั้งสัปดาห์ (7 วันจาก from_start) ไปยังสัปดาห์ใหม่ (to_start)
+  // "วางทับ" จริง: ล้างกะของสัปดาห์ปลายทางก่อน แล้วค่อยคัดลอกมาใส่
+  // (เดิม upsert เฉยๆ ไม่ล้างก่อน → ถ้าปลายทางมีกะคนละกะอยู่แล้ว จะกลายเป็น "ควบกะ" ซ้อนโดยไม่ตั้งใจ)
   async function hrSchedCopy(fromStart, toStart) {
     const fromEnd = addDays(fromStart, 6);
     const { data, error } = await sb().from('schedules').select('*').gte('work_date', fromStart).lte('work_date', fromEnd);
@@ -1359,10 +1364,20 @@
       emp_id: s.emp_id, work_date: addDays(s.work_date, offset),
       shift_id: s.shift_id, branch_id: s.branch_id, is_cover: s.is_cover, note: s.note,
     }));
-    if (!rows.length) return { ok: true, copied: 0 };
+    // ★ ล้างสัปดาห์ปลายทางก่อน (ตามความหมาย "วางทับ") — ตัดสาเหตุกะซ้อนเพิ่มเอง
+    const toEnd = addDays(toStart, 6);
+    const { data: cleared, error: eDel } = await sb().from('schedules')
+      .delete().gte('work_date', toStart).lte('work_date', toEnd).select('emp_id');
+    if (eDel) throw eDel;
+    const clearedCount = (cleared || []).length;
+    if (!rows.length) {
+      await logAct('คัดลอกตารางเวร (วางทับ)', null, 'สัปดาห์ ' + toStart + ' · ล้างเดิม ' + clearedCount + ' เวร · ต้นทางว่าง คัดลอก 0');
+      return { ok: true, copied: 0, cleared: clearedCount };
+    }
     const { error: e2 } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date,shift_id' });
     if (e2) throw e2;
-    return { ok: true, copied: rows.length };
+    await logAct('คัดลอกตารางเวร (วางทับ)', null, 'จาก ' + fromStart + ' → ' + toStart + ' · ล้างเดิม ' + clearedCount + ' เวร · คัดลอก ' + rows.length + ' เวร');
+    return { ok: true, copied: rows.length, cleared: clearedCount };
   }
 
   // ---------- COVERAGE (รายงานการไปทำแทนสาขา) ----------
