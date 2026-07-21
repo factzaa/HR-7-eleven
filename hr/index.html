@@ -676,6 +676,9 @@
       <option value="rejected">ไม่อนุมัติ</option>
       <option value="cancelled">ยกเลิก</option>
     </select>
+    <select id="adv_branch" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <option value="">ทุกสาขา</option>
+    </select>
     <button class="btn btn-sec btn-sm" id="adv_emgbtn">🚨 เปิดสิทธิ์เบิกฉุกเฉิน</button>
     <button class="btn btn-sec btn-sm" id="adv_payrollbtn">📊 สรุปหักเงินเดือน</button>
     <button class="btn btn-sec btn-sm" id="adv_cfgbtn">⚙️ ตั้งค่า</button>
@@ -4027,7 +4030,7 @@ $('tm_rules') && ($('tm_rules').onclick=async()=>{
    HR: อนุมัติ · ปรับยอด · ปฏิเสธ · บันทึกการโอน · สรุปหักเงินเดือน · ตั้งค่า
    ผจก.: ดูของสาขาตัวเอง (อ่านอย่างเดียว) + เปิดสิทธิ์เบิกฉุกเฉิน
    ============================================================ */
-let ADV=null, ADV_CAN={ review:true, pay:true, config:true, open_window:true };
+let ADV=null, ADV_CAN={ review:true, pay:true, config:true, open_window:true }, advBranch='';
 const advB = n => Number(n||0).toLocaleString('th-TH');
 const ADV_ST = { submitted:['รออนุมัติ','#fef3c7','#a16207'], approved:['อนุมัติแล้ว — รอโอน','#dbeafe','#1d4ed8'],
                  paid:['โอนแล้ว','#dcfce7','#166534'], rejected:['ไม่อนุมัติ','#fee2e2','#b91c1c'], cancelled:['ยกเลิก','#f1f5f9','#64748b'] };
@@ -4053,18 +4056,40 @@ async function loadAdvance(){
   }
   ['adv_payrollbtn','adv_cfgbtn'].forEach(id=>{ const b=$(id); if(b) b.style.display = ADV_CAN.config ? '' : 'none'; });
 
-  const s=r.summary;
-  $('adv_kpi').innerHTML =
-     `<div class="kpi ${s.submitted?'warn':''}"><div class="lbl">รออนุมัติ</div><div class="val">${s.submitted}<span class="sm"> คำขอ</span></div><div class="delta">${advB(s.submitted_amount)} บาท</div></div>
-      <div class="kpi ${s.approved?'bad':''}"><div class="lbl">รอโอนเงิน</div><div class="val">${s.approved}<span class="sm"> คำขอ</span></div><div class="delta">${advB(s.approved_amount)} บาท</div></div>
-      <div class="kpi ok"><div class="lbl">โอนแล้ว</div><div class="val">${s.paid}<span class="sm"> คำขอ</span></div><div class="delta">${advB(s.paid_amount)} บาท</div></div>
-      <div class="kpi"><div class="lbl">เบิกฉุกเฉิน</div><div class="val">${s.emergency}<span class="sm"> คำขอ</span></div></div>`;
-
+  advFillBranchFilter();
   renderAdvRows(); renderAdvWindows((w&&w.ok)?w.rows:[]);
 }
+// เติมตัวเลือกสาขาในตัวกรอง (จากคำขอที่มีจริงในรอบนี้ + จำนวนต่อสาขา) · คงค่าที่เลือกไว้
+function advFillBranchFilter(){
+  const sel=$('adv_branch'); if(!sel) return;
+  const all=ADV.rows||[]; const seen={}, opts=[];
+  all.forEach(r=>{ const id=r.branch_id||''; if(id && !seen[id]){ seen[id]=1; opts.push([id, r.branch_name||branchName(id)]); } });
+  opts.sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'th'));
+  sel.innerHTML='<option value="">ทุกสาขา ('+all.length+')</option>'
+    + opts.map(o=>{ const n=all.filter(r=>String(r.branch_id)===String(o[0])).length; return '<option value="'+esc(o[0])+'">'+esc(o[1])+' ('+n+')</option>'; }).join('');
+  sel.value=advBranch;
+  if(sel.value!==advBranch){ advBranch=''; sel.value=''; }   // สาขาที่เคยเลือกไม่มีคำขอในรอบนี้แล้ว → กลับเป็นทุกสาขา
+}
+// KPI คำนวณจากรายการที่กรองสาขาแล้ว (ตัวเลขตรงกับที่เห็นในตาราง)
+function renderAdvKpi(rows){
+  const amt=r=>Number(r.approved_amount!=null?r.approved_amount:r.amount)||0;
+  const by=st=>rows.filter(r=>r.status===st);
+  const sub=by('submitted'), app=by('approved'), pd=by('paid');
+  const S={ submitted:sub.length, submitted_amount:sub.reduce((a,r)=>a+amt(r),0),
+    approved:app.length, approved_amount:app.reduce((a,r)=>a+amt(r),0),
+    paid:pd.length, paid_amount:pd.reduce((a,r)=>a+amt(r),0),
+    emergency:rows.filter(r=>r.kind==='emergency').length };
+  if($('adv_kpi')) $('adv_kpi').innerHTML =
+     `<div class="kpi ${S.submitted?'warn':''}"><div class="lbl">รออนุมัติ</div><div class="val">${S.submitted}<span class="sm"> คำขอ</span></div><div class="delta">${advB(S.submitted_amount)} บาท</div></div>
+      <div class="kpi ${S.approved?'bad':''}"><div class="lbl">รอโอนเงิน</div><div class="val">${S.approved}<span class="sm"> คำขอ</span></div><div class="delta">${advB(S.approved_amount)} บาท</div></div>
+      <div class="kpi ok"><div class="lbl">โอนแล้ว</div><div class="val">${S.paid}<span class="sm"> คำขอ</span></div><div class="delta">${advB(S.paid_amount)} บาท</div></div>
+      <div class="kpi"><div class="lbl">เบิกฉุกเฉิน</div><div class="val">${S.emergency}<span class="sm"> คำขอ</span></div></div>`;
+}
 function renderAdvRows(){
-  const rows=ADV.rows||[];
-  if(!rows.length){ $('adv_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีคำขอเบิกในรอบนี้</div></div></div>'; return; }
+  const all=ADV.rows||[];
+  const rows = advBranch ? all.filter(r=>String(r.branch_id)===String(advBranch)) : all;
+  renderAdvKpi(rows);
+  if(!rows.length){ $('adv_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">'+(advBranch?'ไม่มีคำขอเบิกของสาขานี้ในรอบนี้':'ยังไม่มีคำขอเบิกในรอบนี้')+'</div></div></div>'; return; }
   const pend = rows.filter(r=>r.status==='submitted');
   const bulk = (ADV_CAN.review && pend.length)
     ? `<div style="display:flex;gap:8px;align-items:center;margin:0 4px 10px;flex-wrap:wrap">
@@ -4090,6 +4115,7 @@ function renderAdvRows(){
         <td style="white-space:nowrap">
           ${(ADV_CAN.review && r.status==='submitted')?`<button class="btn btn-pri btn-sm" data-advok="${r.id}">อนุมัติ</button> <button class="btn btn-sec btn-sm" data-advno="${r.id}">ไม่อนุมัติ</button>`:''}
           ${(ADV_CAN.pay && r.status==='approved')?`<button class="btn btn-pri btn-sm" data-advpay="${r.id}">💸 บันทึกโอน</button>`:''}
+          ${ADV_CAN.pay?`<button class="btn btn-sec btn-sm" data-advbank="${r.id}">🏦 บัญชี</button>`:''}
           <button class="btn btn-sec btn-sm" data-advtl="${r.id}">ไทม์ไลน์</button>
         </td></tr>`;
     }).join('')}</tbody></table></div>
@@ -4099,6 +4125,7 @@ function renderAdvRows(){
   document.querySelectorAll('[data-advno]').forEach(b=>b.onclick=()=>advReject(b.dataset.advno));
   document.querySelectorAll('[data-advpay]').forEach(b=>b.onclick=()=>advPay(b.dataset.advpay));
   document.querySelectorAll('[data-advtl]').forEach(b=>b.onclick=()=>advTimeline(b.dataset.advtl));
+  document.querySelectorAll('[data-advbank]').forEach(b=>b.onclick=()=>advBank(b.dataset.advbank));
   $('adv_approveall') && ($('adv_approveall').onclick=async()=>{
     if(!confirm('อนุมัติคำขอที่รออยู่ทั้งหมด '+pend.length+' รายการ (เต็มยอดที่ขอ)?')) return;
     const r=await post({ action:'hr_advance_review', ...authBody(), data:{ ids:pend.map(x=>x.id), action:'approve', by:'สำนักงาน (HR)' } });
@@ -4106,6 +4133,24 @@ function renderAdvRows(){
   });
 }
 function advFind(id){ return (ADV.rows||[]).find(x=>String(x.id)===String(id)); }
+// ดูเลขบัญชีรับโอนของพนักงาน (สแนปช็อตตอนคีย์คำขอ) — สำหรับ HR ใช้ตอนโอนเงิน
+function advBank(id){
+  const r=advFind(id); if(!r) return;
+  const acc=String(r.bank_account||'').trim();
+  const body = acc
+    ? '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;line-height:1.8">'
+        +'<div style="font-size:12.5px;color:var(--muted)">ชื่อบัญชี</div><div style="font-weight:700;font-size:15px">'+esc(r.emp_name||'')+'</div>'
+        +'<div style="font-size:12.5px;color:var(--muted);margin-top:8px">ธนาคาร</div><div style="font-weight:700;font-size:15px">'+esc(r.bank_name||'—')+'</div>'
+        +'<div style="font-size:12.5px;color:var(--muted);margin-top:8px">เลขที่บัญชี</div>'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-top:2px;flex-wrap:wrap"><div class="mono" style="font-weight:800;font-size:22px;letter-spacing:1px">'+esc(acc)+'</div>'
+        +'<button class="btn btn-sec btn-sm" id="adv_bankcopy">📋 คัดลอกเลขบัญชี</button></div>'
+      +'</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:10px">เลขที่คำขอ '+esc(r.req_no||'')+' · สาขา '+esc(r.branch_name||branchName(r.branch_id))+' · ยอดที่อนุมัติ '+advB(r.approved_amount!=null?r.approved_amount:r.amount)+' บาท</div>'
+    : '<div class="empty">พนักงานยังไม่ได้กรอกเลขบัญชีในระบบ<br><span style="font-size:12px">ให้พนักงานกรอกที่เมนู “กรอกข้อมูล/เอกสาร” ก่อน คำขอรอบถัดไปจะมีเลขบัญชีให้อัตโนมัติ</span></div>';
+  openModal('🏦 บัญชีรับโอน — '+esc(r.emp_name||''), body);
+  const cb=$('adv_bankcopy');
+  if(cb) cb.onclick=async()=>{ try{ await navigator.clipboard.writeText(acc); toast('ok','คัดลอกเลขบัญชีแล้ว'); }catch(e){ toast('err','คัดลอกไม่สำเร็จ'); } };
+}
 
 async function advApprove(id){
   const r=advFind(id); if(!r) return;
@@ -4335,6 +4380,7 @@ $('adv_cfgbtn') && ($('adv_cfgbtn').onclick=async()=>{
 $('adv_refresh') && ($('adv_refresh').onclick=loadAdvance);
 $('adv_month')   && ($('adv_month').onchange=loadAdvance);
 $('adv_filter')  && ($('adv_filter').onchange=loadAdvance);
+$('adv_branch')  && ($('adv_branch').onchange=()=>{ advBranch=$('adv_branch').value; renderAdvRows(); });
 
 // ========== LEAVES & HOLIDAYS ==========
 let LEAVES_ROWS=[];
