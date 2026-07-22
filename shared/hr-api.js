@@ -727,6 +727,7 @@
         // ทำงานตรงกับวันหยุดบริษัท (ไว้ไฮไลต์กรอบแดงในรายงาน)
         is_holiday: !!holiName[r.work_date],
         holiday_name: holiName[r.work_date] || '',
+        unscheduled: !!r.unscheduled,           // ★ เข้างานนอกตาราง (ให้ HR ตรวจสอบ)
         early_out_min: r.early_out_min != null ? Number(r.early_out_min) : null,
         check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
         late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,

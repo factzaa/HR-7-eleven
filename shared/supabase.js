@@ -44,7 +44,7 @@
   }
 
   // ---------- เช็กอิน ----------
-  async function checkIn({ empId, shiftId, branchId, lat, lng, accuracy, photoDataUrl, faceMatch }) {
+  async function checkIn({ empId, shiftId, branchId, lat, lng, accuracy, photoDataUrl, faceMatch, unscheduledOk }) {
     const today = bangkokDate();
     // กันเช็กอินซ้ำ: ถ้าวันนี้เคยเช็กอินแล้ว ไม่ให้เขียนทับ (ต้องให้ HR แก้)
     const { data: ex } = await sb.from('attendance').select('check_in,check_out').eq('emp_id', empId).eq('work_date', today).maybeSingle();
@@ -63,7 +63,16 @@
     // กันบั๊ก: ถ้าใช้ default_shift อย่างเดียว คนที่จัดกะผ่านตารางเวร (default_shift ว่าง) จะคำนวณสายไม่ได้
     let useShift = shiftId || null;
     const sched = (await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', today).maybeSingle()).data;
-    if (sched && sched.shift_id) useShift = sched.shift_id;
+    const hasSchedule = !!(sched && sched.shift_id);
+    if (hasSchedule) useShift = sched.shift_id;
+
+    // ★ ไม่มีตารางเวรของวันนี้เลย → เป็น "เข้างานนอกตาราง"
+    //   ต้องให้พนักงานยืนยันก่อน (unscheduledOk) และบันทึกธงไว้ให้ HR ตรวจสอบ
+    //   เดิม: fallback ไปกะประจำเงียบ ๆ เหมือนถูกจัดเวร → HR ตรวจสอบไม่ได้
+    const isUnscheduled = !hasSchedule;
+    if (isUnscheduled && !unscheduledOk) {
+      const e = new Error('วันนี้คุณไม่มีตารางเวร'); e.code = 'NO_SCHEDULE'; throw e;
+    }
 
     let photo_url = null;
     if (photoDataUrl) {
@@ -79,20 +88,31 @@
       check_in: nowIso, late_min: lateMin || 0,
       photo_url, gps_lat: lat, gps_lng: lng, gps_accuracy: accuracy,
       face_match: faceMatch, status: 'OPEN',
+      unscheduled: isUnscheduled,                 // ★ ธงเข้างานนอกตาราง (ให้ HR ตรวจสอบ)
     }, { onConflict: 'emp_id,work_date' });
     if (error) throw error;
-    return { late_min: lateMin || 0, shift_id: useShift };
+    // แจ้ง HR เมื่อมีคนเข้างานนอกตาราง (ไม่ให้พังการลงเวลาถ้าตารางแจ้งเตือนไม่มี)
+    if (isUnscheduled) {
+      try {
+        await sb.from('activity_log').insert({ action: 'เข้างานนอกตาราง', emp_id: empId,
+          detail: 'กดเข้างานวันที่ไม่มีตารางเวร (' + today + ') เวลา ' + _fmtTime(nowIso) + ' · สาขา ' + (branchId || '-'), actor: empId });
+      } catch (_e) { /* ข้าม */ }
+    }
+    return { late_min: lateMin || 0, shift_id: useShift, unscheduled: isUnscheduled };
   }
 
   // ---------- คำแนะนำก่อนเช็กอิน: กันกดเข้างานผิด (นอกกะ / เพิ่งออกงาน) ----------
   async function checkInAdvisory(empId) {
-    const out = { offSchedule: false, recentCheckout: null, openRecord: null };
+    const out = { offSchedule: false, noSchedule: false, recentCheckout: null, openRecord: null };
     if (!empId) return out;
     try {
       const today = bangkokDate();
       const yday = _addDays(today, -1);
       const nowMs = Date.now();
       const st = await _loadSettings();
+      // ★ วันนี้ไม่มีตารางเวรเลยหรือไม่ (ไว้เตือน "เข้างานนอกตาราง")
+      const todaySched = (await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', today).maybeSingle()).data;
+      out.noSchedule = !(todaySched && todaySched.shift_id);
       const earlyMin = Number(st.checkin_early_min || 180);      // เข้างานก่อนกะได้ไม่เกิน N นาที
       const recentHrs = Number(st.recent_checkout_hours || 8);   // เพิ่งออกงานภายใน N ชม. → เตือน
 

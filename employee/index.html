@@ -595,10 +595,16 @@ async function submit(action){
       } else if(adv && adv.offSchedule){
         if(!confirm('⚠️ ช่วงเวลานี้คุณไม่มีกะตามตารางเวร\n\nยืนยันว่าต้องการเข้างานใช่หรือไม่?')) return;
       }
+      // ★ ไม่มีตารางเวรของวันนี้เลย → ต้องยืนยัน + ระบบบันทึกเป็น "เข้างานนอกตาราง" ให้ HR ตรวจสอบ
+      let unschedOk = false;
+      if(adv && adv.noSchedule){
+        if(!confirm('⚠️ วันนี้คุณไม่มีตารางเวร\n\nหากยืนยันเข้างาน ระบบจะบันทึกเป็น "เข้างานนอกตาราง" และแจ้งให้ HR ตรวจสอบ\n\nยืนยันเข้างานใช่หรือไม่?')) return;
+        unschedOk = true;
+      }
       const r = await HR.checkIn({
         empId:empMatch.emp_id, shiftId, branchId,
         lat:gps.lat, lng:gps.lng, accuracy:gps.accuracy,
-        photoDataUrl: capturePhoto(), faceMatch
+        photoDataUrl: capturePhoto(), faceMatch, unscheduledOk: unschedOk
       });
       await showAckPopup('checkin', { name:empMatch.name, time:timeStr,
         shift_name: shiftName(r.shift_id||shiftId), branch_name: gps.branch?gps.branch.name:'',
@@ -617,7 +623,18 @@ async function submit(action){
       else if(co && co.needReason){ showToast('err','ต้องระบุเหตุผลก่อนกดออก'); }
       else await showAckPopup('checkout', { name:empMatch.name, time:timeStr, cross:!!(co&&co.crossBranch), branch_name:gps.branch?gps.branch.name:'' });
     }
-  }catch(e){ console.error(e); showToast('err','ส่งข้อมูลไม่สำเร็จ\n'+(e.message||'ตรวจการเชื่อมต่อ')); }
+  }catch(e){
+    // ★ กันพลาด: ถ้า advisory โหลดไม่ทันแล้ว checkIn เด้ง NO_SCHEDULE → ถามยืนยันแล้วลองใหม่
+    if(e && e.code==='NO_SCHEDULE' && action==='checkin'){
+      if(confirm('⚠️ วันนี้คุณไม่มีตารางเวร\n\nหากยืนยันเข้างาน ระบบจะบันทึกเป็น "เข้างานนอกตาราง" และแจ้งให้ HR ตรวจสอบ\n\nยืนยันเข้างานใช่หรือไม่?')){
+        try{
+          const shiftId=empMatch.default_shift, branchId=gps.branch?gps.branch.branch_id:empMatch.branch_id, timeStr=new Date().toLocaleTimeString('th-TH',{hour12:false});
+          const r=await HR.checkIn({ empId:empMatch.emp_id, shiftId, branchId, lat:gps.lat, lng:gps.lng, accuracy:gps.accuracy, photoDataUrl:capturePhoto(), faceMatch, unscheduledOk:true });
+          await showAckPopup('checkin', { name:empMatch.name, time:timeStr, shift_name:shiftName(r.shift_id||shiftId), branch_name:gps.branch?gps.branch.name:'', late_min:r.late_min||0, faceMatch });
+        }catch(e2){ showToast('err','ส่งข้อมูลไม่สำเร็จ\n'+(e2.message||'')); }
+      }
+    } else { console.error(e); showToast('err','ส่งข้อมูลไม่สำเร็จ\n'+(e.message||'ตรวจการเชื่อมต่อ')); }
+  }
   finally{ busy=false; setBtnBusy(false); updateUI(); refreshCoCard(); }
 }
 function shiftName(id){ const s=(CFG.shifts||[]).find(x=>x.shift_id===id); return s?s.name:(id||'—'); }
