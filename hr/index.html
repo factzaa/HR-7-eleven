@@ -3663,8 +3663,38 @@ function openMeDetail(empId){
       +(c.note?('<tr><td>หมายเหตุ</td><td>'+esc(c.note)+'</td></tr>'):'')
       +'</tbody></table></div>';
   } else html+='<div style="font-size:12.5px;color:#94a3b8">— ยังไม่ได้คีย์ KPI ธุรกิจรอบนี้ —</div>';
+  html+='<div id="med_trend" style="margin-top:16px"></div>';
   $('med_body').innerHTML=html;
   $('meDetailOverlay').classList.add('show');
+  meLoadTrend(m.emp_id);
+}
+// กราฟแนวโน้มย้อนหลัง (จาก snapshots ที่ HR ตรึงผลไว้)
+async function meLoadTrend(empId){
+  const box=$('med_trend'); if(!box) return;
+  box.innerHTML='<div style="font-size:12px;color:var(--muted)">กำลังโหลดแนวโน้ม…</div>';
+  const r=await post({ action:'hr_mgr_eval_trend', password:pwd, emp_id:empId });
+  if(!r||!r.ok){ box.innerHTML=''; return; }
+  const rows=(r.rows||[]).filter(x=>x.score_a!=null||x.score_b!=null);
+  if(rows.length<1){ box.innerHTML='<div style="font-size:12px;color:#94a3b8;border-top:1px dashed var(--line2);padding-top:10px">📈 แนวโน้ม: ยังไม่มีผลที่ตรึงไว้ — กด "💾 ตรึงผลรอบนี้" เพื่อเริ่มเก็บประวัติเทียบรอบ</div>'; return; }
+  box.innerHTML='<div style="font-weight:700;margin-bottom:6px;border-top:1px dashed var(--line2);padding-top:12px">📈 แนวโน้มย้อนหลัง ('+rows.length+' รอบ)</div>'+meTrendSvg(rows);
+}
+function meTrendSvg(rows){
+  const W=560,H=170,padL=34,padR=12,padT=14,padB=34;
+  const n=rows.length;
+  const xs=i=>n===1?(padL+(W-padL-padR)/2):(padL+i*(W-padL-padR)/(n-1));
+  const ys=v=>padT+(100-v)/100*(H-padT-padB);
+  const line=(key,color)=>{
+    const pts=rows.map((r,i)=>({i,v:r[key]})).filter(p=>p.v!=null);
+    if(!pts.length) return '';
+    const path=pts.map((p,k)=>(k?'L':'M')+xs(p.i).toFixed(1)+' '+ys(p.v).toFixed(1)).join(' ');
+    const dots=pts.map(p=>'<circle cx="'+xs(p.i).toFixed(1)+'" cy="'+ys(p.v).toFixed(1)+'" r="3" fill="'+color+'"></circle>').join('');
+    return '<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="2.2"></path>'+dots;
+  };
+  const grid=[0,25,50,75,100].map(v=>'<line x1="'+padL+'" y1="'+ys(v).toFixed(1)+'" x2="'+(W-padR)+'" y2="'+ys(v).toFixed(1)+'" stroke="#eef2f7"></line><text x="'+(padL-6)+'" y="'+(ys(v)+3).toFixed(1)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+v+'</text>').join('');
+  const xlab=rows.map((r,i)=>{ const p=String(r.period_start||'').slice(5); return '<text x="'+xs(i).toFixed(1)+'" y="'+(H-padB+16)+'" font-size="9" fill="#64748b" text-anchor="middle">'+esc(p)+'</text>'; }).join('');
+  return '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:340px;height:auto">'
+    +grid+line('score_a','#2563eb')+line('score_b','#16a34a')+xlab+'</svg></div>'
+    +'<div style="display:flex;gap:16px;font-size:12px;margin-top:2px"><span><span style="display:inline-block;width:12px;height:3px;background:#2563eb;vertical-align:middle"></span> Own (ผจก.ทำเอง)</span><span><span style="display:inline-block;width:12px;height:3px;background:#16a34a;vertical-align:middle"></span> Team (ผลทีม)</span></div>';
 }
 function openMeBiz(branchId){
   const start=(MEVAL&&MEVAL.range)?MEVAL.range.start:'';
