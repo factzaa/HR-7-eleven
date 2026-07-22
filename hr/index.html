@@ -3335,17 +3335,19 @@ async function openWarningView(wid){
       const before = (tl.items||[]).filter(i=> i.warning_id!==w.warning_id && String(i.at||'') < String(w.created_at||(w.issue_date+'T23:59:59')));
       if(before.length){
         const fmtd=v=>{ try{ return new Date(v).toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'}); }catch(e){ return '—'; } };
-        prior = '<div style="margin-top:14px"><b>ประวัติการดำเนินการก่อนหน้า</b></div>'
-          + '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:5px">'
-          + '<tr><th style="border:1px solid #000;padding:4px 6px;background:#eee">ครั้งที่</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">วันที่</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">การดำเนินการ</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">สาเหตุ</th><th style="border:1px solid #000;padding:4px 6px;background:#eee">การรับทราบ</th></tr>'
+        // ★ ย่อ "สาเหตุ" ในตารางประวัติให้สั้น (สาเหตุเต็มอยู่ในส่วนที่ 2 แล้ว) — กันเอกสารยาวเกิน 1 หน้า
+        const shortReason=(t)=>{ let s=String(t||'').replace(/\s+/g,' ').trim(); if(!s) return '—'; return s.length>70 ? s.slice(0,70)+'…' : s; };
+        prior = '<div style="margin-top:8px;font-weight:700">ประวัติการดำเนินการ</div>'
+          + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:4px">'
+          + '<tr><th style="border:1px solid #000;padding:2px 5px;background:#eee">ครั้งที่</th><th style="border:1px solid #000;padding:2px 5px;background:#eee">วันที่</th><th style="border:1px solid #000;padding:2px 5px;background:#eee">การดำเนินการ</th><th style="border:1px solid #000;padding:2px 5px;background:#eee">สาเหตุ (โดยย่อ)</th><th style="border:1px solid #000;padding:2px 5px;background:#eee">การรับทราบ</th></tr>'
           + before.slice().reverse().map((i,k)=>'<tr>'
-              +'<td style="border:1px solid #000;padding:4px 6px;text-align:center">'+(k+1)+'</td>'
-              +'<td style="border:1px solid #000;padding:4px 6px;text-align:center">'+fmtd(i.at)+'</td>'
-              +'<td style="border:1px solid #000;padding:4px 6px">'+esc(i.label)+'</td>'
-              +'<td style="border:1px solid #000;padding:4px 6px">'+esc(i.reason||'—')+'</td>'
-              +'<td style="border:1px solid #000;padding:4px 6px;text-align:center">'+(i.ack_at?('รับทราบแล้ว '+fmtd(i.ack_at)):(i.need_ack?'ยังไม่รับทราบ':'—'))+'</td></tr>').join('')
+              +'<td style="border:1px solid #000;padding:2px 5px;text-align:center">'+(k+1)+'</td>'
+              +'<td style="border:1px solid #000;padding:2px 5px;text-align:center;white-space:nowrap">'+fmtd(i.at)+'</td>'
+              +'<td style="border:1px solid #000;padding:2px 5px">'+esc(i.label)+'</td>'
+              +'<td style="border:1px solid #000;padding:2px 5px">'+esc(shortReason(i.reason))+'</td>'
+              +'<td style="border:1px solid #000;padding:2px 5px;text-align:center;white-space:nowrap">'+(i.ack_at?('รับทราบ '+fmtd(i.ack_at)):(i.need_ack?'ยังไม่รับทราบ':'—'))+'</td></tr>').join('')
           + '</table>'
-          + '<p style="font-size:12.5px;margin-top:5px">บริษัทได้ดำเนินการตักเตือนตามลำดับขั้นมาก่อนหน้านี้แล้ว แต่พนักงานยังมิได้ปรับปรุงพฤติกรรม</p>';
+          + '<p style="font-size:10px;margin-top:3px">บริษัทได้ดำเนินการตักเตือนตามลำดับขั้นมาก่อนหน้านี้แล้ว แต่พนักงานยังมิได้ปรับปรุงพฤติกรรม</p>';
       }
     }
   }catch(e){}
@@ -3503,6 +3505,19 @@ function printDocOverlay(){
   d.close();
 
   const go=()=>{
+    // ★ ย่ออัตโนมัติให้จบหน้าเดียว: ถ้าเนื้อหาสูงเกิน A4 เล็กน้อย ย่อลงพอดี (ไม่ต่ำกว่า 72% กันอ่านไม่ออก)
+    try{
+      const doc=d.querySelector('.es-doc');
+      if(doc){
+        const pageH=1123;                    // A4 @96dpi (px)
+        const h=doc.scrollHeight;
+        if(h>pageH){
+          const scale=Math.max(0.72, pageH/h);
+          doc.style.zoom=String(scale);        // Chrome ใช้ zoom ตอนพิมพ์ได้ · ปรับ min-height ตามสเกล
+          doc.style.minHeight=Math.round(pageH/scale)+'px';
+        }
+      }
+    }catch(_e){}
     try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast('err','พิมพ์ไม่สำเร็จ'); }
     setTimeout(()=>{ const f=document.getElementById('docPrintFrame'); if(f) f.remove(); }, 60000);
   };
