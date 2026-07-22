@@ -210,6 +210,14 @@
         case 'hr_advance_window_open':   return await hrAdvanceWindowOpen(p.data, p);
         case 'hr_advance_window_list':   return await hrAdvanceWindowList(p);
         case 'hr_advance_window_revoke': return await hrAdvanceWindowRevoke(p.data, p);
+        // ---- ประเมินผลงานผู้จัดการสาขา (เห็นเฉพาะ HR) ----
+        case 'hr_mgr_eval':            return await hrMgrEval(p);
+        case 'hr_mgr_eval_config_get': return await hrMgrEvalConfigGet();
+        case 'hr_mgr_eval_config_save':return await hrMgrEvalConfigSave(p.data);
+        case 'hr_mgr_eval_biz_get':    return await hrMgrEvalBusinessGet(p);
+        case 'hr_mgr_eval_biz_save':   return await hrMgrEvalBusinessSave(p.data);
+        case 'hr_mgr_eval_snapshot':   return await hrMgrEvalSnapshot(p);
+        case 'hr_mgr_eval_trend':      return await hrMgrEvalTrend(p.emp_id);
         case 'hr_handover_list':     return await hrHandoverList();
         case 'hr_task_defs_get':     return await hrTaskDefsGet();
         case 'hr_task_def_save':     return await hrTaskDefSave(p.data);
@@ -4930,6 +4938,249 @@
     if (error) throw error;
     await logAct('ลบบันทึกวันอบรม', empId, String(workDate));
     return { ok: true };
+  }
+
+  // ============================================================
+  // ประเมินผลงานผู้จัดการสาขา (Branch Manager Scorecard)
+  //   A = ผจก. ทำเอง (รับผิดชอบงาน/ตรวจคุณภาพ/ตอบสนอง)  · เต็ม 100
+  //   B = ผลทีม/สาขา (วินัยทีม/ดำเนินงานหน้าร้าน) · normalize เป็น % · เต็ม 100
+  //   C = KPI ธุรกิจคีย์มือ (ยอดขาย/waste/QSSI) แยกต่างหาก
+  //   ★ เห็นเฉพาะ HR — ไม่มีการเปิด PIN/รหัสใด ๆ
+  // ============================================================
+  async function _mgrEvalConfig() {
+    const rows = ((await sb().from('mgr_eval_config').select('key,value')).data) || [];
+    const cfg = {}; rows.forEach(r => { cfg[r.key] = r.value; });
+    return {
+      wA: Object.assign({ responsibility: 40, review: 40, responsiveness: 20 }, cfg.weights_a || {}),
+      wB: Object.assign({ team_discipline: 55, store_ops: 45 }, cfg.weights_b || {}),
+      bands: Array.isArray(cfg.grade_bands) && cfg.grade_bands.length ? cfg.grade_bands
+        : [{ min: 90, label: 'ดีเยี่ยม', color: '#16a34a' }, { min: 75, label: 'ดี', color: '#22c55e' }, { min: 60, label: 'พอใช้', color: '#f59e0b' }, { min: 0, label: 'ต้องพัฒนา', color: '#ef4444' }],
+      th: Object.assign({ review_fast_hours: 6, chat_reply_hours: 12, chat_silent_days: 3, waste_pct_good: 2.5, waste_pct_warn: 4.0, qssi_good: 85, qssi_warn: 70, sales_good_pct: 100, sales_warn_pct: 90 }, cfg.thresholds || {}),
+    };
+  }
+  async function hrMgrEvalConfigGet() {
+    const c = await _mgrEvalConfig();
+    return { ok: true, weights_a: c.wA, weights_b: c.wB, grade_bands: c.bands, thresholds: c.th };
+  }
+  async function hrMgrEvalConfigSave(d) {
+    d = d || {};
+    const ups = [];
+    if (d.weights_a) ups.push({ key: 'weights_a', value: d.weights_a, updated_at: new Date().toISOString() });
+    if (d.weights_b) ups.push({ key: 'weights_b', value: d.weights_b, updated_at: new Date().toISOString() });
+    if (d.grade_bands) ups.push({ key: 'grade_bands', value: d.grade_bands, updated_at: new Date().toISOString() });
+    if (d.thresholds) ups.push({ key: 'thresholds', value: d.thresholds, updated_at: new Date().toISOString() });
+    if (!ups.length) return { ok: false, error: 'ไม่มีค่าให้บันทึก' };
+    const { error } = await sb().from('mgr_eval_config').upsert(ups, { onConflict: 'key' });
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrMgrEvalBusinessGet(p) {
+    p = p || {};
+    const start = p.period_start || cycleRange(p.which === 'previous' ? 'previous' : 'current').start;
+    let q = sb().from('mgr_eval_business').select('*').eq('period_start', start);
+    if (p.branch_id) q = q.eq('branch_id', p.branch_id);
+    const { data, error } = await q;
+    if (error) throw error;
+    return { ok: true, period_start: start, rows: data || [] };
+  }
+  async function hrMgrEvalBusinessSave(d) {
+    d = d || {};
+    if (!d.branch_id || !d.period_start) return { ok: false, error: 'ต้องระบุสาขาและรอบ' };
+    const num = v => (v === '' || v == null || isNaN(Number(v))) ? null : Number(v);
+    let wastePct = num(d.waste_pct);
+    const salesActual = num(d.sales_actual), wasteVal = num(d.waste_value);
+    if (wastePct == null && wasteVal != null && salesActual) wastePct = Math.round(wasteVal / salesActual * 10000) / 100;
+    const row = {
+      branch_id: d.branch_id, period_start: d.period_start,
+      sales_target: num(d.sales_target), sales_actual: salesActual,
+      waste_value: wasteVal, waste_pct: wastePct, qssi_score: num(d.qssi_score),
+      note: d.note ? String(d.note).trim() : null,
+      updated_by: d.updated_by || 'สำนักงาน (HR)', updated_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('mgr_eval_business').upsert(row, { onConflict: 'branch_id,period_start' });
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrMgrEval(p) {
+    p = p || {};
+    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const cyc = cycleRange(which);
+    const start = cyc.start, end = cyc.end;
+    const today = bkkToday();
+    const endEff = end < today ? end : today;
+    const c = await _mgrEvalConfig();
+    const th = c.th;
+    const clamp = v => Math.max(0, Math.min(100, v));
+    // ค่าเฉลี่ยถ่วงน้ำหนักโดยข้ามตัวชี้วัดที่ไม่มีข้อมูล (null) แล้วเกลี่ยน้ำหนักให้ตัวที่เหลือ
+    const wmean = parts => { let sw = 0, s = 0; parts.forEach(pt => { if (pt.v != null && !isNaN(pt.v)) { s += pt.v * pt.w; sw += pt.w; } }); return sw ? Math.round(s / sw * 10) / 10 : null; };
+    const gradeOf = v => { if (v == null) return { label: 'ไม่มีข้อมูล', color: '#94a3b8' }; for (const b of c.bands) { if (v >= b.min) return { label: b.label, color: b.color }; } const last = c.bands[c.bands.length - 1]; return { label: last.label, color: last.color }; };
+    const hoursBetween = (a, b) => (!a || !b) ? null : (new Date(b).getTime() - new Date(a).getTime()) / 3600000;
+
+    const [empR, brR, attR, mtR, mdlR, mdDefR, taR, chatR, hoR, gdR, dscR] = await Promise.all([
+      sb().from('employees').select('emp_id,name,nickname,branch_id,is_manager,active,start_date,photo_url').eq('active', true),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,branch_id').gte('work_date', start).lte('work_date', endEff),
+      sb().from('mgr_tasks').select('assignee_emp,status,due_date,emp_submitted_at,done_at,created_at'),
+      sb().from('mgr_daily_logs').select('branch_id,status,work_date').gte('work_date', start).lte('work_date', endEff),
+      sb().from('mgr_daily_defs').select('id').eq('active', true),
+      sb().from('task_assignments').select('checked_by_emp,mgr_result,mgr_checked_at,submitted_at,fix_emp,branch_id,needs_mgr,status,work_date').gte('work_date', start).lte('work_date', end),
+      sb().from('mgr_chat').select('branch_id,sender_role,created_at').gte('created_at', start + 'T00:00:00').lte('created_at', end + 'T23:59:59'),
+      sb().from('handovers').select('branch_id,status,work_date').gte('work_date', start).lte('work_date', endEff),
+      sb().from('goods_receipts').select('branch_id,diff,work_date').gte('work_date', start).lte('work_date', endEff),
+      sb().from('disc_actions').select('emp_id,performed_role,performed_at,action_type').gte('performed_at', start + 'T00:00:00').lte('performed_at', end + 'T23:59:59'),
+    ]);
+    if (empR.error) throw empR.error;
+    const emps = empR.data || [];
+    const empById = {}; emps.forEach(e => { empById[e.emp_id] = e; });
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const scAll = await hrScoreGet(which, null);
+    const scByEmp = {}; (scAll.employees || []).forEach(s => { scByEmp[s.emp_id] = s; });
+    const bizRows = ((await sb().from('mgr_eval_business').select('*').eq('period_start', start)).data) || [];
+    const bizByBr = {}; bizRows.forEach(r => { bizByBr[r.branch_id] = r; });
+
+    const defCount = (mdDefR.data || []).length;
+    const dayCount = (endEff >= start) ? daysBetween(start, endEff) : 0;
+    const att = attR.data || [], mts = mtR.data || [], mdl = mdlR.data || [], tas = taR.data || [], chats = chatR.data || [], hos = hoR.data || [], gds = gdR.data || [], dscs = dscR.data || [];
+
+    // ---- คิดคะแนน "ผลทีม (B)" ระดับสาขา (คำนวณครั้งเดียวต่อสาขา) ----
+    const branchCache = {};
+    function teamOf(brId) {
+      if (branchCache[brId]) return branchCache[brId];
+      const team = emps.filter(e => e.branch_id === brId && !e.is_manager);   // ลูกน้องที่ ผจก. ดูแล
+      const new_hires = team.filter(e => e.start_date && String(e.start_date) >= start).length;
+      // วินัยทีม
+      const bAtt = att.filter(a => a.branch_id === brId && a.check_in);
+      const onTimeRate = bAtt.length ? clamp((bAtt.filter(a => !(a.late_min > 0)).length) * 100 / bAtt.length) : null;
+      const scores = team.map(e => scByEmp[e.emp_id]).filter(s => s && s.score != null).map(s => Number(s.score));
+      const avgDisc = scores.length ? Math.round(scores.reduce((x, y) => x + y, 0) / scores.length * 10) / 10 : null;
+      const team_discipline = wmean([{ v: onTimeRate, w: 1 }, { v: avgDisc, w: 1 }]);
+      // ดำเนินงานหน้าร้าน
+      const bHo = hos.filter(h => h.branch_id === brId);
+      const hoRate = bHo.length ? clamp((bHo.filter(h => h.status !== 'no_handover' && h.status !== 'rejected').length) * 100 / bHo.length) : null;
+      const bGd = gds.filter(g => g.branch_id === brId);
+      const gdRate = bGd.length ? clamp((bGd.filter(g => Number(g.diff || 0) === 0).length) * 100 / bGd.length) : null;
+      const bPastAtt = att.filter(a => a.branch_id === brId && a.check_in && a.work_date < today);
+      const coRate = bPastAtt.length ? clamp((bPastAtt.filter(a => !!a.check_out).length) * 100 / bPastAtt.length) : null;
+      const store_ops = wmean([{ v: hoRate, w: 2 }, { v: gdRate, w: 2 }, { v: coRate, w: 1 }]);
+      const score_b = wmean([{ v: team_discipline, w: c.wB.team_discipline }, { v: store_ops, w: c.wB.store_ops }]);
+      // จัดการวินัยเชิงรุก (ข้อมูลประกอบ ไม่ถ่วงคะแนน)
+      const proactive = dscs.filter(a => { const e = empById[a.emp_id]; return e && e.branch_id === brId; }).length;
+      const res = {
+        team_size: team.length, new_hires,
+        b_breakdown: [
+          { key: 'team_discipline', label: 'วินัยทีม', score: team_discipline, weight: c.wB.team_discipline, raw: { on_time_pct: onTimeRate, avg_discipline: avgDisc, team_scored: scores.length } },
+          { key: 'store_ops', label: 'ดำเนินงานหน้าร้าน', score: store_ops, weight: c.wB.store_ops, raw: { handover_pct: hoRate, goods_accuracy_pct: gdRate, checkout_complete_pct: coRate, handovers: bHo.length, goods_docs: bGd.length } },
+        ],
+        score_b, proactive_disc: proactive,
+      };
+      branchCache[brId] = res;
+      return res;
+    }
+
+    const managers = emps.filter(e => e.is_manager);
+    const out = managers.map(m => {
+      const brId = m.branch_id || '';
+      // ---- คะแนน A: 1) รับผิดชอบงานที่มอบหมาย ----
+      const myMt = mts.filter(t => String(t.assignee_emp || '') === String(m.emp_id))
+        .filter(t => { const d = String(t.created_at || '').slice(0, 10); return !d || (d >= start && d <= end); });
+      const mtDone = myMt.filter(t => t.status === 'done' || !!t.emp_submitted_at).length;
+      const mtOnTime = myMt.filter(t => (t.status === 'done' || !!t.emp_submitted_at) && (!t.due_date || String(t.emp_submitted_at || t.done_at || '').slice(0, 10) <= t.due_date)).length;
+      const mtScore = myMt.length ? clamp(mtOnTime * 100 / myMt.length) : null;
+      // งานประจำวัน ผจก. ของสาขา
+      const bMdl = mdl.filter(l => l.branch_id === brId);
+      const mdlExpected = defCount * dayCount;
+      const mdlDone = bMdl.length;
+      const mdlApproved = bMdl.filter(l => l.status === 'approved').length;
+      const mdlCoverage = mdlExpected ? clamp(mdlDone * 100 / mdlExpected) : null;
+      const mdlPass = mdlDone ? clamp(mdlApproved * 100 / mdlDone) : null;
+      const dailyScore = wmean([{ v: mdlCoverage, w: 1 }, { v: mdlPass, w: 1 }]);
+      const responsibility = wmean([{ v: mtScore, w: 2 }, { v: dailyScore, w: 1 }]);
+      // ---- คะแนน A: 2) ตรวจงาน & คุมคุณภาพ ----
+      const bTa = tas.filter(t => t.branch_id === brId);
+      const needs = bTa.filter(t => t.needs_mgr);
+      const needsChecked = needs.filter(t => !!t.mgr_checked_at).length;
+      const coverage = needs.length ? clamp(needsChecked * 100 / needs.length) : null;
+      const myReviewed = tas.filter(t => String(t.checked_by_emp || '') === String(m.emp_id));
+      const rvTotal = myReviewed.length;
+      const rvMissed = myReviewed.filter(t => t.mgr_result === 'sent_back' || String(t.fix_emp || '') === String(m.emp_id)).length;
+      const rvAccuracy = rvTotal ? clamp((rvTotal - rvMissed) * 100 / rvTotal) : null;
+      const rvTimed = myReviewed.filter(t => t.mgr_checked_at && t.submitted_at);
+      const rvFast = rvTimed.length ? clamp(rvTimed.filter(t => { const h = hoursBetween(t.submitted_at, t.mgr_checked_at); return h != null && h <= th.review_fast_hours; }).length * 100 / rvTimed.length) : null;
+      const review = wmean([{ v: coverage, w: 2 }, { v: rvAccuracy, w: 2 }, { v: rvFast, w: 1 }]);
+      // ---- คะแนน A: 3) ตอบสนอง & สื่อสาร ----
+      const bChat = chats.filter(x => x.branch_id === brId).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const asks = bChat.filter(x => x.sender_role === 'hr' || x.sender_role === 'nida');
+      let repliedOnTime = 0;
+      asks.forEach(q => {
+        const rep = bChat.find(x => x.sender_role === 'mgr' && new Date(x.created_at) > new Date(q.created_at));
+        if (rep) { const h = hoursBetween(q.created_at, rep.created_at); if (h != null && h <= th.chat_reply_hours) repliedOnTime++; }
+      });
+      const responsiveness = asks.length ? clamp(repliedOnTime * 100 / asks.length) : null;
+      const score_a = wmean([{ v: responsibility, w: c.wA.responsibility }, { v: review, w: c.wA.review }, { v: responsiveness, w: c.wA.responsiveness }]);
+      const a_breakdown = [
+        { key: 'responsibility', label: 'รับผิดชอบงานที่มอบหมาย', score: responsibility, weight: c.wA.responsibility, raw: { mgr_tasks: myMt.length, done: mtDone, on_time: mtOnTime, daily_coverage_pct: mdlCoverage, daily_pass_pct: mdlPass } },
+        { key: 'review', label: 'ตรวจงาน & คุมคุณภาพ', score: review, weight: c.wA.review, raw: { needs_mgr: needs.length, checked: needsChecked, coverage_pct: coverage, reviewed: rvTotal, accuracy_pct: rvAccuracy, fast_pct: rvFast } },
+        { key: 'responsiveness', label: 'ตอบสนอง & สื่อสาร', score: responsiveness, weight: c.wA.responsiveness, raw: { asks: asks.length, replied_on_time: repliedOnTime } },
+      ];
+      // ---- ผลทีม (B) ----
+      const tm = teamOf(brId);
+      // ---- บล็อก C: KPI ธุรกิจ ----
+      const biz = bizByBr[brId] || null;
+      let block_c = null;
+      if (biz) {
+        const salesPct = (biz.sales_target && Number(biz.sales_target) > 0) ? Math.round(Number(biz.sales_actual || 0) / Number(biz.sales_target) * 1000) / 10 : null;
+        const wastePct = biz.waste_pct != null ? Number(biz.waste_pct) : null;
+        const qssi = biz.qssi_score != null ? Number(biz.qssi_score) : null;
+        const light = (v, good, warn, invert) => v == null ? 'none' : (invert ? (v <= good ? 'green' : (v <= warn ? 'yellow' : 'red')) : (v >= good ? 'green' : (v >= warn ? 'yellow' : 'red')));
+        block_c = {
+          sales_target: biz.sales_target, sales_actual: biz.sales_actual, sales_pct: salesPct,
+          waste_value: biz.waste_value, waste_pct: wastePct, qssi_score: qssi, note: biz.note || '',
+          lights: {
+            sales: light(salesPct, th.sales_good_pct, th.sales_warn_pct, false),
+            waste: light(wastePct, th.waste_pct_good, th.waste_pct_warn, true),
+            qssi: light(qssi, th.qssi_good, th.qssi_warn, false),
+          },
+        };
+      }
+      const gA = gradeOf(score_a), gB = gradeOf(tm.score_b);
+      return {
+        emp_id: m.emp_id, mgr_name: m.name, nickname: m.nickname || '', photo_url: m.photo_url || '',
+        branch_id: brId, branch_name: brName[brId] || brId || '—',
+        team_size: tm.team_size, new_hires: tm.new_hires,
+        score_a, grade_a: gA.label, grade_a_color: gA.color, a_breakdown,
+        score_b: tm.score_b, grade_b: gB.label, grade_b_color: gB.color, b_breakdown: tm.b_breakdown, proactive_disc: tm.proactive_disc,
+        block_c,
+      };
+    }).sort((a, b) => (b.score_a || 0) - (a.score_a || 0));
+
+    return {
+      ok: true,
+      which, range: { start, end, label: (which === 'previous' ? 'รอบก่อนหน้า' : 'รอบปัจจุบัน') + ' (' + start + ' ถึง ' + end + ')' },
+      config: { weights_a: c.wA, weights_b: c.wB, grade_bands: c.bands, thresholds: th },
+      managers: out,
+    };
+  }
+  async function hrMgrEvalSnapshot(p) {
+    p = p || {};
+    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const r = await hrMgrEval({ which });
+    if (!r.ok) return r;
+    const rows = (r.managers || []).map(m => ({
+      mgr_emp: m.emp_id, mgr_name: m.mgr_name, branch_id: m.branch_id, branch_name: m.branch_name,
+      period_start: r.range.start, period_end: r.range.end, team_size: m.team_size, new_hires: m.new_hires,
+      score_a: m.score_a, score_b: m.score_b, grade_a: m.grade_a, grade_b: m.grade_b,
+      block_c: m.block_c || null, detail: { a_breakdown: m.a_breakdown, b_breakdown: m.b_breakdown }, created_by: p.by || 'สำนักงาน (HR)',
+    }));
+    if (!rows.length) return { ok: true, saved: 0 };
+    const { error } = await sb().from('mgr_eval_snapshots').upsert(rows, { onConflict: 'mgr_emp,period_start' });
+    if (error) throw error;
+    return { ok: true, saved: rows.length };
+  }
+  async function hrMgrEvalTrend(empId) {
+    if (!empId) return { ok: false, error: 'ไม่ระบุ ผจก.' };
+    const { data, error } = await sb().from('mgr_eval_snapshots').select('period_start,period_end,score_a,score_b,grade_a,grade_b,block_c').eq('mgr_emp', empId).order('period_start', { ascending: true });
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
   }
 
   window.HRAPI = { dispatch };
