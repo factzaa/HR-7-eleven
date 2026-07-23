@@ -5339,8 +5339,13 @@
       if (a.check_in) { const dv = a.day_value != null ? Number(a.day_value) : (dvMap[a.shift_id] != null ? dvMap[a.shift_id] : 1); (workedDV[a.emp_id] || (workedDV[a.emp_id] = {}))[a.work_date] = dv; }
       otByEmp[a.emp_id] = (otByEmp[a.emp_id] || 0) + otAdj(a.ot_hours, otWhole);
     });
+    // ★ หักเงินเบิก "ตามรอบจริงไม่เว้นเดือน" — ดึงทุกใบที่ "จ่ายแล้ว + ยังไม่หัก" มาหักในรอบนี้ทันที
+    //   (กันพนักงานเบิกเกินค่าแรงแล้วหาย · ไม่ผูกกับ deduct_month ที่อาจเป็นเดือนถัดไป)
     let advByEmp = {};
-    try { const ap = await hrAdvancePayroll(payMonth, {}); (ap.by_emp || []).forEach(e => { advByEmp[e.emp_id] = e.total; }); } catch (_e) { /* ยังไม่มีระบบเบิก */ }
+    try {
+      const { data: advRows } = await sb().from('advance_requests').select('emp_id,amount,approved_amount').eq('status', 'paid').eq('deducted', false);
+      (advRows || []).forEach(r => { const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advByEmp[r.emp_id] = (advByEmp[r.emp_id] || 0) + amt; });
+    } catch (_e) { /* ยังไม่มีระบบเบิก */ }
     let { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
     if (!run) {
       const ins = await sb().from('payroll_runs').insert({ period_start: cyc.start, period_end: cyc.end, pay_month: payMonth, status: 'draft', created_by: 'สำนักงาน (HR)' }).select().maybeSingle();
@@ -5413,8 +5418,9 @@
     if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้ — กดคำนวณก่อน' };
     if (run.status === 'finalized') return { ok: true, already: true };
     try {
-      const ap = await hrAdvancePayroll(run.pay_month, {});
-      const ids = (ap.rows || []).filter(r => !r.deducted).map(r => r.id);
+      // ทำเครื่องหมาย "หักแล้ว" ให้ทุกใบที่จ่ายแล้ว+ยังไม่หัก (ชุดเดียวกับที่ดึงมาหักตอนคำนวณ)
+      const { data: advRows } = await sb().from('advance_requests').select('id').eq('status', 'paid').eq('deducted', false);
+      const ids = (advRows || []).map(r => r.id);
       if (ids.length) await hrAdvanceDeduct({ ids, payroll_ref: run.id, by: 'ระบบเงินเดือน' }, {});
     } catch (_e) { /* ไม่มีระบบเบิก ก็ข้าม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);

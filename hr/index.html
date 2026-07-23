@@ -4817,7 +4817,7 @@ function renderAdvRows(){
           <button class="btn btn-sec btn-sm" data-advtl="${r.id}">ไทม์ไลน์</button>
         </td></tr>`;
     }).join('')}</tbody></table></div>
-    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* วงเงิน = อัตราต่อวัน × วันทำงานจริงในรอบ × ตัวคูณวินัย (ไม่เกินเพดานสูงสุด) · ยอดที่โอนจะถูกหักคืนจากเงินเดือนรอบถัดไปครั้งเดียวเต็มจำนวน</div></div>`;
+    <div style="font-size:12px;color:var(--muted);padding:8px 12px">* วงเงิน = อัตราต่อวัน × วันทำงานจริงในรอบ × ตัวคูณวินัย (ไม่เกินเพดานสูงสุด) · ยอดที่โอนจะถูกหักคืนจากเงินเดือน <b>รอบที่จะถึงนี้ทันที</b> ครั้งเดียวเต็มจำนวน (ไม่เว้นเดือน)</div></div>`;
 
   document.querySelectorAll('[data-advok]').forEach(b=>b.onclick=()=>advApprove(b.dataset.advok));
   document.querySelectorAll('[data-advno]').forEach(b=>b.onclick=()=>advReject(b.dataset.advno));

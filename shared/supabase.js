@@ -1004,7 +1004,7 @@
       face_verified: !!face_verified,
       device: (navigator.userAgent || '').slice(0, 200),
       status: 'submitted',
-      deduct_month: _nextMonth(q.month),                 // หักคืนครั้งเดียวในรอบเงินเดือนถัดไป
+      deduct_month: q.month,                             // หักคืนในรอบเงินเดือน "ปัจจุบัน" ทันที (ไม่เว้นเดือน กันเบิกเกินค่าแรง)
       window_id: isEmg ? q.emergency_window.id : null,
       emergency_opened_by: isEmg ? q.emergency_window.opened_by : null,
       emergency_opened_at: isEmg ? q.emergency_window.opened_at : null,
