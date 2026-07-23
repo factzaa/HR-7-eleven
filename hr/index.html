@@ -66,6 +66,8 @@
   .pill.muted{background:#eef0ec; color:var(--muted);}
 
   .container{max-width:1280px; margin:0 auto; padding:18px;}
+  /* ตารางเงินเดือน: ขยายเต็มจอบนเดสก์ท็อป (ไม่ต้องเลื่อนซ้ายขวา) */
+  @media(min-width:1281px){ .pl-fullbleed{ position:relative; left:50%; transform:translateX(-50%); width:98vw; padding:0 10px; box-sizing:border-box; } .pl-fullbleed>table{ width:100%; } }
   .toolbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px;}
   .search{flex:1; min-width:220px; position:relative;}
   .search input{width:100%; padding:11px 14px 11px 38px; font:inherit; font-size:15px; background:#fff; border:1.5px solid var(--line2); border-radius:11px;}
@@ -3994,7 +3996,7 @@ function renderPayrollItems(){
       +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">รวมจ่ายสุทธิ</div><div style="font-size:20px;font-weight:800;color:#166534">'+plB(sumNet)+'</div></div>'
     +'</div>'
     +'<div style="font-size:11px;color:var(--muted);margin:0 2px 6px">💡 เลื่อนตารางแนวนอนเพื่อดูครบทุกคอลัมน์ · ชี้เมาส์ที่ตัวเลข "เบี้ย/โบนัส" และ "อื่นๆ" เพื่อดูรายละเอียด</div>'
-    +'<div class="tablewrap"><table style="font-size:12.5px;white-space:nowrap"><thead><tr>'
+    +'<div class="tablewrap pl-fullbleed"><table style="font-size:12.5px;white-space:nowrap"><thead><tr>'
       +'<th>#</th><th>ชื่อ / รหัส · สาขา</th><th>บัญชีรับเงิน</th><th style="text-align:center">วัน</th><th style="text-align:right">อัตรา/วัน</th><th style="text-align:right">ฐาน</th><th style="text-align:right">OT</th><th style="text-align:right">เบี้ย/โบนัส</th><th style="text-align:right">เพิ่มอื่น</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมรับ</th><th style="text-align:right">ปกส.</th><th style="text-align:right">หักเบิก</th><th style="text-align:right">หักอื่น</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมหัก</th><th style="text-align:right;border-left:2px solid #0f172a">สุทธิ</th><th></th>'
     +'</tr></thead><tbody>'+items.map(rowHtml).join('')+'</tbody></table></div>';
   $('pl_run_body').querySelectorAll('[data-pledit]').forEach(b=>b.onclick=()=>openPlItem(b.dataset.pledit));
