@@ -1106,6 +1106,20 @@
     </div>
   </div>
 
+  <!-- ภาพรวมสินค้าใกล้หมดอายุ รวมทุกโฟลเดอร์ (เรียงตามวันหมดอายุใกล้สุด) -->
+  <div class="toolbar" style="margin-top:22px;flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:200px">📋 สินค้าใกล้หมดอายุ · รวมทุกโฟลเดอร์</h3>
+    <select id="qaall_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <option value="on_shelf">ยังอยู่บนเชลฟ์</option>
+      <option value="">ทั้งหมด</option>
+      <option value="sold">ขายแล้ว</option>
+      <option value="removed">เก็บออกแล้ว</option>
+    </select>
+    <select id="qaall_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
+    <input id="qaall_search" type="text" placeholder="ค้นหาชื่อ/รหัสสินค้า" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <button class="btn btn-sec btn-sm" id="qaall_refresh">รีเฟรช</button>
+  </div>
+  <div id="qaall_body"><div class="empty">กำลังโหลด…</div></div>
+
   <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">โฟลเดอร์ทั้งหมด</h3><button class="btn btn-sec btn-sm" id="qa_refresh">รีเฟรช</button></div>
   <div id="qa_list"><div class="empty">กำลังโหลด…</div></div>
   <div id="qa_items_wrap" style="margin-top:16px"></div>
@@ -7534,6 +7548,7 @@ function qaFmtDate(d){ if(!d) return '—'; try{ return new Date(d+'T00:00:00').
 function qaDaysLeft(d){ const x=new Date(d+'T00:00:00'); const n=new Date(); n.setHours(0,0,0,0); return Math.round((x-n)/86400000); }
 function loadQaTab(){
   fillSelect($('qa_branchfilter'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+  if($('qaall_branch')) fillSelect($('qaall_branch'), (DATA.branches||[]).map(b=>[b.branch_id,b.name]), 'ทุกสาขา');
   if(!$('qa_emplist').dataset.wired){
     $('qa_branchfilter').addEventListener('change', renderQaEmpList);
     $('qa_empsearch').addEventListener('input', renderQaEmpList);
@@ -7541,10 +7556,65 @@ function loadQaTab(){
     $('qa_selnone').onclick=()=>{ QA_SEL.clear(); renderQaEmpList(); };
     $('qa_create').onclick=qaCreate;
     $('qa_refresh').onclick=loadQaFolders;
+    if($('qaall_refresh')) $('qaall_refresh').onclick=loadQaAll;
+    if($('qaall_status')) $('qaall_status').addEventListener('change', loadQaAll);
+    if($('qaall_branch')) $('qaall_branch').addEventListener('change', renderQaAll);
+    if($('qaall_search')) $('qaall_search').addEventListener('input', renderQaAll);
     $('qa_emplist').dataset.wired='1';
   }
   renderQaEmpList();
+  loadQaAll();
   loadQaFolders();
+}
+let QAALL=[];
+async function loadQaAll(){
+  const body=$('qaall_body'); if(!body) return;
+  body.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const status=($('qaall_status')||{}).value||'';
+  const r=await post({ action:'hr_qa_all_items', password:pwd, status: status||undefined });
+  if(!r||!r.ok){ body.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  QAALL=r.rows||[]; renderQaAll();
+}
+function qaAllRowHtml(it){
+  const dl=it.expiry_date?qaDaysLeft(it.expiry_date):null;
+  const stTxt=it.status==='sold'?'ขายแล้ว':it.status==='removed'?'เก็บออกแล้ว':'ยังอยู่บนเชลฟ์';
+  const stCol=it.status==='sold'?'#16a34a':it.status==='removed'?'#6b7280':'#d97706';
+  let col='#6b7280'; if(dl!=null){ if(dl<0||dl<=3)col='#dc2626'; else if(dl<=7)col='#b45309'; else if(dl<=30)col='#a06515'; }
+  const canEdit = !MGR_MODE || String(it.branch_id)===String(MGR_BRANCH);
+  const ph=(it.photos&&it.photos.length)?it.photos[0]:'';
+  const thumb=ph?('<img src="'+esc(ph)+'" onclick="spLightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:8px;cursor:pointer;display:block">'+(it.photos.length>1?('<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:1px">+'+(it.photos.length-1)+'</div>'):'')):'<div style="width:44px;height:44px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:18px">📦</div>';
+  const sub=[it.barcode?('รหัส '+esc(it.barcode)):'', it.size?('ขนาด '+esc(it.size)):'', '×'+(it.qty||1), it.zone?('โซน '+esc(it.zone)):''].filter(Boolean).join(' · ');
+  const dlTxt=dl!=null?(dl<0?('หมดแล้ว '+(-dl)+' วัน'):(dl===0?'หมดอายุวันนี้':('เหลือ '+dl+' วัน'))):'';
+  const stBtns=canEdit?(it.status==='on_shelf'?'<button class="btn btn-sec btn-sm" data-qaastatus="'+it.id+'|sold">✓ ขาย</button><button class="btn btn-sec btn-sm" data-qaastatus="'+it.id+'|removed">📦 เก็บ</button>':'<button class="btn btn-sec btn-sm" data-qaastatus="'+it.id+'|on_shelf">↩ คืน</button>'):'';
+  const actions=canEdit?('<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+stBtns+'<button class="btn btn-sec btn-sm" data-qaaopen="'+it.folder_id+'" title="เปิดโฟลเดอร์">📁</button><button class="btn btn-sec btn-sm" data-qaadel="'+it.id+'" title="ลบ">🗑</button></div>'):'<span style="font-size:11px;color:var(--muted)">🔒 สาขาอื่น</span>';
+  return '<tr>'
+    +'<td>'+thumb+'</td>'
+    +'<td><div style="font-weight:600">'+esc(it.name)+'</div>'+(sub?('<div style="font-size:11.5px;color:var(--muted)">'+esc(sub)+'</div>'):'')+'</td>'
+    +'<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+esc(it.folder_title||'—')+(it.folder_month?('<br>'+esc(it.folder_month)):'')+'</td>'
+    +'<td style="white-space:nowrap"><div style="color:'+col+';font-weight:600">📅 '+qaFmtDate(it.expiry_date)+'</div>'+(dlTxt?('<div style="font-size:11.5px;color:'+col+'">'+dlTxt+'</div>'):'')+'</td>'
+    +'<td style="text-align:center"><span class="pill" style="background:'+stCol+'22;color:'+stCol+';font-weight:600;white-space:nowrap">'+stTxt+'</span></td>'
+    +'<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+esc(it.branch_name||'')+'</td>'
+    +'<td>'+actions+'</td>'
+    +'</tr>';
+}
+function renderQaAll(){
+  const body=$('qaall_body'); if(!body) return;
+  const brf=MGR_MODE?MGR_BRANCH:(($('qaall_branch')||{}).value||'');
+  const qq=(($('qaall_search')||{}).value||'').trim().toLowerCase();
+  let rows=(QAALL||[]).filter(it=>!MGR_MODE || String(it.branch_id)===String(MGR_BRANCH));
+  if(brf) rows=rows.filter(it=>String(it.branch_id)===String(brf));
+  if(qq) rows=rows.filter(it=>((it.name||'')+' '+(it.barcode||'')).toLowerCase().includes(qq));
+  rows=rows.slice().sort((a,b)=>{ const da=a.expiry_date||'9999-12-31',db=b.expiry_date||'9999-12-31'; return da<db?-1:da>db?1:0; });
+  if(!rows.length){ body.innerHTML='<div class="empty">ไม่มีสินค้าตามเงื่อนไข</div>'; return; }
+  const near=rows.filter(it=>{ const dl=it.expiry_date?qaDaysLeft(it.expiry_date):null; return dl!=null&&dl<=7; }).length;
+  let h='<div style="font-size:12.5px;color:var(--muted);margin:0 2px 8px">รวม <b>'+rows.length+'</b> รายการ'+(near?(' · <b style="color:#dc2626">ใกล้หมด/หมดแล้ว (≤7 วัน) '+near+' รายการ</b>'):'')+'</div>';
+  h+='<div class="tablewrap"><table style="font-size:13px"><thead><tr><th style="width:52px"></th><th>สินค้า</th><th>โฟลเดอร์</th><th>หมดอายุ</th><th style="text-align:center">สถานะ</th><th>สาขา</th><th></th></tr></thead><tbody>'
+    + rows.map(qaAllRowHtml).join('')
+    + '</tbody></table></div>';
+  body.innerHTML=h;
+  body.querySelectorAll('[data-qaadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบสินค้ารายการนี้?'))return; const rr=await post({action:'hr_qa_item_delete',password:pwd,id:Number(b.dataset.qaadel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadQaAll(); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
+  body.querySelectorAll('[data-qaastatus]').forEach(b=>b.onclick=async()=>{ const pp=b.dataset.qaastatus.split('|'); const id=Number(pp[0]),st=pp[1]; const lbl=st==='sold'?'ขายแล้ว':st==='removed'?'เก็บออก':'คืนขึ้นเชลฟ์'; if(!confirm('เปลี่ยนสถานะเป็น "'+lbl+'" ?'))return; try{ await window.HR.qaUpdateItemStatus({ item_id:id, empId:(MGR_MODE?MGR_EMP:''), status:st }); toast('ok','อัปเดตเป็น '+lbl); loadQaAll(); loadQaFolders(); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } });
+  body.querySelectorAll('[data-qaaopen]').forEach(b=>b.onclick=()=>{ qaViewItems(Number(b.dataset.qaaopen)); const w=$('qa_items_wrap'); if(w) w.scrollIntoView({behavior:'smooth'}); });
 }
 function qaVisibleEmps(){
   const bf=MGR_MODE?MGR_BRANCH:$('qa_branchfilter').value; const q=($('qa_empsearch').value||'').trim().toLowerCase();

@@ -264,6 +264,7 @@
         case 'hr_qa_folder_list':    return await hrQaFolderList();
         case 'hr_qa_folder_delete':  return await hrQaFolderDelete(p.id);
         case 'hr_qa_items':          return await hrQaItems(p.folder_id, p.status);
+        case 'hr_qa_all_items':      return await hrQaAllItems(p);
         case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
         case 'hr_qa_item_update':    return await hrQaItemUpdate(p.id, p.data);
         case 'hr_applicants_list':   return await hrApplicantsList(p.branch);
@@ -4227,6 +4228,25 @@
     return { ok: true, folder: fR.data || null, assignees, rows };
   }
 
+  // รวมสินค้า QA "ทุกโฟลเดอร์" ในที่เดียว — เรียงตามวันหมดอายุใกล้สุดก่อน (สำหรับหน้าภาพรวม)
+  async function hrQaAllItems(p) {
+    p = p || {};
+    const [itR, brR, fR] = await Promise.all([
+      sb().from('qa_items').select('*').order('expiry_date', { ascending: true }).limit(3000),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('qa_folders').select('id,title,target_month'),
+    ]);
+    if (itR.error) throw itR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const fMap = {}; (fR.data || []).forEach(f => { fMap[f.id] = { title: f.title, target_month: f.target_month }; });
+    let rows = (itR.data || []).map(i => ({
+      ...i, branch_name: brName[i.branch_id] || i.branch_id || '—',
+      folder_title: (fMap[i.folder_id] || {}).title || '', folder_month: (fMap[i.folder_id] || {}).target_month || '',
+    }));
+    if (p.branch_id) rows = rows.filter(r => String(r.branch_id) === String(p.branch_id));
+    if (p.status) rows = rows.filter(r => r.status === p.status);
+    return { ok: true, rows, branches: brR.data || [] };
+  }
   async function hrQaItemDelete(id) {
     if (!id) return { ok: false, error: 'ไม่ระบุรายการ' };
     const { error } = await sb().from('qa_items').delete().eq('id', id);
