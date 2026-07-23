@@ -4910,7 +4910,7 @@ async function advTimeline(id){
   const r=await post({ action:'hr_advance_timeline', ...authBody(), id });
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
   const q=r.request, ev=r.events||[];
-  const EV={ submit:'พนักงานยื่นคำขอ', cancel:'พนักงานยกเลิก', approve:'HR อนุมัติ', adjust:'HR อนุมัติ (ปรับยอด)', reject:'HR ไม่อนุมัติ', pay:'โอนเงินแล้ว', deduct:'หักคืนจากเงินเดือนแล้ว', window_open:'ผจก. เปิดสิทธิ์ฉุกเฉิน', window_revoke:'ยกเลิกสิทธิ์ฉุกเฉิน' };
+  const EV={ submit:'พนักงานยื่นคำขอ', cancel:'พนักงานยกเลิก', approve:'HR อนุมัติ', adjust:'HR อนุมัติ (ปรับยอด)', reject:'HR ไม่อนุมัติ', pay:'โอนเงินแล้ว', deduct:'หักคืนจากเงินเดือนแล้ว', defer:'เลื่อนการหัก (ผ่อนผัน)', defer_cancel:'ยกเลิกการเลื่อนหัก', window_open:'ผจก. เปิดสิทธิ์ฉุกเฉิน', window_revoke:'ยกเลิกสิทธิ์ฉุกเฉิน' };
   const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
   openModal('🧾 คำขอ '+esc(q.req_no||''),
     '<div style="font-size:13px;line-height:1.9;margin-bottom:12px">'
@@ -4918,8 +4918,17 @@ async function advTimeline(id){
       +'ยอดขอ <b>'+advB(q.amount)+'</b>'+(q.approved_amount!=null?(' · อนุมัติ <b>'+advB(q.approved_amount)+'</b>'):'')+' บาท · '+esc(q.status_label||'')+'<br>'
       +'<span style="color:var(--muted)">วงเงินตอนคีย์ '+advB(q.cap_calculated)+' (ทำงาน '+q.days_worked+' วัน × '+advB(q.rate_per_day)+' × คะแนน '+q.score+' ตัวคูณ '+q.advance_factor+')</span><br>'
       +'บัญชี '+esc(q.bank_name||'—')+' '+esc(q.bank_account||'')+'<br>'
-      +'หักคืนรอบเงินเดือน <b>'+esc(q.deduct_month||'—')+'</b> '+(q.deducted?'<span class="pill ok">หักแล้ว</span>':'<span class="pill warn">ยังไม่หัก</span>')
+      +(q.deducted?'หักคืนจากเงินเดือนแล้ว <span class="pill ok">หักแล้ว</span>':(Number(q.defer_rounds)>0?'หักคืนถูก <b>เลื่อน</b>อีก <b>'+Number(q.defer_rounds)+'</b> รอบ <span class="pill warn">เลื่อนหัก</span>':'หักคืนจากเงินเดือน <b>รอบที่จะถึงนี้ทันที</b> <span class="pill warn">ยังไม่หัก</span>'))
     +'</div>'
+    +((!MGR_MODE && q.status==='paid' && !q.deducted)?(
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'
+        +(Number(q.defer_rounds)>0
+          ?('<div style="flex:1;min-width:170px;background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:7px 10px;font-size:12px;color:#92400e">⏳ เลื่อนหักอีก <b>'+Number(q.defer_rounds)+'</b> รอบ'+(q.defer_note?('<br>เหตุผล: '+esc(q.defer_note)):'')+'</div>'
+             +'<button class="btn btn-sec btn-sm" id="adv_defer_more">+ เลื่อนอีก 1 รอบ</button>'
+             +'<button class="btn btn-sec btn-sm" id="adv_defer_cancel">ยกเลิกการเลื่อน</button>')
+          :'<button class="btn btn-sec btn-sm" id="adv_defer_btn">⏳ เลื่อนการหัก 1 รอบ (ผ่อนผัน)</button>')
+        +'</div>'
+      ):'')
     +'<div style="background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:13px;line-height:1.7;margin-bottom:12px">📝 '+esc(q.reason||'')+'</div>'
     +((q.photos&&q.photos.length)?('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+q.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:78px;height:78px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>'):'')
     +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">ไทม์ไลน์</div>'
@@ -4928,6 +4937,19 @@ async function advTimeline(id){
         +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+esc(EV[e.event]||e.event)+(e.amount_after!=null?(' · '+advB(e.amount_after)+' บาท'):'')+'</div>'
         +(e.note?('<div style="font-size:12.5px;color:#374151">'+esc(e.note)+'</div>'):'')
         +'<div style="font-size:11.5px;color:var(--muted)">'+esc(e.actor||'')+' · '+fmt(e.at)+'</div></div></div>').join('')+'</div>');
+  const doDefer=async()=>{
+    const note=prompt('เหตุผลการเลื่อนหักเงินเบิก (พนักงานขอผ่อนผัน):','');
+    if(note===null) return;
+    const rr=await post({ action:'hr_advance_defer', ...authBody(), data:{ id:q.id, rounds:1, note } });
+    if(rr.ok){ toast('ok','เลื่อนการหักแล้ว (รวมเลื่อน '+rr.rounds+' รอบ)'); closeModal(); loadAdvance(); } else toast('err', rr.error||'ไม่สำเร็จ');
+  };
+  if($('adv_defer_btn')) $('adv_defer_btn').onclick=doDefer;
+  if($('adv_defer_more')) $('adv_defer_more').onclick=doDefer;
+  if($('adv_defer_cancel')) $('adv_defer_cancel').onclick=async()=>{
+    if(!confirm('ยกเลิกการเลื่อน — กลับมาหักในรอบที่จะถึง?')) return;
+    const rr=await post({ action:'hr_advance_defer', ...authBody(), data:{ id:q.id, cancel:true } });
+    if(rr.ok){ toast('ok','ยกเลิกการเลื่อนแล้ว'); closeModal(); loadAdvance(); } else toast('err', rr.error||'ไม่สำเร็จ');
+  };
 }
 
 // ---------- สิทธิ์เบิกฉุกเฉิน ----------

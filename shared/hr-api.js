@@ -206,6 +206,7 @@
         case 'hr_advance_pay':        return await hrAdvancePay(p.data, p);
         case 'hr_advance_payroll':    return await hrAdvancePayroll(p.month, p);
         case 'hr_advance_deduct':     return await hrAdvanceDeduct(p.data, p);
+        case 'hr_advance_defer':      return await hrAdvanceDefer(p.data, p);
         case 'hr_advance_timeline':   return await hrAdvanceTimeline(p.id);
         case 'hr_advance_window_open':   return await hrAdvanceWindowOpen(p.data, p);
         case 'hr_advance_window_list':   return await hrAdvanceWindowList(p);
@@ -2927,7 +2928,7 @@
       await sb().from('emp_notifications').insert({
         emp_id: r.emp_id, kind: 'info', title: '💸 โอนเงินเบิกล่วงหน้าแล้ว ' + Number(r.approved_amount != null ? r.approved_amount : r.amount).toLocaleString() + ' บาท',
         body: 'เลขที่คำขอ ' + r.req_no + '\nโอนเข้าบัญชี ' + (r.bank_name || '') + ' ' + (r.bank_account || '') + '\nอ้างอิง ' + String(d.payout_ref).trim()
-          + '\n\n⚠️ ยอดนี้จะถูกหักคืนจากเงินเดือนรอบ ' + (r.deduct_month || '-') + ' ครั้งเดียวเต็มจำนวน',
+          + '\n\n⚠️ ยอดนี้จะถูกหักคืนจากเงินเดือนรอบที่จะถึงนี้ทันที ครั้งเดียวเต็มจำนวน',
         ref: 'advance:' + d.id, created_by: who,
       });
     } catch (_e) { }
@@ -2976,6 +2977,34 @@
     for (const id of ids) await sb().from('advance_events').insert({ request_id: id, event: 'deduct', actor: who, role: 'hr', note: 'หักคืนจากเงินเดือนแล้ว' + (d.payroll_ref ? (' · อ้างอิง ' + d.payroll_ref) : '') });
     await logAct('บันทึกหักคืนเงินเบิก', null, ids.length + ' รายการ');
     return { ok: true, done: ids.length };
+  }
+  // ---- ผ่อนผัน/เลื่อนการหักเงินเบิกไปรอบถัดไป (HR อนุมัติ) ----
+  async function hrAdvanceDefer(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const { data: r } = await sb().from('advance_requests').select('id,deducted,defer_rounds').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    if (r.deducted) return { ok: false, error: 'รายการนี้หักคืนไปแล้ว เลื่อนไม่ได้' };
+    // ยกเลิกการเลื่อน → กลับมาหักในรอบที่จะถึง
+    if (d.cancel) {
+      const { error } = await sb().from('advance_requests').update({ defer_rounds: 0, defer_note: null, defer_by: null, defer_at: null }).eq('id', d.id);
+      if (error) throw error;
+      await sb().from('advance_events').insert({ request_id: d.id, event: 'defer_cancel', actor: me.name, role: 'hr', note: 'ยกเลิกการเลื่อนหัก — กลับมาหักรอบที่จะถึง' });
+      await logAct('ยกเลิกเลื่อนหักเงินเบิก', null, String(d.id));
+      return { ok: true, cleared: true };
+    }
+    // เลื่อน N รอบ (ดีฟอลต์ 1) — เพิ่มจากค่าเดิม (เผื่อขอเลื่อนซ้ำ) แต่ถ้าระบุ set=true = ตั้งค่าตรง
+    const add = Math.max(1, Number(d.rounds || 1));
+    const rounds = d.set ? add : (Math.max(0, Number(r.defer_rounds || 0)) + add);
+    const { error } = await sb().from('advance_requests').update({
+      defer_rounds: rounds, defer_note: (d.note || '').trim() || null, defer_by: me.name, defer_at: new Date().toISOString(),
+    }).eq('id', d.id);
+    if (error) throw error;
+    await sb().from('advance_events').insert({ request_id: d.id, event: 'defer', actor: me.name, role: 'hr', note: 'เลื่อนการหัก ' + add + ' รอบ (รวมเลื่อน ' + rounds + ' รอบ)' + (d.note ? ' · เหตุผล: ' + d.note : '') });
+    await logAct('เลื่อนหักเงินเบิก', null, 'เลื่อน ' + rounds + ' รอบ');
+    return { ok: true, rounds };
   }
 
   // ---- ไทม์ไลน์คำขอ ----
@@ -5343,7 +5372,9 @@
     //   (กันพนักงานเบิกเกินค่าแรงแล้วหาย · ไม่ผูกกับ deduct_month ที่อาจเป็นเดือนถัดไป)
     let advByEmp = {};
     try {
-      const { data: advRows } = await sb().from('advance_requests').select('emp_id,amount,approved_amount').eq('status', 'paid').eq('deducted', false);
+      // ข้ามใบที่ถูก "เลื่อนหัก" (defer_rounds > 0)
+      const { data: advRows } = await sb().from('advance_requests').select('emp_id,amount,approved_amount')
+        .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
       (advRows || []).forEach(r => { const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advByEmp[r.emp_id] = (advByEmp[r.emp_id] || 0) + amt; });
     } catch (_e) { /* ยังไม่มีระบบเบิก */ }
     let { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
@@ -5418,10 +5449,15 @@
     if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้ — กดคำนวณก่อน' };
     if (run.status === 'finalized') return { ok: true, already: true };
     try {
-      // ทำเครื่องหมาย "หักแล้ว" ให้ทุกใบที่จ่ายแล้ว+ยังไม่หัก (ชุดเดียวกับที่ดึงมาหักตอนคำนวณ)
-      const { data: advRows } = await sb().from('advance_requests').select('id').eq('status', 'paid').eq('deducted', false);
-      const ids = (advRows || []).map(r => r.id);
+      // 1) หักใบที่ถึงกำหนด (ไม่ถูกเลื่อน) — ทำเครื่องหมาย "หักแล้ว"
+      const { data: dueRows } = await sb().from('advance_requests').select('id')
+        .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
+      const ids = (dueRows || []).map(r => r.id);
       if (ids.length) await hrAdvanceDeduct({ ids, payroll_ref: run.id, by: 'ระบบเงินเดือน' }, {});
+      // 2) ใบที่ยังถูกเลื่อน → ลดตัวนับลง 1 (ปิดรอบนี้ = ผ่านไป 1 รอบ)
+      const { data: defRows } = await sb().from('advance_requests').select('id,defer_rounds')
+        .eq('status', 'paid').eq('deducted', false).gt('defer_rounds', 0);
+      for (const r of (defRows || [])) { await sb().from('advance_requests').update({ defer_rounds: Math.max(0, Number(r.defer_rounds || 0) - 1) }).eq('id', r.id); }
     } catch (_e) { /* ไม่มีระบบเบิก ก็ข้าม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);
     if (error) throw error;
