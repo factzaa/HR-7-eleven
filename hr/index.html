@@ -2097,7 +2097,8 @@ function chatEnsureDom(){
   if($('chatFab')) return;
   const fab=document.createElement('button'); fab.id='chatFab'; fab.type='button';
   fab.innerHTML='💬<span id="chatFabBadge" style="position:absolute;top:-5px;right:-5px;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;font-size:12px;line-height:22px;display:none;border:2px solid #fff">0</span>';
-  fab.onclick=chatOpen; document.body.appendChild(fab);
+  document.body.appendChild(fab);
+  makeChatFabDraggable(fab);   // ★ ลากเลื่อนได้ (กันทับปุ่มส่งข้อความ) · แตะสั้น = เปิดแชท
   const ov=document.createElement('div'); ov.id='chatOverlay'; ov.className='overlay'; ov.style.alignItems='flex-end'; ov.style.justifyContent='flex-end';
   ov.innerHTML='<div class="modal" style="max-width:430px;width:96%;height:82vh;max-height:660px;display:flex;flex-direction:column;padding:0;overflow:hidden;margin:0 12px 12px 0">'
     +'<div id="chatHead" style="display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line)"></div>'
@@ -2105,6 +2106,20 @@ function chatEnsureDom(){
     +'<div id="chatFoot" style="border-top:1px solid var(--line);padding:8px 10px"></div></div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) chatClose(); });
+}
+// ปุ่มแชทลอย: ลากเลื่อนได้ + จำตำแหน่ง (localStorage) · แตะสั้น (ไม่ลาก) = เปิดแชท
+function makeChatFabDraggable(fab){
+  const KEY='chatFabPos';
+  const clamp=(x,y)=>{ const r=fab.getBoundingClientRect(); const w=r.width||56,h=r.height||56; const mx=Math.max(4,Math.min(x,(window.innerWidth||360)-w-4)); const my=Math.max(4,Math.min(y,(window.innerHeight||640)-h-4)); return [mx,my]; };
+  const applyPos=(x,y)=>{ const [cx,cy]=clamp(x,y); fab.style.left=cx+'px'; fab.style.top=cy+'px'; fab.style.right='auto'; fab.style.bottom='auto'; };
+  try{ const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s&&typeof s.x==='number'){ requestAnimationFrame(()=>applyPos(s.x,s.y)); } }catch(e){}
+  let sx=0,sy=0,ox=0,oy=0,moved=false,dragging=false;
+  const down=e=>{ const p=e.touches?e.touches[0]:e; const r=fab.getBoundingClientRect(); sx=p.clientX; sy=p.clientY; ox=r.left; oy=r.top; moved=false; dragging=true; fab.style.transition='none'; document.addEventListener('mousemove',move,{passive:false}); document.addEventListener('mouseup',up); document.addEventListener('touchmove',move,{passive:false}); document.addEventListener('touchend',up); };
+  const move=e=>{ if(!dragging) return; const p=e.touches?e.touches[0]:e; const dx=p.clientX-sx, dy=p.clientY-sy; if(Math.abs(dx)>4||Math.abs(dy)>4){ moved=true; if(e.cancelable) e.preventDefault(); applyPos(ox+dx, oy+dy); } };
+  const up=()=>{ dragging=false; document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); document.removeEventListener('touchmove',move); document.removeEventListener('touchend',up); if(moved){ const r=fab.getBoundingClientRect(); try{ localStorage.setItem(KEY, JSON.stringify({x:r.left,y:r.top})); }catch(e){} } };
+  fab.addEventListener('mousedown',down); fab.addEventListener('touchstart',down,{passive:true});
+  fab.addEventListener('click',e=>{ if(moved){ e.preventDefault(); e.stopPropagation(); return; } chatOpen(); });
+  window.addEventListener('resize',()=>{ const r=fab.getBoundingClientRect(); if(fab.style.left) applyPos(r.left,r.top); });
 }
 function chatInit(){ chatEnsureDom(); $('chatFab').style.display='block'; chatSubscribe(); chatRefreshBadge(); }
 function chatSubscribe(){
