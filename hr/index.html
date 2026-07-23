@@ -655,6 +655,7 @@
           <option value="previous">รอบก่อนหน้า</option>
         </select>
         <button class="btn btn-pri btn-sm" id="pl_calc">🧮 คำนวณ</button>
+        <select id="pl_run_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
         <span id="pl_run_status" style="font-size:12.5px;color:var(--muted);align-self:center"></span>
         <span style="flex:1"></span>
         <button class="btn btn-sec btn-sm" id="pl_print">🖨️ พิมพ์สลิป (A5 2/แผ่น)</button>
@@ -3937,35 +3938,52 @@ async function loadPayrollRun(){
   const fin = r.run && r.run.status==='finalized';
   $('pl_run_status').innerHTML = (r.range?('📆 '+esc(r.range.label)+' · '):'') + (fin?'<b style="color:#166534">ปิดรอบแล้ว</b>':'<span style="color:#c2410c">ร่าง (แก้ได้)</span>');
   $('pl_finalize').style.display = fin?'none':'';
+  plFillRunBranches();
   renderPayrollItems();
 }
+function plFillRunBranches(){
+  const sel=$('pl_run_branch'); if(!sel) return; const cur=sel.value;
+  const seen={}; (PAY.items||[]).forEach(it=>{ const b=it.branch_id||''; if(!(b in seen)) seen[b]={ id:b, name:it.branch_name||b||'(ไม่ระบุ)', n:0 }; seen[b].n++; });
+  const opts=Object.values(seen).sort((a,b)=>String(a.name).localeCompare(String(b.name),'th'));
+  sel.innerHTML='<option value="">ทุกสาขา ('+(PAY.items||[]).length+')</option>'+opts.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.name)+' ('+o.n+')</option>').join('');
+  if(cur) sel.value=cur;
+}
 function renderPayrollItems(){
-  const items=(PAY&&PAY.items)||[];
+  const all=(PAY&&PAY.items)||[];
   const fin = PAY.run && PAY.run.status==='finalized';
-  if(!items.length){ $('pl_run_body').innerHTML='<div class="empty">ไม่มีพนักงาน</div>'; return; }
-  const card=(it)=>{
-    const addN=(it.additions||[]).length, dedN=(it.deductions||[]).length;
-    return '<div class="card" style="padding:12px 14px;margin-bottom:9px">'
-      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
-        +'<div style="min-width:0"><div style="font-weight:700">'+esc(it.emp_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">'+esc(it.emp_id)+'</span></div>'
-        +'<div style="font-size:12px;color:var(--muted)">🏪 '+esc(it.branch_name||'—')+' · '+(it.wage_type==='daily'?('รายวัน · ทำ '+plB(it.days_worked)+' วัน'):'รายเดือน')+'</div></div>'
-        +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">สุทธิ</div><div style="font-size:19px;font-weight:800;color:#166534">'+plB(it.net)+'</div></div>'
-      +'</div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12.5px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line2)">'
-        +'<div style="color:#166534;font-weight:600">รายรับ '+plB(it.gross)+'</div><div style="color:#b91c1c;font-weight:600;text-align:right">รายหัก '+plB(it.total_deduct)+'</div>'
-        +plKV('ฐาน',it.base_pay)+plKV('OT ('+plB(it.ot_hours)+' ชม.)',it.ot_pay)
-        +plKV('เบี้ยตำแหน่ง',it.position_allowance)+plKV('เบี้ยขยัน',it.diligence)
-        +plKV('โบนัสวินัย',it.bonus)+(addN?plKV('เพิ่มอื่น ('+addN+')',(it.additions||[]).reduce((s,a)=>s+Number(a.amount||0),0)):'<div></div>')
-        +plKV('ประกันสังคม','-'+plB(it.sso))+plKV('หักเบิกล่วงหน้า','-'+plB(it.advance_deduct))
-        +(dedN?plKV('หักอื่น ('+dedN+')','-'+plB((it.deductions||[]).reduce((s,a)=>s+Number(a.amount||0),0))):'<div></div>')+'<div></div>'
-      +'</div>'
-      +(fin?'':'<div style="margin-top:9px;text-align:right"><button class="btn btn-sec btn-sm" data-pledit="'+esc(it.emp_id)+'">✏️ เพิ่ม/หักรายการ</button></div>')
-      +'</div>';
+  const br=($('pl_run_branch')||{}).value||'';
+  const items=br?all.filter(it=>String(it.branch_id||'')===br):all;
+  if(!all.length){ $('pl_run_body').innerHTML='<div class="empty">ไม่มีพนักงาน</div>'; return; }
+  const sumGross=items.reduce((s,it)=>s+Number(it.gross||0),0);
+  const sumNet=items.reduce((s,it)=>s+Number(it.net||0),0);
+  const sumDed=items.reduce((s,it)=>s+Number(it.total_deduct||0),0);
+  const adj=(it)=>{ const up=Number(it.bonus||0)+Number(it.position_allowance||0)+Number(it.diligence||0)+Number(it.ot_pay||0)+(it.additions||[]).reduce((s,a)=>s+Number(a.amount||0),0);
+    const down=Number(it.sso||0)+Number(it.advance_deduct||0)+(it.deductions||[]).reduce((s,a)=>s+Number(a.amount||0),0); return {up,down}; };
+  const rowHtml=(it,i)=>{ const a=adj(it); const daily=it.wage_type==='daily';
+    return '<tr>'
+      +'<td class="mono" style="color:var(--muted)">'+(i+1)+'</td>'
+      +'<td><div style="font-weight:600;font-size:13px">'+esc(it.emp_name)+'</div><div style="font-size:11px;color:var(--muted)">'+esc(it.emp_id)+(it.branch_name?(' · '+esc(it.branch_name)):'')+'</div></td>'
+      +'<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+(it.bank_account?(esc(it.bank_account)+'<br>'+esc(it.bank_name||'')):'<span style="color:#cbd5e1">—</span>')+'</td>'
+      +'<td class="mono" style="text-align:center">'+(daily?plB(it.days_worked):'<span style="color:#cbd5e1">—</span>')+'</td>'
+      +'<td class="mono" style="text-align:right">'+plB(daily? (Number(it.base_pay)/(Number(it.days_worked)||1)) : it.base_pay)+'</td>'
+      +'<td class="mono" style="text-align:right;font-weight:600;color:#166534">'+plB(it.gross)+'</td>'
+      +'<td class="mono" style="text-align:right;font-size:12px"><span style="color:#166534">▲'+plB(a.up)+'</span><br><span style="color:#b91c1c">▼'+plB(a.down)+'</span></td>'
+      +'<td class="mono" style="text-align:right;font-weight:800;color:#0f172a">'+plB(it.net)+'</td>'
+      +'<td style="text-align:center">'+(fin?'<span class="pill ok" style="font-size:11px">ปิดแล้ว</span>':'<button class="btn btn-sec btn-sm" data-pledit="'+esc(it.emp_id)+'" title="เพิ่ม/หักรายการ">✏️</button>')+'</td>'
+      +'</tr>';
   };
-  $('pl_run_body').innerHTML='<div style="font-size:12px;color:var(--muted);margin:0 2px 8px">'+items.length+' คน</div>'+items.map(card).join('');
+  $('pl_run_body').innerHTML=
+    '<div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end;align-items:baseline;margin:0 2px 10px">'
+      +'<div style="margin-right:auto;font-size:12.5px;color:var(--muted);align-self:center">'+items.length+' คน'+(br?' (กรองสาขา)':'')+'</div>'
+      +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">รวมค่าใช้จ่ายพนักงาน</div><div style="font-size:17px;font-weight:700">'+plB(sumGross)+'</div></div>'
+      +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">รวมจ่ายสุทธิ</div><div style="font-size:20px;font-weight:800;color:#166534">'+plB(sumNet)+'</div></div>'
+    +'</div>'
+    +'<div class="tablewrap"><table style="font-size:13px"><thead><tr>'
+      +'<th>#</th><th>ชื่อ / รหัส · สาขา</th><th>บัญชีรับเงิน</th><th style="text-align:center">วัน</th><th style="text-align:right">ค่าจ้าง</th><th style="text-align:right">รวมรับ</th><th style="text-align:right">ปรับเพิ่ม/ลด</th><th style="text-align:right">สุทธิ</th><th></th>'
+    +'</tr></thead><tbody>'+items.map(rowHtml).join('')+'</tbody></table></div>';
   $('pl_run_body').querySelectorAll('[data-pledit]').forEach(b=>b.onclick=()=>openPlItem(b.dataset.pledit));
 }
-function plKV(k,v){ return '<div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">'+esc(k)+'</span><span class="mono">'+(typeof v==='string'?esc(v):plB(v))+'</span></div>'; }
+$('pl_run_branch') && ($('pl_run_branch').onchange=renderPayrollItems);
 $('pl_calc') && ($('pl_calc').onclick=loadPayrollRun);
 $('pl_which') && ($('pl_which').onchange=loadPayrollRun);
 $('pl_finalize') && ($('pl_finalize').onclick=async()=>{
