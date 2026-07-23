@@ -7608,27 +7608,39 @@ async function qaViewItems(folderId){
     +(canAdd?'<button class="btn btn-pri btn-sm" id="qa_additem_btn">+ บันทึกสินค้า</button>':'<span style="font-size:12px;color:var(--muted)">🔒 สาขาอื่น · ดูอย่างเดียว</span>')+'</div>';
   h+='<div id="qa_addform"></div>';
   if(!r.rows.length){ h+='<div class="empty">ยังไม่มีสินค้าในโฟลเดอร์นี้ — กด "+ บันทึกสินค้า" เพื่อบันทึกแทนพนักงาน</div>'; }
-  else h+=r.rows.map(it=>{
-    const dl=it.expiry_date?qaDaysLeft(it.expiry_date):null;
-    const stTxt=it.status==='sold'?'ขายแล้ว':it.status==='removed'?'เก็บออกแล้ว':'ยังอยู่บนเชลฟ์';
-    const stCol=it.status==='sold'?'#16a34a':it.status==='removed'?'#6b7280':'#d97706';
-    let col='#6b7280'; if(dl!=null){ if(dl<0||dl<=3)col='#dc2626'; else if(dl<=7)col='#b45309'; else if(dl<=30)col='#a06515'; }
-    let c='<div class="card" style="padding:12px;margin-bottom:8px"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1">';
-    c+='<div style="font-weight:700">'+esc(it.name)+' <span style="color:'+stCol+';font-size:12px;font-weight:600">· '+stTxt+'</span></div>';
-    c+='<div style="font-size:12.5px;color:var(--muted);margin-top:2px">'+(it.barcode?('รหัส '+esc(it.barcode)+' · '):'')+(it.size?('ขนาด <b style="color:#0f172a;font-size:14.5px">'+esc(it.size)+'</b> · '):'')+'จำนวน <b style="color:#0f172a;font-size:14.5px">'+(it.qty||1)+'</b> ชิ้น'+(it.zone?(' · โซน '+esc(it.zone)):'')+'</div>';
-    c+='<div style="font-size:13px;color:'+col+';font-weight:600;margin-top:3px">📅 หมดอายุ '+qaFmtDate(it.expiry_date)+(dl!=null?(dl<0?(' · หมดอายุแล้ว '+(-dl)+' วัน'):(' · เหลือ '+dl+' วัน')):'')+'</div>';
-    c+='<div style="font-size:12px;color:var(--muted);margin-top:2px">บันทึกโดย '+esc(it.emp_name||it.emp_id||'—')+' · '+esc(it.branch_name)+'</div>';
-    const canEdit = !MGR_MODE || String(it.branch_id)===String(MGR_BRANCH);   // ผจก.แก้ได้เฉพาะสาขาตัวเอง
-    c+='</div>'+(canEdit?'<div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-sec btn-sm" data-qaiedit="'+it.id+'">✏️ แก้ไข</button><button class="btn btn-sec btn-sm" data-qaidel="'+it.id+'">🗑 ลบ</button></div>':'<span style="font-size:11px;color:var(--muted);align-self:flex-start">🔒 สาขาอื่น</span>')+'</div>';
-    if(canEdit){
-      const stBtns = it.status==='on_shelf'
-        ? '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|sold">✓ ขายแล้ว</button><button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|removed">📦 เก็บออก</button>'
-        : '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|on_shelf">↩ คืนขึ้นเชลฟ์</button>';
-      c+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'+stBtns+'</div>';
-    }
-    if(it.photos&&it.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+it.photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
-    return c+'</div>';
-  }).join('');
+  else {
+    // เรียงตามวันหมดอายุใกล้สุดก่อน (หมดแล้ว/ใกล้หมด อยู่บนสุด) — เหมือนแดชบอร์ด
+    const rows=(r.rows||[]).slice().sort((a,b)=>{ const da=a.expiry_date||'9999-12-31', db=b.expiry_date||'9999-12-31'; return da<db?-1:da>db?1:0; });
+    h+='<div class="tablewrap"><table style="font-size:13px"><thead><tr>'
+      +'<th style="width:52px"></th><th>สินค้า</th><th>หมดอายุ</th><th style="text-align:center">สถานะ</th><th>ผู้บันทึก</th><th></th>'
+      +'</tr></thead><tbody>'
+      +rows.map(it=>{
+        const dl=it.expiry_date?qaDaysLeft(it.expiry_date):null;
+        const stTxt=it.status==='sold'?'ขายแล้ว':it.status==='removed'?'เก็บออกแล้ว':'ยังอยู่บนเชลฟ์';
+        const stCol=it.status==='sold'?'#16a34a':it.status==='removed'?'#6b7280':'#d97706';
+        let col='#6b7280'; if(dl!=null){ if(dl<0||dl<=3)col='#dc2626'; else if(dl<=7)col='#b45309'; else if(dl<=30)col='#a06515'; }
+        const canEdit = !MGR_MODE || String(it.branch_id)===String(MGR_BRANCH);   // ผจก.แก้ได้เฉพาะสาขาตัวเอง
+        const ph=(it.photos&&it.photos.length)?it.photos[0]:'';
+        const thumb=ph?('<img src="'+esc(ph)+'" onclick="spLightbox(this)" style="width:44px;height:44px;object-fit:cover;border-radius:8px;cursor:pointer;display:block">'+(it.photos.length>1?('<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:1px">+'+(it.photos.length-1)+'</div>'):'')):'<div style="width:44px;height:44px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:18px">📦</div>';
+        const sub=[it.barcode?('รหัส '+esc(it.barcode)):'', it.size?('ขนาด '+esc(it.size)):'', '×'+(it.qty||1), it.zone?('โซน '+esc(it.zone)):''].filter(Boolean).join(' · ');
+        const dlTxt=dl!=null?(dl<0?('หมดแล้ว '+(-dl)+' วัน'):(dl===0?'หมดอายุวันนี้':('เหลือ '+dl+' วัน'))):'';
+        const stBtns=canEdit?(it.status==='on_shelf'
+          ? '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|sold">✓ ขาย</button><button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|removed">📦 เก็บ</button>'
+          : '<button class="btn btn-sec btn-sm" data-qastatus="'+it.id+'|on_shelf">↩ คืน</button>'):'';
+        const actions=canEdit
+          ? '<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+stBtns+'<button class="btn btn-sec btn-sm" data-qaiedit="'+it.id+'" title="แก้ไข">✏️</button><button class="btn btn-sec btn-sm" data-qaidel="'+it.id+'" title="ลบ">🗑</button></div>'
+          : '<span style="font-size:11px;color:var(--muted)">🔒 สาขาอื่น</span>';
+        return '<tr>'
+          +'<td>'+thumb+'</td>'
+          +'<td><div style="font-weight:600">'+esc(it.name)+'</div>'+(sub?('<div style="font-size:11.5px;color:var(--muted)">'+esc(sub)+'</div>'):'')+'</td>'
+          +'<td style="white-space:nowrap"><div style="color:'+col+';font-weight:600">📅 '+qaFmtDate(it.expiry_date)+'</div>'+(dlTxt?('<div style="font-size:11.5px;color:'+col+'">'+dlTxt+'</div>'):'')+'</td>'
+          +'<td style="text-align:center"><span class="pill" style="background:'+stCol+'22;color:'+stCol+';font-weight:600;white-space:nowrap">'+stTxt+'</span></td>'
+          +'<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+esc(it.emp_name||it.emp_id||'—')+'<br>'+esc(it.branch_name||'')+'</td>'
+          +'<td>'+actions+'</td>'
+          +'</tr>';
+      }).join('')
+      +'</tbody></table></div>';
+  }
   wrap.innerHTML=h;
   if($('qa_additem_btn')) $('qa_additem_btn').onclick=()=>qaToggleAddForm();
   wrap.querySelectorAll('[data-qaiedit]').forEach(b=>b.onclick=()=>{ const it=(QA_CUR.items||[]).find(x=>String(x.id)===String(b.dataset.qaiedit)); if(it) qaToggleAddForm(it); });
