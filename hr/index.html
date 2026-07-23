@@ -3902,7 +3902,7 @@ $('mecSave') && ($('mecSave').onclick=meConfigSave);
 /* ============================================================
    เงินเดือน (Payroll) — เห็นเฉพาะ HR + ล็อกรหัสอีกชั้น
    ============================================================ */
-let PAY_UNLOCKED=false, PAY=null, PAY_CFG=null, PAY_PROFILES=null;
+let PAY_UNLOCKED=false, PAY=null, PAY_CFG=null, PAY_PROFILES=null, PAY_PF_DEF={daily_rate:0,monthly_rate:0};
 const plB = n => Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:0, maximumFractionDigits:2});
 function enterPayroll(){
   if(PAY_UNLOCKED){ $('pl_lock').style.display='none'; $('pl_main').style.display='block'; plShowSec('run'); }
@@ -4046,7 +4046,7 @@ async function loadPayrollProfiles(){
   $('pl_pf_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_payroll_profiles', password:pwd });
   if(!r||!r.ok){ $('pl_pf_body').innerHTML='<div class="empty">ไม่สำเร็จ</div>'; return; }
-  PAY_PROFILES=r.rows||[]; renderPayrollProfiles();
+  PAY_PROFILES=r.rows||[]; PAY_PF_DEF=r.defaults||{daily_rate:0,monthly_rate:0}; renderPayrollProfiles();
 }
 function renderPayrollProfiles(){
   const q=(($('pl_pf_q')||{}).value||'').toLowerCase();
@@ -4058,7 +4058,7 @@ function renderPayrollProfiles(){
       +'<button class="btn btn-pri btn-sm pl-pf-save" style="flex:none">บันทึก</button></div>'
     +'<div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12.5px">'
       +'<label>ประเภท <select class="pf-type" style="padding:5px;border:1.5px solid var(--line2);border-radius:7px;font:inherit"><option value="daily"'+(p.wage_type!=='monthly'?' selected':'')+'>รายวัน</option><option value="monthly"'+(p.wage_type==='monthly'?' selected':'')+'>รายเดือน</option></select></label>'
-      +'<label>ฐาน '+inp('pf-base',p.base_rate,90)+'</label>'
+      +'<label>ฐาน <input class="pf-base" type="number" step="any" value="'+(Number(p.base_rate)>0?esc(p.base_rate):'')+'" placeholder="กลาง '+((p.wage_type==='monthly'?PAY_PF_DEF.monthly_rate:PAY_PF_DEF.daily_rate)||0)+'" style="width:96px;padding:5px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;text-align:right"></label>'
       +'<label>OT/ชม. '+inp('pf-ot',p.ot_rate,70)+'</label>'
       +'<label>เบี้ยตำแหน่ง '+inp('pf-pos',p.position_allowance,80)+'</label>'
       +'<label>เบี้ยขยัน '+inp('pf-dil',p.diligence_amount,70)+'</label>'
@@ -4103,8 +4103,14 @@ async function loadPayrollConfig(){
   const N=(id,label,val)=>'<label style="display:block;font-size:13px;margin-bottom:9px">'+label+'<input id="'+id+'" type="number" step="any" value="'+(val!=null?val:'')+'" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>';
   const T=(id,label,val)=>'<label style="display:block;font-size:13px;margin-bottom:9px">'+label+'<input id="'+id+'" type="text" value="'+esc(val||'')+'" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>';
   $('pl_cfg_body').innerHTML=
-    '<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">ค่าล่วงเวลา (OT)</div>'
-      +N('cfo_mult','ตัวคูณ OT ตั้งต้น (× ค่าแรงรายชั่วโมง)',r.ot.default_multiplier)+N('cfo_bh','ชั่วโมงทำงาน/วัน',r.ot.base_hours_per_day)+'</div>'
+    '<div class="card" style="padding:14px;margin-bottom:12px;border:1.5px solid #bbf7d0;background:#f0fdf4"><div style="font-weight:700;margin-bottom:4px">💵 อัตราค่าแรงกลาง</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">ตั้งที่เดียวใช้กับทุกคน (ตามค่าแรงขั้นต่ำ) · ตั้งอัตรารายคนในหน้าตั้งค่าจ้างเพื่อ override เฉพาะกรณี</div>'
+      +N('cfw_daily','ค่าแรงรายวัน (บาท/วัน)',r.wage.daily_rate)+N('cfw_monthly','เงินเดือน (บาท/เดือน) — เฉพาะคนแบบรายเดือน',r.wage.monthly_rate)+'</div>'
+    +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">ค่าล่วงเวลา (OT)</div>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">วิธีคิด OT<select id="cfo_mode" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"><option value="flat"'+((r.ot.mode||"flat")!=="multiplier"?" selected":"")+'>เรทคงที่ต่อชั่วโมง (แนะนำ · ง่ายสุด)</option><option value="multiplier"'+((r.ot.mode||"flat")==="multiplier"?" selected":"")+'>คำนวณจากค่าแรง × ตัวคูณ</option></select></label>'
+      +'<div id="cfo_flat_box">'+N('cfo_flat','อัตรา OT ต่อชั่วโมง (บาท) — เช่น 65',r.ot.flat_rate)+'</div>'
+      +'<div id="cfo_mult_box" style="display:none">'+N('cfo_mult','ตัวคูณ OT (× ค่าแรงรายชั่วโมง)',r.ot.default_multiplier)+N('cfo_bh','ชั่วโมงทำงาน/วัน',r.ot.base_hours_per_day)+'</div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">💡 OT รวม = ชั่วโมง OT × อัตรานี้ · ถ้าตั้ง "อัตรา OT" รายคนในหน้าตั้งค่าจ้าง จะใช้ของรายคนก่อน</div></div>'
     +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">ประกันสังคม</div>'
       +N('cfs_rate','อัตรา % ',r.sso.rate)+N('cfs_cap','เพดานหัก (บาท)',r.sso.cap)+N('cfs_min','ฐานต่ำสุด',r.sso.wage_min)+N('cfs_max','ฐานสูงสุด',r.sso.wage_max)+'</div>'
     +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">เบี้ยขยัน · ปัดเศษ</div>'
@@ -4120,12 +4126,15 @@ async function loadPayrollConfig(){
       +'<button class="btn btn-sec" id="pl_pass_save">ตั้ง/เปลี่ยนรหัสเงินเดือน</button></div>';
   $('pl_cfg_save').onclick=savePayrollConfig;
   $('pl_pass_save').onclick=savePayrollPass;
+  const otToggle=()=>{ const m=$('cfo_mode').value; $('cfo_flat_box').style.display=(m==='multiplier')?'none':'block'; $('cfo_mult_box').style.display=(m==='multiplier')?'block':'none'; };
+  $('cfo_mode').onchange=otToggle; otToggle();
 }
 async function savePayrollConfig(){
   const n=id=>{ const v=$(id).value; return v===''?null:Number(v); };
   $('pl_cfg_save').innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_payroll_config_save', password:pwd, data:{
-    ot:{ default_multiplier:n('cfo_mult'), base_hours_per_day:n('cfo_bh') },
+    wage:{ daily_rate:n('cfw_daily'), monthly_rate:n('cfw_monthly') },
+    ot:{ mode:$('cfo_mode').value, flat_rate:n('cfo_flat'), default_multiplier:n('cfo_mult'), base_hours_per_day:n('cfo_bh') },
     sso:{ enabled:(PAY_CFG&&PAY_CFG.sso&&PAY_CFG.sso.enabled)!==false, rate:n('cfs_rate'), cap:n('cfs_cap'), wage_min:n('cfs_min'), wage_max:n('cfs_max') },
     diligence:{ require_no_absent:$('cfd_noab').checked, allow_late_count:n('cfd_late') },
     rounding:{ net_round_to:n('cfr_round') },

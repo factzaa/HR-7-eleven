@@ -5216,7 +5216,8 @@
     const rows = ((await sb().from('payroll_config').select('key,value')).data) || [];
     const c = {}; rows.forEach(r => { c[r.key] = r.value; });
     return {
-      ot: Object.assign({ default_multiplier: 1.5, base_hours_per_day: 8 }, c.ot || {}),
+      wage: Object.assign({ daily_rate: 0, monthly_rate: 0 }, c.wage || {}),
+      ot: Object.assign({ mode: 'flat', flat_rate: 60, default_multiplier: 1.5, base_hours_per_day: 8 }, c.ot || {}),
       sso: Object.assign({ enabled: true, rate: 5, cap: 750, wage_min: 1650, wage_max: 15000 }, c.sso || {}),
       diligence: Object.assign({ require_no_absent: true, allow_late_count: 0 }, c.diligence || {}),
       rounding: Object.assign({ net_round_to: 1 }, c.rounding || {}),
@@ -5228,13 +5229,14 @@
   async function hrPayrollConfigSave(d) {
     d = d || {};
     const ups = [];
-    ['ot', 'sso', 'diligence', 'rounding', 'company', 'payday'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
+    ['wage', 'ot', 'sso', 'diligence', 'rounding', 'company', 'payday'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
     if (!ups.length) return { ok: false, error: 'ไม่มีค่าให้บันทึก' };
     const { error } = await sb().from('payroll_config').upsert(ups, { onConflict: 'key' });
     if (error) throw error;
     return { ok: true };
   }
   async function hrPayrollProfileList() {
+    const cfg = await _payrollConfig();
     const [pr, emp, br] = await Promise.all([
       sb().from('payroll_profiles').select('*'),
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account').eq('active', true).order('emp_id'),
@@ -5251,7 +5253,7 @@
         has_profile: !!pm[e.emp_id],
       };
     });
-    return { ok: true, rows };
+    return { ok: true, rows, defaults: { daily_rate: Number(cfg.wage.daily_rate || 0), monthly_rate: Number(cfg.wage.monthly_rate || 0) } };
   }
   async function hrPayrollProfileSave(d) {
     d = d || {};
@@ -5269,15 +5271,21 @@
   }
   // คำนวณองค์ประกอบเงินเดือน 1 คน
   function _payrollCompute(prof, cfg, stats, advanceAmt, additions, deductions) {
-    const wageType = prof.wage_type || 'monthly';
-    const baseRate = Number(prof.base_rate || 0);
+    const wageType = prof.wage_type || 'daily';
+    // อัตราค่าแรง: รายคน (ถ้าตั้งไว้ >0) มาก่อน · ไม่ตั้ง = ใช้อัตรากลางจากค่าตั้งค่า
+    const globalRate = wageType === 'daily' ? Number((cfg.wage && cfg.wage.daily_rate) || 0) : Number((cfg.wage && cfg.wage.monthly_rate) || 0);
+    const baseRate = (prof.base_rate != null && Number(prof.base_rate) > 0) ? Number(prof.base_rate) : globalRate;
     const daysWorked = Number(stats.days_worked || 0);
     const base_pay = wageType === 'daily' ? _pr2(daysWorked * baseRate) : baseRate;
     const bh = Number(cfg.ot.base_hours_per_day || 8) || 8;
-    let otRate = (prof.ot_rate != null) ? Number(prof.ot_rate) : null;
+    let otRate = (prof.ot_rate != null) ? Number(prof.ot_rate) : null;   // อัตรารายคนมาก่อนเสมอ
     if (otRate == null) {
-      const hourly = wageType === 'daily' ? (baseRate / bh) : (baseRate / 30 / bh);
-      otRate = hourly * Number(cfg.ot.default_multiplier || 1.5);
+      if ((cfg.ot.mode || 'flat') === 'multiplier') {
+        const hourly = wageType === 'daily' ? (baseRate / bh) : (baseRate / 30 / bh);
+        otRate = hourly * Number(cfg.ot.default_multiplier || 1.5);
+      } else {
+        otRate = Number(cfg.ot.flat_rate || 0);   // เรทคงที่ต่อชั่วโมง (ง่าย)
+      }
     }
     const otHours = Number(stats.ot_hours || 0);
     const ot_pay = _pr2(otHours * otRate);
