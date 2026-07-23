@@ -5246,7 +5246,7 @@
       const p = pm[e.emp_id] || {};
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname || '', branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '', email: e.email || '',
-        wage_type: p.wage_type || 'monthly', base_rate: p.base_rate != null ? Number(p.base_rate) : 0, ot_rate: p.ot_rate != null ? Number(p.ot_rate) : null,
+        wage_type: p.wage_type || 'daily', base_rate: p.base_rate != null ? Number(p.base_rate) : 0, ot_rate: p.ot_rate != null ? Number(p.ot_rate) : null,
         position_allowance: Number(p.position_allowance || 0), diligence_amount: Number(p.diligence_amount || 0), sso_enabled: p.sso_enabled !== false,
         has_profile: !!pm[e.emp_id],
       };
@@ -5258,7 +5258,7 @@
     if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
     const num = (v, def) => { const n = (v === '' || v == null) ? def : Number(v); return isNaN(n) ? def : n; };
     const row = {
-      emp_id: d.emp_id, wage_type: (d.wage_type === 'daily' ? 'daily' : 'monthly'), base_rate: num(d.base_rate, 0),
+      emp_id: d.emp_id, wage_type: (d.wage_type === 'monthly' ? 'monthly' : 'daily'), base_rate: num(d.base_rate, 0),
       ot_rate: (d.ot_rate === '' || d.ot_rate == null) ? null : Number(d.ot_rate),
       position_allowance: num(d.position_allowance, 0), diligence_amount: num(d.diligence_amount, 0),
       sso_enabled: d.sso_enabled !== false, updated_at: new Date().toISOString(),
@@ -5345,7 +5345,7 @@
     for (const e of (empR.data || [])) {
       const ex = exM[e.emp_id] || {};
       if (finalized && exM[e.emp_id]) { items.push(ex); continue; }   // ปิดรอบแล้ว = คืนยอดที่ตรึงไว้
-      const prof = profM[e.emp_id] || { wage_type: 'monthly', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, ot_rate: null };
+      const prof = profM[e.emp_id] || { wage_type: 'daily', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, ot_rate: null };
       const s = scMap[e.emp_id] || {};
       const days_worked = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
       const stats = { days_worked, ot_hours: Math.round((otByEmp[e.emp_id] || 0) * 10) / 10, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };

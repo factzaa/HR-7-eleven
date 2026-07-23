@@ -4057,7 +4057,7 @@ function renderPayrollProfiles(){
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><div style="font-weight:600">'+esc(p.name)+' <span style="color:var(--muted);font-size:12px;font-weight:400">'+esc(p.emp_id)+'</span>'+(p.email?'':' <span style="color:#c2410c;font-size:11px">· ยังไม่มีอีเมล</span>')+'</div>'
       +'<button class="btn btn-pri btn-sm pl-pf-save" style="flex:none">บันทึก</button></div>'
     +'<div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12.5px">'
-      +'<label>ประเภท <select class="pf-type" style="padding:5px;border:1.5px solid var(--line2);border-radius:7px;font:inherit"><option value="monthly"'+(p.wage_type!=='daily'?' selected':'')+'>รายเดือน</option><option value="daily"'+(p.wage_type==='daily'?' selected':'')+'>รายวัน</option></select></label>'
+      +'<label>ประเภท <select class="pf-type" style="padding:5px;border:1.5px solid var(--line2);border-radius:7px;font:inherit"><option value="daily"'+(p.wage_type!=='monthly'?' selected':'')+'>รายวัน</option><option value="monthly"'+(p.wage_type==='monthly'?' selected':'')+'>รายเดือน</option></select></label>'
       +'<label>ฐาน '+inp('pf-base',p.base_rate,90)+'</label>'
       +'<label>OT/ชม. '+inp('pf-ot',p.ot_rate,70)+'</label>'
       +'<label>เบี้ยตำแหน่ง '+inp('pf-pos',p.position_allowance,80)+'</label>'
