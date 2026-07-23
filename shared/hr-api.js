@@ -210,6 +210,17 @@
         case 'hr_advance_window_open':   return await hrAdvanceWindowOpen(p.data, p);
         case 'hr_advance_window_list':   return await hrAdvanceWindowList(p);
         case 'hr_advance_window_revoke': return await hrAdvanceWindowRevoke(p.data, p);
+        // ---- เงินเดือน (Payroll · เห็นเฉพาะ HR + ล็อกรหัสอีกชั้น) ----
+        case 'hr_payroll_unlock':      return await hrPayrollUnlock(p.pass);
+        case 'hr_payroll_pass_set':    return await hrPayrollPassSet(p.data);
+        case 'hr_payroll_config_get':  return await hrPayrollConfigGet();
+        case 'hr_payroll_config_save': return await hrPayrollConfigSave(p.data);
+        case 'hr_payroll_profiles':    return await hrPayrollProfileList();
+        case 'hr_payroll_profile_save':return await hrPayrollProfileSave(p.data);
+        case 'hr_payroll_run':         return await hrPayrollRun(p);
+        case 'hr_payroll_item_save':   return await hrPayrollItemSave(p.data);
+        case 'hr_payroll_finalize':    return await hrPayrollFinalize(p);
+        case 'hr_payroll_summary':     return await hrPayrollSummary(p);
         // ---- ประเมินผลงานผู้จัดการสาขา (เห็นเฉพาะ HR) ----
         case 'hr_mgr_eval':            return await hrMgrEval(p);
         case 'hr_mgr_eval_config_get': return await hrMgrEvalConfigGet();
@@ -621,6 +632,7 @@
       end_date: d.end_date || null,
       branch_id: d.branch_id || null, weekly_off: d.weekly_off || null,
       phone: d.phone || null, line_user_id: d.line_user_id || null, address: d.address || null,
+      email: d.email || null,
       emergency_name: d.emergency_name || null, emergency_phone: d.emergency_phone || null,
       bank_name: d.bank_name || null, bank_account: d.bank_account || null, id_card: d.id_card || null,
       active: !!d.active,
@@ -5181,6 +5193,245 @@
     const { data, error } = await sb().from('mgr_eval_snapshots').select('period_start,period_end,score_a,score_b,grade_a,grade_b,block_c').eq('mgr_emp', empId).order('period_start', { ascending: true });
     if (error) throw error;
     return { ok: true, rows: data || [] };
+  }
+
+  // ============================================================
+  // ระบบเงินเดือน (Payroll) — เห็นเฉพาะ HR + ล็อกรหัสอีกชั้น
+  //   ★ คำนวณ+ออกสลิปเท่านั้น ไม่โอนเงินจริง · ค่าจ้างผสมรายเดือน/รายวัน
+  // ============================================================
+  const _pr2 = v => Math.round((Number(v) || 0) * 100) / 100;
+  async function hrPayrollUnlock(pass) {
+    const { data, error } = await sb().rpc('payroll_check_password', { p_password: String(pass || '') });
+    if (error) throw error;
+    return { ok: data === true, error: data === true ? null : 'รหัสเงินเดือนไม่ถูกต้อง' };
+  }
+  async function hrPayrollPassSet(d) {
+    d = d || {};
+    const { data, error } = await sb().rpc('payroll_set_password', { p_hr_password: String(d.hr_password || ''), p_new_password: String(d.new_password || '') });
+    if (error) throw error;
+    if (data !== true) return { ok: false, error: 'รหัส HR ไม่ถูกต้อง' };
+    return { ok: true };
+  }
+  async function _payrollConfig() {
+    const rows = ((await sb().from('payroll_config').select('key,value')).data) || [];
+    const c = {}; rows.forEach(r => { c[r.key] = r.value; });
+    return {
+      ot: Object.assign({ default_multiplier: 1.5, base_hours_per_day: 8 }, c.ot || {}),
+      sso: Object.assign({ enabled: true, rate: 5, cap: 750, wage_min: 1650, wage_max: 15000 }, c.sso || {}),
+      diligence: Object.assign({ require_no_absent: true, allow_late_count: 0 }, c.diligence || {}),
+      rounding: Object.assign({ net_round_to: 1 }, c.rounding || {}),
+      company: Object.assign({ name: '', address: '', tax_id: '' }, c.company || {}),
+      payday: Object.assign({ day: 0 }, c.payday || {}),
+    };
+  }
+  async function hrPayrollConfigGet() { const c = await _payrollConfig(); return { ok: true, ...c }; }
+  async function hrPayrollConfigSave(d) {
+    d = d || {};
+    const ups = [];
+    ['ot', 'sso', 'diligence', 'rounding', 'company', 'payday'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
+    if (!ups.length) return { ok: false, error: 'ไม่มีค่าให้บันทึก' };
+    const { error } = await sb().from('payroll_config').upsert(ups, { onConflict: 'key' });
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function hrPayrollProfileList() {
+    const [pr, emp, br] = await Promise.all([
+      sb().from('payroll_profiles').select('*'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account').eq('active', true).order('emp_id'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    const pm = {}; (pr.data || []).forEach(p => { pm[p.emp_id] = p; });
+    const brName = {}; (br.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const rows = (emp.data || []).map(e => {
+      const p = pm[e.emp_id] || {};
+      return {
+        emp_id: e.emp_id, name: e.name, nickname: e.nickname || '', branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '', email: e.email || '',
+        wage_type: p.wage_type || 'monthly', base_rate: p.base_rate != null ? Number(p.base_rate) : 0, ot_rate: p.ot_rate != null ? Number(p.ot_rate) : null,
+        position_allowance: Number(p.position_allowance || 0), diligence_amount: Number(p.diligence_amount || 0), sso_enabled: p.sso_enabled !== false,
+        has_profile: !!pm[e.emp_id],
+      };
+    });
+    return { ok: true, rows };
+  }
+  async function hrPayrollProfileSave(d) {
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const num = (v, def) => { const n = (v === '' || v == null) ? def : Number(v); return isNaN(n) ? def : n; };
+    const row = {
+      emp_id: d.emp_id, wage_type: (d.wage_type === 'daily' ? 'daily' : 'monthly'), base_rate: num(d.base_rate, 0),
+      ot_rate: (d.ot_rate === '' || d.ot_rate == null) ? null : Number(d.ot_rate),
+      position_allowance: num(d.position_allowance, 0), diligence_amount: num(d.diligence_amount, 0),
+      sso_enabled: d.sso_enabled !== false, updated_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('payroll_profiles').upsert(row, { onConflict: 'emp_id' });
+    if (error) throw error;
+    return { ok: true };
+  }
+  // คำนวณองค์ประกอบเงินเดือน 1 คน
+  function _payrollCompute(prof, cfg, stats, advanceAmt, additions, deductions) {
+    const wageType = prof.wage_type || 'monthly';
+    const baseRate = Number(prof.base_rate || 0);
+    const daysWorked = Number(stats.days_worked || 0);
+    const base_pay = wageType === 'daily' ? _pr2(daysWorked * baseRate) : baseRate;
+    const bh = Number(cfg.ot.base_hours_per_day || 8) || 8;
+    let otRate = (prof.ot_rate != null) ? Number(prof.ot_rate) : null;
+    if (otRate == null) {
+      const hourly = wageType === 'daily' ? (baseRate / bh) : (baseRate / 30 / bh);
+      otRate = hourly * Number(cfg.ot.default_multiplier || 1.5);
+    }
+    const otHours = Number(stats.ot_hours || 0);
+    const ot_pay = _pr2(otHours * otRate);
+    const position_allowance = Number(prof.position_allowance || 0);
+    let diligence = 0;
+    const dcfg = cfg.diligence || {};
+    const noAbsent = !dcfg.require_no_absent || (Number(stats.absent_count || 0) === 0);
+    const lateOk = Number(stats.late_count || 0) <= Number(dcfg.allow_late_count || 0);
+    if (noAbsent && lateOk) diligence = Number(prof.diligence_amount || 0);
+    const bonus = Number(stats.bonus || 0);
+    const addSum = (additions || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const gross = _pr2(base_pay + ot_pay + position_allowance + diligence + bonus + addSum);
+    let sso = 0;
+    if (prof.sso_enabled !== false && cfg.sso && cfg.sso.enabled !== false && base_pay > 0) {
+      const wage = Math.max(Number(cfg.sso.wage_min || 0), Math.min(Number(cfg.sso.wage_max || 1e12), base_pay));
+      sso = Math.min(Number(cfg.sso.cap || 1e12), _pr2(wage * Number(cfg.sso.rate || 5) / 100));
+    }
+    const dedSum = (deductions || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const total_deduct = _pr2(sso + Number(advanceAmt || 0) + dedSum);
+    const rt = Number((cfg.rounding && cfg.rounding.net_round_to) || 1) || 1;
+    const net = Math.round((gross - total_deduct) / rt) * rt;
+    return {
+      base_pay: _pr2(base_pay), days_worked: daysWorked, ot_hours: otHours, ot_pay,
+      position_allowance: _pr2(position_allowance), diligence: _pr2(diligence), bonus: _pr2(bonus),
+      gross, sso: _pr2(sso), advance_deduct: _pr2(Number(advanceAmt || 0)), total_deduct, net,
+    };
+  }
+  async function hrPayrollRun(p) {
+    p = p || {};
+    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const cyc = cycleRange(cycleBack(which));
+    const payMonth = p.pay_month || cyc.end.slice(0, 7);
+    const cfg = await _payrollConfig();
+    const sc = await hrScoreGet(which, null);
+    const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
+    const today = bkkToday();
+    const endEff = cyc.end < today ? cyc.end : today;
+    const [profR, empR, brR, attR, shR] = await Promise.all([
+      sb().from('payroll_profiles').select('*'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account').eq('active', true).order('emp_id'),
+      sb().from('branches').select('branch_id,name'),
+      sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('shifts').select('shift_id,day_value'),
+    ]);
+    const profM = {}; (profR.data || []).forEach(x => { profM[x.emp_id] = x; });
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const otWhole = await getSettingBool('ot_whole_day');
+    const workedDV = {}, otByEmp = {};
+    (attR.data || []).forEach(a => {
+      if (a.check_in) { const dv = a.day_value != null ? Number(a.day_value) : (dvMap[a.shift_id] != null ? dvMap[a.shift_id] : 1); (workedDV[a.emp_id] || (workedDV[a.emp_id] = {}))[a.work_date] = dv; }
+      otByEmp[a.emp_id] = (otByEmp[a.emp_id] || 0) + otAdj(a.ot_hours, otWhole);
+    });
+    let advByEmp = {};
+    try { const ap = await hrAdvancePayroll(payMonth, {}); (ap.by_emp || []).forEach(e => { advByEmp[e.emp_id] = e.total; }); } catch (_e) { /* ยังไม่มีระบบเบิก */ }
+    let { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
+    if (!run) {
+      const ins = await sb().from('payroll_runs').insert({ period_start: cyc.start, period_end: cyc.end, pay_month: payMonth, status: 'draft', created_by: 'สำนักงาน (HR)' }).select().maybeSingle();
+      run = ins.data;
+    }
+    const finalized = run && run.status === 'finalized';
+    const { data: existing } = await sb().from('payroll_items').select('*').eq('run_id', run.id);
+    const exM = {}; (existing || []).forEach(x => { exM[x.emp_id] = x; });
+    const items = [];
+    for (const e of (empR.data || [])) {
+      const ex = exM[e.emp_id] || {};
+      if (finalized && exM[e.emp_id]) { items.push(ex); continue; }   // ปิดรอบแล้ว = คืนยอดที่ตรึงไว้
+      const prof = profM[e.emp_id] || { wage_type: 'monthly', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, ot_rate: null };
+      const s = scMap[e.emp_id] || {};
+      const days_worked = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
+      const stats = { days_worked, ot_hours: Math.round((otByEmp[e.emp_id] || 0) * 10) / 10, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
+      const additions = Array.isArray(ex.additions) ? ex.additions : [];
+      const deductions = Array.isArray(ex.deductions) ? ex.deductions : [];
+      const comp = _payrollCompute(prof, cfg, stats, advByEmp[e.emp_id] || 0, additions, deductions);
+      items.push({
+        run_id: run.id, emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '',
+        wage_type: prof.wage_type || 'monthly',
+        base_pay: comp.base_pay, days_worked: comp.days_worked, ot_hours: comp.ot_hours, ot_pay: comp.ot_pay,
+        position_allowance: comp.position_allowance, diligence: comp.diligence, bonus: comp.bonus,
+        additions, gross: comp.gross, sso: comp.sso, advance_deduct: comp.advance_deduct, deductions,
+        total_deduct: comp.total_deduct, net: comp.net,
+        bank_name: e.bank_name || null, bank_account: e.bank_account || null, email: e.email || null,
+        note: ex.note || null, updated_at: new Date().toISOString(),
+      });
+    }
+    if (!finalized && items.length) {
+      const { error } = await sb().from('payroll_items').upsert(items, { onConflict: 'run_id,emp_id' });
+      if (error) throw error;
+    }
+    // ดึงกลับมาเพื่อให้มี id ครบ (ฝั่งหน้าเว็บใช้ id ตอนแก้รายการเพิ่ม/หัก)
+    const { data: finalItems } = await sb().from('payroll_items').select('*').eq('run_id', run.id).order('emp_id');
+    return {
+      ok: true,
+      run: { id: run.id, period_start: run.period_start, period_end: run.period_end, pay_month: run.pay_month, status: run.status },
+      range: { start: cyc.start, end: cyc.end, label: 'รอบ ' + cyc.start + ' ถึง ' + cyc.end },
+      items: finalItems || items, config: cfg,
+    };
+  }
+  async function hrPayrollItemSave(d) {
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const { data: it } = await sb().from('payroll_items').select('*').eq('id', d.id).maybeSingle();
+    if (!it) return { ok: false, error: 'ไม่พบรายการ' };
+    const { data: run } = await sb().from('payroll_runs').select('status').eq('id', it.run_id).maybeSingle();
+    if (run && run.status === 'finalized') return { ok: false, error: 'รอบนี้ปิดแล้ว แก้ไขไม่ได้' };
+    const cfg = await _payrollConfig();
+    const additions = Array.isArray(d.additions) ? d.additions : (Array.isArray(it.additions) ? it.additions : []);
+    const deductions = Array.isArray(d.deductions) ? d.deductions : (Array.isArray(it.deductions) ? it.deductions : []);
+    const addSum = additions.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const dedSum = deductions.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const gross = _pr2(Number(it.base_pay) + Number(it.ot_pay) + Number(it.position_allowance) + Number(it.diligence) + Number(it.bonus) + addSum);
+    const total_deduct = _pr2(Number(it.sso) + Number(it.advance_deduct) + dedSum);
+    const rt = Number((cfg.rounding && cfg.rounding.net_round_to) || 1) || 1;
+    const net = Math.round((gross - total_deduct) / rt) * rt;
+    const upd = { additions, deductions, gross, total_deduct, net, note: d.note != null ? d.note : it.note, edited_by: 'สำนักงาน (HR)', updated_at: new Date().toISOString() };
+    const { error } = await sb().from('payroll_items').update(upd).eq('id', d.id);
+    if (error) throw error;
+    return { ok: true, gross, total_deduct, net };
+  }
+  async function hrPayrollFinalize(p) {
+    p = p || {};
+    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const cyc = cycleRange(cycleBack(which));
+    const { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
+    if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้ — กดคำนวณก่อน' };
+    if (run.status === 'finalized') return { ok: true, already: true };
+    try {
+      const ap = await hrAdvancePayroll(run.pay_month, {});
+      const ids = (ap.rows || []).filter(r => !r.deducted).map(r => r.id);
+      if (ids.length) await hrAdvanceDeduct({ ids, payroll_ref: run.id, by: 'ระบบเงินเดือน' }, {});
+    } catch (_e) { /* ไม่มีระบบเบิก ก็ข้าม */ }
+    const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);
+    if (error) throw error;
+    await logAct('ปิดรอบเงินเดือน', null, 'รอบ ' + run.period_start);
+    return { ok: true };
+  }
+  async function hrPayrollSummary(p) {
+    p = p || {};
+    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const cyc = cycleRange(cycleBack(which));
+    const { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
+    if (!run) return { ok: true, run: null, count: 0, total_gross: 0, total_sso: 0, total_advance: 0, total_net: 0, by_branch: [] };
+    const { data: items } = await sb().from('payroll_items').select('*').eq('run_id', run.id);
+    const rows = items || [];
+    const byBr = {};
+    rows.forEach(r => { const b = byBr[r.branch_id] || (byBr[r.branch_id] = { branch_id: r.branch_id, branch_name: r.branch_name || r.branch_id || '—', count: 0, net: 0, gross: 0, sso: 0 }); b.count++; b.net += Number(r.net || 0); b.gross += Number(r.gross || 0); b.sso += Number(r.sso || 0); });
+    return {
+      ok: true, run: { id: run.id, period_start: run.period_start, pay_month: run.pay_month, status: run.status }, count: rows.length,
+      total_gross: rows.reduce((s, r) => s + Number(r.gross || 0), 0),
+      total_sso: rows.reduce((s, r) => s + Number(r.sso || 0), 0),
+      total_advance: rows.reduce((s, r) => s + Number(r.advance_deduct || 0), 0),
+      total_net: rows.reduce((s, r) => s + Number(r.net || 0), 0),
+      by_branch: Object.values(byBr),
+    };
   }
 
   window.HRAPI = { dispatch };

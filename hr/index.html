@@ -379,6 +379,7 @@
   <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
   <button class="tab" id="tab_terminate"><span class="tabicon">⛔</span>พิจารณาเลิกจ้าง</button>
   <button class="tab" id="tab_advance"><span class="tabicon">💵</span>เบิกเงินล่วงหน้า</button>
+  <button class="tab" id="tab_payroll"><span class="tabicon">💰</span>เงินเดือน</button>
   <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
   <button class="tab" id="tab_mgreval"><span class="tabicon">🏅</span>ประเมิน ผจก.</button>
   <button class="tab" id="tab_analytics"><span class="tabicon">📈</span>วิเคราะห์</button>
@@ -619,6 +620,75 @@
     <div class="modal-h"><h2 style="font-size:16px">⚙️ ตั้งค่าการประเมิน</h2><button class="close" id="mecClose">×</button></div>
     <div class="modal-b" id="mec_body"></div>
     <div class="modal-f"><button class="btn btn-sec" id="mecCancel">ยกเลิก</button><button class="btn btn-pri" id="mecSave">บันทึก</button></div>
+  </div>
+</div>
+
+<!-- เงินเดือน (Payroll · เห็นเฉพาะ HR + ล็อกรหัสอีกชั้น) -->
+<div id="view_payroll" class="container" style="display:none">
+  <!-- ประตูรหัส -->
+  <div id="pl_lock" class="card" style="max-width:420px;margin:30px auto;padding:24px;text-align:center">
+    <div style="font-size:34px;margin-bottom:6px">🔒</div>
+    <h3 style="margin:0 0 4px">หน้าเงินเดือน</h3>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">ใส่รหัสเงินเดือนอีกชั้นเพื่อเข้าดู</div>
+    <input id="pl_pass" type="password" placeholder="รหัสเงินเดือน" style="width:100%;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;text-align:center;margin-bottom:10px">
+    <button class="btn btn-pri" id="pl_unlock" style="width:100%">ปลดล็อก</button>
+    <div id="pl_lock_msg" style="color:#dc2626;font-size:12.5px;margin-top:8px"></div>
+  </div>
+
+  <!-- เนื้อหา (ซ่อนจนกว่าจะปลดล็อก) -->
+  <div id="pl_main" style="display:none">
+    <div class="card" style="padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;font-size:12px;color:#92400e;margin-bottom:12px">
+      💰 ระบบ <b>คำนวณ + ออกสลิปเท่านั้น ไม่โอนเงินจริง</b> · อัตราประกันสังคม/OT เป็นค่าตั้งต้น ตรวจให้ตรงกฎหมายก่อนใช้จริง · เห็นเฉพาะสำนักงาน
+    </div>
+    <div class="tabrow" id="pl_subnav" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn btn-sec btn-sm on" data-pl="run">🧮 รันรอบเงินเดือน</button>
+      <button class="btn btn-sec btn-sm" data-pl="profiles">🧑‍💼 ตั้งค่าจ้าง</button>
+      <button class="btn btn-sec btn-sm" data-pl="summary">📊 สรุปยอดจ่าย</button>
+      <button class="btn btn-sec btn-sm" data-pl="config">⚙️ ตั้งค่า</button>
+    </div>
+
+    <!-- รันรอบ -->
+    <div id="pls_run" class="pl-sec">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+        <select id="pl_which" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+          <option value="current">รอบปัจจุบัน</option>
+          <option value="previous">รอบก่อนหน้า</option>
+        </select>
+        <button class="btn btn-pri btn-sm" id="pl_calc">🧮 คำนวณ</button>
+        <span id="pl_run_status" style="font-size:12.5px;color:var(--muted);align-self:center"></span>
+        <span style="flex:1"></span>
+        <button class="btn btn-sec btn-sm" id="pl_print">🖨️ พิมพ์สลิป (A5 2/แผ่น)</button>
+        <button class="btn btn-sec btn-sm" id="pl_mail" title="ต้องตั้งค่า Resend ก่อน (เฟส 1.5)">📧 ส่งอีเมล</button>
+        <button class="btn btn-pri btn-sm" id="pl_finalize">🔒 ปิดรอบ</button>
+      </div>
+      <div id="pl_run_body"><div class="empty">เลือกรอบแล้วกด "คำนวณ"</div></div>
+    </div>
+
+    <!-- ตั้งค่าจ้าง -->
+    <div id="pls_profiles" class="pl-sec" style="display:none">
+      <div class="toolbar"><h3 style="flex:1;font-size:15px;font-weight:600">ตั้งค่าจ้างรายคน</h3><input id="pl_pf_q" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div style="font-size:12px;color:var(--muted);margin:0 2px 8px">แก้ในตารางได้เลย · รายเดือน = เงินเดือนเต็ม · รายวัน = อัตรา/วัน × วันทำงาน · เว้น OT/ชม. = คำนวณจากฐานให้</div>
+      <div id="pl_pf_body"><div class="empty">กำลังโหลด…</div></div>
+    </div>
+
+    <!-- สรุป -->
+    <div id="pls_summary" class="pl-sec" style="display:none">
+      <div id="pl_sum_body"><div class="empty">เลือกรอบในหน้ารันรอบก่อน แล้วกลับมาดูสรุป</div></div>
+    </div>
+
+    <!-- ตั้งค่า -->
+    <div id="pls_config" class="pl-sec" style="display:none">
+      <div id="pl_cfg_body"><div class="empty">กำลังโหลด…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- modal: แก้รายการเพิ่ม/หักอิสระของคน -->
+<div class="overlay" id="plItemOverlay">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-h"><h2 id="pli_title" style="font-size:16px">รายการเพิ่ม/หัก</h2><button class="close" id="pliClose">×</button></div>
+    <div class="modal-b" id="pli_body"></div>
+    <div class="modal-f"><button class="btn btn-sec" id="pliCancel">ยกเลิก</button><button class="btn btn-pri" id="pliSave">บันทึก</button></div>
   </div>
 </div>
 
@@ -1705,6 +1775,7 @@
       <div class="section"><h3>ติดต่อ</h3>
         <div class="grid">
           <div class="field"><label>เบอร์โทร</label><input id="f_phone" type="tel" inputmode="tel"></div>
+          <div class="field"><label>อีเมล (สำหรับส่งสลิปเงินเดือน)</label><input id="f_email" type="email" inputmode="email" placeholder="name@email.com"></div>
           <div class="field"><label>LINE User ID</label><input id="f_line_user_id" type="text"></div>
           <div class="field span2"><label>ที่อยู่</label><textarea id="f_address" rows="2"></textarea></div>
         </div>
@@ -2558,7 +2629,7 @@ async function loadDashboard(){
 
 // ========== EMPLOYEES ==========
 const FIELDS = ['emp_id','start_date','end_date','name','nickname','branch_id','phone',
-                'emergency_phone','emergency_name','bank_name','bank_account','id_card','address','line_user_id','weekly_off'];
+                'emergency_phone','emergency_name','bank_name','bank_account','id_card','address','line_user_id','weekly_off','email'];
 function fillEmpBranchFilter(){
   const sel=$('q_branch'); if(!sel) return; const cur=sel.value;
   sel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
@@ -3826,6 +3897,277 @@ $('medNida') && ($('medNida').onclick=meDetailNida);
 $('mebSave') && ($('mebSave').onclick=meBizSave);
 ['mecClose','mecCancel'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('meCfgOverlay').classList.remove('show'); });
 $('mecSave') && ($('mecSave').onclick=meConfigSave);
+
+/* ============================================================
+   เงินเดือน (Payroll) — เห็นเฉพาะ HR + ล็อกรหัสอีกชั้น
+   ============================================================ */
+let PAY_UNLOCKED=false, PAY=null, PAY_CFG=null, PAY_PROFILES=null;
+const plB = n => Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:0, maximumFractionDigits:2});
+function enterPayroll(){
+  if(PAY_UNLOCKED){ $('pl_lock').style.display='none'; $('pl_main').style.display='block'; plShowSec('run'); }
+  else { $('pl_lock').style.display='block'; $('pl_main').style.display='none'; setTimeout(()=>{ const el=$('pl_pass'); if(el) el.focus(); },50); }
+}
+async function plUnlock(){
+  const pass=($('pl_pass')||{}).value||'';
+  if(!pass){ $('pl_lock_msg').textContent='ใส่รหัสก่อน'; return; }
+  $('pl_unlock').innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_payroll_unlock', password:pwd, pass });
+  $('pl_unlock').textContent='ปลดล็อก';
+  if(r&&r.ok){ PAY_UNLOCKED=true; $('pl_pass').value=''; $('pl_lock_msg').textContent=''; enterPayroll(); }
+  else $('pl_lock_msg').textContent=(r&&r.error)||'รหัสไม่ถูกต้อง';
+}
+$('pl_unlock') && ($('pl_unlock').onclick=plUnlock);
+$('pl_pass') && ($('pl_pass').addEventListener('keydown',e=>{ if(e.key==='Enter') plUnlock(); }));
+function plShowSec(sec){
+  ['run','profiles','summary','config'].forEach(s=>{ const el=$('pls_'+s); if(el) el.style.display = s===sec?'block':'none'; });
+  document.querySelectorAll('#pl_subnav [data-pl]').forEach(b=>b.classList.toggle('on', b.dataset.pl===sec));
+  if(sec==='profiles' && !PAY_PROFILES) loadPayrollProfiles();
+  if(sec==='summary') loadPayrollSummary();
+  if(sec==='config') loadPayrollConfig();
+}
+document.querySelectorAll('#pl_subnav [data-pl]').forEach(b=>b.onclick=()=>plShowSec(b.dataset.pl));
+
+// ---------- รันรอบ ----------
+async function loadPayrollRun(){
+  const which=($('pl_which')||{}).value||'current';
+  $('pl_run_body').innerHTML='<div class="empty">กำลังคำนวณ…</div>';
+  const r=await post({ action:'hr_payroll_run', password:pwd, which });
+  if(!r||!r.ok){ $('pl_run_body').innerHTML='<div class="empty">'+esc((r&&r.error)||'ไม่สำเร็จ')+'</div>'; return; }
+  PAY=r;
+  const fin = r.run && r.run.status==='finalized';
+  $('pl_run_status').innerHTML = (r.range?('📆 '+esc(r.range.label)+' · '):'') + (fin?'<b style="color:#166534">ปิดรอบแล้ว</b>':'<span style="color:#c2410c">ร่าง (แก้ได้)</span>');
+  $('pl_finalize').style.display = fin?'none':'';
+  renderPayrollItems();
+}
+function renderPayrollItems(){
+  const items=(PAY&&PAY.items)||[];
+  const fin = PAY.run && PAY.run.status==='finalized';
+  if(!items.length){ $('pl_run_body').innerHTML='<div class="empty">ไม่มีพนักงาน</div>'; return; }
+  const card=(it)=>{
+    const addN=(it.additions||[]).length, dedN=(it.deductions||[]).length;
+    return '<div class="card" style="padding:12px 14px;margin-bottom:9px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+        +'<div style="min-width:0"><div style="font-weight:700">'+esc(it.emp_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">'+esc(it.emp_id)+'</span></div>'
+        +'<div style="font-size:12px;color:var(--muted)">🏪 '+esc(it.branch_name||'—')+' · '+(it.wage_type==='daily'?('รายวัน · ทำ '+plB(it.days_worked)+' วัน'):'รายเดือน')+'</div></div>'
+        +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">สุทธิ</div><div style="font-size:19px;font-weight:800;color:#166534">'+plB(it.net)+'</div></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12.5px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line2)">'
+        +'<div style="color:#166534;font-weight:600">รายรับ '+plB(it.gross)+'</div><div style="color:#b91c1c;font-weight:600;text-align:right">รายหัก '+plB(it.total_deduct)+'</div>'
+        +plKV('ฐาน',it.base_pay)+plKV('OT ('+plB(it.ot_hours)+' ชม.)',it.ot_pay)
+        +plKV('เบี้ยตำแหน่ง',it.position_allowance)+plKV('เบี้ยขยัน',it.diligence)
+        +plKV('โบนัสวินัย',it.bonus)+(addN?plKV('เพิ่มอื่น ('+addN+')',(it.additions||[]).reduce((s,a)=>s+Number(a.amount||0),0)):'<div></div>')
+        +plKV('ประกันสังคม','-'+plB(it.sso))+plKV('หักเบิกล่วงหน้า','-'+plB(it.advance_deduct))
+        +(dedN?plKV('หักอื่น ('+dedN+')','-'+plB((it.deductions||[]).reduce((s,a)=>s+Number(a.amount||0),0))):'<div></div>')+'<div></div>'
+      +'</div>'
+      +(fin?'':'<div style="margin-top:9px;text-align:right"><button class="btn btn-sec btn-sm" data-pledit="'+esc(it.emp_id)+'">✏️ เพิ่ม/หักรายการ</button></div>')
+      +'</div>';
+  };
+  $('pl_run_body').innerHTML='<div style="font-size:12px;color:var(--muted);margin:0 2px 8px">'+items.length+' คน</div>'+items.map(card).join('');
+  $('pl_run_body').querySelectorAll('[data-pledit]').forEach(b=>b.onclick=()=>openPlItem(b.dataset.pledit));
+}
+function plKV(k,v){ return '<div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">'+esc(k)+'</span><span class="mono">'+(typeof v==='string'?esc(v):plB(v))+'</span></div>'; }
+$('pl_calc') && ($('pl_calc').onclick=loadPayrollRun);
+$('pl_which') && ($('pl_which').onchange=loadPayrollRun);
+$('pl_finalize') && ($('pl_finalize').onclick=async()=>{
+  if(!PAY||!PAY.run){ toast('err','คำนวณก่อน'); return; }
+  if(!confirm('ปิดรอบนี้? หลังปิดจะแก้ไม่ได้ และจะทำเครื่องหมาย "หักเบิกล่วงหน้าแล้ว" ให้อัตโนมัติ')) return;
+  const which=($('pl_which')||{}).value||'current';
+  $('pl_finalize').innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_payroll_finalize', password:pwd, which });
+  $('pl_finalize').textContent='🔒 ปิดรอบ';
+  if(r&&r.ok){ toast('ok','ปิดรอบแล้ว'); loadPayrollRun(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+});
+
+// ---------- แก้รายการเพิ่ม/หักของคน ----------
+let PLI_CUR=null;
+function openPlItem(empId){
+  const it=((PAY&&PAY.items)||[]).find(x=>String(x.emp_id)===String(empId)); if(!it) return;
+  PLI_CUR=it;
+  $('pli_title').textContent='เพิ่ม/หัก · '+(it.emp_name||empId);
+  const lineRows=(arr,kind)=>(arr||[]).map((a,i)=>plLineRow(kind,i,a.label,a.amount)).join('');
+  $('pli_body').innerHTML=
+    '<div style="font-weight:600;margin-bottom:6px;color:#166534">รายการเพิ่ม (บวกเข้ารายรับ)</div>'
+    +'<div id="pli_adds">'+lineRows(it.additions,'add')+'</div>'
+    +'<button class="btn btn-sec btn-sm" id="pli_addBtn" style="margin:2px 0 14px">+ เพิ่มบรรทัด</button>'
+    +'<div style="font-weight:600;margin-bottom:6px;color:#b91c1c">รายการหัก (หักจากเงินเดือน)</div>'
+    +'<div id="pli_deds">'+lineRows(it.deductions,'ded')+'</div>'
+    +'<button class="btn btn-sec btn-sm" id="pli_dedBtn" style="margin:2px 0 6px">+ เพิ่มบรรทัด</button>';
+  $('pli_addBtn').onclick=()=>{ $('pli_adds').insertAdjacentHTML('beforeend', plLineRow('add', Date.now(), '', '')); plBindRm(); };
+  $('pli_dedBtn').onclick=()=>{ $('pli_deds').insertAdjacentHTML('beforeend', plLineRow('ded', Date.now(), '', '')); plBindRm(); };
+  plBindRm();
+  $('plItemOverlay').classList.add('show');
+}
+function plLineRow(kind,i,label,amount){
+  return '<div class="pli-row" data-kind="'+kind+'" style="display:flex;gap:6px;margin-bottom:6px">'
+    +'<input class="pli-label" placeholder="'+(kind==='add'?'เช่น คอมมิชชั่น':'เช่น ค่าเสื้อ/สินค้าเสื่อม')+'" value="'+esc(label||'')+'" style="flex:1;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit">'
+    +'<input class="pli-amt" type="number" step="any" placeholder="0" value="'+(amount!=null&&amount!==''?esc(amount):'')+'" style="width:110px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:right">'
+    +'<button class="btn btn-sec btn-sm pli-rm" style="flex:none" type="button">✕</button></div>';
+}
+function plBindRm(){ document.querySelectorAll('#pli_body .pli-rm').forEach(b=>b.onclick=()=>b.closest('.pli-row').remove()); }
+function plCollect(kind){
+  const out=[];
+  document.querySelectorAll('#pli_body .pli-row[data-kind="'+kind+'"]').forEach(row=>{
+    const label=(row.querySelector('.pli-label').value||'').trim();
+    const amt=Number(row.querySelector('.pli-amt').value);
+    if(label && !isNaN(amt) && amt!==0) out.push({ label, amount:amt });
+  });
+  return out;
+}
+['pliClose','pliCancel'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('plItemOverlay').classList.remove('show'); });
+$('pliSave') && ($('pliSave').onclick=async()=>{
+  if(!PLI_CUR) return;
+  $('pliSave').innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_payroll_item_save', password:pwd, data:{ id:PLI_CUR.id, additions:plCollect('add'), deductions:plCollect('ded') } });
+  $('pliSave').textContent='บันทึก';
+  if(r&&r.ok){ toast('ok','บันทึกแล้ว'); $('plItemOverlay').classList.remove('show'); loadPayrollRun(); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+});
+
+// ---------- ตั้งค่าจ้างรายคน ----------
+async function loadPayrollProfiles(){
+  $('pl_pf_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_payroll_profiles', password:pwd });
+  if(!r||!r.ok){ $('pl_pf_body').innerHTML='<div class="empty">ไม่สำเร็จ</div>'; return; }
+  PAY_PROFILES=r.rows||[]; renderPayrollProfiles();
+}
+function renderPayrollProfiles(){
+  const q=(($('pl_pf_q')||{}).value||'').toLowerCase();
+  const rows=(PAY_PROFILES||[]).filter(p=>!q || (p.name+' '+p.emp_id+' '+(p.nickname||'')).toLowerCase().includes(q));
+  if(!rows.length){ $('pl_pf_body').innerHTML='<div class="empty">ไม่พบพนักงาน</div>'; return; }
+  const inp=(cls,val,w)=>'<input class="'+cls+'" value="'+(val!=null&&val!==''?esc(val):'')+'" type="number" step="any" style="width:'+(w||70)+'px;padding:5px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;text-align:right">';
+  const row=(p)=>'<div class="card" style="padding:11px 13px;margin-bottom:8px" data-plpf="'+esc(p.emp_id)+'">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><div style="font-weight:600">'+esc(p.name)+' <span style="color:var(--muted);font-size:12px;font-weight:400">'+esc(p.emp_id)+'</span>'+(p.email?'':' <span style="color:#c2410c;font-size:11px">· ยังไม่มีอีเมล</span>')+'</div>'
+      +'<button class="btn btn-pri btn-sm pl-pf-save" style="flex:none">บันทึก</button></div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12.5px">'
+      +'<label>ประเภท <select class="pf-type" style="padding:5px;border:1.5px solid var(--line2);border-radius:7px;font:inherit"><option value="monthly"'+(p.wage_type!=='daily'?' selected':'')+'>รายเดือน</option><option value="daily"'+(p.wage_type==='daily'?' selected':'')+'>รายวัน</option></select></label>'
+      +'<label>ฐาน '+inp('pf-base',p.base_rate,90)+'</label>'
+      +'<label>OT/ชม. '+inp('pf-ot',p.ot_rate,70)+'</label>'
+      +'<label>เบี้ยตำแหน่ง '+inp('pf-pos',p.position_allowance,80)+'</label>'
+      +'<label>เบี้ยขยัน '+inp('pf-dil',p.diligence_amount,70)+'</label>'
+      +'<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" class="pf-sso"'+(p.sso_enabled!==false?' checked':'')+'>ประกันสังคม</label>'
+    +'</div></div>';
+  $('pl_pf_body').innerHTML=rows.map(row).join('');
+  $('pl_pf_body').querySelectorAll('.pl-pf-save').forEach(b=>b.onclick=async()=>{
+    const c=b.closest('[data-plpf]'); const emp_id=c.dataset.plpf;
+    b.innerHTML='<span class="spin"></span>';
+    const r=await post({ action:'hr_payroll_profile_save', password:pwd, data:{
+      emp_id, wage_type:c.querySelector('.pf-type').value, base_rate:c.querySelector('.pf-base').value,
+      ot_rate:c.querySelector('.pf-ot').value, position_allowance:c.querySelector('.pf-pos').value,
+      diligence_amount:c.querySelector('.pf-dil').value, sso_enabled:c.querySelector('.pf-sso').checked } });
+    b.textContent='บันทึก';
+    if(r&&r.ok){ toast('ok','บันทึกค่าจ้าง '+emp_id); const idx=(PAY_PROFILES||[]).findIndex(x=>x.emp_id===emp_id); if(idx>=0){ Object.assign(PAY_PROFILES[idx],{ wage_type:c.querySelector('.pf-type').value, base_rate:Number(c.querySelector('.pf-base').value)||0 }); } }
+    else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+  });
+}
+$('pl_pf_q') && ($('pl_pf_q').addEventListener('input', renderPayrollProfiles));
+
+// ---------- สรุปยอดจ่าย ----------
+async function loadPayrollSummary(){
+  const which=($('pl_which')||{}).value||'current';
+  $('pl_sum_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_payroll_summary', password:pwd, which });
+  if(!r||!r.ok){ $('pl_sum_body').innerHTML='<div class="empty">ไม่สำเร็จ</div>'; return; }
+  if(!r.run){ $('pl_sum_body').innerHTML='<div class="empty">ยังไม่มีรอบนี้ — ไปหน้ารันรอบแล้วกดคำนวณก่อน</div>'; return; }
+  const box=(t,v,c)=>'<div class="card" style="padding:12px 14px;flex:1;min-width:130px"><div style="font-size:12px;color:var(--muted)">'+t+'</div><div style="font-size:20px;font-weight:800;color:'+(c||'#0f172a')+'">'+plB(v)+'</div></div>';
+  let html='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+    +box('จำนวนคน',r.count)+box('รวมรายรับ',r.total_gross,'#166534')+box('รวมสุทธิจ่าย',r.total_net,'#166534')+box('ประกันสังคมนำส่ง',r.total_sso,'#b45309')+box('หักเบิกล่วงหน้า',r.total_advance,'#b91c1c')+'</div>';
+  html+='<div class="tablewrap"><table><thead><tr><th>สาขา</th><th style="text-align:center">คน</th><th style="text-align:right">รวมรับ</th><th style="text-align:right">สปส.</th><th style="text-align:right">สุทธิ</th></tr></thead><tbody>'
+    +(r.by_branch||[]).map(b=>'<tr><td>'+esc(b.branch_name)+'</td><td style="text-align:center">'+b.count+'</td><td class="mono" style="text-align:right">'+plB(b.gross)+'</td><td class="mono" style="text-align:right">'+plB(b.sso)+'</td><td class="mono" style="text-align:right;font-weight:700">'+plB(b.net)+'</td></tr>').join('')
+    +'</tbody></table></div>';
+  $('pl_sum_body').innerHTML=html;
+}
+
+// ---------- ตั้งค่ากลาง + เปลี่ยนรหัส ----------
+async function loadPayrollConfig(){
+  const r=await post({ action:'hr_payroll_config_get', password:pwd });
+  if(!r||!r.ok){ $('pl_cfg_body').innerHTML='<div class="empty">ไม่สำเร็จ</div>'; return; }
+  PAY_CFG=r;
+  const N=(id,label,val)=>'<label style="display:block;font-size:13px;margin-bottom:9px">'+label+'<input id="'+id+'" type="number" step="any" value="'+(val!=null?val:'')+'" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>';
+  const T=(id,label,val)=>'<label style="display:block;font-size:13px;margin-bottom:9px">'+label+'<input id="'+id+'" type="text" value="'+esc(val||'')+'" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>';
+  $('pl_cfg_body').innerHTML=
+    '<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">ค่าล่วงเวลา (OT)</div>'
+      +N('cfo_mult','ตัวคูณ OT ตั้งต้น (× ค่าแรงรายชั่วโมง)',r.ot.default_multiplier)+N('cfo_bh','ชั่วโมงทำงาน/วัน',r.ot.base_hours_per_day)+'</div>'
+    +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">ประกันสังคม</div>'
+      +N('cfs_rate','อัตรา % ',r.sso.rate)+N('cfs_cap','เพดานหัก (บาท)',r.sso.cap)+N('cfs_min','ฐานต่ำสุด',r.sso.wage_min)+N('cfs_max','ฐานสูงสุด',r.sso.wage_max)+'</div>'
+    +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">เบี้ยขยัน · ปัดเศษ</div>'
+      +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:9px"><input type="checkbox" id="cfd_noab"'+(r.diligence.require_no_absent?' checked':'')+'>จ่ายเบี้ยขยันเมื่อ "ไม่ขาดงาน"</label>'
+      +N('cfd_late','สายได้ไม่เกิน (ครั้ง) ยังได้เบี้ยขยัน',r.diligence.allow_late_count)+N('cfr_round','ปัดเศษเงินสุทธิ (บาท)',r.rounding.net_round_to)+'</div>'
+    +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">หัวบริษัทบนสลิป</div>'
+      +T('cfc_name','ชื่อบริษัท',r.company.name)+T('cfc_addr','ที่อยู่',r.company.address)+T('cfc_tax','เลขผู้เสียภาษี',r.company.tax_id)+'</div>'
+    +'<div style="text-align:right;margin-bottom:18px"><button class="btn btn-pri" id="pl_cfg_save">บันทึกค่าตั้งค่า</button></div>'
+    +'<div class="card" style="padding:14px;border:1px solid #fecaca"><div style="font-weight:700;margin-bottom:8px;color:#b91c1c">🔑 เปลี่ยนรหัสเข้าหน้าเงินเดือน</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">ต้องยืนยันด้วยรหัส HR</div>'
+      +'<input id="pl_hrpass" type="password" placeholder="รหัส HR ปัจจุบัน" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-bottom:8px">'
+      +'<input id="pl_newpass" type="password" placeholder="รหัสเงินเดือนใหม่" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-bottom:8px">'
+      +'<button class="btn btn-sec" id="pl_pass_save">ตั้ง/เปลี่ยนรหัสเงินเดือน</button></div>';
+  $('pl_cfg_save').onclick=savePayrollConfig;
+  $('pl_pass_save').onclick=savePayrollPass;
+}
+async function savePayrollConfig(){
+  const n=id=>{ const v=$(id).value; return v===''?null:Number(v); };
+  $('pl_cfg_save').innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_payroll_config_save', password:pwd, data:{
+    ot:{ default_multiplier:n('cfo_mult'), base_hours_per_day:n('cfo_bh') },
+    sso:{ enabled:(PAY_CFG&&PAY_CFG.sso&&PAY_CFG.sso.enabled)!==false, rate:n('cfs_rate'), cap:n('cfs_cap'), wage_min:n('cfs_min'), wage_max:n('cfs_max') },
+    diligence:{ require_no_absent:$('cfd_noab').checked, allow_late_count:n('cfd_late') },
+    rounding:{ net_round_to:n('cfr_round') },
+    company:{ name:$('cfc_name').value.trim(), address:$('cfc_addr').value.trim(), tax_id:$('cfc_tax').value.trim() } } });
+  $('pl_cfg_save').textContent='บันทึกค่าตั้งค่า';
+  if(r&&r.ok) toast('ok','บันทึกค่าตั้งค่าแล้ว'); else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+async function savePayrollPass(){
+  const hr=($('pl_hrpass')||{}).value||'', np=($('pl_newpass')||{}).value||'';
+  if(!hr||!np){ toast('err','กรอกให้ครบ'); return; }
+  $('pl_pass_save').innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_payroll_pass_set', password:pwd, data:{ hr_password:hr, new_password:np } });
+  $('pl_pass_save').textContent='ตั้ง/เปลี่ยนรหัสเงินเดือน';
+  if(r&&r.ok){ toast('ok','ตั้งรหัสเงินเดือนแล้ว'); $('pl_hrpass').value=''; $('pl_newpass').value=''; }
+  else toast('err',(r&&r.error)||'รหัส HR ไม่ถูกต้อง');
+}
+
+// ---------- พิมพ์สลิป A5 · 2 คน/แผ่น A4 ----------
+function payrollPrintSlips(){
+  if(!PAY||!(PAY.items||[]).length){ toast('err','คำนวณรอบก่อน'); return; }
+  const co=(PAY.config&&PAY.config.company)||{}; const rangeLabel=(PAY.range&&PAY.range.label)||'';
+  const slip=(it)=>{
+    const addRows=(it.additions||[]).map(a=>['+ '+a.label, a.amount]);
+    const earn=[['ฐานเงินเดือน',it.base_pay],['ค่าล่วงเวลา ('+plB(it.ot_hours)+' ชม.)',it.ot_pay],['เบี้ยตำแหน่ง',it.position_allowance],['เบี้ยขยัน',it.diligence],['โบนัสวินัย',it.bonus],...addRows].filter(x=>Number(x[1])||x[0].indexOf('ฐาน')===0);
+    const dedRows=(it.deductions||[]).map(a=>[a.label,a.amount]);
+    const ded=[['ประกันสังคม',it.sso],['หักเบิกล่วงหน้า',it.advance_deduct],...dedRows].filter(x=>Number(x[1]));
+    const tbl=(arr)=>arr.map(x=>'<tr><td>'+esc(x[0])+'</td><td style="text-align:right">'+plB(x[1])+'</td></tr>').join('')||'<tr><td colspan="2" style="color:#999">—</td></tr>';
+    return '<div class="slip">'
+      +'<div class="sl-head"><div class="sl-co">'+esc(co.name||'บริษัท')+'</div><div class="sl-title">สลิปเงินเดือน · '+esc(rangeLabel)+'</div></div>'
+      +'<div class="sl-emp"><b>'+esc(it.emp_name)+'</b> ('+esc(it.emp_id)+') · '+esc(it.branch_name||'')+' · '+(it.wage_type==='daily'?'รายวัน':'รายเดือน')+'</div>'
+      +'<div class="sl-cols"><div class="sl-c"><div class="sl-h sl-earn">รายรับ</div><table>'+tbl(earn)+'<tr class="sl-sum"><td>รวมรับ</td><td style="text-align:right">'+plB(it.gross)+'</td></tr></table></div>'
+      +'<div class="sl-c"><div class="sl-h sl-ded">รายหัก</div><table>'+tbl(ded)+'<tr class="sl-sum"><td>รวมหัก</td><td style="text-align:right">'+plB(it.total_deduct)+'</td></tr></table></div></div>'
+      +'<div class="sl-net"><span>เงินสุทธิ</span><span>'+plB(it.net)+' บาท</span></div>'
+      +'<div class="sl-foot">โอนเข้า: '+esc(it.bank_name||'-')+' '+esc(it.bank_account||'')+'</div>'
+      +'</div>';
+  };
+  const items=PAY.items;
+  let pages='';
+  for(let i=0;i<items.length;i+=2){ pages+='<div class="sheet">'+slip(items[i])+(items[i+1]?slip(items[i+1]):'<div class="slip slip-empty"></div>')+'</div>'; }
+  const css='@page{size:A4 portrait;margin:0} *{box-sizing:border-box;font-family:"Anuphan","Noto Sans Thai",sans-serif} body{margin:0}'
+    +'.sheet{width:210mm;height:297mm;display:flex;flex-direction:column} .sheet:not(:last-child){page-break-after:always}'
+    +'.slip{height:148.5mm;padding:11mm 12mm;border-bottom:1px dashed #bbb;display:flex;flex-direction:column} .slip-empty{border-bottom:0}'
+    +'.sl-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #0f172a;padding-bottom:4px} .sl-co{font-size:15px;font-weight:700} .sl-title{font-size:11px;color:#555}'
+    +'.sl-emp{font-size:12px;margin:7px 0 9px} .sl-cols{display:flex;gap:14px;flex:1} .sl-c{flex:1} .sl-h{font-size:11px;font-weight:700;padding:3px 6px;border-radius:5px;margin-bottom:4px} .sl-earn{background:#dcfce7;color:#166534} .sl-ded{background:#fee2e2;color:#b91c1c}'
+    +'.slip table{width:100%;border-collapse:collapse;font-size:11.5px} .slip td{padding:2px 4px;border-bottom:1px solid #f1f5f9} .sl-sum td{font-weight:700;border-top:1.5px solid #94a3b8;border-bottom:0}'
+    +'.sl-net{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:7px 10px;background:#0f172a;color:#fff;border-radius:7px;font-weight:700;font-size:14px}'
+    +'.sl-foot{font-size:10.5px;color:#555;margin-top:6px}';
+  const old=document.getElementById('slipFrame'); if(old) old.remove();
+  const fr=document.createElement('iframe'); fr.id='slipFrame'; fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(fr);
+  const d=fr.contentWindow.document; d.open();
+  d.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap"><style>'+css+'</style></head><body>'+pages+'</body></html>');
+  d.close();
+  setTimeout(()=>{ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast('err','พิมพ์ไม่สำเร็จ'); } setTimeout(()=>{ const f=document.getElementById('slipFrame'); if(f) f.remove(); },60000); }, 500);
+}
+$('pl_print') && ($('pl_print').onclick=payrollPrintSlips);
+$('pl_mail') && ($('pl_mail').onclick=()=>{
+  if(!PAY||!PAY.run||PAY.run.status!=='finalized'){ toast('err','ปิดรอบก่อนจึงส่งอีเมลได้'); return; }
+  toast('err','ส่งอีเมลยังไม่พร้อม — ต้องตั้งค่า Resend + ช่องอีเมลพนักงานก่อน (เฟส 1.5)');
+});
 
 /* ============================================================
    พิจารณาเลิกจ้าง (Termination Review)
@@ -5890,7 +6232,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','empsum','mgreval','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','empsum','mgreval','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); loadMdailyDash(); }
@@ -5904,6 +6246,7 @@ showTab = function(name){
   else if(name==='score') loadScore();
   else if(name==='terminate') loadTerm();
   else if(name==='advance') loadAdvance();
+  else if(name==='payroll') enterPayroll();
   else if(name==='empsum') initEmpSum();
   else if(name==='mgreval') loadMgrEval();
   else if(name==='analytics') loadAnalytics();
@@ -6290,7 +6633,7 @@ const NAV_GROUPS=[
   { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
   { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'⚠️', label:'วินัย',       tabs:['discipline','score','terminate'] },
-  { icon:'💵', label:'เบิกเงิน',    tabs:['advance'] },
+  { icon:'💵', label:'เบิกเงิน',    tabs:['advance','payroll'] },
   { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
