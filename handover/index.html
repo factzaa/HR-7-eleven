@@ -236,6 +236,9 @@ async function wipGet(key){ try{ const db=await wipOpen(); return await new Prom
 async function wipDel(key){ try{ const db=await wipOpen(); await new Promise(res=>{ const tx=db.transaction(WIP_ST,'readwrite'); tx.objectStore(WIP_ST).delete(key); tx.oncomplete=res; tx.onerror=res; }); }catch(e){} }
 async function wipCleanup(maxAgeMs){ try{ const db=await wipOpen(); const tx=db.transaction(WIP_ST,'readwrite'); const st=tx.objectStore(WIP_ST); st.openCursor().onsuccess=e=>{ const c=e.target.result; if(!c) return; const v=c.value; if(!v||!v.at||(Date.now()-v.at)>maxAgeMs) st.delete(c.key); c.continue(); }; }catch(e){} }
 function taskDraftSave(id){ wipSave('t:'+id,{ photos:TASK_PHOTOS[id]||[], note:($('mn_'+id)||{}).value||'' }); }
+// ตัวช่วยกลางสำหรับทุกจุดที่ถ่ายรูปส่ง (งานพิเศษ/เชลฟ์/งานแก้/งาน ผจก.) — arrKey=คีย์ใน TASK_PHOTOS
+function wipPut(storeKey, arrKey, noteId){ wipSave(storeKey, { photos: TASK_PHOTOS[arrKey]||[], note: (noteId?(($(noteId)||{}).value||''):'') }); }
+function wipRestore(storeKey, arrKey, noteId, renderFn, renderArg){ wipGet(storeKey).then(d=>{ if(!d) return; if(Array.isArray(d.photos)&&d.photos.length) TASK_PHOTOS[arrKey]=d.photos.slice(); if(noteId){ const el=$(noteId); if(el && d.note && !el.value) el.value=d.note; } if(renderFn){ try{ renderFn(renderArg); }catch(e){} } }); }
 try{ wipCleanup(3*86400000); }catch(e){}   // ล้างร่างเก่าเกิน 3 วัน
 
 // ===== แนบรูปงานแบบหลายรูป (ถ่ายทีละรูปสะสม / เลือกหลายรูปได้) =====
@@ -693,7 +696,7 @@ function renderSpThumbs(id){
   if(t) t.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmSpPhoto('+id+','+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
   if(c) c.textContent = arr.length ? ('แนบแล้ว '+arr.length+' รูป') : 'ถ่ายรูปได้หลายรูป (บังคับกล้อง · สแตมป์ชื่อ/เวลา/สาขาอัตโนมัติ)';
 }
-function rmSpPhoto(id,i){ if(TASK_PHOTOS['sp_'+id]){ TASK_PHOTOS['sp_'+id].splice(i,1); renderSpThumbs(id); } }
+function rmSpPhoto(id,i){ if(TASK_PHOTOS['sp_'+id]){ TASK_PHOTOS['sp_'+id].splice(i,1); renderSpThumbs(id); wipPut('sp:'+id,'sp_'+id,'spn_'+id); } }
 function wireSpInput(inpId, taskId){
   const inp=$(inpId); if(!inp) return;
   inp.addEventListener('change',async()=>{
@@ -702,14 +705,15 @@ function wireSpInput(inpId, taskId){
     TASK_PHOTOS['sp_'+taskId]=(TASK_PHOTOS['sp_'+taskId]||[]).concat(added);
     inp.value='';
     renderSpThumbs(taskId);
+    wipPut('sp:'+taskId,'sp_'+taskId,'spn_'+taskId);   // ★ เก็บร่าง
   });
 }
 function wireSpecial(rows){
-  (rows||[]).forEach(a=>{ if(a.status==='todo'||a.status==='sent_back'){ TASK_PHOTOS['sp_'+a.id]=[]; wireSpInput('spfc_'+a.id, a.id); } });
+  (rows||[]).forEach(a=>{ if(a.status==='todo'||a.status==='sent_back'){ TASK_PHOTOS['sp_'+a.id]=[]; wireSpInput('spfc_'+a.id, a.id); const n=$('spn_'+a.id); if(n) n.oninput=()=>wipPut('sp:'+a.id,'sp_'+a.id,'spn_'+a.id); wipRestore('sp:'+a.id,'sp_'+a.id,'spn_'+a.id,renderSpThumbs,a.id); } });
   document.querySelectorAll('[data-spsub]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.spsub); const note=($('spn_'+id)||{}).value||'';
     b.innerHTML='<span class="spin"></span>';
-    try{ const photos=TASK_PHOTOS['sp_'+id]||[]; await window.HR.submitSpecialTask({ assignee_id:id, empId:EMP.emp_id, photos, note }); toast('ok','ส่งงานพิเศษแล้ว'); openM2(); }
+    try{ const photos=TASK_PHOTOS['sp_'+id]||[]; await window.HR.submitSpecialTask({ assignee_id:id, empId:EMP.emp_id, photos, note }); await wipDel('sp:'+id); toast('ok','ส่งงานพิเศษแล้ว'); openM2(); }
     catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงาน'; }
   });
 }
@@ -769,7 +773,7 @@ function renderShvThumbs(id){
   const arr=TASK_PHOTOS['shv_'+id]||[]; const t=$('shvt_'+id);
   if(t) t.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmShvPhoto('+id+','+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
 }
-function rmShvPhoto(id,i){ if(TASK_PHOTOS['shv_'+id]){ TASK_PHOTOS['shv_'+id].splice(i,1); renderShvThumbs(id); } }
+function rmShvPhoto(id,i){ if(TASK_PHOTOS['shv_'+id]){ TASK_PHOTOS['shv_'+id].splice(i,1); renderShvThumbs(id); wipPut('shv:'+id,'shv_'+id,'shvn_'+id); } }
 function wireMyShelves(){
   const rows=(SHV_DATA&&SHV_DATA.rows)||[];
   rows.forEach(r=>{
@@ -783,8 +787,11 @@ function wireMyShelves(){
       const a=await filesToData(inp.files);
       TASK_PHOTOS['shv_'+r.shelf_id]=(TASK_PHOTOS['shv_'+r.shelf_id]||[]).concat(a);
       inp.value=''; renderShvThumbs(r.shelf_id);
+      wipPut('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id);   // ★ เก็บร่าง
       if(a.length) toast('ok','แนบรูปแล้ว '+a.length+'/'+picked+' รูป');
     });
+    const n=$('shvn_'+r.shelf_id); if(n) n.oninput=()=>wipPut('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id);
+    wipRestore('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id,renderShvThumbs,r.shelf_id);
   });
   document.querySelectorAll('[data-shvsub]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.shvsub);
@@ -793,7 +800,7 @@ function wireMyShelves(){
     const items=[...document.querySelectorAll('.shvck_'+id)].map(el=>({ label:el.dataset.label, done:el.checked }));
     const note=($('shvn_'+id)||{}).value||'';
     b.innerHTML='<span class="spin"></span>';
-    try{ await window.HR.submitShelfCheck({ empId:EMP.emp_id, shelf_id:id, items, note, photos }); toast('ok','ส่งการตรวจเชลฟ์แล้ว'); openM2(); }
+    try{ await window.HR.submitShelfCheck({ empId:EMP.emp_id, shelf_id:id, items, note, photos }); await wipDel('shv:'+id); toast('ok','ส่งการตรวจเชลฟ์แล้ว'); openM2(); }
     catch(e){ toast('err', e.message||'ไม่สำเร็จ'); b.textContent='ส่งการตรวจเชลฟ์'; }
   });
 }
@@ -861,6 +868,8 @@ function wireFixTasks(rows){
     TASK_PHOTOS['fx_'+a.id]=(Array.isArray(a.photos)?a.photos.slice():[]);
     FIX_MIN['fx_'+a.id]=Number(a.min_photos||0);
     renderFixThumbs(a.id);
+    const nInp=$('fxn_'+a.id); if(nInp) nInp.oninput=()=>wipPut('fx:'+a.id,'fx_'+a.id,'fxn_'+a.id);
+    wipRestore('fx:'+a.id,'fx_'+a.id,'fxn_'+a.id,renderFixThumbs,a.id);   // ★ กู้ร่างที่แก้ค้างไว้
     const inp=document.getElementById('fxc_'+a.id);
     if(inp) inp.onchange=async e=>{
       if(!inp.files||!inp.files.length) return;
@@ -868,6 +877,7 @@ function wireFixTasks(rows){
         const added=await filesToData(inp.files);      // ใช้ตัวอ่านรูปตัวเดียวกับงานในกะ (ย่อ+บีบอัดให้แล้ว)
         TASK_PHOTOS['fx_'+a.id]=(TASK_PHOTOS['fx_'+a.id]||[]).concat(added);
         renderFixThumbs(a.id);
+        wipPut('fx:'+a.id,'fx_'+a.id,'fxn_'+a.id);   // ★ เก็บร่าง
       }catch(err){ toast('err','อ่านรูปไม่สำเร็จ: '+((err&&err.message)||'')); }
       inp.value='';
     };
@@ -880,7 +890,7 @@ function wireFixTasks(rows){
     if(min && photos.length<min){ toast('err','งานนี้ต้องมีรูปอย่างน้อย '+min+' รูป (ตอนนี้ '+photos.length+' รูป)'); return; }
     const note=(document.getElementById('fxn_'+id)||{}).value||'';
     b.innerHTML='<span class="spin"></span>';
-    try{ await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); toast('ok','ส่งงานที่แก้แล้ว — รอผู้จัดการตรวจซ้ำ'); openM2(); }
+    try{ await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); await wipDel('fx:'+id); toast('ok','ส่งงานที่แก้แล้ว — รอผู้จัดการตรวจซ้ำ'); openM2(); }
     catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงานที่แก้แล้ว'; }
   });
 }
@@ -888,7 +898,7 @@ let FIX_MIN={};   // จำนวนรูปขั้นต่ำของง�
 function renderFixThumbs(id){
   const box=document.getElementById('fxth_'+id); if(!box) return;
   const arr=TASK_PHOTOS['fx_'+id]||[];
-  box.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="TASK_PHOTOS[\'fx_'+id+'\'].splice('+i+',1);renderFixThumbs('+id+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join('');
+  box.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="TASK_PHOTOS[\'fx_'+id+'\'].splice('+i+',1);renderFixThumbs('+id+');wipPut(\'fx:'+id+'\',\'fx_'+id+'\',\'fxn_'+id+'\')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join('');
   const cnt=document.getElementById('fxc_cnt_'+id);
   if(cnt){
     const min=FIX_MIN['fx_'+id]||0;
@@ -928,7 +938,7 @@ function renderMgtThumbs(id){
   if(t) t.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmMgtPhoto(\''+esc(id)+'\','+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
   if(c) c.textContent = arr.length ? ('แนบแล้ว '+arr.length+' รูป') : 'ถ่ายรูปได้หลายรูป · ส่งความคืบหน้าให้ผู้จัดการเห็นได้หลายครั้ง';
 }
-function rmMgtPhoto(id,i){ if(TASK_PHOTOS['mgt_'+id]){ TASK_PHOTOS['mgt_'+id].splice(i,1); renderMgtThumbs(id); } }
+function rmMgtPhoto(id,i){ if(TASK_PHOTOS['mgt_'+id]){ TASK_PHOTOS['mgt_'+id].splice(i,1); renderMgtThumbs(id); wipPut('mgt:'+id,'mgt_'+id,'mgtn_'+id); } }
 function wireMgtInput(inpId, taskId){
   const inp=$(inpId); if(!inp) return;
   inp.addEventListener('change',async()=>{
@@ -937,14 +947,15 @@ function wireMgtInput(inpId, taskId){
     TASK_PHOTOS['mgt_'+taskId]=(TASK_PHOTOS['mgt_'+taskId]||[]).concat(added);
     inp.value='';
     renderMgtThumbs(taskId);
+    wipPut('mgt:'+taskId,'mgt_'+taskId,'mgtn_'+taskId);   // ★ เก็บร่าง
   });
 }
 function wireMgrTasks(rows){
-  (rows||[]).forEach(a=>{ TASK_PHOTOS['mgt_'+a.id]=[]; wireMgtInput('mgtfc_'+a.id, a.id); });
+  (rows||[]).forEach(a=>{ TASK_PHOTOS['mgt_'+a.id]=[]; wireMgtInput('mgtfc_'+a.id, a.id); const n=$('mgtn_'+a.id); if(n) n.oninput=()=>wipPut('mgt:'+a.id,'mgt_'+a.id,'mgtn_'+a.id); wipRestore('mgt:'+a.id,'mgt_'+a.id,'mgtn_'+a.id,renderMgtThumbs,a.id); });
   document.querySelectorAll('[data-mgtsub]').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.mgtsub; const note=($('mgtn_'+id)||{}).value||'';
     b.innerHTML='<span class="spin"></span>';
-    try{ const photos=TASK_PHOTOS['mgt_'+id]||[]; await window.HR.submitMgrTaskByEmp({ task_id:id, empId:EMP.emp_id, photos, note }); toast('ok','ส่งให้ผู้จัดการแล้ว'); openM2(); }
+    try{ const photos=TASK_PHOTOS['mgt_'+id]||[]; await window.HR.submitMgrTaskByEmp({ task_id:id, empId:EMP.emp_id, photos, note }); await wipDel('mgt:'+id); toast('ok','ส่งให้ผู้จัดการแล้ว'); openM2(); }
     catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งให้ผู้จัดการ'; }
   });
 }
@@ -1106,19 +1117,21 @@ function renderGoods(){
   wireGoods();
 }
 function renderGdThumbs(){ const t=$('gd_thumbs'); if(!t) return; t.innerHTML=(GD_PHOTOS||[]).map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmGdPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join(''); }
-function rmGdPhoto(i){ GD_PHOTOS.splice(i,1); renderGdThumbs(); }
+function gdDraftSave(){ if(GD_EDIT) return; wipSave('gd:new', { photos: GD_PHOTOS||[] }); }   // เก็บร่างรูปรับสินค้า (เฉพาะใบใหม่)
+function rmGdPhoto(i){ GD_PHOTOS.splice(i,1); renderGdThumbs(); gdDraftSave(); }
 function wireGoods(){
   $('gd_release')&&($('gd_release').onclick=async()=>{ if(!confirm('ปล่อยสิทธิ์ผู้คุมผลัด? (คนอื่นจะกดรับแทนได้)')) return; try{ await window.HR.releaseShiftController({empId:EMP.emp_id}); toast('ok','ปล่อยสิทธิ์แล้ว'); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } openGoods(); });
   if(!GOODS.warehouses.length) return;
   GD_PHOTOS = (GD_EDIT && Array.isArray(GD_EDIT.in_photos)) ? GD_EDIT.in_photos.slice() : [];
   renderGdThumbs();
+  if(!GD_EDIT){ wipGet('gd:new').then(d=>{ if(d && Array.isArray(d.photos) && d.photos.length){ GD_PHOTOS=d.photos.slice(); renderGdThumbs(); } }); }   // ★ กู้ร่างรูป
   const inp=$('gd_fc');
   if(inp) inp.addEventListener('change',async()=>{
     if(!inp.files||!inp.files.length) return;
     const picked=inp.files.length;
     toast('ok','กำลังเตรียมรูป '+picked+' รูป…');
     const a=await filesToData(inp.files);
-    GD_PHOTOS=GD_PHOTOS.concat(a); inp.value=''; renderGdThumbs();
+    GD_PHOTOS=GD_PHOTOS.concat(a); inp.value=''; renderGdThumbs(); gdDraftSave();   // ★ เก็บร่าง
     if(a.length) toast('ok','แนบรูปแล้ว '+a.length+'/'+picked+' รูป');
   });
   const upd=()=>{ const wid=$('gd_wh').value; const exp=wid?(GOODS.outstanding[wid]||0):0; $('gd_exp').textContent=wid?('(ยอดคงค้างควรคืน '+exp+' ลัง)'):''; const ret=parseInt($('gd_ret').value)||0; const d=ret-exp; if($('gd_diff')){ $('gd_diff').textContent=wid?('ส่วนต่าง: '+(d>0?'+':'')+d+(d===0?' (ตรง)':' (ไม่ตรง — บันทึกเป็นออดิท)')):''; $('gd_diff').style.color=d===0?'var(--muted)':'#dc2626'; } };
@@ -1135,7 +1148,7 @@ function wireGoods(){
     // ★ กันเคส "คิดว่าแนบรูปแล้ว แต่จริง ๆ ไม่มีรูป" — ยืนยันก่อนบันทึก
     if(!(GD_PHOTOS||[]).length && !confirm('ยังไม่มีรูปแนบ (รูปลัง/บิล)\nยืนยันบันทึกโดยไม่มีรูป?')) return;
     $('gd_save').innerHTML='<span class="spin"></span>';
-    try{ await window.HR.submitGoodsReceipt({ empId:EMP.emp_id, id:GD_EDIT?GD_EDIT.id:null, warehouse_id:Number(warehouse_id), ref_no, crates_in, crates_return, in_photos:GD_PHOTOS, note }); toast('ok','บันทึกรับสินค้าแล้ว'); GD_EDIT=null; openGoods(); }
+    try{ await window.HR.submitGoodsReceipt({ empId:EMP.emp_id, id:GD_EDIT?GD_EDIT.id:null, warehouse_id:Number(warehouse_id), ref_no, crates_in, crates_return, in_photos:GD_PHOTOS, note }); await wipDel('gd:new'); toast('ok','บันทึกรับสินค้าแล้ว'); GD_EDIT=null; openGoods(); }
     catch(e){ toast('err',e.message||'ไม่สำเร็จ'); $('gd_save').textContent=GD_EDIT?'อัปเดต':'บันทึก'; }
   };
 }
