@@ -277,6 +277,18 @@
         case 'hr_positions_list':    return await hrPositionsList();
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
+        case 'rider_vehicles_list':  return await hrRiderVehiclesList(p.branch, p.emp_id);
+        case 'rider_vehicle_save':   return await hrRiderVehicleSave(p.data);
+        case 'rider_vehicle_delete': return await hrRiderVehicleDelete(p.id);
+        case 'rider_items_list':     return await hrRiderItemsList(p);
+        case 'rider_item_save':      return await hrRiderItemSave(p.data, p);
+        case 'rider_cfg_get':        return await hrRiderCfgGet();
+        case 'rider_cfg_save':       return await hrRiderCfgSave(p.data, p);
+        case 'rider_claim_eligibility': return await hrRiderClaimEligibility(p);
+        case 'rider_claim_create':   return await hrRiderClaimCreate(p.data);
+        case 'rider_claims_list':    return await hrRiderClaimsList(p);
+        case 'rider_claim_review':   return await hrRiderClaimReview(p.data, p);
+        case 'rider_claim_pay':      return await hrRiderClaimPay(p.data, p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
@@ -4366,6 +4378,337 @@
     const { error } = await sb().from('positions').delete().eq('id', id);
     if (error) throw error;
     await logAct('ลบตำแหน่งงาน', null, '#' + id);
+    return { ok: true };
+  }
+
+  // ============================================================
+  // ระบบเบิกซ่อมบำรุงรถ — ตำแหน่ง Rider (เฟส 1)
+  // ============================================================
+  const RIDER_CLAIM_STATUS = {
+    submitted: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ',
+    serviced: 'รับบริการแล้ว', paid: 'จ่ายแล้ว', cancelled: 'ยกเลิก',
+  };
+
+  async function _riderCfg() {
+    const { data } = await sb().from('rider_claim_config').select('*').eq('id', 1).maybeSingle();
+    return data || { gps_radius_m: 200, mileage_gps_gap_pct: 20, evidence_deadline_days: 3, approval_tier1_max: 500, approval_tier2_max: 2000, fuel_mode: 'receipt', require_camera: true, dedup_photos: true };
+  }
+  function _riderTier(amount, cfg) {
+    const a = Number(amount) || 0;
+    if (a <= (cfg.approval_tier1_max || 500)) return 'lead';
+    if (a <= (cfg.approval_tier2_max || 2000)) return 'manager';
+    return 'exec';
+  }
+  const RIDER_TIER_LABEL = { lead: 'หัวหน้างาน', manager: 'ผู้จัดการสาขา', exec: 'ฝ่ายบริหาร' };
+
+  async function _riderNextClaimNo() {
+    const byear = new Date().getFullYear() + 543;
+    const pre = 'RC-' + byear + '-';
+    const { data } = await sb().from('rider_claims').select('claim_no').like('claim_no', pre + '%').order('claim_no', { ascending: false }).limit(1);
+    let n = 0;
+    if (data && data.length) { const m = String(data[0].claim_no).match(/(\d+)$/); if (m) n = parseInt(m[1], 10) || 0; }
+    return pre + String(n + 1).padStart(4, '0');
+  }
+
+  // ---- ทะเบียนรถ ----
+  async function hrRiderVehiclesList(branch, empId) {
+    let q = sb().from('rider_vehicles').select('*').order('active', { ascending: false }).order('plate');
+    if (branch) q = q.eq('branch_id', branch);
+    if (empId) q = q.eq('emp_id', empId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+  async function hrRiderVehicleSave(d) {
+    d = d || {};
+    if (!d.plate || !String(d.plate).trim()) return { ok: false, error: 'กรอกทะเบียนรถ' };
+    const photos = d.photos ? await _uploadMany('rider/veh', d.photos) : undefined;
+    const row = {
+      emp_id: d.emp_id || null, branch_id: d.branch_id || null,
+      owner_type: d.owner_type === 'personal' ? 'personal' : 'company',
+      plate: String(d.plate).trim(), brand: d.brand || null, model: d.model || null,
+      year: d.year != null ? (parseInt(d.year) || null) : null,
+      engine_cc: d.engine_cc != null ? (parseInt(d.engine_cc) || null) : null,
+      cooling: d.cooling === 'liquid' ? 'liquid' : 'air',
+      drivetrain: d.drivetrain === 'cvt' ? 'cvt' : 'chain',
+      odo_start: parseInt(d.odo_start) || 0,
+      active: d.active !== false, note: d.note || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (photos && photos.length) row.photos = photos;
+    if (d.id) { const { error } = await sb().from('rider_vehicles').update(row).eq('id', d.id); if (error) throw error; }
+    else { row.odo_last = row.odo_start; const { error } = await sb().from('rider_vehicles').insert(row); if (error) throw error; }
+    await logAct('บันทึกทะเบียนรถไรเดอร์', d.emp_id || null, row.plate);
+    return { ok: true };
+  }
+  async function hrRiderVehicleDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุรถ' };
+    // ปิดใช้งานแทนการลบถ้ามีคำขอผูกอยู่
+    const { count } = await sb().from('rider_claims').select('id', { count: 'exact', head: true }).eq('vehicle_id', id);
+    if (count && count > 0) { await sb().from('rider_vehicles').update({ active: false }).eq('id', id); return { ok: true, disabled: true }; }
+    const { error } = await sb().from('rider_vehicles').delete().eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---- แคตตาล็อกรายการเบิก (เปิด/ปิด + เงื่อนไข) ----
+  async function hrRiderItemsList(p) {
+    p = p || {};
+    let q = sb().from('rider_maint_items').select('*').order('sort').order('name');
+    if (p.enabled_only) q = q.eq('enabled', true);
+    const { data, error } = await q;
+    if (error) throw error;
+    let rows = data || [];
+    // กรองตามชนิดรถ (สำหรับฝั่งไรเดอร์)
+    if (p.cooling || p.drivetrain) {
+      rows = rows.filter(it =>
+        (!it.applies_cooling || it.applies_cooling === (p.cooling || '')) &&
+        (!it.applies_drivetrain || it.applies_drivetrain === (p.drivetrain || '')));
+    }
+    return { ok: true, rows };
+  }
+  async function hrRiderItemSave(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้นที่ตั้งค่ารายการเบิกได้' };
+    d = d || {};
+    if (!d.code || !d.name) return { ok: false, error: 'กรอก code และชื่อรายการ' };
+    const num = (v) => (v === '' || v == null) ? null : (Number(v) || 0);
+    const row = {
+      code: String(d.code).trim().replace(/[^a-zA-Z0-9_]/g, ''),
+      name: String(d.name).trim(),
+      category: ['maintenance', 'consumable', 'safety', 'operating'].includes(d.category) ? d.category : 'maintenance',
+      enabled: d.enabled !== false,
+      interval_km: num(d.interval_km), early_km: parseInt(d.early_km) || 0,
+      per_year_cap: num(d.per_year_cap),
+      cap_basis: d.cap_basis === 'by_distance' ? 'by_distance' : 'fixed',
+      per_period_months: num(d.per_period_months),
+      amount_cap: num(d.amount_cap),
+      needs_approval: d.needs_approval !== false,
+      approval_tier: ['auto', 'lead', 'manager', 'exec'].includes(d.approval_tier) ? d.approval_tier : 'auto',
+      require_before_photo: d.require_before_photo !== false,
+      require_after_photo: d.require_after_photo !== false,
+      require_receipt: d.require_receipt !== false,
+      require_gps: d.require_gps !== false,
+      require_reason: d.require_reason !== false,
+      applies_cooling: d.applies_cooling === 'liquid' ? 'liquid' : '',
+      applies_drivetrain: ['chain', 'cvt'].includes(d.applies_drivetrain) ? d.applies_drivetrain : '',
+      sort: parseInt(d.sort) || 0, note: d.note || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('rider_maint_items').upsert(row, { onConflict: 'code' });
+    if (error) throw error;
+    await logAct('บันทึกรายการเบิกซ่อมรถ', null, row.name + (row.enabled ? ' (เปิด)' : ' (ปิด)'));
+    return { ok: true };
+  }
+
+  async function hrRiderCfgGet() {
+    const cfg = await _riderCfg();
+    return { ok: true, config: cfg, tier_label: RIDER_TIER_LABEL };
+  }
+  async function hrRiderCfgSave(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    const row = { id: 1, updated_at: new Date().toISOString() };
+    if (d.enabled !== undefined) row.enabled = d.enabled !== false;
+    if (d.gps_radius_m !== undefined) row.gps_radius_m = parseInt(d.gps_radius_m) || 200;
+    if (d.mileage_gps_gap_pct !== undefined) row.mileage_gps_gap_pct = parseInt(d.mileage_gps_gap_pct) || 20;
+    if (d.evidence_deadline_days !== undefined) row.evidence_deadline_days = parseInt(d.evidence_deadline_days) || 3;
+    if (d.approval_tier1_max !== undefined) row.approval_tier1_max = parseInt(d.approval_tier1_max) || 500;
+    if (d.approval_tier2_max !== undefined) row.approval_tier2_max = parseInt(d.approval_tier2_max) || 2000;
+    if (d.fuel_mode !== undefined) row.fuel_mode = d.fuel_mode === 'per_km' ? 'per_km' : 'receipt';
+    if (d.fuel_rate_per_km !== undefined) row.fuel_rate_per_km = Number(d.fuel_rate_per_km) || 0;
+    if (d.require_camera !== undefined) row.require_camera = d.require_camera !== false;
+    if (d.dedup_photos !== undefined) row.dedup_photos = d.dedup_photos !== false;
+    const { error } = await sb().from('rider_claim_config').upsert(row, { onConflict: 'id' });
+    if (error) throw error;
+    await logAct('บันทึกตั้งค่าเบิกซ่อมรถ', null, null);
+    return { ok: true };
+  }
+
+  // ---- เช็คสิทธิ์ (ถึงระยะ / เพดานปี / รอบเวลา / ชนิดรถ) ----
+  async function _riderEligibility(empId, vehicle, item, odoCurrent) {
+    const out = { elig_ok: true, note: '', last_km_at: null, used_this_year: 0, allowed_this_year: null, blocked: false };
+    if (!item.enabled) { out.elig_ok = false; out.blocked = true; out.note = 'รายการนี้ถูกปิดการเบิก'; return out; }
+    // ชนิดรถ
+    if (item.applies_drivetrain && vehicle && item.applies_drivetrain !== vehicle.drivetrain) {
+      out.elig_ok = false; out.blocked = true; out.note = 'รายการนี้ใช้กับรถ' + (item.applies_drivetrain === 'cvt' ? 'ออโตเมติก (สายพาน)' : 'โซ่') + 'เท่านั้น'; return out;
+    }
+    if (item.applies_cooling === 'liquid' && vehicle && vehicle.cooling !== 'liquid') {
+      out.elig_ok = false; out.blocked = true; out.note = 'รายการนี้ใช้กับรถระบายความร้อนด้วยน้ำเท่านั้น'; return out;
+    }
+    const year = new Date().getFullYear();
+    const yStart = year + '-01-01';
+    // คำขอรายการเดียวกันปีนี้ (นับที่ไม่ถูกปฏิเสธ/ยกเลิก)
+    const { data: prev } = await sb().from('rider_claims').select('odo_current,created_at,status')
+      .eq('emp_id', empId).eq('item_code', item.code)
+      .not('status', 'in', '(rejected,cancelled)')
+      .gte('created_at', yStart).order('created_at', { ascending: false });
+    const list = prev || [];
+    out.used_this_year = list.length;
+    // เพดานปี
+    if (item.cap_basis === 'fixed' && item.per_year_cap != null) {
+      out.allowed_this_year = Number(item.per_year_cap);
+      if (list.length >= Number(item.per_year_cap)) { out.elig_ok = false; out.note = 'ครบเพดานปีนี้แล้ว (' + item.per_year_cap + ' ครั้ง) — เกินต้องให้ผู้จัดการพิจารณา'; }
+    }
+    // รอบระยะ กม.
+    const lastWithOdo = list.find(x => x.odo_current != null);
+    out.last_km_at = lastWithOdo ? lastWithOdo.odo_current : (vehicle ? vehicle.odo_start : null);
+    if (item.interval_km && odoCurrent != null && out.last_km_at != null) {
+      const need = Number(item.interval_km) - (Number(item.early_km) || 0);
+      const run = Number(odoCurrent) - Number(out.last_km_at);
+      if (run < need) { out.elig_ok = false; out.note = (out.note ? out.note + ' · ' : '') + 'ยังไม่ถึงระยะ (วิ่งไป ' + run.toLocaleString() + '/' + need.toLocaleString() + ' กม.)'; }
+    }
+    // รอบเวลา (เดือน)
+    if (item.per_period_months && list.length) {
+      const lastAt = new Date(list[0].created_at);
+      const months = (Date.now() - lastAt.getTime()) / (1000 * 3600 * 24 * 30);
+      if (months < Number(item.per_period_months)) { out.elig_ok = false; out.note = (out.note ? out.note + ' · ' : '') + 'ยังไม่ครบรอบ ' + item.per_period_months + ' เดือน'; }
+    }
+    if (out.elig_ok && !out.note) out.note = 'ผ่านเกณฑ์เบื้องต้น';
+    return out;
+  }
+
+  async function hrRiderClaimEligibility(p) {
+    p = p || {};
+    if (!p.emp_id || !p.item_code) return { ok: false, error: 'ไม่ครบข้อมูล' };
+    const { data: item } = await sb().from('rider_maint_items').select('*').eq('code', p.item_code).maybeSingle();
+    if (!item) return { ok: false, error: 'ไม่พบรายการ' };
+    let vehicle = null;
+    if (p.vehicle_id) { const { data } = await sb().from('rider_vehicles').select('*').eq('id', p.vehicle_id).maybeSingle(); vehicle = data; }
+    const e = await _riderEligibility(p.emp_id, vehicle, item, p.odo_current != null ? Number(p.odo_current) : null);
+    return { ok: true, item, eligibility: e };
+  }
+
+  async function hrRiderClaimCreate(d) {
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    if (!d.item_code) return { ok: false, error: 'เลือกรายการที่ต้องการเบิก' };
+    const { data: item } = await sb().from('rider_maint_items').select('*').eq('code', d.item_code).maybeSingle();
+    if (!item) return { ok: false, error: 'ไม่พบรายการ' };
+    if (!item.enabled) return { ok: false, error: 'รายการนี้ถูกปิดการเบิก' };
+    let vehicle = null;
+    if (d.vehicle_id) { const { data } = await sb().from('rider_vehicles').select('*').eq('id', d.vehicle_id).maybeSingle(); vehicle = data; }
+    const cfg = await _riderCfg();
+    const odoCur = d.odo_current != null ? Number(d.odo_current) : null;
+    const e = await _riderEligibility(d.emp_id, vehicle, item, odoCur);
+    if (e.blocked) return { ok: false, error: e.note };
+    // หลักฐานตามที่รายการกำหนด
+    if (item.require_reason && (!d.reason || !String(d.reason).trim())) return { ok: false, error: 'ระบุอาการ/เหตุผลการเบิก' };
+
+    // อัปโหลดรูป (before/after/part/receipt)
+    const photos = {};
+    for (const k of ['before', 'after', 'part', 'receipt']) {
+      if (d.photos && d.photos[k]) { const u = await _uploadMany('rider/claim_' + k, [d.photos[k]]); if (u[0]) photos[k] = u[0]; }
+    }
+    if (item.require_before_photo && !photos.before) return { ok: false, error: 'แนบรูปก่อนซ่อม/เลขไมล์ก่อน' };
+    if (item.require_receipt && !photos.receipt && d.amount_actual != null) return { ok: false, error: 'แนบใบเสร็จ' };
+
+    const amountEst = parseInt(d.amount_est) || 0;
+    const tier = item.approval_tier && item.approval_tier !== 'auto' ? item.approval_tier : _riderTier(amountEst, cfg);
+    const emp = await _empBrief(d.emp_id);
+    const claim_no = await _riderNextClaimNo();
+    const row = {
+      claim_no, emp_id: d.emp_id, emp_name: emp.name, nickname: emp.nickname,
+      branch_id: emp.branch_id, branch_name: emp.branch_name,
+      vehicle_id: d.vehicle_id || null, vehicle_plate: vehicle ? vehicle.plate : null,
+      item_code: item.code, item_name: item.name,
+      odo_current: odoCur, amount_est: amountEst,
+      amount_actual: d.amount_actual != null ? (parseInt(d.amount_actual) || 0) : null,
+      shop_name: d.shop_name || null,
+      shop_gps_lat: d.shop_gps_lat != null ? Number(d.shop_gps_lat) : null,
+      shop_gps_lng: d.shop_gps_lng != null ? Number(d.shop_gps_lng) : null,
+      photos: Object.keys(photos).length ? photos : null,
+      reason: d.reason ? String(d.reason).trim() : null,
+      elig_ok: e.elig_ok, elig_note: e.note,
+      last_km_at: e.last_km_at, used_this_year: e.used_this_year, allowed_this_year: e.allowed_this_year,
+      status: 'submitted', approval_tier: tier,
+      device: d.device || null,
+    };
+    const { data: ins, error } = await sb().from('rider_claims').insert(row).select('id').maybeSingle();
+    if (error) throw error;
+    await sb().from('rider_claim_events').insert({ claim_id: ins && ins.id, emp_id: d.emp_id, event: 'submit', actor: emp.name, role: 'emp', note: item.name + (e.elig_ok ? '' : ' ⚠ ' + e.note), amount_after: amountEst });
+    await logAct('ยื่นคำขอเบิกซ่อมรถ ' + claim_no, d.emp_id, item.name);
+    return { ok: true, id: ins && ins.id, claim_no, eligibility: e };
+  }
+
+  // ข้อมูลย่อพนักงาน (ชื่อ/สาขา) ใช้ตอนสร้างคำขอ
+  async function _empBrief(empId) {
+    const { data } = await sb().from('employees').select('name,nickname,branch_id, branches(name)').eq('emp_id', empId).maybeSingle();
+    return {
+      name: (data && data.name) || empId, nickname: (data && data.nickname) || null,
+      branch_id: (data && data.branch_id) || null,
+      branch_name: (data && data.branches && data.branches.name) || null,
+    };
+  }
+
+  async function hrRiderClaimsList(p) {
+    p = p || {};
+    let q = sb().from('rider_claims').select('*').order('created_at', { ascending: false });
+    if (p.emp_id) q = q.eq('emp_id', p.emp_id);
+    if (p.branch) q = q.eq('branch_id', p.branch);
+    if (p.status) q = q.eq('status', p.status);
+    if (p.pending) q = q.eq('status', 'submitted');
+    const { data, error } = await q;
+    if (error) throw error;
+    return { ok: true, rows: data || [], status_label: RIDER_CLAIM_STATUS, tier_label: RIDER_TIER_LABEL };
+  }
+
+  // อนุมัติ/ปฏิเสธ — HR อนุมัติได้ทุกชั้น · ผจก.สาขาอนุมัติชั้น lead/manager ในสาขาตน
+  async function hrRiderClaimReview(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const action = ['approve', 'reject'].includes(d.action) ? d.action : 'approve';
+    if (action === 'reject' && (!d.note || !String(d.note).trim())) return { ok: false, error: 'ไม่อนุมัติ ต้องระบุเหตุผล' };
+    const { data: r } = await sb().from('rider_claims').select('*').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    if (r.status !== 'submitted') return { ok: false, error: 'คำขอนี้ถูกพิจารณาไปแล้ว (' + (RIDER_CLAIM_STATUS[r.status] || r.status) + ')' };
+    // สิทธิ์ตามชั้น
+    if (me.role === 'mgr') {
+      if (r.approval_tier === 'exec') return { ok: false, error: 'วงเงินนี้ต้องให้ฝ่ายบริหาร/สำนักงานอนุมัติ' };
+      if (r.branch_id && me.branch_id && r.branch_id !== me.branch_id) return { ok: false, error: 'อนุมัติได้เฉพาะคำขอในสาขาของท่าน' };
+    }
+    const who = d.by || me.name;
+    const now = new Date().toISOString();
+    if (action === 'reject') {
+      await sb().from('rider_claims').update({ status: 'rejected', reviewed_by: who, reviewed_at: now, review_note: String(d.note).trim() }).eq('id', d.id);
+      await sb().from('rider_claim_events').insert({ claim_id: d.id, emp_id: r.emp_id, event: 'reject', actor: who, role: me.role, note: String(d.note).trim() });
+      try { await sb().from('emp_notifications').insert({ emp_id: r.emp_id, kind: 'warn', title: 'คำขอเบิกซ่อมรถ ' + r.claim_no + ' ไม่อนุมัติ', body: 'เหตุผล: ' + String(d.note).trim(), ref: 'rider_claim:' + d.id, created_by: who }); } catch (_e) {}
+      await logAct('ไม่อนุมัติคำขอเบิกซ่อมรถ ' + r.claim_no, r.emp_id, null);
+      return { ok: true };
+    }
+    let amt = d.approved_amount != null ? (parseInt(d.approved_amount) || 0) : (r.amount_est || 0);
+    if (amt <= 0) return { ok: false, error: 'ยอดอนุมัติต้องมากกว่า 0' };
+    await sb().from('rider_claims').update({ status: 'approved', approved_amount: amt, reviewed_by: who, reviewed_at: now, review_note: d.note ? String(d.note).trim() : null }).eq('id', d.id);
+    await sb().from('rider_claim_events').insert({ claim_id: d.id, emp_id: r.emp_id, event: 'approve', actor: who, role: me.role, note: d.note ? String(d.note).trim() : null, amount_before: r.amount_est, amount_after: amt });
+    try { await sb().from('emp_notifications').insert({ emp_id: r.emp_id, kind: 'info', title: '✅ อนุมัติเบิกซ่อมรถ ' + r.claim_no + ' · ' + amt.toLocaleString() + ' บาท', body: r.item_name + '\nเข้ารับบริการแล้วส่งใบเสร็จภายในกำหนด', ref: 'rider_claim:' + d.id, created_by: who }); } catch (_e) {}
+    await logAct('อนุมัติคำขอเบิกซ่อมรถ ' + r.claim_no, r.emp_id, amt.toLocaleString());
+    return { ok: true };
+  }
+
+  // จ่ายเงิน (HR เท่านั้น) — ผูกยอดจริงจากใบเสร็จ
+  async function hrRiderClaimPay(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const { data: r } = await sb().from('rider_claims').select('*').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    if (r.status !== 'approved' && r.status !== 'serviced') return { ok: false, error: 'จ่ายได้เฉพาะคำขอที่อนุมัติแล้ว' };
+    if (!d.payout_ref || !String(d.payout_ref).trim()) return { ok: false, error: 'ระบุเลขอ้างอิงการโอน' };
+    const actual = d.amount_actual != null ? (parseInt(d.amount_actual) || 0) : (r.amount_actual != null ? r.amount_actual : r.approved_amount);
+    const who = d.by || 'สำนักงาน (HR)';
+    let recv = null;
+    if (d.receipt) { const u = await _uploadMany('rider/receipt', [d.receipt]); recv = u[0]; }
+    const upd = { status: 'paid', paid_at: new Date().toISOString(), paid_by: who, payout_method: 'transfer', payout_ref: String(d.payout_ref).trim(), amount_actual: actual };
+    if (recv) upd.photos = Object.assign({}, r.photos || {}, { receipt: recv });
+    const { error } = await sb().from('rider_claims').update(upd).eq('id', d.id);
+    if (error) throw error;
+    await sb().from('rider_claim_events').insert({ claim_id: d.id, emp_id: r.emp_id, event: 'pay', actor: who, role: 'hr', note: 'โอน · อ้างอิง ' + String(d.payout_ref).trim(), amount_after: actual });
+    try { await sb().from('emp_notifications').insert({ emp_id: r.emp_id, kind: 'info', title: '💸 จ่ายเงินเบิกซ่อมรถแล้ว ' + Number(actual).toLocaleString() + ' บาท', body: 'เลขที่ ' + r.claim_no + ' · ' + r.item_name + '\nอ้างอิง ' + String(d.payout_ref).trim(), ref: 'rider_claim:' + d.id, created_by: who }); } catch (_e) {}
+    await logAct('จ่ายเงินเบิกซ่อมรถ ' + r.claim_no, r.emp_id, String(d.payout_ref).trim());
     return { ok: true };
   }
 

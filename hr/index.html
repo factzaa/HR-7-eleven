@@ -382,6 +382,7 @@
   <button class="tab" id="tab_terminate"><span class="tabicon">⛔</span>พิจารณาเลิกจ้าง</button>
   <button class="tab" id="tab_advance"><span class="tabicon">💵</span>เบิกเงินล่วงหน้า</button>
   <button class="tab" id="tab_payroll"><span class="tabicon">💰</span>เงินเดือน</button>
+  <button class="tab" id="tab_rider"><span class="tabicon">🏍️</span>เบิกซ่อมรถ (ไรเดอร์)</button>
   <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
   <button class="tab" id="tab_mgreval"><span class="tabicon">🏅</span>ประเมิน ผจก.</button>
   <button class="tab" id="tab_analytics"><span class="tabicon">📈</span>วิเคราะห์</button>
@@ -695,6 +696,70 @@
     <div class="modal-f"><button class="btn btn-sec" id="pliCancel">ยกเลิก</button><button class="btn btn-pri" id="pliSave">บันทึก</button></div>
   </div>
 </div>
+
+<!-- Rider: เบิกซ่อมบำรุงรถ -->
+<div id="view_rider" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px;gap:6px;flex-wrap:wrap">
+    <button class="btn btn-sec btn-sm rd-sub on" data-rdsec="claims">📋 คำขอเบิก</button>
+    <button class="btn btn-sec btn-sm rd-sub" data-rdsec="vehicles">🏍️ ทะเบียนรถ</button>
+    <button class="btn btn-sec btn-sm rd-sub" data-rdsec="items" data-hronly="1">🧰 รายการเบิก (เปิด/ปิด)</button>
+    <button class="btn btn-sec btn-sm rd-sub" data-rdsec="config" data-hronly="1">⚙️ ตั้งค่า</button>
+    <span style="flex:1"></span>
+    <select id="rd_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+  </div>
+
+  <!-- คำขอเบิก -->
+  <div id="rd_sec_claims" class="rd-sec">
+    <div class="toolbar" style="margin-bottom:8px;gap:6px;flex-wrap:wrap">
+      <select id="rd_cl_status" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
+        <option value="">ทุกสถานะ</option><option value="submitted">รออนุมัติ</option><option value="approved">อนุมัติแล้ว</option>
+        <option value="paid">จ่ายแล้ว</option><option value="rejected">ไม่อนุมัติ</option>
+      </select>
+      <button class="btn btn-sec btn-sm" id="rd_cl_reload">รีเฟรช</button>
+    </div>
+    <div id="rd_claims_box"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+
+  <!-- ทะเบียนรถ -->
+  <div id="rd_sec_vehicles" class="rd-sec" style="display:none">
+    <div class="toolbar" style="margin-bottom:8px"><h3 style="flex:1;font-size:15px;font-weight:600">ทะเบียนรถไรเดอร์</h3><button class="btn btn-pri btn-sm" id="rd_veh_new">+ เพิ่มรถ</button></div>
+    <div id="rd_veh_box"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+
+  <!-- รายการเบิก (แคตตาล็อก) -->
+  <div id="rd_sec_items" class="rd-sec" style="display:none">
+    <div class="card" style="padding:11px 14px;margin-bottom:10px;background:#f3faf6;font-size:13px;color:var(--muted)">
+      สลับสวิตช์เพื่อ <b>เปิด/ปิด</b> ให้ไรเดอร์เบิกรายการนั้น ๆ · กด "แก้เงื่อนไข" เพื่อตั้งระยะ กม. เพดานต่อปี วงเงิน และหลักฐานที่ต้องแนบ
+    </div>
+    <div id="rd_items_box"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+
+  <!-- ตั้งค่า -->
+  <div id="rd_sec_config" class="rd-sec" style="display:none">
+    <div id="rd_config_box"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+</div>
+
+<!-- Rider: modal แก้เงื่อนไขรายการ -->
+<div class="overlay" id="rdItemOverlay"><div class="modal" style="max-width:560px">
+  <div class="modal-h"><h2 id="rdi_title" style="font-size:16px">แก้เงื่อนไขรายการ</h2><button class="close" id="rdiClose">×</button></div>
+  <div class="modal-b" id="rdi_body"></div>
+  <div class="modal-f"><button class="btn btn-sec" id="rdiCancel">ยกเลิก</button><button class="btn btn-pri" id="rdiSave">บันทึก</button></div>
+</div></div>
+
+<!-- Rider: modal ทะเบียนรถ -->
+<div class="overlay" id="rdVehOverlay"><div class="modal" style="max-width:560px">
+  <div class="modal-h"><h2 id="rdv_title" style="font-size:16px">เพิ่มรถ</h2><button class="close" id="rdvClose">×</button></div>
+  <div class="modal-b" id="rdv_body"></div>
+  <div class="modal-f"><button class="btn btn-sec" id="rdvCancel">ยกเลิก</button><button class="btn btn-pri" id="rdvSave">บันทึก</button></div>
+</div></div>
+
+<!-- Rider: modal อนุมัติ/จ่าย -->
+<div class="overlay" id="rdClaimOverlay"><div class="modal" style="max-width:600px">
+  <div class="modal-h"><h2 id="rdc_title" style="font-size:16px">รายละเอียดคำขอ</h2><button class="close" id="rdcClose">×</button></div>
+  <div class="modal-b" id="rdc_body"></div>
+  <div class="modal-f" id="rdc_foot"></div>
+</div></div>
 
 <!-- Report -->
 <div id="view_report" class="container" style="display:none">
@@ -1983,7 +2048,7 @@ let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 // ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule','discipline','terminate','advance'];
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule','discipline','terminate','advance','rider'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -5632,6 +5697,328 @@ function exportAnalyticsXlsx(){
   XLSX.writeFile(wb,fn);
 }
 
+// ========== เบิกซ่อมบำรุงรถ (Rider) ==========
+let RD = { sec:'claims', wired:false, items:[], vehicles:[], claims:[], config:null, editItemCode:null, editVehId:null, curClaim:null, vehPhotos:[] };
+const RD_CAT = { maintenance:'บำรุงรักษา', consumable:'สิ้นเปลือง', safety:'ความปลอดภัย', operating:'ค่าดำเนินงาน' };
+function rdIsHR(){ return !MGR_MODE; }
+function rdBranchVal(){ return MGR_MODE ? MGR_BRANCH : ($('rd_branch') ? $('rd_branch').value : ''); }
+
+function loadRider(){
+  if(!RD.wired){
+    document.querySelectorAll('.rd-sub').forEach(b=>{
+      if(b.dataset.hronly==='1' && !rdIsHR()){ b.style.display='none'; return; }
+      b.onclick=()=>rdShowSec(b.dataset.rdsec);
+    });
+    if($('rd_veh_new')) $('rd_veh_new').onclick=()=>openRdVeh(null);
+    if($('rd_cl_reload')) $('rd_cl_reload').onclick=loadRdClaims;
+    if($('rd_cl_status')) $('rd_cl_status').onchange=loadRdClaims;
+    if($('rd_branch')) $('rd_branch').onchange=()=>{ if(RD.sec==='claims') loadRdClaims(); else if(RD.sec==='vehicles') loadRdVehicles(); };
+    ['rdiClose','rdiCancel'].forEach(id=>$(id)&&($(id).onclick=()=>$('rdItemOverlay').classList.remove('show')));
+    ['rdvClose','rdvCancel'].forEach(id=>$(id)&&($(id).onclick=()=>$('rdVehOverlay').classList.remove('show')));
+    ['rdcClose'].forEach(id=>$(id)&&($(id).onclick=()=>$('rdClaimOverlay').classList.remove('show')));
+    if($('rdiSave')) $('rdiSave').onclick=saveRdItem;
+    if($('rdvSave')) $('rdvSave').onclick=saveRdVeh;
+    RD.wired=true;
+  }
+  if($('rd_branch') && !$('rd_branch').dataset.filled && DATA.branches){
+    fillSelect($('rd_branch'), DATA.branches.map(b=>[b.branch_id,b.name]), '— ทุกสาขา —');
+    $('rd_branch').dataset.filled='1';
+    if(MGR_MODE) enforceMgrBranch();
+  }
+  rdShowSec(RD.sec||'claims');
+}
+function rdShowSec(sec){
+  RD.sec=sec;
+  document.querySelectorAll('.rd-sub').forEach(b=>b.classList.toggle('on', b.dataset.rdsec===sec));
+  ['claims','vehicles','items','config'].forEach(s=>{ const el=$('rd_sec_'+s); if(el) el.style.display=(s===sec?'block':'none'); });
+  if(sec==='claims') loadRdClaims();
+  else if(sec==='vehicles') loadRdVehicles();
+  else if(sec==='items') loadRdItems();
+  else if(sec==='config') loadRdConfig();
+}
+
+// ---- คำขอเบิก ----
+async function loadRdClaims(){
+  $('rd_claims_box').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'rider_claims_list', ...authBody(), branch:rdBranchVal()||undefined, status:($('rd_cl_status')?$('rd_cl_status').value:'')||undefined });
+  if(!r||!r.ok){ $('rd_claims_box').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  RD.claims=r.rows||[]; RD._st=r.status_label||{}; RD._tier=r.tier_label||{};
+  renderRdClaims();
+}
+function rdStatusBadge(s){
+  const c={submitted:'#a06515',approved:'#0369a1',paid:'#16a34a',rejected:'#dc2626',serviced:'#7c3aed',cancelled:'#64748b'}[s]||'#64748b';
+  return '<span style="background:'+c+'1a;color:'+c+';padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">'+esc((RD._st&&RD._st[s])||s)+'</span>';
+}
+function renderRdClaims(){
+  const rows=RD.claims;
+  if(!rows.length){ $('rd_claims_box').innerHTML='<div class="empty">— ไม่มีคำขอ —</div>'; return; }
+  const pend=rows.filter(r=>r.status==='submitted').length;
+  let h='';
+  if(pend) h+='<div class="card" style="padding:9px 13px;margin-bottom:9px;background:#fff7ed;color:#9a3412;font-size:13px;font-weight:600">⏳ รออนุมัติ '+pend+' คำขอ</div>';
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+   + '<thead><tr style="background:#f6f7f9;text-align:left">'
+   + '<th style="padding:8px">เลขที่</th><th style="padding:8px">พนักงาน</th><th style="padding:8px">รายการ</th>'
+   + '<th style="padding:8px">รถ</th><th style="padding:8px;text-align:right">ยอด</th><th style="padding:8px">ชั้น</th><th style="padding:8px">สถานะ</th><th></th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const amt=(r.approved_amount!=null?r.approved_amount:(r.amount_actual!=null?r.amount_actual:r.amount_est))||0;
+    h+='<tr style="border-top:1px solid var(--line)">'
+     + '<td style="padding:8px;white-space:nowrap">'+esc(r.claim_no||'')+(r.elig_ok?'':' <span title="'+esc(r.elig_note||'')+'" style="color:#dc2626">⚠</span>')+'</td>'
+     + '<td style="padding:8px">'+esc(r.nickname||r.emp_name||r.emp_id)+'<div style="font-size:11px;color:var(--muted)">'+esc(r.branch_name||'')+'</div></td>'
+     + '<td style="padding:8px">'+esc(r.item_name||r.item_code)+'</td>'
+     + '<td style="padding:8px">'+esc(r.vehicle_plate||'—')+'</td>'
+     + '<td style="padding:8px;text-align:right">'+Number(amt).toLocaleString()+'</td>'
+     + '<td style="padding:8px;font-size:11px">'+esc((RD._tier&&RD._tier[r.approval_tier])||r.approval_tier||'')+'</td>'
+     + '<td style="padding:8px">'+rdStatusBadge(r.status)+'</td>'
+     + '<td style="padding:8px"><button class="btn btn-sec btn-sm" data-rdclaim="'+r.id+'">เปิด</button></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  $('rd_claims_box').innerHTML=h;
+  $('rd_claims_box').querySelectorAll('[data-rdclaim]').forEach(b=>b.onclick=()=>openRdClaim(b.dataset.rdclaim));
+}
+function openRdClaim(id){
+  const r=RD.claims.find(x=>String(x.id)===String(id)); if(!r) return;
+  RD.curClaim=r;
+  const ph=r.photos||{};
+  const thumb=(u,lb)=>u?'<div style="text-align:center"><img src="'+esc(u)+'" onclick="lightbox(this)" style="width:92px;height:92px;object-fit:cover;border-radius:9px;cursor:zoom-in;border:1px solid var(--line)"><div style="font-size:11px;color:var(--muted)">'+lb+'</div></div>':'';
+  const imgs=[thumb(ph.before,'ก่อน'),thumb(ph.part,'อะไหล่'),thumb(ph.after,'หลัง'),thumb(ph.receipt,'ใบเสร็จ')].filter(Boolean).join('');
+  const amt=(r.approved_amount!=null?r.approved_amount:r.amount_est)||0;
+  let b='<div style="font-size:13px;line-height:1.9">'
+   + '<b style="font-size:15px">'+esc(r.item_name||'')+'</b> · '+rdStatusBadge(r.status)+'<br>'
+   + 'เลขที่ <b>'+esc(r.claim_no||'')+'</b> · พนักงาน '+esc(r.nickname||r.emp_name||r.emp_id)+' ('+esc(r.branch_name||'')+')<br>'
+   + 'รถ '+esc(r.vehicle_plate||'—')+' · เลขไมล์ '+(r.odo_current!=null?Number(r.odo_current).toLocaleString():'—')+' กม.<br>'
+   + 'ประมาณการ '+Number(r.amount_est||0).toLocaleString()+' บาท'+(r.amount_actual!=null?(' · ตามจริง '+Number(r.amount_actual).toLocaleString()+' บาท'):'')+'<br>'
+   + (r.shop_name?('ร้าน '+esc(r.shop_name)+'<br>'):'')
+   + (r.reason?('<div style="margin-top:4px;color:#334155">อาการ: '+esc(r.reason)+'</div>'):'')
+   + '<div style="margin-top:6px;padding:7px 10px;border-radius:8px;background:'+(r.elig_ok?'#f0fdf4':'#fef2f2')+';color:'+(r.elig_ok?'#166534':'#991b1b')+';font-size:12.5px">'
+   + (r.elig_ok?'✅ ':'⚠ ')+esc(r.elig_note||'')
+   + (r.allowed_this_year!=null?(' · ใช้สิทธิ์ปีนี้ '+(r.used_this_year||0)+'/'+r.allowed_this_year):'')+'</div>';
+  if(imgs) b+='<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:9px">'+imgs+'</div>';
+  if(r.review_note) b+='<div style="margin-top:6px;font-size:12px;color:var(--muted)">หมายเหตุผู้อนุมัติ: '+esc(r.review_note)+'</div>';
+  b+='</div>';
+  $('rdc_body').innerHTML=b;
+  // ปุ่มตามสถานะ + สิทธิ์
+  let foot='';
+  if(r.status==='submitted'){
+    const canApprove = rdIsHR() || (r.approval_tier!=='exec' && (!r.branch_id || r.branch_id===MGR_BRANCH));
+    if(canApprove){
+      foot='<div style="display:flex;gap:8px;flex-wrap:wrap;width:100%;align-items:center">'
+       + '<input id="rdc_amt" type="number" value="'+amt+'" style="width:120px;padding:8px;border:1.5px solid var(--line2);border-radius:8px" placeholder="ยอดอนุมัติ">'
+       + '<button class="btn btn-pri btn-sm" id="rdc_approve">✅ อนุมัติ</button>'
+       + '<button class="btn btn-sec btn-sm" id="rdc_reject" style="color:#dc2626">✕ ไม่อนุมัติ</button></div>';
+    } else foot='<div style="color:var(--muted);font-size:12px">วงเงินนี้ต้องให้สำนักงาน/ฝ่ายบริหารอนุมัติ</div>';
+  } else if(r.status==='approved' && rdIsHR()){
+    foot='<div style="display:flex;gap:8px;flex-wrap:wrap;width:100%;align-items:center">'
+     + '<input id="rdc_actual" type="number" value="'+amt+'" style="width:120px;padding:8px;border:1.5px solid var(--line2);border-radius:8px" placeholder="ยอดจ่ายจริง">'
+     + '<input id="rdc_ref" type="text" style="flex:1;min-width:130px;padding:8px;border:1.5px solid var(--line2);border-radius:8px" placeholder="เลขอ้างอิงการโอน">'
+     + '<button class="btn btn-pri btn-sm" id="rdc_pay">💸 บันทึกจ่าย</button></div>';
+  } else foot='<button class="btn btn-sec" id="rdcClose2">ปิด</button>';
+  $('rdc_foot').innerHTML=foot;
+  if($('rdcClose2')) $('rdcClose2').onclick=()=>$('rdClaimOverlay').classList.remove('show');
+  if($('rdc_approve')) $('rdc_approve').onclick=()=>rdReview(r.id,'approve',Number($('rdc_amt').value)||0);
+  if($('rdc_reject')) $('rdc_reject').onclick=()=>{ const n=prompt('เหตุผลที่ไม่อนุมัติ'); if(n&&n.trim()) rdReview(r.id,'reject',0,n.trim()); };
+  if($('rdc_pay')) $('rdc_pay').onclick=()=>rdPay(r.id);
+  $('rdClaimOverlay').classList.add('show');
+}
+async function rdReview(id,action,amount,note){
+  const r=await post({ action:'rider_claim_review', ...authBody(), data:{ id, action, approved_amount:amount, note:note||undefined } });
+  if(r&&r.ok){ toast('ok', action==='approve'?'อนุมัติแล้ว':'บันทึกแล้ว'); $('rdClaimOverlay').classList.remove('show'); loadRdClaims(); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+async function rdPay(id){
+  const ref=$('rdc_ref')?$('rdc_ref').value.trim():''; if(!ref){ toast('err','ระบุเลขอ้างอิงการโอน'); return; }
+  const actual=$('rdc_actual')?(Number($('rdc_actual').value)||0):undefined;
+  const r=await post({ action:'rider_claim_pay', ...authBody(), data:{ id, payout_ref:ref, amount_actual:actual } });
+  if(r&&r.ok){ toast('ok','บันทึกการจ่ายแล้ว'); $('rdClaimOverlay').classList.remove('show'); loadRdClaims(); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+
+// ---- ทะเบียนรถ ----
+async function loadRdVehicles(){
+  $('rd_veh_box').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'rider_vehicles_list', ...authBody(), branch:rdBranchVal()||undefined });
+  if(!r||!r.ok){ $('rd_veh_box').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  RD.vehicles=r.rows||[]; renderRdVehicles();
+}
+function renderRdVehicles(){
+  if(!RD.vehicles.length){ $('rd_veh_box').innerHTML='<div class="empty">— ยังไม่มีรถ —</div>'; return; }
+  let h='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">';
+  RD.vehicles.forEach(v=>{
+    h+='<div class="card" style="padding:12px 14px'+(v.active?'':';opacity:.55')+'">'
+     + '<div style="display:flex;justify-content:space-between;align-items:start"><b style="font-size:15px">'+esc(v.plate||'(ไม่มีทะเบียน)')+'</b>'
+     + '<span style="font-size:11px;color:'+(v.owner_type==='company'?'#0369a1':'#a06515')+'">'+(v.owner_type==='company'?'รถบริษัท':'รถส่วนตัว')+'</span></div>'
+     + '<div style="font-size:12.5px;color:var(--muted);margin-top:3px">'+esc([v.brand,v.model,v.year].filter(Boolean).join(' '))+'</div>'
+     + '<div style="font-size:12px;margin-top:4px">'+(v.drivetrain==='cvt'?'ออโตเมติก (สายพาน)':'โซ่-สเตอร์')+' · '+(v.cooling==='liquid'?'ระบายน้ำ':'ระบายอากาศ')+'</div>'
+     + '<div style="font-size:12px;color:var(--muted)">ไมล์ล่าสุด '+Number(v.odo_last||v.odo_start||0).toLocaleString()+' กม.</div>'
+     + '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-sec btn-sm" data-rdvedit="'+v.id+'">แก้ไข</button>'
+     + '<button class="btn btn-sec btn-sm" data-rdvdel="'+v.id+'" style="color:#dc2626">ลบ</button></div></div>';
+  });
+  h+='</div>';
+  $('rd_veh_box').innerHTML=h;
+  $('rd_veh_box').querySelectorAll('[data-rdvedit]').forEach(b=>b.onclick=()=>openRdVeh(b.dataset.rdvedit));
+  $('rd_veh_box').querySelectorAll('[data-rdvdel]').forEach(b=>b.onclick=()=>rdDelVeh(b.dataset.rdvdel));
+}
+function openRdVeh(id){
+  const v=id?RD.vehicles.find(x=>String(x.id)===String(id)):{};
+  RD.editVehId=id||null;
+  const empOpts=(DATA.rows||[]).map(e=>'<option value="'+esc(e.emp_id)+'"'+((v&&v.emp_id===e.emp_id)?' selected':'')+'>'+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</option>').join('');
+  const brOpts=(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(((v&&v.branch_id===b.branch_id)||(MGR_MODE&&b.branch_id===MGR_BRANCH))?' selected':'')+'>'+esc(b.name)+'</option>').join('');
+  $('rdv_title').textContent=id?'แก้ไขรถ':'เพิ่มรถ';
+  const F=(l,inner)=>'<div class="field" style="margin-bottom:9px"><label style="font-size:12px;color:var(--muted)">'+l+'</label>'+inner+'</div>';
+  const inp=(idv,val,ph,type)=>'<input id="'+idv+'" type="'+(type||'text')+'" value="'+esc(val!=null?val:'')+'" placeholder="'+(ph||'')+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit">';
+  $('rdv_body').innerHTML=
+     F('ทะเบียนรถ *', inp('rdv_plate',v&&v.plate,'เช่น 1กข 1234'))
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+   + F('ยี่ห้อ', inp('rdv_brand',v&&v.brand,'Honda'))
+   + F('รุ่น', inp('rdv_model',v&&v.model,'Wave'))+'</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">'
+   + F('ปี', inp('rdv_year',v&&v.year,'','number'))
+   + F('ซีซี', inp('rdv_cc',v&&v.engine_cc,'','number'))
+   + F('เลขไมล์เริ่ม', inp('rdv_odo',v&&v.odo_start,'','number'))+'</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+   + F('เจ้าของ','<select id="rdv_owner" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px"><option value="company"'+((v&&v.owner_type==='personal')?'':' selected')+'>รถบริษัท</option><option value="personal"'+((v&&v.owner_type==='personal')?' selected':'')+'>รถส่วนตัว</option></select>')
+   + F('ระบบส่งกำลัง','<select id="rdv_drive" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px"><option value="chain"'+((v&&v.drivetrain==='cvt')?'':' selected')+'>โซ่-สเตอร์</option><option value="cvt"'+((v&&v.drivetrain==='cvt')?' selected':'')+'>ออโตเมติก (สายพาน)</option></select>')+'</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+   + F('ระบายความร้อน','<select id="rdv_cool" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px"><option value="air"'+((v&&v.cooling==='liquid')?'':' selected')+'>อากาศ</option><option value="liquid"'+((v&&v.cooling==='liquid')?' selected':'')+'>น้ำ (หม้อน้ำ)</option></select>')
+   + F('สาขา','<select id="rdv_branch" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px"><option value="">— ไม่ระบุ —</option>'+brOpts+'</select>')+'</div>'
+   + F('ผู้ใช้ประจำ (ไรเดอร์)','<select id="rdv_emp" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px"><option value="">— รถกลางสาขา —</option>'+empOpts+'</select>')
+   + F('หมายเหตุ', inp('rdv_note',v&&v.note,''));
+  $('rdVehOverlay').classList.add('show');
+}
+async function saveRdVeh(){
+  const plate=$('rdv_plate').value.trim(); if(!plate){ toast('err','กรอกทะเบียนรถ'); return; }
+  const data={ id:RD.editVehId||undefined, plate, brand:$('rdv_brand').value.trim(), model:$('rdv_model').value.trim(),
+    year:$('rdv_year').value||null, engine_cc:$('rdv_cc').value||null, odo_start:$('rdv_odo').value||0,
+    owner_type:$('rdv_owner').value, drivetrain:$('rdv_drive').value, cooling:$('rdv_cool').value,
+    branch_id:$('rdv_branch').value||(MGR_MODE?MGR_BRANCH:null), emp_id:$('rdv_emp').value||null, note:$('rdv_note').value.trim() };
+  const r=await post({ action:'rider_vehicle_save', ...authBody(), data });
+  if(r&&r.ok){ toast('ok','บันทึกรถแล้ว'); $('rdVehOverlay').classList.remove('show'); loadRdVehicles(); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+async function rdDelVeh(id){
+  if(!confirm('ลบ/ปิดใช้งานรถคันนี้?')) return;
+  const r=await post({ action:'rider_vehicle_delete', ...authBody(), id });
+  if(r&&r.ok){ toast('ok', r.disabled?'ปิดใช้งานแล้ว (มีคำขอผูกอยู่)':'ลบแล้ว'); loadRdVehicles(); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+
+// ---- แคตตาล็อกรายการเบิก (HR เท่านั้น) ----
+async function loadRdItems(){
+  $('rd_items_box').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'rider_items_list', ...authBody() });
+  if(!r||!r.ok){ $('rd_items_box').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  RD.items=r.rows||[]; renderRdItems();
+}
+function renderRdItems(){
+  const groups={};
+  RD.items.forEach(it=>{ (groups[it.category]=groups[it.category]||[]).push(it); });
+  let h='';
+  Object.keys(groups).forEach(cat=>{
+    h+='<div style="font-size:13px;font-weight:700;color:var(--green-d);margin:12px 0 6px">'+esc(RD_CAT[cat]||cat)+'</div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:9px">';
+    groups[cat].forEach(it=>{
+      const cond=[];
+      if(it.interval_km) cond.push('ทุก '+Number(it.interval_km).toLocaleString()+' กม.');
+      if(it.per_year_cap!=null) cond.push('≤'+it.per_year_cap+'/ปี');
+      if(it.per_period_months) cond.push('รอบ '+it.per_period_months+' ด.');
+      if(it.amount_cap) cond.push('≤'+Number(it.amount_cap).toLocaleString()+' บ.');
+      h+='<div class="card" style="padding:11px 13px'+(it.enabled?'':';background:#f8fafc;opacity:.7')+'">'
+       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+       + '<b style="font-size:14px">'+esc(it.name)+'</b>'
+       + '<label style="position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0">'
+       + '<input type="checkbox" data-rdtog="'+esc(it.code)+'"'+(it.enabled?' checked':'')+' style="opacity:0;width:0;height:0">'
+       + '<span class="rd-sw" style="position:absolute;inset:0;background:'+(it.enabled?'var(--green)':'#cbd5e1')+';border-radius:24px;transition:.2s;cursor:pointer"><span style="position:absolute;top:3px;left:'+(it.enabled?'21px':'3px')+';width:18px;height:18px;background:#fff;border-radius:50%;transition:.2s"></span></span></label></div>'
+       + '<div style="font-size:11.5px;color:var(--muted);margin-top:5px;min-height:16px">'+esc(cond.join(' · ')||'ตามสภาพจริง')+'</div>'
+       + (it.applies_drivetrain||it.applies_cooling?'<div style="font-size:11px;color:#a06515;margin-top:2px">เฉพาะรถ '+esc(it.applies_drivetrain==='cvt'?'ออโตเมติก':it.applies_drivetrain==='chain'?'โซ่':'')+(it.applies_cooling==='liquid'?' ระบายน้ำ':'')+'</div>':'')
+       + '<button class="btn btn-sec btn-sm" data-rditem="'+esc(it.code)+'" style="margin-top:7px">แก้เงื่อนไข</button></div>';
+    });
+    h+='</div>';
+  });
+  $('rd_items_box').innerHTML=h;
+  $('rd_items_box').querySelectorAll('[data-rdtog]').forEach(c=>c.onchange=()=>rdToggleItem(c.dataset.rdtog,c.checked));
+  $('rd_items_box').querySelectorAll('[data-rditem]').forEach(b=>b.onclick=()=>openRdItemEdit(b.dataset.rditem));
+}
+async function rdToggleItem(code,enabled){
+  const it=RD.items.find(x=>x.code===code); if(!it) return;
+  const r=await post({ action:'rider_item_save', ...authBody(), data:{ ...it, enabled } });
+  if(r&&r.ok){ toast('ok', enabled?'เปิดให้เบิก '+it.name:'ปิดการเบิก '+it.name); it.enabled=enabled; renderRdItems(); }
+  else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); loadRdItems(); }
+}
+function openRdItemEdit(code){
+  const it=RD.items.find(x=>x.code===code); if(!it) return;
+  RD.editItemCode=code;
+  $('rdi_title').textContent='เงื่อนไข: '+it.name;
+  const F=(l,inner,hint)=>'<div class="field" style="margin-bottom:9px"><label style="font-size:12px;color:var(--muted)">'+l+'</label>'+inner+(hint?'<div style="font-size:11px;color:var(--muted)">'+hint+'</div>':'')+'</div>';
+  const num=(idv,val)=>'<input id="'+idv+'" type="number" value="'+(val!=null?val:'')+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px">';
+  const chk=(idv,val,lb)=>'<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;padding:4px 0"><input id="'+idv+'" type="checkbox"'+(val!==false?' checked':'')+'>'+lb+'</label>';
+  $('rdi_body').innerHTML=
+     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+   + F('ระยะทางถึงรอบ (กม.)', num('rdi_interval',it.interval_km),'ว่าง = ไม่คิดตามระยะ')
+   + F('อนุโลมก่อน (กม.)', num('rdi_early',it.early_km))+'</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+   + F('เพดานต่อปี', num('rdi_cap',it.per_year_cap),'ครั้ง/เส้น/ชุด ต่อปี')
+   + F('ฐานเพดาน','<select id="rdi_basis" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px"><option value="fixed"'+(it.cap_basis==='by_distance'?'':' selected')+'>ตายตัว</option><option value="by_distance"'+(it.cap_basis==='by_distance'?' selected':'')+'>ตามระยะทาง</option></select>')+'</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+   + F('รอบเวลาขั้นต่ำ (เดือน)', num('rdi_months',it.per_period_months))
+   + F('วงเงินจ่ายสูงสุด/ครั้ง (บาท)', num('rdi_amtcap',it.amount_cap),'ว่าง = จ่ายตามจริง')+'</div>'
+   + '<div style="font-size:12px;font-weight:600;margin:8px 0 3px">หลักฐานที่ต้องแนบ</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px">'
+   + chk('rdi_pbefore',it.require_before_photo,'รูปก่อน/เลขไมล์ก่อน')
+   + chk('rdi_pafter',it.require_after_photo,'รูปหลัง/เลขไมล์หลัง')
+   + chk('rdi_receipt',it.require_receipt,'ใบเสร็จ')
+   + chk('rdi_gps',it.require_gps,'พิกัด GPS ร้าน')
+   + chk('rdi_reason',it.require_reason,'ระบุอาการ/เหตุผล')
+   + chk('rdi_needappr',it.needs_approval,'ต้องอนุมัติก่อนซ่อม')+'</div>';
+  $('rdItemOverlay').classList.add('show');
+}
+async function saveRdItem(){
+  const it=RD.items.find(x=>x.code===RD.editItemCode); if(!it) return;
+  const g=id=>$(id).value.trim()===''?null:Number($(id).value);
+  const data={ ...it,
+    interval_km:g('rdi_interval'), early_km:Number($('rdi_early').value)||0,
+    per_year_cap:g('rdi_cap'), cap_basis:$('rdi_basis').value,
+    per_period_months:g('rdi_months'), amount_cap:g('rdi_amtcap'),
+    require_before_photo:$('rdi_pbefore').checked, require_after_photo:$('rdi_pafter').checked,
+    require_receipt:$('rdi_receipt').checked, require_gps:$('rdi_gps').checked,
+    require_reason:$('rdi_reason').checked, needs_approval:$('rdi_needappr').checked };
+  const r=await post({ action:'rider_item_save', ...authBody(), data });
+  if(r&&r.ok){ toast('ok','บันทึกเงื่อนไขแล้ว'); $('rdItemOverlay').classList.remove('show'); loadRdItems(); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+
+// ---- ตั้งค่า (HR เท่านั้น) ----
+async function loadRdConfig(){
+  $('rd_config_box').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'rider_cfg_get', ...authBody() });
+  if(!r||!r.ok){ $('rd_config_box').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  RD.config=r.config||{}; renderRdConfig();
+}
+function renderRdConfig(){
+  const c=RD.config||{};
+  const F=(l,inner,hint)=>'<div class="field" style="margin-bottom:11px"><label style="font-size:12.5px;color:var(--muted)">'+l+'</label>'+inner+(hint?'<div style="font-size:11px;color:var(--muted)">'+hint+'</div>':'')+'</div>';
+  const num=(idv,val)=>'<input id="'+idv+'" type="number" value="'+(val!=null?val:'')+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px">';
+  $('rd_config_box').innerHTML='<div class="card" style="padding:15px 17px;max-width:560px">'
+   + '<div style="font-size:14px;font-weight:700;margin-bottom:10px">ระดับการอนุมัติตามวงเงิน</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+   + F('หัวหน้างานอนุมัติ ≤ (บาท)', num('rdcfg_t1',c.approval_tier1_max),'เกินนี้ขึ้นชั้นถัดไป')
+   + F('ผู้จัดการอนุมัติ ≤ (บาท)', num('rdcfg_t2',c.approval_tier2_max),'เกินนี้ = ฝ่ายบริหาร')+'</div>'
+   + '<div style="font-size:14px;font-weight:700;margin:14px 0 10px">การตรวจสอบ</div>'
+   + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+   + F('รัศมี GPS คลาดเคลื่อน (ม.)', num('rdcfg_gps',c.gps_radius_m))
+   + F('ไมล์-GPS ต่างเกิน (%) ให้ตรวจ', num('rdcfg_gap',c.mileage_gps_gap_pct))+'</div>'
+   + F('ส่งหลักฐานหลังรับบริการภายใน (วัน)', num('rdcfg_deadline',c.evidence_deadline_days))
+   + '<div style="font-size:14px;font-weight:700;margin:14px 0 10px">ค่าน้ำมัน</div>'
+   + F('รูปแบบ','<select id="rdcfg_fuel" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px"><option value="receipt"'+(c.fuel_mode==='per_km'?'':' selected')+'>ตามใบเสร็จ</option><option value="per_km"'+(c.fuel_mode==='per_km'?' selected':'')+'>จ่ายต่อกิโลเมตร</option></select>','ห้ามใช้สองแบบพร้อมกัน')
+   + F('อัตราต่อ กม. (บาท)', num('rdcfg_rate',c.fuel_rate_per_km))
+   + '<button class="btn btn-pri" id="rdcfg_save" style="margin-top:6px">บันทึกการตั้งค่า</button></div>';
+  $('rdcfg_save').onclick=async()=>{
+    const data={ approval_tier1_max:$('rdcfg_t1').value, approval_tier2_max:$('rdcfg_t2').value,
+      gps_radius_m:$('rdcfg_gps').value, mileage_gps_gap_pct:$('rdcfg_gap').value,
+      evidence_deadline_days:$('rdcfg_deadline').value, fuel_mode:$('rdcfg_fuel').value, fuel_rate_per_km:$('rdcfg_rate').value };
+    const r=await post({ action:'rider_cfg_save', ...authBody(), data });
+    if(r&&r.ok) toast('ok','บันทึกแล้ว'); else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+  };
+}
+
 // ---------- override showTab รองรับแท็บใหม่ ----------
 // ========== รับสมัครงาน (Recruitment) ==========
 let RC_ROWS = [], RC_CUR = null;
@@ -6492,7 +6879,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','empsum','mgreval','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); loadMdailyDash(); }
@@ -6507,6 +6894,7 @@ showTab = function(name){
   else if(name==='terminate') loadTerm();
   else if(name==='advance') loadAdvance();
   else if(name==='payroll') enterPayroll();
+  else if(name==='rider') loadRider();
   else if(name==='empsum') initEmpSum();
   else if(name==='mgreval') loadMgrEval();
   else if(name==='analytics') loadAnalytics();
@@ -6894,6 +7282,7 @@ const NAV_GROUPS=[
   { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'⚠️', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'💵', label:'เบิกเงิน',    tabs:['advance','payroll'] },
+  { icon:'🏍️', label:'ไรเดอร์',     tabs:['rider'] },
   { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }

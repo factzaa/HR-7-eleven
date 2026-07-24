@@ -175,6 +175,8 @@
       <div id="coCard" style="margin-top:10px"></div>
       <!-- 🚨 เบิกฉุกเฉิน — โผล่เฉพาะคนที่ ผจก. เปิดสิทธิ์ให้ และยังไม่หมดอายุ -->
       <div id="advEmgCard" style="margin-top:10px"></div>
+      <!-- 🏍️ เบิกซ่อมรถ — โผล่เฉพาะตำแหน่งไรเดอร์ -->
+      <div id="riderCard" style="margin-top:10px"></div>
     </div>
   </div>
 </div>
@@ -658,6 +660,7 @@ $('empId').addEventListener('input', e=>{
   updateUI();
   refreshCoCard();
   refreshAdvEmg();          // ★ เช็คสิทธิ์เบิกฉุกเฉินของรหัสนี้
+  refreshRiderCard();       // ★ ไรเดอร์: ปุ่มเบิกซ่อมรถ
 });
 $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');
@@ -760,6 +763,174 @@ function openAdvEmg(){
       close(); refreshAdvEmg();
     }catch(e){ showToast('err', e.message||'ส่งไม่สำเร็จ'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; }
   };
+}
+
+// ============================================================
+// 🏍️ ไรเดอร์: เบิกซ่อมบำรุงรถ
+// ============================================================
+let RIDER = { on:false, vehicles:[], items:[], photos:{} };
+function riderMoney(n){ return Number(n||0).toLocaleString('th-TH'); }
+function riderDraftKey(){ return empMatch?('riderdraft:'+empMatch.emp_id):null; }
+function riderSaveDraft(){
+  const k=riderDraftKey(); if(!k) return;
+  try{ sessionStorage.setItem(k, JSON.stringify({
+    veh:$('rcVeh')?$('rcVeh').value:'', item:$('rcItem')?$('rcItem').value:'',
+    odo:$('rcOdo')?$('rcOdo').value:'', amt:$('rcAmt')?$('rcAmt').value:'',
+    shop:$('rcShop')?$('rcShop').value:'', reason:$('rcReason')?$('rcReason').value:'',
+    photos:RIDER.photos })); }catch(_e){}
+}
+function riderClearDraft(){ const k=riderDraftKey(); if(k) try{ sessionStorage.removeItem(k); }catch(_e){} }
+
+async function refreshRiderCard(){
+  const box=$('riderCard'); if(!box) return;
+  box.innerHTML=''; RIDER.on=false;
+  if(!empMatch || empMatch.unknown) return;
+  let isR=false; try{ isR=await HR.riderIsRider(empMatch.emp_id); }catch(e){ return; }
+  if(!isR) return;
+  RIDER.on=true;
+  try{ RIDER.vehicles = await HR.riderMyVehicles(empMatch.emp_id); }catch(e){ RIDER.vehicles=[]; }
+  box.innerHTML='<div style="border:1.5px solid #0d9488;background:#f0fdfa;border-radius:14px;padding:12px 14px">'
+    +'<div style="font-weight:800;color:#0f766e;font-size:14px">🏍️ ไรเดอร์ · เบิกซ่อมบำรุงรถ</div>'
+    +'<div style="font-size:12.5px;color:#134e4a;margin-top:2px">'+(RIDER.vehicles.length?('รถของคุณ '+RIDER.vehicles.length+' คัน'):'ยังไม่มีรถลงทะเบียน — แจ้งผู้จัดการ')+'</div>'
+    +'<div style="display:flex;gap:8px;margin-top:9px">'
+    +'<button type="button" id="rcNewBtn" style="flex:1;padding:11px;border:0;border-radius:11px;background:#0d9488;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ ขอเบิกซ่อม</button>'
+    +'<button type="button" id="rcMineBtn" style="padding:11px 14px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">คำขอของฉัน</button>'
+    +'</div></div>';
+  $('rcNewBtn').onclick=openRiderClaim;
+  $('rcMineBtn').onclick=openRiderMine;
+}
+
+function riderCurVehicle(){ const id=$('rcVeh')?$('rcVeh').value:''; return RIDER.vehicles.find(v=>String(v.id)===String(id))||null; }
+async function riderReloadItems(){
+  const v=riderCurVehicle();
+  try{ RIDER.items = await HR.riderItems(v); }catch(e){ RIDER.items=[]; }
+  const sel=$('rcItem'); if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— เลือกรายการ —</option>'+RIDER.items.map(it=>'<option value="'+it.code+'">'+it.name+'</option>').join('');
+  if(RIDER.items.find(x=>x.code===cur)) sel.value=cur;
+  riderCheckElig();
+}
+async function riderCheckElig(){
+  const box=$('rcElig'); if(!box) return;
+  const item=RIDER.items.find(x=>x.code===($('rcItem')?$('rcItem').value:''));
+  if(!item){ box.innerHTML=''; riderApplyReq(null); return; }
+  riderApplyReq(item);
+  const v=riderCurVehicle();
+  const odo=$('rcOdo')?$('rcOdo').value:'';
+  let e; try{ e=await HR.riderEligibility({ empId:empMatch.emp_id, vehicle:v, item, odoCurrent:(odo!==''?Number(odo):null) }); }catch(_e){ box.innerHTML=''; return; }
+  box.innerHTML='<div style="padding:8px 11px;border-radius:9px;font-size:12.5px;background:'+(e.ok?'#f0fdf4':'#fef2f2')+';color:'+(e.ok?'#166534':'#991b1b')+'">'
+    +(e.ok?'✅ ':'⚠ ')+escH(e.note||'')+(e.allowed!=null?(' · ใช้สิทธิ์ปีนี้ '+(e.used||0)+'/'+e.allowed):'')+'</div>';
+}
+// เปิด/ปิดช่องหลักฐานตามที่รายการกำหนด
+function riderApplyReq(item){
+  const map={ before:'rcSlotBefore', part:'rcSlotPart', after:'rcSlotAfter', receipt:'rcSlotReceipt' };
+  const need={ before:item?item.require_before_photo:false, part:false, after:item?item.require_after_photo:false, receipt:item?item.require_receipt:false };
+  Object.keys(map).forEach(k=>{ const el=$(map[k]); if(el) el.style.display=(item?'':'none'); });
+  ['rcReqBefore','rcReqAfter','rcReqReceipt'].forEach(id=>{ /* ป้าย * */ });
+  const st=(id,on)=>{ const el=$(id); if(el) el.textContent=on?' *':''; };
+  st('rcReqBefore',need.before); st('rcReqAfter',need.after); st('rcReqReceipt',need.receipt);
+}
+function riderThumb(slot){
+  const u=RIDER.photos[slot]; const el=$('rcThumb_'+slot); if(!el) return;
+  el.innerHTML=u?'<img src="'+u+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px">':'';
+}
+function riderPhotoSlot(label, slot, reqSpanId){
+  return '<div id="rcSlot'+slot.charAt(0).toUpperCase()+slot.slice(1)+'" style="display:none">'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:8px 0 4px">'+label+(reqSpanId?'<span id="'+reqSpanId+'" style="color:#dc2626"></span>':'')+'</label>'
+    +'<label style="display:inline-block;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 ถ่าย/แนบรูป'
+    +'<input type="file" accept="image/*" capture="environment" data-rcslot="'+slot+'" style="display:none"></label>'
+    +'<div id="rcThumb_'+slot+'" style="margin-top:6px"></div></div>';
+}
+function openRiderClaim(){
+  if(!RIDER.vehicles.length){ showToast('err','ยังไม่มีรถลงทะเบียน — แจ้งผู้จัดการเพิ่มรถให้ก่อน'); return; }
+  RIDER.photos={};
+  const ov=document.createElement('div'); ov.id='rcOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  const vehOpts=RIDER.vehicles.map(v=>'<option value="'+v.id+'">'+escH(v.plate||'(ไม่มีทะเบียน)')+(v.brand?(' · '+escH(v.brand)):'')+'</option>').join('');
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:480px;width:100%;padding:18px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">🏍️ ขอเบิกซ่อมรถ</h2>'
+      +'<button type="button" id="rcX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
+    +'<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:8px 11px;font-size:12px;color:#134e4a;margin-bottom:10px">ถ่ายรูปหลักฐานผ่านกล้องในระบบ · ระบบเช็คสิทธิ์ให้อัตโนมัติ · ผู้จัดการ/สำนักงานเป็นผู้อนุมัติ</div>'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">รถ</label>'
+    +'<select id="rcVeh" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box">'+vehOpts+'</select>'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">รายการที่ต้องการเบิก</label>'
+    +'<select id="rcItem" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box"><option value="">— เลือกรายการ —</option></select>'
+    +'<div id="rcElig" style="margin-top:7px"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:9px">'
+      +'<div style="flex:1"><label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">เลขไมล์ปัจจุบัน</label>'
+        +'<input id="rcOdo" type="number" inputmode="numeric" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box"></div>'
+      +'<div style="flex:1"><label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">ประมาณการ (บาท)</label>'
+        +'<input id="rcAmt" type="number" inputmode="numeric" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box"></div></div>'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">ร้าน (ถ้ามี)</label>'
+    +'<input id="rcShop" type="text" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box">'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">อาการ/เหตุผล<span id="rcReqReason"></span></label>'
+    +'<textarea id="rcReason" rows="2" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box"></textarea>'
+    +riderPhotoSlot('รูปก่อนซ่อม / เลขไมล์ก่อน','before','rcReqBefore')
+    +riderPhotoSlot('รูปอะไหล่ / จุดเสียหาย','part',null)
+    +riderPhotoSlot('รูปหลังซ่อม / เลขไมล์หลัง','after','rcReqAfter')
+    +riderPhotoSlot('ใบเสร็จ','receipt','rcReqReceipt')
+    +'<button type="button" id="rcSend" style="width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#0d9488;color:#fff;font-weight:700;font-size:15px;cursor:pointer">ส่งคำขอ</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  const close=()=>{ ov.remove(); };
+  $('rcX').onclick=close;
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  // กู้ร่างที่ค้าง (auto-save)
+  try{ const d=JSON.parse(sessionStorage.getItem(riderDraftKey())||'null'); if(d){
+    if(d.veh) $('rcVeh').value=d.veh; if(d.odo) $('rcOdo').value=d.odo; if(d.amt) $('rcAmt').value=d.amt;
+    if(d.shop) $('rcShop').value=d.shop; if(d.reason) $('rcReason').value=d.reason;
+    RIDER.photos=d.photos||{}; RIDER._draftItem=d.item;
+  } }catch(_e){}
+  $('rcVeh').onchange=()=>{ riderReloadItems(); riderSaveDraft(); };
+  $('rcItem').onchange=()=>{ riderCheckElig(); riderSaveDraft(); };
+  ['rcOdo','rcAmt','rcShop','rcReason'].forEach(id=>{ const el=$(id); if(el){ el.oninput=riderSaveDraft; if(id==='rcOdo') el.addEventListener('change', riderCheckElig); } });
+  ov.querySelectorAll('[data-rcslot]').forEach(inp=>inp.addEventListener('change', async e=>{
+    const slot=inp.dataset.rcslot, f=e.target.files&&e.target.files[0]; if(!f) return;
+    const d=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>res(null); r.readAsDataURL(f); });
+    if(d){ RIDER.photos[slot]=d; riderThumb(slot); riderSaveDraft(); }
+    e.target.value='';
+  }));
+  $('rcSend').onclick=riderSubmit;
+  // init
+  riderReloadItems().then(()=>{ if(RIDER._draftItem){ $('rcItem').value=RIDER._draftItem; riderCheckElig(); }
+    ['before','part','after','receipt'].forEach(riderThumb); });
+}
+async function riderSubmit(){
+  const item=RIDER.items.find(x=>x.code===$('rcItem').value);
+  if(!item){ showToast('err','เลือกรายการที่ต้องการเบิก'); return; }
+  const btn=$('rcSend'); btn.disabled=true; btn.textContent='กำลังส่ง…';
+  try{
+    const r=await HR.riderSubmitClaim({ empId:empMatch.emp_id, vehicle_id:$('rcVeh').value||null, item_code:item.code,
+      odo_current:$('rcOdo').value, amount_est:$('rcAmt').value, shop_name:$('rcShop').value.trim(),
+      reason:$('rcReason').value.trim(), photos:RIDER.photos });
+    showToast('ok','ส่งคำขอแล้ว · เลขที่ '+r.claim_no+(r.eligibility&&!r.eligibility.ok?' (รอผู้จัดการพิจารณาสิทธิ์)':''));
+    riderClearDraft(); RIDER.photos={};
+    const ov=$('rcOv'); if(ov) ov.remove();
+    refreshRiderCard();
+  }catch(e){ showToast('err', e.message||'ส่งไม่สำเร็จ'); btn.disabled=false; btn.textContent='ส่งคำขอ'; }
+}
+async function openRiderMine(){
+  let rows=[]; try{ rows=await HR.riderMyClaims(empMatch.emp_id); }catch(e){}
+  const ST={ submitted:'รออนุมัติ', approved:'อนุมัติแล้ว', paid:'จ่ายแล้ว', rejected:'ไม่อนุมัติ', serviced:'รับบริการแล้ว', cancelled:'ยกเลิก' };
+  const CL={ submitted:'#a06515', approved:'#0369a1', paid:'#16a34a', rejected:'#dc2626', serviced:'#7c3aed', cancelled:'#64748b' };
+  const ov=document.createElement('div'); ov.id='rcMineOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  let list=rows.length?rows.map(r=>{
+    const amt=(r.approved_amount!=null?r.approved_amount:(r.amount_actual!=null?r.amount_actual:r.amount_est))||0;
+    return '<div style="border:1px solid #e5e7eb;border-radius:11px;padding:10px 12px;margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px">'+escH(r.item_name||'')+'</b>'
+      +'<span style="font-size:11px;font-weight:700;color:'+(CL[r.status]||'#64748b')+'">'+(ST[r.status]||r.status)+'</span></div>'
+      +'<div style="font-size:12px;color:#6b7280;margin-top:2px">'+escH(r.claim_no||'')+' · '+escH(r.vehicle_plate||'—')+' · '+riderMoney(amt)+' บาท</div>'
+      +(r.elig_ok?'':'<div style="font-size:11.5px;color:#b45309;margin-top:2px">⚠ '+escH(r.elig_note||'')+'</div>')
+      +(r.review_note?'<div style="font-size:11.5px;color:#6b7280;margin-top:2px">หมายเหตุ: '+escH(r.review_note)+'</div>':'')
+      +'</div>';
+  }).join(''):'<div style="text-align:center;color:#9ca3af;padding:24px">— ยังไม่มีคำขอ —</div>';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h2 style="flex:1;font-size:18px;margin:0">คำขอเบิกซ่อมของฉัน</h2>'
+    +'<button type="button" id="rcMineX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'+list+'</div>';
+  document.body.appendChild(ov);
+  $('rcMineX').onclick=()=>ov.remove();
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
 }
 
 // ====== การ์ดเตือนกดออก / ควบกะต่อ / ยื่นแก้ไขเวลาออก ======

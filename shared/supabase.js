@@ -1828,7 +1828,107 @@
     return { ok:true };
   }
 
+  // ============================================================
+  // ไรเดอร์: เบิกซ่อมบำรุงรถ (ฝั่งพนักงาน)
+  // ============================================================
+  async function riderIsRider(empId) {
+    const { data } = await sb.from('employees').select('is_rider').eq('emp_id', empId).maybeSingle();
+    return !!(data && data.is_rider);
+  }
+  async function riderMyVehicles(empId) {
+    const { data } = await sb.from('rider_vehicles').select('*').eq('emp_id', empId).eq('active', true).order('plate');
+    return data || [];
+  }
+  async function riderItems(vehicle) {
+    const { data } = await sb.from('rider_maint_items').select('*').eq('enabled', true).order('sort');
+    let rows = data || [];
+    if (vehicle) rows = rows.filter(it =>
+      (!it.applies_cooling || it.applies_cooling === (vehicle.cooling || '')) &&
+      (!it.applies_drivetrain || it.applies_drivetrain === (vehicle.drivetrain || '')));
+    return rows;
+  }
+  // เช็คสิทธิ์ฝั่ง client (สรุปให้ไรเดอร์เห็นก่อนยื่น) — server เช็คซ้ำตอนสร้างจริง
+  async function riderEligibility({ empId, vehicle, item, odoCurrent }) {
+    const out = { ok: true, note: '', used: 0, allowed: null };
+    const yStart = bangkokDate().slice(0, 4) + '-01-01';
+    const { data: prev } = await sb.from('rider_claims').select('odo_current,created_at,status')
+      .eq('emp_id', empId).eq('item_code', item.code)
+      .not('status', 'in', '(rejected,cancelled)').gte('created_at', yStart).order('created_at', { ascending: false });
+    const list = prev || []; out.used = list.length;
+    if (item.cap_basis === 'fixed' && item.per_year_cap != null) {
+      out.allowed = Number(item.per_year_cap);
+      if (list.length >= Number(item.per_year_cap)) { out.ok = false; out.note = 'ครบเพดานปีนี้แล้ว (' + item.per_year_cap + ') — เกินต้องให้ผู้จัดการพิจารณา'; }
+    }
+    const lastOdo = list.find(x => x.odo_current != null);
+    const lastKm = lastOdo ? lastOdo.odo_current : (vehicle ? vehicle.odo_start : null);
+    if (item.interval_km && odoCurrent != null && lastKm != null) {
+      const need = Number(item.interval_km) - (Number(item.early_km) || 0);
+      const run = Number(odoCurrent) - Number(lastKm);
+      if (run < need) { out.ok = false; out.note = (out.note ? out.note + ' · ' : '') + 'ยังไม่ถึงระยะ (วิ่งไป ' + run.toLocaleString() + '/' + need.toLocaleString() + ' กม.)'; }
+    }
+    if (item.per_period_months && list.length) {
+      const months = (Date.now() - new Date(list[0].created_at).getTime()) / (1000 * 3600 * 24 * 30);
+      if (months < Number(item.per_period_months)) { out.ok = false; out.note = (out.note ? out.note + ' · ' : '') + 'ยังไม่ครบรอบ ' + item.per_period_months + ' เดือน'; }
+    }
+    if (out.ok && !out.note) out.note = 'ผ่านเกณฑ์เบื้องต้น';
+    return out;
+  }
+  async function riderSubmitClaim({ empId, vehicle_id, item_code, odo_current, amount_est, shop_name, reason, photos }) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data: item } = await sb.from('rider_maint_items').select('*').eq('code', item_code).maybeSingle();
+    if (!item) throw new Error('ไม่พบรายการที่เลือก');
+    if (!item.enabled) throw new Error('รายการนี้ถูกปิดการเบิก');
+    let vehicle = null;
+    if (vehicle_id) { const { data } = await sb.from('rider_vehicles').select('*').eq('id', vehicle_id).maybeSingle(); vehicle = data; }
+    if (item.require_reason && !String(reason || '').trim()) throw new Error('กรุณาระบุอาการ/เหตุผลการเบิก');
+    if (item.require_before_photo && !(photos && photos.before)) throw new Error('กรุณาแนบรูปก่อนซ่อม/เลขไมล์ก่อน');
+
+    const odoCur = odo_current != null && odo_current !== '' ? Number(odo_current) : null;
+    const e = await riderEligibility({ empId, vehicle, item, odoCurrent: odoCur });
+
+    // อัปโหลดรูป
+    const ph = {};
+    for (const k of ['before', 'after', 'part', 'receipt']) {
+      const p = photos && photos[k];
+      if (!p) continue;
+      if (typeof p === 'string' && /^https?:/i.test(p)) ph[k] = p;
+      else ph[k] = await uploadPhoto('employee-docs', 'rider/claim_' + k + '_' + empId + '_' + Date.now() + '.jpg', p);
+    }
+    // เลขที่ RC-<พ.ศ.>-####
+    const yrBE = new Date().getFullYear() + 543, pre = 'RC-' + yrBE + '-';
+    const { data: all } = await sb.from('rider_claims').select('claim_no').like('claim_no', pre + '%');
+    let mx = 0; (all || []).forEach(r => { const n = parseInt(String(r.claim_no).slice(pre.length), 10); if (isFinite(n) && n > mx) mx = n; });
+    const claim_no = pre + String(mx + 1).padStart(4, '0');
+
+    const { data: br } = await sb.from('branches').select('name').eq('branch_id', emp.branch_id || '').maybeSingle();
+    const cfg = (await sb.from('rider_claim_config').select('*').eq('id', 1).maybeSingle()).data || {};
+    const amt = Math.floor(Number(amount_est) || 0);
+    const tier = (item.approval_tier && item.approval_tier !== 'auto') ? item.approval_tier
+      : (amt <= (cfg.approval_tier1_max || 500) ? 'lead' : amt <= (cfg.approval_tier2_max || 2000) ? 'manager' : 'exec');
+
+    const row = {
+      claim_no, emp_id: emp.emp_id, emp_name: emp.name, nickname: emp.nickname || null,
+      branch_id: emp.branch_id || null, branch_name: (br && br.name) || null,
+      vehicle_id: vehicle_id || null, vehicle_plate: vehicle ? vehicle.plate : null,
+      item_code: item.code, item_name: item.name, odo_current: odoCur, amount_est: amt,
+      shop_name: shop_name || null, photos: Object.keys(ph).length ? ph : null,
+      reason: String(reason || '').trim() || null,
+      elig_ok: e.ok, elig_note: e.note, used_this_year: e.used, allowed_this_year: e.allowed,
+      status: 'submitted', approval_tier: tier, device: 'employee',
+    };
+    const { data: ins, error } = await sb.from('rider_claims').insert(row).select('id').maybeSingle();
+    if (error) throw error;
+    try { await sb.from('rider_claim_events').insert({ claim_id: ins && ins.id, emp_id: emp.emp_id, event: 'submit', actor: emp.name, role: 'emp', note: item.name + (e.ok ? '' : ' ⚠ ' + e.note), amount_after: amt }); } catch (_e) {}
+    return { ok: true, claim_no, eligibility: e };
+  }
+  async function riderMyClaims(empId) {
+    const { data } = await sb.from('rider_claims').select('*').eq('emp_id', empId).order('created_at', { ascending: false }).limit(50);
+    return data || [];
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+  window.HR = { sb, loadConfig, uploadPhoto,
+    riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
