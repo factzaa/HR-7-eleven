@@ -1858,6 +1858,12 @@
     if (item.cap_basis === 'fixed' && item.per_year_cap != null) {
       out.allowed = Number(item.per_year_cap);
       if (list.length >= Number(item.per_year_cap)) { out.ok = false; out.note = 'ครบเพดานปีนี้แล้ว (' + item.per_year_cap + ') — เกินต้องให้ผู้จัดการพิจารณา'; }
+    } else if (item.cap_basis === 'by_distance' && item.interval_km && vehicle) {
+      const dist = await riderDistanceYear(vehicle.id);
+      if (dist > 0) {
+        out.allowed = Math.floor(dist / Number(item.interval_km));
+        if (out.allowed > 0 && list.length >= out.allowed) { out.ok = false; out.note = 'ครบจำนวนครั้งตามระยะทางปีนี้ (' + out.allowed + ' ครั้ง)'; }
+      }
     }
     const lastOdo = list.find(x => x.odo_current != null);
     const lastKm = lastOdo ? lastOdo.odo_current : (vehicle ? vehicle.odo_start : null);
@@ -1926,9 +1932,54 @@
     const { data } = await sb.from('rider_claims').select('*').eq('emp_id', empId).order('created_at', { ascending: false }).limit(50);
     return data || [];
   }
+  // ระยะทางปฏิบัติงานปีนี้ (กม.) = ไมล์สูงสุด − ต่ำสุดของปี
+  async function riderDistanceYear(vehicleId) {
+    if (!vehicleId) return 0;
+    const yStart = bangkokDate().slice(0, 4) + '-01-01';
+    const { data } = await sb.from('rider_odometer').select('odo').eq('vehicle_id', vehicleId).gte('log_date', yStart);
+    if (!data || data.length < 2) return 0;
+    const vals = data.map(r => Number(r.odo)).filter(n => isFinite(n));
+    return vals.length < 2 ? 0 : Math.max(...vals) - Math.min(...vals);
+  }
+  async function riderTodayOdometer(vehicleId) {
+    if (!vehicleId) return { start: null, end: null };
+    const { data } = await sb.from('rider_odometer').select('phase,odo,gps_ok').eq('vehicle_id', vehicleId).eq('log_date', bangkokDate());
+    const map = {}; (data || []).forEach(r => map[r.phase] = r);
+    return { start: map.start || null, end: map.end || null };
+  }
+  async function riderLogOdometer({ empId, vehicle_id, phase, odo, photo, lat, lng }) {
+    if (!vehicle_id) throw new Error('ยังไม่เลือกรถ');
+    if (odo == null || odo === '') throw new Error('กรอกเลขไมล์');
+    const ph = phase === 'end' ? 'end' : 'start';
+    const n = parseInt(odo) || 0;
+    const { data: veh } = await sb.from('rider_vehicles').select('*').eq('id', vehicle_id).maybeSingle();
+    if (!veh) throw new Error('ไม่พบรถ');
+    const lastOdo = veh.odo_last != null ? veh.odo_last : veh.odo_start;
+    if (lastOdo != null && n < Number(lastOdo)) throw new Error('เลขไมล์ (' + n.toLocaleString() + ') น้อยกว่าครั้งก่อน (' + Number(lastOdo).toLocaleString() + ') — ตรวจสอบอีกครั้ง');
+    // GPS อยู่ในรัศมีสาขาไหม
+    let gps_ok = null;
+    if (lat != null && lng != null && veh.branch_id) {
+      const { data: br } = await sb.from('branches').select('lat,lng,radius_m').eq('branch_id', veh.branch_id).maybeSingle();
+      if (br && br.lat != null && br.lng != null) {
+        const R = 6371000, toRad = x => x * Math.PI / 180;
+        const dLat = toRad(br.lat - lat), dLng = toRad(br.lng - lng);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat)) * Math.cos(toRad(br.lat)) * Math.sin(dLng / 2) ** 2;
+        const dist = 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        gps_ok = dist <= (Number(br.radius_m || 200) + 200);
+      }
+    }
+    let photo_url = null;
+    if (photo) photo_url = await uploadPhoto('employee-docs', 'rider/odo_' + vehicle_id + '_' + Date.now() + '.jpg', photo);
+    const row = { vehicle_id, emp_id: empId || veh.emp_id || null, branch_id: veh.branch_id || null,
+      log_date: bangkokDate(), phase: ph, odo: n, photo_url, gps_lat: lat != null ? lat : null, gps_lng: lng != null ? lng : null, gps_ok, device: 'employee' };
+    const { error } = await sb.from('rider_odometer').upsert(row, { onConflict: 'vehicle_id,log_date,phase' });
+    if (error) throw error;
+    if (lastOdo == null || n >= Number(lastOdo)) await sb.from('rider_vehicles').update({ odo_last: n, updated_at: new Date().toISOString() }).eq('id', vehicle_id);
+    return { ok: true, gps_ok };
+  }
 
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
-    riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

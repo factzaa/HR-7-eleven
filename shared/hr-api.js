@@ -289,6 +289,9 @@
         case 'rider_claims_list':    return await hrRiderClaimsList(p);
         case 'rider_claim_review':   return await hrRiderClaimReview(p.data, p);
         case 'rider_claim_pay':      return await hrRiderClaimPay(p.data, p);
+        case 'rider_odo_log':        return await hrRiderOdoLog(p.data);
+        case 'rider_odo_list':       return await hrRiderOdoList(p.vehicle_id, p.limit);
+        case 'rider_odo_today':      return await hrRiderOdoToday(p.vehicle_id);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
@@ -4550,6 +4553,13 @@
     if (item.cap_basis === 'fixed' && item.per_year_cap != null) {
       out.allowed_this_year = Number(item.per_year_cap);
       if (list.length >= Number(item.per_year_cap)) { out.elig_ok = false; out.note = 'ครบเพดานปีนี้แล้ว (' + item.per_year_cap + ' ครั้ง) — เกินต้องให้ผู้จัดการพิจารณา'; }
+    } else if (item.cap_basis === 'by_distance' && item.interval_km) {
+      // เพดาน = ระยะทางปฏิบัติงานปีนี้ ÷ interval_km (เช่น น้ำมันเครื่อง วิ่ง 24,000/4,000 = 6 ครั้ง)
+      const dist = await _riderDistanceYear(vehicle ? vehicle.id : null);
+      if (dist > 0) {
+        out.allowed_this_year = Math.floor(dist / Number(item.interval_km));
+        if (out.allowed_this_year > 0 && list.length >= out.allowed_this_year) { out.elig_ok = false; out.note = 'ครบจำนวนครั้งตามระยะทางปีนี้ (' + out.allowed_this_year + ' ครั้ง จากระยะ ' + Math.round(dist).toLocaleString() + ' กม.)'; }
+      }
     }
     // รอบระยะ กม.
     const lastWithOdo = list.find(x => x.odo_current != null);
@@ -4710,6 +4720,72 @@
     try { await sb().from('emp_notifications').insert({ emp_id: r.emp_id, kind: 'info', title: '💸 จ่ายเงินเบิกซ่อมรถแล้ว ' + Number(actual).toLocaleString() + ' บาท', body: 'เลขที่ ' + r.claim_no + ' · ' + r.item_name + '\nอ้างอิง ' + String(d.payout_ref).trim(), ref: 'rider_claim:' + d.id, created_by: who }); } catch (_e) {}
     await logAct('จ่ายเงินเบิกซ่อมรถ ' + r.claim_no, r.emp_id, String(d.payout_ref).trim());
     return { ok: true };
+  }
+
+  // ---- เลขไมล์ประจำวัน + ระยะทางสะสม ----
+  function _haversine(lat1, lng1, lat2, lng2) {
+    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return null;
+    const R = 6371000, toRad = x => x * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  // ระยะทางปฏิบัติงานปีนี้ (กม.) จากบันทึกเลขไมล์ = ไมล์สูงสุด − ไมล์ต่ำสุดของปี
+  async function _riderDistanceYear(vehicleId) {
+    if (!vehicleId) return 0;
+    const yStart = new Date().getFullYear() + '-01-01';
+    const { data } = await sb().from('rider_odometer').select('odo').eq('vehicle_id', vehicleId).gte('log_date', yStart);
+    if (!data || !data.length) return 0;
+    const vals = data.map(r => Number(r.odo)).filter(n => isFinite(n));
+    if (vals.length < 2) return 0;
+    return Math.max(...vals) - Math.min(...vals);
+  }
+  async function hrRiderOdoLog(d) {
+    d = d || {};
+    if (!d.vehicle_id) return { ok: false, error: 'ไม่ระบุรถ' };
+    if (d.odo == null || d.odo === '') return { ok: false, error: 'กรอกเลขไมล์' };
+    const phase = d.phase === 'end' ? 'end' : 'start';
+    const odo = parseInt(d.odo) || 0;
+    const { data: veh } = await sb().from('rider_vehicles').select('*').eq('id', d.vehicle_id).maybeSingle();
+    if (!veh) return { ok: false, error: 'ไม่พบรถ' };
+    // กันไมล์ถอยหลัง (เว้นแต่ override)
+    const lastOdo = veh.odo_last != null ? veh.odo_last : veh.odo_start;
+    if (!d.allow_lower && lastOdo != null && odo < Number(lastOdo)) {
+      return { ok: false, error: 'เลขไมล์ (' + odo.toLocaleString() + ') น้อยกว่าครั้งก่อน (' + Number(lastOdo).toLocaleString() + ') — ตรวจสอบอีกครั้ง' };
+    }
+    const today = bkkToday();
+    // GPS อยู่ในรัศมีสาขาไหม
+    let gps_ok = null;
+    if (d.gps_lat != null && d.gps_lng != null && veh.branch_id) {
+      const { data: br } = await sb().from('branches').select('lat,lng,radius_m').eq('branch_id', veh.branch_id).maybeSingle();
+      if (br && br.lat != null && br.lng != null) { const dist = _haversine(Number(d.gps_lat), Number(d.gps_lng), Number(br.lat), Number(br.lng)); gps_ok = dist != null ? dist <= (Number(br.radius_m || 200) + 200) : null; }
+    }
+    let photo_url = null;
+    if (d.photo) { const u = await _uploadMany('rider/odo', [d.photo]); photo_url = u[0] || null; }
+    const row = {
+      vehicle_id: d.vehicle_id, emp_id: d.emp_id || veh.emp_id || null, branch_id: veh.branch_id || null,
+      log_date: today, phase, odo, photo_url,
+      gps_lat: d.gps_lat != null ? Number(d.gps_lat) : null, gps_lng: d.gps_lng != null ? Number(d.gps_lng) : null,
+      gps_ok, device: d.device || 'hr',
+    };
+    const { error } = await sb().from('rider_odometer').upsert(row, { onConflict: 'vehicle_id,log_date,phase' });
+    if (error) throw error;
+    // อัปเดตไมล์ล่าสุดของรถ (ไม่ให้ต่ำลง)
+    if (lastOdo == null || odo >= Number(lastOdo)) await sb().from('rider_vehicles').update({ odo_last: odo, updated_at: new Date().toISOString() }).eq('id', d.vehicle_id);
+    await logAct('บันทึกเลขไมล์รถ ' + (veh.plate || ''), row.emp_id, phase + ' ' + odo.toLocaleString());
+    return { ok: true, gps_ok };
+  }
+  async function hrRiderOdoList(vehicleId, limit) {
+    if (!vehicleId) return { ok: false, error: 'ไม่ระบุรถ' };
+    const { data } = await sb().from('rider_odometer').select('*').eq('vehicle_id', vehicleId).order('log_date', { ascending: false }).order('phase').limit(Number(limit) || 30);
+    const dist = await _riderDistanceYear(vehicleId);
+    return { ok: true, rows: data || [], distance_year: Math.round(dist) };
+  }
+  async function hrRiderOdoToday(vehicleId) {
+    if (!vehicleId) return { ok: false, error: 'ไม่ระบุรถ' };
+    const { data } = await sb().from('rider_odometer').select('phase,odo,gps_ok').eq('vehicle_id', vehicleId).eq('log_date', bkkToday());
+    const map = {}; (data || []).forEach(r => map[r.phase] = r);
+    return { ok: true, start: map.start || null, end: map.end || null };
   }
 
   // ---------- งาน ผจก. (Manager Tasks) ----------
