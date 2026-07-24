@@ -2003,7 +2003,7 @@
     if (error) throw error;
     if (!s) return { ok: false, error: 'ไม่พบรายการ' };
     const upd = {};
-    ['name', 'nickname', 'phone', 'address', 'emergency_name', 'emergency_phone', 'bank_name', 'bank_account', 'id_card', 'photo_url', 'idcard_url', 'bankbook_url', 'house_url', 'edu_url']
+    ['name', 'nickname', 'phone', 'email', 'address', 'emergency_name', 'emergency_phone', 'bank_name', 'bank_account', 'id_card', 'photo_url', 'idcard_url', 'bankbook_url', 'house_url', 'edu_url']
       .forEach(k => { if (s[k] != null && s[k] !== '') upd[k] = s[k]; });
     if (Object.keys(upd).length) {
       const { error: e2 } = await sb().from('employees').update(upd).eq('emp_id', s.emp_id);

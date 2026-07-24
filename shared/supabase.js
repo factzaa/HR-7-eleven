@@ -743,7 +743,7 @@
   }
   // ★ ดึงข้อมูลที่เคยกรอกไว้ มาแสดงในฟอร์ม (แก้ไขต่อได้ ไม่ต้องพิมพ์ใหม่ทั้งหมด)
   //   ลำดับความสำคัญ: ใบที่ยังรอผู้จัดการอนุมัติ (ล่าสุด) > ข้อมูลที่อนุมัติแล้วในทะเบียนพนักงาน
-  const PROFILE_FIELDS = ['name', 'nickname', 'phone', 'address', 'emergency_name', 'emergency_phone',
+  const PROFILE_FIELDS = ['name', 'nickname', 'phone', 'email', 'address', 'emergency_name', 'emergency_phone',
     'bank_name', 'bank_account', 'id_card', 'photo_url', 'idcard_url', 'bankbook_url', 'house_url', 'edu_url'];
   async function getMyProfile(empId) {
     if (!empId) return null;
@@ -784,7 +784,7 @@
     const doc = async (val, name, keepUrl) => (await up(val, name)) || (keepUrl || null);
     const row = {
       emp_id: p.empId, name: p.name || emp.name, nickname: p.nickname || null,
-      phone: p.phone || null, address: p.address || null,
+      phone: p.phone || null, email: p.email || null, address: p.address || null,
       emergency_name: p.emergency_name || null, emergency_phone: p.emergency_phone || null,
       bank_name: p.bank_name || null, bank_account: p.bank_account || null, id_card: p.id_card || null,
       photo_url: await doc(p.photo, 'photo', keep.photo_url),

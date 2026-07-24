@@ -69,6 +69,7 @@
       <div><label>ชื่อเล่น</label><input id="f_nickname" type="text"></div>
       <div><label>เบอร์โทร</label><input id="f_phone" type="tel" inputmode="tel"></div>
     </div>
+    <label>อีเมล (สำหรับรับสลิปเงินเดือน)</label><input id="f_email" type="email" inputmode="email" placeholder="name@email.com">
     <label>ที่อยู่</label><textarea id="f_address" rows="2"></textarea>
 
     <div class="sec">ผู้ติดต่อฉุกเฉิน</div>
@@ -142,6 +143,7 @@ $('checkBtn').onclick = async ()=>{
     $('f_name').value     = p.name || emp.name || '';
     $('f_nickname').value = p.nickname || '';
     $('f_phone').value    = p.phone || '';
+    $('f_email').value    = p.email || '';
     $('f_address').value  = p.address || '';
     $('f_em_name').value  = p.emergency_name || '';
     $('f_em_phone').value = p.emergency_phone || '';
@@ -196,7 +198,7 @@ $('submitBtn').onclick = async ()=>{
   const id = $('empId').value.trim();
   const p = {
     empId:id, name:$('f_name').value.trim(), nickname:$('f_nickname').value.trim(),
-    phone:$('f_phone').value.trim(), address:$('f_address').value.trim(),
+    phone:$('f_phone').value.trim(), email:$('f_email').value.trim(), address:$('f_address').value.trim(),
     emergency_name:$('f_em_name').value.trim(), emergency_phone:$('f_em_phone').value.trim(),
     bank_name:$('f_bank').value.trim(), bank_account:$('f_acct').value.trim(), id_card:$('f_idcard').value.trim(),
     photo:docs.photo, idcard:docs.idcard, bankbook:docs.bankbook, house:docs.house, edu:docs.edu,
