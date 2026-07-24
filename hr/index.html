@@ -5780,12 +5780,24 @@ function mtCard(t){
     +'<div style="font-size:11px;color:#9aa4b2;margin-top:5px">อัปเดต '+beDateTime(t.updated_at)+(nph?(' · 📎'+nph):'')+'</div>'
     +'</div>';
 }
+// ===== ร่างงานค้าง (WIP) ฝั่ง ผจก. — กันรูป/ข้อความหายเวลาสลับแอป/รีโหลด (IndexedDB · ใช้ที่เก็บเดียวกับฝั่งพนักงาน) =====
+const HRWIP_DB='hr_wip', HRWIP_ST='drafts';
+function hrwipOpen(){ return new Promise((res,rej)=>{ let r; try{ r=indexedDB.open(HRWIP_DB,1); }catch(e){ return rej(e); } r.onupgradeneeded=()=>{ const db=r.result; if(!db.objectStoreNames.contains(HRWIP_ST)) db.createObjectStore(HRWIP_ST); }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function hrwipSave(k,v){ try{ const db=await hrwipOpen(); await new Promise((res,rej)=>{ const tx=db.transaction(HRWIP_ST,'readwrite'); tx.objectStore(HRWIP_ST).put({...v,at:Date.now()},k); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); }); }catch(e){} }
+async function hrwipGet(k){ try{ const db=await hrwipOpen(); return await new Promise(res=>{ const tx=db.transaction(HRWIP_ST,'readonly'); const g=tx.objectStore(HRWIP_ST).get(k); g.onsuccess=()=>res(g.result||null); g.onerror=()=>res(null); }); }catch(e){ return null; } }
+async function hrwipDel(k){ try{ const db=await hrwipOpen(); await new Promise(res=>{ const tx=db.transaction(HRWIP_ST,'readwrite'); tx.objectStore(HRWIP_ST).delete(k); tx.oncomplete=res; tx.onerror=res; }); }catch(e){} }
+async function hrwipCleanup(ms){ try{ const db=await hrwipOpen(); const tx=db.transaction(HRWIP_ST,'readwrite'); const st=tx.objectStore(HRWIP_ST); st.openCursor().onsuccess=e=>{ const c=e.target.result; if(!c) return; const v=c.value; if(!v||!v.at||(Date.now()-v.at)>ms) st.delete(c.key); c.continue(); }; }catch(e){} }
+try{ hrwipCleanup(3*86400000); }catch(e){}
+function mtDraftSave(){ if(!MT_CUR) return; hrwipSave('mt:'+MT_CUR.id, { photos:MT_PHOTOS||[], note:($('mt_msg')||{}).value||'' }); }
+async function mtRestoreDraft(){ if(!MT_CUR) return; const d=await hrwipGet('mt:'+MT_CUR.id); if(!d) return; if(Array.isArray(d.photos)&&d.photos.length){ MT_PHOTOS=d.photos.slice(); renderMtPhotoBar(); } const el=$('mt_msg'); if(el && d.note && !el.value) el.value=d.note; }
+
 async function openMtask(id){
   const r=await post({ action:'hr_mtask_get', password:pwd, id });
   if(!r.ok){ toast('err', r.error||'ไม่พบงาน'); return; }
   MT_CUR=r.task; MT_PHOTOS=[];
   $('mt_title').textContent=r.task.title;
   renderMtDetail();
+  await mtRestoreDraft();   // ★ กู้ร่างรูป/ข้อความที่ค้างไว้ของงานนี้
   await refreshMtFeed();
   $('mtOverlay').classList.add('show');
   // Realtime ไทม์ไลน์: มีข้อความ/อัปเดตใหม่ → เด้งทันที
@@ -5835,6 +5847,7 @@ function renderMtDetail(){
   $('mt_file').onchange=e=>mtAddFiles(e.target);
   $('mt_draw').onclick=mtDrawNew;
   $('mt_send').onclick=mtSend;
+  if($('mt_msg')) $('mt_msg').oninput=mtDraftSave;   // เก็บร่างข้อความอัตโนมัติ
   if($('mt_edit')) $('mt_edit').onclick=()=>openMtAssign(MT_CUR);
   if($('mt_reject')) $('mt_reject').onclick=()=>mtReject();
   if($('mt_del')) $('mt_del').onclick=async()=>{
@@ -5857,7 +5870,7 @@ async function refreshMtFeed(){
 function mtEditFeedPhoto(url){
   if(!url) return;
   MT_PHOTOS.push(url);
-  renderMtPhotoBar();
+  renderMtPhotoBar(); mtDraftSave();
   mtDrawPhoto(MT_PHOTOS.length-1);
   toast('ok','ดึงรูปมาวาดแล้ว — วาดเสร็จกด "ส่ง"');
 }
@@ -5874,14 +5887,14 @@ function mtFeedRow(m){
 }
 function mtAddFiles(input){
   const files=[...(input.files||[])];
-  Promise.all(files.map(f=>spReadImg(f))).then(urls=>{ urls.forEach(u=>MT_PHOTOS.push(u)); renderMtPhotoBar(); }).catch(()=>toast('err','อ่านรูปไม่สำเร็จ'));
+  Promise.all(files.map(f=>spReadImg(f))).then(urls=>{ urls.forEach(u=>MT_PHOTOS.push(u)); renderMtPhotoBar(); mtDraftSave(); }).catch(()=>toast('err','อ่านรูปไม่สำเร็จ'));
   input.value='';
 }
 function renderMtPhotoBar(){
   const bar=$('mt_photobar'); if(!bar) return;
   bar.innerHTML=MT_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:52px;height:52px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="mtDrawPhoto('+i+')" title="วาดทับ" style="position:absolute;bottom:-4px;left:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer">✏️</button><button type="button" onclick="mtRmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button></span>').join('');
 }
-function mtRmPhoto(i){ MT_PHOTOS.splice(i,1); renderMtPhotoBar(); }
+function mtRmPhoto(i){ MT_PHOTOS.splice(i,1); renderMtPhotoBar(); mtDraftSave(); }
 function mtBlankCanvas(){ const c=document.createElement('canvas'); c.width=1000; c.height=750; const x=c.getContext('2d'); x.fillStyle='#ffffff'; x.fillRect(0,0,c.width,c.height); return c.toDataURL('image/jpeg',0.9); }
 function mtDrawNew(){
   // มีรูปแนบอยู่ → วาดทับรูปล่าสุด · ไม่มี → วาดบนกระดาษเปล่า
@@ -5891,7 +5904,7 @@ function mtDrawNew(){
 function mtDrawPhoto(i){
   const src=MT_PHOTOS[i]; if(!src) return;
   ensureMarkupUI();
-  MK={ task:{}, tool:'circle', cur:0, imgs:[{src, el:null, shapes:[]}], reviewFn:(note,out)=>{ if(out&&out[0]){ MT_PHOTOS[i]=out[0]; renderMtPhotoBar(); } } };
+  MK={ task:{}, tool:'circle', cur:0, imgs:[{src, el:null, shapes:[]}], reviewFn:(note,out)=>{ if(out&&out[0]){ MT_PHOTOS[i]=out[0]; renderMtPhotoBar(); mtDraftSave(); } } };
   document.querySelectorAll('#mkOverlay [data-tool]').forEach(x=>x.classList.toggle('on',x.dataset.tool==='circle'));
   document.getElementById('mkNote').value=''; document.getElementById('mkOverlay').style.display='flex';
   mkLoadCur();
@@ -5903,7 +5916,7 @@ async function mtSend(){
   const btn=$('mt_send'); btn.disabled=true;
   const r=await post({ action:'hr_mtask_feed_add', password:pwd, data:{ task_id:MT_CUR.id, role:mtRole(), sender_name:mtName(), message:msg, photos:MT_PHOTOS.slice(), kind: MT_PHOTOS.length?'progress':'chat' } });
   btn.disabled=false;
-  if(r.ok){ $('mt_msg').value=''; MT_PHOTOS=[]; renderMtPhotoBar(); refreshMtFeed(); }
+  if(r.ok){ $('mt_msg').value=''; MT_PHOTOS=[]; renderMtPhotoBar(); await hrwipDel('mt:'+MT_CUR.id); refreshMtFeed(); }
   else toast('err', r.error||'ส่งไม่สำเร็จ');
 }
 async function mtStage(status){
