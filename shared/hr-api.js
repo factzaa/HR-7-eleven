@@ -221,6 +221,7 @@
         case 'hr_payroll_run':         return await hrPayrollRun(p);
         case 'hr_payroll_item_save':   return await hrPayrollItemSave(p.data);
         case 'hr_payroll_finalize':    return await hrPayrollFinalize(p);
+        case 'hr_payroll_reopen':      return await hrPayrollReopen(p);
         case 'hr_payroll_summary':     return await hrPayrollSummary(p);
         // ---- ประเมินผลงานผู้จัดการสาขา (เห็นเฉพาะ HR) ----
         case 'hr_mgr_eval':            return await hrMgrEval(p);
@@ -5484,6 +5485,31 @@
     if (error) throw error;
     await logAct('ปิดรอบเงินเดือน', null, 'รอบ ' + run.period_start);
     return { ok: true };
+  }
+  // ★ เปิดรอบที่ปิดแล้วกลับเป็น "ร่าง" (แก้ไข/ทดสอบ) — คืนการหักเงินเบิกที่ผูกกับรอบนี้
+  //   ยกเลิกการหักด้วย payroll_ref = run.id (ย้อนได้ตรงเป๊ะ) · defer_rounds ที่ถูกลดตอนปิดรอบ "ไม่คืนอัตโนมัติ" (เตือนที่ UI)
+  async function hrPayrollReopen(p) {
+    p = p || {};
+    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const cyc = cycleRange(cycleBack(which));
+    const { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
+    if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้' };
+    if (run.status !== 'finalized') return { ok: false, error: 'รอบนี้ยังไม่ได้ปิด (เป็นร่างอยู่แล้ว)' };
+    let reverted = 0;
+    try {
+      const { data: advRows } = await sb().from('advance_requests').select('id').eq('payroll_ref', run.id);
+      const ids = (advRows || []).map(r => r.id);
+      if (ids.length) {
+        const { error: e1 } = await sb().from('advance_requests').update({ deducted: false, deducted_at: null, deducted_by: null, payroll_ref: null }).in('id', ids);
+        if (e1) throw e1;
+        for (const id of ids) await sb().from('advance_events').insert({ request_id: id, event: 'reopen', actor: 'สำนักงาน (HR)', role: 'hr', note: 'เปิดรอบเงินเดือนใหม่ — ยกเลิกการหักคืน (รอบ ' + run.period_start + ')' });
+        reverted = ids.length;
+      }
+    } catch (_e) { /* ไม่มีระบบเบิก ก็ข้าม */ }
+    const { error } = await sb().from('payroll_runs').update({ status: 'draft', finalized_by: null, finalized_at: null }).eq('id', run.id);
+    if (error) throw error;
+    await logAct('เปิดรอบเงินเดือนใหม่', null, 'รอบ ' + run.period_start + ' · คืนใบเบิก ' + reverted + ' ใบ');
+    return { ok: true, reverted };
   }
   async function hrPayrollSummary(p) {
     p = p || {};

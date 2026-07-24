@@ -663,6 +663,7 @@
         <button class="btn btn-sec btn-sm" id="pl_print">🖨️ พิมพ์สลิป (A5 2/แผ่น)</button>
         <button class="btn btn-sec btn-sm" id="pl_mail" title="ต้องตั้งค่า Resend ก่อน (เฟส 1.5)">📧 ส่งอีเมล</button>
         <button class="btn btn-pri btn-sm" id="pl_finalize">🔒 ปิดรอบ</button>
+        <button class="btn btn-sec btn-sm" id="pl_reopen" style="display:none" title="เปิดรอบที่ปิดแล้วกลับมาแก้/ทดสอบ + คืนการหักเงินเบิก">🔓 เปิดรอบใหม่</button>
       </div>
       <div id="pl_run_body"><div class="empty">เลือกรอบแล้วกด "คำนวณ"</div></div>
     </div>
@@ -3969,6 +3970,7 @@ async function loadPayrollRun(){
   const fin = r.run && r.run.status==='finalized';
   $('pl_run_status').innerHTML = (r.range?('📆 '+esc(r.range.label)+' · '):'') + (fin?'<b style="color:#166534">ปิดรอบแล้ว</b>':'<span style="color:#c2410c">ร่าง (แก้ได้)</span>');
   $('pl_finalize').style.display = fin?'none':'';
+  if($('pl_reopen')) $('pl_reopen').style.display = fin?'':'none';
   plFillRunBranches();
   renderPayrollItems();
 }
@@ -4041,6 +4043,16 @@ $('pl_finalize') && ($('pl_finalize').onclick=async()=>{
   const r=await post({ action:'hr_payroll_finalize', password:pwd, which });
   $('pl_finalize').textContent='🔒 ปิดรอบ';
   if(r&&r.ok){ toast('ok','ปิดรอบแล้ว'); loadPayrollRun(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+});
+$('pl_reopen') && ($('pl_reopen').onclick=async()=>{
+  if(!PAY||!PAY.run){ toast('err','คำนวณก่อน'); return; }
+  if(!confirm('เปิดรอบนี้กลับเป็น "ร่าง" เพื่อแก้ไข/ทดสอบ?\n\nระบบจะยกเลิกการหักเงินเบิกที่ผูกกับรอบนี้ให้ (คืนใบเบิกกลับเป็น "ยังไม่หัก")\n\n⚠️ ใบเบิกที่ถูก "เลื่อนหัก" ตัวนับรอบถูกลดไป 1 แล้ว จะไม่คืนอัตโนมัติ — ตรวจสอบเองถ้าจำเป็น')) return;
+  const which=($('pl_which')||{}).value||'current';
+  $('pl_reopen').innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_payroll_reopen', password:pwd, which });
+  $('pl_reopen').textContent='🔓 เปิดรอบใหม่';
+  if(r&&r.ok){ toast('ok','เปิดรอบแล้ว'+(r.reverted?(' · คืนใบเบิก '+r.reverted+' ใบ'):'')); loadPayrollRun(); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 });
 
 // ---------- แก้รายการเพิ่ม/หักของคน ----------
