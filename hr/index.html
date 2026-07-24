@@ -4215,55 +4215,75 @@ async function savePayrollPass(){
   else toast('err',(r&&r.error)||'รหัส HR ไม่ถูกต้อง');
 }
 
-// ---------- สลิปเงินเดือน (ใช้ร่วมกัน: พิมพ์ + อีเมล + PDF) ----------
+// ---------- สลิปเงินเดือน 2 ภาษา 3 คอลัมน์ (ใช้ร่วมกัน: พิมพ์ + อีเมล + PDF) ----------
+// ข้อมูลหัวสลิป (บริษัท/รอบ/วันจ่าย/ปี) — คิดครั้งเดียวต่อรอบ
+function plSlipMeta(){
+  const cfg=(PAY&&PAY.config)||{}; const co=cfg.company||{}; const range=(PAY&&PAY.range)||{};
+  const period=(range.start&&range.end)?(beDate(range.start)+' - '+beDate(range.end)):(range.label||'');
+  const year=range.end?(Number(String(range.end).slice(0,4))+543):'';
+  let payDate='—';
+  const pm=(PAY&&PAY.run&&PAY.run.pay_month)||''; const pd=(cfg.payday&&Number(cfg.payday.day))||0;
+  if(pm&&pd>0) payDate=beDate(pm+'-'+String(pd).padStart(2,'0'));
+  return { co, period, payDate, year };
+}
 // markup 1 สลิป
-function plSlipInner(it, co, rangeLabel){
-  co=co||{};
-  const addRows=(it.additions||[]).map(a=>['+ '+a.label, a.amount]);
-  const earn=[['ฐานเงินเดือน',it.base_pay],['ค่าล่วงเวลา ('+plB(it.ot_hours)+' ชม.)',it.ot_pay],['เบี้ยตำแหน่ง',it.position_allowance],['เบี้ยขยัน',it.diligence],['โบนัสวินัย',it.bonus],...addRows].filter(x=>Number(x[1])||x[0].indexOf('ฐาน')===0);
-  const dedRows=(it.deductions||[]).map(a=>[a.label,a.amount]);
-  const ded=[['ประกันสังคม',it.sso],['หักเบิกล่วงหน้า',it.advance_deduct],...dedRows].filter(x=>Number(x[1]));
-  const tbl=(arr)=>arr.map(x=>'<tr><td>'+esc(x[0])+'</td><td style="text-align:right">'+plB(x[1])+'</td></tr>').join('')||'<tr><td colspan="2" style="color:#999">—</td></tr>';
-  return '<div class="slip">'
-    +'<div class="sl-head"><div class="sl-co">'+esc(co.name||'บริษัท')+'</div><div class="sl-title">สลิปเงินเดือน · '+esc(rangeLabel)+'</div></div>'
-    +'<div class="sl-emp"><b>'+esc(it.emp_name)+'</b> ('+esc(it.emp_id)+') · '+esc(it.branch_name||'')+' · '+(it.wage_type==='daily'?'รายวัน':'รายเดือน')+'</div>'
-    +'<div class="sl-cols"><div class="sl-c"><div class="sl-h sl-earn">รายรับ</div><table>'+tbl(earn)+'<tr class="sl-sum"><td>รวมรับ</td><td style="text-align:right">'+plB(it.gross)+'</td></tr></table></div>'
-    +'<div class="sl-c"><div class="sl-h sl-ded">รายหัก</div><table>'+tbl(ded)+'<tr class="sl-sum"><td>รวมหัก</td><td style="text-align:right">'+plB(it.total_deduct)+'</td></tr></table></div></div>'
-    +'<div class="sl-net"><span>เงินสุทธิ</span><span>'+plB(it.net)+' บาท</span></div>'
-    +'<div class="sl-foot">โอนเข้า: '+esc(it.bank_name||'-')+' '+esc(it.bank_account||'')+'</div>'
+function plSlipInner(it, meta){
+  meta=meta||{}; const co=meta.co||{}; const B=v=>plB(Number(v||0));
+  const wageLabel=(it.wage_type==='daily'?'พนักงานรายวัน':'พนักงานรายเดือน');
+  const addSum=(it.additions||[]).reduce((s,a)=>s+Number(a.amount||0),0);
+  const dedOther=Number(it.advance_deduct||0)+(it.deductions||[]).reduce((s,a)=>s+Number(a.amount||0),0);
+  const posAllow=Number(it.position_allowance||0)+Number(it.diligence||0);
+  const earn=[['เงินเดือน/ค่าจ้าง','Salary/Wage',it.base_pay],['ค่าล่วงเวลา','Overtime',it.ot_pay],['ค่านายหน้า','Commission',0],['ค่าเบี้ยเลี้ยง/ค่าครองชีพ','Allowances/Cost of livings',posAllow],['โบนัส','Bonus',it.bonus],['เงินได้อื่นๆ','Others',addSum]];
+  const ded=[['ประกันสังคม','Social Security Fund',it.sso],['ภาษีหัก ณ ที่จ่าย','Withholding tax',0],['เงินกู้ยืม กยศ./กรอ.','Student Loan Fund',0],['เงินประกัน','Deposit',0],['ขาด/ลา/มาสาย','Absent/Leave/Late',0],['รายการหักอื่นๆ','Others',dedOther]];
+  const ytd=[['เงินได้สะสม','YTD earnings',it.ytd_earnings,0],['ภาษีหัก ณ ที่จ่ายสะสม','YTD Withholding tax',it.ytd_tax||0,0],['เงินประกันสังคมสะสม','Accumulated SSF',it.ytd_sso,0],['รวมเงินได้','Total earnings',it.gross,1],['รวมรายการหัก','Total deductions',it.total_deduct,1],['เงินได้สุทธิ','Net pay',it.net,2]];
+  const cell=(r)=>'<div class="ps-row"><div class="ps-lbl"><div class="ps-th">'+esc(r[0])+'</div><div class="ps-en">'+esc(r[1])+'</div></div><div class="ps-amt'+(r[3]===1?' ps-strong':(r[3]===2?' ps-net':''))+'">'+B(r[2])+'</div></div>';
+  const remarks=[]; if(Number(it.advance_deduct||0)>0) remarks.push('หักเบิกล่วงหน้า '+B(it.advance_deduct)+' บาท'); if(it.note) remarks.push(it.note);
+  return '<div class="ps-slip">'
+    +'<div class="ps-head"><div class="ps-co">'+esc(co.name||'บริษัท')+'</div><div class="ps-title">สลิปเงินเดือน<br><span>Pay Slip</span></div></div>'
+    +'<div class="ps-info"><div class="ps-info-c">'
+      +'<div class="ps-f"><div class="ps-k">ชื่อ–นามสกุล(รหัส)<div class="ps-en">Emp. name (Code)</div></div><div class="ps-v">'+esc(it.emp_name||'')+' ('+esc(it.emp_id)+')</div></div>'
+      +'<div class="ps-f"><div class="ps-k">ตำแหน่ง<div class="ps-en">Position</div></div><div class="ps-v">'+esc((it.branch_name||'')+(it.branch_name?'/':'')+wageLabel)+'</div></div>'
+      +'</div><div class="ps-info-c">'
+      +'<div class="ps-f"><div class="ps-k">รอบเงินเดือน<div class="ps-en">Payroll Period</div></div><div class="ps-v">'+esc(meta.period||'')+'</div></div>'
+      +'<div class="ps-f"><div class="ps-k">วันที่จ่าย<div class="ps-en">Payment Date</div></div><div class="ps-v">'+esc(meta.payDate||'—')+'</div></div>'
+      +'<div class="ps-f"><div class="ps-k">เลขที่บัญชี<div class="ps-en">Bank Account</div></div><div class="ps-v">'+esc(it.bank_account||'—')+(it.bank_name?(' ('+esc(it.bank_name)+')'):'')+'</div></div>'
+      +'</div></div>'
+    +'<div class="ps-cols">'
+      +'<div class="ps-col"><div class="ps-colh">เงินได้<span>Earnings</span></div>'+earn.map(cell).join('')+'</div>'
+      +'<div class="ps-col"><div class="ps-colh">รายการหัก<span>Deductions</span></div>'+ded.map(cell).join('')+'</div>'
+      +'<div class="ps-col"><div class="ps-colh">ปี<span>'+esc(meta.year||'')+'</span></div>'+ytd.map(cell).join('')+'</div>'
+    +'</div>'
+    +'<div class="ps-foot"><div class="ps-remark"><span class="ps-rk">หมายเหตุ / Remarks:</span> '+esc(remarks.join(' · ')||'-')+'</div>'
+      +'<div class="ps-sign"><div class="ps-signline"></div>ลายเซ็นผู้จ่ายเงิน / Employer\'s Signature</div></div>'
+    +'<div class="ps-conf">ข้อมูลเงินเดือนและค่าจ้างเป็นข้อมูลส่วนบุคคล ห้ามเปิดเผยโดยเด็ดขาด เอกสารนี้สมบูรณ์เมื่อมีลายเซ็นผู้มีอำนาจจ่ายและตราประทับเท่านั้น<br>Salary and wages are confidential information. Disclosure is strictly prohibited. This document is only valid with an authorized signature and company stamp.</div>'
     +'</div>';
 }
-// CSS แกนของสลิป (อีเมล/PDF · การ์ดเดี่ยว)
-const PL_SLIP_CSS_CORE='*{box-sizing:border-box;font-family:"Anuphan","Noto Sans Thai",sans-serif} body{margin:0;background:#fff;color:#0f172a}'
-  +'.slip{max-width:640px;margin:0 auto;padding:22px 24px;border:1px solid #e5e7eb;border-radius:10px}'
-  +'.sl-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #0f172a;padding-bottom:6px} .sl-co{font-size:17px;font-weight:700} .sl-title{font-size:12px;color:#555}'
-  +'.sl-emp{font-size:13px;margin:9px 0 11px} .sl-cols{display:flex;gap:16px} .sl-c{flex:1} .sl-h{font-size:12px;font-weight:700;padding:4px 7px;border-radius:6px;margin-bottom:5px} .sl-earn{background:#dcfce7;color:#166534} .sl-ded{background:#fee2e2;color:#b91c1c}'
-  +'.slip table{width:100%;border-collapse:collapse;font-size:12.5px} .slip td{padding:3px 5px;border-bottom:1px solid #f1f5f9} .sl-sum td{font-weight:700;border-top:1.5px solid #94a3b8;border-bottom:0}'
-  +'.sl-net{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:9px 12px;background:#0f172a;color:#fff;border-radius:8px;font-weight:700;font-size:15px}'
-  +'.sl-foot{font-size:11px;color:#555;margin-top:8px}';
-// เอกสาร HTML สมบูรณ์ 1 สลิป (ใช้เป็น body อีเมล)
+// CSS สลิป (ใช้ทั้งอีเมล/PDF/พิมพ์)
+const PL_SLIP_STYLE='*{box-sizing:border-box;font-family:"Anuphan","Noto Sans Thai",sans-serif} body{margin:0;background:#fff;color:#1f2937}'
+  +'.ps-slip{max-width:900px;margin:0 auto;padding:24px 28px;background:#fff}'
+  +'.ps-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}'
+  +'.ps-co{font-size:20px;font-weight:700;line-height:1.25;max-width:64%} .ps-title{text-align:right;font-size:19px;font-weight:700;white-space:nowrap} .ps-title span{font-weight:400;font-size:13px;color:#6b7280}'
+  +'.ps-info{display:flex;justify-content:space-between;gap:32px;margin:16px 0 14px} .ps-info-c{display:flex;flex-direction:column;gap:9px;font-size:12.5px}'
+  +'.ps-f{display:flex;gap:10px} .ps-k{color:#374151;font-weight:600;min-width:120px} .ps-k .ps-en{font-weight:400} .ps-en{font-size:10px;color:#9ca3af;font-weight:400} .ps-v{color:#111827}'
+  +'.ps-cols{display:flex;border:1px solid #4b5563} .ps-col{flex:1;border-right:1px solid #4b5563} .ps-col:last-child{border-right:0}'
+  +'.ps-colh{text-align:center;font-weight:700;font-size:12.5px;padding:6px;border-bottom:1px solid #4b5563;background:#f3f4f6} .ps-colh span{display:block;font-weight:400;font-size:10px;color:#9ca3af}'
+  +'.ps-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px}'
+  +'.ps-th{font-size:12.5px} .ps-lbl .ps-en{font-size:10px;color:#9ca3af} .ps-amt{font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums} .ps-amt.ps-strong{font-weight:700} .ps-amt.ps-net{font-weight:800;font-size:15px}'
+  +'.ps-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-top:18px} .ps-remark{font-size:11.5px;color:#374151;max-width:55%} .ps-rk{font-weight:600}'
+  +'.ps-sign{text-align:center;font-size:11px;color:#374151} .ps-signline{width:210px;height:24px;border-bottom:1px solid #111827;margin-bottom:4px}'
+  +'.ps-conf{margin-top:16px;text-align:center;font-size:9.5px;color:#9ca3af;line-height:1.5;border-top:1px solid #e5e7eb;padding-top:8px}';
+// เอกสาร HTML สมบูรณ์ 1 สลิป (body อีเมล)
 function plSlipDocHtml(it){
-  const co=(PAY.config&&PAY.config.company)||{}; const rangeLabel=(PAY.range&&PAY.range.label)||'';
   return '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
     +'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap">'
-    +'<style>'+PL_SLIP_CSS_CORE+'</style></head><body style="padding:14px">'+plSlipInner(it,co,rangeLabel)+'</body></html>';
+    +'<style>'+PL_SLIP_STYLE+'</style></head><body style="padding:10px">'+plSlipInner(it, plSlipMeta())+'</body></html>';
 }
-// ---------- พิมพ์สลิป A5 · 2 คน/แผ่น A4 ----------
+// ---------- พิมพ์สลิป A4 · 1 คน/แผ่น ----------
 function payrollPrintSlips(){
   if(!PAY||!(PAY.items||[]).length){ toast('err','คำนวณรอบก่อน'); return; }
-  const co=(PAY.config&&PAY.config.company)||{}; const rangeLabel=(PAY.range&&PAY.range.label)||'';
-  const slip=(it)=>plSlipInner(it, co, rangeLabel);
-  const items=PAY.items;
-  let pages='';
-  for(let i=0;i<items.length;i+=2){ pages+='<div class="sheet">'+slip(items[i])+(items[i+1]?slip(items[i+1]):'<div class="slip slip-empty"></div>')+'</div>'; }
-  const css='@page{size:A4 portrait;margin:0} *{box-sizing:border-box;font-family:"Anuphan","Noto Sans Thai",sans-serif} body{margin:0}'
-    +'.sheet{width:210mm;height:297mm;display:flex;flex-direction:column} .sheet:not(:last-child){page-break-after:always}'
-    +'.slip{height:148.5mm;padding:11mm 12mm;border-bottom:1px dashed #bbb;display:flex;flex-direction:column} .slip-empty{border-bottom:0}'
-    +'.sl-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #0f172a;padding-bottom:4px} .sl-co{font-size:15px;font-weight:700} .sl-title{font-size:11px;color:#555}'
-    +'.sl-emp{font-size:12px;margin:7px 0 9px} .sl-cols{display:flex;gap:14px;flex:1} .sl-c{flex:1} .sl-h{font-size:11px;font-weight:700;padding:3px 6px;border-radius:5px;margin-bottom:4px} .sl-earn{background:#dcfce7;color:#166534} .sl-ded{background:#fee2e2;color:#b91c1c}'
-    +'.slip table{width:100%;border-collapse:collapse;font-size:11.5px} .slip td{padding:2px 4px;border-bottom:1px solid #f1f5f9} .sl-sum td{font-weight:700;border-top:1.5px solid #94a3b8;border-bottom:0}'
-    +'.sl-net{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:7px 10px;background:#0f172a;color:#fff;border-radius:7px;font-weight:700;font-size:14px}'
-    +'.sl-foot{font-size:10.5px;color:#555;margin-top:6px}';
+  const meta=plSlipMeta(); const items=PAY.items;
+  const pages=items.map(it=>'<div class="ps-sheet">'+plSlipInner(it, meta)+'</div>').join('');
+  const css='@page{size:A4 portrait;margin:10mm} body{margin:0} .ps-sheet{page-break-after:always} .ps-sheet:last-child{page-break-after:auto} .ps-slip{max-width:none;padding:0} '+PL_SLIP_STYLE;
   const old=document.getElementById('slipFrame'); if(old) old.remove();
   const fr=document.createElement('iframe'); fr.id='slipFrame'; fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
   document.body.appendChild(fr);
@@ -4291,16 +4311,15 @@ function ensurePdfLibs(){
 // สร้าง PDF สลิป 1 คน จากสลิป HTML เดิม (ฟอนต์ไทยตรง) → คืน base64 (ไม่มี prefix)
 async function plMakePdf(it){
   await ensurePdfLibs();
-  const co=(PAY.config&&PAY.config.company)||{}; const rangeLabel=(PAY.range&&PAY.range.label)||'';
   const wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;left:-99999px;top:0;width:640px;background:#fff';
-  wrap.innerHTML='<style>'+PL_SLIP_CSS_CORE+'</style>'+plSlipInner(it,co,rangeLabel);
+  wrap.style.cssText='position:fixed;left:-99999px;top:0;width:900px;background:#fff';
+  wrap.innerHTML='<style>'+PL_SLIP_STYLE+'</style>'+plSlipInner(it, plSlipMeta());
   document.body.appendChild(wrap);
   try{
-    const canvas=await html2canvas(wrap.querySelector('.slip'),{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const canvas=await html2canvas(wrap.querySelector('.ps-slip'),{scale:2,backgroundColor:'#ffffff',useCORS:true});
     const img=canvas.toDataURL('image/jpeg',0.92);
     const jsPDF=window.jspdf.jsPDF;
-    const pdf=new jsPDF({unit:'pt',format:'a5',orientation:'portrait'});
+    const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
     const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
     const iw=pw-40, ih=iw*canvas.height/canvas.width;
     pdf.addImage(img,'JPEG',20,20,iw,Math.min(ih,ph-40));

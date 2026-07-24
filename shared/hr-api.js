@@ -5435,11 +5435,29 @@
     }
     // ดึงกลับมาเพื่อให้มี id ครบ (ฝั่งหน้าเว็บใช้ id ตอนแก้รายการเพิ่ม/หัก)
     const { data: finalItems } = await sb().from('payroll_items').select('*').eq('run_id', run.id).order('emp_id');
+    // ---- YTD: ยอดสะสมทั้งปี (จากรอบที่ปิดแล้วในปีปฏิทินเดียวกัน) ----
+    const year = String(cyc.end).slice(0, 4);
+    const ytdEarn = {}, ytdSso = {};
+    try {
+      const { data: finRuns } = await sb().from('payroll_runs').select('id')
+        .eq('status', 'finalized').gte('period_start', year + '-01-01').lte('period_start', year + '-12-31');
+      const finIds = (finRuns || []).map(r => r.id);
+      if (finIds.length) {
+        const { data: finIt } = await sb().from('payroll_items').select('emp_id,gross,sso').in('run_id', finIds);
+        (finIt || []).forEach(x => { ytdEarn[x.emp_id] = (ytdEarn[x.emp_id] || 0) + Number(x.gross || 0); ytdSso[x.emp_id] = (ytdSso[x.emp_id] || 0) + Number(x.sso || 0); });
+      }
+    } catch (_e) { /* ไม่มีรอบเก่า ก็ข้าม */ }
+    const addCur = finalized ? 0 : 1;   // รอบนี้ยังไม่ปิด → บวกยอดรอบนี้เข้าไปด้วย (ถ้าปิดแล้ว อยู่ในผลรวมข้างบนแล้ว)
+    const outItems = (finalItems || items).map(it => Object.assign({}, it, {
+      ytd_earnings: _pr2((ytdEarn[it.emp_id] || 0) + addCur * Number(it.gross || 0)),
+      ytd_sso: _pr2((ytdSso[it.emp_id] || 0) + addCur * Number(it.sso || 0)),
+      ytd_tax: 0,
+    }));
     return {
       ok: true,
       run: { id: run.id, period_start: run.period_start, period_end: run.period_end, pay_month: run.pay_month, status: run.status },
       range: { start: cyc.start, end: cyc.end, label: 'รอบ ' + cyc.start + ' ถึง ' + cyc.end },
-      items: finalItems || items, config: cfg,
+      items: outItems, config: cfg,
     };
   }
   async function hrPayrollItemSave(d) {
