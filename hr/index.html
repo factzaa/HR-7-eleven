@@ -4282,8 +4282,18 @@ function plSlipDocHtml(it){
 function payrollPrintSlips(){
   if(!PAY||!(PAY.items||[]).length){ toast('err','คำนวณรอบก่อน'); return; }
   const meta=plSlipMeta(); const items=PAY.items;
-  const pages=items.map(it=>'<div class="ps-sheet">'+plSlipInner(it, meta)+'</div>').join('');
-  const css='@page{size:A4 portrait;margin:10mm} body{margin:0} .ps-sheet{page-break-after:always} .ps-sheet:last-child{page-break-after:auto} .ps-slip{max-width:none;padding:0} '+PL_SLIP_STYLE;
+  let pages='';
+  for(let i=0;i<items.length;i+=2){
+    pages+='<div class="ps-sheet">'
+      +'<div class="ps-half">'+plSlipInner(items[i], meta)+'</div>'
+      +(items[i+1]?('<div class="ps-half ps-half2">'+plSlipInner(items[i+1], meta)+'</div>'):'')
+      +'</div>';
+  }
+  const css='@page{size:A4 portrait;margin:8mm} body{margin:0} '
+    +'.ps-sheet{page-break-after:always} .ps-sheet:last-child{page-break-after:auto} '
+    +'.ps-half{padding-bottom:5mm} .ps-half2{border-top:1px dashed #bbb;padding-top:5mm} '
+    +'.ps-slip{max-width:none;padding:0} .ps-slip .ps-row{padding:4px 10px} .ps-slip .ps-info{margin:10px 0 8px} .ps-slip .ps-foot{margin-top:10px} .ps-slip .ps-conf{margin-top:10px;padding-top:6px} '
+    +PL_SLIP_STYLE;
   const old=document.getElementById('slipFrame'); if(old) old.remove();
   const fr=document.createElement('iframe'); fr.id='slipFrame'; fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
   document.body.appendChild(fr);
