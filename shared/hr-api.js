@@ -655,6 +655,7 @@
       bank_name: d.bank_name || null, bank_account: d.bank_account || null, id_card: d.id_card || null,
       active: !!d.active,
       is_manager: !!d.is_manager,
+      is_rider: !!d.is_rider,
     };
     // PIN ผจก.: ยกเลิกสิทธิ์ = ล้าง PIN · ตั้ง ผจก.+กรอก PIN ใหม่ = อัปเดต · ตั้ง ผจก.แต่เว้น PIN = คง PIN เดิม
     if (!d.is_manager) row.manager_pin = null;
