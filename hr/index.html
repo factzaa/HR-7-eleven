@@ -4165,6 +4165,9 @@ async function loadPayrollConfig(){
       +N('cfd_late','สายได้ไม่เกิน (ครั้ง) ยังได้เบี้ยขยัน',r.diligence.allow_late_count)+N('cfr_round','ปัดเศษเงินสุทธิ (บาท)',r.rounding.net_round_to)+'</div>'
     +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">หัวบริษัทบนสลิป</div>'
       +T('cfc_name','ชื่อบริษัท',r.company.name)+T('cfc_addr','ที่อยู่',r.company.address)+T('cfc_tax','เลขผู้เสียภาษี',r.company.tax_id)+'</div>'
+    +'<div class="card" style="padding:14px;margin-bottom:12px;border:1.5px solid #bfdbfe;background:#eff6ff"><div style="font-weight:700;margin-bottom:4px">📧 อีเมลผู้ส่งสลิป (Resend)</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">ต้องตั้ง <b>RESEND_API_KEY</b> ใน Supabase secrets ก่อน · ผู้ส่ง (From) ต้องเป็นโดเมนที่ verify แล้วใน Resend — โหมดทดสอบใช้ <b>onboarding@resend.dev</b> ได้ (แต่ส่งได้เฉพาะเข้าอีเมลเจ้าของบัญชี Resend)</div>'
+      +T('cfm_from','อีเมลผู้ส่ง (From)',(r.mail&&r.mail.from)||'')+T('cfm_fromname','ชื่อผู้ส่งที่แสดง',(r.mail&&r.mail.from_name)||'')+'</div>'
     +'<div style="text-align:right;margin-bottom:18px"><button class="btn btn-pri" id="pl_cfg_save">บันทึกค่าตั้งค่า</button></div>'
     +'<div class="card" style="padding:14px;border:1px solid #fecaca"><div style="font-weight:700;margin-bottom:8px;color:#b91c1c">🔑 เปลี่ยนรหัสเข้าหน้าเงินเดือน</div>'
       +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">ต้องยืนยันด้วยรหัส HR</div>'
@@ -4185,7 +4188,8 @@ async function savePayrollConfig(){
     sso:{ enabled:(PAY_CFG&&PAY_CFG.sso&&PAY_CFG.sso.enabled)!==false, rate:n('cfs_rate'), cap:n('cfs_cap'), wage_min:n('cfs_min'), wage_max:n('cfs_max') },
     diligence:{ require_no_absent:$('cfd_noab').checked, allow_late_count:n('cfd_late') },
     rounding:{ net_round_to:n('cfr_round') },
-    company:{ name:$('cfc_name').value.trim(), address:$('cfc_addr').value.trim(), tax_id:$('cfc_tax').value.trim() } } });
+    company:{ name:$('cfc_name').value.trim(), address:$('cfc_addr').value.trim(), tax_id:$('cfc_tax').value.trim() },
+    mail:{ from:($('cfm_from')?$('cfm_from').value.trim():''), from_name:($('cfm_fromname')?$('cfm_fromname').value.trim():'') } } });
   $('pl_cfg_save').textContent='บันทึกค่าตั้งค่า';
   if(r&&r.ok) toast('ok','บันทึกค่าตั้งค่าแล้ว'); else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
@@ -4199,25 +4203,44 @@ async function savePayrollPass(){
   else toast('err',(r&&r.error)||'รหัส HR ไม่ถูกต้อง');
 }
 
+// ---------- สลิปเงินเดือน (ใช้ร่วมกัน: พิมพ์ + อีเมล + PDF) ----------
+// markup 1 สลิป
+function plSlipInner(it, co, rangeLabel){
+  co=co||{};
+  const addRows=(it.additions||[]).map(a=>['+ '+a.label, a.amount]);
+  const earn=[['ฐานเงินเดือน',it.base_pay],['ค่าล่วงเวลา ('+plB(it.ot_hours)+' ชม.)',it.ot_pay],['เบี้ยตำแหน่ง',it.position_allowance],['เบี้ยขยัน',it.diligence],['โบนัสวินัย',it.bonus],...addRows].filter(x=>Number(x[1])||x[0].indexOf('ฐาน')===0);
+  const dedRows=(it.deductions||[]).map(a=>[a.label,a.amount]);
+  const ded=[['ประกันสังคม',it.sso],['หักเบิกล่วงหน้า',it.advance_deduct],...dedRows].filter(x=>Number(x[1]));
+  const tbl=(arr)=>arr.map(x=>'<tr><td>'+esc(x[0])+'</td><td style="text-align:right">'+plB(x[1])+'</td></tr>').join('')||'<tr><td colspan="2" style="color:#999">—</td></tr>';
+  return '<div class="slip">'
+    +'<div class="sl-head"><div class="sl-co">'+esc(co.name||'บริษัท')+'</div><div class="sl-title">สลิปเงินเดือน · '+esc(rangeLabel)+'</div></div>'
+    +'<div class="sl-emp"><b>'+esc(it.emp_name)+'</b> ('+esc(it.emp_id)+') · '+esc(it.branch_name||'')+' · '+(it.wage_type==='daily'?'รายวัน':'รายเดือน')+'</div>'
+    +'<div class="sl-cols"><div class="sl-c"><div class="sl-h sl-earn">รายรับ</div><table>'+tbl(earn)+'<tr class="sl-sum"><td>รวมรับ</td><td style="text-align:right">'+plB(it.gross)+'</td></tr></table></div>'
+    +'<div class="sl-c"><div class="sl-h sl-ded">รายหัก</div><table>'+tbl(ded)+'<tr class="sl-sum"><td>รวมหัก</td><td style="text-align:right">'+plB(it.total_deduct)+'</td></tr></table></div></div>'
+    +'<div class="sl-net"><span>เงินสุทธิ</span><span>'+plB(it.net)+' บาท</span></div>'
+    +'<div class="sl-foot">โอนเข้า: '+esc(it.bank_name||'-')+' '+esc(it.bank_account||'')+'</div>'
+    +'</div>';
+}
+// CSS แกนของสลิป (อีเมล/PDF · การ์ดเดี่ยว)
+const PL_SLIP_CSS_CORE='*{box-sizing:border-box;font-family:"Anuphan","Noto Sans Thai",sans-serif} body{margin:0;background:#fff;color:#0f172a}'
+  +'.slip{max-width:640px;margin:0 auto;padding:22px 24px;border:1px solid #e5e7eb;border-radius:10px}'
+  +'.sl-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #0f172a;padding-bottom:6px} .sl-co{font-size:17px;font-weight:700} .sl-title{font-size:12px;color:#555}'
+  +'.sl-emp{font-size:13px;margin:9px 0 11px} .sl-cols{display:flex;gap:16px} .sl-c{flex:1} .sl-h{font-size:12px;font-weight:700;padding:4px 7px;border-radius:6px;margin-bottom:5px} .sl-earn{background:#dcfce7;color:#166534} .sl-ded{background:#fee2e2;color:#b91c1c}'
+  +'.slip table{width:100%;border-collapse:collapse;font-size:12.5px} .slip td{padding:3px 5px;border-bottom:1px solid #f1f5f9} .sl-sum td{font-weight:700;border-top:1.5px solid #94a3b8;border-bottom:0}'
+  +'.sl-net{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:9px 12px;background:#0f172a;color:#fff;border-radius:8px;font-weight:700;font-size:15px}'
+  +'.sl-foot{font-size:11px;color:#555;margin-top:8px}';
+// เอกสาร HTML สมบูรณ์ 1 สลิป (ใช้เป็น body อีเมล)
+function plSlipDocHtml(it){
+  const co=(PAY.config&&PAY.config.company)||{}; const rangeLabel=(PAY.range&&PAY.range.label)||'';
+  return '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
+    +'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap">'
+    +'<style>'+PL_SLIP_CSS_CORE+'</style></head><body style="padding:14px">'+plSlipInner(it,co,rangeLabel)+'</body></html>';
+}
 // ---------- พิมพ์สลิป A5 · 2 คน/แผ่น A4 ----------
 function payrollPrintSlips(){
   if(!PAY||!(PAY.items||[]).length){ toast('err','คำนวณรอบก่อน'); return; }
   const co=(PAY.config&&PAY.config.company)||{}; const rangeLabel=(PAY.range&&PAY.range.label)||'';
-  const slip=(it)=>{
-    const addRows=(it.additions||[]).map(a=>['+ '+a.label, a.amount]);
-    const earn=[['ฐานเงินเดือน',it.base_pay],['ค่าล่วงเวลา ('+plB(it.ot_hours)+' ชม.)',it.ot_pay],['เบี้ยตำแหน่ง',it.position_allowance],['เบี้ยขยัน',it.diligence],['โบนัสวินัย',it.bonus],...addRows].filter(x=>Number(x[1])||x[0].indexOf('ฐาน')===0);
-    const dedRows=(it.deductions||[]).map(a=>[a.label,a.amount]);
-    const ded=[['ประกันสังคม',it.sso],['หักเบิกล่วงหน้า',it.advance_deduct],...dedRows].filter(x=>Number(x[1]));
-    const tbl=(arr)=>arr.map(x=>'<tr><td>'+esc(x[0])+'</td><td style="text-align:right">'+plB(x[1])+'</td></tr>').join('')||'<tr><td colspan="2" style="color:#999">—</td></tr>';
-    return '<div class="slip">'
-      +'<div class="sl-head"><div class="sl-co">'+esc(co.name||'บริษัท')+'</div><div class="sl-title">สลิปเงินเดือน · '+esc(rangeLabel)+'</div></div>'
-      +'<div class="sl-emp"><b>'+esc(it.emp_name)+'</b> ('+esc(it.emp_id)+') · '+esc(it.branch_name||'')+' · '+(it.wage_type==='daily'?'รายวัน':'รายเดือน')+'</div>'
-      +'<div class="sl-cols"><div class="sl-c"><div class="sl-h sl-earn">รายรับ</div><table>'+tbl(earn)+'<tr class="sl-sum"><td>รวมรับ</td><td style="text-align:right">'+plB(it.gross)+'</td></tr></table></div>'
-      +'<div class="sl-c"><div class="sl-h sl-ded">รายหัก</div><table>'+tbl(ded)+'<tr class="sl-sum"><td>รวมหัก</td><td style="text-align:right">'+plB(it.total_deduct)+'</td></tr></table></div></div>'
-      +'<div class="sl-net"><span>เงินสุทธิ</span><span>'+plB(it.net)+' บาท</span></div>'
-      +'<div class="sl-foot">โอนเข้า: '+esc(it.bank_name||'-')+' '+esc(it.bank_account||'')+'</div>'
-      +'</div>';
-  };
+  const slip=(it)=>plSlipInner(it, co, rangeLabel);
   const items=PAY.items;
   let pages='';
   for(let i=0;i<items.length;i+=2){ pages+='<div class="sheet">'+slip(items[i])+(items[i+1]?slip(items[i+1]):'<div class="slip slip-empty"></div>')+'</div>'; }
@@ -4238,10 +4261,97 @@ function payrollPrintSlips(){
   setTimeout(()=>{ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast('err','พิมพ์ไม่สำเร็จ'); } setTimeout(()=>{ const f=document.getElementById('slipFrame'); if(f) f.remove(); },60000); }, 500);
 }
 $('pl_print') && ($('pl_print').onclick=payrollPrintSlips);
-$('pl_mail') && ($('pl_mail').onclick=()=>{
+$('pl_mail') && ($('pl_mail').onclick=openPayrollMail);
+
+// ---------- ส่งสลิปทางอีเมล (Resend) ----------
+let PDF_LIBS=null, PL_MAIL_BUSY=false;
+function ensurePdfLibs(){
+  if(PDF_LIBS) return PDF_LIBS;
+  PDF_LIBS=new Promise((resolve,reject)=>{
+    const need=[];
+    if(!window.html2canvas) need.push('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    if(!(window.jspdf&&window.jspdf.jsPDF)) need.push('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    let left=need.length; if(!left){ resolve(true); return; }
+    need.forEach(src=>{ const s=document.createElement('script'); s.src=src; s.onload=()=>{ if(--left===0) resolve(true); }; s.onerror=()=>reject(new Error('โหลดไลบรารี PDF ไม่สำเร็จ')); document.head.appendChild(s); });
+  });
+  return PDF_LIBS;
+}
+// สร้าง PDF สลิป 1 คน จากสลิป HTML เดิม (ฟอนต์ไทยตรง) → คืน base64 (ไม่มี prefix)
+async function plMakePdf(it){
+  await ensurePdfLibs();
+  const co=(PAY.config&&PAY.config.company)||{}; const rangeLabel=(PAY.range&&PAY.range.label)||'';
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;left:-99999px;top:0;width:640px;background:#fff';
+  wrap.innerHTML='<style>'+PL_SLIP_CSS_CORE+'</style>'+plSlipInner(it,co,rangeLabel);
+  document.body.appendChild(wrap);
+  try{
+    const canvas=await html2canvas(wrap.querySelector('.slip'),{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const img=canvas.toDataURL('image/jpeg',0.92);
+    const jsPDF=window.jspdf.jsPDF;
+    const pdf=new jsPDF({unit:'pt',format:'a5',orientation:'portrait'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const iw=pw-40, ih=iw*canvas.height/canvas.width;
+    pdf.addImage(img,'JPEG',20,20,iw,Math.min(ih,ph-40));
+    return (pdf.output('datauristring').split(',')[1])||'';
+  } finally { wrap.remove(); }
+}
+function plMailStatusHtml(it){
+  const s=it.mail_status;
+  if(s==='sent') return '<span class="pill ok" style="font-size:11px">✓ ส่งแล้ว'+(it.mailed_at?(' · '+beDateTime(it.mailed_at)):'')+'</span>';
+  if(s==='failed') return '<span class="pill bad" style="font-size:11px" title="'+esc(it.mail_error||'')+'">✕ ล้มเหลว</span>';
+  if(s==='no_email'||!it.email) return '<span class="pill" style="font-size:11px;background:#f1f5f9;color:#64748b">ไม่มีอีเมล</span>';
+  return '<span style="color:#cbd5e1">—</span>';
+}
+function plSel(id){ return (window.CSS&&CSS.escape)?CSS.escape(String(id)):String(id); }
+function openPayrollMail(){
   if(!PAY||!PAY.run||PAY.run.status!=='finalized'){ toast('err','ปิดรอบก่อนจึงส่งอีเมลได้'); return; }
-  toast('err','ส่งอีเมลยังไม่พร้อม — ต้องตั้งค่า Resend + ช่องอีเมลพนักงานก่อน (เฟส 1.5)');
-});
+  const items=(PAY.items||[]);
+  const mail=(PAY.config&&PAY.config.mail)||{from:'onboarding@resend.dev',from_name:'ฝ่ายบุคคล'};
+  const testMode=/onboarding@resend\.dev/i.test(mail.from||'');
+  const withEmail=items.filter(it=>it.email);
+  const rows=items.map(it=>'<tr data-mailemp="'+esc(it.emp_id)+'">'
+    +'<td>'+esc(it.emp_name)+'<div style="font-size:11px;color:var(--muted)">'+esc(it.emp_id)+(it.branch_name?(' · '+esc(it.branch_name)):'')+'</div></td>'
+    +'<td style="font-size:12px">'+(it.email?esc(it.email):'<span style="color:#c2410c">ไม่มีอีเมล</span>')+'</td>'
+    +'<td class="pl-mailst" style="text-align:center">'+plMailStatusHtml(it)+'</td>'
+    +'<td style="text-align:right">'+(it.email?'<button class="btn btn-sec btn-sm" data-mailone="'+esc(it.emp_id)+'">'+(it.mail_status==='sent'?'ส่งซ้ำ':'ส่ง')+'</button>':'')+'</td></tr>').join('');
+  openModal('📧 ส่งสลิปทางอีเมล'+((PAY.range&&PAY.range.label)?(' · '+esc(PAY.range.label)):''),
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">ผู้ส่ง: <b>'+esc(mail.from_name||'')+' &lt;'+esc(mail.from||'')+'&gt;</b> · เปลี่ยนได้ที่หน้า ⚙️ ตั้งค่า</div>'
+    +(testMode?'<div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:10px">⚠️ โหมดทดสอบ (onboarding@resend.dev): Resend ส่งได้เฉพาะเข้าอีเมลเจ้าของบัญชี Resend เท่านั้น · ตั้งโดเมนแล้วเปลี่ยนผู้ส่งก่อนใช้จริง</div>':'')
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" id="pl_mail_all">📧 ส่งทุกคนที่มีอีเมล ('+withEmail.length+')</button><span id="pl_mail_prog" style="font-size:12px;color:var(--muted)"></span></div>'
+    +'<div class="tablewrap" style="max-height:52vh;overflow:auto"><table style="font-size:13px"><thead><tr><th>พนักงาน</th><th>อีเมล</th><th style="text-align:center">สถานะ</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>');
+  const allBtn=$('pl_mail_all'); if(allBtn) allBtn.onclick=()=>plMailSend(withEmail.map(it=>it.emp_id));
+  document.querySelectorAll('#gmBody [data-mailone]').forEach(b=>b.onclick=()=>plMailSend([b.dataset.mailone]));
+}
+async function plMailSend(empIds){
+  if(PL_MAIL_BUSY||!empIds||!empIds.length) return;
+  const mail=(PAY.config&&PAY.config.mail)||{}; const range=(PAY.range&&PAY.range.label)||'';
+  PL_MAIL_BUSY=true; const allBtn=$('pl_mail_all'); if(allBtn) allBtn.disabled=true;
+  const prog=$('pl_mail_prog'); let sent=0,fail=0,noemail=0;
+  try{ await ensurePdfLibs(); }catch(e){ toast('err','โหลดไลบรารี PDF ไม่สำเร็จ'); PL_MAIL_BUSY=false; if(allBtn) allBtn.disabled=false; return; }
+  for(let i=0;i<empIds.length;i++){
+    const it=(PAY.items||[]).find(x=>String(x.emp_id)===String(empIds[i])); if(!it) continue;
+    if(prog) prog.textContent='กำลังส่ง '+(i+1)+'/'+empIds.length+'… ('+it.emp_name+')';
+    const cell=document.querySelector('#gmBody [data-mailemp="'+plSel(it.emp_id)+'"] .pl-mailst'); if(cell) cell.innerHTML='<span class="spin"></span>';
+    let pdf=null, html='';
+    if(it.email){ html=plSlipDocHtml(it); try{ pdf=await plMakePdf(it); }catch(e){ pdf=null; } }
+    let res=null;
+    try{
+      const r=await fetch(asstApiBase().base+'/functions/v1/payroll-mail',{ method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ password:pwd, run_id:(PAY.run&&PAY.run.id)||'', emp_id:it.emp_id, to:it.email||'', to_name:it.emp_name||'',
+          from:mail.from||'onboarding@resend.dev', from_name:mail.from_name||'ฝ่ายบุคคล',
+          subject:'สลิปเงินเดือน'+(range?(' '+range):'')+' · '+(it.emp_name||''), html, pdf_base64:pdf, filename:'payslip_'+it.emp_id+'.pdf' }) });
+      res=await r.json();
+    }catch(e){ res={ok:false,error:'เชื่อมต่อไม่สำเร็จ'}; }
+    if(res&&res.ok){ sent++; it.mail_status='sent'; it.mailed_at=new Date().toISOString(); it.mail_error=null; }
+    else if(res&&res.reason==='no_email'){ noemail++; it.mail_status='no_email'; }
+    else { fail++; it.mail_status='failed'; it.mail_error=(res&&res.error)||'ไม่สำเร็จ'; }
+    if(cell) cell.innerHTML=plMailStatusHtml(it);
+    const btn=document.querySelector('#gmBody [data-mailone="'+plSel(it.emp_id)+'"]'); if(btn) btn.textContent=(it.mail_status==='sent'?'ส่งซ้ำ':'ส่ง');
+  }
+  if(prog) prog.textContent='เสร็จ · สำเร็จ '+sent+(fail?(' · ล้มเหลว '+fail):'')+(noemail?(' · ไม่มีอีเมล '+noemail):'');
+  toast(fail?'err':'ok','ส่งอีเมลเสร็จ — สำเร็จ '+sent+(fail?(' / ล้มเหลว '+fail):''));
+  if(allBtn) allBtn.disabled=false; PL_MAIL_BUSY=false;
+}
 
 /* ============================================================
    พิจารณาเลิกจ้าง (Termination Review)

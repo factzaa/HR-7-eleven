@@ -5272,13 +5272,14 @@
       rounding: Object.assign({ net_round_to: 1 }, c.rounding || {}),
       company: Object.assign({ name: '', address: '', tax_id: '' }, c.company || {}),
       payday: Object.assign({ day: 0 }, c.payday || {}),
+      mail: Object.assign({ from: 'onboarding@resend.dev', from_name: 'ฝ่ายบุคคล' }, c.mail || {}),
     };
   }
   async function hrPayrollConfigGet() { const c = await _payrollConfig(); return { ok: true, ...c }; }
   async function hrPayrollConfigSave(d) {
     d = d || {};
     const ups = [];
-    ['wage', 'ot', 'sso', 'diligence', 'rounding', 'company', 'payday'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
+    ['wage', 'ot', 'sso', 'diligence', 'rounding', 'company', 'payday', 'mail'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
     if (!ups.length) return { ok: false, error: 'ไม่มีค่าให้บันทึก' };
     const { error } = await sb().from('payroll_config').upsert(ups, { onConflict: 'key' });
     if (error) throw error;
