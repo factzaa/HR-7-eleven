@@ -770,6 +770,21 @@ function openAdvEmg(){
 // ============================================================
 let RIDER = { on:false, vehicles:[], items:[], photos:{} };
 function riderMoney(n){ return Number(n||0).toLocaleString('th-TH'); }
+// ปั๊มวันเวลา+พิกัด+สถานที่ลงบนรูป (ใช้ drawStamp ตัวเดียวกับรูปลงเวลา) — หมวด 3.2 นโยบาย
+async function riderStampFile(file){
+  return new Promise(res=>{
+    const r=new FileReader();
+    r.onload=ev=>{ const img=new Image(); img.onload=()=>{
+      const M=1000; let w=img.width,h=img.height;
+      if(w>M||h>M){ if(w>h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,w,h);
+      try{ drawStamp(ctx,w,h); }catch(e){ console.warn('rider stamp',e); }
+      res(c.toDataURL('image/jpeg',0.85));
+    }; img.onerror=()=>res(null); img.src=ev.target.result; };
+    r.onerror=()=>res(null); r.readAsDataURL(file);
+  });
+}
 function riderDraftKey(){ return empMatch?('riderdraft:'+empMatch.emp_id):null; }
 function riderSaveDraft(){
   const k=riderDraftKey(); if(!k) return;
@@ -792,12 +807,71 @@ async function refreshRiderCard(){
   box.innerHTML='<div style="border:1.5px solid #0d9488;background:#f0fdfa;border-radius:14px;padding:12px 14px">'
     +'<div style="font-weight:800;color:#0f766e;font-size:14px">🏍️ ไรเดอร์ · เบิกซ่อมบำรุงรถ</div>'
     +'<div style="font-size:12.5px;color:#134e4a;margin-top:2px">'+(RIDER.vehicles.length?('รถของคุณ '+RIDER.vehicles.length+' คัน'):'ยังไม่มีรถลงทะเบียน — แจ้งผู้จัดการ')+'</div>'
-    +'<div style="display:flex;gap:8px;margin-top:9px">'
+    +'<button type="button" id="rcOdoBtn" style="width:100%;margin-top:9px;padding:11px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">📍 บันทึกเลขไมล์ (ก่อน/หลังงาน)</button>'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
     +'<button type="button" id="rcNewBtn" style="flex:1;padding:11px;border:0;border-radius:11px;background:#0d9488;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ ขอเบิกซ่อม</button>'
     +'<button type="button" id="rcMineBtn" style="padding:11px 14px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">คำขอของฉัน</button>'
     +'</div></div>';
   $('rcNewBtn').onclick=openRiderClaim;
   $('rcMineBtn').onclick=openRiderMine;
+  $('rcOdoBtn').onclick=openRiderOdo;
+}
+
+let RIDER_ODO={ photo:null };
+async function openRiderOdo(){
+  if(!RIDER.vehicles.length){ showToast('err','ยังไม่มีรถลงทะเบียน — แจ้งผู้จัดการเพิ่มรถให้ก่อน'); return; }
+  RIDER_ODO={ photo:null };
+  const ov=document.createElement('div'); ov.id='rcOdoOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  const vehOpts=RIDER.vehicles.map(v=>'<option value="'+v.id+'">'+escH(v.plate||'(ไม่มีทะเบียน)')+'</option>').join('');
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:440px;width:100%;padding:18px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">📍 บันทึกเลขไมล์</h2>'
+      +'<button type="button" id="rcoX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">รถ</label>'
+    +'<select id="rcoVeh" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box">'+vehOpts+'</select>'
+    +'<div id="rcoStatus" style="font-size:12.5px;color:#6b7280;margin:8px 0"></div>'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">ช่วงเวลา</label>'
+    +'<div style="display:flex;gap:8px"><label style="flex:1;text-align:center;padding:9px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer"><input type="radio" name="rcoPhase" value="start" checked> ก่อนเริ่มงาน</label>'
+      +'<label style="flex:1;text-align:center;padding:9px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer"><input type="radio" name="rcoPhase" value="end"> หลังเลิกงาน</label></div>'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">เลขไมล์ปัจจุบัน</label>'
+    +'<input id="rcoOdo" type="number" inputmode="numeric" style="width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;font-size:18px;text-align:center;font-weight:700;box-sizing:border-box">'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">รูปหน้าปัด (บังคับ)</label>'
+    +'<label style="display:inline-block;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="rcoFile" style="display:none"></label>'
+    +'<div id="rcoThumb" style="margin-top:6px"></div>'
+    +'<div id="rcoGps" style="font-size:11.5px;color:#6b7280;margin-top:6px"></div>'
+    +'<button type="button" id="rcoSend" style="width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:#0d9488;color:#fff;font-weight:700;font-size:15px;cursor:pointer">บันทึก</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  $('rcoX').onclick=close; ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+  const refreshStatus=async()=>{
+    const vid=$('rcoVeh').value;
+    let t; try{ t=await HR.riderTodayOdometer(vid); }catch(e){ t={}; }
+    $('rcoStatus').innerHTML='วันนี้: ก่อนงาน '+(t.start?('<b style="color:#16a34a">'+Number(t.start.odo).toLocaleString()+' ✓</b>'):'<span style="color:#dc2626">ยังไม่บันทึก</span>')
+      +' · หลังงาน '+(t.end?('<b style="color:#16a34a">'+Number(t.end.odo).toLocaleString()+' ✓</b>'):'ยังไม่บันทึก');
+    // เดาช่วงถัดไป
+    if(!t.start){ document.querySelector('input[name=rcoPhase][value=start]').checked=true; }
+    else if(!t.end){ document.querySelector('input[name=rcoPhase][value=end]').checked=true; }
+  };
+  $('rcoVeh').onchange=refreshStatus; refreshStatus();
+  $('rcoGps').textContent=(gps.lat!=null)?('📍 พิกัด '+gps.lat.toFixed(5)+', '+gps.lng.toFixed(5)):'📍 กำลังหาพิกัด GPS…';
+  $('rcoFile').addEventListener('change', async e=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    const d=await riderStampFile(f);
+    if(d){ RIDER_ODO.photo=d; $('rcoThumb').innerHTML='<img src="'+d+'" style="width:80px;height:80px;object-fit:cover;border-radius:8px">'; }
+    e.target.value='';
+  });
+  $('rcoSend').onclick=async()=>{
+    const odo=$('rcoOdo').value; if(odo===''){ showToast('err','กรอกเลขไมล์'); return; }
+    if(!RIDER_ODO.photo){ showToast('err','ถ่ายรูปหน้าปัดก่อน'); return; }
+    const phase=document.querySelector('input[name=rcoPhase]:checked').value;
+    const btn=$('rcoSend'); btn.disabled=true; btn.textContent='กำลังบันทึก…';
+    try{
+      const r=await HR.riderLogOdometer({ empId:empMatch.emp_id, vehicle_id:$('rcoVeh').value, phase, odo, photo:RIDER_ODO.photo, lat:gps.lat, lng:gps.lng });
+      showToast('ok','บันทึกเลขไมล์แล้ว'+(r.gps_ok===false?' ⚠ พิกัดนอกรัศมีสาขา':''));
+      close();
+    }catch(e){ showToast('err', e.message||'บันทึกไม่สำเร็จ'); btn.disabled=false; btn.textContent='บันทึก'; }
+  };
 }
 
 function riderCurVehicle(){ const id=$('rcVeh')?$('rcVeh').value:''; return RIDER.vehicles.find(v=>String(v.id)===String(id))||null; }
@@ -886,7 +960,7 @@ function openRiderClaim(){
   ['rcOdo','rcAmt','rcShop','rcReason'].forEach(id=>{ const el=$(id); if(el){ el.oninput=riderSaveDraft; if(id==='rcOdo') el.addEventListener('change', riderCheckElig); } });
   ov.querySelectorAll('[data-rcslot]').forEach(inp=>inp.addEventListener('change', async e=>{
     const slot=inp.dataset.rcslot, f=e.target.files&&e.target.files[0]; if(!f) return;
-    const d=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>res(null); r.readAsDataURL(f); });
+    const d=await riderStampFile(f);
     if(d){ RIDER.photos[slot]=d; riderThumb(slot); riderSaveDraft(); }
     e.target.value='';
   }));

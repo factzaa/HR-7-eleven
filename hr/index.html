@@ -5849,13 +5849,47 @@ function renderRdVehicles(){
      + '<div style="font-size:12.5px;color:var(--muted);margin-top:3px">'+esc([v.brand,v.model,v.year].filter(Boolean).join(' '))+'</div>'
      + '<div style="font-size:12px;margin-top:4px">'+(v.drivetrain==='cvt'?'ออโตเมติก (สายพาน)':'โซ่-สเตอร์')+' · '+(v.cooling==='liquid'?'ระบายน้ำ':'ระบายอากาศ')+'</div>'
      + '<div style="font-size:12px;color:var(--muted)">ไมล์ล่าสุด '+Number(v.odo_last||v.odo_start||0).toLocaleString()+' กม.</div>'
-     + '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-sec btn-sm" data-rdvedit="'+v.id+'">แก้ไข</button>'
+     + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-sec btn-sm" data-rdvodo="'+v.id+'">📍 ไมล์</button>'
+     + '<button class="btn btn-sec btn-sm" data-rdvedit="'+v.id+'">แก้ไข</button>'
      + '<button class="btn btn-sec btn-sm" data-rdvdel="'+v.id+'" style="color:#dc2626">ลบ</button></div></div>';
   });
   h+='</div>';
   $('rd_veh_box').innerHTML=h;
   $('rd_veh_box').querySelectorAll('[data-rdvedit]').forEach(b=>b.onclick=()=>openRdVeh(b.dataset.rdvedit));
   $('rd_veh_box').querySelectorAll('[data-rdvdel]').forEach(b=>b.onclick=()=>rdDelVeh(b.dataset.rdvdel));
+  $('rd_veh_box').querySelectorAll('[data-rdvodo]').forEach(b=>b.onclick=()=>openRdOdo(b.dataset.rdvodo));
+}
+async function openRdOdo(vehicleId){
+  const v=RD.vehicles.find(x=>String(x.id)===String(vehicleId));
+  const r=await post({ action:'rider_odo_list', ...authBody(), vehicle_id:vehicleId, limit:40 });
+  if(!r||!r.ok){ toast('err','โหลดไม่สำเร็จ'); return; }
+  const rows=r.rows||[];
+  $('rdc_title').textContent='ประวัติเลขไมล์ · '+(v?esc(v.plate||''):'');
+  let prev=null, body='';
+  body+='<div class="card" style="padding:9px 13px;margin-bottom:10px;background:#f0fdfa;font-size:13px"><b>ระยะทางปฏิบัติงานปีนี้: '+Number(r.distance_year||0).toLocaleString()+' กม.</b></div>';
+  if(!rows.length) body+='<div class="empty">— ยังไม่มีบันทึกเลขไมล์ —</div>';
+  else {
+    body+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f6f7f9;text-align:left">'
+      +'<th style="padding:7px">วันที่</th><th style="padding:7px">ช่วง</th><th style="padding:7px;text-align:right">เลขไมล์</th><th style="padding:7px">GPS</th><th style="padding:7px">รูป</th></tr></thead><tbody>';
+    // เรียงเก่า→ใหม่เพื่อเช็คถอยหลัง
+    const asc=rows.slice().sort((a,b)=>(a.log_date+a.phase).localeCompare(b.log_date+b.phase));
+    const warnSet=new Set(); let last=null;
+    asc.forEach(x=>{ if(last!=null && Number(x.odo)<last) warnSet.add(x.id); last=Number(x.odo); });
+    rows.forEach(x=>{
+      const warn=warnSet.has(x.id);
+      body+='<tr style="border-top:1px solid var(--line)'+(warn?';background:#fef2f2':'')+'">'
+        +'<td style="padding:7px;white-space:nowrap">'+esc(x.log_date||'')+'</td>'
+        +'<td style="padding:7px">'+(x.phase==='end'?'หลังงาน':'ก่อนงาน')+'</td>'
+        +'<td style="padding:7px;text-align:right">'+Number(x.odo).toLocaleString()+(warn?' <span style="color:#dc2626" title="ต่ำกว่าครั้งก่อน">⚠</span>':'')+'</td>'
+        +'<td style="padding:7px">'+(x.gps_ok===true?'<span style="color:#16a34a">✓</span>':x.gps_ok===false?'<span style="color:#dc2626" title="นอกรัศมีสาขา">✕</span>':'—')+'</td>'
+        +'<td style="padding:7px">'+(x.photo_url?'<img src="'+esc(x.photo_url)+'" onclick="lightbox(this)" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:zoom-in">':'—')+'</td></tr>';
+    });
+    body+='</tbody></table></div>';
+  }
+  $('rdc_body').innerHTML=body;
+  $('rdc_foot').innerHTML='<button class="btn btn-sec" id="rdcClose3">ปิด</button>';
+  $('rdcClose3').onclick=()=>$('rdClaimOverlay').classList.remove('show');
+  $('rdClaimOverlay').classList.add('show');
 }
 function openRdVeh(id){
   const v=id?RD.vehicles.find(x=>String(x.id)===String(id)):{};
