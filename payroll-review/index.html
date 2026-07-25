@@ -301,7 +301,7 @@ async function discountInst(id){
 }
 async function cancelInst(id){
   if(!confirm('ยกเลิกแผนผ่อนนี้? (จะหยุดหักงวดถัดไป)')) return;
-  try{ await HR.installmentCancel(id); toast('ยกเลิกแล้ว'); await loadInst(); load(); }catch(e){ toast(e.message||'ไม่สำเร็จ',true); }
+  try{ const r=await HR.installmentCancel(id); toast('ยกเลิกแล้ว'+(r&&r.adv_note?(' · '+r.adv_note):'')); await loadInst(); load(); }catch(e){ toast(e.message||'ไม่สำเร็จ',true); }
 }
 $('in_add').onclick=async()=>{
   const label=$('in_label').value.trim(), total=Number($('in_total').value)||0, per=Number($('in_per').value)||0;

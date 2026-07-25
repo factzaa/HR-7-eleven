@@ -5294,7 +5294,7 @@ async function advTimeline(id){
   const r=await post({ action:'hr_advance_timeline', ...authBody(), id });
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
   const q=r.request, ev=r.events||[];
-  const EV={ submit:'พนักงานยื่นคำขอ', cancel:'พนักงานยกเลิก', approve:'HR อนุมัติ', adjust:'HR อนุมัติ (ปรับยอด)', reject:'HR ไม่อนุมัติ', pay:'โอนเงินแล้ว', deduct:'หักคืนจากเงินเดือนแล้ว', defer:'เลื่อนการหัก (ผ่อนผัน)', defer_cancel:'ยกเลิกการเลื่อนหัก', window_open:'ผจก. เปิดสิทธิ์ฉุกเฉิน', window_revoke:'ยกเลิกสิทธิ์ฉุกเฉิน' };
+  const EV={ submit:'พนักงานยื่นคำขอ', cancel:'พนักงานยกเลิก', approve:'HR อนุมัติ', adjust:'HR อนุมัติ (ปรับยอด)', reject:'HR ไม่อนุมัติ', pay:'โอนเงินแล้ว', deduct:'หักคืนจากเงินเดือนแล้ว', defer:'เลื่อนการหัก (ผ่อนผัน)', defer_cancel:'ยกเลิกการเลื่อนหัก', installment:'แปลงเป็นผ่อน (หักทีละงวด)', installment_cancel:'ยกเลิกผ่อน — คืนเป็นเบิกปกติ', window_open:'ผจก. เปิดสิทธิ์ฉุกเฉิน', window_revoke:'ยกเลิกสิทธิ์ฉุกเฉิน' };
   const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
   openModal('🧾 คำขอ '+esc(q.req_no||''),
     '<div style="font-size:13px;line-height:1.9;margin-bottom:12px">'
@@ -5302,7 +5302,7 @@ async function advTimeline(id){
       +'ยอดขอ <b>'+advB(q.amount)+'</b>'+(q.approved_amount!=null?(' · อนุมัติ <b>'+advB(q.approved_amount)+'</b>'):'')+' บาท · '+esc(q.status_label||'')+'<br>'
       +'<span style="color:var(--muted)">วงเงินตอนคีย์ '+advB(q.cap_calculated)+' (ทำงาน '+q.days_worked+' วัน × '+advB(q.rate_per_day)+' × คะแนน '+q.score+' ตัวคูณ '+q.advance_factor+')</span><br>'
       +'บัญชี '+esc(q.bank_name||'—')+' '+esc(q.bank_account||'')+'<br>'
-      +(q.deducted?'หักคืนจากเงินเดือนแล้ว <span class="pill ok">หักแล้ว</span>':(Number(q.defer_rounds)>0?'หักคืนถูก <b>เลื่อน</b>อีก <b>'+Number(q.defer_rounds)+'</b> รอบ <span class="pill warn">เลื่อนหัก</span>':'หักคืนจากเงินเดือน <b>รอบที่จะถึงนี้ทันที</b> <span class="pill warn">ยังไม่หัก</span>'))
+      +(q.installment_id?'แปลงเป็น <b>ผ่อน</b> — หักทีละงวด (ดู/จัดการแผนผ่อนในหน้าตรวจ) <span class="pill" style="background:#ede9fe;color:#6d28d9">ผ่อนอยู่</span>':(q.deducted?'หักคืนจากเงินเดือนแล้ว <span class="pill ok">หักแล้ว</span>':(Number(q.defer_rounds)>0?'หักคืนถูก <b>เลื่อน</b>อีก <b>'+Number(q.defer_rounds)+'</b> รอบ <span class="pill warn">เลื่อนหัก</span>':'หักคืนจากเงินเดือน <b>รอบที่จะถึงนี้ทันที</b> <span class="pill warn">ยังไม่หัก</span>')))
     +'</div>'
     +((!MGR_MODE && q.status==='paid' && !q.deducted)?(
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'

@@ -2045,7 +2045,7 @@
     // แผนผ่อนหักที่ยัง active → สรุปต่อคน (จำนวนแผน · หัก/รอบ · คงเหลือ)
     let instByEmp = {};
     try {
-      const { data: plans } = await sb.from('payroll_installments').select('id,emp_id,total_amount,per_round,discount').eq('status', 'active');
+      const { data: plans } = await sb.from('payroll_installments').select('*').eq('status', 'active');
       const pids = (plans || []).map(p => p.id); const paidMap = {};
       if (pids.length) { const { data: chs } = await sb.from('payroll_installment_charges').select('installment_id,amount,finalized').in('installment_id', pids); (chs || []).forEach(c => { if (c.finalized) paidMap[c.installment_id] = (paidMap[c.installment_id] || 0) + Number(c.amount || 0); }); }
       (plans || []).forEach(p => { const remaining = Number(p.total_amount) - Number(p.discount || 0) - (paidMap[p.id] || 0); if (remaining <= 0) return; const nextD = Math.min(Number(p.per_round), remaining); const m = instByEmp[p.emp_id] || (instByEmp[p.emp_id] = { count: 0, next: 0, remaining: 0 }); m.count++; m.next += nextD; m.remaining += remaining; });
@@ -2150,7 +2150,29 @@
     if (!id) throw new Error('ไม่ระบุแผน');
     const { error } = await sb.from('payroll_installments').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
-    return { ok: true };
+    // ถ้าแผนนี้มาจากใบเบิกเงินล่วงหน้า (แปลงเป็นผ่อน) → คืนสถานะใบเบิก
+    let advNote = '';
+    try {
+      const { data: adv } = await sb.from('advance_requests').select('id,req_no').eq('installment_id', id);
+      if (adv && adv.length) {
+        const { data: chs } = await sb.from('payroll_installment_charges').select('amount,finalized').eq('installment_id', id);
+        const paid = (chs || []).filter(c => c.finalized).reduce((s, c) => s + Number(c.amount || 0), 0);
+        for (const a of adv) {
+          if (paid <= 0) {
+            // ยังไม่หักงวดไหนเลย → คืนใบเบิกเป็นปกติ (จะถูกหักคืนก้อนเดียวรอบที่จะถึง)
+            await sb.from('advance_requests').update({ deducted: false, deducted_at: null, deducted_by: null, installment_id: null }).eq('id', a.id);
+            try { await sb.from('advance_events').insert({ request_id: a.id, event: 'installment_cancel', actor: 'ผจก.ตรวจ', role: 'hr', note: 'ยกเลิกผ่อน — คืนเป็นเบิกปกติ (จะหักคืนรอบที่จะถึง)' }); } catch (_e) {}
+            advNote = 'คืนใบเบิกเป็นปกติ (จะหักคืนก้อนเดียวรอบที่จะถึง)';
+          } else {
+            // หักไปบางงวดแล้ว → ตัดสายผูก + คงสถานะหักแล้ว (ยอดที่เหลือถือว่ายกให้)
+            await sb.from('advance_requests').update({ installment_id: null }).eq('id', a.id);
+            try { await sb.from('advance_events').insert({ request_id: a.id, event: 'installment_cancel', actor: 'ผจก.ตรวจ', role: 'hr', note: 'ยกเลิกผ่อน (หักไปแล้ว ' + paid.toLocaleString() + ' · ยอดที่เหลือยกให้)' }); } catch (_e) {}
+            advNote = 'หักไปแล้ว ' + paid.toLocaleString() + ' · ยอดที่เหลือถือว่ายกให้';
+          }
+        }
+      }
+    } catch (_e) {}
+    return { ok: true, adv_note: advNote };
   }
 
   // รายวันในรอบของพนักงานคนเดียว (เวร/มา/สาย/ขาด/ลา) — สำหรับ modal ตรวจ+แก้

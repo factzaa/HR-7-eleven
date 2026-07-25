@@ -6134,7 +6134,7 @@
     try {
       // ★ ผ่อนจ่าย: ล็อกยอดหักของงวดรอบนี้ + ปิดแผนที่หักครบแล้ว
       await sb().from('payroll_installment_charges').update({ finalized: true, updated_at: new Date().toISOString() }).eq('period_start', cyc.start);
-      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount,discount').eq('status', 'active');
+      const { data: plans } = await sb().from('payroll_installments').select('*').eq('status', 'active');
       for (const pl of (plans || [])) {
         const { data: chs } = await sb().from('payroll_installment_charges').select('amount').eq('installment_id', pl.id).eq('finalized', true);
         const paid = (chs || []).reduce((s, c) => s + Number(c.amount || 0), 0);
@@ -6169,7 +6169,7 @@
     try {
       // ★ ผ่อนจ่าย: ปลดล็อกงวดรอบนี้ + เปิดแผนที่ปิดไปแล้วกลับมาถ้ายังไม่ครบ
       await sb().from('payroll_installment_charges').update({ finalized: false, updated_at: new Date().toISOString() }).eq('period_start', cyc.start);
-      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount,discount').eq('status', 'done');
+      const { data: plans } = await sb().from('payroll_installments').select('*').eq('status', 'done');
       for (const pl of (plans || [])) {
         const { data: chs } = await sb().from('payroll_installment_charges').select('amount').eq('installment_id', pl.id).eq('finalized', true);
         const paid = (chs || []).reduce((s, c) => s + Number(c.amount || 0), 0);
