@@ -5179,6 +5179,8 @@ function renderAdvRows(){
         <td style="white-space:nowrap">
           ${(ADV_CAN.review && r.status==='submitted')?`<button class="btn btn-pri btn-sm" data-advok="${r.id}">อนุมัติ</button> <button class="btn btn-sec btn-sm" data-advno="${r.id}">ไม่อนุมัติ</button>`:''}
           ${(ADV_CAN.pay && r.status==='approved')?`<button class="btn btn-pri btn-sm" data-advpay="${r.id}">💸 บันทึกโอน</button>`:''}
+          ${(ADV_CAN.pay && r.status==='paid' && !r.deducted && !r.installment_id)?`<button class="btn btn-sec btn-sm" data-advinst="${r.id}" title="แปลงเป็นผ่อน หักทีละงวด">💳 ผ่อน</button>`:''}
+          ${r.installment_id?`<span style="font-size:11px;color:#7c3aed;font-weight:600">💳 ผ่อนอยู่</span>`:''}
           ${ADV_CAN.pay?`<button class="btn btn-sec btn-sm" data-advbank="${r.id}">🏦 บัญชี</button>`:''}
           <button class="btn btn-sec btn-sm" data-advtl="${r.id}">ไทม์ไลน์</button>
         </td></tr>`;
@@ -5190,6 +5192,7 @@ function renderAdvRows(){
   document.querySelectorAll('[data-advpay]').forEach(b=>b.onclick=()=>advPay(b.dataset.advpay));
   document.querySelectorAll('[data-advtl]').forEach(b=>b.onclick=()=>advTimeline(b.dataset.advtl));
   document.querySelectorAll('[data-advbank]').forEach(b=>b.onclick=()=>advBank(b.dataset.advbank));
+  document.querySelectorAll('[data-advinst]').forEach(b=>b.onclick=()=>advInstallment(b.dataset.advinst));
   $('adv_approveall') && ($('adv_approveall').onclick=async()=>{
     if(!confirm('อนุมัติคำขอที่รออยู่ทั้งหมด '+pend.length+' รายการ (เต็มยอดที่ขอ)?')) return;
     const r=await post({ action:'hr_advance_review', ...authBody(), data:{ ids:pend.map(x=>x.id), action:'approve', by:'สำนักงาน (HR)' } });
@@ -5197,6 +5200,16 @@ function renderAdvRows(){
   });
 }
 function advFind(id){ return (ADV.rows||[]).find(x=>String(x.id)===String(id)); }
+async function advInstallment(id){
+  const r=advFind(id); if(!r) return;
+  const total=(r.approved_amount!=null?r.approved_amount:r.amount)||0;
+  const per=prompt('แปลงใบเบิก '+(r.req_no||'')+' (ยอด '+Number(total).toLocaleString()+' บาท) เป็นผ่อน\nหักงวดละกี่บาท?', '500');
+  if(per===null) return;
+  const n=Number(per); if(!(n>0)){ toast('err','กรอกยอดต่อรอบให้ถูกต้อง'); return; }
+  const rr=await post({ action:'hr_advance_installment', ...authBody(), data:{ id, per_round:n } });
+  if(rr&&rr.ok){ toast('ok','ตั้งผ่อนแล้ว · หักงวดละ '+n.toLocaleString()); loadAdvance(); }
+  else toast('err',(rr&&rr.error)||'ไม่สำเร็จ');
+}
 // ดูเลขบัญชีรับโอนของพนักงาน (สแนปช็อตตอนคีย์คำขอ) — สำหรับ HR ใช้ตอนโอนเงิน
 function advBank(id){
   const r=advFind(id); if(!r) return;

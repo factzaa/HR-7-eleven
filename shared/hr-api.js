@@ -207,6 +207,7 @@
         case 'hr_advance_payroll':    return await hrAdvancePayroll(p.month, p);
         case 'hr_advance_deduct':     return await hrAdvanceDeduct(p.data, p);
         case 'hr_advance_defer':      return await hrAdvanceDefer(p.data, p);
+        case 'hr_advance_installment': return await hrAdvanceInstallment(p.data, p);
         case 'hr_advance_timeline':   return await hrAdvanceTimeline(p.id);
         case 'hr_advance_window_open':   return await hrAdvanceWindowOpen(p.data, p);
         case 'hr_advance_window_list':   return await hrAdvanceWindowList(p);
@@ -3026,6 +3027,35 @@
     await sb().from('advance_events').insert({ request_id: d.id, event: 'defer', actor: me.name, role: 'hr', note: 'เลื่อนการหัก ' + add + ' รอบ (รวมเลื่อน ' + rounds + ' รอบ)' + (d.note ? ' · เหตุผล: ' + d.note : '') });
     await logAct('เลื่อนหักเงินเบิก', null, 'เลื่อน ' + rounds + ' รอบ');
     return { ok: true, rounds };
+  }
+
+  // ---- แปลงใบเบิกเป็น "ผ่อนหัก" (หักทีละงวดแทนก้อนเดียว) ----
+  async function hrAdvanceInstallment(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const per = Number(d.per_round) || 0;
+    if (per <= 0) return { ok: false, error: 'ระบุยอดหักต่อรอบ' };
+    const { data: r } = await sb().from('advance_requests').select('*').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    if (me.role === 'mgr' && r.branch_id && me.branch_id && r.branch_id !== me.branch_id) return { ok: false, error: 'ทำได้เฉพาะคำขอในสาขาของท่าน' };
+    if (r.status !== 'paid') return { ok: false, error: 'ตั้งผ่อนได้เฉพาะใบที่จ่ายเงินแล้ว' };
+    if (r.deducted) return { ok: false, error: 'ใบนี้หักคืน/จัดการไปแล้ว' };
+    const total = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0;
+    if (total <= 0) return { ok: false, error: 'ยอดเบิกไม่ถูกต้อง' };
+    const cyc = cycleRange('current');
+    const { data: ins, error: e1 } = await sb().from('payroll_installments').insert({
+      emp_id: r.emp_id, emp_name: r.emp_name, label: 'เบิกเงิน ' + (r.req_no || ''),
+      total_amount: total, per_round: per, start_period: cyc.start, status: 'active',
+      note: 'แปลงจากใบเบิก ' + (r.req_no || ''), created_by: me.name,
+    }).select('id').maybeSingle();
+    if (e1) throw e1;
+    // ทำเครื่องหมายใบเบิก = จัดการแล้ว (ไม่หักก้อนเดียว) + ผูกแผนผ่อน
+    await sb().from('advance_requests').update({ deducted: true, deducted_at: new Date().toISOString(), deducted_by: me.name, installment_id: ins && ins.id, payroll_ref: null }).eq('id', d.id);
+    await sb().from('advance_events').insert({ request_id: d.id, emp_id: r.emp_id, event: 'installment', actor: me.name, role: me.role, note: 'แปลงเป็นผ่อน หักงวดละ ' + per.toLocaleString() + ' (รวม ' + total.toLocaleString() + ')' });
+    await logAct('แปลงเบิกเป็นผ่อน ' + (r.req_no || ''), r.emp_id, 'งวดละ ' + per);
+    return { ok: true, installment_id: ins && ins.id };
   }
 
   // ---- ไทม์ไลน์คำขอ ----
