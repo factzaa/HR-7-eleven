@@ -2005,11 +2005,11 @@
     const today = bangkokDate(); const endEff = cyc.end < today ? cyc.end : today;
     let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id').eq('active', true).order('emp_id');
     if (branch) empQ = empQ.eq('branch_id', branch);
-    const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR] = await Promise.all([
+    const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR, ctrlR] = await Promise.all([
       empQ,
       sb.from('branches').select('branch_id,name').order('branch_id'),
-      sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,late_min,day_value,shift_id,status').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb.from('shifts').select('shift_id,day_value,name'),
+      sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,late_min,day_value,shift_id,status,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('shifts').select('shift_id,day_value,name,start_time,end_time'),
       sb.from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('payroll_review').select('*').eq('period_start', cyc.start),
@@ -2020,6 +2020,7 @@
       sb.from('score_bands').select('*'),
       sb.from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
       sb.from('payroll_config').select('key,value'),
+      sb.from('shift_controllers').select('branch_id,work_date,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
     ]);
     // เกณฑ์เบี้ยวินัย/ขยัน (ต้องไม่ขาด + สายไม่เกินที่กำหนด) — จาก payroll_config
     let dilCfg = { enabled: true, require_no_absent: true, allow_late_count: 0 };
@@ -2028,6 +2029,19 @@
     const dv = {}; (shR.data || []).forEach(s => dv[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1);
     // ปัด OT เป็นชั่วโมงเต็มไหม (ตั้งค่าเดียวกับที่ระบบเงินเดือนใช้)
     const _st = await _loadSettings(); const otWhole = (_st['ot_whole_day'] === '1' || _st['ot_whole_day'] === 'true');
+    // ค่ากะดึก: กะข้ามคืน (เลิก ≤ เข้า) · ผู้คุมผลัด = controller_rate · อื่น = staff_rate
+    let saCfg = { enabled: true, controller_rate: 15, staff_rate: 10 };
+    try { const srow = (pcfgR.data || []).find(x => x.key === 'shift_allowance'); if (srow && srow.value && typeof srow.value === 'object') saCfg = Object.assign(saCfg, srow.value); } catch (_e) {}
+    const _isOvn = (s, e) => (s && e) ? (String(e).slice(0, 5) <= String(s).slice(0, 5)) : false;
+    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
+    const ctrlMap = {}; (ctrlR.data || []).forEach(c => { ctrlMap[(c.branch_id || '') + '|' + c.work_date] = c.emp_id; });
+    const shiftAllowBy = {};
+    if (saCfg.enabled !== false) (attR.data || []).forEach(a => {
+      if (a.check_in && nightSet.has(a.shift_id)) {
+        const isCtrl = ctrlMap[(a.branch_id || '') + '|' + a.work_date] === a.emp_id;
+        shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
+      }
+    });
     const attBy = {}, schBy = {}, lvBy = {}, evBy = {};
     (attR.data || []).forEach(a => (attBy[a.emp_id] || (attBy[a.emp_id] = [])).push(a));
     (schR.data || []).forEach(s => (schBy[s.emp_id] || (schBy[s.emp_id] = [])).push(s));
@@ -2056,6 +2070,7 @@
         emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
         att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok,
         score, band, band_color: bandColor, auto_advance: advBy[e.emp_id] || 0,
+        auto_shift_allowance: shiftAllowBy[e.emp_id] || 0, shift_allowance_override: rv.shift_allowance_override,
         days_override: rv.days_override, ot_override: rv.ot_override, advance_override: rv.advance_override,
         add_special: rv.add_special, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, ded_other_note: rv.ded_other_note, note: rv.note,
       };
@@ -2070,6 +2085,7 @@
       period_start: f.period_start, emp_id: f.emp_id,
       days_override: num(f.days_override), ot_override: num(f.ot_override), advance_override: num(f.advance_override),
       add_special: num(f.add_special), ded_damaged: num(f.ded_damaged), ded_other: num(f.ded_other),
+      shift_allowance_override: num(f.shift_allowance_override),
       ded_other_note: (f.ded_other_note || '').trim() || null,
       note: (f.note || '').trim() || null, updated_by: f.by || 'ผจก.ตรวจ', updated_at: new Date().toISOString(),
     };

@@ -4357,6 +4357,9 @@ async function loadPayrollConfig(){
     +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">เบี้ยขยัน · ปัดเศษ</div>'
       +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:9px"><input type="checkbox" id="cfd_noab"'+(r.diligence.require_no_absent?' checked':'')+'>จ่ายเบี้ยขยันเมื่อ "ไม่ขาดงาน"</label>'
       +N('cfd_late','สายได้ไม่เกิน (ครั้ง) ยังได้เบี้ยขยัน',r.diligence.allow_late_count)+N('cfr_round','ปัดเศษเงินสุทธิ (บาท)',r.rounding.net_round_to)+'</div>'
+    +'<div class="card" style="padding:14px;margin-bottom:12px;border:1.5px solid #ddd6fe;background:#f5f3ff"><div style="font-weight:700;margin-bottom:4px">🌙 ค่ากะดึก (กะข้ามคืน)</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">คิดต่อ "วันที่ทำกะดึก" (กะที่เลิก ≤ เวลาเข้า = ข้ามคืน) · <b>ผู้คุมผลัด</b> (คนที่กดรับเป็นผู้คุมผลัดวันนั้น) ได้เรทสูงกว่าพนักงานทั่วไปในผลัด</div>'
+      +N('cfsa_ctrl','ผู้คุมผลัด (บาท/คืน)',r.shift_allowance.controller_rate)+N('cfsa_staff','พนักงานในผลัด (บาท/คืน)',r.shift_allowance.staff_rate)+'</div>'
     +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">หัวบริษัทบนสลิป</div>'
       +T('cfc_name','ชื่อบริษัท',r.company.name)+T('cfc_addr','ที่อยู่',r.company.address)+T('cfc_tax','เลขผู้เสียภาษี',r.company.tax_id)+'</div>'
     +'<div class="card" style="padding:14px;margin-bottom:12px;border:1.5px solid #bfdbfe;background:#eff6ff"><div style="font-weight:700;margin-bottom:4px">📧 อีเมลผู้ส่งสลิป (Resend)</div>'
@@ -4381,6 +4384,7 @@ async function savePayrollConfig(){
     ot:{ mode:$('cfo_mode').value, flat_rate:n('cfo_flat'), default_multiplier:n('cfo_mult'), base_hours_per_day:n('cfo_bh') },
     sso:{ enabled:(PAY_CFG&&PAY_CFG.sso&&PAY_CFG.sso.enabled)!==false, rate:n('cfs_rate'), cap:n('cfs_cap'), wage_min:n('cfs_min'), wage_max:n('cfs_max') },
     diligence:{ require_no_absent:$('cfd_noab').checked, allow_late_count:n('cfd_late') },
+    shift_allowance:{ enabled:(PAY_CFG&&PAY_CFG.shift_allowance&&PAY_CFG.shift_allowance.enabled)!==false, controller_rate:n('cfsa_ctrl'), staff_rate:n('cfsa_staff') },
     rounding:{ net_round_to:n('cfr_round') },
     company:{ name:$('cfc_name').value.trim(), address:$('cfc_addr').value.trim(), tax_id:$('cfc_tax').value.trim() },
     mail:{ from:($('cfm_from')?$('cfm_from').value.trim():''), from_name:($('cfm_fromname')?$('cfm_fromname').value.trim():'') } } });

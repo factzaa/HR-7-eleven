@@ -397,6 +397,7 @@
   async function getSettingBool(key) { const s = await loadAppSettings(); return String(s[key] || '') === '1'; }
   // ปรับ OT ตามเงื่อนไข: ถ้าตั้ง "ปัดชั่วโมงเต็มต่อวัน" → ปัดลงเป็นจำนวนเต็ม (เศษนาทีไม่นับ) · ใช้ต่อรายการลงเวลา (ต่อวัน) ก่อนนำไปรวม
   function otAdj(h, whole) { h = Number(h) || 0; return whole ? Math.floor(h + 1e-9) : h; }
+  function _isOvernight(st, en) { if (!st || !en) return false; return String(en).slice(0, 5) <= String(st).slice(0, 5); }
   function hmToMin(hm) { const p = String(hm || '').split(':'); return (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0); }
   // "ลืมกดออก" แล้วหรือยัง — รองรับกะข้ามคืน (deadline ของกะดึกตกในวันถัดไป)
   // workDate=วันที่ของแถวลงเวลา · st/en=เวลาเข้า/ออกของกะ · grace=ผ่อนผัน · today=วันนี้ · nowMin=นาทีปัจจุบัน
@@ -5692,6 +5693,7 @@
       ot: Object.assign({ mode: 'flat', flat_rate: 60, default_multiplier: 1.5, base_hours_per_day: 8 }, c.ot || {}),
       sso: Object.assign({ enabled: true, rate: 5, cap: 750, wage_min: 1650, wage_max: 15000 }, c.sso || {}),
       diligence: Object.assign({ require_no_absent: true, allow_late_count: 0 }, c.diligence || {}),
+      shift_allowance: Object.assign({ enabled: true, controller_rate: 15, staff_rate: 10 }, c.shift_allowance || {}),
       rounding: Object.assign({ net_round_to: 1 }, c.rounding || {}),
       company: Object.assign({ name: '', address: '', tax_id: '' }, c.company || {}),
       payday: Object.assign({ day: 0 }, c.payday || {}),
@@ -5702,7 +5704,7 @@
   async function hrPayrollConfigSave(d) {
     d = d || {};
     const ups = [];
-    ['wage', 'ot', 'sso', 'diligence', 'rounding', 'company', 'payday', 'mail'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
+    ['wage', 'ot', 'sso', 'diligence', 'shift_allowance', 'rounding', 'company', 'payday', 'mail'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
     if (!ups.length) return { ok: false, error: 'ไม่มีค่าให้บันทึก' };
     const { error } = await sb().from('payroll_config').upsert(ups, { onConflict: 'key' });
     if (error) throw error;
@@ -5796,16 +5798,30 @@
     const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
-    const [profR, empR, brR, attR, shR] = await Promise.all([
+    const [profR, empR, brR, attR, shR, ctrlR] = await Promise.all([
       sb().from('payroll_profiles').select('*'),
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account').eq('active', true).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb().from('shifts').select('shift_id,day_value'),
+      sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
+      sb().from('shift_controllers').select('branch_id,work_date,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
     ]);
     const profM = {}; (profR.data || []).forEach(x => { profM[x.emp_id] = x; });
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    // กะดึก = กะข้ามคืน (เลิก ≤ เข้า) · ผู้คุมผลัด/วัน จาก shift_controllers
+    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvernight(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
+    const ctrlMap = {}; (ctrlR.data || []).forEach(c => { ctrlMap[(c.branch_id || '') + '|' + c.work_date] = c.emp_id; });
+    const saCfg = cfg.shift_allowance || {};
+    const shiftAllowBy = {};
+    if (saCfg.enabled !== false) {
+      (attR.data || []).forEach(a => {
+        if (a.check_in && nightSet.has(a.shift_id)) {
+          const isCtrl = ctrlMap[(a.branch_id || '') + '|' + a.work_date] === a.emp_id;
+          shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
+        }
+      });
+    }
     const otWhole = await getSettingBool('ot_whole_day');
     const workedDV = {}, otByEmp = {};
     (attR.data || []).forEach(a => {
@@ -5851,9 +5867,12 @@
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
-      const notRv = a => a.src !== 'rv' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ';
+      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก';
       let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
       if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
+      // ค่ากะดึก: override จากหน้าตรวจ > ยอดที่ระบบคำนวณ
+      const shiftAmt = (rv.shift_allowance_override != null) ? Number(rv.shift_allowance_override) : (shiftAllowBy[e.emp_id] || 0);
+      if (shiftAmt > 0) additions.push({ label: 'ค่ากะดึก', amount: _pr2(shiftAmt), src: 'shift' });
       let deductions = (Array.isArray(ex.deductions) ? ex.deductions : []).filter(notRv);
       if (Number(rv.ded_damaged) > 0) deductions.push({ label: RES_D1, amount: _pr2(Number(rv.ded_damaged)), src: 'rv' });
       if (Number(rv.ded_other) > 0) deductions.push({ label: String(rv.ded_other_note || '').trim() || 'หักอื่นๆ', amount: _pr2(Number(rv.ded_other)), src: 'rv' });
