@@ -2005,7 +2005,7 @@
     const today = bangkokDate(); const endEff = cyc.end < today ? cyc.end : today;
     let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id').eq('active', true).order('emp_id');
     if (branch) empQ = empQ.eq('branch_id', branch);
-    const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR] = await Promise.all([
+    const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR] = await Promise.all([
       empQ,
       sb.from('branches').select('branch_id,name').order('branch_id'),
       sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,late_min,day_value,shift_id,status').gte('work_date', cyc.start).lte('work_date', endEff),
@@ -2019,7 +2019,11 @@
       sb.from('score_rules').select('*'),
       sb.from('score_bands').select('*'),
       sb.from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
+      sb.from('payroll_config').select('key,value'),
     ]);
+    // เกณฑ์เบี้ยวินัย/ขยัน (ต้องไม่ขาด + สายไม่เกินที่กำหนด) — จาก payroll_config
+    let dilCfg = { enabled: true, require_no_absent: true, allow_late_count: 0 };
+    try { const drow = (pcfgR.data || []).find(x => x.key === 'diligence'); if (drow && drow.value && typeof drow.value === 'object') dilCfg = Object.assign(dilCfg, drow.value); } catch (_e) {}
     const brName = {}; (brR.data || []).forEach(b => brName[b.branch_id] = b.name);
     const dv = {}; (shR.data || []).forEach(s => dv[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1);
     // ปัด OT เป็นชั่วโมงเต็มไหม (ตั้งค่าเดียวกับที่ระบบเงินเดือนใช้)
@@ -2046,9 +2050,11 @@
       let score = null, band = '', bandColor = '';
       try { const sc = _computeScore({ cfg: scfgR.data, rules: srR.data, bands: sbR.data, events: evBy[e.emp_id] || [], att, mySched, worked, onLeave }); if (sc && sc.enabled !== false) { score = sc.score; band = sc.band_label; bandColor = sc.band_color; } } catch (_e) {}
       const rv = rvM[e.emp_id] || {};
+      // สิทธิ์เบี้ยวินัย/ขยัน: ไม่ขาด (ถ้ากำหนด) + สายไม่เกินเกณฑ์
+      const dil_ok = (dilCfg.enabled === false) ? null : ((!dilCfg.require_no_absent || absent === 0) && (late_count <= Number(dilCfg.allow_late_count || 0)));
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
-        att_days: attDays, att_ot: attOT, late_count, absent, leave_days,
+        att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok,
         score, band, band_color: bandColor, auto_advance: advBy[e.emp_id] || 0,
         days_override: rv.days_override, ot_override: rv.ot_override, advance_override: rv.advance_override,
         add_special: rv.add_special, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, ded_other_note: rv.ded_other_note, note: rv.note,

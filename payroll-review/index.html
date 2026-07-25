@@ -65,6 +65,7 @@
 
 <div id="mainView" style="display:none">
   <div class="top">
+    <a href="../hr/" class="btn sec sm" style="text-decoration:none">← หน้า HR</a>
     <h1>🧾 ตรวจข้อมูลเข้าเงินเดือน</h1>
     <span class="badge">ไม่แสดงยอดเงิน</span>
     <select id="which"><option value="current">รอบปัจจุบัน</option><option value="previous">รอบก่อนหน้า</option></select>
@@ -144,13 +145,16 @@ function render(){
     const scoreChip = (r.score!=null)
       ? '<span class="chip" style="background:'+(r.band_color||'#475569')+'22;color:'+(r.band_color||'#475569')+'">คะแนน '+r.score+(r.band?(' · '+esc(r.band)):'')+'</span>'
       : '<span class="chip" style="background:#e5e7eb;color:#6b7280">ยังไม่มีคะแนน</span>';
+    const dilChip = (r.dil_ok==null) ? ''
+      : (r.dil_ok ? ' <span class="chip" style="background:#16a34a22;color:#16a34a">เบี้ยวินัย ✓ ได้</span>'
+                  : ' <span class="chip" style="background:#dc262622;color:#dc2626">เบี้ยวินัย ✗ ไม่ได้</span>');
     const sum='<div class="sumbar">'
       +'<span>ขาด <b style="color:'+(r.absent>0?'#dc2626':'#111827')+'">'+r.absent+'</b></span>'
       +'<span>ลา <b>'+r.leave_days+'</b></span>'
       +'<span>สาย <b style="color:'+(r.late_count>0?'#b45309':'#111827')+'">'+r.late_count+'</b></span></div>';
     h+='<tr data-emp="'+esc(r.emp_id)+'">'
      +'<td data-l="พนักงาน"><div class="nm">'+esc(r.name||r.emp_id)+(r.nickname?(' <span class="sub">('+esc(r.nickname)+')</span>'):'')+'</div>'
-       +'<div class="sub">'+esc(r.emp_id)+' · '+esc(r.branch_name||'')+'</div>'+scoreChip+sum+'</td>'
+       +'<div class="sub">'+esc(r.emp_id)+' · '+esc(r.branch_name||'')+'</div>'+scoreChip+dilChip+sum+'</td>'
      +'<td data-l="วัน"><div><input class="f-days" type="number" step="0.5" min="0" placeholder="'+r.att_days+'" value="'+val(r.days_override)+'"><div class="hint">ลงเวลา '+r.att_days+'</div></div></td>'
      +'<td data-l="OT (ชม.)"><div><input class="f-ot" type="number" step="0.5" min="0" placeholder="'+r.att_ot+'" value="'+val(r.ot_override)+'"><div class="hint">ลงเวลา '+r.att_ot+'</div></div></td>'
      +'<td data-l="เงินเบิก"><div><input class="f-adv" type="number" step="1" min="0" placeholder="'+(r.auto_advance||0)+'" value="'+val(r.advance_override)+'"><div class="hint">ระบบเบิก '+(r.auto_advance||0).toLocaleString()+'</div></div></td>'
