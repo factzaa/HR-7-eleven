@@ -6022,6 +6022,12 @@
       const { data: fuelRows } = await sb().from('rider_fuel_claims').select('emp_id,amount').eq('status', 'approved').eq('deducted', false);
       (fuelRows || []).forEach(r => { fuelByEmp[r.emp_id] = (fuelByEmp[r.emp_id] || 0) + Number(r.amount || 0); });
     } catch (_e) { /* ยังไม่มีระบบน้ำมัน */ }
+    // ★ ค่าซ่อมบำรุงรถไรเดอร์ (อนุมัติแล้ว ยังไม่จ่าย) → รายได้ (บริษัทจ่ายคืน จ่ายพร้อมเงินเดือน)
+    let maintByEmp = {};
+    try {
+      const { data: mRows } = await sb().from('rider_claims').select('emp_id,approved_amount,amount_est').eq('status', 'approved');
+      (mRows || []).forEach(r => { const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount_est) || 0; if (amt > 0) maintByEmp[r.emp_id] = (maintByEmp[r.emp_id] || 0) + amt; });
+    } catch (_e) { /* ยังไม่มีระบบซ่อม */ }
     // ★ ค่าที่ ผจก.ระดับสูงกรอกในหน้าตรวจ (payroll_review) — ดึงมาผสมเข้าเงินเดือน
     let reviewMap = {};
     try {
@@ -6066,12 +6072,14 @@
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
-      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)';
+      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.src !== 'maint' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)' && a.label !== 'ค่าซ่อมบำรุงรถ';
       let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
       if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
       // ค่ากะดึก: override จากหน้าตรวจ > ยอดที่ระบบคำนวณ
       const shiftAmt = (rv.shift_allowance_override != null) ? Number(rv.shift_allowance_override) : (shiftAllowBy[e.emp_id] || 0);
       if (shiftAmt > 0) additions.push({ label: 'ค่ากะดึก', amount: _pr2(shiftAmt), src: 'shift' });
+      // ค่าซ่อมบำรุงรถ (อนุมัติแล้ว) → รายได้จ่ายพร้อมเงินเดือน
+      if (Number(maintByEmp[e.emp_id]) > 0) additions.push({ label: 'ค่าซ่อมบำรุงรถ', amount: _pr2(Number(maintByEmp[e.emp_id])), src: 'maint' });
       let deductions = (Array.isArray(ex.deductions) ? ex.deductions : []).filter(notRv);
       if (Number(rv.ded_damaged) > 0) deductions.push({ label: RES_D1, amount: _pr2(Number(rv.ded_damaged)), src: 'rv' });
       if (Number(rv.ded_other) > 0) deductions.push({ label: String(rv.ded_other_note || '').trim() || 'หักอื่นๆ', amount: _pr2(Number(rv.ded_other)), src: 'rv' });
@@ -6255,6 +6263,10 @@
       // เบิกค่าน้ำมัน: ทำเครื่องหมาย "หักคืนแล้ว" (อนุมัติ + ยังไม่หัก)
       await sb().from('rider_fuel_claims').update({ deducted: true, deducted_at: new Date().toISOString(), payroll_ref: run.id }).eq('status', 'approved').eq('deducted', false);
     } catch (_e) { /* ไม่มีระบบน้ำมัน */ }
+    try {
+      // ค่าซ่อมบำรุงรถ: อนุมัติแล้ว → เปลี่ยนเป็น "จ่ายแล้ว" ทันที (จ่ายพร้อมเงินเดือน)
+      await sb().from('rider_claims').update({ status: 'paid', paid_at: new Date().toISOString(), paid_by: 'ระบบเงินเดือน', payout_method: 'payroll', payroll_ref: run.id }).eq('status', 'approved');
+    } catch (_e) { /* ไม่มีระบบซ่อม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);
     if (error) throw error;
     await logAct('ปิดรอบเงินเดือน', null, 'รอบ ' + run.period_start);
@@ -6294,6 +6306,10 @@
       // เบิกค่าน้ำมัน: คืนสถานะ "ยังไม่หัก" ที่ผูกกับรอบนี้
       await sb().from('rider_fuel_claims').update({ deducted: false, deducted_at: null, payroll_ref: null }).eq('payroll_ref', run.id);
     } catch (_e) { /* ไม่มีระบบน้ำมัน */ }
+    try {
+      // ค่าซ่อมบำรุงรถ: คืนสถานะจาก "จ่ายแล้ว" → "อนุมัติแล้ว" ที่ผูกกับรอบนี้
+      await sb().from('rider_claims').update({ status: 'approved', paid_at: null, paid_by: null, payroll_ref: null }).eq('payroll_ref', run.id).eq('status', 'paid');
+    } catch (_e) { /* ไม่มีระบบซ่อม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'draft', finalized_by: null, finalized_at: null }).eq('id', run.id);
     if (error) throw error;
     await logAct('เปิดรอบเงินเดือนใหม่', null, 'รอบ ' + run.period_start + ' · คืนใบเบิก ' + reverted + ' ใบ');
