@@ -223,6 +223,8 @@
         case 'hr_payroll_finalize':    return await hrPayrollFinalize(p);
         case 'hr_payroll_reopen':      return await hrPayrollReopen(p);
         case 'hr_payroll_summary':     return await hrPayrollSummary(p);
+        case 'hr_backfill_preview':    return await hrBackfillPreview(p.data || p);
+        case 'hr_backfill_apply':      return await hrBackfillApply(p.data || p);
         // ---- ประเมินผลงานผู้จัดการสาขา (เห็นเฉพาะ HR) ----
         case 'hr_mgr_eval':            return await hrMgrEval(p);
         case 'hr_mgr_eval_config_get': return await hrMgrEvalConfigGet();
@@ -5929,6 +5931,60 @@
     if (error) throw error;
     return { ok: true, base_pay, days_worked, sso, gross, total_deduct, net };
   }
+  // ---- Backfill ลงเวลาย้อนหลัง (กรณีเพิ่งเริ่มใช้ระบบ) ----
+  //   นับ "มาปกติ" late_min=0 status=CLOSED source=backfill · ไม่ทับแถวจริง (ignoreDuplicates)
+  async function _backfillBuild(d) {
+    d = d || {};
+    if (!d.start || !d.end) return { error: 'ระบุช่วงวันที่' };
+    const mode = d.mode === 'manual' ? 'manual' : 'schedule';
+    const { data: exist } = await sb().from('attendance').select('emp_id,work_date').gte('work_date', d.start).lte('work_date', d.end);
+    const existSet = new Set((exist || []).map(r => r.emp_id + '|' + r.work_date));
+    let candidates = [];
+    if (mode === 'schedule') {
+      let q = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id').gte('work_date', d.start).lte('work_date', d.end);
+      if (d.branch) q = q.eq('branch_id', d.branch);
+      const { data: sch } = await q;
+      candidates = (sch || []).map(s => ({ emp_id: s.emp_id, work_date: s.work_date, shift_id: s.shift_id, branch_id: s.branch_id }));
+    } else {
+      const emps = Array.isArray(d.emps) ? d.emps : [];
+      const dates = Array.isArray(d.dates) ? d.dates.filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)) : [];
+      if (!emps.length || !dates.length) return { error: 'เลือกพนักงานและวันที่อย่างน้อยอย่างละ 1' };
+      const { data: empRows } = await sb().from('employees').select('emp_id,branch_id,default_shift').in('emp_id', emps);
+      const em = {}; (empRows || []).forEach(e => em[e.emp_id] = e);
+      emps.forEach(id => dates.forEach(dt => {
+        const e = em[id] || {};
+        candidates.push({ emp_id: id, work_date: dt, shift_id: d.shift_id || e.default_shift || null, branch_id: d.branch || e.branch_id || null });
+      }));
+    }
+    const rows = []; let skipped = 0;
+    for (const c of candidates) {
+      if (!c.emp_id || !c.work_date) continue;
+      if (existSet.has(c.emp_id + '|' + c.work_date)) { skipped++; continue; }
+      rows.push({
+        emp_id: c.emp_id, work_date: c.work_date, shift_id: c.shift_id || null, branch_id: c.branch_id || null,
+        check_in: c.work_date + 'T00:00:00+07:00', check_out: c.work_date + 'T00:00:00+07:00',
+        late_min: 0, ot_hours: 0, status: 'CLOSED', source: 'backfill', day_note: 'HR เติมย้อนหลัง',
+      });
+    }
+    return { rows, skipped };
+  }
+  async function hrBackfillPreview(d) {
+    const b = await _backfillBuild(d);
+    if (b.error) return { ok: false, error: b.error };
+    const byEmp = {}; b.rows.forEach(r => byEmp[r.emp_id] = (byEmp[r.emp_id] || 0) + 1);
+    return { ok: true, to_create: b.rows.length, skipped: b.skipped, employees: Object.keys(byEmp).length, sample: b.rows.slice(0, 10).map(r => ({ emp_id: r.emp_id, work_date: r.work_date, shift_id: r.shift_id })) };
+  }
+  async function hrBackfillApply(d) {
+    const b = await _backfillBuild(d);
+    if (b.error) return { ok: false, error: b.error };
+    if (!b.rows.length) return { ok: true, created: 0, skipped: b.skipped, note: 'ไม่มีวันใหม่ให้เติม (มีข้อมูลครบแล้ว)' };
+    // ignoreDuplicates = ไม่ทับแถวสแกนจริงเด็ดขาด
+    const { error } = await sb().from('attendance').upsert(b.rows, { onConflict: 'emp_id,work_date', ignoreDuplicates: true });
+    if (error) throw error;
+    await logAct('เติมวันทำงานย้อนหลัง (backfill)', null, b.rows.length + ' แถว');
+    return { ok: true, created: b.rows.length, skipped: b.skipped };
+  }
+
   async function hrPayrollFinalize(p) {
     p = p || {};
     const which = (p.which === 'previous') ? 'previous' : 'current';

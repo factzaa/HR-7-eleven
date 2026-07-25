@@ -658,6 +658,7 @@
           <option value="previous">รอบก่อนหน้า</option>
         </select>
         <button class="btn btn-pri btn-sm" id="pl_calc">🧮 คำนวณ</button>
+        <button class="btn btn-sec btn-sm" id="pl_backfill" title="เติมวันทำงานย้อนหลัง — กรณีเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ">＋ เติมวันย้อนหลัง</button>
         <select id="pl_run_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
         <span id="pl_run_status" style="font-size:12.5px;color:var(--muted);align-self:center"></span>
         <span style="flex:1"></span>
@@ -685,6 +686,15 @@
     <div id="pls_config" class="pl-sec" style="display:none">
       <div id="pl_cfg_body"><div class="empty">กำลังโหลด…</div></div>
     </div>
+  </div>
+</div>
+
+<!-- modal: เติมวันทำงานย้อนหลัง (backfill) -->
+<div class="overlay" id="bfOverlay">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-h"><h2 style="font-size:16px">＋ เติมวันทำงานย้อนหลัง</h2><button class="close" id="bfClose">×</button></div>
+    <div class="modal-b" id="bf_body"></div>
+    <div class="modal-f"><button class="btn btn-sec" id="bfCancel">ปิด</button><button class="btn btn-sec" id="bfPreview">👁 ดูตัวอย่าง</button><button class="btn btn-pri" id="bfApply">เติมข้อมูล</button></div>
   </div>
 </div>
 
@@ -4107,6 +4117,82 @@ function renderPayrollItems(){
 $('pl_run_branch') && ($('pl_run_branch').onchange=renderPayrollItems);
 $('pl_calc') && ($('pl_calc').onclick=loadPayrollRun);
 $('pl_which') && ($('pl_which').onchange=loadPayrollRun);
+
+// ===== เติมวันทำงานย้อนหลัง (Backfill) =====
+let BF={ mode:'schedule' };
+$('pl_backfill') && ($('pl_backfill').onclick=openBackfill);
+['bfClose','bfCancel'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('bfOverlay').classList.remove('show'); });
+function bfRange(){ return (PAY&&PAY.run)?{start:PAY.run.period_start,end:PAY.run.period_end}:{start:'',end:''}; }
+function bfDatesInRange(start,end,skipSun){
+  const out=[]; if(!start||!end) return out;
+  let d=new Date(start+'T00:00:00'), e=new Date(end+'T00:00:00');
+  while(d<=e){
+    if(!(skipSun&&d.getDay()===0)) out.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+function openBackfill(){
+  const rg=bfRange();
+  const brOpts=(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'">'+esc(b.name)+'</option>').join('');
+  const shOpts=(DATA.shifts||[]).map(s=>'<option value="'+esc(s.shift_id)+'">'+esc(s.name)+'</option>').join('');
+  $('bf_body').innerHTML=
+    '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#92400e;margin-bottom:12px">'
+    +'เติมวันทำงานจริงลงตารางลงเวลา (ใช้ตอนเพิ่งเริ่มใช้ระบบ) · นับ <b>มาปกติเท่านั้น</b> ไม่คิดสาย/ขาด · ติดธง <b>HR กรอกย้อนหลัง</b> · <b>ไม่ทับ</b>วันที่มีข้อมูลจริงอยู่แล้ว</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px">'
+      +'<label style="flex:1;text-align:center;padding:9px;border:1.5px solid var(--line2);border-radius:9px;cursor:pointer"><input type="radio" name="bfMode" value="schedule" checked> จากตารางเวร</label>'
+      +'<label style="flex:1;text-align:center;padding:9px;border:1.5px solid var(--line2);border-radius:9px;cursor:pointer"><input type="radio" name="bfMode" value="manual"> กรอกเอง</label></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+      +'<div><label style="font-size:12px;color:var(--muted)">ตั้งแต่</label><input id="bf_start" type="date" value="'+esc(rg.start)+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+      +'<div><label style="font-size:12px;color:var(--muted)">ถึง</label><input id="bf_end" type="date" value="'+esc(rg.end)+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div></div>'
+    +'<div style="margin-top:9px"><label style="font-size:12px;color:var(--muted)">สาขา</label><select id="bf_branch" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"><option value="">— ทุกสาขา —</option>'+brOpts+'</select></div>'
+    +'<div id="bf_manual" style="display:none;margin-top:10px">'
+      +'<label style="font-size:12px;color:var(--muted)">กะที่ใช้ (รายการที่กรอกเอง)</label>'
+      +'<select id="bf_shift" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;margin-bottom:8px"><option value="">— ใช้กะประจำของแต่ละคน —</option>'+shOpts+'</select>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><label style="font-size:12px;color:var(--muted)">พนักงาน</label>'
+        +'<label style="font-size:11.5px;color:var(--muted);cursor:pointer"><input type="checkbox" id="bf_all"> เลือกทั้งหมด</label></div>'
+      +'<div id="bf_emps" style="max-height:150px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:6px;margin:4px 0"></div>'
+      +'<label style="font-size:12px;color:var(--muted)">วันที่ (YYYY-MM-DD คั่นด้วยเว้นวรรค/จุลภาค)</label>'
+      +'<textarea id="bf_dates" rows="2" placeholder="เช่น 2026-06-21 2026-06-22 ..." style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit"></textarea>'
+      +'<div style="display:flex;gap:6px;margin-top:5px"><button class="btn btn-sec btn-sm" id="bf_fillAll" type="button">เติมทุกวันในช่วง</button><button class="btn btn-sec btn-sm" id="bf_fillWk" type="button">ทุกวัน (เว้น อา.)</button></div></div>'
+    +'<div id="bf_result" style="margin-top:12px"></div>';
+  // events
+  document.querySelectorAll('input[name=bfMode]').forEach(r=>r.onchange=()=>{ BF.mode=r.value; $('bf_manual').style.display=(BF.mode==='manual'?'block':'none'); if(BF.mode==='manual') bfRenderEmps(); $('bf_result').innerHTML=''; });
+  $('bf_branch').onchange=()=>{ if(BF.mode==='manual') bfRenderEmps(); };
+  $('bf_fillAll') && ($('bf_fillAll').onclick=()=>{ $('bf_dates').value=bfDatesInRange($('bf_start').value,$('bf_end').value,false).join(' '); });
+  $('bf_fillWk') && ($('bf_fillWk').onclick=()=>{ $('bf_dates').value=bfDatesInRange($('bf_start').value,$('bf_end').value,true).join(' '); });
+  $('bfOverlay').classList.add('show');
+}
+function bfRenderEmps(){
+  const br=$('bf_branch').value;
+  const rows=(DATA.rows||[]).filter(e=>!br||String(e.branch_id)===String(br));
+  $('bf_emps').innerHTML=rows.map(e=>'<label style="display:flex;align-items:center;gap:7px;padding:3px 2px;font-size:13px"><input type="checkbox" class="bf-emp" value="'+esc(e.emp_id)+'"> '+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</label>').join('')||'<div style="color:var(--muted);font-size:12px;padding:6px">— ไม่มีพนักงานในสาขานี้ —</div>';
+  const all=$('bf_all'); if(all) all.onchange=()=>document.querySelectorAll('#bf_emps .bf-emp').forEach(c=>c.checked=all.checked);
+}
+function bfPayload(){
+  const p={ mode:BF.mode, start:$('bf_start').value, end:$('bf_end').value, branch:$('bf_branch').value||undefined };
+  if(BF.mode==='manual'){
+    p.emps=[...document.querySelectorAll('#bf_emps .bf-emp:checked')].map(c=>c.value);
+    p.dates=($('bf_dates').value||'').split(/[\s,]+/).filter(Boolean);
+    p.shift_id=$('bf_shift').value||undefined;
+  }
+  return p;
+}
+$('bfPreview') && ($('bfPreview').onclick=async()=>{
+  const r=await post({ action:'hr_backfill_preview', password:pwd, data:bfPayload() });
+  if(!r||!r.ok){ $('bf_result').innerHTML='<div style="color:#dc2626;font-size:13px">'+esc((r&&r.error)||'ไม่สำเร็จ')+'</div>'; return; }
+  $('bf_result').innerHTML='<div class="card" style="padding:10px 13px;background:#f0fdf4;font-size:13px">จะสร้าง <b>'+r.to_create+'</b> แถว ให้ <b>'+r.employees+'</b> คน · ข้าม <b>'+r.skipped+'</b> (มีข้อมูลแล้ว)'
+    +(r.sample&&r.sample.length?'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">ตัวอย่าง: '+r.sample.map(s=>esc(s.emp_id+'/'+s.work_date)).join(', ')+(r.to_create>r.sample.length?' …':'')+'</div>':'')+'</div>';
+});
+$('bfApply') && ($('bfApply').onclick=async()=>{
+  const p=bfPayload();
+  if(!confirm('เติมวันทำงานย้อนหลังตามที่ตั้งไว้?')) return;
+  $('bfApply').disabled=true; $('bfApply').textContent='กำลังเติม…';
+  const r=await post({ action:'hr_backfill_apply', password:pwd, data:p });
+  $('bfApply').disabled=false; $('bfApply').textContent='เติมข้อมูล';
+  if(r&&r.ok){ toast('ok','เติมแล้ว '+r.created+' แถว'+(r.skipped?(' · ข้าม '+r.skipped):'')); $('bf_result').innerHTML='<div class="card" style="padding:10px 13px;background:#eff6ff;font-size:13px">✅ เติม '+r.created+' แถว'+(r.note?(' · '+esc(r.note)):'')+'<br><span style="color:var(--muted)">กด "คำนวณ" อีกครั้งเพื่อดึงวันเข้าเงินเดือน</span></div>'; }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+});
 $('pl_finalize') && ($('pl_finalize').onclick=async()=>{
   if(!PAY||!PAY.run){ toast('err','คำนวณก่อน'); return; }
   if(!confirm('ปิดรอบนี้? หลังปิดจะแก้ไม่ได้ และจะทำเครื่องหมาย "หักเบิกล่วงหน้าแล้ว" ให้อัตโนมัติ')) return;
