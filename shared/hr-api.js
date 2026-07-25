@@ -301,6 +301,7 @@
         case 'rider_fuel_create':    return await hrFuelCreate(p.data, p);
         case 'rider_fuel_cfg_get':   return await hrFuelCfgGet();
         case 'rider_fuel_cfg_save':  return await hrFuelCfgSave(p.data, p);
+        case 'rider_pending':        return await hrRiderPending(p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
@@ -4953,6 +4954,23 @@
     const { data } = await sb().from('rider_fuel_config').select('*').eq('id', 1).maybeSingle();
     return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false };
   }
+  // นับรายการเบิกน้ำมัน + เบิกซ่อม ที่ "รออนุมัติ" (แจ้งเตือน HR)
+  async function hrRiderPending(p) {
+    p = p || {};
+    let fq = sb().from('rider_fuel_claims').select('id,emp_name,nickname,amount,branch_id,branch_name,created_at').eq('status', 'submitted').order('created_at', { ascending: false }).limit(30);
+    let mq = sb().from('rider_claims').select('id,emp_name,nickname,item_name,amount_est,branch_id,branch_name,created_at').eq('status', 'submitted').order('created_at', { ascending: false }).limit(30);
+    if (p.branch) { fq = fq.eq('branch_id', p.branch); mq = mq.eq('branch_id', p.branch); }
+    const [fuelR, maintR] = await Promise.all([fq, mq]);
+    const fuel = fuelR.data || [], maint = maintR.data || [];
+    return {
+      ok: true,
+      fuel_count: fuel.length, maint_count: maint.length,
+      fuel_amount: fuel.reduce((s, r) => s + Number(r.amount || 0), 0),
+      maint_amount: maint.reduce((s, r) => s + Number(r.amount_est || 0), 0),
+      fuel: fuel.slice(0, 8), maint: maint.slice(0, 8),
+    };
+  }
+
   async function hrFuelCfgGet() { return { ok: true, config: await _fuelCfg() }; }
   async function hrFuelCfgSave(d, auth) {
     const me = await _termActor(auth);

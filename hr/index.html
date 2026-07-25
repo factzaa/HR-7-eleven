@@ -426,6 +426,7 @@
 <div id="view_dashboard" class="container" style="display:none">
   <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="dash_date" type="date" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="dash_today" title="กลับมาวันนี้">วันนี้</button><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
   <div id="coCorrPanel"></div>
+  <div id="riderPendingPanel"></div>
   <div id="openTasksPanel"></div>
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
@@ -5973,7 +5974,7 @@ function renderRdFuel(){
 }
 async function rfReview(id, action, note){
   const r=await post({ action:'rider_fuel_review', ...authBody(), data:{ id, action, note } });
-  if(r&&r.ok){ toast('ok', action==='approve'?'อนุมัติแล้ว':'บันทึกแล้ว'); fetchRdFuel(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+  if(r&&r.ok){ toast('ok', action==='approve'?'อนุมัติแล้ว':'บันทึกแล้ว'); fetchRdFuel(); try{loadRiderPending();}catch(_e){} } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
 let RFK_PHOTO=null;
 function openRfKey(){
@@ -6106,7 +6107,7 @@ function openRdClaim(id){
 }
 async function rdReview(id,action,amount,note){
   const r=await post({ action:'rider_claim_review', ...authBody(), data:{ id, action, approved_amount:amount, note:note||undefined } });
-  if(r&&r.ok){ toast('ok', action==='approve'?'อนุมัติแล้ว':'บันทึกแล้ว'); $('rdClaimOverlay').classList.remove('show'); loadRdClaims(); }
+  if(r&&r.ok){ toast('ok', action==='approve'?'อนุมัติแล้ว':'บันทึกแล้ว'); $('rdClaimOverlay').classList.remove('show'); loadRdClaims(); try{loadRiderPending();}catch(_e){} }
   else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
 async function rdPay(id){
@@ -7201,7 +7202,7 @@ async function loadMdailyDash(){
 const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
-  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadDutyRecords(); loadMdailyDash(); }
+  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadDutyRecords(); loadMdailyDash(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
@@ -10539,6 +10540,40 @@ async function loadCheckoutCorr(){
 }
 
 // ========== การ์ดงานค้างข้ามวัน (Dashboard) ==========
+// แจ้งเตือน HR: คำขอเบิกน้ำมัน/เบิกซ่อม รออนุมัติ
+async function loadRiderPending(){
+  const box=$('riderPendingPanel'); if(!box) return;
+  let r; try{ r=await post({ action:'rider_pending', password:pwd, branch:(MGR_MODE?MGR_BRANCH:undefined) }); }catch(e){ box.innerHTML=''; return; }
+  if(!r||!r.ok){ box.innerHTML=''; return; }
+  const total=(r.fuel_count||0)+(r.maint_count||0);
+  updateRiderBadge(total);
+  if(!total){ box.innerHTML=''; return; }
+  const goSec=r.fuel_count?'fuel':'claims';
+  let h='<div class="card" style="padding:13px 16px;margin-bottom:12px;border:1.5px solid #fdba74;background:#fff7ed;cursor:pointer" onclick="showTab(\'rider\');setTimeout(()=>rdShowSec(\''+goSec+'\'),250)">'
+    +'<div style="display:flex;align-items:center;gap:10px"><div style="font-size:22px">🛵</div>'
+    +'<div style="flex:1"><div style="font-weight:800;color:#9a3412;font-size:14.5px">มีคำขอไรเดอร์รออนุมัติ '+total+' รายการ</div>'
+    +'<div style="font-size:12.5px;color:#7c2d12;margin-top:2px">'
+      +(r.fuel_count?('⛽ เบิกน้ำมัน '+r.fuel_count+' ('+Number(r.fuel_amount).toLocaleString()+' บาท)'):'')
+      +(r.fuel_count&&r.maint_count?' · ':'')
+      +(r.maint_count?('🔧 เบิกซ่อม '+r.maint_count+' ('+Number(r.maint_amount).toLocaleString()+' บาท)'):'')
+    +'</div></div><div style="font-size:12px;color:#9a3412;white-space:nowrap">แตะเพื่ออนุมัติ ›</div></div>';
+  const items=[];
+  (r.fuel||[]).forEach(x=>items.push('⛽ '+(x.nickname||x.emp_name||'')+' '+Number(x.amount).toLocaleString()+' บ.'));
+  (r.maint||[]).forEach(x=>items.push('🔧 '+(x.nickname||x.emp_name||'')+' '+(x.item_name||'')));
+  if(items.length) h+='<div style="font-size:11.5px;color:#7c2d12;margin-top:6px;padding-left:32px">'+items.slice(0,6).map(esc).join(' · ')+(items.length>6?' …':'')+'</div>';
+  h+='</div>';
+  box.innerHTML=h;
+}
+function updateRiderBadge(n){
+  document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{
+    if(NAV_GROUPS[i] && NAV_GROUPS[i].label==='ไรเดอร์'){
+      let bd=b.querySelector('.navbadge');
+      if(n>0){ if(!bd){ bd=document.createElement('span'); bd.className='navbadge'; bd.style.cssText='margin-left:5px;min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:#dc2626;color:#fff;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center'; b.appendChild(bd);} bd.textContent=n; }
+      else if(bd) bd.remove();
+    }
+  });
+}
+
 async function loadOpenTasks(){
   const box=$('openTasksPanel'); if(!box) return;
   let r; try{ r=await post({ action:'hr_open_tasks', password:pwd }); }catch(e){ box.innerHTML=''; return; }
