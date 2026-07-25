@@ -4248,7 +4248,9 @@ function openPlItem(empId){
     +'<button class="btn btn-sec btn-sm" id="pli_addBtn" style="margin:2px 0 14px">+ เพิ่มบรรทัด</button>'
     +'<div style="font-weight:600;margin-bottom:6px;color:#b91c1c">รายการหัก (หักจากเงินเดือน)</div>'
     +'<div id="pli_deds">'+lineRows(it.deductions,'ded')+'</div>'
-    +'<button class="btn btn-sec btn-sm" id="pli_dedBtn" style="margin:2px 0 6px">+ เพิ่มบรรทัด</button>';
+    +'<button class="btn btn-sec btn-sm" id="pli_dedBtn" style="margin:2px 0 14px">+ เพิ่มบรรทัด</button>'
+    +'<div style="font-weight:600;margin-bottom:6px">📝 หมายเหตุ (Remark บนสลิป)</div>'
+    +'<textarea id="pli_note" rows="2" placeholder="ข้อความนี้จะแสดงในช่อง Remark ของสลิปเงินเดือน" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit">'+esc(it.note||'')+'</textarea>';
   $('pli_addBtn').onclick=()=>{ $('pli_adds').insertAdjacentHTML('beforeend', plLineRow('add', Date.now(), '', '')); plBindRm(); };
   $('pli_dedBtn').onclick=()=>{ $('pli_deds').insertAdjacentHTML('beforeend', plLineRow('ded', Date.now(), '', '')); plBindRm(); };
   plBindRm();
@@ -4277,6 +4279,7 @@ $('pliSave') && ($('pliSave').onclick=async()=>{
   const daysEl=$('pli_days');
   const dataSave={ id:PLI_CUR.id, additions:plCollect('add'), deductions:plCollect('ded') };
   if(daysEl) dataSave.days_override = daysEl.value.trim();   // ว่าง = ใช้ตามลงเวลา
+  if($('pli_note')) dataSave.note = $('pli_note').value.trim();   // Remark บนสลิป
   const r=await post({ action:'hr_payroll_item_save', password:pwd, data:dataSave });
   $('pliSave').textContent='บันทึก';
   if(r&&r.ok){ toast('ok','บันทึกแล้ว'); $('plItemOverlay').classList.remove('show'); loadPayrollRun(); }
@@ -4427,8 +4430,8 @@ function plSlipInner(it, meta){
   const ded=[['ประกันสังคม','Social Security Fund',it.sso],['ภาษีหัก ณ ที่จ่าย','Withholding tax',0],['เงินกู้ยืม กยศ./กรอ.','Student Loan Fund',0],['เงินประกัน','Deposit',0],['ขาด/ลา/มาสาย','Absent/Leave/Late',0],['รายการหักอื่นๆ','Others',dedOther]];
   const ytd=[['เงินได้สะสม','YTD earnings',it.ytd_earnings,0],['ภาษีหัก ณ ที่จ่ายสะสม','YTD Withholding tax',it.ytd_tax||0,0],['เงินประกันสังคมสะสม','Accumulated SSF',it.ytd_sso,0],['รวมเงินได้','Total earnings',it.gross,1],['รวมรายการหัก','Total deductions',it.total_deduct,1],['เงินได้สุทธิ','Net pay',it.net,2]];
   const cell=(r)=>'<div class="ps-row"><div class="ps-lbl"><div class="ps-th">'+esc(r[0])+'</div><div class="ps-en">'+esc(r[1])+'</div></div><div class="ps-amt'+(r[3]===1?' ps-strong':(r[3]===2?' ps-net':''))+'">'+B(r[2])+'</div></div>';
-  // Remark: แสดงเฉพาะเงินเบิกล่วงหน้า
-  const remarks=[]; if(Number(it.advance_deduct||0)>0) remarks.push('หักเบิกล่วงหน้า '+B(it.advance_deduct)+' บาท');
+  // Remark: เงินเบิกล่วงหน้า (อัตโนมัติ) + หมายเหตุที่ HR พิมพ์เอง
+  const remarks=[]; if(Number(it.advance_deduct||0)>0) remarks.push('หักเบิกล่วงหน้า '+B(it.advance_deduct)+' บาท'); if(it.note) remarks.push(it.note);
   return '<div class="ps-slip">'
     +'<div class="ps-head"><div class="ps-co">'+esc(co.name||'บริษัท')+'</div><div class="ps-title">สลิปเงินเดือน<br><span>Pay Slip</span></div></div>'
     +'<div class="ps-info"><div class="ps-info-c">'
