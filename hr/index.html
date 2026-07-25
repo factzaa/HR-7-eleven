@@ -1828,6 +1828,7 @@
     <div class="vsec"><h3>ติดต่อ</h3>
       <div class="vgrid">
         <div class="vitem"><span class="vlabel">เบอร์โทร</span><span class="vvalue mono" id="v_phone">—</span></div>
+        <div class="vitem"><span class="vlabel">อีเมล (ส่งสลิป)</span><span class="vvalue mono" id="v_email">—</span></div>
         <div class="vitem"><span class="vlabel">LINE User ID</span><span class="vvalue mono" id="v_line">—</span></div>
         <div class="vitem span2"><span class="vlabel">ที่อยู่</span><span class="vvalue" id="v_address">—</span></div>
       </div>
@@ -3055,7 +3056,7 @@ function openView(empId){
     $('v_pills').innerHTML += '<span class="pill bad">'+(ended?'สิ้นสุดแล้ว ':'จะสิ้นสุด ')+beDate(r.end_date)+'</span>'; }
   vSet('v_shift', shiftName(r.default_shift)); vSet('v_branch', branchName(r.branch_id));
   vSet('v_weekly_off', r.weekly_off || 'ทำงานทุกวัน');
-  vSetPhone('v_phone', r.phone); vSet('v_line', r.line_user_id); vSet('v_address', r.address);
+  vSetPhone('v_phone', r.phone); vSet('v_email', r.email); vSet('v_line', r.line_user_id); vSet('v_address', r.address);
   vSet('v_em_name', r.emergency_name); vSetPhone('v_em_phone', r.emergency_phone);
   vSet('v_bank', r.bank_name); vSet('v_account', r.bank_account); vSet('v_idcard', r.id_card);
   const docs=[['รูปถ่าย',r.photo_url],['สำเนาบัตร',r.idcard_url],['สมุดบัญชี',r.bankbook_url],['ทะเบียนบ้าน',r.house_url],['วุฒิการศึกษา',r.edu_url]];
@@ -9231,9 +9232,13 @@ function renderSchedule(){
       }
       return `<td style="position:relative;padding:5px 5px;vertical-align:top;text-align:center;min-width:72px">${inner}</td>`;
     }).join('');
+    const telLink = e.phone
+      ? `<a href="tel:${esc(e.phone)}" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:3px;margin-top:3px;color:#0369a1;font-weight:700;font-size:11.5px;text-decoration:none">📞 ${esc(e.phone)}</a>`
+      : '<span style="font-size:11px;color:#cbd5e1">— ไม่มีเบอร์ —</span>';
     return `<tr><td style="text-align:left">
       <div style="font-weight:700;font-size:14px">${esc(e.nickname||e.name)}</div>
       <div style="font-size:11.5px;color:var(--muted);margin-top:1px">${esc(e.nickname?e.name:('รหัส '+e.emp_id))} · ประจำ ${esc(branchName(e.branch_id))}</div>
+      <div>${telLink}</div>
     </td>${cells}</tr>`;
   }).join('');
   // สรุปจำนวนคน/กะ แยกรายวัน
@@ -10714,7 +10719,9 @@ async function loadSubmissions(){
         <button class="btn btn-danger btn-sm" data-srej="${s.id}">ปฏิเสธ</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin-top:10px;font-size:13px">
+        <div style="grid-column:1/3">ชื่อ-สกุล: ${esc(s.name||s.current_name||'—')}</div>
         <div>ชื่อเล่น: ${esc(s.nickname||'—')}</div><div>เบอร์: ${esc(s.phone||'—')}</div>
+        <div style="grid-column:1/3">อีเมล: ${esc(s.email||'—')}</div>
         <div style="grid-column:1/3">ที่อยู่: ${esc(s.address||'—')}</div>
         <div>ผู้ติดต่อฉุกเฉิน: ${esc(s.emergency_name||'—')}</div><div>เบอร์ฉุกเฉิน: ${esc(s.emergency_phone||'—')}</div>
         <div>ธนาคาร: ${esc(s.bank_name||'—')}</div><div>เลขบัญชี: ${esc(s.bank_account||'—')}</div>

@@ -1330,7 +1330,7 @@
   // ---------- SCHEDULES (ตารางเวรรายสัปดาห์) ----------
   async function hrSchedWeek(start, end) {
     const [empsR, schR, brR, shR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).or('start_date.is.null,start_date.lte.' + end).order('emp_id'),
+      sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,phone,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).or('start_date.is.null,start_date.lte.' + end).order('emp_id'),
       sb().from('schedules').select('*').gte('work_date', start).lte('work_date', end),
       sb().from('branches').select('branch_id,name').order('branch_id'),
       sb().from('shifts').select('shift_id,name').order('start_time'),
