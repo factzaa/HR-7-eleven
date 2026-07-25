@@ -2005,30 +2005,51 @@
     const today = bangkokDate(); const endEff = cyc.end < today ? cyc.end : today;
     let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id').eq('active', true).order('emp_id');
     if (branch) empQ = empQ.eq('branch_id', branch);
-    const [empR, brR, attR, shR, rvR] = await Promise.all([
+    const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR] = await Promise.all([
       empQ,
       sb.from('branches').select('branch_id,name').order('branch_id'),
-      sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb.from('shifts').select('shift_id,day_value'),
+      sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,late_min,day_value,shift_id,status').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('shifts').select('shift_id,day_value,name'),
+      sb.from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('payroll_review').select('*').eq('period_start', cyc.start),
+      sb.from('advance_requests').select('emp_id,amount,approved_amount,defer_rounds').eq('status', 'paid').eq('deducted', false),
+      sb.from('discipline_rules').select('*'),
+      sb.from('score_config').select('*').eq('id', 1).maybeSingle(),
+      sb.from('score_rules').select('*'),
+      sb.from('score_bands').select('*'),
+      sb.from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
     ]);
     const brName = {}; (brR.data || []).forEach(b => brName[b.branch_id] = b.name);
     const dv = {}; (shR.data || []).forEach(s => dv[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1);
-    const wd = {}, ot = {};
-    (attR.data || []).forEach(a => {
-      if (a.check_in) { const v = a.day_value != null ? Number(a.day_value) : (dv[a.shift_id] != null ? dv[a.shift_id] : 1); (wd[a.emp_id] || (wd[a.emp_id] = {}))[a.work_date] = v; }
-      ot[a.emp_id] = (ot[a.emp_id] || 0) + (Number(a.ot_hours) || 0);
-    });
+    const attBy = {}, schBy = {}, lvBy = {}, evBy = {};
+    (attR.data || []).forEach(a => (attBy[a.emp_id] || (attBy[a.emp_id] = [])).push(a));
+    (schR.data || []).forEach(s => (schBy[s.emp_id] || (schBy[s.emp_id] = [])).push(s));
+    (lvR.data || []).forEach(l => (lvBy[l.emp_id] || (lvBy[l.emp_id] = [])).push(l));
+    (seR.data || []).forEach(e => (evBy[e.emp_id] || (evBy[e.emp_id] = [])).push(e));
+    const advBy = {}; (advR.data || []).forEach(r => { if (r.defer_rounds && Number(r.defer_rounds) > 0) return; const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advBy[r.emp_id] = (advBy[r.emp_id] || 0) + amt; });
     const rvM = {}; (rvR.data || []).forEach(r => rvM[r.emp_id] = r);
     const rows = (empR.data || []).map(e => {
-      const attDays = Math.round(Object.values(wd[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
-      const attOT = Math.round((ot[e.emp_id] || 0) * 10) / 10;
+      const att = attBy[e.emp_id] || [];
+      const worked = new Set(att.filter(a => a.check_in).map(a => a.work_date));
+      const myLeaves = lvBy[e.emp_id] || [];
+      const onLeave = d => myLeaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+      let attDays = 0; att.forEach(a => { if (a.check_in) { const v = a.day_value != null ? Number(a.day_value) : (dv[a.shift_id] != null ? dv[a.shift_id] : 1); attDays += v; } });
+      attDays = Math.round(attDays * 10) / 10;
+      const attOT = Math.round(att.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
+      const late_count = att.filter(a => a.late_min > 0).length;
+      const mySched = [...new Set((schBy[e.emp_id] || []).filter(s => s.shift_id).map(s => s.work_date))].filter(d => d < today);
+      const absent = mySched.filter(d => !worked.has(d) && !onLeave(d)).length;
+      let leave_days = 0; myLeaves.forEach(l => { const s = l.start_date < cyc.start ? cyc.start : l.start_date; const en = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date); if (s <= en) leave_days += _daysBetween(s, en); });
+      let score = null, band = '', bandColor = '';
+      try { const sc = _computeScore({ cfg: scfgR.data, rules: srR.data, bands: sbR.data, events: evBy[e.emp_id] || [], att, mySched, worked, onLeave }); if (sc && sc.enabled !== false) { score = sc.score; band = sc.band_label; bandColor = sc.band_color; } } catch (_e) {}
       const rv = rvM[e.emp_id] || {};
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
-        att_days: attDays, att_ot: attOT,
+        att_days: attDays, att_ot: attOT, late_count, absent, leave_days,
+        score, band, band_color: bandColor, auto_advance: advBy[e.emp_id] || 0,
         days_override: rv.days_override, ot_override: rv.ot_override, advance_override: rv.advance_override,
-        add_special: rv.add_special, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, note: rv.note,
+        add_special: rv.add_special, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, ded_other_note: rv.ded_other_note, note: rv.note,
       };
     });
     return { period_start: cyc.start, period_end: cyc.end, rows, branches: brR.data || [] };
@@ -2041,16 +2062,71 @@
       period_start: f.period_start, emp_id: f.emp_id,
       days_override: num(f.days_override), ot_override: num(f.ot_override), advance_override: num(f.advance_override),
       add_special: num(f.add_special), ded_damaged: num(f.ded_damaged), ded_other: num(f.ded_other),
+      ded_other_note: (f.ded_other_note || '').trim() || null,
       note: (f.note || '').trim() || null, updated_by: f.by || 'ผจก.ตรวจ', updated_at: new Date().toISOString(),
     };
     const { error } = await sb.from('payroll_review').upsert(row, { onConflict: 'period_start,emp_id' });
     if (error) throw error;
     return { ok: true };
   }
+  // รายวันในรอบของพนักงานคนเดียว (เวร/มา/สาย/ขาด/ลา) — สำหรับ modal ตรวจ+แก้
+  async function reviewShiftDetail(empId, which) {
+    const cyc = reviewCycleRange(which);
+    const today = bangkokDate();
+    const [attR, schR, lvR, shR] = await Promise.all([
+      sb.from('attendance').select('work_date,check_in,late_min,ot_hours,shift_id,source,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
+      sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
+      sb.from('leaves').select('start_date,end_date,type,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
+      sb.from('shifts').select('shift_id,name'),
+    ]);
+    const shN = {}; (shR.data || []).forEach(s => shN[s.shift_id] = s.name);
+    const attM = {}; (attR.data || []).forEach(a => attM[a.work_date] = a);
+    const schM = {}; (schR.data || []).forEach(s => schM[s.work_date] = s);
+    const lv = lvR.data || [];
+    const onLeave = d => lv.find(l => d >= l.start_date && d <= (l.end_date || l.start_date));
+    // รวมทุกวันที่มี (เวร ∪ ลงเวลา) ในรอบ
+    const dates = new Set([...Object.keys(attM), ...Object.keys(schM)]);
+    const rows = [...dates].sort().map(d => {
+      const a = attM[d], s = schM[d], l = onLeave(d);
+      let status = 'none';
+      if (a && a.check_in) status = (a.late_min > 0) ? 'late' : 'present';
+      else if (l) status = 'leave';
+      else if (s && d < today) status = 'absent';
+      else if (s) status = 'scheduled';
+      return {
+        work_date: d, shift_id: (a && a.shift_id) || (s && s.shift_id) || null,
+        shift_name: shN[(a && a.shift_id) || (s && s.shift_id)] || '',
+        status, has_att: !!a, late_min: a ? (a.late_min || 0) : 0, ot_hours: a ? (a.ot_hours || 0) : 0,
+        source: a ? a.source : null, leave_type: l ? (l.type || 'ลา') : null,
+      };
+    });
+    return { period_start: cyc.start, period_end: cyc.end, rows };
+  }
+  // แก้สถานะรายวัน: present = สร้าง/คงแถวลงเวลา (มาปกติ) · absent = ลบแถว backfill (คืนสภาพขาด)
+  async function reviewMarkDay({ emp_id, work_date, action, shift_id, branch_id, by }) {
+    if (!emp_id || !work_date) throw new Error('ข้อมูลไม่ครบ');
+    if (action === 'present') {
+      const { data: veh } = await sb.from('employees').select('branch_id,default_shift').eq('emp_id', emp_id).maybeSingle();
+      const row = {
+        emp_id, work_date, shift_id: shift_id || (veh && veh.default_shift) || null, branch_id: branch_id || (veh && veh.branch_id) || null,
+        check_in: work_date + 'T00:00:00+07:00', check_out: work_date + 'T00:00:00+07:00',
+        late_min: 0, ot_hours: 0, status: 'CLOSED', source: 'backfill', day_note: 'ผจก.ตรวจ: มาปกติ',
+      };
+      const { error } = await sb.from('attendance').upsert(row, { onConflict: 'emp_id,work_date', ignoreDuplicates: true });
+      if (error) throw error;
+      return { ok: true };
+    } else if (action === 'absent') {
+      // ลบเฉพาะแถวที่มาจาก backfill (ไม่แตะแถวสแกนจริง)
+      const { error } = await sb.from('attendance').delete().eq('emp_id', emp_id).eq('work_date', work_date).eq('source', 'backfill');
+      if (error) throw error;
+      return { ok: true };
+    }
+    throw new Error('action ไม่ถูกต้อง');
+  }
 
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
-    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave,
+    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewShiftDetail, reviewMarkDay,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

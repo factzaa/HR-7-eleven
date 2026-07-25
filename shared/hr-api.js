@@ -5849,13 +5849,14 @@
       const days_worked = daysOv != null ? daysOv : attDays;
       const ot_hours = (rv.ot_override != null) ? Number(rv.ot_override) : attOT;
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
-      // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ (ใช้ป้ายสงวน — คงรายการอื่นที่ HR ใส่เองไว้)
-      const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม', RES_D2 = 'หักอื่นๆ';
-      let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(a => a.label !== RES_ADD);
-      if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)) });
-      let deductions = (Array.isArray(ex.deductions) ? ex.deductions : []).filter(a => a.label !== RES_D1 && a.label !== RES_D2);
-      if (Number(rv.ded_damaged) > 0) deductions.push({ label: RES_D1, amount: _pr2(Number(rv.ded_damaged)) });
-      if (Number(rv.ded_other) > 0) deductions.push({ label: RES_D2, amount: _pr2(Number(rv.ded_other)) });
+      // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
+      const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
+      const notRv = a => a.src !== 'rv' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ';
+      let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
+      if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
+      let deductions = (Array.isArray(ex.deductions) ? ex.deductions : []).filter(notRv);
+      if (Number(rv.ded_damaged) > 0) deductions.push({ label: RES_D1, amount: _pr2(Number(rv.ded_damaged)), src: 'rv' });
+      if (Number(rv.ded_other) > 0) deductions.push({ label: String(rv.ded_other_note || '').trim() || 'หักอื่นๆ', amount: _pr2(Number(rv.ded_other)), src: 'rv' });
       const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
       const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
       items.push({

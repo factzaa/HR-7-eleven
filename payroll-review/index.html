@@ -28,7 +28,11 @@
   /* table */
   .note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:11px;padding:10px 13px;font-size:13px;margin-bottom:12px;line-height:1.6}
   .tbl{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden}
-  .tbl th{background:#f6f7f9;text-align:left;padding:9px 8px;font-weight:600;white-space:nowrap;position:sticky;top:56px;z-index:5}
+  .tbl th{background:#f6f7f9;text-align:left;padding:9px 8px;font-weight:600;white-space:nowrap}
+  .chip{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:20px;font-weight:600}
+  .sumbar{font-size:11px;color:#374151;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+  .sumbar b{font-weight:700}
+  .lbl-in{width:150px;padding:6px;border:1.5px solid var(--line2);border-radius:8px;text-align:left;margin-top:4px;font-size:12px}
   .tbl td{padding:7px 8px;border-top:1px solid var(--line);vertical-align:middle}
   .tbl input{width:78px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;text-align:right}
   .tbl input.wide{width:150px;text-align:left}
@@ -75,6 +79,16 @@
     </div>
     <div id="period" class="sub" style="margin-bottom:8px"></div>
     <div id="tblWrap"><div style="color:var(--muted);padding:20px;text-align:center">กำลังโหลด…</div></div>
+  </div>
+</div>
+
+<div id="shiftOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
+  <div style="background:#fff;border-radius:16px;max-width:520px;width:100%;padding:18px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 id="shTitle" style="flex:1;font-size:17px;margin:0">ตารางกะรายวัน</h2>
+      <button id="shX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>
+    <div id="shSub" class="sub" style="margin-bottom:10px"></div>
+    <div id="shBody"><div style="color:var(--muted);text-align:center;padding:16px">กำลังโหลด…</div></div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:10px">แก้ได้เฉพาะวันที่ระบบเติมย้อนหลัง — วันที่พนักงานสแกนจริงจะไม่ถูกแตะ · แก้แล้วกด "รีเฟรช" หน้าหลักเพื่ออัปเดตจำนวนวัน</div>
   </div>
 </div>
 
@@ -127,20 +141,29 @@ function render(){
   let h='<table class="tbl"><thead><tr>'
     +'<th>พนักงาน</th><th>วัน</th><th>OT (ชม.)</th><th>เงินเบิก</th><th>เบี้ยพิเศษ</th><th>สินค้าเสื่อม</th><th>หักอื่นๆ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>';
   rows.forEach(r=>{
+    const scoreChip = (r.score!=null)
+      ? '<span class="chip" style="background:'+(r.band_color||'#475569')+'22;color:'+(r.band_color||'#475569')+'">คะแนน '+r.score+(r.band?(' · '+esc(r.band)):'')+'</span>'
+      : '<span class="chip" style="background:#e5e7eb;color:#6b7280">ยังไม่มีคะแนน</span>';
+    const sum='<div class="sumbar">'
+      +'<span>ขาด <b style="color:'+(r.absent>0?'#dc2626':'#111827')+'">'+r.absent+'</b></span>'
+      +'<span>ลา <b>'+r.leave_days+'</b></span>'
+      +'<span>สาย <b style="color:'+(r.late_count>0?'#b45309':'#111827')+'">'+r.late_count+'</b></span></div>';
     h+='<tr data-emp="'+esc(r.emp_id)+'">'
-     +'<td data-l="พนักงาน"><div class="nm">'+esc(r.nickname||r.name||r.emp_id)+'</div><div class="sub">'+esc(r.emp_id)+' · '+esc(r.branch_name||'')+'</div></td>'
+     +'<td data-l="พนักงาน"><div class="nm">'+esc(r.name||r.emp_id)+(r.nickname?(' <span class="sub">('+esc(r.nickname)+')</span>'):'')+'</div>'
+       +'<div class="sub">'+esc(r.emp_id)+' · '+esc(r.branch_name||'')+'</div>'+scoreChip+sum+'</td>'
      +'<td data-l="วัน"><div><input class="f-days" type="number" step="0.5" min="0" placeholder="'+r.att_days+'" value="'+val(r.days_override)+'"><div class="hint">ลงเวลา '+r.att_days+'</div></div></td>'
      +'<td data-l="OT (ชม.)"><div><input class="f-ot" type="number" step="0.5" min="0" placeholder="'+r.att_ot+'" value="'+val(r.ot_override)+'"><div class="hint">ลงเวลา '+r.att_ot+'</div></div></td>'
-     +'<td data-l="เงินเบิก"><input class="f-adv" type="number" step="1" min="0" placeholder="0" value="'+val(r.advance_override)+'"></td>'
+     +'<td data-l="เงินเบิก"><div><input class="f-adv" type="number" step="1" min="0" placeholder="'+(r.auto_advance||0)+'" value="'+val(r.advance_override)+'"><div class="hint">ระบบเบิก '+(r.auto_advance||0).toLocaleString()+'</div></div></td>'
      +'<td data-l="เบี้ยพิเศษ"><input class="f-sp" type="number" step="1" min="0" placeholder="0" value="'+val(r.add_special)+'"></td>'
      +'<td data-l="สินค้าเสื่อม"><input class="f-dm" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_damaged)+'"></td>'
-     +'<td data-l="หักอื่นๆ"><input class="f-ot2" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_other)+'"></td>'
+     +'<td data-l="หักอื่นๆ"><input class="f-ot2" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_other)+'"><input class="f-ot2n lbl-in" type="text" placeholder="ระบุว่าหักอะไร" value="'+esc(val(r.ded_other_note))+'"></td>'
      +'<td data-l="หมายเหตุ"><input class="f-note wide" type="text" placeholder="—" value="'+esc(val(r.note))+'"></td>'
-     +'<td data-l=""><button class="btn sm saveRow">บันทึก</button><div class="rowsaved" style="display:none">✓ บันทึก</div></td></tr>';
+     +'<td data-l=""><button class="btn sec sm shiftBtn" title="ดู/แก้ตารางกะรายวัน">📅 กะ</button><button class="btn sm saveRow" style="margin-top:5px">บันทึก</button><div class="rowsaved" style="display:none">✓ บันทึก</div></td></tr>';
   });
   h+='</tbody></table>';
   $('tblWrap').innerHTML=h;
   document.querySelectorAll('#tblWrap .saveRow').forEach(b=>b.onclick=()=>saveRow(b.closest('tr')));
+  document.querySelectorAll('#tblWrap .shiftBtn').forEach(b=>b.onclick=()=>openShift(b.closest('tr').dataset.emp));
 }
 
 function rowPayload(tr){
@@ -148,7 +171,7 @@ function rowPayload(tr){
   return {
     period_start:DATA.period_start, emp_id:tr.dataset.emp, by:'ผจก.ตรวจ',
     days_override:g('.f-days'), ot_override:g('.f-ot'), advance_override:g('.f-adv'),
-    add_special:g('.f-sp'), ded_damaged:g('.f-dm'), ded_other:g('.f-ot2'), note:g('.f-note'),
+    add_special:g('.f-sp'), ded_damaged:g('.f-dm'), ded_other:g('.f-ot2'), ded_other_note:g('.f-ot2n'), note:g('.f-note'),
   };
 }
 async function saveRow(tr){
@@ -157,6 +180,54 @@ async function saveRow(tr){
   catch(e){ toast(e.message||'ไม่สำเร็จ',true); }
   btn.disabled=false; btn.textContent='บันทึก';
 }
+// ===== ตารางกะรายวัน (ดู/แก้) =====
+let SH_EMP=null;
+$('shX').onclick=()=>$('shiftOv').style.display='none';
+$('shiftOv').addEventListener('click',e=>{ if(e.target===$('shiftOv')) $('shiftOv').style.display='none'; });
+const SH_ST={ present:{t:'มาปกติ',c:'#16a34a'}, late:{t:'มาสาย',c:'#b45309'}, absent:{t:'ขาด',c:'#dc2626'}, leave:{t:'ลา',c:'#7c3aed'}, scheduled:{t:'มีเวร (ยังไม่ถึง)',c:'#6b7280'}, none:{t:'—',c:'#9ca3af'} };
+async function openShift(empId){
+  SH_EMP=empId;
+  const r=(DATA.rows||[]).find(x=>x.emp_id===empId);
+  $('shTitle').textContent='ตารางกะ · '+((r&&(r.name||r.nickname))||empId);
+  $('shSub').textContent='';
+  $('shBody').innerHTML='<div style="color:var(--muted);text-align:center;padding:16px">กำลังโหลด…</div>';
+  $('shiftOv').style.display='flex';
+  await loadShift();
+}
+async function loadShift(){
+  try{
+    const d=await HR.reviewShiftDetail(SH_EMP, $('which').value);
+    $('shSub').textContent='รอบ '+d.period_start+' ถึง '+d.period_end;
+    if(!d.rows.length){ $('shBody').innerHTML='<div style="color:var(--muted);text-align:center;padding:16px">— ไม่มีข้อมูลวัน/เวรในรอบนี้ —</div>'; return; }
+    let h='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
+    d.rows.forEach(x=>{
+      const st=SH_ST[x.status]||SH_ST.none;
+      const editable=(x.status==='absent'||x.status==='scheduled'||(x.has_att&&x.source==='backfill'));
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="padding:7px 6px;white-space:nowrap">'+esc(x.work_date)+'<div style="font-size:11px;color:var(--muted)">'+esc(x.shift_name||'')+'</div></td>'
+        +'<td style="padding:7px 6px"><span class="chip" style="background:'+st.c+'22;color:'+st.c+'">'+st.t+'</span>'
+          +(x.late_min?(' <span style="font-size:11px;color:#b45309">สาย '+x.late_min+' น.</span>'):'')
+          +(x.source==='backfill'?' <span style="font-size:10.5px;color:#6b7280">(เติมย้อนหลัง)</span>':'')+'</td>'
+        +'<td style="padding:7px 6px;text-align:right;white-space:nowrap">';
+      if(x.status==='present'||x.status==='late'){ if(x.source==='backfill') h+='<button class="btn sec sm" data-mk="absent" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นขาด</button>'; else h+='<span style="font-size:11px;color:#9ca3af">สแกนจริง</span>'; }
+      else { h+='<button class="btn sm" data-mk="present" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นมา</button>'; }
+      h+='</td></tr>';
+    });
+    h+='</tbody></table>';
+    $('shBody').innerHTML=h;
+    $('shBody').querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>markDay(b.dataset.mk, b.dataset.d, b.dataset.sh, b));
+  }catch(e){ $('shBody').innerHTML='<div style="color:#b91c1c;text-align:center;padding:16px">'+esc(e.message||'โหลดไม่สำเร็จ')+'</div>'; }
+}
+async function markDay(action, work_date, shift_id, btn){
+  btn.disabled=true; btn.textContent='…';
+  const r=(DATA.rows||[]).find(x=>x.emp_id===SH_EMP);
+  try{
+    await HR.reviewMarkDay({ emp_id:SH_EMP, work_date, action, shift_id:shift_id||null, branch_id:(r&&r.branch_id)||null, by:'ผจก.ตรวจ' });
+    toast(action==='present'?'ทำเป็นมาปกติแล้ว':'ทำเป็นขาดแล้ว');
+    await loadShift();
+  }catch(e){ toast(e.message||'ไม่สำเร็จ',true); btn.disabled=false; btn.textContent=action==='present'?'ทำเป็นมา':'ทำเป็นขาด'; }
+}
+
 async function saveAll(){
   const trs=[...document.querySelectorAll('#tblWrap tbody tr')];
   if(!trs.length) return;
