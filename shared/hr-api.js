@@ -423,7 +423,7 @@
     const d = date || today;                 // วันที่ของ "ภาพรวมรายวัน" (ค่าเริ่มต้น = วันนี้)
     const otWhole = await getSettingBool('ot_whole_day');
     const cyc = cycleRange('current');
-    let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id,end_date').eq('active', true).or('end_date.is.null,end_date.gte.' + d);
+    let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + d).or('start_date.is.null,start_date.lte.' + d);
     let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status,extend_until').eq('work_date', d);
     let qD30 = sb().from('attendance').select('work_date,late_min,ot_hours,branch_id').gte('work_date', addDays(today, -29)).lte('work_date', today);
     let qCyc = sb().from('attendance').select('emp_id,late_min,branch_id').gte('work_date', cyc.start).lte('work_date', cyc.end);
@@ -1322,7 +1322,7 @@
   // ---------- SCHEDULES (ตารางเวรรายสัปดาห์) ----------
   async function hrSchedWeek(start, end) {
     const [empsR, schR, brR, shR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,end_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).order('emp_id'),
+      sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).or('start_date.is.null,start_date.lte.' + end).order('emp_id'),
       sb().from('schedules').select('*').gte('work_date', start).lte('work_date', end),
       sb().from('branches').select('branch_id,name').order('branch_id'),
       sb().from('shifts').select('shift_id,name').order('start_time'),
@@ -2099,7 +2099,7 @@
       sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb().from('score_rules').select('*').order('sort'),
       sb().from('score_bands').select('*').order('sort'),
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -5800,7 +5800,7 @@
     const endEff = cyc.end < today ? cyc.end : today;
     const [profR, empR, brR, attR, shR, ctrlR] = await Promise.all([
       sb().from('payroll_profiles').select('*'),
-      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).order('emp_id'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
