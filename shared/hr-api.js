@@ -5833,7 +5833,10 @@
       if (finalized && exM[e.emp_id]) { items.push(ex); continue; }   // ปิดรอบแล้ว = คืนยอดที่ตรึงไว้
       const prof = profM[e.emp_id] || { wage_type: 'daily', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, ot_rate: null };
       const s = scMap[e.emp_id] || {};
-      const days_worked = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
+      const attDays = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
+      // ★ ถ้า HR แก้ "วันทำงาน" รายคนไว้ (override) ให้ใช้ค่านั้น คงทนแม้กดคำนวณซ้ำ
+      const daysOv = (ex.days_override != null) ? Number(ex.days_override) : null;
+      const days_worked = daysOv != null ? daysOv : attDays;
       const stats = { days_worked, ot_hours: Math.round((otByEmp[e.emp_id] || 0) * 10) / 10, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
       const additions = Array.isArray(ex.additions) ? ex.additions : [];
       const deductions = Array.isArray(ex.deductions) ? ex.deductions : [];
@@ -5841,6 +5844,7 @@
       items.push({
         run_id: run.id, emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '',
         wage_type: prof.wage_type || 'monthly',
+        days_override: daysOv,
         base_pay: comp.base_pay, days_worked: comp.days_worked, ot_hours: comp.ot_hours, ot_pay: comp.ot_pay,
         position_allowance: comp.position_allowance, diligence: comp.diligence, bonus: comp.bonus,
         additions, gross: comp.gross, sso: comp.sso, advance_deduct: comp.advance_deduct, deductions,
@@ -5892,14 +5896,38 @@
     const deductions = Array.isArray(d.deductions) ? d.deductions : (Array.isArray(it.deductions) ? it.deductions : []);
     const addSum = additions.reduce((s, a) => s + (Number(a.amount) || 0), 0);
     const dedSum = deductions.reduce((s, a) => s + (Number(a.amount) || 0), 0);
-    const gross = _pr2(Number(it.base_pay) + Number(it.ot_pay) + Number(it.position_allowance) + Number(it.diligence) + Number(it.bonus) + addSum);
-    const total_deduct = _pr2(Number(it.sso) + Number(it.advance_deduct) + dedSum);
+
+    // ★ แก้ "วันทำงาน" รายคน (override) — กรณีเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ
+    //   ว่าง/null = ใช้ตามลงเวลา (คงฐานเดิม) · กรอกตัวเลข = คิดฐานใหม่ = วัน × อัตรา (เฉพาะรายวัน) และคิด ปกส.ใหม่
+    let base_pay = Number(it.base_pay), days_worked = Number(it.days_worked), sso = Number(it.sso);
+    let days_override = it.days_override != null ? Number(it.days_override) : null;
+    if (d.days_override !== undefined) {
+      days_override = (d.days_override === '' || d.days_override == null) ? null : Number(d.days_override);
+      if (days_override != null && (it.wage_type || 'daily') === 'daily') {
+        const { data: prof } = await sb().from('payroll_profiles').select('base_rate,sso_enabled').eq('emp_id', it.emp_id).maybeSingle();
+        const globalDaily = Number((cfg.wage && cfg.wage.daily_rate) || 0);
+        const rate = (prof && prof.base_rate != null && Number(prof.base_rate) > 0) ? Number(prof.base_rate) : globalDaily;
+        days_worked = days_override;
+        base_pay = _pr2(days_worked * rate);
+        // คิดประกันสังคมใหม่จากฐานใหม่
+        sso = 0;
+        if ((!prof || prof.sso_enabled !== false) && cfg.sso && cfg.sso.enabled !== false && base_pay > 0) {
+          const w = Math.max(Number(cfg.sso.wage_min || 0), Math.min(Number(cfg.sso.wage_max || 1e12), base_pay));
+          sso = Math.min(Number(cfg.sso.cap || 1e12), _pr2(w * Number(cfg.sso.rate || 5) / 100));
+        }
+      } else if (days_override != null) {
+        days_worked = days_override;   // รายเดือน: บันทึกวันไว้ให้ตรง แต่ฐานคงเดิม
+      }
+    }
+
+    const gross = _pr2(base_pay + Number(it.ot_pay) + Number(it.position_allowance) + Number(it.diligence) + Number(it.bonus) + addSum);
+    const total_deduct = _pr2(sso + Number(it.advance_deduct) + dedSum);
     const rt = Number((cfg.rounding && cfg.rounding.net_round_to) || 1) || 1;
     const net = Math.round((gross - total_deduct) / rt) * rt;
-    const upd = { additions, deductions, gross, total_deduct, net, note: d.note != null ? d.note : it.note, edited_by: 'สำนักงาน (HR)', updated_at: new Date().toISOString() };
+    const upd = { additions, deductions, base_pay, days_worked, days_override, sso, gross, total_deduct, net, note: d.note != null ? d.note : it.note, edited_by: 'สำนักงาน (HR)', updated_at: new Date().toISOString() };
     const { error } = await sb().from('payroll_items').update(upd).eq('id', d.id);
     if (error) throw error;
-    return { ok: true, gross, total_deduct, net };
+    return { ok: true, base_pay, days_worked, sso, gross, total_deduct, net };
   }
   async function hrPayrollFinalize(p) {
     p = p || {};

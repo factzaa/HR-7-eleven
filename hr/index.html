@@ -4134,8 +4134,16 @@ function openPlItem(empId){
   PLI_CUR=it;
   $('pli_title').textContent='เพิ่ม/หัก · '+(it.emp_name||empId);
   const lineRows=(arr,kind)=>(arr||[]).map((a,i)=>plLineRow(kind,i,a.label,a.amount)).join('');
+  const isDaily=(it.wage_type||'daily')==='daily';
+  const ovVal=(it.days_override!=null?it.days_override:'');
   $('pli_body').innerHTML=
-    '<div style="font-weight:600;margin-bottom:6px;color:#166534">รายการเพิ่ม (บวกเข้ารายรับ)</div>'
+    (isDaily?('<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:10px 12px;margin-bottom:14px">'
+      +'<div style="font-weight:600;color:#0369a1;margin-bottom:5px">วันทำงาน (แก้เอง)</div>'
+      +'<div style="display:flex;gap:8px;align-items:center">'
+      +'<input id="pli_days" type="number" step="0.5" min="0" placeholder="ตามลงเวลา" value="'+esc(ovVal)+'" style="width:120px;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:center;font-weight:700">'
+      +'<div style="font-size:12px;color:var(--muted)">ปัจจุบันคิดฐานจาก <b>'+esc(it.days_worked!=null?it.days_worked:0)+'</b> วัน · เว้นว่าง = ใช้ตามลงเวลา</div></div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:5px">💡 ใช้ตอนเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ — กรอกวันจริง ระบบจะคิดฐาน = วัน × อัตราให้ใหม่ + ประกันสังคมใหม่</div></div>'):'')
+    +'<div style="font-weight:600;margin-bottom:6px;color:#166534">รายการเพิ่ม (บวกเข้ารายรับ)</div>'
     +'<div id="pli_adds">'+lineRows(it.additions,'add')+'</div>'
     +'<button class="btn btn-sec btn-sm" id="pli_addBtn" style="margin:2px 0 14px">+ เพิ่มบรรทัด</button>'
     +'<div style="font-weight:600;margin-bottom:6px;color:#b91c1c">รายการหัก (หักจากเงินเดือน)</div>'
@@ -4166,7 +4174,10 @@ function plCollect(kind){
 $('pliSave') && ($('pliSave').onclick=async()=>{
   if(!PLI_CUR) return;
   $('pliSave').innerHTML='<span class="spin"></span>';
-  const r=await post({ action:'hr_payroll_item_save', password:pwd, data:{ id:PLI_CUR.id, additions:plCollect('add'), deductions:plCollect('ded') } });
+  const daysEl=$('pli_days');
+  const dataSave={ id:PLI_CUR.id, additions:plCollect('add'), deductions:plCollect('ded') };
+  if(daysEl) dataSave.days_override = daysEl.value.trim();   // ว่าง = ใช้ตามลงเวลา
+  const r=await post({ action:'hr_payroll_item_save', password:pwd, data:dataSave });
   $('pliSave').textContent='บันทึก';
   if(r&&r.ok){ toast('ok','บันทึกแล้ว'); $('plItemOverlay').classList.remove('show'); loadPayrollRun(); }
   else toast('err',(r&&r.error)||'ไม่สำเร็จ');
