@@ -298,6 +298,7 @@
         case 'rider_odo_today':      return await hrRiderOdoToday(p.vehicle_id);
         case 'rider_fuel_list':      return await hrFuelList(p);
         case 'rider_fuel_review':    return await hrFuelReview(p.data, p);
+        case 'rider_fuel_create':    return await hrFuelCreate(p.data, p);
         case 'rider_fuel_cfg_get':   return await hrFuelCfgGet();
         case 'rider_fuel_cfg_save':  return await hrFuelCfgSave(p.data, p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
@@ -4914,6 +4915,40 @@
     await logAct(action === 'approve' ? 'อนุมัติเบิกน้ำมัน ' + r.claim_no : 'ไม่อนุมัติเบิกน้ำมัน ' + r.claim_no, r.emp_id, Number(r.amount).toLocaleString());
     return { ok: true };
   }
+  // คีย์เบิกน้ำมันแทนไรเดอร์ / ย้อนหลัง (HR) — ระบุรอบ + อนุมัติทันทีได้
+  async function hrFuelCreate(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'เลือกพนักงาน' };
+    const amt = Math.floor(Number(d.amount) || 0);
+    if (amt <= 0) return { ok: false, error: 'ระบุยอดเบิก' };
+    const { data: emp } = await sb().from('employees').select('emp_id,name,nickname,branch_id').eq('emp_id', d.emp_id).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบพนักงาน' };
+    const { data: br } = await sb().from('branches').select('name').eq('branch_id', emp.branch_id || '').maybeSingle();
+    const month = d.cycle_month || bkkToday().slice(0, 7);
+    const pre = 'RF-' + (new Date().getFullYear() + 543) + '-';
+    const { data: all } = await sb().from('rider_fuel_claims').select('claim_no').like('claim_no', pre + '%').order('claim_no', { ascending: false }).limit(1);
+    let n = 0; if (all && all.length) { const m = String(all[0].claim_no).match(/(\d+)$/); if (m) n = parseInt(m[1], 10) || 0; }
+    const claim_no = pre + String(n + 1).padStart(4, '0');
+    let receipt_url = null;
+    if (d.receipt) { const u = await _uploadMany('fuel/hr', [d.receipt]); receipt_url = u[0] || null; }
+    const approveNow = d.approve === true;
+    const row = {
+      claim_no, emp_id: emp.emp_id, emp_name: emp.name, nickname: emp.nickname || null,
+      branch_id: emp.branch_id || null, branch_name: (br && br.name) || null,
+      amount: amt, odometer: (d.odometer != null && d.odometer !== '') ? parseInt(d.odometer) || null : null,
+      shop_name: d.shop_name || null, receipt_url, note: (d.note || '').trim() || 'คีย์โดยสำนักงาน',
+      cycle_month: month, physical_receipt: d.physical_receipt === true, device: 'hr-console',
+      status: approveNow ? 'approved' : 'submitted',
+    };
+    if (approveNow) { row.reviewed_by = me.name; row.reviewed_at = new Date().toISOString(); }
+    const { data: ins, error } = await sb().from('rider_fuel_claims').insert(row).select('id').maybeSingle();
+    if (error) throw error;
+    await logAct('คีย์เบิกน้ำมัน ' + claim_no + (approveNow ? ' (อนุมัติทันที)' : '') + ' รอบ ' + month, emp.emp_id, amt.toLocaleString());
+    return { ok: true, claim_no, id: ins && ins.id, approved: approveNow };
+  }
+
   async function _fuelCfg() {
     const { data } = await sb().from('rider_fuel_config').select('*').eq('id', 1).maybeSingle();
     return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false };

@@ -759,6 +759,7 @@
       <select id="rf_status" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกสถานะ</option><option value="submitted">รออนุมัติ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ไม่อนุมัติ</option></select>
       <input id="rf_month" type="month" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
       <button class="btn btn-sec btn-sm" id="rf_reload">รีเฟรช</button>
+      <button class="btn btn-pri btn-sm" id="rf_keybtn" data-hronly="1">＋ คีย์ย้อนหลัง</button>
       <button class="btn btn-sec btn-sm" id="rf_cfgbtn" data-hronly="1">⚙️ ตั้งค่าเพดาน</button>
     </div>
     <div id="rf_box"><div class="empty">กำลังโหลด…</div></div>
@@ -5925,6 +5926,7 @@ function loadRdFuel(){
     $('rf_status')&&($('rf_status').onchange=loadRdFuel);
     $('rf_month')&&($('rf_month').onchange=loadRdFuel);
     $('rf_cfgbtn')&&($('rf_cfgbtn').onclick=openRfCfg);
+    $('rf_keybtn')&&($('rf_keybtn').onclick=openRfKey);
     RD._fuelWired=true;
   }
   fetchRdFuel();
@@ -5967,6 +5969,37 @@ function renderRdFuel(){
 async function rfReview(id, action, note){
   const r=await post({ action:'rider_fuel_review', ...authBody(), data:{ id, action, note } });
   if(r&&r.ok){ toast('ok', action==='approve'?'อนุมัติแล้ว':'บันทึกแล้ว'); fetchRdFuel(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+let RFK_PHOTO=null;
+function openRfKey(){
+  if(MGR_MODE){ toast('err','เฉพาะ HR'); return; }
+  RFK_PHOTO=null;
+  const emps=(DATA.rows||[]).filter(e=>e.is_rider);
+  const list=emps.length?emps:(DATA.rows||[]);
+  const opts=list.map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</option>').join('');
+  const nowM=(new Date()).toISOString().slice(0,7);
+  openModal('＋ คีย์เบิกน้ำมัน (ย้อนหลัง)',
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">คีย์แทนไรเดอร์ / แก้ข้อมูลรอบก่อนเริ่มใช้ระบบ · ระบุรอบที่จะหักคืน · ไม่ติดเพดาน (ดุลยพินิจ HR)</div>'
+    +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">พนักงาน</label><select id="rfk_emp" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px">'+opts+'</select></div>'
+    +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:13px">ยอดเบิก (บาท)</label><input id="rfk_amt" type="number" min="0" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px"></div>'
+    +'<div style="flex:1"><label style="font-size:13px">รอบ (เดือนหัก)</label><input id="rfk_month" type="month" value="'+nowM+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px"></div></div>'
+    +'<div style="display:flex;gap:8px;margin-top:9px"><div style="flex:1"><label style="font-size:13px">เลขไมล์ (ถ้ามี)</label><input id="rfk_odo" type="number" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px"></div>'
+    +'<div style="flex:1"><label style="font-size:13px">ปั๊ม/ร้าน</label><input id="rfk_shop" type="text" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px"></div></div>'
+    +'<label style="font-size:13px;display:block;margin:9px 0 4px">รูปบิล (ถ้ามี)</label>'
+    +'<label class="btn btn-sec btn-sm" style="cursor:pointer">📷 แนบบิล<input type="file" accept="image/*" id="rfk_file" style="display:none"></label><div id="rfk_thumb" style="margin-top:6px"></div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:10px 0 6px"><input type="checkbox" id="rfk_rcpt"> ได้รับบิลตัวจริงแล้ว</label>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:12px"><input type="checkbox" id="rfk_approve" checked> <b>อนุมัติทันที</b> (เข้ารายการหักเลย)</label>'
+    +'<button class="btn btn-pri" id="rfk_save" style="width:100%;padding:10px">สร้างคำขอ</button>');
+  $('rfk_file').onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ RFK_PHOTO=rd.result; $('rfk_thumb').innerHTML='<img src="'+RFK_PHOTO+'" style="width:80px;height:80px;object-fit:cover;border-radius:8px">'; }; rd.readAsDataURL(f); };
+  $('rfk_save').onclick=async()=>{
+    const emp=$('rfk_emp').value, amt=Number($('rfk_amt').value)||0;
+    if(!emp){ toast('err','เลือกพนักงาน'); return; }
+    if(amt<=0){ toast('err','ระบุยอดเบิก'); return; }
+    $('rfk_save').disabled=true; $('rfk_save').textContent='กำลังสร้าง…';
+    const r=await post({ action:'rider_fuel_create', ...authBody(), data:{ emp_id:emp, amount:amt, cycle_month:$('rfk_month').value, odometer:$('rfk_odo').value, shop_name:$('rfk_shop').value.trim(), receipt:RFK_PHOTO||undefined, physical_receipt:$('rfk_rcpt').checked, approve:$('rfk_approve').checked } });
+    if(r&&r.ok){ toast('ok','สร้างแล้ว · '+(r.claim_no||'')+(r.approved?' · อนุมัติ':'')); closeModal(); fetchRdFuel(); }
+    else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); $('rfk_save').disabled=false; $('rfk_save').textContent='สร้างคำขอ'; }
+  };
 }
 async function openRfCfg(){
   if(MGR_MODE){ toast('err','เฉพาะ HR'); return; }
