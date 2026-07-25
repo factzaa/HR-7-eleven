@@ -2022,6 +2022,8 @@
     ]);
     const brName = {}; (brR.data || []).forEach(b => brName[b.branch_id] = b.name);
     const dv = {}; (shR.data || []).forEach(s => dv[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1);
+    // ปัด OT เป็นชั่วโมงเต็มไหม (ตั้งค่าเดียวกับที่ระบบเงินเดือนใช้)
+    const _st = await _loadSettings(); const otWhole = (_st['ot_whole_day'] === '1' || _st['ot_whole_day'] === 'true');
     const attBy = {}, schBy = {}, lvBy = {}, evBy = {};
     (attR.data || []).forEach(a => (attBy[a.emp_id] || (attBy[a.emp_id] = [])).push(a));
     (schR.data || []).forEach(s => (schBy[s.emp_id] || (schBy[s.emp_id] = [])).push(s));
@@ -2036,7 +2038,7 @@
       const onLeave = d => myLeaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
       let attDays = 0; att.forEach(a => { if (a.check_in) { const v = a.day_value != null ? Number(a.day_value) : (dv[a.shift_id] != null ? dv[a.shift_id] : 1); attDays += v; } });
       attDays = Math.round(attDays * 10) / 10;
-      const attOT = Math.round(att.reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10;
+      const attOT = Math.round(att.reduce((s, a) => { let hh = Number(a.ot_hours) || 0; if (otWhole) hh = Math.floor(hh); return s + hh; }, 0) * 10) / 10;
       const late_count = att.filter(a => a.late_min > 0).length;
       const mySched = [...new Set((schBy[e.emp_id] || []).filter(s => s.shift_id).map(s => s.work_date))].filter(d => d < today);
       const absent = mySched.filter(d => !worked.has(d) && !onLeave(d)).length;
@@ -2084,9 +2086,11 @@
     const schM = {}; (schR.data || []).forEach(s => schM[s.work_date] = s);
     const lv = lvR.data || [];
     const onLeave = d => lv.find(l => d >= l.start_date && d <= (l.end_date || l.start_date));
-    // รวมทุกวันที่มี (เวร ∪ ลงเวลา) ในรอบ
-    const dates = new Set([...Object.keys(attM), ...Object.keys(schM)]);
-    const rows = [...dates].sort().map(d => {
+    // ★ ทุกวันในรอบ (ถึงวันนี้) เพื่อจัดกะย้อนหลังได้ครบ ไม่จำกัดแค่วันที่มีเวร
+    const endEff = cyc.end < today ? cyc.end : today;
+    const dates = []; let _d = new Date(cyc.start + 'T00:00:00'), _e = new Date(endEff + 'T00:00:00');
+    while (_d <= _e) { dates.push(_d.getFullYear() + '-' + String(_d.getMonth() + 1).padStart(2, '0') + '-' + String(_d.getDate()).padStart(2, '0')); _d.setDate(_d.getDate() + 1); }
+    const rows = dates.map(d => {
       const a = attM[d], s = schM[d], l = onLeave(d);
       let status = 'none';
       if (a && a.check_in) status = (a.late_min > 0) ? 'late' : 'present';

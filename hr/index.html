@@ -659,8 +659,6 @@
         </select>
         <button class="btn btn-pri btn-sm" id="pl_calc">🧮 คำนวณ</button>
         <button class="btn btn-sec btn-sm" id="pl_backfill" title="เติมวันทำงานย้อนหลัง — กรณีเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ">＋ เติมวันย้อนหลัง</button>
-        <button class="btn btn-sec btn-sm" id="pl_reviewpass" title="ตั้งรหัสหน้าตรวจสำหรับ ผจก.ระดับสูง (หน้า /payroll-review/ ไม่เห็นยอดเงิน)">🔑 รหัสหน้าตรวจ</button>
-        <button class="btn btn-sec btn-sm" id="pl_reviewopen" title="เปิดหน้าตรวจข้อมูล (ผจก.ระดับสูง) ในแท็บใหม่">🔗 เปิดหน้าตรวจ</button>
         <select id="pl_run_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
         <span id="pl_run_status" style="font-size:12.5px;color:var(--muted);align-self:center"></span>
         <span style="flex:1"></span>
@@ -890,6 +888,8 @@
     <button class="btn btn-sec btn-sm" id="adv_emgbtn">🚨 เปิดสิทธิ์เบิกฉุกเฉิน</button>
     <button class="btn btn-sec btn-sm" id="adv_payrollbtn">📊 สรุปหักเงินเดือน</button>
     <button class="btn btn-sec btn-sm" id="adv_cfgbtn">⚙️ ตั้งค่า</button>
+    <button class="btn btn-sec btn-sm" id="adv_reviewopen" title="เปิดหน้าตรวจข้อมูลเข้าเงินเดือน (ผจก.ระดับสูง)">🔗 เปิดหน้าตรวจ</button>
+    <button class="btn btn-sec btn-sm" id="adv_reviewpass" title="ตั้งรหัสหน้าตรวจ (เฉพาะ HR)">🔑 รหัสหน้าตรวจ</button>
     <button class="btn btn-sec" id="adv_refresh">รีเฟรช</button>
   </div>
   <div id="adv_kpi" class="kpi-grid" style="margin-bottom:14px"></div>
@@ -4120,8 +4120,9 @@ $('pl_run_branch') && ($('pl_run_branch').onchange=renderPayrollItems);
 $('pl_calc') && ($('pl_calc').onclick=loadPayrollRun);
 $('pl_which') && ($('pl_which').onchange=loadPayrollRun);
 
-// ===== ตั้งรหัสหน้าตรวจ (payroll-review) =====
-$('pl_reviewpass') && ($('pl_reviewpass').onclick=async()=>{
+// ===== หน้าตรวจข้อมูลเข้าเงินเดือน (payroll-review) — ปุ่มอยู่แท็บเบิกเงินล่วงหน้า =====
+$('adv_reviewopen') && ($('adv_reviewopen').onclick=()=>{ window.open('../payroll-review/','_blank'); });
+$('adv_reviewpass') && ($('adv_reviewpass').onclick=async()=>{
   if(MGR_MODE){ toast('err','เฉพาะ HR'); return; }
   const hrpw=prompt('ยืนยันรหัส HR (รหัสที่ใช้เข้าระบบนี้)'); if(hrpw===null) return;
   const np=prompt('ตั้งรหัสหน้าตรวจใหม่ (สำหรับ ผจก.ระดับสูง) — อย่าใช้รหัสเดียวกับ HR'); if(np===null) return;
@@ -4131,8 +4132,6 @@ $('pl_reviewpass') && ($('pl_reviewpass').onclick=async()=>{
     if(ok) toast('ok','ตั้งรหัสหน้าตรวจแล้ว · เปิดที่ /payroll-review/'); else toast('err','รหัส HR ไม่ถูกต้อง');
   }catch(e){ toast('err', e.message||'ไม่สำเร็จ'); }
 });
-
-$('pl_reviewopen') && ($('pl_reviewopen').onclick=()=>{ window.open('../payroll-review/','_blank'); });
 
 // ===== เติมวันทำงานย้อนหลัง (Backfill) =====
 let BF={ mode:'schedule' };
