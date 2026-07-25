@@ -2061,11 +2061,13 @@
       const mySched = [...new Set((schBy[e.emp_id] || []).filter(s => s.shift_id).map(s => s.work_date))].filter(d => d < today);
       const absent = mySched.filter(d => !worked.has(d) && !onLeave(d)).length;
       let leave_days = 0; myLeaves.forEach(l => { const s = l.start_date < cyc.start ? cyc.start : l.start_date; const en = (l.end_date || l.start_date) > endEff ? endEff : (l.end_date || l.start_date); if (s <= en) leave_days += _daysBetween(s, en); });
-      let score = null, band = '', bandColor = '';
-      try { const sc = _computeScore({ cfg: scfgR.data, rules: srR.data, bands: sbR.data, events: evBy[e.emp_id] || [], att, mySched, worked, onLeave }); if (sc && sc.enabled !== false) { score = sc.score; band = sc.band_label; bandColor = sc.band_color; } } catch (_e) {}
+      let score = null, band = '', bandColor = '', bandBonus = 0;
+      try { const sc = _computeScore({ cfg: scfgR.data, rules: srR.data, bands: sbR.data, events: evBy[e.emp_id] || [], att, mySched, worked, onLeave }); if (sc && sc.enabled !== false) { score = sc.score; band = sc.band_label; bandColor = sc.band_color; bandBonus = Number(sc.bonus || 0); } } catch (_e) {}
       const rv = rvM[e.emp_id] || {};
-      // สิทธิ์เบี้ยวินัย/ขยัน: ไม่ขาด (ถ้ากำหนด) + สายไม่เกินเกณฑ์
-      const dil_ok = (dilCfg.enabled === false) ? null : ((!dilCfg.require_no_absent || absent === 0) && (late_count <= Number(dilCfg.allow_late_count || 0)));
+      // เบี้ยวินัย = โบนัสตามแบนด์คะแนน (ตัวที่เข้าเงินเดือนจริง) · ถ้ายังไม่ตั้งระบบคะแนน → ใช้เกณฑ์ขาด/สาย (เบี้ยขยัน)
+      const dil_ok = (score != null)
+        ? (bandBonus > 0)
+        : ((dilCfg.enabled === false) ? null : ((!dilCfg.require_no_absent || absent === 0) && (late_count <= Number(dilCfg.allow_late_count || 0))));
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
         att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok,
