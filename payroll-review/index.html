@@ -93,6 +93,25 @@
   </div>
 </div>
 
+<div id="instOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
+  <div style="background:#fff;border-radius:16px;max-width:500px;width:100%;padding:18px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 id="inTitle" style="flex:1;font-size:17px;margin:0">💳 แผนผ่อนหัก</h2>
+      <button id="inX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>
+    <div id="inList" style="margin-bottom:12px"><div style="color:var(--muted);text-align:center;padding:12px">กำลังโหลด…</div></div>
+    <div style="border-top:1px solid var(--line);padding-top:12px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">+ เพิ่มแผนผ่อนใหม่</div>
+      <input id="in_label" type="text" placeholder="รายการ (เช่น ค่าชุดยูนิฟอร์ม / สินค้าเสียหาย)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <div style="flex:1"><label style="font-size:12px;color:var(--muted)">ยอดรวม (บาท)</label><input id="in_total" type="number" min="0" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px"></div>
+        <div style="flex:1"><label style="font-size:12px;color:var(--muted)">หักงวดละ (บาท)</label><input id="in_per" type="number" min="0" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px"></div>
+      </div>
+      <div id="in_preview" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+      <button id="in_add" class="btn" style="width:100%;padding:11px">เพิ่มแผนผ่อน</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">เริ่มหักรอบปัจจุบัน · ระบบหักอัตโนมัติทุกรอบจนครบ · งวดสุดท้ายหักเท่าที่เหลือ</div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -152,9 +171,12 @@ function render(){
       +'<span>ขาด <b style="color:'+(r.absent>0?'#dc2626':'#111827')+'">'+r.absent+'</b></span>'
       +'<span>ลา <b>'+r.leave_days+'</b></span>'
       +'<span>สาย <b style="color:'+(r.late_count>0?'#b45309':'#111827')+'">'+r.late_count+'</b></span></div>';
+    const instBadge = r.installments
+      ? '<div class="sumbar"><span style="color:#7c3aed">💳 ผ่อน '+r.installments.count+' รายการ · หักรอบนี้ '+Number(r.installments.next).toLocaleString()+' · เหลือ '+Number(r.installments.remaining).toLocaleString()+'</span></div>'
+      : '';
     h+='<tr data-emp="'+esc(r.emp_id)+'">'
      +'<td data-l="พนักงาน"><div class="nm">'+esc(r.name||r.emp_id)+(r.nickname?(' <span class="sub">('+esc(r.nickname)+')</span>'):'')+'</div>'
-       +'<div class="sub">'+esc(r.emp_id)+' · '+esc(r.branch_name||'')+'</div>'+scoreChip+dilChip+sum+'</td>'
+       +'<div class="sub">'+esc(r.emp_id)+' · '+esc(r.branch_name||'')+'</div>'+scoreChip+dilChip+sum+instBadge+'</td>'
      +'<td data-l="วัน"><div><input class="f-days" type="number" step="0.5" min="0" placeholder="'+r.att_days+'" value="'+val(r.days_override)+'"><div class="hint">ลงเวลา '+r.att_days+'</div></div></td>'
      +'<td data-l="OT (ชม.)"><div><input class="f-ot" type="number" step="0.5" min="0" placeholder="'+r.att_ot+'" value="'+val(r.ot_override)+'"><div class="hint">ลงเวลา '+r.att_ot+'</div></div></td>'
      +'<td data-l="ค่ากะดึก"><div><input class="f-sa" type="number" step="1" min="0" placeholder="'+(r.auto_shift_allowance||0)+'" value="'+val(r.shift_allowance_override)+'"><div class="hint">อัตโนมัติ '+(r.auto_shift_allowance||0).toLocaleString()+'</div></div></td>'
@@ -163,12 +185,15 @@ function render(){
      +'<td data-l="สินค้าเสื่อม"><input class="f-dm" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_damaged)+'"></td>'
      +'<td data-l="หักอื่นๆ"><input class="f-ot2" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_other)+'"><input class="f-ot2n lbl-in" type="text" placeholder="ระบุว่าหักอะไร" value="'+esc(val(r.ded_other_note))+'"></td>'
      +'<td data-l="หมายเหตุ"><input class="f-note wide" type="text" placeholder="—" value="'+esc(val(r.note))+'"></td>'
-     +'<td data-l=""><button class="btn sec sm shiftBtn" title="ดู/แก้ตารางกะรายวัน">📅 กะ</button><button class="btn sm saveRow" style="margin-top:5px">บันทึก</button><div class="rowsaved" style="display:none">✓ บันทึก</div></td></tr>';
+     +'<td data-l=""><button class="btn sec sm shiftBtn" title="ดู/แก้ตารางกะรายวัน">📅 กะ</button>'
+       +'<button class="btn sec sm instBtn" title="แผนผ่อนหัก" style="margin-top:5px">💳 ผ่อน</button>'
+       +'<button class="btn sm saveRow" style="margin-top:5px">บันทึก</button><div class="rowsaved" style="display:none">✓ บันทึก</div></td></tr>';
   });
   h+='</tbody></table>';
   $('tblWrap').innerHTML=h;
   document.querySelectorAll('#tblWrap .saveRow').forEach(b=>b.onclick=()=>saveRow(b.closest('tr')));
   document.querySelectorAll('#tblWrap .shiftBtn').forEach(b=>b.onclick=()=>openShift(b.closest('tr').dataset.emp));
+  document.querySelectorAll('#tblWrap .instBtn').forEach(b=>b.onclick=()=>openInst(b.closest('tr').dataset.emp));
 }
 
 function rowPayload(tr){
@@ -235,6 +260,49 @@ async function markDay(action, work_date, shift_id, btn){
     load();   // รีเฟรชตารางหลักให้ "วัน" คำนวณเพิ่มตามทันที
   }catch(e){ toast(e.message||'ไม่สำเร็จ',true); btn.disabled=false; btn.textContent=action==='present'?'ทำเป็นมา':'ทำเป็นขาด'; }
 }
+
+// ===== แผนผ่อนหัก =====
+let IN_EMP=null;
+$('inX').onclick=()=>$('instOv').style.display='none';
+$('instOv').addEventListener('click',e=>{ if(e.target===$('instOv')) $('instOv').style.display='none'; });
+function inPreview(){ const t=Number($('in_total').value)||0, p=Number($('in_per').value)||0; if(t>0&&p>0){ const n=Math.ceil(t/p); $('in_preview').textContent='≈ '+n+' งวด (งวดสุดท้าย '+(t-(n-1)*p).toLocaleString()+' บาท)'; } else $('in_preview').textContent=''; }
+$('in_total').oninput=inPreview; $('in_per').oninput=inPreview;
+async function openInst(empId){
+  IN_EMP=empId; const r=(DATA.rows||[]).find(x=>x.emp_id===empId);
+  $('inTitle').textContent='💳 ผ่อนหัก · '+((r&&(r.name||r.nickname))||empId);
+  $('in_label').value=''; $('in_total').value=''; $('in_per').value=''; $('in_preview').textContent='';
+  $('inList').innerHTML='<div style="color:var(--muted);text-align:center;padding:12px">กำลังโหลด…</div>';
+  $('instOv').style.display='flex'; await loadInst();
+}
+async function loadInst(){
+  let plans=[]; try{ plans=await HR.installmentList(IN_EMP); }catch(e){}
+  const ST={active:{t:'กำลังหัก',c:'#0369a1'}, done:{t:'ครบแล้ว',c:'#16a34a'}, cancelled:{t:'ยกเลิก',c:'#9ca3af'}};
+  if(!plans.length){ $('inList').innerHTML='<div style="color:var(--muted);text-align:center;padding:8px">— ยังไม่มีแผนผ่อน —</div>'; return; }
+  $('inList').innerHTML=plans.map(p=>{
+    const st=ST[p.status]||ST.active;
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:7px">'
+     +'<div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(p.label)+'</b><span style="font-size:11px;font-weight:700;color:'+st.c+'">'+st.t+'</span></div>'
+     +'<div style="font-size:12.5px;color:#374151;margin-top:2px">ยอดรวม '+Number(p.total_amount).toLocaleString()+' · งวดละ '+Number(p.per_round).toLocaleString()+' · หักแล้ว '+Number(p.paid).toLocaleString()+' · เหลือ <b>'+Number(p.remaining).toLocaleString()+'</b></div>'
+     +(p.status==='active'?'<button class="btn sec sm" data-incancel="'+p.id+'" style="margin-top:6px;color:#dc2626">ยกเลิกแผน</button>':'')
+     +'</div>';
+  }).join('');
+  $('inList').querySelectorAll('[data-incancel]').forEach(b=>b.onclick=()=>cancelInst(b.dataset.incancel));
+}
+async function cancelInst(id){
+  if(!confirm('ยกเลิกแผนผ่อนนี้? (จะหยุดหักงวดถัดไป)')) return;
+  try{ await HR.installmentCancel(id); toast('ยกเลิกแล้ว'); await loadInst(); load(); }catch(e){ toast(e.message||'ไม่สำเร็จ',true); }
+}
+$('in_add').onclick=async()=>{
+  const label=$('in_label').value.trim(), total=Number($('in_total').value)||0, per=Number($('in_per').value)||0;
+  if(!label){ toast('กรอกรายการ',true); return; }
+  if(total<=0||per<=0){ toast('กรอกยอดรวม/งวดละ',true); return; }
+  const r=(DATA.rows||[]).find(x=>x.emp_id===IN_EMP);
+  $('in_add').disabled=true; $('in_add').textContent='กำลังเพิ่ม…';
+  try{ await HR.installmentCreate({ emp_id:IN_EMP, emp_name:(r&&r.name)||null, label, total_amount:total, per_round:per, by:'ผจก.ตรวจ' });
+    toast('เพิ่มแผนผ่อนแล้ว'); $('in_label').value=''; $('in_total').value=''; $('in_per').value=''; $('in_preview').textContent=''; await loadInst(); load();
+  }catch(e){ toast(e.message||'ไม่สำเร็จ',true); }
+  $('in_add').disabled=false; $('in_add').textContent='เพิ่มแผนผ่อน';
+};
 
 async function saveAll(){
   const trs=[...document.querySelectorAll('#tblWrap tbody tr')];

@@ -2042,6 +2042,14 @@
         shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
       }
     });
+    // แผนผ่อนหักที่ยัง active → สรุปต่อคน (จำนวนแผน · หัก/รอบ · คงเหลือ)
+    let instByEmp = {};
+    try {
+      const { data: plans } = await sb.from('payroll_installments').select('id,emp_id,total_amount,per_round').eq('status', 'active');
+      const pids = (plans || []).map(p => p.id); const paidMap = {};
+      if (pids.length) { const { data: chs } = await sb.from('payroll_installment_charges').select('installment_id,amount,finalized').in('installment_id', pids); (chs || []).forEach(c => { if (c.finalized) paidMap[c.installment_id] = (paidMap[c.installment_id] || 0) + Number(c.amount || 0); }); }
+      (plans || []).forEach(p => { const remaining = Number(p.total_amount) - (paidMap[p.id] || 0); if (remaining <= 0) return; const nextD = Math.min(Number(p.per_round), remaining); const m = instByEmp[p.emp_id] || (instByEmp[p.emp_id] = { count: 0, next: 0, remaining: 0 }); m.count++; m.next += nextD; m.remaining += remaining; });
+    } catch (_e) {}
     const attBy = {}, schBy = {}, lvBy = {}, evBy = {};
     (attR.data || []).forEach(a => (attBy[a.emp_id] || (attBy[a.emp_id] = [])).push(a));
     (schR.data || []).forEach(s => (schBy[s.emp_id] || (schBy[s.emp_id] = [])).push(s));
@@ -2073,6 +2081,7 @@
         att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok,
         score, band, band_color: bandColor, auto_advance: advBy[e.emp_id] || 0,
         auto_shift_allowance: shiftAllowBy[e.emp_id] || 0, shift_allowance_override: rv.shift_allowance_override,
+        installments: instByEmp[e.emp_id] || null,
         days_override: rv.days_override, ot_override: rv.ot_override, advance_override: rv.advance_override,
         add_special: rv.add_special, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, ded_other_note: rv.ded_other_note, note: rv.note,
       };
@@ -2095,6 +2104,35 @@
     if (error) throw error;
     return { ok: true };
   }
+  // ---------- แผนผ่อนหัก (installment) ----------
+  async function installmentList(empId) {
+    const { data } = await sb.from('payroll_installments').select('*').eq('emp_id', empId).order('created_at', { ascending: false });
+    const plans = data || []; const ids = plans.map(p => p.id); const paidMap = {};
+    if (ids.length) { const { data: chs } = await sb.from('payroll_installment_charges').select('installment_id,amount,finalized').in('installment_id', ids); (chs || []).forEach(c => { if (c.finalized) paidMap[c.installment_id] = (paidMap[c.installment_id] || 0) + Number(c.amount || 0); }); }
+    return plans.map(p => ({ ...p, paid: paidMap[p.id] || 0, remaining: Number(p.total_amount) - (paidMap[p.id] || 0) }));
+  }
+  async function installmentCreate(f) {
+    f = f || {};
+    if (!f.emp_id || !f.label || !String(f.label).trim()) throw new Error('กรอกรหัสพนักงานและรายการ');
+    const total = Number(f.total_amount) || 0, per = Number(f.per_round) || 0;
+    if (total <= 0 || per <= 0) throw new Error('ยอดรวมและงวดละ ต้องมากกว่า 0');
+    const row = {
+      emp_id: f.emp_id, emp_name: f.emp_name || null, label: String(f.label).trim(),
+      total_amount: total, per_round: per,
+      start_period: f.start_period || reviewCycleRange('current').start,
+      status: 'active', note: (f.note || '').trim() || null, created_by: f.by || 'ผจก.ตรวจ',
+    };
+    const { error } = await sb.from('payroll_installments').insert(row);
+    if (error) throw error;
+    return { ok: true };
+  }
+  async function installmentCancel(id) {
+    if (!id) throw new Error('ไม่ระบุแผน');
+    const { error } = await sb.from('payroll_installments').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+
   // รายวันในรอบของพนักงานคนเดียว (เวร/มา/สาย/ขาด/ลา) — สำหรับ modal ตรวจ+แก้
   async function reviewShiftDetail(empId, which) {
     const cyc = reviewCycleRange(which);
@@ -2154,7 +2192,7 @@
 
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
-    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewShiftDetail, reviewMarkDay,
+    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewShiftDetail, reviewMarkDay, installmentList, installmentCreate, installmentCancel,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

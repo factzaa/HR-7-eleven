@@ -5798,13 +5798,15 @@
     const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
-    const [profR, empR, brR, attR, shR, ctrlR] = await Promise.all([
+    const [profR, empR, brR, attR, shR, ctrlR, instR, instChR] = await Promise.all([
       sb().from('payroll_profiles').select('*'),
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
       sb().from('shift_controllers').select('branch_id,work_date,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('payroll_installments').select('*').eq('status', 'active'),
+      sb().from('payroll_installment_charges').select('*').lte('period_start', cyc.start),
     ]);
     const profM = {}; (profR.data || []).forEach(x => { profM[x.emp_id] = x; });
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
@@ -5849,6 +5851,20 @@
       run = ins.data;
     }
     const finalized = run && run.status === 'finalized';
+    // ★ ผ่อนจ่าย (หักเป็นงวด) — คิดยอดหักงวดนี้ต่อคน (min(งวดละ, คงเหลือ)) · ล็อกยอดตอนปิดรอบ
+    const instByEmp = {}; const _chargeUps = [];
+    (instR && instR.data || []).forEach(pl => {
+      if (String(pl.start_period) > cyc.start) return;                 // ยังไม่ถึงรอบเริ่มหัก
+      const chs = (instChR && instChR.data || []).filter(c => c.installment_id === pl.id);
+      const paidLocked = chs.filter(c => c.finalized && String(c.period_start) < cyc.start).reduce((s, c) => s + Number(c.amount || 0), 0);
+      const remaining = Number(pl.total_amount) - paidLocked;
+      if (remaining <= 0) return;
+      const thisAmt = Math.min(Number(pl.per_round), remaining);
+      if (thisAmt <= 0) return;
+      (instByEmp[pl.emp_id] || (instByEmp[pl.emp_id] = [])).push({ id: pl.id, label: pl.label, amount: _pr2(thisAmt), remain_after: _pr2(remaining - thisAmt) });
+      if (!finalized) _chargeUps.push({ installment_id: pl.id, emp_id: pl.emp_id, period_start: cyc.start, amount: _pr2(thisAmt), finalized: false, updated_at: new Date().toISOString() });
+    });
+    if (!finalized && _chargeUps.length) { try { await sb().from('payroll_installment_charges').upsert(_chargeUps, { onConflict: 'installment_id,period_start' }); } catch (_e) {} }
     const { data: existing } = await sb().from('payroll_items').select('*').eq('run_id', run.id);
     const exM = {}; (existing || []).forEach(x => { exM[x.emp_id] = x; });
     const items = [];
@@ -5867,7 +5883,7 @@
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
-      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก';
+      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก';
       let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
       if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
       // ค่ากะดึก: override จากหน้าตรวจ > ยอดที่ระบบคำนวณ
@@ -5876,6 +5892,8 @@
       let deductions = (Array.isArray(ex.deductions) ? ex.deductions : []).filter(notRv);
       if (Number(rv.ded_damaged) > 0) deductions.push({ label: RES_D1, amount: _pr2(Number(rv.ded_damaged)), src: 'rv' });
       if (Number(rv.ded_other) > 0) deductions.push({ label: String(rv.ded_other_note || '').trim() || 'หักอื่นๆ', amount: _pr2(Number(rv.ded_other)), src: 'rv' });
+      // ผ่อนจ่าย: หักงวดนี้ทีละแผน
+      (instByEmp[e.emp_id] || []).forEach(x => deductions.push({ label: 'ผ่อน: ' + x.label + (x.remain_after > 0 ? (' (เหลือ ' + x.remain_after.toLocaleString() + ')') : ' (งวดสุดท้าย)'), amount: x.amount, src: 'inst', inst_id: x.id }));
       const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
       const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
       items.push({
@@ -6038,6 +6056,16 @@
         .eq('status', 'paid').eq('deducted', false).gt('defer_rounds', 0);
       for (const r of (defRows || [])) { await sb().from('advance_requests').update({ defer_rounds: Math.max(0, Number(r.defer_rounds || 0) - 1) }).eq('id', r.id); }
     } catch (_e) { /* ไม่มีระบบเบิก ก็ข้าม */ }
+    try {
+      // ★ ผ่อนจ่าย: ล็อกยอดหักของงวดรอบนี้ + ปิดแผนที่หักครบแล้ว
+      await sb().from('payroll_installment_charges').update({ finalized: true, updated_at: new Date().toISOString() }).eq('period_start', cyc.start);
+      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount').eq('status', 'active');
+      for (const pl of (plans || [])) {
+        const { data: chs } = await sb().from('payroll_installment_charges').select('amount').eq('installment_id', pl.id).eq('finalized', true);
+        const paid = (chs || []).reduce((s, c) => s + Number(c.amount || 0), 0);
+        if (paid >= Number(pl.total_amount)) await sb().from('payroll_installments').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', pl.id);
+      }
+    } catch (_e) { /* ไม่มีระบบผ่อน ก็ข้าม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);
     if (error) throw error;
     await logAct('ปิดรอบเงินเดือน', null, 'รอบ ' + run.period_start);
@@ -6063,6 +6091,16 @@
         reverted = ids.length;
       }
     } catch (_e) { /* ไม่มีระบบเบิก ก็ข้าม */ }
+    try {
+      // ★ ผ่อนจ่าย: ปลดล็อกงวดรอบนี้ + เปิดแผนที่ปิดไปแล้วกลับมาถ้ายังไม่ครบ
+      await sb().from('payroll_installment_charges').update({ finalized: false, updated_at: new Date().toISOString() }).eq('period_start', cyc.start);
+      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount').eq('status', 'done');
+      for (const pl of (plans || [])) {
+        const { data: chs } = await sb().from('payroll_installment_charges').select('amount').eq('installment_id', pl.id).eq('finalized', true);
+        const paid = (chs || []).reduce((s, c) => s + Number(c.amount || 0), 0);
+        if (paid < Number(pl.total_amount)) await sb().from('payroll_installments').update({ status: 'active', updated_at: new Date().toISOString() }).eq('id', pl.id);
+      }
+    } catch (_e) { /* ไม่มีระบบผ่อน ก็ข้าม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'draft', finalized_by: null, finalized_at: null }).eq('id', run.id);
     if (error) throw error;
     await logAct('เปิดรอบเงินเดือนใหม่', null, 'รอบ ' + run.period_start + ' · คืนใบเบิก ' + reverted + ' ใบ');
