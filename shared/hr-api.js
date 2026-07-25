@@ -5821,6 +5821,12 @@
         .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
       (advRows || []).forEach(r => { const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advByEmp[r.emp_id] = (advByEmp[r.emp_id] || 0) + amt; });
     } catch (_e) { /* ยังไม่มีระบบเบิก */ }
+    // ★ ค่าที่ ผจก.ระดับสูงกรอกในหน้าตรวจ (payroll_review) — ดึงมาผสมเข้าเงินเดือน
+    let reviewMap = {};
+    try {
+      const { data: rvRows } = await sb().from('payroll_review').select('*').eq('period_start', cyc.start);
+      (rvRows || []).forEach(r => { reviewMap[r.emp_id] = r; });
+    } catch (_e) { /* ยังไม่มีหน้าตรวจ */ }
     let { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
     if (!run) {
       const ins = await sb().from('payroll_runs').insert({ period_start: cyc.start, period_end: cyc.end, pay_month: payMonth, status: 'draft', created_by: 'สำนักงาน (HR)' }).select().maybeSingle();
@@ -5835,14 +5841,23 @@
       if (finalized && exM[e.emp_id]) { items.push(ex); continue; }   // ปิดรอบแล้ว = คืนยอดที่ตรึงไว้
       const prof = profM[e.emp_id] || { wage_type: 'daily', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, ot_rate: null };
       const s = scMap[e.emp_id] || {};
+      const rv = reviewMap[e.emp_id] || {};
       const attDays = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
-      // ★ ถ้า HR แก้ "วันทำงาน" รายคนไว้ (override) ให้ใช้ค่านั้น คงทนแม้กดคำนวณซ้ำ
-      const daysOv = (ex.days_override != null) ? Number(ex.days_override) : null;
+      const attOT = Math.round((otByEmp[e.emp_id] || 0) * 10) / 10;
+      // ★ ลำดับความสำคัญ: หน้าตรวจ (payroll_review) > แก้รายคนเดิม (item) > ตามลงเวลา
+      const daysOv = (rv.days_override != null) ? Number(rv.days_override) : ((ex.days_override != null) ? Number(ex.days_override) : null);
       const days_worked = daysOv != null ? daysOv : attDays;
-      const stats = { days_worked, ot_hours: Math.round((otByEmp[e.emp_id] || 0) * 10) / 10, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
-      const additions = Array.isArray(ex.additions) ? ex.additions : [];
-      const deductions = Array.isArray(ex.deductions) ? ex.deductions : [];
-      const comp = _payrollCompute(prof, cfg, stats, advByEmp[e.emp_id] || 0, additions, deductions);
+      const ot_hours = (rv.ot_override != null) ? Number(rv.ot_override) : attOT;
+      const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
+      // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ (ใช้ป้ายสงวน — คงรายการอื่นที่ HR ใส่เองไว้)
+      const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม', RES_D2 = 'หักอื่นๆ';
+      let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(a => a.label !== RES_ADD);
+      if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)) });
+      let deductions = (Array.isArray(ex.deductions) ? ex.deductions : []).filter(a => a.label !== RES_D1 && a.label !== RES_D2);
+      if (Number(rv.ded_damaged) > 0) deductions.push({ label: RES_D1, amount: _pr2(Number(rv.ded_damaged)) });
+      if (Number(rv.ded_other) > 0) deductions.push({ label: RES_D2, amount: _pr2(Number(rv.ded_other)) });
+      const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
+      const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
       items.push({
         run_id: run.id, emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '',
         wage_type: prof.wage_type || 'monthly',

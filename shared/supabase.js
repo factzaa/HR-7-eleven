@@ -1978,8 +1978,79 @@
     return { ok: true, gps_ok };
   }
 
+  // ============================================================
+  // หน้าตรวจสอบเงินเดือน (Payroll Review) — ผจก.ระดับสูง (ไม่เห็นยอดเงินรวม)
+  // ============================================================
+  async function reviewCheckPassword(pw) {
+    const { data, error } = await sb.rpc('review_check_password', { p_password: String(pw || '') });
+    if (error) throw error;
+    return data === true;
+  }
+  async function reviewSetPassword(hrPw, newPw) {
+    const { data, error } = await sb.rpc('review_set_password', { p_hr_password: String(hrPw || ''), p_new_password: String(newPw || '') });
+    if (error) throw error;
+    return data === true;
+  }
+  function reviewCycleRange(which) {
+    const t = new Date(bangkokDate() + 'T00:00:00'); const day = t.getDate();
+    let endRef = (day <= 20) ? new Date(t.getFullYear(), t.getMonth(), 20) : new Date(t.getFullYear(), t.getMonth() + 1, 20);
+    if (which === 'previous') endRef = new Date(endRef.getFullYear(), endRef.getMonth() - 1, 20);
+    const end = new Date(endRef.getFullYear(), endRef.getMonth(), 20);
+    const start = new Date(endRef.getFullYear(), endRef.getMonth() - 1, 21);
+    const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    return { start: iso(start), end: iso(end) };
+  }
+  async function reviewLoad(which, branch) {
+    const cyc = reviewCycleRange(which);
+    const today = bangkokDate(); const endEff = cyc.end < today ? cyc.end : today;
+    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id').eq('active', true).order('emp_id');
+    if (branch) empQ = empQ.eq('branch_id', branch);
+    const [empR, brR, attR, shR, rvR] = await Promise.all([
+      empQ,
+      sb.from('branches').select('branch_id,name').order('branch_id'),
+      sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('shifts').select('shift_id,day_value'),
+      sb.from('payroll_review').select('*').eq('period_start', cyc.start),
+    ]);
+    const brName = {}; (brR.data || []).forEach(b => brName[b.branch_id] = b.name);
+    const dv = {}; (shR.data || []).forEach(s => dv[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1);
+    const wd = {}, ot = {};
+    (attR.data || []).forEach(a => {
+      if (a.check_in) { const v = a.day_value != null ? Number(a.day_value) : (dv[a.shift_id] != null ? dv[a.shift_id] : 1); (wd[a.emp_id] || (wd[a.emp_id] = {}))[a.work_date] = v; }
+      ot[a.emp_id] = (ot[a.emp_id] || 0) + (Number(a.ot_hours) || 0);
+    });
+    const rvM = {}; (rvR.data || []).forEach(r => rvM[r.emp_id] = r);
+    const rows = (empR.data || []).map(e => {
+      const attDays = Math.round(Object.values(wd[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
+      const attOT = Math.round((ot[e.emp_id] || 0) * 10) / 10;
+      const rv = rvM[e.emp_id] || {};
+      return {
+        emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
+        att_days: attDays, att_ot: attOT,
+        days_override: rv.days_override, ot_override: rv.ot_override, advance_override: rv.advance_override,
+        add_special: rv.add_special, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, note: rv.note,
+      };
+    });
+    return { period_start: cyc.start, period_end: cyc.end, rows, branches: brR.data || [] };
+  }
+  async function reviewSave(f) {
+    f = f || {};
+    if (!f.period_start || !f.emp_id) throw new Error('ข้อมูลไม่ครบ');
+    const num = v => (v === '' || v == null) ? null : Number(v);
+    const row = {
+      period_start: f.period_start, emp_id: f.emp_id,
+      days_override: num(f.days_override), ot_override: num(f.ot_override), advance_override: num(f.advance_override),
+      add_special: num(f.add_special), ded_damaged: num(f.ded_damaged), ded_other: num(f.ded_other),
+      note: (f.note || '').trim() || null, updated_by: f.by || 'ผจก.ตรวจ', updated_at: new Date().toISOString(),
+    };
+    const { error } = await sb.from('payroll_review').upsert(row, { onConflict: 'period_start,emp_id' });
+    if (error) throw error;
+    return { ok: true };
+  }
+
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
+    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
