@@ -296,6 +296,10 @@
         case 'rider_odo_log':        return await hrRiderOdoLog(p.data);
         case 'rider_odo_list':       return await hrRiderOdoList(p.vehicle_id, p.limit);
         case 'rider_odo_today':      return await hrRiderOdoToday(p.vehicle_id);
+        case 'rider_fuel_list':      return await hrFuelList(p);
+        case 'rider_fuel_review':    return await hrFuelReview(p.data, p);
+        case 'rider_fuel_cfg_get':   return await hrFuelCfgGet();
+        case 'rider_fuel_cfg_save':  return await hrFuelCfgSave(p.data, p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
@@ -4867,6 +4871,69 @@
     return { ok: true, start: map.start || null, end: map.end || null };
   }
 
+  // ---------- เบิกค่าน้ำมันไรเดอร์ (HR อนุมัติ · หักคืนเงินเดือน) ----------
+  const RFUEL_STATUS = { submitted: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ' };
+  async function hrFuelList(p) {
+    p = p || {};
+    let q = sb().from('rider_fuel_claims').select('*').order('created_at', { ascending: false });
+    if (p.branch) q = q.eq('branch_id', p.branch);
+    if (p.month) q = q.eq('cycle_month', p.month);
+    if (p.status) q = q.eq('status', p.status);
+    if (p.pending) q = q.eq('status', 'submitted');
+    const { data, error } = await q.limit(400);
+    if (error) throw error;
+    const rows = data || [];
+    // สถิติต่อคนในรอบ
+    const byEmp = {};
+    rows.forEach(r => { const m = byEmp[r.emp_id] || (byEmp[r.emp_id] = { emp_id: r.emp_id, emp_name: r.emp_name, count: 0, approved: 0, submitted: 0 }); m.count++; if (r.status === 'approved') m.approved += Number(r.amount || 0); if (r.status === 'submitted') m.submitted += Number(r.amount || 0); });
+    return { ok: true, rows, status_label: RFUEL_STATUS, stats: Object.values(byEmp) };
+  }
+  async function hrFuelReview(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้นที่อนุมัติค่าน้ำมันได้' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const { data: r } = await sb().from('rider_fuel_claims').select('*').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    // ติ๊กบิลตัวจริงอย่างเดียว (ไม่เปลี่ยนสถานะ)
+    if (d.action === 'receipt') {
+      await sb().from('rider_fuel_claims').update({ physical_receipt: d.physical_receipt !== false }).eq('id', d.id);
+      return { ok: true };
+    }
+    if (r.status !== 'submitted') return { ok: false, error: 'คำขอนี้ถูกพิจารณาไปแล้ว (' + (RFUEL_STATUS[r.status] || r.status) + ')' };
+    const action = ['approve', 'reject'].includes(d.action) ? d.action : 'approve';
+    if (action === 'reject' && (!d.note || !String(d.note).trim())) return { ok: false, error: 'ไม่อนุมัติ ต้องระบุเหตุผล' };
+    const upd = { status: action === 'approve' ? 'approved' : 'rejected', reviewed_by: d.by || 'สำนักงาน (HR)', reviewed_at: new Date().toISOString(), review_note: d.note ? String(d.note).trim() : null };
+    if (action === 'approve' && d.physical_receipt != null) upd.physical_receipt = d.physical_receipt === true;
+    await sb().from('rider_fuel_claims').update(upd).eq('id', d.id);
+    try {
+      await sb().from('emp_notifications').insert({ emp_id: r.emp_id, kind: action === 'approve' ? 'info' : 'warn',
+        title: (action === 'approve' ? '✅ อนุมัติเบิกน้ำมัน ' : 'ไม่อนุมัติเบิกน้ำมัน ') + r.claim_no + (action === 'approve' ? ' · ' + Number(r.amount).toLocaleString() + ' บาท' : ''),
+        body: action === 'approve' ? 'ยอดนี้จะถูกหักคืนจากเงินเดือนรอบนี้' : ('เหตุผล: ' + String(d.note).trim()), ref: 'fuel:' + d.id, created_by: d.by || 'สำนักงาน (HR)' });
+    } catch (_e) {}
+    await logAct(action === 'approve' ? 'อนุมัติเบิกน้ำมัน ' + r.claim_no : 'ไม่อนุมัติเบิกน้ำมัน ' + r.claim_no, r.emp_id, Number(r.amount).toLocaleString());
+    return { ok: true };
+  }
+  async function _fuelCfg() {
+    const { data } = await sb().from('rider_fuel_config').select('*').eq('id', 1).maybeSingle();
+    return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false };
+  }
+  async function hrFuelCfgGet() { return { ok: true, config: await _fuelCfg() }; }
+  async function hrFuelCfgSave(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    const row = { id: 1, updated_at: new Date().toISOString() };
+    if (d.enabled !== undefined) row.enabled = d.enabled !== false;
+    if (d.per_claim_max !== undefined) row.per_claim_max = parseInt(d.per_claim_max) || 500;
+    if (d.total_max !== undefined) row.total_max = parseInt(d.total_max) || 1500;
+    if (d.require_odometer !== undefined) row.require_odometer = d.require_odometer === true;
+    const { error } = await sb().from('rider_fuel_config').upsert(row, { onConflict: 'id' });
+    if (error) throw error;
+    await logAct('บันทึกตั้งค่าเบิกน้ำมัน', null, null);
+    return { ok: true };
+  }
+
   // ---------- งาน ผจก. (Manager Tasks) ----------
   async function _uploadMany(prefix, arr) {
     const urls = [];
@@ -5914,6 +5981,12 @@
         .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
       (advRows || []).forEach(r => { const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advByEmp[r.emp_id] = (advByEmp[r.emp_id] || 0) + amt; });
     } catch (_e) { /* ยังไม่มีระบบเบิก */ }
+    // ★ เบิกค่าน้ำมันไรเดอร์ (อนุมัติแล้ว + ยังไม่หัก) → หักคืนในรอบนี้
+    let fuelByEmp = {};
+    try {
+      const { data: fuelRows } = await sb().from('rider_fuel_claims').select('emp_id,amount').eq('status', 'approved').eq('deducted', false);
+      (fuelRows || []).forEach(r => { fuelByEmp[r.emp_id] = (fuelByEmp[r.emp_id] || 0) + Number(r.amount || 0); });
+    } catch (_e) { /* ยังไม่มีระบบน้ำมัน */ }
     // ★ ค่าที่ ผจก.ระดับสูงกรอกในหน้าตรวจ (payroll_review) — ดึงมาผสมเข้าเงินเดือน
     let reviewMap = {};
     try {
@@ -5958,7 +6031,7 @@
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
-      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก';
+      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)';
       let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
       if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
       // ค่ากะดึก: override จากหน้าตรวจ > ยอดที่ระบบคำนวณ
@@ -5969,6 +6042,8 @@
       if (Number(rv.ded_other) > 0) deductions.push({ label: String(rv.ded_other_note || '').trim() || 'หักอื่นๆ', amount: _pr2(Number(rv.ded_other)), src: 'rv' });
       // ผ่อนจ่าย: หักงวดนี้ทีละแผน
       (instByEmp[e.emp_id] || []).forEach(x => deductions.push({ label: 'ผ่อน: ' + x.label + (x.remain_after > 0 ? (' (เหลือ ' + x.remain_after.toLocaleString() + ')') : ' (งวดสุดท้าย)'), amount: x.amount, src: 'inst', inst_id: x.id }));
+      // เบิกค่าน้ำมัน (อนุมัติแล้ว) → หักคืน
+      if (Number(fuelByEmp[e.emp_id]) > 0) deductions.push({ label: 'ค่าน้ำมัน (เบิก)', amount: _pr2(Number(fuelByEmp[e.emp_id])), src: 'fuel' });
       const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
       const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
       items.push({
@@ -6141,6 +6216,10 @@
         if (paid >= Number(pl.total_amount) - Number(pl.discount || 0)) await sb().from('payroll_installments').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', pl.id);
       }
     } catch (_e) { /* ไม่มีระบบผ่อน ก็ข้าม */ }
+    try {
+      // เบิกค่าน้ำมัน: ทำเครื่องหมาย "หักคืนแล้ว" (อนุมัติ + ยังไม่หัก)
+      await sb().from('rider_fuel_claims').update({ deducted: true, deducted_at: new Date().toISOString(), payroll_ref: run.id }).eq('status', 'approved').eq('deducted', false);
+    } catch (_e) { /* ไม่มีระบบน้ำมัน */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);
     if (error) throw error;
     await logAct('ปิดรอบเงินเดือน', null, 'รอบ ' + run.period_start);
@@ -6176,6 +6255,10 @@
         if (paid < Number(pl.total_amount) - Number(pl.discount || 0)) await sb().from('payroll_installments').update({ status: 'active', updated_at: new Date().toISOString() }).eq('id', pl.id);
       }
     } catch (_e) { /* ไม่มีระบบผ่อน ก็ข้าม */ }
+    try {
+      // เบิกค่าน้ำมัน: คืนสถานะ "ยังไม่หัก" ที่ผูกกับรอบนี้
+      await sb().from('rider_fuel_claims').update({ deducted: false, deducted_at: null, payroll_ref: null }).eq('payroll_ref', run.id);
+    } catch (_e) { /* ไม่มีระบบน้ำมัน */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'draft', finalized_by: null, finalized_at: null }).eq('id', run.id);
     if (error) throw error;
     await logAct('เปิดรอบเงินเดือนใหม่', null, 'รอบ ' + run.period_start + ' · คืนใบเบิก ' + reverted + ' ใบ');

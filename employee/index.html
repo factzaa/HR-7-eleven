@@ -808,6 +808,7 @@ async function refreshRiderCard(){
     +'<div style="font-weight:800;color:#0f766e;font-size:14px">🏍️ ไรเดอร์ · เบิกซ่อมบำรุงรถ</div>'
     +'<div style="font-size:12.5px;color:#134e4a;margin-top:2px">'+(RIDER.vehicles.length?('รถของคุณ '+RIDER.vehicles.length+' คัน'):'ยังไม่มีรถลงทะเบียน — แจ้งผู้จัดการ')+'</div>'
     +'<button type="button" id="rcOdoBtn" style="width:100%;margin-top:9px;padding:11px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">📍 บันทึกเลขไมล์ (ก่อน/หลังงาน)</button>'
+    +'<button type="button" id="rcFuelBtn" style="width:100%;margin-top:8px;padding:11px;border:0;border-radius:11px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer">⛽ เบิกค่าน้ำมัน</button>'
     +'<div style="display:flex;gap:8px;margin-top:8px">'
     +'<button type="button" id="rcNewBtn" style="flex:1;padding:11px;border:0;border-radius:11px;background:#0d9488;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ ขอเบิกซ่อม</button>'
     +'<button type="button" id="rcMineBtn" style="padding:11px 14px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">คำขอของฉัน</button>'
@@ -815,6 +816,45 @@ async function refreshRiderCard(){
   $('rcNewBtn').onclick=openRiderClaim;
   $('rcMineBtn').onclick=openRiderMine;
   $('rcOdoBtn').onclick=openRiderOdo;
+  $('rcFuelBtn').onclick=openFuelClaim;
+}
+
+// ⛽ เบิกค่าน้ำมัน
+let FUEL_PHOTO=null;
+async function openFuelClaim(){
+  FUEL_PHOTO=null;
+  let q; try{ q=await HR.riderFuelQuota(empMatch.emp_id); }catch(e){ showToast('err', e.message||'โหลดไม่สำเร็จ'); return; }
+  if(!q.enabled){ showToast('err','ระบบเบิกน้ำมันปิดอยู่'); return; }
+  const vehOpts=(RIDER.vehicles||[]).map(v=>'<option value="'+v.id+'">'+escH(v.plate||'(ไม่มีทะเบียน)')+'</option>').join('');
+  const ov=document.createElement('div'); ov.id='fuelOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">⛽ เบิกค่าน้ำมัน</h2>'
+      +'<button type="button" id="fuX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
+    +'<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:9px 11px;font-size:12px;color:#7c2d12;margin-bottom:10px;line-height:1.6">เงินหมุนเวียนสำหรับเติมน้ำมัน (ไม่ใช่สวัสดิการ) · <b>จะถูกหักคืนจากเงินเดือนสิ้นเดือน</b><br>ครั้งละไม่เกิน <b>'+q.per_claim_max.toLocaleString()+'</b> · รอบนี้เบิกได้อีก <b>'+q.remaining.toLocaleString()+'</b> บาท (จาก '+q.total_max.toLocaleString()+')</div>'
+    +(vehOpts?('<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">รถ</label><select id="fuVeh" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box;margin-bottom:9px">'+vehOpts+'</select>'):'')
+    +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">ยอดเบิก (บาท)</label>'
+      +'<input id="fuAmt" type="number" inputmode="numeric" max="'+q.per_claim_max+'" style="width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;font-size:18px;text-align:center;font-weight:700;box-sizing:border-box"></div>'
+      +'<div style="flex:1"><label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">เลขไมล์'+(q.require_odometer?' *':'')+'</label>'
+      +'<input id="fuOdo" type="number" inputmode="numeric" style="width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box"></div></div>'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">ปั๊ม/ร้าน (ถ้ามี)</label>'
+    +'<input id="fuShop" type="text" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box">'
+    +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">รูปบิลน้ำมัน (บังคับ) — ส่งบิลตัวจริงให้ HR ด้วย</label>'
+    +'<label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 ถ่าย/แนบบิล<input type="file" accept="image/*" capture="environment" id="fuFile" style="display:none"></label>'
+    +'<div id="fuThumb" style="margin-top:8px"></div>'
+    +'<button type="button" id="fuSend" style="width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#ea580c;color:#fff;font-weight:700;font-size:15px;cursor:pointer">ส่งคำขอเบิกน้ำมัน</button></div>';
+  document.body.appendChild(ov);
+  const close=()=>ov.remove(); $('fuX').onclick=close; ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+  $('fuFile').addEventListener('change', async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const d=await riderStampFile(f); if(d){ FUEL_PHOTO=d; $('fuThumb').innerHTML='<img src="'+d+'" style="width:88px;height:88px;object-fit:cover;border-radius:8px">'; } e.target.value=''; });
+  $('fuSend').onclick=async()=>{
+    const amt=Number($('fuAmt').value)||0; if(amt<=0){ showToast('err','ระบุยอดเบิก'); return; }
+    if(!FUEL_PHOTO){ showToast('err','แนบรูปบิลน้ำมัน'); return; }
+    const btn=$('fuSend'); btn.disabled=true; btn.textContent='กำลังส่ง…';
+    try{
+      const r=await HR.riderFuelSubmit({ empId:empMatch.emp_id, vehicle_id:$('fuVeh')?$('fuVeh').value:null, amount:amt, odometer:$('fuOdo').value, shop_name:$('fuShop').value.trim(), receipt:FUEL_PHOTO, lat:gps.lat, lng:gps.lng });
+      showToast('ok','ส่งคำขอเบิกน้ำมันแล้ว · '+r.claim_no+' (รอ HR อนุมัติ)'); close();
+    }catch(e){ showToast('err', e.message||'ส่งไม่สำเร็จ'); btn.disabled=false; btn.textContent='ส่งคำขอเบิกน้ำมัน'; }
+  };
 }
 
 let RIDER_ODO={ photo:null };

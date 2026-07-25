@@ -1979,6 +1979,61 @@
   }
 
   // ============================================================
+  // เบิกค่าน้ำมันไรเดอร์ (เงินหมุนเวียน — หักคืนจากเงินเดือน)
+  // ============================================================
+  async function riderFuelConfig() {
+    const { data } = await sb.from('rider_fuel_config').select('*').eq('id', 1).maybeSingle();
+    return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false };
+  }
+  async function riderFuelQuota(empId, cycleMonth) {
+    const cfg = await riderFuelConfig();
+    const m = cycleMonth || bangkokDate().slice(0, 7);
+    const { data } = await sb.from('rider_fuel_claims').select('amount,status').eq('emp_id', empId).eq('cycle_month', m).in('status', ['submitted', 'approved']);
+    const used = (data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
+    return { per_claim_max: Number(cfg.per_claim_max || 500), total_max: Number(cfg.total_max || 1500), used, remaining: Math.max(0, Number(cfg.total_max || 1500) - used), enabled: cfg.enabled !== false, require_odometer: cfg.require_odometer === true, month: m };
+  }
+  async function riderFuelSubmit({ empId, vehicle_id, amount, odometer, liters, shop_name, receipt, note, lat, lng }) {
+    const emp = await lookupEmployee(empId);
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const cfg = await riderFuelConfig();
+    if (cfg.enabled === false) throw new Error('ระบบเบิกน้ำมันปิดใช้งานอยู่');
+    const amt = Math.floor(Number(amount) || 0);
+    if (amt <= 0) throw new Error('ระบุยอดเบิก');
+    if (amt > Number(cfg.per_claim_max || 500)) throw new Error('เบิกได้ครั้งละไม่เกิน ' + Number(cfg.per_claim_max || 500) + ' บาท');
+    if (cfg.require_odometer && !(Number(odometer) > 0)) throw new Error('กรอกเลขไมล์');
+    if (!receipt) throw new Error('แนบรูปบิลน้ำมัน');
+    const month = bangkokDate().slice(0, 7);
+    const q = await riderFuelQuota(empId, month);
+    if (amt > q.remaining) throw new Error('เกินวงเงินรวมรอบนี้ (เหลือ ' + q.remaining.toLocaleString() + ' บาท)');
+    let vehicle = null;
+    if (vehicle_id) { const { data } = await sb.from('rider_vehicles').select('plate').eq('id', vehicle_id).maybeSingle(); vehicle = data; }
+    let receipt_url = null;
+    if (typeof receipt === 'string' && /^https?:/i.test(receipt)) receipt_url = receipt;
+    else receipt_url = await uploadPhoto('employee-docs', 'fuel/' + empId + '_' + Date.now() + '.jpg', receipt);
+    const { data: br } = await sb.from('branches').select('name').eq('branch_id', emp.branch_id || '').maybeSingle();
+    const yrBE = new Date().getFullYear() + 543, pre = 'RF-' + yrBE + '-';
+    const { data: all } = await sb.from('rider_fuel_claims').select('claim_no').like('claim_no', pre + '%');
+    let mx = 0; (all || []).forEach(r => { const n = parseInt(String(r.claim_no).slice(pre.length), 10); if (isFinite(n) && n > mx) mx = n; });
+    const claim_no = pre + String(mx + 1).padStart(4, '0');
+    const row = {
+      claim_no, emp_id: emp.emp_id, emp_name: emp.name, nickname: emp.nickname || null,
+      branch_id: emp.branch_id || null, branch_name: (br && br.name) || null,
+      vehicle_id: vehicle_id || null, vehicle_plate: vehicle ? vehicle.plate : null,
+      amount: amt, odometer: odometer != null && odometer !== '' ? Number(odometer) : null,
+      liters: liters != null && liters !== '' ? Number(liters) : null,
+      shop_name: shop_name || null, gps_lat: lat != null ? lat : null, gps_lng: lng != null ? lng : null,
+      receipt_url, note: (note || '').trim() || null, cycle_month: month, status: 'submitted', device: 'employee',
+    };
+    const { data: ins, error } = await sb.from('rider_fuel_claims').insert(row).select('id').maybeSingle();
+    if (error) throw error;
+    return { ok: true, claim_no, id: ins && ins.id };
+  }
+  async function riderFuelMyList(empId) {
+    const { data } = await sb.from('rider_fuel_claims').select('*').eq('emp_id', empId).order('created_at', { ascending: false }).limit(50);
+    return data || [];
+  }
+
+  // ============================================================
   // หน้าตรวจสอบเงินเดือน (Payroll Review) — ผจก.ระดับสูง (ไม่เห็นยอดเงินรวม)
   // ============================================================
   async function reviewCheckPassword(pw) {
@@ -2235,6 +2290,7 @@
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewShiftDetail, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
-    riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
