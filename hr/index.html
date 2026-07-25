@@ -885,6 +885,7 @@
     <select id="adv_branch" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
       <option value="">ทุกสาขา</option>
     </select>
+    <button class="btn btn-pri btn-sm" id="adv_keybtn">＋ คีย์เบิกให้พนักงาน</button>
     <button class="btn btn-sec btn-sm" id="adv_emgbtn">🚨 เปิดสิทธิ์เบิกฉุกเฉิน</button>
     <button class="btn btn-sec btn-sm" id="adv_payrollbtn">📊 สรุปหักเงินเดือน</button>
     <button class="btn btn-sec btn-sm" id="adv_cfgbtn">⚙️ ตั้งค่า</button>
@@ -5413,6 +5414,30 @@ $('adv_payrollbtn') && ($('adv_payrollbtn').onclick=async()=>{
 });
 
 // ---------- ตั้งค่า ----------
+// คีย์เบิกให้พนักงาน (HR/ผจก. สร้างคำขอแทน)
+$('adv_keybtn') && ($('adv_keybtn').onclick=openAdvKey);
+function openAdvKey(){
+  const rows=(DATA.rows||[]).filter(e=>!MGR_MODE || String(e.branch_id)===String(MGR_BRANCH));
+  if(!rows.length){ toast('err','ไม่มีพนักงาน'); return; }
+  const opts=rows.map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</option>').join('');
+  openModal('＋ คีย์เบิกให้พนักงาน',
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">สร้างคำขอเบิกแทนพนักงาน (พนักงานไม่ต้องคีย์เอง) · จะเข้าคิว "รออนุมัติ" ให้กดอนุมัติ + โอนตามปกติ</div>'
+    +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">พนักงาน</label><select id="ak_emp" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px">'+opts+'</select></div>'
+    +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">จำนวนเงิน (บาท)</label><input id="ak_amt" type="number" min="0" step="100" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px"></div>'
+    +'<div class="field" style="margin-bottom:10px"><label style="font-size:13px">เหตุผล/หมายเหตุ</label><input id="ak_reason" type="text" placeholder="เช่น เบิกล่วงหน้า" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px"></div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:12px;cursor:pointer"><input type="checkbox" id="ak_approve"> <b>อนุมัติทันที</b> (ข้ามขั้นกดอนุมัติ · พร้อมโอนเลย)</label>'
+    +'<button class="btn btn-pri" id="ak_save" style="width:100%;padding:11px">สร้างคำขอเบิก</button>');
+  $('ak_save').onclick=async()=>{
+    const emp=$('ak_emp').value, amt=Number($('ak_amt').value)||0, reason=$('ak_reason').value.trim(), approve=$('ak_approve')&&$('ak_approve').checked;
+    if(!emp){ toast('err','เลือกพนักงาน'); return; }
+    if(amt<=0){ toast('err','ระบุจำนวนเงิน'); return; }
+    $('ak_save').disabled=true; $('ak_save').textContent='กำลังสร้าง…';
+    const r=await post({ action:'hr_advance_create', ...authBody(), data:{ emp_id:emp, amount:amt, reason, approve } });
+    if(r&&r.ok){ toast('ok','สร้างคำขอเบิกแล้ว · '+(r.req_no||'')+(r.approved?' · อนุมัติแล้ว':'')); closeModal(); loadAdvance(); }
+    else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); $('ak_save').disabled=false; $('ak_save').textContent='สร้างคำขอเบิก'; }
+  };
+}
+
 $('adv_cfgbtn') && ($('adv_cfgbtn').onclick=async()=>{
   const r=await post({ action:'hr_advance_config_get', password:pwd });
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
@@ -10780,6 +10805,7 @@ body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่ม�
 #asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 8px 16px rgba(0,0,0,.28));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
 body.is-logged #asstFab{display:block}
 body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
+body.mgr-mode #adv_keybtn{display:none !important}   /* คีย์เบิกให้พนักงาน = เฉพาะ HR */
 #asstFab img{width:100%;height:100%;object-fit:contain;pointer-events:none;position:relative;z-index:2}
 #asstFab .fbadge{position:absolute;top:2px;right:0;z-index:3;background:#ea580c;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
 #asstFab::before,#asstFab::after{content:"";position:absolute;left:50%;top:56%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;border:3px solid rgba(16,163,74,.6);z-index:0;pointer-events:none;animation:asstRing 2.4s ease-out infinite}

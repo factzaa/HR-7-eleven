@@ -207,6 +207,7 @@
         case 'hr_advance_payroll':    return await hrAdvancePayroll(p.month, p);
         case 'hr_advance_deduct':     return await hrAdvanceDeduct(p.data, p);
         case 'hr_advance_defer':      return await hrAdvanceDefer(p.data, p);
+        case 'hr_advance_create':     return await hrAdvanceCreate(p.data, p);
         case 'hr_advance_installment': return await hrAdvanceInstallment(p.data, p);
         case 'hr_advance_timeline':   return await hrAdvanceTimeline(p.id);
         case 'hr_advance_window_open':   return await hrAdvanceWindowOpen(p.data, p);
@@ -3027,6 +3028,50 @@
     await sb().from('advance_events').insert({ request_id: d.id, event: 'defer', actor: me.name, role: 'hr', note: 'เลื่อนการหัก ' + add + ' รอบ (รวมเลื่อน ' + rounds + ' รอบ)' + (d.note ? ' · เหตุผล: ' + d.note : '') });
     await logAct('เลื่อนหักเงินเบิก', null, 'เลื่อน ' + rounds + ' รอบ');
     return { ok: true, rounds };
+  }
+
+  // ---- คีย์เบิกให้พนักงาน (HR/ผจก. สร้างคำขอแทนพนักงาน) ----
+  async function _nextAdvanceNo() {
+    const pre = 'AD-' + (new Date().getFullYear() + 543) + '-';
+    const { data } = await sb().from('advance_requests').select('req_no').like('req_no', pre + '%').order('req_no', { ascending: false }).limit(1);
+    let n = 0; if (data && data.length) { const m = String(data[0].req_no).match(/(\d+)$/); if (m) n = parseInt(m[1], 10) || 0; }
+    return pre + String(n + 1).padStart(4, '0');
+  }
+  async function hrAdvanceCreate(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้นที่คีย์เบิกให้พนักงานได้' };
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'เลือกพนักงาน' };
+    const amt = Math.floor(Number(d.amount) || 0);
+    if (amt <= 0) return { ok: false, error: 'ระบุจำนวนเงินที่เบิก' };
+    const { data: emp } = await sb().from('employees').select('emp_id,name,nickname,branch_id,bank_name,bank_account').eq('emp_id', d.emp_id).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบพนักงาน' };
+    const { data: br } = await sb().from('branches').select('name').eq('branch_id', emp.branch_id || '').maybeSingle();
+    const month = d.cycle_month || bkkToday().slice(0, 7);
+    const approveNow = d.approve === true;
+    const req_no = await _nextAdvanceNo();
+    const row = {
+      req_no, emp_id: emp.emp_id, emp_name: emp.name, nickname: emp.nickname || null,
+      branch_id: emp.branch_id || null, branch_name: (br && br.name) || null,
+      kind: 'normal', cycle_month: month, amount: amt,
+      reason_category: d.reason_category || 'คีย์โดยสำนักงาน', reason: (d.reason || '').trim() || 'คีย์เบิกโดยสำนักงาน',
+      bank_name: emp.bank_name || null, bank_account: emp.bank_account || null,
+      status: 'submitted', keyed_at: new Date().toISOString(), device: 'hr-console',
+    };
+    if (approveNow) {
+      const cfg = await _advCfgHr();
+      row.status = 'approved'; row.approved_amount = amt; row.reviewed_by = me.name; row.reviewed_at = new Date().toISOString();
+      row.payout_due_date = month + '-' + String((cfg && cfg.payout_start) || 20).padStart(2, '0');
+    }
+    const { data: ins, error } = await sb().from('advance_requests').insert(row).select('id').maybeSingle();
+    if (error) throw error;
+    await sb().from('advance_events').insert({ request_id: ins && ins.id, emp_id: emp.emp_id, event: 'submit', actor: me.name, role: me.role, note: 'คีย์เบิกให้พนักงานโดยสำนักงาน (HR)', amount_after: amt });
+    if (approveNow) {
+      await sb().from('advance_events').insert({ request_id: ins && ins.id, emp_id: emp.emp_id, event: 'approve', actor: me.name, role: me.role, note: 'คีย์ + อนุมัติทันที', amount_before: amt, amount_after: amt });
+      try { await sb().from('emp_notifications').insert({ emp_id: emp.emp_id, kind: 'info', title: '✅ อนุมัติคำขอเบิกเงิน ' + req_no + ' · ' + amt.toLocaleString() + ' บาท', body: 'สำนักงานคีย์เบิกให้ · กำหนดโอน ' + row.payout_due_date, ref: 'advance:' + (ins && ins.id), created_by: me.name }); } catch (_e) {}
+    }
+    await logAct('คีย์เบิกเงินให้พนักงาน ' + req_no + (approveNow ? ' (อนุมัติทันที)' : ''), emp.emp_id, amt.toLocaleString());
+    return { ok: true, id: ins && ins.id, req_no, approved: approveNow };
   }
 
   // ---- แปลงใบเบิกเป็น "ผ่อนหัก" (หักทีละงวดแทนก้อนเดียว) ----
