@@ -2143,6 +2143,27 @@
     });
     return { period_start: cyc.start, period_end: cyc.end, rows, branches: brR.data || [] };
   }
+  // ดูข้อมูล "ผู้คุมผลัด" (shift_controllers) ในรอบ + ไฮไลต์คืนกะดึกที่ไม่มีผู้คุมผลัด (= ทุกคนได้เรทพนักงาน)
+  async function reviewShiftControllers(which) {
+    const cyc = reviewCycleRange(which);
+    const [ctrlR, empR, brR, attR, shR] = await Promise.all([
+      sb.from('shift_controllers').select('*').gte('work_date', cyc.start).lte('work_date', cyc.end).order('work_date'),
+      sb.from('employees').select('emp_id,name,nickname'),
+      sb.from('branches').select('branch_id,name'),
+      sb.from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in').gte('work_date', cyc.start).lte('work_date', cyc.end),
+      sb.from('shifts').select('shift_id,name,start_time,end_time'),
+    ]);
+    const empN = {}; (empR.data || []).forEach(e => empN[e.emp_id] = e.nickname || e.name || e.emp_id);
+    const brN = {}; (brR.data || []).forEach(b => brN[b.branch_id] = b.name);
+    const _isOvn = (s, e) => (s && e) ? (String(e).slice(0, 5) <= String(s).slice(0, 5)) : false;
+    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
+    const rows = (ctrlR.data || []).map(c => ({ work_date: c.work_date, branch_id: c.branch_id, branch_name: brN[c.branch_id] || c.branch_id || '', emp_id: c.emp_id, emp_name: empN[c.emp_id] || c.emp_id }));
+    const nightBy = {};
+    (attR.data || []).forEach(a => { if (a.check_in && nightSet.has(a.shift_id)) { const k = (a.branch_id || '') + '|' + a.work_date; (nightBy[k] = nightBy[k] || []).push(empN[a.emp_id] || a.emp_id); } });
+    const ctrlKeys = new Set(rows.map(r => (r.branch_id || '') + '|' + r.work_date));
+    const gaps = Object.keys(nightBy).filter(k => !ctrlKeys.has(k)).map(k => { const i = k.indexOf('|'); const b = k.slice(0, i), d = k.slice(i + 1); return { work_date: d, branch_name: brN[b] || b || '(ไม่ระบุสาขา)', people: nightBy[k] }; }).sort((a, b) => a.work_date.localeCompare(b.work_date));
+    return { period_start: cyc.start, period_end: cyc.end, rows, gaps, night_shift_days: Object.keys(nightBy).length, controller_days: ctrlKeys.size, night_shifts: [...nightSet] };
+  }
   async function reviewSave(f) {
     f = f || {};
     if (!f.period_start || !f.emp_id) throw new Error('ข้อมูลไม่ครบ');
