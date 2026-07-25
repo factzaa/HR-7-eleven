@@ -2003,7 +2003,7 @@
   async function reviewLoad(which, branch) {
     const cyc = reviewCycleRange(which);
     const today = bangkokDate(); const endEff = cyc.end < today ? cyc.end : today;
-    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id').eq('active', true).order('emp_id');
+    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id,end_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).order('emp_id');
     if (branch) empQ = empQ.eq('branch_id', branch);
     const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR, ctrlR] = await Promise.all([
       empQ,
