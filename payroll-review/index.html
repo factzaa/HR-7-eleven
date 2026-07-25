@@ -282,11 +282,22 @@ async function loadInst(){
     const st=ST[p.status]||ST.active;
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:7px">'
      +'<div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(p.label)+'</b><span style="font-size:11px;font-weight:700;color:'+st.c+'">'+st.t+'</span></div>'
-     +'<div style="font-size:12.5px;color:#374151;margin-top:2px">ยอดรวม '+Number(p.total_amount).toLocaleString()+' · งวดละ '+Number(p.per_round).toLocaleString()+' · หักแล้ว '+Number(p.paid).toLocaleString()+' · เหลือ <b>'+Number(p.remaining).toLocaleString()+'</b></div>'
-     +(p.status==='active'?'<button class="btn sec sm" data-incancel="'+p.id+'" style="margin-top:6px;color:#dc2626">ยกเลิกแผน</button>':'')
+     +'<div style="font-size:12.5px;color:#374151;margin-top:2px">ยอดรวม '+Number(p.total_amount).toLocaleString()+' · งวดละ '+Number(p.per_round).toLocaleString()
+       +(Number(p.discount)>0?(' · <span style="color:#16a34a">ส่วนลด '+Number(p.discount).toLocaleString()+'</span>'):'')
+       +' · หักแล้ว '+Number(p.paid).toLocaleString()+' · เหลือ <b>'+Number(p.remaining).toLocaleString()+'</b></div>'
+     +(p.status==='active'?'<div style="display:flex;gap:6px;margin-top:6px"><button class="btn sec sm" data-indisc="'+p.id+'" style="color:#16a34a">ส่วนลด</button><button class="btn sec sm" data-incancel="'+p.id+'" style="color:#dc2626">ยกเลิกแผน</button></div>':'')
      +'</div>';
   }).join('');
   $('inList').querySelectorAll('[data-incancel]').forEach(b=>b.onclick=()=>cancelInst(b.dataset.incancel));
+  $('inList').querySelectorAll('[data-indisc]').forEach(b=>b.onclick=()=>discountInst(b.dataset.indisc));
+}
+async function discountInst(id){
+  const amt=prompt('ลดหนี้ค้าง (ส่วนลด) กี่บาท?');
+  if(amt===null) return;
+  const n=Number(amt); if(!(n>0)){ toast('กรอกยอดส่วนลด',true); return; }
+  const note=prompt('เหตุผลส่วนลด (ถ้ามี)','')||'';
+  try{ const r=await HR.installmentDiscount(id, n, note); toast('ลดหนี้ '+r.applied.toLocaleString()+' แล้ว · เหลือ '+r.remaining.toLocaleString()); await loadInst(); load(); }
+  catch(e){ toast(e.message||'ไม่สำเร็จ',true); }
 }
 async function cancelInst(id){
   if(!confirm('ยกเลิกแผนผ่อนนี้? (จะหยุดหักงวดถัดไป)')) return;

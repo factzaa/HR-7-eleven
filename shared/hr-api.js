@@ -5932,7 +5932,7 @@
       if (String(pl.start_period) > cyc.start) return;                 // ยังไม่ถึงรอบเริ่มหัก
       const chs = (instChR && instChR.data || []).filter(c => c.installment_id === pl.id);
       const paidLocked = chs.filter(c => c.finalized && String(c.period_start) < cyc.start).reduce((s, c) => s + Number(c.amount || 0), 0);
-      const remaining = Number(pl.total_amount) - paidLocked;
+      const remaining = Number(pl.total_amount) - Number(pl.discount || 0) - paidLocked;
       if (remaining <= 0) return;
       const thisAmt = Math.min(Number(pl.per_round), remaining);
       if (thisAmt <= 0) return;
@@ -6134,11 +6134,11 @@
     try {
       // ★ ผ่อนจ่าย: ล็อกยอดหักของงวดรอบนี้ + ปิดแผนที่หักครบแล้ว
       await sb().from('payroll_installment_charges').update({ finalized: true, updated_at: new Date().toISOString() }).eq('period_start', cyc.start);
-      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount').eq('status', 'active');
+      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount,discount').eq('status', 'active');
       for (const pl of (plans || [])) {
         const { data: chs } = await sb().from('payroll_installment_charges').select('amount').eq('installment_id', pl.id).eq('finalized', true);
         const paid = (chs || []).reduce((s, c) => s + Number(c.amount || 0), 0);
-        if (paid >= Number(pl.total_amount)) await sb().from('payroll_installments').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', pl.id);
+        if (paid >= Number(pl.total_amount) - Number(pl.discount || 0)) await sb().from('payroll_installments').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', pl.id);
       }
     } catch (_e) { /* ไม่มีระบบผ่อน ก็ข้าม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);
@@ -6169,11 +6169,11 @@
     try {
       // ★ ผ่อนจ่าย: ปลดล็อกงวดรอบนี้ + เปิดแผนที่ปิดไปแล้วกลับมาถ้ายังไม่ครบ
       await sb().from('payroll_installment_charges').update({ finalized: false, updated_at: new Date().toISOString() }).eq('period_start', cyc.start);
-      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount').eq('status', 'done');
+      const { data: plans } = await sb().from('payroll_installments').select('id,total_amount,discount').eq('status', 'done');
       for (const pl of (plans || [])) {
         const { data: chs } = await sb().from('payroll_installment_charges').select('amount').eq('installment_id', pl.id).eq('finalized', true);
         const paid = (chs || []).reduce((s, c) => s + Number(c.amount || 0), 0);
-        if (paid < Number(pl.total_amount)) await sb().from('payroll_installments').update({ status: 'active', updated_at: new Date().toISOString() }).eq('id', pl.id);
+        if (paid < Number(pl.total_amount) - Number(pl.discount || 0)) await sb().from('payroll_installments').update({ status: 'active', updated_at: new Date().toISOString() }).eq('id', pl.id);
       }
     } catch (_e) { /* ไม่มีระบบผ่อน ก็ข้าม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'draft', finalized_by: null, finalized_at: null }).eq('id', run.id);

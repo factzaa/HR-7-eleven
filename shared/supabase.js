@@ -2045,10 +2045,10 @@
     // แผนผ่อนหักที่ยัง active → สรุปต่อคน (จำนวนแผน · หัก/รอบ · คงเหลือ)
     let instByEmp = {};
     try {
-      const { data: plans } = await sb.from('payroll_installments').select('id,emp_id,total_amount,per_round').eq('status', 'active');
+      const { data: plans } = await sb.from('payroll_installments').select('id,emp_id,total_amount,per_round,discount').eq('status', 'active');
       const pids = (plans || []).map(p => p.id); const paidMap = {};
       if (pids.length) { const { data: chs } = await sb.from('payroll_installment_charges').select('installment_id,amount,finalized').in('installment_id', pids); (chs || []).forEach(c => { if (c.finalized) paidMap[c.installment_id] = (paidMap[c.installment_id] || 0) + Number(c.amount || 0); }); }
-      (plans || []).forEach(p => { const remaining = Number(p.total_amount) - (paidMap[p.id] || 0); if (remaining <= 0) return; const nextD = Math.min(Number(p.per_round), remaining); const m = instByEmp[p.emp_id] || (instByEmp[p.emp_id] = { count: 0, next: 0, remaining: 0 }); m.count++; m.next += nextD; m.remaining += remaining; });
+      (plans || []).forEach(p => { const remaining = Number(p.total_amount) - Number(p.discount || 0) - (paidMap[p.id] || 0); if (remaining <= 0) return; const nextD = Math.min(Number(p.per_round), remaining); const m = instByEmp[p.emp_id] || (instByEmp[p.emp_id] = { count: 0, next: 0, remaining: 0 }); m.count++; m.next += nextD; m.remaining += remaining; });
     } catch (_e) {}
     const attBy = {}, schBy = {}, lvBy = {}, evBy = {};
     (attR.data || []).forEach(a => (attBy[a.emp_id] || (attBy[a.emp_id] = [])).push(a));
@@ -2109,7 +2109,27 @@
     const { data } = await sb.from('payroll_installments').select('*').eq('emp_id', empId).order('created_at', { ascending: false });
     const plans = data || []; const ids = plans.map(p => p.id); const paidMap = {};
     if (ids.length) { const { data: chs } = await sb.from('payroll_installment_charges').select('installment_id,amount,finalized').in('installment_id', ids); (chs || []).forEach(c => { if (c.finalized) paidMap[c.installment_id] = (paidMap[c.installment_id] || 0) + Number(c.amount || 0); }); }
-    return plans.map(p => ({ ...p, paid: paidMap[p.id] || 0, remaining: Number(p.total_amount) - (paidMap[p.id] || 0) }));
+    return plans.map(p => ({ ...p, paid: paidMap[p.id] || 0, remaining: Number(p.total_amount) - Number(p.discount || 0) - (paidMap[p.id] || 0) }));
+  }
+  async function installmentDiscount(id, amount, note) {
+    if (!id) throw new Error('ไม่ระบุแผน');
+    const amt = Number(amount) || 0;
+    if (amt <= 0) throw new Error('ระบุยอดส่วนลด');
+    const { data: p } = await sb.from('payroll_installments').select('*').eq('id', id).maybeSingle();
+    if (!p) throw new Error('ไม่พบแผน');
+    const { data: chs } = await sb.from('payroll_installment_charges').select('amount,finalized').eq('installment_id', id);
+    const paid = (chs || []).filter(c => c.finalized).reduce((s, c) => s + Number(c.amount || 0), 0);
+    const curRemain = Number(p.total_amount) - Number(p.discount || 0) - paid;
+    const applied = Math.min(amt, Math.max(0, curRemain));   // ลดได้ไม่เกินคงเหลือ
+    if (applied <= 0) throw new Error('ไม่มีหนี้คงเหลือให้ลด');
+    const newDiscount = Number(p.discount || 0) + applied;
+    const done = (Number(p.total_amount) - newDiscount - paid) <= 0;
+    const upd = { discount: newDiscount, updated_at: new Date().toISOString() };
+    if (done) upd.status = 'done';
+    if (note) upd.note = ((p.note ? p.note + ' · ' : '') + 'ส่วนลด ' + applied.toLocaleString() + (String(note).trim() ? (' (' + String(note).trim() + ')') : ''));
+    const { error } = await sb.from('payroll_installments').update(upd).eq('id', id);
+    if (error) throw error;
+    return { ok: true, applied, remaining: Number(p.total_amount) - newDiscount - paid };
   }
   async function installmentCreate(f) {
     f = f || {};
@@ -2192,7 +2212,7 @@
 
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
-    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewShiftDetail, reviewMarkDay, installmentList, installmentCreate, installmentCancel,
+    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewShiftDetail, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
