@@ -2064,7 +2064,7 @@
       empQ,
       sb.from('branches').select('branch_id,name').order('branch_id'),
       sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,late_min,day_value,shift_id,status,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb.from('shifts').select('shift_id,day_value,name,start_time,end_time'),
+      sb.from('shifts').select('shift_id,day_value,name,start_time,end_time,main_shift'),
       sb.from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('payroll_review').select('*').eq('period_start', cyc.start),
@@ -2075,7 +2075,7 @@
       sb.from('score_bands').select('*'),
       sb.from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
       sb.from('payroll_config').select('key,value'),
-      sb.from('shift_controllers').select('branch_id,work_date,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
     ]);
     // เกณฑ์เบี้ยวินัย/ขยัน (ต้องไม่ขาด + สายไม่เกินที่กำหนด) — จาก payroll_config
     let dilCfg = { enabled: true, require_no_absent: true, allow_late_count: 0 };
@@ -2088,12 +2088,15 @@
     let saCfg = { enabled: true, controller_rate: 15, staff_rate: 10 };
     try { const srow = (pcfgR.data || []).find(x => x.key === 'shift_allowance'); if (srow && srow.value && typeof srow.value === 'object') saCfg = Object.assign(saCfg, srow.value); } catch (_e) {}
     const _isOvn = (s, e) => (s && e) ? (String(e).slice(0, 5) <= String(s).slice(0, 5)) : false;
+    const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
     const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
-    const ctrlMap = {}; (ctrlR.data || []).forEach(c => { ctrlMap[(c.branch_id || '') + '|' + c.work_date] = c.emp_id; });
+    // ผู้คุมผลัด = หัวหน้าผลัดของกะนั้น (shift_leads แยกตามกะ) · จับคู่ (สาขา|วัน|กลุ่มกะ)
+    const leadMap = {}; (ctrlR.data || []).forEach(c => { leadMap[(c.branch_id || '') + '|' + c.work_date + '|' + (grpOf[c.shift_id] || c.shift_id)] = c.emp_id; });
     const shiftAllowBy = {};
     if (saCfg.enabled !== false) (attR.data || []).forEach(a => {
       if (a.check_in && nightSet.has(a.shift_id)) {
-        const isCtrl = ctrlMap[(a.branch_id || '') + '|' + a.work_date] === a.emp_id;
+        const grp = grpOf[a.shift_id] || a.shift_id;
+        const isCtrl = leadMap[(a.branch_id || '') + '|' + a.work_date + '|' + grp] === a.emp_id;
         shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
       }
     });
@@ -2143,42 +2146,47 @@
     });
     return { period_start: cyc.start, period_end: cyc.end, rows, branches: brR.data || [] };
   }
-  // ดูข้อมูล "ผู้คุมผลัด" (shift_controllers) ในรอบ + ไฮไลต์คืนกะดึกที่ไม่มีผู้คุมผลัด (= ทุกคนได้เรทพนักงาน)
+  // ดูผู้คุมผลัดกะดึก (จาก shift_leads แยกตามกะ) เทียบใบลงเวลากะดึกรายคืน
   async function reviewShiftControllers(which) {
     const cyc = reviewCycleRange(which);
-    const [ctrlR, empR, brR, attR, shR] = await Promise.all([
-      sb.from('shift_controllers').select('*').gte('work_date', cyc.start).lte('work_date', cyc.end).order('work_date'),
+    const [leadR, empR, brR, attR, shR] = await Promise.all([
+      sb.from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', cyc.end),
       sb.from('employees').select('emp_id,name,nickname'),
       sb.from('branches').select('branch_id,name'),
-      sb.from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in').gte('work_date', _addDays(cyc.start, -1)).lte('work_date', _addDays(cyc.end, 1)),
-      sb.from('shifts').select('shift_id,name,start_time,end_time'),
+      sb.from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in').gte('work_date', cyc.start).lte('work_date', cyc.end),
+      sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift'),
     ]);
     const empN = {}; (empR.data || []).forEach(e => empN[e.emp_id] = e.nickname || e.name || e.emp_id);
     const brN = {}; (brR.data || []).forEach(b => brN[b.branch_id] = b.name);
+    const shName = {}; (shR.data || []).forEach(s => shName[s.shift_id] = s.name || s.shift_id);
+    const grpOf = {}; (shR.data || []).forEach(s => grpOf[s.shift_id] = s.main_shift || s.shift_id);
     const _isOvn = (s, e) => (s && e) ? (String(e).slice(0, 5) <= String(s).slice(0, 5)) : false;
     const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
-    // ใบลงเวลากะดึกทั้งหมด (รวมวันขอบ ±1 เพื่อตรวจเหลื่อมวัน)
-    const nightAtt = (attR.data || []).filter(a => a.check_in && nightSet.has(a.shift_id));
-    const nightKeySet = new Set(nightAtt.map(a => (a.branch_id || '') + '|' + a.work_date));               // (สาขา|วัน) ที่มีคนลงเวลากะดึก
-    const empNightDates = {}; nightAtt.forEach(a => { (empNightDates[a.emp_id] = empNightDates[a.emp_id] || new Set()).add(a.work_date); });
-    // ตรวจแต่ละ record ผู้คุมผลัด: จับคู่ใบลงเวลาของ "ตัวผู้คุมผลัดเอง" ติดไหม
-    const rows = (ctrlR.data || []).map(c => {
-      const own = empNightDates[c.emp_id] || new Set();
-      const exact = own.has(c.work_date);
-      const near = !exact && (own.has(_addDays(c.work_date, 1)) || own.has(_addDays(c.work_date, -1)));   // ลงเวลาเหลื่อม ±1 วัน
-      return {
-        work_date: c.work_date, branch_id: c.branch_id, branch_name: brN[c.branch_id] || c.branch_id || '',
-        emp_id: c.emp_id, emp_name: empN[c.emp_id] || c.emp_id,
-        matched: exact, near, att_dates: [...own].sort(),
-      };
+    // หัวหน้าผลัดต่อ (สาขา|วัน|กลุ่มกะ)
+    const leadMap = {}; (leadR.data || []).forEach(l => { leadMap[(l.branch_id || '') + '|' + l.work_date + '|' + (grpOf[l.shift_id] || l.shift_id)] = l.emp_id; });
+    // รวมใบลงเวลากะดึกเป็นรายคืน (สาขา|วัน|กลุ่มกะ)
+    const byKey = {};
+    (attR.data || []).forEach(a => {
+      if (!a.check_in || !nightSet.has(a.shift_id)) return;
+      const grp = grpOf[a.shift_id] || a.shift_id;
+      const k = (a.branch_id || '') + '|' + a.work_date + '|' + grp;
+      const o = byKey[k] || (byKey[k] = { branch_id: a.branch_id || '', work_date: a.work_date, grp, people: [], ids: new Set() });
+      o.people.push(empN[a.emp_id] || a.emp_id); o.ids.add(a.emp_id);
     });
-    // นับเฉพาะใบลงเวลาในรอบจริง (ไม่รวมวันขอบ) สำหรับสรุป/gaps
-    const nightBy = {};
-    nightAtt.forEach(a => { if (a.work_date >= cyc.start && a.work_date <= cyc.end) { const k = (a.branch_id || '') + '|' + a.work_date; (nightBy[k] = nightBy[k] || []).push(empN[a.emp_id] || a.emp_id); } });
-    const ctrlKeys = new Set((ctrlR.data || []).map(c => (c.branch_id || '') + '|' + c.work_date));
-    const gaps = Object.keys(nightBy).filter(k => !ctrlKeys.has(k)).map(k => { const i = k.indexOf('|'); const b = k.slice(0, i), d = k.slice(i + 1); return { work_date: d, branch_name: brN[b] || b || '(ไม่ระบุสาขา)', people: nightBy[k] }; }).sort((a, b) => a.work_date.localeCompare(b.work_date));
-    const matched_ctrl = rows.filter(r => r.matched).length, unmatched_ctrl = rows.filter(r => !r.matched).length;
-    return { period_start: cyc.start, period_end: cyc.end, rows, gaps, night_shift_days: Object.keys(nightBy).length, controller_days: ctrlKeys.size, matched_ctrl, unmatched_ctrl, night_shifts: [...nightSet] };
+    const rows = Object.keys(byKey).map(k => {
+      const o = byKey[k];
+      const leadId = leadMap[k] || null;
+      const matched = !!(leadId && o.ids.has(leadId));   // หัวหน้าผลัดของกะนี้มาลงเวลากะดึกคืนนี้ → ได้ 15
+      return {
+        work_date: o.work_date, branch_name: brN[o.branch_id] || o.branch_id || '(ไม่ระบุสาขา)',
+        shift_name: shName[o.grp] || o.grp, lead_name: leadId ? (empN[leadId] || leadId) : null,
+        matched, has_lead: !!leadId, people: o.people,
+      };
+    }).sort((a, b) => (a.work_date + a.branch_name).localeCompare(b.work_date + b.branch_name));
+    const night_keys = rows.length;
+    const matched_keys = rows.filter(r => r.matched).length;
+    const nolead_keys = rows.filter(r => !r.has_lead).length;
+    return { period_start: cyc.start, period_end: cyc.end, rows, night_keys, matched_keys, nolead_keys, night_shifts: [...nightSet] };
   }
   async function reviewSave(f) {
     f = f || {};

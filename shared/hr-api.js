@@ -5998,23 +5998,25 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
-      sb().from('shift_controllers').select('branch_id,work_date,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift'),
+      sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
       sb().from('payroll_installment_charges').select('*').lte('period_start', cyc.start),
     ]);
     const profM = {}; (profR.data || []).forEach(x => { profM[x.emp_id] = x; });
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
-    // กะดึก = กะข้ามคืน (เลิก ≤ เข้า) · ผู้คุมผลัด/วัน จาก shift_controllers
+    // กะดึก = กะข้ามคืน (เลิก ≤ เข้า) · ผู้คุมผลัด = หัวหน้าผลัดของกะนั้น จาก shift_leads (แยกตามกะ)
+    const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
     const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvernight(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
-    const ctrlMap = {}; (ctrlR.data || []).forEach(c => { ctrlMap[(c.branch_id || '') + '|' + c.work_date] = c.emp_id; });
+    const leadMap = {}; (ctrlR.data || []).forEach(c => { leadMap[(c.branch_id || '') + '|' + c.work_date + '|' + (grpOf[c.shift_id] || c.shift_id)] = c.emp_id; });
     const saCfg = cfg.shift_allowance || {};
     const shiftAllowBy = {};
     if (saCfg.enabled !== false) {
       (attR.data || []).forEach(a => {
         if (a.check_in && nightSet.has(a.shift_id)) {
-          const isCtrl = ctrlMap[(a.branch_id || '') + '|' + a.work_date] === a.emp_id;
+          const grp = grpOf[a.shift_id] || a.shift_id;
+          const isCtrl = leadMap[(a.branch_id || '') + '|' + a.work_date + '|' + grp] === a.emp_id;
           shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
         }
       });
