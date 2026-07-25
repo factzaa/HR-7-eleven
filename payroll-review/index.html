@@ -185,9 +185,10 @@ async function saveRow(tr){
   btn.disabled=false; btn.textContent='บันทึก';
 }
 // ===== ตารางกะรายวัน (ดู/แก้) =====
-let SH_EMP=null;
-$('shX').onclick=()=>$('shiftOv').style.display='none';
-$('shiftOv').addEventListener('click',e=>{ if(e.target===$('shiftOv')) $('shiftOv').style.display='none'; });
+let SH_EMP=null, SH_CHANGED=false;
+function closeShift(){ $('shiftOv').style.display='none'; if(SH_CHANGED){ SH_CHANGED=false; load(); } }
+$('shX').onclick=closeShift;
+$('shiftOv').addEventListener('click',e=>{ if(e.target===$('shiftOv')) closeShift(); });
 const SH_ST={ present:{t:'มาปกติ',c:'#16a34a'}, late:{t:'มาสาย',c:'#b45309'}, absent:{t:'ขาด',c:'#dc2626'}, leave:{t:'ลา',c:'#7c3aed'}, scheduled:{t:'มีเวร (ยังไม่ถึง)',c:'#6b7280'}, none:{t:'—',c:'#9ca3af'} };
 async function openShift(empId){
   SH_EMP=empId;
@@ -227,8 +228,10 @@ async function markDay(action, work_date, shift_id, btn){
   const r=(DATA.rows||[]).find(x=>x.emp_id===SH_EMP);
   try{
     await HR.reviewMarkDay({ emp_id:SH_EMP, work_date, action, shift_id:shift_id||null, branch_id:(r&&r.branch_id)||null, by:'ผจก.ตรวจ' });
-    toast(action==='present'?'ทำเป็นมาปกติแล้ว':'ทำเป็นขาดแล้ว');
+    SH_CHANGED=true;
+    toast(action==='present'?'ทำเป็นมาปกติแล้ว · อัปเดตจำนวนวัน':'ทำเป็นขาดแล้ว · อัปเดตจำนวนวัน');
     await loadShift();
+    load();   // รีเฟรชตารางหลักให้ "วัน" คำนวณเพิ่มตามทันที
   }catch(e){ toast(e.message||'ไม่สำเร็จ',true); btn.disabled=false; btn.textContent=action==='present'?'ทำเป็นมา':'ทำเป็นขาด'; }
 }
 
