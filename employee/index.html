@@ -359,14 +359,27 @@ async function startCamera(){
   }
 }
 
+// อุ่นเครื่อง full pipeline บนภาพเปล่า → คอมไพล์ shader ของ landmark+recognition ล่วงหน้า (สแกนจริงครั้งแรกจะไม่หน่วง)
+async function warmUpFace(){
+  try{
+    const c=document.createElement('canvas'); c.width=160; c.height=160;
+    const x=c.getContext('2d'); x.fillStyle='#888'; x.fillRect(0,0,160,160);
+    await faceapi.detectSingleFace(c, new faceapi.TinyFaceDetectorOptions({ inputSize:224 })).withFaceLandmarks().withFaceDescriptor();
+  }catch(_e){}
+}
 async function loadModels(){
   $('facetext').textContent = 'กำลังโหลดโมเดล…';
   try{
-    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    // เร่งความเร็ว backend (WebGL) ให้พร้อมก่อน + โหลด 3 โมเดล "พร้อมกัน" (เดิมโหลดทีละตัว)
+    try{ if(faceapi.tf && faceapi.tf.setBackend){ await faceapi.tf.setBackend('webgl'); await faceapi.tf.ready(); } }catch(_e){}
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ]);
     modelsReady = true;
     $('facetext').textContent = 'ค้นหาใบหน้า…';
+    warmUpFace();   // อุ่นเครื่อง (คอมไพล์ shader) เบื้องหลัง → สแกนครั้งแรกเร็ว
   }catch(e){
     $('facetext').textContent = 'โหลดโมเดลไม่สำเร็จ';
     showToast('err','โหลดโมเดลใบหน้าไม่สำเร็จ\nลองสลับ MODEL_URL อีกตัวในโค้ด');
@@ -407,11 +420,11 @@ function haversine(lat1,lng1,lat2,lng2){
 
 async function detectLoop(){
   if(modelsReady){
-    try{ faceDetected = !!(await faceapi.detectSingleFace($('video'), new faceapi.TinyFaceDetectorOptions())); }
+    try{ faceDetected = !!(await faceapi.detectSingleFace($('video'), new faceapi.TinyFaceDetectorOptions({ inputSize:224 }))); }
     catch(e){ faceDetected=false; }
   }
   updateUI();
-  setTimeout(detectLoop, 700);
+  setTimeout(detectLoop, 900);
 }
 
 let openShift=false;   // ยังมีงานค้างที่ยังไม่กดออก → ปิดปุ่ม "เข้างาน" กันกดผิด
@@ -442,7 +455,7 @@ function updateUI(){
 
 async function getDescriptor(){
   // scoreThreshold สูงขึ้น = ต้องมั่นใจว่าเป็นใบหน้าจริง (กันถ่ายเพดาน/วัตถุคล้ายหน้าหลุดผ่าน)
-  const det = await faceapi.detectSingleFace($('video'), new faceapi.TinyFaceDetectorOptions({ scoreThreshold:0.6 }))
+  const det = await faceapi.detectSingleFace($('video'), new faceapi.TinyFaceDetectorOptions({ scoreThreshold:0.6, inputSize:320 }))
     .withFaceLandmarks().withFaceDescriptor();
   return det ? Array.from(det.descriptor) : null;
 }
