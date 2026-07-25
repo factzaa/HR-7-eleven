@@ -888,8 +888,7 @@
     <button class="btn btn-sec btn-sm" id="adv_emgbtn">🚨 เปิดสิทธิ์เบิกฉุกเฉิน</button>
     <button class="btn btn-sec btn-sm" id="adv_payrollbtn">📊 สรุปหักเงินเดือน</button>
     <button class="btn btn-sec btn-sm" id="adv_cfgbtn">⚙️ ตั้งค่า</button>
-    <button class="btn btn-sec btn-sm" id="adv_reviewopen" title="เปิดหน้าตรวจข้อมูลเข้าเงินเดือน (ผจก.ระดับสูง)">🔗 เปิดหน้าตรวจ</button>
-    <button class="btn btn-sec btn-sm" id="adv_reviewpass" title="ตั้งรหัสหน้าตรวจ (เฉพาะ HR)">🔑 รหัสหน้าตรวจ</button>
+    <button class="btn btn-sec btn-sm" id="adv_reviewpass" title="ตั้งรหัสหน้าตรวจวันทำงาน (เฉพาะ HR)">🔑 รหัสหน้าตรวจ</button>
     <button class="btn btn-sec" id="adv_refresh">รีเฟรช</button>
   </div>
   <div id="adv_kpi" class="kpi-grid" style="margin-bottom:14px"></div>
@@ -4120,8 +4119,7 @@ $('pl_run_branch') && ($('pl_run_branch').onchange=renderPayrollItems);
 $('pl_calc') && ($('pl_calc').onclick=loadPayrollRun);
 $('pl_which') && ($('pl_which').onchange=loadPayrollRun);
 
-// ===== หน้าตรวจข้อมูลเข้าเงินเดือน (payroll-review) — ปุ่มอยู่แท็บเบิกเงินล่วงหน้า =====
-$('adv_reviewopen') && ($('adv_reviewopen').onclick=()=>{ window.open('../payroll-review/','_blank'); });
+// ===== หน้าตรวจข้อมูลเข้าเงินเดือน (payroll-review) — ลิงก์อยู่ในเมนู "การเงิน" · ตั้งรหัสอยู่แท็บเบิกเงินล่วงหน้า =====
 $('adv_reviewpass') && ($('adv_reviewpass').onclick=async()=>{
   if(MGR_MODE){ toast('err','เฉพาะ HR'); return; }
   const hrpw=prompt('ยืนยันรหัส HR (รหัสที่ใช้เข้าระบบนี้)'); if(hrpw===null) return;
@@ -7434,7 +7432,7 @@ const NAV_GROUPS=[
   { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
   { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'⚠️', label:'วินัย',       tabs:['discipline','score','terminate'] },
-  { icon:'💵', label:'การเงิน',    tabs:['advance','payroll'] },
+  { icon:'💵', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'🧾', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
   { icon:'🏍️', label:'ไรเดอร์',     tabs:['rider'] },
   { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
@@ -7450,6 +7448,8 @@ function buildGroupedNav(){
     btn.innerHTML='<span class="tabicon">'+g.icon+'</span>'+g.label+'<span class="caret">▾</span>';
     const menu=document.createElement('div'); menu.className='navgrp-menu';
     g.tabs.forEach(k=>{ const t=$('tab_'+k); if(t){ menu.appendChild(t); used.add(k); } });
+    // ★ ลิงก์ไปหน้าอื่น (เปิดแท็บใหม่) เช่น หน้าตรวจวันทำงาน
+    (g.links||[]).forEach(l=>{ if(l.hrOnly && MGR_MODE) return; const a=document.createElement('a'); a.className='tab'; a.href=l.href; a.target='_blank'; a.rel='noopener'; a.innerHTML='<span class="tabicon">'+l.icon+'</span>'+l.label; menu.appendChild(a); });
     btn.onclick=(e)=>{ e.stopPropagation(); const wasOpen=grp.classList.contains('open'); closeAllNavGroups(); if(!wasOpen){ grp.classList.add('open'); const rc=btn.getBoundingClientRect(); menu.style.top=rc.bottom+'px'; menu.style.left=Math.max(6, Math.min(rc.left, (window.innerWidth||360)-220))+'px'; } };
     grp.appendChild(btn); grp.appendChild(menu); return grp;
   });
