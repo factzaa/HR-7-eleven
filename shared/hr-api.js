@@ -6072,9 +6072,10 @@
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
-      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.src !== 'maint' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)' && a.label !== 'ค่าซ่อมบำรุงรถ';
+      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.src !== 'maint' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)' && a.label !== 'ค่าซ่อมบำรุงรถ' && a.label !== 'Delivery';
       let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
       if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
+      if (Number(rv.delivery) > 0) additions.push({ label: 'Delivery', amount: _pr2(Number(rv.delivery)), src: 'rv' });
       // ค่ากะดึก: override จากหน้าตรวจ > ยอดที่ระบบคำนวณ
       const shiftAmt = (rv.shift_allowance_override != null) ? Number(rv.shift_allowance_override) : (shiftAllowBy[e.emp_id] || 0);
       if (shiftAmt > 0) additions.push({ label: 'ค่ากะดึก', amount: _pr2(shiftAmt), src: 'shift' });
@@ -6124,6 +6125,7 @@
       ytd_earnings: _pr2((ytdEarn[it.emp_id] || 0) + addCur * Number(it.gross || 0)),
       ytd_sso: _pr2((ytdSso[it.emp_id] || 0) + addCur * Number(it.sso || 0)),
       ytd_tax: 0,
+      delivery: (reviewMap[it.emp_id] && reviewMap[it.emp_id].delivery != null) ? Number(reviewMap[it.emp_id].delivery) : null,   // ค่า Delivery (จาก payroll_review) — โมดัลแก้รายคนใช้
     }));
     return {
       ok: true,
@@ -6140,10 +6142,20 @@
     const { data: run } = await sb().from('payroll_runs').select('status').eq('id', it.run_id).maybeSingle();
     if (run && run.status === 'finalized') return { ok: false, error: 'รอบนี้ปิดแล้ว แก้ไขไม่ได้' };
     const cfg = await _payrollConfig();
-    const additions = Array.isArray(d.additions) ? d.additions : (Array.isArray(it.additions) ? it.additions : []);
-    const deductions = Array.isArray(d.deductions) ? d.deductions : (Array.isArray(it.deductions) ? it.deductions : []);
-    const addSum = additions.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    // บรรทัดอัตโนมัติ (src) = Delivery/ค่ากะ/ผ่อน/น้ำมัน/ซ่อม ฯลฯ — คงไว้ · บรรทัดที่ HR แก้เอง (ไม่มี src) มาจากตัวแก้บรรทัด
+    const autoAdds = (Array.isArray(it.additions) ? it.additions : []).filter(a => a.src);
+    const autoDeds = (Array.isArray(it.deductions) ? it.deductions : []).filter(a => a.src);
+    let additions = Array.isArray(d.additions) ? autoAdds.concat(d.additions) : (Array.isArray(it.additions) ? it.additions : []);
+    const deductions = Array.isArray(d.deductions) ? autoDeds.concat(d.deductions) : (Array.isArray(it.deductions) ? it.deductions : []);
     const dedSum = deductions.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    // ★ ช่อง Delivery (รายได้เพิ่ม) — เก็บที่ payroll_review + ใส่บรรทัด "Delivery" ในรายการเพิ่ม
+    if (d.delivery !== undefined) {
+      additions = additions.filter(a => a.label !== 'Delivery');
+      const deliv = (d.delivery === '' || d.delivery == null) ? null : Number(d.delivery);
+      if (deliv > 0) additions.push({ label: 'Delivery', amount: _pr2(deliv), src: 'rv' });
+      try { const { data: r2 } = await sb().from('payroll_runs').select('period_start').eq('id', it.run_id).maybeSingle(); if (r2) await sb().from('payroll_review').upsert({ period_start: r2.period_start, emp_id: it.emp_id, delivery: deliv, updated_at: new Date().toISOString() }, { onConflict: 'period_start,emp_id' }); } catch (_e) {}
+    }
+    const addSum = additions.reduce((s, a) => s + (Number(a.amount) || 0), 0);
 
     // ★ แก้ "วันทำงาน" รายคน (override) — กรณีเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ
     //   ว่าง/null = ใช้ตามลงเวลา (คงฐานเดิม) · กรอกตัวเลข = คิดฐานใหม่ = วัน × อัตรา (เฉพาะรายวัน) และคิด ปกส.ใหม่

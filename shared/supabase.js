@@ -2138,7 +2138,7 @@
         auto_shift_allowance: shiftAllowBy[e.emp_id] || 0, shift_allowance_override: rv.shift_allowance_override,
         installments: instByEmp[e.emp_id] || null,
         days_override: rv.days_override, ot_override: rv.ot_override, advance_override: rv.advance_override,
-        add_special: rv.add_special, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, ded_other_note: rv.ded_other_note, note: rv.note,
+        add_special: rv.add_special, delivery: rv.delivery, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, ded_other_note: rv.ded_other_note, note: rv.note,
       };
     });
     return { period_start: cyc.start, period_end: cyc.end, rows, branches: brR.data || [] };
@@ -2150,7 +2150,7 @@
     const row = {
       period_start: f.period_start, emp_id: f.emp_id,
       days_override: num(f.days_override), ot_override: num(f.ot_override), advance_override: num(f.advance_override),
-      add_special: num(f.add_special), ded_damaged: num(f.ded_damaged), ded_other: num(f.ded_other),
+      add_special: num(f.add_special), delivery: num(f.delivery), ded_damaged: num(f.ded_damaged), ded_other: num(f.ded_other),
       shift_allowance_override: num(f.shift_allowance_override),
       ded_other_note: (f.ded_other_note || '').trim() || null,
       note: (f.note || '').trim() || null, updated_by: f.by || 'ผจก.ตรวจ', updated_at: new Date().toISOString(),

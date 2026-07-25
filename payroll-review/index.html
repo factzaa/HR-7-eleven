@@ -159,7 +159,7 @@ function render(){
   if(!rows.length){ $('tblWrap').innerHTML='<div style="color:var(--muted);padding:20px;text-align:center">— ไม่มีพนักงาน —</div>'; return; }
   const val=v=>(v==null?'':v);
   let h='<table class="tbl"><thead><tr>'
-    +'<th>พนักงาน</th><th>วัน</th><th>OT (ชม.)</th><th>ค่ากะดึก</th><th>เงินเบิก</th><th>เบี้ยพิเศษ</th><th>สินค้าเสื่อม</th><th>หักอื่นๆ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>';
+    +'<th>พนักงาน</th><th>วัน</th><th>OT (ชม.)</th><th>ค่ากะดึก</th><th>Delivery</th><th>เงินเบิก</th><th>เบี้ยพิเศษ</th><th>สินค้าเสื่อม</th><th>หักอื่นๆ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>';
   rows.forEach(r=>{
     const scoreChip = (r.score!=null)
       ? '<span class="chip" style="background:'+(r.band_color||'#475569')+'22;color:'+(r.band_color||'#475569')+'">คะแนน '+r.score+(r.band?(' · '+esc(r.band)):'')+'</span>'
@@ -180,6 +180,7 @@ function render(){
      +'<td data-l="วัน"><div><input class="f-days" type="number" step="0.5" min="0" placeholder="'+r.att_days+'" value="'+val(r.days_override)+'"><div class="hint">ลงเวลา '+r.att_days+'</div></div></td>'
      +'<td data-l="OT (ชม.)"><div><input class="f-ot" type="number" step="0.5" min="0" placeholder="'+r.att_ot+'" value="'+val(r.ot_override)+'"><div class="hint">ลงเวลา '+r.att_ot+'</div></div></td>'
      +'<td data-l="ค่ากะดึก"><div><input class="f-sa" type="number" step="1" min="0" placeholder="'+(r.auto_shift_allowance||0)+'" value="'+val(r.shift_allowance_override)+'"><div class="hint">อัตโนมัติ '+(r.auto_shift_allowance||0).toLocaleString()+'</div></div></td>'
+     +'<td data-l="Delivery"><input class="f-deliv" type="number" step="1" min="0" placeholder="0" value="'+val(r.delivery)+'"></td>'
      +'<td data-l="เงินเบิก"><div><input class="f-adv" type="number" step="1" min="0" placeholder="'+(r.auto_advance||0)+'" value="'+val(r.advance_override)+'"><div class="hint">ระบบเบิก '+(r.auto_advance||0).toLocaleString()+'</div></div></td>'
      +'<td data-l="เบี้ยพิเศษ"><input class="f-sp" type="number" step="1" min="0" placeholder="0" value="'+val(r.add_special)+'"></td>'
      +'<td data-l="สินค้าเสื่อม"><input class="f-dm" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_damaged)+'"></td>'
@@ -200,7 +201,7 @@ function rowPayload(tr){
   const g=cls=>{ const el=tr.querySelector(cls); return el?el.value.trim():''; };
   return {
     period_start:DATA.period_start, emp_id:tr.dataset.emp, by:'ผจก.ตรวจ',
-    days_override:g('.f-days'), ot_override:g('.f-ot'), shift_allowance_override:g('.f-sa'), advance_override:g('.f-adv'),
+    days_override:g('.f-days'), ot_override:g('.f-ot'), shift_allowance_override:g('.f-sa'), delivery:g('.f-deliv'), advance_override:g('.f-adv'),
     add_special:g('.f-sp'), ded_damaged:g('.f-dm'), ded_other:g('.f-ot2'), ded_other_note:g('.f-ot2n'), note:g('.f-note'),
   };
 }
