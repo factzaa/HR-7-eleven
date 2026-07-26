@@ -307,6 +307,7 @@
         case 'rider_fuel_list':      return await hrFuelList(p);
         case 'rider_fuel_review':    return await hrFuelReview(p.data, p);
         case 'rider_fuel_create':    return await hrFuelCreate(p.data, p);
+        case 'rider_fuel_cycle':     return await hrFuelSetCycle(p.data, p);
         case 'rider_fuel_cfg_get':   return await hrFuelCfgGet();
         case 'rider_fuel_cfg_save':  return await hrFuelCfgSave(p.data, p);
         case 'rider_pending':        return await hrRiderPending(p);
@@ -5014,6 +5015,21 @@
     };
   }
 
+  // เปลี่ยน "รอบที่จะหัก" (cycle_month) ของใบเบิกน้ำมัน — HR เท่านั้น · เฉพาะใบที่ยังไม่ถูกหัก
+  async function hrFuelSetCycle(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    if (!/^\d{4}-\d{2}$/.test(String(d.cycle_month || ''))) return { ok: false, error: 'รูปแบบรอบไม่ถูกต้อง (YYYY-MM)' };
+    const { data: r } = await sb().from('rider_fuel_claims').select('id,deducted,claim_no,emp_id').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    if (r.deducted) return { ok: false, error: 'ใบนี้หักไปแล้ว เปลี่ยนรอบไม่ได้ (ต้องเปิดรอบที่หักก่อน)' };
+    const { error } = await sb().from('rider_fuel_claims').update({ cycle_month: d.cycle_month }).eq('id', d.id);
+    if (error) throw error;
+    await logAct('เปลี่ยนรอบหักค่าน้ำมัน ' + r.claim_no, r.emp_id, d.cycle_month);
+    return { ok: true };
+  }
   async function hrFuelCfgGet() { return { ok: true, config: await _fuelCfg() }; }
   async function hrFuelCfgSave(d, auth) {
     const me = await _termActor(auth);
@@ -6072,18 +6088,24 @@
     });
     // ★ หักเงินเบิก "ตามรอบจริงไม่เว้นเดือน" — ดึงทุกใบที่ "จ่ายแล้ว + ยังไม่หัก" มาหักในรอบนี้ทันที
     //   (กันพนักงานเบิกเกินค่าแรงแล้วหาย · ไม่ผูกกับ deduct_month ที่อาจเป็นเดือนถัดไป)
-    const runMonth = cyc.end.slice(0, 7);   // เดือนสิ้นรอบของรอบที่กำลังคิด — หักเฉพาะใบที่สังกัดรอบนี้หรือก่อนหน้า
+    const runMonth = cyc.end.slice(0, 7);          // เดือนสิ้นรอบของรอบที่กำลังคิด
+    const payingMonth = bkkToday().slice(0, 7);     // เดือนของ "รอบที่กำลังจะจ่าย" (รอบปัจจุบัน)
+    const carry = runMonth === payingMonth;         // รอบปัจจุบัน = ตกทอดใบเก่าที่ยังไม่หักได้ · รอบอนาคต = เฉพาะใบที่สังกัดรอบนั้นเป๊ะ (ไม่ทบมาโชว์)
     let advByEmp = {};
     try {
-      // ข้ามใบที่ถูก "เลื่อนหัก" (defer_rounds > 0) · หักเฉพาะใบที่ cycle_month ≤ รอบนี้ (ใบของรอบถัดไปยังไม่หัก)
-      const { data: advRows } = await sb().from('advance_requests').select('emp_id,amount,approved_amount')
-        .eq('status', 'paid').eq('deducted', false).lte('cycle_month', runMonth).or('defer_rounds.is.null,defer_rounds.lte.0');
+      // ข้ามใบที่ถูก "เลื่อนหัก" (defer_rounds > 0)
+      let aq = sb().from('advance_requests').select('emp_id,amount,approved_amount')
+        .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
+      aq = carry ? aq.lte('cycle_month', runMonth) : aq.eq('cycle_month', runMonth);
+      const { data: advRows } = await aq;
       (advRows || []).forEach(r => { const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advByEmp[r.emp_id] = (advByEmp[r.emp_id] || 0) + amt; });
     } catch (_e) { /* ยังไม่มีระบบเบิก */ }
-    // ★ เบิกค่าน้ำมันไรเดอร์ (อนุมัติแล้ว + ยังไม่หัก + สังกัดรอบนี้หรือก่อนหน้า) → หักคืนในรอบนี้
+    // ★ เบิกค่าน้ำมันไรเดอร์ (อนุมัติแล้ว + ยังไม่หัก) → หักคืน · รอบปัจจุบันตกทอดได้ · รอบอนาคตเฉพาะใบของรอบนั้น
     let fuelByEmp = {};
     try {
-      const { data: fuelRows } = await sb().from('rider_fuel_claims').select('emp_id,amount').eq('status', 'approved').eq('deducted', false).lte('cycle_month', runMonth);
+      let fq = sb().from('rider_fuel_claims').select('emp_id,amount').eq('status', 'approved').eq('deducted', false);
+      fq = carry ? fq.lte('cycle_month', runMonth) : fq.eq('cycle_month', runMonth);
+      const { data: fuelRows } = await fq;
       (fuelRows || []).forEach(r => { fuelByEmp[r.emp_id] = (fuelByEmp[r.emp_id] || 0) + Number(r.amount || 0); });
     } catch (_e) { /* ยังไม่มีระบบน้ำมัน */ }
     // ★ ค่าซ่อมบำรุงรถไรเดอร์ (อนุมัติแล้ว ยังไม่จ่าย) → รายได้ (บริษัทจ่ายคืน จ่ายพร้อมเงินเดือน)
@@ -6314,11 +6336,14 @@
     const { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
     if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้ — กดคำนวณก่อน' };
     if (run.status === 'finalized') return { ok: true, already: true };
-    const runMonth = cyc.end.slice(0, 7);   // เดือนสิ้นรอบ — หักเฉพาะใบที่สังกัดรอบนี้หรือก่อนหน้า
+    const runMonth = cyc.end.slice(0, 7);
+    const carry = runMonth === bkkToday().slice(0, 7);   // รอบปัจจุบัน = ตกทอดใบเก่าได้ · รอบอนาคต = เฉพาะใบของรอบนั้น
     try {
-      // 1) หักใบที่ถึงกำหนด (ไม่ถูกเลื่อน + สังกัดรอบนี้หรือก่อนหน้า) — ทำเครื่องหมาย "หักแล้ว"
-      const { data: dueRows } = await sb().from('advance_requests').select('id')
-        .eq('status', 'paid').eq('deducted', false).lte('cycle_month', runMonth).or('defer_rounds.is.null,defer_rounds.lte.0');
+      // 1) หักใบที่ถึงกำหนด (ไม่ถูกเลื่อน) — ทำเครื่องหมาย "หักแล้ว"
+      let dueQ = sb().from('advance_requests').select('id')
+        .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
+      dueQ = carry ? dueQ.lte('cycle_month', runMonth) : dueQ.eq('cycle_month', runMonth);
+      const { data: dueRows } = await dueQ;
       const ids = (dueRows || []).map(r => r.id);
       if (ids.length) await hrAdvanceDeduct({ ids, payroll_ref: run.id, by: 'ระบบเงินเดือน' }, {});
       // 2) ใบที่ยังถูกเลื่อน → ลดตัวนับลง 1 (ปิดรอบนี้ = ผ่านไป 1 รอบ)
@@ -6337,8 +6362,10 @@
       }
     } catch (_e) { /* ไม่มีระบบผ่อน ก็ข้าม */ }
     try {
-      // เบิกค่าน้ำมัน: ทำเครื่องหมาย "หักคืนแล้ว" (อนุมัติ + ยังไม่หัก + สังกัดรอบนี้หรือก่อนหน้า)
-      await sb().from('rider_fuel_claims').update({ deducted: true, deducted_at: new Date().toISOString(), payroll_ref: run.id }).eq('status', 'approved').eq('deducted', false).lte('cycle_month', runMonth);
+      // เบิกค่าน้ำมัน: ทำเครื่องหมาย "หักคืนแล้ว" (อนุมัติ + ยังไม่หัก) · รอบปัจจุบันตกทอดได้ · รอบอนาคตเฉพาะใบของรอบนั้น
+      { let fuQ = sb().from('rider_fuel_claims').update({ deducted: true, deducted_at: new Date().toISOString(), payroll_ref: run.id }).eq('status', 'approved').eq('deducted', false);
+        fuQ = carry ? fuQ.lte('cycle_month', runMonth) : fuQ.eq('cycle_month', runMonth);
+        await fuQ; }
     } catch (_e) { /* ไม่มีระบบน้ำมัน */ }
     try {
       // ค่าซ่อมบำรุงรถ: อนุมัติแล้ว → เปลี่ยนเป็น "จ่ายแล้ว" ทันที (จ่ายพร้อมเงินเดือน)
