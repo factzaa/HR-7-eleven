@@ -5258,6 +5258,7 @@ function renderAdvRows(){
         <td><span class="pill" style="background:${st[1]};color:${st[2]};font-weight:700">${st[0]}</span>
             ${r.payout_due_date?`<div style="font-size:11px;color:var(--muted);margin-top:2px">กำหนดโอน ${beDate(r.payout_due_date)}</div>`:''}
             ${r.paid_at?`<div style="font-size:11px;color:#166534;margin-top:2px">อ้างอิง ${esc(r.payout_ref||'')}</div>`:''}
+            ${(ADV_CAN.pay && r.status==='paid' && !r.deducted && !r.installment_id)?`<div style="font-size:11px;color:var(--muted);margin-top:4px">หักรอบ: <select data-advcyc="${r.id}" style="padding:3px 5px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:11px">${_fuelRoundOpts(r.cycle_month||'')}</select></div>`:''}
             ${r.review_note?`<div style="font-size:11px;color:#b91c1c;margin-top:2px">${esc(r.review_note)}</div>`:''}</td>
         <td style="white-space:nowrap">
           ${(ADV_CAN.review && r.status==='submitted')?`<button class="btn btn-pri btn-sm" data-advok="${r.id}">อนุมัติ</button> <button class="btn btn-sec btn-sm" data-advno="${r.id}">ไม่อนุมัติ</button>`:''}
@@ -5274,6 +5275,7 @@ function renderAdvRows(){
   document.querySelectorAll('[data-advno]').forEach(b=>b.onclick=()=>advReject(b.dataset.advno));
   document.querySelectorAll('[data-advpay]').forEach(b=>b.onclick=()=>advPay(b.dataset.advpay));
   document.querySelectorAll('[data-advtl]').forEach(b=>b.onclick=()=>advTimeline(b.dataset.advtl));
+  document.querySelectorAll('[data-advcyc]').forEach(s=>s.onchange=async()=>{ const r=await post({ action:'hr_advance_cycle', ...authBody(), data:{ id:s.dataset.advcyc, cycle_month:s.value } }); if(r&&r.ok){ toast('ok','เปลี่ยนรอบหักแล้ว'); loadAdvance(); } else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); loadAdvance(); } });
   document.querySelectorAll('[data-advbank]').forEach(b=>b.onclick=()=>advBank(b.dataset.advbank));
   document.querySelectorAll('[data-advinst]').forEach(b=>b.onclick=()=>advInstallment(b.dataset.advinst));
   $('adv_approveall') && ($('adv_approveall').onclick=async()=>{

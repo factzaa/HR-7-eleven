@@ -216,6 +216,7 @@
         case 'hr_advance_deduct':     return await hrAdvanceDeduct(p.data, p);
         case 'hr_advance_defer':      return await hrAdvanceDefer(p.data, p);
         case 'hr_advance_create':     return await hrAdvanceCreate(p.data, p);
+        case 'hr_advance_cycle':      return await hrAdvanceSetCycle(p.data, p);
         case 'hr_advance_installment': return await hrAdvanceInstallment(p.data, p);
         case 'hr_advance_timeline':   return await hrAdvanceTimeline(p.id);
         case 'hr_advance_window_open':   return await hrAdvanceWindowOpen(p.data, p);
@@ -3090,6 +3091,22 @@
     return { ok: true, id: ins && ins.id, req_no, approved: approveNow };
   }
 
+  // เปลี่ยน "รอบที่จะหัก" (cycle_month) ของใบเบิกเงินล่วงหน้า — HR เท่านั้น · เฉพาะใบที่จ่ายแล้ว+ยังไม่หัก+ไม่ใช่ผ่อน
+  async function hrAdvanceSetCycle(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'เฉพาะสำนักงาน (HR) เท่านั้น' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    if (!/^\d{4}-\d{2}$/.test(String(d.cycle_month || ''))) return { ok: false, error: 'รูปแบบรอบไม่ถูกต้อง (YYYY-MM)' };
+    const { data: r } = await sb().from('advance_requests').select('id,deducted,installment_id,req_no,emp_id').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    if (r.deducted) return { ok: false, error: 'ใบนี้หักไปแล้ว เปลี่ยนรอบไม่ได้ (ต้องเปิดรอบที่หักก่อน)' };
+    if (r.installment_id) return { ok: false, error: 'ใบนี้เป็นแผนผ่อนแล้ว เปลี่ยนรอบที่นี่ไม่ได้' };
+    const { error } = await sb().from('advance_requests').update({ cycle_month: d.cycle_month }).eq('id', d.id);
+    if (error) throw error;
+    await logAct('เปลี่ยนรอบหักเบิกล่วงหน้า ' + r.req_no, r.emp_id, d.cycle_month);
+    return { ok: true };
+  }
   // ---- แปลงใบเบิกเป็น "ผ่อนหัก" (หักทีละงวดแทนก้อนเดียว) ----
   async function hrAdvanceInstallment(d, auth) {
     const me = await _termActor(auth);
