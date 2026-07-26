@@ -6049,6 +6049,18 @@ async function fetchRdFuel(){
   renderRdFuel();
 }
 function rfBadge(s){ const c={submitted:'#a06515',approved:'#16a34a',rejected:'#dc2626'}[s]||'#64748b'; return '<span style="background:'+c+'1a;color:'+c+';padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">'+esc((RD._fuelSt&&RD._fuelSt[s])||s)+'</span>'; }
+function _fuelPayLabel(ym){
+  if(!ym||!/^\d{4}-\d{2}$/.test(ym)) return ym||'—';
+  const [y,m]=ym.split('-').map(Number);
+  const pay=new Date(y, m, 1);   // เดือนสิ้นรอบ m → จ่าย 1 ของเดือนถัดไป
+  const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  return 'จ่าย 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2);
+}
+function _fuelKeyDate(iso){
+  if(!iso) return '—';
+  const d=new Date(new Date(iso).getTime()+7*3600*1000);
+  return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+String(d.getUTCFullYear()+543).slice(2);
+}
 function renderRdFuel(){
   const rows=RD.fuel;
   if(!rows.length){ $('rf_box').innerHTML='<div class="empty">— ไม่มีคำขอ —</div>'; return; }
@@ -6056,13 +6068,16 @@ function renderRdFuel(){
   let h='';
   if(pend) h+='<div class="card" style="padding:9px 13px;margin-bottom:9px;background:#fff7ed;color:#9a3412;font-size:13px;font-weight:600">⏳ รออนุมัติ '+pend+' คำขอ</div>';
   h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f6f7f9;text-align:left">'
-   +'<th style="padding:8px">เลขที่</th><th style="padding:8px">พนักงาน</th><th style="padding:8px;text-align:right">ยอด</th><th style="padding:8px">ไมล์</th><th style="padding:8px">บิล</th><th style="padding:8px">บิลจริง</th><th style="padding:8px">สถานะ</th><th></th></tr></thead><tbody>';
+   +'<th style="padding:8px">เลขที่</th><th style="padding:8px">พนักงาน</th><th style="padding:8px;text-align:right">ยอด</th><th style="padding:8px">ไมล์</th><th style="padding:8px">วันที่คีย์</th><th style="padding:8px">รอบที่จะหัก</th><th style="padding:8px">บิล</th><th style="padding:8px">บิลจริง</th><th style="padding:8px">สถานะ</th><th></th></tr></thead><tbody>';
   rows.forEach(r=>{
+    const dedTxt = r.deducted ? '<div style="font-size:10.5px;color:#16a34a;font-weight:700">✓ หักแล้ว</div>' : '<div style="font-size:10.5px;color:#c2410c">ยังไม่หัก</div>';
     h+='<tr style="border-top:1px solid var(--line)">'
-     +'<td style="padding:8px;white-space:nowrap">'+esc(r.claim_no||'')+'<div style="font-size:11px;color:var(--muted)">'+esc(r.cycle_month||'')+'</div></td>'
+     +'<td style="padding:8px;white-space:nowrap">'+esc(r.claim_no||'')+'</td>'
      +'<td style="padding:8px">'+esc(r.nickname||r.emp_name||r.emp_id)+'<div style="font-size:11px;color:var(--muted)">'+esc(r.branch_name||'')+'</div></td>'
      +'<td style="padding:8px;text-align:right;font-weight:700">'+Number(r.amount).toLocaleString()+'</td>'
      +'<td style="padding:8px">'+(r.odometer!=null?Number(r.odometer).toLocaleString():'—')+'</td>'
+     +'<td style="padding:8px;white-space:nowrap">'+_fuelKeyDate(r.created_at)+'</td>'
+     +'<td style="padding:8px;white-space:nowrap"><b>'+esc(_fuelPayLabel(r.cycle_month))+'</b><div style="font-size:10.5px;color:var(--muted)">รอบ '+esc(r.cycle_month||'')+'</div>'+dedTxt+'</td>'
      +'<td style="padding:8px">'+(r.receipt_url?'<img src="'+esc(r.receipt_url)+'" onclick="lightbox(this)" style="width:36px;height:36px;object-fit:cover;border-radius:6px;cursor:zoom-in">':'—')+'</td>'
      +'<td style="padding:8px"><input type="checkbox" data-rfrcpt="'+r.id+'"'+(r.physical_receipt?' checked':'')+' title="ได้รับบิลตัวจริง"></td>'
      +'<td style="padding:8px">'+rfBadge(r.status)+(r.review_note?('<div style="font-size:10.5px;color:#b91c1c">'+esc(r.review_note)+'</div>'):'')+'</td>'
