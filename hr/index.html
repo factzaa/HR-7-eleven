@@ -715,6 +715,7 @@
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="vehicles">🏍️ ทะเบียนรถ</button>
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="fuel" data-hronly="1">⛽ ค่าน้ำมัน</button>
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="items" data-hronly="1">🧰 รายการเบิก (เปิด/ปิด)</button>
+    <button class="btn btn-sec btn-sm rd-sub" data-rdsec="stats" data-hronly="1">📊 สถิติระยะทาง</button>
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="config" data-hronly="1">⚙️ ตั้งค่า</button>
     <span style="flex:1"></span>
     <select id="rd_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
@@ -744,6 +745,18 @@
       สลับสวิตช์เพื่อ <b>เปิด/ปิด</b> ให้ไรเดอร์เบิกรายการนั้น ๆ · กด "แก้เงื่อนไข" เพื่อตั้งระยะ กม. เพดานต่อปี วงเงิน และหลักฐานที่ต้องแนบ
     </div>
     <div id="rd_items_box"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+
+  <!-- 📊 สถิติระยะทาง -->
+  <div id="rd_sec_stats" class="rd-sec" style="display:none">
+    <div class="card" style="padding:11px 14px;margin-bottom:10px;background:#f0fdfa;font-size:13px;color:#134e4a">
+      เทียบ <b>ระยะทาง (กม.)</b> · <b>ค่าน้ำมัน</b> · <b>฿/กม.</b> · <b>ค่าซ่อม</b> ของไรเดอร์ทุกคน (ทั้งปี) · ระบบไฮไลต์รายการที่ <b>ไม่สอดคล้อง</b> (เบิกแต่ไม่มีเลขไมล์ / ฿ต่อ กม. สูงผิดปกติ)
+    </div>
+    <div class="toolbar" style="margin-bottom:8px;gap:6px;flex-wrap:wrap">
+      <select id="rs_year" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"></select>
+      <button class="btn btn-sec btn-sm" id="rs_reload">รีเฟรช</button>
+    </div>
+    <div id="rd_stats_box"><div class="empty">กำลังโหลด…</div></div>
   </div>
 
   <!-- ตั้งค่า -->
@@ -5919,12 +5932,47 @@ function loadRider(){
 function rdShowSec(sec){
   RD.sec=sec;
   document.querySelectorAll('.rd-sub').forEach(b=>b.classList.toggle('on', b.dataset.rdsec===sec));
-  ['claims','vehicles','items','config','fuel'].forEach(s=>{ const el=$('rd_sec_'+s); if(el) el.style.display=(s===sec?'block':'none'); });
+  ['claims','vehicles','items','config','fuel','stats'].forEach(s=>{ const el=$('rd_sec_'+s); if(el) el.style.display=(s===sec?'block':'none'); });
   if(sec==='claims') loadRdClaims();
   else if(sec==='vehicles') loadRdVehicles();
   else if(sec==='items') loadRdItems();
   else if(sec==='config') loadRdConfig();
   else if(sec==='fuel') loadRdFuel();
+  else if(sec==='stats') loadRdStats();
+}
+// 📊 สถิติระยะทางไรเดอร์
+function loadRdStats(){
+  if(!RD._statsWired){
+    const ySel=$('rs_year'); if(ySel && !ySel.options.length){ const y=new Date().getFullYear(); for(let i=0;i<3;i++){ const yy=y-i; const o=document.createElement('option'); o.value=yy; o.textContent='ปี '+(yy+543); ySel.appendChild(o);} }
+    $('rs_reload')&&($('rs_reload').onclick=loadRdStats);
+    $('rs_year')&&($('rs_year').onchange=loadRdStats);
+    RD._statsWired=true;
+  }
+  const box=$('rd_stats_box'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  post({ action:'rider_stats', password:pwd, year:$('rs_year')?$('rs_year').value:undefined }).then(r=>{
+    if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+    if(!r.rows.length){ box.innerHTML='<div class="empty">— ยังไม่มีข้อมูลไรเดอร์ —</div>'; return; }
+    const t=r.totals||{};
+    let h='<div class="card" style="padding:10px 13px;margin-bottom:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:13px">'
+      +'<div>ระยะทางรวม <b>'+Number(t.distance||0).toLocaleString()+'</b> กม.</div>'
+      +'<div>ค่าน้ำมันรวม <b>'+Number(t.fuel||0).toLocaleString()+'</b> ฿</div>'
+      +'<div>ค่าซ่อมรวม <b>'+Number(t.maint||0).toLocaleString()+'</b> ฿</div>'
+      +(t.flagged?('<div style="color:#b45309">⚠️ ไม่สอดคล้อง <b>'+t.flagged+'</b> คน</div>'):'<div style="color:#16a34a">✓ สอดคล้องทุกคน</div>')+'</div>';
+    h+='<div class="tablewrap"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f6f7f9">'
+      +'<th style="text-align:left;padding:8px">ไรเดอร์</th><th style="text-align:right;padding:8px">ระยะทาง (กม.)</th><th style="text-align:right;padding:8px">ค่าน้ำมัน (฿)</th><th style="text-align:right;padding:8px">฿/กม.</th><th style="text-align:right;padding:8px">ค่าซ่อม (฿)</th><th style="text-align:left;padding:8px">หมายเหตุ</th></tr></thead><tbody>';
+    r.rows.forEach(x=>{
+      const warn = x.flags&&x.flags.length;
+      h+='<tr style="border-top:1px solid var(--line)'+(warn?';background:#fffbeb':'')+'">'
+        +'<td style="padding:8px"><b>'+esc(x.name)+'</b><div style="font-size:11px;color:var(--muted)">'+esc(x.branch||'')+(x.plates?(' · '+esc(x.plates)):'')+'</div></td>'
+        +'<td style="padding:8px;text-align:right">'+Number(x.distance).toLocaleString()+'</td>'
+        +'<td style="padding:8px;text-align:right">'+Number(x.fuel).toLocaleString()+'<div style="font-size:10.5px;color:var(--muted)">'+x.fuel_count+' ครั้ง</div></td>'
+        +'<td style="padding:8px;text-align:right;font-weight:700;'+(x.baht_per_km!=null&&x.baht_per_km>3?'color:#b45309':'')+'">'+(x.baht_per_km!=null?x.baht_per_km.toLocaleString():'—')+'</td>'
+        +'<td style="padding:8px;text-align:right">'+Number(x.maint).toLocaleString()+'<div style="font-size:10.5px;color:var(--muted)">'+x.maint_count+' ครั้ง</div></td>'
+        +'<td style="padding:8px;font-size:11.5px;color:#b45309">'+(warn?x.flags.map(esc).join('<br>'):'<span style="color:#16a34a">✓</span>')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    box.innerHTML=h;
+  }).catch(e=>{ box.innerHTML='<div class="empty">'+esc(e.message||'ผิดพลาด')+'</div>'; });
 }
 // ⛽ ค่าน้ำมัน (HR อนุมัติ)
 function loadRdFuel(){
@@ -9295,7 +9343,7 @@ function buildScheduleText(){
   if(bf) txt+=' ('+branchName(bf)+')';
   emps.forEach(e=>{
     const cells=days.map(d=>{ const arr=SC.schedules[e.emp_id+'|'+d]||[]; if(!arr.length) return 'OFF'; return arr.map(c=>{ let s=shiftCodeOf(c.shift_id); if(c.is_cover) s+='→'+c.branch_id; return s; }).join('+'); });
-    txt+='\n• '+e.name+': '+days.map((d,i)=>TH_DOW_S[new Date(d+'T00:00:00').getDay()]+cells[i]).join('  ');
+    txt+='\n• '+e.name+(e.phone?(' ☎'+e.phone):'')+': '+days.map((d,i)=>TH_DOW_S[new Date(d+'T00:00:00').getDay()]+cells[i]).join('  ');
   });
   txt+='\n\n(→ = ไปแทนสาขา)';
   return txt;
@@ -9309,7 +9357,7 @@ function buildScheduleCanvas(){
   const days=[]; for(let i=0;i<7;i++) days.push(addDaysStr(scWeek,i));
   const bf=$('sc_branchfilter')?$('sc_branchfilter').value:'';
   const emps=scFilteredEmps();
-  const nameW=190, colW=82, rowH=48, headTop=70, padX=16;
+  const nameW=210, colW=82, rowH=58, headTop=70, padX=16;
   const W=padX*2+nameW+colW*7, H=headTop+rowH*Math.max(1,emps.length)+30;
   const c=document.createElement('canvas'); c.width=W; c.height=H;
   const x=c.getContext('2d');
@@ -9326,8 +9374,9 @@ function buildScheduleCanvas(){
   emps.forEach((e,r)=>{
     const y=top+rowH*r;
     if(r%2){ x.fillStyle='#f9fafb'; x.fillRect(padX,y,nameW+colW*7,rowH); }
-    x.textAlign='left'; x.fillStyle='#1f2937'; x.font='600 13px Anuphan,sans-serif'; x.fillText(e.nickname||e.name, padX+8, y+rowH/2-7);
-    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText((e.nickname?e.name:('รหัส '+e.emp_id)), padX+8, y+rowH/2+10);
+    x.textAlign='left'; x.fillStyle='#1f2937'; x.font='600 13px Anuphan,sans-serif'; x.fillText(e.nickname||e.name, padX+8, y+rowH/2-14);
+    x.fillStyle='#9ca3af'; x.font='400 11px Anuphan,sans-serif'; x.fillText((e.nickname?e.name:('รหัส '+e.emp_id)), padX+8, y+rowH/2);
+    if(e.phone){ x.fillStyle='#0369a1'; x.font='600 11px Anuphan,sans-serif'; x.fillText('โทร '+e.phone, padX+8, y+rowH/2+15); }
     x.textAlign='center';
     days.forEach((d,i)=>{
       const cx=padX+nameW+colW*i, arr=SC.schedules[e.emp_id+'|'+d]||[], cover=arr.some(cc=>cc.is_cover);

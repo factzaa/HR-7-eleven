@@ -302,6 +302,7 @@
         case 'rider_fuel_cfg_get':   return await hrFuelCfgGet();
         case 'rider_fuel_cfg_save':  return await hrFuelCfgSave(p.data, p);
         case 'rider_pending':        return await hrRiderPending(p);
+        case 'rider_stats':          return await hrRiderStats(p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
@@ -4875,6 +4876,40 @@
 
   // ---------- เบิกค่าน้ำมันไรเดอร์ (HR อนุมัติ · หักคืนเงินเดือน) ----------
   const RFUEL_STATUS = { submitted: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ' };
+  // สรุปสถิติระยะทาง/ค่าน้ำมัน/ซ่อม ต่อไรเดอร์ (ทั้งปี) + ตรวจความไม่สอดคล้อง
+  async function hrRiderStats(p) {
+    p = p || {};
+    const year = String(p.year || new Date().getFullYear());
+    const yStart = year + '-01-01', yEnd = year + '-12-31';
+    const [vehR, odoR, fuelR, maintR, empR, brR] = await Promise.all([
+      sb().from('rider_vehicles').select('id,emp_id,plate,odo_start,odo_last,active'),
+      sb().from('rider_odometer').select('vehicle_id,odo,log_date').gte('log_date', yStart).lte('log_date', yEnd),
+      sb().from('rider_fuel_claims').select('emp_id,amount,status,odometer,created_at'),
+      sb().from('rider_claims').select('emp_id,amount_est,approved_amount,amount_actual,status,created_at'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    const emps = {}; (empR.data || []).forEach(e => emps[e.emp_id] = e);
+    const brN = {}; (brR.data || []).forEach(b => brN[b.branch_id] = b.name);
+    const inYear = s => String(s || '').slice(0, 4) === year;
+    // ระยะทางต่อรถ = ไมล์สูงสุด − ต่ำสุด ในปี
+    const odoByVeh = {};
+    (odoR.data || []).forEach(o => { const v = Number(o.odo); if (!isFinite(v)) return; const m = odoByVeh[o.vehicle_id] || (odoByVeh[o.vehicle_id] = { min: v, max: v }); if (v < m.min) m.min = v; if (v > m.max) m.max = v; });
+    const stat = {};
+    const S = id => stat[id] || (stat[id] = { emp_id: id, name: (emps[id] && (emps[id].nickname || emps[id].name)) || id, branch: (emps[id] && brN[emps[id].branch_id]) || '', distance: 0, plates: [], fuel: 0, fuel_count: 0, maint: 0, maint_count: 0 });
+    (vehR.data || []).forEach(v => { if (!v.emp_id) return; const s = S(v.emp_id); const d = odoByVeh[v.id]; if (d) s.distance += (d.max - d.min); if (v.plate) s.plates.push(v.plate); });
+    (fuelR.data || []).forEach(f => { if (!inYear(f.created_at)) return; if (f.status !== 'approved' && f.status !== 'deducted') return; const s = S(f.emp_id); s.fuel += Number(f.amount || 0); s.fuel_count++; });
+    (maintR.data || []).forEach(m => { if (!inYear(m.created_at)) return; if (!['approved', 'serviced', 'paid'].includes(m.status)) return; const s = S(m.emp_id); const amt = m.amount_actual != null ? m.amount_actual : (m.approved_amount != null ? m.approved_amount : m.amount_est); s.maint += Number(amt || 0); s.maint_count++; });
+    const rows = Object.values(stat).map(s => {
+      const bpk = s.distance > 0 ? (s.fuel / s.distance) : null;
+      const flags = [];
+      if (s.fuel > 0 && s.distance <= 0) flags.push('เบิกน้ำมันแต่ไม่มีระยะทาง (ไม่ได้บันทึกเลขไมล์)');
+      if (bpk != null && bpk > 3) flags.push('ค่าน้ำมันต่อ กม. สูงผิดปกติ (' + bpk.toFixed(1) + ' ฿/กม.)');
+      if (s.maint > 0 && s.distance <= 0) flags.push('เบิกซ่อมแต่ไม่มีระยะทาง');
+      return { emp_id: s.emp_id, name: s.name, branch: s.branch, plates: s.plates.join(', '), distance: Math.round(s.distance), fuel: Math.round(s.fuel), fuel_count: s.fuel_count, maint: Math.round(s.maint), maint_count: s.maint_count, baht_per_km: bpk != null ? Math.round(bpk * 100) / 100 : null, flags };
+    }).sort((a, b) => b.distance - a.distance);
+    return { ok: true, year, rows, totals: { distance: rows.reduce((a, b) => a + b.distance, 0), fuel: rows.reduce((a, b) => a + b.fuel, 0), maint: rows.reduce((a, b) => a + b.maint, 0), flagged: rows.filter(r => r.flags.length).length } };
+  }
   async function hrFuelList(p) {
     p = p || {};
     let q = sb().from('rider_fuel_claims').select('*').order('created_at', { ascending: false });
