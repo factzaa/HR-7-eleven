@@ -6235,6 +6235,7 @@
       run: { id: run.id, period_start: run.period_start, period_end: run.period_end, pay_month: run.pay_month, status: run.status },
       range: { start: cyc.start, end: cyc.end, label: 'รอบ ' + cyc.start + ' ถึง ' + cyc.end },
       items: outItems, config: cfg,
+      _dbg: { which, runMonth, payingMonth, carry, adv_by: advByEmp, fuel_by: fuelByEmp },
     };
   }
   async function hrPayrollItemSave(d) {
