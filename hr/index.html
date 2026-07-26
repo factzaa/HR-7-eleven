@@ -4293,6 +4293,16 @@ function openPlItem(empId){
   $('pli_title').textContent='เพิ่ม/หัก · '+(it.emp_name||empId);
   // แสดงเฉพาะบรรทัดที่ HR ใส่เอง (ไม่มี src) · บรรทัดอัตโนมัติ (Delivery/ค่ากะ/ผ่อน/น้ำมัน/ซ่อม/เบี้ยพิเศษ ฯลฯ) จัดการที่ช่องเฉพาะ/หน้าตรวจ
   const lineRows=(arr,kind)=>(arr||[]).filter(a=>!a.src).map((a,i)=>plLineRow(kind,i,a.label,a.amount)).join('');
+  // รายการอัตโนมัติ (อ่านอย่างเดียว) — ค่าน้ำมัน/ซ่อม/ค่ากะ/ผ่อน/หน้าตรวจ · แก้ที่ต้นทาง
+  const autoList=(arr,extra)=>{
+    const auto=(arr||[]).filter(a=>a.src).slice();
+    (extra||[]).forEach(x=>{ if(Number(x.amount)>0) auto.push(x); });
+    if(!auto.length) return '<div style="font-size:11.5px;color:#94a3b8;margin-bottom:8px">— ไม่มีรายการอัตโนมัติ —</div>';
+    return '<div style="background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px">'
+      +'<div style="color:var(--muted);font-size:11px;margin-bottom:4px">🔒 รายการอัตโนมัติ (แก้ที่หน้าตรวจ / ระบบต้นทาง)</div>'
+      +auto.map(a=>'<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0"><span>'+esc(a.label)+'</span><b>'+plB(a.amount)+'</b></div>').join('')
+      +'</div>';
+  };
   const isDaily=(it.wage_type||'daily')==='daily';
   const ovVal=(it.days_override!=null?it.days_override:'');
   $('pli_body').innerHTML=
@@ -4306,9 +4316,11 @@ function openPlItem(empId){
       +'<input id="pli_deliv" type="number" step="1" min="0" placeholder="0" value="'+esc(it.delivery!=null?it.delivery:"")+'" style="width:140px;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:right">'
       +'<div style="font-size:11.5px;color:var(--muted);margin-top:5px">บวกเข้ารายได้ (แสดงในสลิปช่อง "เงินได้อื่นๆ") · เก็บพร้อมหน้าตรวจ</div></div>'
     +'<div style="font-weight:600;margin-bottom:6px;color:#166534">รายการเพิ่ม (บวกเข้ารายรับ)</div>'
+    +autoList(it.additions)
     +'<div id="pli_adds">'+lineRows(it.additions,'add')+'</div>'
-    +'<button class="btn btn-sec btn-sm" id="pli_addBtn" style="margin:2px 0 14px">+ เพิ่มบรรทัด</button>'
+    +'<button class="btn btn-sec btn-sm" id="pli_addBtn" style="margin:2px 0 14px">+ เพิ่มบรรทัด (แก้เอง)</button>'
     +'<div style="font-weight:600;margin-bottom:6px;color:#b91c1c">รายการหัก (หักจากเงินเดือน)</div>'
+    +autoList(it.deductions,[{label:'เบิกล่วงหน้า (หัก)',amount:it.advance_deduct}])
     +'<div id="pli_deds">'+lineRows(it.deductions,'ded')+'</div>'
     +'<button class="btn btn-sec btn-sm" id="pli_dedBtn" style="margin:2px 0 14px">+ เพิ่มบรรทัด</button>'
     +'<div style="font-weight:600;margin-bottom:6px">📝 หมายเหตุ (Remark บนสลิป)</div>'
