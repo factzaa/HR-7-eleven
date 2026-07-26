@@ -4051,8 +4051,35 @@ $('mecSave') && ($('mecSave').onclick=meConfigSave);
    ============================================================ */
 let PAY_UNLOCKED=false, PAY=null, PAY_CFG=null, PAY_PROFILES=null, PAY_PF_DEF={daily_rate:0,monthly_rate:0};
 const plB = n => Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:0, maximumFractionDigits:2});
+// ป้ายรอบอิงวันจ่าย: "รอบปัจจุบัน" = รอบที่กำลังจะจ่าย (จ่าย 1 ของเดือนถัดจากสิ้นรอบ 21–20)
+function _plCyc(which){
+  const bkkStr=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+  const t=new Date(bkkStr+'T00:00:00'); const day=t.getDate();
+  let endRef=(day<=20)?new Date(t.getFullYear(),t.getMonth(),20):new Date(t.getFullYear(),t.getMonth()+1,20);
+  const back=which==='previous'?1:0;
+  endRef=new Date(endRef.getFullYear(),endRef.getMonth()-back,20);
+  const start=new Date(endRef.getFullYear(),endRef.getMonth()-1,21);
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return { start:iso(start), end:iso(endRef) };
+}
+function _plPayText(which){
+  const c=_plCyc(which); const e=new Date(c.end+'T00:00:00');
+  const pay=new Date(e.getFullYear(), e.getMonth()+1, 1);
+  const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  return 'จ่าย 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2);
+}
+function setupPlWhich(){
+  const sel=$('pl_which'); if(!sel) return;
+  const past20=Number(new Date(Date.now()+7*3600*1000).toISOString().slice(8,10))>20;
+  const payW=past20?'previous':'current', othW=past20?'current':'previous';
+  const othLbl=past20?'รอบถัดไป':'รอบก่อน (จ่ายแล้ว)';
+  const cur=sel.value;
+  sel.innerHTML='<option value="'+payW+'">รอบปัจจุบัน · '+_plPayText(payW)+'</option>'
+    +'<option value="'+othW+'">'+othLbl+' · '+_plPayText(othW)+'</option>';
+  sel.value=(cur===payW||cur===othW)?cur:payW;
+}
 function enterPayroll(){
-  if(PAY_UNLOCKED){ $('pl_lock').style.display='none'; $('pl_main').style.display='block'; plShowSec('run'); }
+  if(PAY_UNLOCKED){ setupPlWhich(); $('pl_lock').style.display='none'; $('pl_main').style.display='block'; plShowSec('run'); }
   else { $('pl_lock').style.display='block'; $('pl_main').style.display='none'; setTimeout(()=>{ const el=$('pl_pass'); if(el) el.focus(); },50); }
 }
 async function plUnlock(){
@@ -5455,6 +5482,21 @@ $('adv_payrollbtn') && ($('adv_payrollbtn').onclick=async()=>{
 // ---------- ตั้งค่า ----------
 // คีย์เบิกให้พนักงาน (HR/ผจก. สร้างคำขอแทน)
 $('adv_keybtn') && ($('adv_keybtn').onclick=openAdvKey);
+// ตัวเลือก "รอบที่จะหัก" สำหรับ HR คีย์เบิก — อิงเดือนสิ้นรอบ 21–20 + วันจ่าย (ดีฟอลต์ = รอบจ่ายถัดไป)
+function _akRoundOpts(){
+  const bkkStr=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+  const t=new Date(bkkStr+'T00:00:00');
+  const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  let h='';
+  for(let i=0;i<3;i++){
+    const cm=new Date(t.getFullYear(), t.getMonth()+i, 1);
+    const ym=cm.getFullYear()+'-'+String(cm.getMonth()+1).padStart(2,'0');
+    const pay=new Date(cm.getFullYear(), cm.getMonth()+1, 1);
+    const lbl=(i===0?'รอบปัจจุบัน':i===1?'รอบถัดไป':'อีก '+i+' รอบ')+' · จ่าย 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2);
+    h+='<option value="'+ym+'">'+lbl+'</option>';
+  }
+  return h;
+}
 function openAdvKey(){
   const rows=(DATA.rows||[]).filter(e=>!MGR_MODE || String(e.branch_id)===String(MGR_BRANCH));
   if(!rows.length){ toast('err','ไม่มีพนักงาน'); return; }
@@ -5463,15 +5505,16 @@ function openAdvKey(){
     '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">สร้างคำขอเบิกแทนพนักงาน (พนักงานไม่ต้องคีย์เอง) · จะเข้าคิว "รออนุมัติ" ให้กดอนุมัติ + โอนตามปกติ</div>'
     +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">พนักงาน</label><select id="ak_emp" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px">'+opts+'</select></div>'
     +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">จำนวนเงิน (บาท)</label><input id="ak_amt" type="number" min="0" step="100" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px"></div>'
+    +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">หักในรอบ</label><select id="ak_cycle" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px">'+_akRoundOpts()+'</select><div style="font-size:11px;color:var(--muted);margin-top:3px">เลือกว่าจะให้หักคืนในรอบจ่ายไหน (ดีฟอลต์ = รอบที่จ่ายถัดไป)</div></div>'
     +'<div class="field" style="margin-bottom:10px"><label style="font-size:13px">เหตุผล/หมายเหตุ</label><input id="ak_reason" type="text" placeholder="เช่น เบิกล่วงหน้า" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px"></div>'
     +'<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:12px;cursor:pointer"><input type="checkbox" id="ak_approve"> <b>อนุมัติทันที</b> (ข้ามขั้นกดอนุมัติ · พร้อมโอนเลย)</label>'
     +'<button class="btn btn-pri" id="ak_save" style="width:100%;padding:11px">สร้างคำขอเบิก</button>');
   $('ak_save').onclick=async()=>{
-    const emp=$('ak_emp').value, amt=Number($('ak_amt').value)||0, reason=$('ak_reason').value.trim(), approve=$('ak_approve')&&$('ak_approve').checked;
+    const emp=$('ak_emp').value, amt=Number($('ak_amt').value)||0, reason=$('ak_reason').value.trim(), approve=$('ak_approve')&&$('ak_approve').checked, cycle_month=($('ak_cycle')||{}).value||'';
     if(!emp){ toast('err','เลือกพนักงาน'); return; }
     if(amt<=0){ toast('err','ระบุจำนวนเงิน'); return; }
     $('ak_save').disabled=true; $('ak_save').textContent='กำลังสร้าง…';
-    const r=await post({ action:'hr_advance_create', ...authBody(), data:{ emp_id:emp, amount:amt, reason, approve } });
+    const r=await post({ action:'hr_advance_create', ...authBody(), data:{ emp_id:emp, amount:amt, reason, approve, cycle_month } });
     if(r&&r.ok){ toast('ok','สร้างคำขอเบิกแล้ว · '+(r.req_no||'')+(r.approved?' · อนุมัติแล้ว':'')); closeModal(); loadAdvance(); }
     else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); $('ak_save').disabled=false; $('ak_save').textContent='สร้างคำขอเบิก'; }
   };

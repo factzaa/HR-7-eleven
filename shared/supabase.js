@@ -814,7 +814,8 @@
       emergency_pay_days: 2, emergency_count_in_cap: true, emergency_require_evidence: true,
     };
   }
-  const _advMonth = () => bangkokDate().slice(0, 7);          // YYYY-MM ของเดือนที่เบิก
+  const _cycleMonth = () => cycleRange21().end.slice(0, 7);   // YYYY-MM ของ "เดือนสิ้นรอบ 21–20" (รอบจ่าย)
+  const _advMonth = () => _cycleMonth();                      // เบิกเงินล่วงหน้า: สังกัดรอบสิ้นเดือนนี้ (ไม่ใช่เดือนปฏิทิน)
 
   // สิทธิ์เบิกฉุกเฉินที่ ผจก. เปิดให้ (ยังไม่หมดอายุ / ยังไม่ถูกใช้)
   async function getAdvanceWindow(empId) {
@@ -1987,7 +1988,7 @@
   }
   async function riderFuelQuota(empId, cycleMonth) {
     const cfg = await riderFuelConfig();
-    const m = cycleMonth || bangkokDate().slice(0, 7);
+    const m = cycleMonth || _cycleMonth();   // เดือนสิ้นรอบ 21–20
     const { data } = await sb.from('rider_fuel_claims').select('amount,status').eq('emp_id', empId).eq('cycle_month', m).in('status', ['submitted', 'approved']);
     const used = (data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
     return { per_claim_max: Number(cfg.per_claim_max || 500), total_max: Number(cfg.total_max || 1500), used, remaining: Math.max(0, Number(cfg.total_max || 1500) - used), enabled: cfg.enabled !== false, require_odometer: cfg.require_odometer === true, month: m };
@@ -2002,7 +2003,7 @@
     if (amt > Number(cfg.per_claim_max || 500)) throw new Error('เบิกได้ครั้งละไม่เกิน ' + Number(cfg.per_claim_max || 500) + ' บาท');
     if (cfg.require_odometer && !(Number(odometer) > 0)) throw new Error('กรอกเลขไมล์');
     if (!receipt) throw new Error('แนบรูปบิลน้ำมัน');
-    const month = bangkokDate().slice(0, 7);
+    const month = _cycleMonth();   // เดือนสิ้นรอบ 21–20 (รอบจ่าย) — ไม่ใช่เดือนปฏิทิน
     const q = await riderFuelQuota(empId, month);
     if (amt > q.remaining) throw new Error('เกินวงเงินรวมรอบนี้ (เหลือ ' + q.remaining.toLocaleString() + ' บาท)');
     let vehicle = null;

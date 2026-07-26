@@ -74,7 +74,7 @@
     <a href="../hr/" class="btn sec sm" style="text-decoration:none">← หน้า HR</a>
     <h1>🧾 ตรวจข้อมูลเข้าเงินเดือน</h1>
     <span class="badge">ไม่แสดงยอดเงิน</span>
-    <select id="which"><option value="current">รอบปัจจุบัน</option><option value="previous">รอบก่อนหน้า</option></select>
+    <select id="which"><option value="current">รอบปัจจุบัน</option></select>
     <select id="branch"><option value="">ทุกสาขา</option></select>
     <button class="btn sec sm" id="reload">รีเฟรช</button>
     <button class="btn sec sm" id="ctrlBtn">👥 ผู้คุมผลัด</button>
@@ -149,10 +149,27 @@ async function doLogin(){
     const ok=await HR.reviewCheckPassword(pw);
     if(!ok){ $('loginMsg').textContent='รหัสไม่ถูกต้อง'; $('loginBtn').disabled=false; $('loginBtn').textContent='เข้าสู่ระบบ'; return; }
     $('loginView').style.display='none'; $('mainView').style.display='block';
-    load();
+    setupWhich(); load();
   }catch(e){ $('loginMsg').textContent=e.message||'เชื่อมต่อไม่สำเร็จ'; $('loginBtn').disabled=false; $('loginBtn').textContent='เข้าสู่ระบบ'; }
 }
 
+// ป้ายรอบแบบอิงวันจ่าย: "รอบปัจจุบัน" = รอบที่กำลังจะจ่าย (จ่าย 1 ของเดือนถัดจากสิ้นรอบ)
+const _THM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function cyclePayText(which){
+  const c=HR.reviewCycleRange(which); const e=new Date(c.end+'T00:00:00');
+  const pay=new Date(e.getFullYear(), e.getMonth()+1, 1);
+  return { pay:'จ่าย 1 '+_THM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2), range:c.start+' – '+c.end };
+}
+function setupWhich(){
+  const sel=$('which'); if(!sel) return;
+  let past20=false; try{ past20=Number(HR.bangkokDate().slice(8,10))>20; }catch(e){ past20=new Date().getDate()>20; }
+  const payW=past20?'previous':'current', othW=past20?'current':'previous';
+  const othLbl=past20?'รอบถัดไป':'รอบก่อน (จ่ายแล้ว)';
+  const p=cyclePayText(payW), o=cyclePayText(othW);
+  sel.innerHTML='<option value="'+payW+'">รอบปัจจุบัน · '+p.pay+'</option>'
+    +'<option value="'+othW+'">'+othLbl+' · '+o.pay+'</option>';
+  sel.value=payW;
+}
 $('which').onchange=load; $('branch').onchange=render; $('reload').onclick=load;
 $('saveAll').onclick=saveAll;
 
