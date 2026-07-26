@@ -1864,6 +1864,7 @@
     </div>
     <div class="modal-f">
       <button class="btn btn-danger" id="v_toggleBtn" style="margin-right:auto">ปิดการใช้งาน</button>
+      <button class="btn btn-sec" id="v_transferBtn" title="ย้ายสาขา = เปลี่ยนรหัสตามรหัสสาขาใหม่ โดยย้ายข้อมูลทั้งหมดตามไปด้วย">🔁 ย้ายรหัส/สาขา</button>
       <button class="btn btn-sec" id="v_closeBtn">ปิด</button>
       <button class="btn btn-pri" id="v_editBtn">แก้ไขข้อมูล</button>
     </div>
@@ -3093,6 +3094,26 @@ function closeView(){ $('viewOverlay').classList.remove('show'); }
 $('viewClose').onclick = closeView; $('v_closeBtn').onclick = closeView;
 $('viewOverlay').addEventListener('click', e=>{ if(e.target===$('viewOverlay')) closeView(); });
 $('v_editBtn').onclick = ()=>{ if(editing){ closeView(); openEdit(editing); } };
+$('v_transferBtn') && ($('v_transferBtn').onclick = ()=>{
+  if(!editing) return;
+  const r = DATA.rows.find(x=>String(x.emp_id)===editing); if(!r) return;
+  const brOpts = (DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(String(b.branch_id)===String(r.branch_id)?' selected':'')+'>'+esc(b.branch_id+' · '+(b.name||''))+'</option>').join('');
+  openModal('🔁 ย้ายรหัส / ย้ายสาขา',
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ย้าย <b>'+esc(r.name||editing)+'</b> (รหัสเดิม <b>'+esc(editing)+'</b>) ไปรหัสใหม่ตามสาขาใหม่ · <b>ข้อมูลทั้งหมด</b> (ลงเวลา/เบิก/น้ำมัน/คะแนน/เงินเดือน ฯลฯ) จะย้ายตามไปให้อัตโนมัติ</div>'
+    +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">รหัสใหม่</label><input id="tf_new" type="text" placeholder="เช่น 1077590" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px"></div>'
+    +'<div class="field" style="margin-bottom:12px"><label style="font-size:13px">สาขาใหม่</label><select id="tf_branch" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:3px">'+brOpts+'</select></div>'
+    +'<div style="font-size:11.5px;color:#b45309;margin-bottom:12px">⚠️ ตรวจให้แน่ใจว่ารหัสใหม่ถูกต้องและยังไม่มีใครใช้ · ทำแล้วย้อนกลับต้องย้ายกลับด้วยรหัสเดิม</div>'
+    +'<button class="btn btn-pri" id="tf_save" style="width:100%;padding:11px">ยืนยันย้ายรหัส</button>');
+  $('tf_save').onclick = async ()=>{
+    const newId=$('tf_new').value.trim(), branch=$('tf_branch').value;
+    if(!newId){ toast('err','ใส่รหัสใหม่'); return; }
+    if(!confirm('ยืนยันย้าย '+editing+' → '+newId+' ?\nข้อมูลทั้งหมดจะย้ายตามรหัสใหม่')) return;
+    $('tf_save').disabled=true; $('tf_save').textContent='กำลังย้าย…';
+    const res=await post({ action:'hr_emp_transfer', password:pwd, data:{ old_id:editing, new_id:newId, branch_id:branch } });
+    if(res&&res.ok){ toast('ok','ย้ายเรียบร้อย · '+(res.message||'')); closeModal(); closeView(); await loadAll(); renderEmployees(); }
+    else { toast('err',(res&&res.error)||'ไม่สำเร็จ'); $('tf_save').disabled=false; $('tf_save').textContent='ยืนยันย้ายรหัส'; }
+  };
+});
 $('v_toggleBtn').onclick = async ()=>{
   if(!editing) return;
   const r = DATA.rows.find(x=>String(x.emp_id)===editing);
@@ -11110,6 +11131,7 @@ body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่ม�
 body.is-logged #asstFab{display:block}
 body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
 body.mgr-mode #adv_keybtn{display:none !important}   /* คีย์เบิกให้พนักงาน = เฉพาะ HR */
+body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหัส/สาขา = เฉพาะ HR */
 #asstFab img{width:100%;height:100%;object-fit:contain;pointer-events:none;position:relative;z-index:2}
 #asstFab .fbadge{position:absolute;top:2px;right:0;z-index:3;background:#ea580c;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
 #asstFab::before,#asstFab::after{content:"";position:absolute;left:50%;top:56%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;border:3px solid rgba(16,163,74,.6);z-index:0;pointer-events:none;animation:asstRing 2.4s ease-out infinite}

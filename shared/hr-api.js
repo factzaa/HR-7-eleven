@@ -135,6 +135,7 @@
         case 'hr_board':          return await hrBoard(p.date);
         case 'hr_save':           return await hrSave(p.data);
         case 'hr_toggle':         return await hrToggle(p.emp_id);
+        case 'hr_emp_transfer':   return await hrEmpTransfer(p.data);
         case 'hr_emp_delete':     return await hrEmpDelete(p.emp_id);
         case 'hr_change_emp_id':  return await hrChangeEmpId(p.old_id, p.new_id);
         case 'hr_report':         return await hrReport(p.filter);
@@ -690,6 +691,24 @@
     const { error } = await sb().from('employees').upsert(row, { onConflict: 'emp_id' });
     if (error) throw error;
     return { ok: true, action };
+  }
+
+  // ---------- ย้าย/เปลี่ยนรหัสพนักงาน (ย้ายสาขา) — retarget ทุกตารางในทีเดียว ----------
+  async function hrEmpTransfer(d) {
+    d = d || {};
+    const oldId = String(d.old_id || '').trim();
+    const newId = String(d.new_id || '').trim();
+    const branch = String(d.branch_id || '').trim();
+    if (!oldId || !newId) return { ok: false, error: 'ระบุรหัสเก่าและรหัสใหม่' };
+    if (oldId === newId) return { ok: false, error: 'รหัสเก่ากับรหัสใหม่เหมือนกัน' };
+    if (!/^[a-zA-Z0-9_-]+$/.test(newId)) return { ok: false, error: 'รหัสใหม่ต้องเป็นตัวอักษร/ตัวเลขเท่านั้น' };
+    const { data: dup } = await sb().from('employees').select('emp_id').eq('emp_id', newId).maybeSingle();
+    if (dup) return { ok: false, error: 'รหัสใหม่ ' + newId + ' มีพนักงานอื่นใช้อยู่แล้ว' };
+    const { data, error } = await sb().rpc('transfer_emp', { p_old: oldId, p_new: newId, p_branch: branch || null });
+    if (error) return { ok: false, error: 'เรียกฟังก์ชันไม่สำเร็จ — ยังไม่ได้ติดตั้ง transfer_emp.sql? (' + String(error.message || error) + ')' };
+    if (typeof data === 'string' && data.indexOf('ERROR') === 0) return { ok: false, error: data.replace(/^ERROR:\s*/, '') };
+    await logAct('ย้ายรหัสพนักงาน ' + oldId + ' → ' + newId + (branch ? (' · สาขา ' + branch) : ''), newId, String(data || ''));
+    return { ok: true, message: String(data || 'ย้ายเรียบร้อย') };
   }
 
   // ---------- TOGGLE ACTIVE ----------
