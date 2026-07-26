@@ -4110,8 +4110,7 @@ async function loadPayrollRun(){
   if(!r||!r.ok){ $('pl_run_body').innerHTML='<div class="empty">'+esc((r&&r.error)||'ไม่สำเร็จ')+'</div>'; return; }
   PAY=r;
   const fin = r.run && r.run.status==='finalized';
-  $('pl_run_status').innerHTML = (r.range?('📆 '+esc(r.range.label)+' · '):'') + (fin?'<b style="color:#166534">ปิดรอบแล้ว</b>':'<span style="color:#c2410c">ร่าง (แก้ได้)</span>')
-    + (r._dbg?('<div style="font-size:11px;color:#7c3aed;margin-top:3px;font-family:monospace">🐞 which='+esc(r._dbg.which)+' · runMonth='+esc(r._dbg.runMonth)+' · payingMonth='+esc(r._dbg.payingMonth)+' · carry='+r._dbg.carry+'<br>พิศมัย: เบิก='+((r._dbg.adv_by&&r._dbg.adv_by['0657355'])||0)+' · น้ำมัน='+((r._dbg.fuel_by&&r._dbg.fuel_by['0657355'])||0)+'</div>'):'');
+  $('pl_run_status').innerHTML = (r.range?('📆 '+esc(r.range.label)+' · '):'') + (fin?'<b style="color:#166534">ปิดรอบแล้ว</b>':'<span style="color:#c2410c">ร่าง (แก้ได้)</span>');
   $('pl_finalize').style.display = fin?'none':'';
   if($('pl_reopen')) $('pl_reopen').style.display = fin?'':'none';
   plFillRunBranches();

@@ -6208,6 +6208,11 @@
     if (!finalized && items.length) {
       const { error } = await sb().from('payroll_items').upsert(items, { onConflict: 'run_id,emp_id' });
       if (error) throw error;
+      // ★ ลบ "แถวผี": รายการเก่าของคนที่ไม่อยู่ในรอบนี้แล้ว (เช่น เปลี่ยน emp_id ตอนย้ายสาขา) — กันค่าเก่าค้างมาโชว์
+      try {
+        const keepIds = items.map(x => String(x.emp_id).replace(/[^a-zA-Z0-9_-]/g, ''));
+        if (keepIds.length) await sb().from('payroll_items').delete().eq('run_id', run.id).not('emp_id', 'in', '(' + keepIds.join(',') + ')');
+      } catch (_e) { /* ข้าม ถ้าลบไม่ได้ก็ไม่เป็นไร */ }
     }
     // ดึงกลับมาเพื่อให้มี id ครบ (ฝั่งหน้าเว็บใช้ id ตอนแก้รายการเพิ่ม/หัก)
     const { data: finalItems } = await sb().from('payroll_items').select('*').eq('run_id', run.id).order('emp_id');
@@ -6235,7 +6240,6 @@
       run: { id: run.id, period_start: run.period_start, period_end: run.period_end, pay_month: run.pay_month, status: run.status },
       range: { start: cyc.start, end: cyc.end, label: 'รอบ ' + cyc.start + ' ถึง ' + cyc.end },
       items: outItems, config: cfg,
-      _dbg: { which, runMonth, payingMonth, carry, adv_by: advByEmp, fuel_by: fuelByEmp },
     };
   }
   async function hrPayrollItemSave(d) {
