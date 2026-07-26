@@ -6061,6 +6061,21 @@ function _fuelKeyDate(iso){
   const d=new Date(new Date(iso).getTime()+7*3600*1000);
   return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+String(d.getUTCFullYear()+543).slice(2);
 }
+function _fuelRoundOpts(sel){
+  const bkkStr=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
+  const t=new Date(bkkStr+'T00:00:00');
+  const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  let h=''; const seen=new Set();
+  for(let i=-1;i<=2;i++){
+    const cm=new Date(t.getFullYear(), t.getMonth()+i, 1);
+    const ym=cm.getFullYear()+'-'+String(cm.getMonth()+1).padStart(2,'0'); seen.add(ym);
+    const pay=new Date(cm.getFullYear(), cm.getMonth()+1, 1);
+    const lbl='จ่าย 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2)+(i===0?' (ปัจจุบัน)':i===1?' (ถัดไป)':'');
+    h+='<option value="'+ym+'"'+(ym===sel?' selected':'')+'>'+lbl+'</option>';
+  }
+  if(sel && !seen.has(sel)) h='<option value="'+esc(sel)+'" selected>รอบ '+esc(sel)+'</option>'+h;
+  return h;
+}
 function renderRdFuel(){
   const rows=RD.fuel;
   if(!rows.length){ $('rf_box').innerHTML='<div class="empty">— ไม่มีคำขอ —</div>'; return; }
@@ -6071,13 +6086,16 @@ function renderRdFuel(){
    +'<th style="padding:8px">เลขที่</th><th style="padding:8px">พนักงาน</th><th style="padding:8px;text-align:right">ยอด</th><th style="padding:8px">ไมล์</th><th style="padding:8px">วันที่คีย์</th><th style="padding:8px">รอบที่จะหัก</th><th style="padding:8px">บิล</th><th style="padding:8px">บิลจริง</th><th style="padding:8px">สถานะ</th><th></th></tr></thead><tbody>';
   rows.forEach(r=>{
     const dedTxt = r.deducted ? '<div style="font-size:10.5px;color:#16a34a;font-weight:700">✓ หักแล้ว</div>' : '<div style="font-size:10.5px;color:#c2410c">ยังไม่หัก</div>';
+    const roundCell = r.deducted
+      ? ('<b>'+esc(_fuelPayLabel(r.cycle_month))+'</b><div style="font-size:10.5px;color:var(--muted)">รอบ '+esc(r.cycle_month||'')+'</div>'+dedTxt)
+      : ('<select data-rfcyc="'+r.id+'" style="padding:5px 6px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:12px">'+_fuelRoundOpts(r.cycle_month||'')+'</select>'+dedTxt);
     h+='<tr style="border-top:1px solid var(--line)">'
      +'<td style="padding:8px;white-space:nowrap">'+esc(r.claim_no||'')+'</td>'
      +'<td style="padding:8px">'+esc(r.nickname||r.emp_name||r.emp_id)+'<div style="font-size:11px;color:var(--muted)">'+esc(r.branch_name||'')+'</div></td>'
      +'<td style="padding:8px;text-align:right;font-weight:700">'+Number(r.amount).toLocaleString()+'</td>'
      +'<td style="padding:8px">'+(r.odometer!=null?Number(r.odometer).toLocaleString():'—')+'</td>'
      +'<td style="padding:8px;white-space:nowrap">'+_fuelKeyDate(r.created_at)+'</td>'
-     +'<td style="padding:8px;white-space:nowrap"><b>'+esc(_fuelPayLabel(r.cycle_month))+'</b><div style="font-size:10.5px;color:var(--muted)">รอบ '+esc(r.cycle_month||'')+'</div>'+dedTxt+'</td>'
+     +'<td style="padding:8px;white-space:nowrap">'+roundCell+'</td>'
      +'<td style="padding:8px">'+(r.receipt_url?'<img src="'+esc(r.receipt_url)+'" onclick="lightbox(this)" style="width:36px;height:36px;object-fit:cover;border-radius:6px;cursor:zoom-in">':'—')+'</td>'
      +'<td style="padding:8px"><input type="checkbox" data-rfrcpt="'+r.id+'"'+(r.physical_receipt?' checked':'')+' title="ได้รับบิลตัวจริง"></td>'
      +'<td style="padding:8px">'+rfBadge(r.status)+(r.review_note?('<div style="font-size:10.5px;color:#b91c1c">'+esc(r.review_note)+'</div>'):'')+'</td>'
@@ -6090,6 +6108,7 @@ function renderRdFuel(){
   $('rf_box').querySelectorAll('[data-rfok]').forEach(b=>b.onclick=()=>rfReview(b.dataset.rfok,'approve'));
   $('rf_box').querySelectorAll('[data-rfno]').forEach(b=>b.onclick=()=>{ const n=prompt('เหตุผลที่ไม่อนุมัติ'); if(n&&n.trim()) rfReview(b.dataset.rfno,'reject',n.trim()); });
   $('rf_box').querySelectorAll('[data-rfrcpt]').forEach(c=>c.onchange=async()=>{ await post({ action:'rider_fuel_review', ...authBody(), data:{ id:c.dataset.rfrcpt, action:'receipt', physical_receipt:c.checked } }); toast('ok','บันทึกบิลตัวจริงแล้ว'); });
+  $('rf_box').querySelectorAll('[data-rfcyc]').forEach(s=>s.onchange=async()=>{ const r=await post({ action:'rider_fuel_cycle', ...authBody(), data:{ id:s.dataset.rfcyc, cycle_month:s.value } }); if(r&&r.ok){ toast('ok','เปลี่ยนรอบหักแล้ว'); fetchRdFuel(); } else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); fetchRdFuel(); } });
 }
 async function rfReview(id, action, note){
   const r=await post({ action:'rider_fuel_review', ...authBody(), data:{ id, action, note } });
