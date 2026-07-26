@@ -27,8 +27,9 @@
   .login .btn{width:100%;padding:13px}
   /* table */
   .note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:11px;padding:10px 13px;font-size:13px;margin-bottom:12px;line-height:1.6}
-  .tbl{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13.5px;background:#fff;border-radius:12px;overflow:hidden}
-  .tbl th{background:#eef1f4;text-align:center;padding:9px 6px;font-weight:700;white-space:normal;line-height:1.25;position:sticky;top:60px;z-index:5;border-bottom:1px solid var(--line2)}
+  .tblscroll{max-height:74vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .tbl{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:13.5px;background:#fff}
+  .tbl th{background:#eef1f4;text-align:center;padding:9px 6px;font-weight:700;white-space:normal;line-height:1.25;position:sticky;top:0;z-index:6;border-bottom:2px solid var(--line2);box-shadow:0 1px 0 var(--line2)}
   .tbl th:first-child{text-align:left}
   .chip{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:20px;font-weight:600}
   .sumbar{font-size:11px;color:#374151;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
@@ -48,7 +49,7 @@
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#111827;color:#fff;padding:11px 18px;border-radius:11px;font-size:14px;display:none;z-index:99}
   .toast.show{display:block}
   .toast.err{background:#b91c1c}
-  @media(max-width:760px){ .tbl thead{display:none} .tbl,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}
+  @media(max-width:760px){ .tblscroll{max-height:none;overflow:visible;border:0} .tbl thead{display:none} .tbl,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}
     .tbl tr{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:#fff;padding:6px 4px}
     .tbl td{border:0;display:flex;justify-content:space-between;align-items:center;gap:10px}
     .tbl td::before{content:attr(data-l);font-size:12px;color:var(--muted);font-weight:600}
@@ -204,7 +205,7 @@ function render(){
   const rows=(DATA.rows||[]).filter(r=>!br||String(r.branch_id)===String(br));
   if(!rows.length){ $('tblWrap').innerHTML='<div style="color:var(--muted);padding:20px;text-align:center">— ไม่มีพนักงาน —</div>'; return; }
   const val=v=>(v==null?'':v);
-  let h='<table class="tbl"><colgroup>'
+  let h='<div class="tblscroll"><table class="tbl"><colgroup>'
     +'<col style="width:19%"><col style="width:7%"><col style="width:7%"><col style="width:7.5%"><col style="width:7%"><col style="width:8%"><col style="width:7.5%"><col style="width:8%"><col style="width:11.5%"><col style="width:9.5%"><col style="width:8%">'
     +'</colgroup><thead><tr>'
     +'<th>พนักงาน</th><th>วัน</th><th>OT (ชม.)</th><th>ค่ากะดึก</th><th>Delivery</th><th>เงินเบิก</th><th>เบี้ยพิเศษ</th><th>สินค้าเสื่อม</th><th>หักอื่นๆ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>';
@@ -238,7 +239,7 @@ function render(){
        +'<button class="btn sec sm instBtn" title="แผนผ่อนหัก" style="margin-top:5px">💳 ผ่อน</button>'
        +'<button class="btn sm saveRow" style="margin-top:5px">บันทึก</button><div class="rowsaved" style="display:none">✓ บันทึก</div></td></tr>';
   });
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
   $('tblWrap').innerHTML=h;
   document.querySelectorAll('#tblWrap .saveRow').forEach(b=>b.onclick=()=>saveRow(b.closest('tr')));
   document.querySelectorAll('#tblWrap .shiftBtn').forEach(b=>b.onclick=()=>openShift(b.closest('tr').dataset.emp));
