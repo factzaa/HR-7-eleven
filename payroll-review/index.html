@@ -230,9 +230,11 @@ function render(){
     const scoreChip = (r.score!=null)
       ? '<span class="chip" style="background:'+(r.band_color||'#475569')+'22;color:'+(r.band_color||'#475569')+'">คะแนน '+r.score+(r.band?(' · '+esc(r.band)):'')+'</span>'
       : '<span class="chip" style="background:#e5e7eb;color:#6b7280">ยังไม่มีคะแนน</span>';
-    const dilChip = (r.dil_ok==null) ? ''
-      : (r.dil_ok ? ' <span class="chip" style="background:#16a34a22;color:#16a34a">เบี้ยวินัย ✓ ได้</span>'
-                  : ' <span class="chip" style="background:#dc262622;color:#dc2626">เบี้ยวินัย ✗ ไม่ได้</span>');
+    const dilStyle = r.dil_off ? 'background:#f59e0b22;color:#b45309;border:1px dashed #f59e0b'
+                    : (r.dil_ok===false ? 'background:#dc262622;color:#dc2626' : 'background:#16a34a22;color:#16a34a');
+    const dilText = r.dil_off ? '🚫 เบี้ยวินัย: ปิดไว้' : (r.dil_ok===false ? 'เบี้ยวินัย ✗ ไม่เข้าเกณฑ์' : 'เบี้ยวินัย ✓ ได้');
+    const dilChip = (r.dil_ok==null && !r.dil_off) ? ''
+      : ' <span class="chip dilbtn" data-diloff="'+esc(r.emp_id)+'" style="cursor:pointer;'+dilStyle+'" title="คลิกเพื่อ'+(r.dil_off?'เปิด (พนักงานผ่านประเมินแล้ว)':'ปิด (พนักงานใหม่ยังไม่ผ่านประเมิน)')+'">'+dilText+' <span style="opacity:.6">'+(r.dil_off?'(คลิกเปิด)':'(คลิกปิด)')+'</span></span>';
     const sum='<div class="sumbar">'
       +'<span>ขาด <b style="color:'+(r.absent>0?'#dc2626':'#111827')+'">'+r.absent+'</b></span>'
       +'<span>ลา <b>'+r.leave_days+'</b></span>'
@@ -261,6 +263,14 @@ function render(){
   document.querySelectorAll('#tblWrap .saveRow').forEach(b=>b.onclick=()=>saveRow(b.closest('tr')));
   document.querySelectorAll('#tblWrap .shiftBtn').forEach(b=>b.onclick=()=>openShift(b.closest('tr').dataset.emp));
   document.querySelectorAll('#tblWrap .instBtn').forEach(b=>b.onclick=()=>openInst(b.closest('tr').dataset.emp));
+  document.querySelectorAll('#tblWrap .dilbtn').forEach(b=>b.onclick=()=>toggleDil(b.dataset.diloff));
+}
+async function toggleDil(empId){
+  const r=(DATA.rows||[]).find(x=>String(x.emp_id)===String(empId)); if(!r) return;
+  const next=!r.dil_off;
+  if(next && !confirm('ปิดเบี้ยวินัยของ '+((r.name||r.nickname)||empId)+' รอบนี้?\n(ใช้กรณีพนักงานใหม่ยังไม่ผ่านประเมิน — จะไม่ได้เบี้ยวินัยแม้คะแนน/สถิติจะผ่าน)')) return;
+  try{ await HR.reviewSetDil(DATA.period_start, empId, next); r.dil_off=next; toast(next?'ปิดเบี้ยวินัยแล้ว':'เปิดเบี้ยวินัยแล้ว'); render(); }
+  catch(e){ toast(e.message||'ไม่สำเร็จ',true); }
 }
 
 function rowPayload(tr){

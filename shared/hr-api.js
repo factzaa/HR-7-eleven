@@ -6059,7 +6059,7 @@
     const dcfg = cfg.diligence || {};
     const noAbsent = !dcfg.require_no_absent || (Number(stats.absent_count || 0) === 0);
     const lateOk = Number(stats.late_count || 0) <= Number(dcfg.allow_late_count || 0);
-    if (noAbsent && lateOk) diligence = Number(prof.diligence_amount || 0);
+    if (noAbsent && lateOk && !stats.dil_off) diligence = Number(prof.diligence_amount || 0);   // dil_off = ผจก.ปิดเบี้ยวินัย (เช่น พนักงานใหม่ยังไม่ผ่านประเมิน)
     const bonus = Number(stats.bonus || 0);
     const addSum = (additions || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
     const gross = _pr2(base_pay + ot_pay + position_allowance + diligence + bonus + addSum);
@@ -6210,7 +6210,7 @@
       (instByEmp[e.emp_id] || []).forEach(x => deductions.push({ label: 'ผ่อน: ' + x.label + (x.remain_after > 0 ? (' (เหลือ ' + x.remain_after.toLocaleString() + ')') : ' (งวดสุดท้าย)'), amount: x.amount, src: 'inst', inst_id: x.id }));
       // เบิกค่าน้ำมัน (อนุมัติแล้ว) → หักคืน
       if (Number(fuelByEmp[e.emp_id]) > 0) deductions.push({ label: 'ค่าน้ำมัน (เบิก)', amount: _pr2(Number(fuelByEmp[e.emp_id])), src: 'fuel' });
-      const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0 };
+      const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0, dil_off: rv.dil_off === true };
       const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
       items.push({
         run_id: run.id, emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '',

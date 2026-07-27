@@ -2137,7 +2137,7 @@
         : ((dilCfg.enabled === false) ? null : ((!dilCfg.require_no_absent || absent === 0) && (late_count <= Number(dilCfg.allow_late_count || 0))));
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
-        att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok,
+        att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok, dil_off: rv.dil_off === true,
         score, band, band_color: bandColor, auto_advance: advBy[e.emp_id] || 0,
         auto_shift_allowance: shiftAllowBy[e.emp_id] || 0, shift_allowance_override: rv.shift_allowance_override,
         installments: instByEmp[e.emp_id] || null,
@@ -2198,11 +2198,25 @@
       days_override: num(f.days_override), ot_override: num(f.ot_override), advance_override: num(f.advance_override),
       add_special: num(f.add_special), delivery: num(f.delivery), ded_damaged: num(f.ded_damaged), ded_other: num(f.ded_other),
       shift_allowance_override: num(f.shift_allowance_override),
+      dil_off: f.dil_off === true,
       ded_other_note: (f.ded_other_note || '').trim() || null,
       note: (f.note || '').trim() || null, updated_by: f.by || 'ผจก.ตรวจ', updated_at: new Date().toISOString(),
     };
     const { error } = await sb.from('payroll_review').upsert(row, { onConflict: 'period_start,emp_id' });
     if (error) throw error;
+    return { ok: true };
+  }
+  // เปิด/ปิด "เบี้ยวินัย" รายคน (พนักงานใหม่ยังไม่ผ่านประเมิน) — แตะเฉพาะ dil_off ไม่ทับ override อื่น
+  async function reviewSetDil(period_start, emp_id, dil_off) {
+    if (!period_start || !emp_id) throw new Error('ข้อมูลไม่ครบ');
+    const { data: ex } = await sb.from('payroll_review').select('emp_id').eq('period_start', period_start).eq('emp_id', emp_id).maybeSingle();
+    if (ex) {
+      const { error } = await sb.from('payroll_review').update({ dil_off: dil_off === true, updated_at: new Date().toISOString() }).eq('period_start', period_start).eq('emp_id', emp_id);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('payroll_review').insert({ period_start, emp_id, dil_off: dil_off === true, updated_by: 'ผจก.ตรวจ', updated_at: new Date().toISOString() });
+      if (error) throw error;
+    }
     return { ok: true };
   }
   // ---------- แผนผ่อนหัก (installment) ----------
@@ -2335,7 +2349,7 @@
 
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
-    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
+    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
