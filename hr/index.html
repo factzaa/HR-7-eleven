@@ -9596,6 +9596,7 @@ function shOpen(shift){
   if($('sh_no_ot')) $('sh_no_ot').checked = shift ? (shift.no_ot===true) : false;
   if($('sh_half')) $('sh_half').checked = shift ? (Number(shift.day_value)===0.5) : false;
   if($('sh_mgrrev')) $('sh_mgrrev').checked = shift ? (shift.mgr_review!==false) : true;
+  if($('sh_nightallow')) $('sh_nightallow').checked = shift ? (shift.night_allowance===true) : false;
   $('shOverlay').classList.add('show');
 }
 function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
@@ -10957,6 +10958,7 @@ async function loadSubmissions(){
       <div class="field"><label>ผลัดหลัก (ระบบงานผลัด) — กะนี้นับเป็น เช้า/บ่าย/ดึก หรือพิเศษ</label><select id="sh_main"></select></div>
       <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_no_ot" style="width:18px;height:18px"> ไม่คิด OT สำหรับกะนี้ (เช่น กะ ผจก.)</label></div>
       <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_half" style="width:18px;height:18px"> <span>กะครึ่งวัน — นับเป็น <b>0.5 วัน</b> (มีผลกับรายงาน/ขาด/วินัย)</span></label></div>
+      <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_nightallow" style="width:18px;height:18px"> <span>🌙 จ่าย<b>ค่ากะดึก</b>สำหรับกะนี้ — ติ๊กเฉพาะกะดึกจริง (เช่น N) · กะที่เลิกดึกแต่ไม่ใช่กะดึก (เช่น 16:00–02:00) ไม่ต้องติ๊ก</span></label></div>
       <div class="field"><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sh_mgrrev" style="width:18px;height:18px" checked> <span>กะนี้อยู่ในเวลา ผจก. — ให้ ผจก.ตรวจงานในกะที่ติ๊ก "ผจก.ตรวจ" ได้ (ติ๊กออกสำหรับกะที่ ผจก.ไม่อยู่ เช่น กะดึก → งานจะไป HR ตรวจแทน)</span></label></div>
     </div>
     <div class="modal-f"><button class="btn btn-pri" id="shSave">บันทึก</button></div>
@@ -10967,7 +10969,7 @@ async function loadSubmissions(){
   $('sh_new') && ($('sh_new').onclick = ()=>shOpen(null));
   $('dr_save') && ($('dr_save').onclick = saveDiscRules);
   $('shSave').onclick = async ()=>{
-    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked, day_value:($('sh_half')&&$('sh_half').checked)?0.5:1, mgr_review:($('sh_mgrrev')?$('sh_mgrrev').checked:true) };
+    const data = { shift_id:$('sh_id').value.trim(), code:$('sh_code').value.trim(), name:$('sh_name').value.trim(), start_time:$('sh_start').value, end_time:$('sh_end').value, grace_min:$('sh_grace').value, main_shift:$('sh_main').value, no_ot:$('sh_no_ot').checked, day_value:($('sh_half')&&$('sh_half').checked)?0.5:1, mgr_review:($('sh_mgrrev')?$('sh_mgrrev').checked:true), night_allowance:($('sh_nightallow')?$('sh_nightallow').checked:false) };
     if(!data.shift_id||!data.name){ toast('err','กรอกรหัสกะและชื่อ'); return; }
     $('shSave').innerHTML='<span class="spin"></span>';
     const r = await post({ action:'hr_shift_save', password:pwd, data });

@@ -1514,11 +1514,13 @@
       no_ot: (d.no_ot === undefined) ? undefined : !!d.no_ot,   // กะนี้ไม่คิด OT (เช่น กะ ผจก.)
       day_value: (d.day_value === undefined) ? undefined : (Number(d.day_value) === 0.5 ? 0.5 : 1.0),  // 0.5 = กะครึ่งวัน
       mgr_review: (d.mgr_review === undefined) ? undefined : !!d.mgr_review,   // กะนี้อยู่ในเวลา ผจก. → ให้ ผจก.ตรวจงานในกะได้
+      night_allowance: (d.night_allowance === undefined) ? undefined : !!d.night_allowance,   // กะนี้จ่ายค่ากะดึก (ติ๊กเฉพาะกะดึกจริง)
     };
     if (row.no_ot === undefined) delete row.no_ot;
     if (row.main_shift === undefined) delete row.main_shift;
     if (row.day_value === undefined) delete row.day_value;
     if (row.mgr_review === undefined) delete row.mgr_review;
+    if (row.night_allowance === undefined) delete row.night_allowance;
     const { error } = await sb().from('shifts').upsert(row, { onConflict: 'shift_id' });
     if (error) throw error;
     return { ok: true };
@@ -6094,7 +6096,7 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift'),
+      sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance'),
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
       sb().from('payroll_installment_charges').select('*').lte('period_start', cyc.start),
@@ -6104,7 +6106,9 @@
     const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
     // กะดึก = กะข้ามคืน (เลิก ≤ เข้า) · ผู้คุมผลัด = หัวหน้าผลัดของกะนั้น จาก shift_leads (แยกตามกะ)
     const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
-    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvernight(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
+    // กะที่ "จ่ายค่ากะดึก" = ธง night_allowance (HR ติ๊กเอง) · fallback: ถ้าไม่มีกะไหนตั้งธงเลย ใช้กฎเก่า (เลิก ≤ เข้า)
+    const _hasNightFlag = (shR.data || []).some(s => s.night_allowance === true);
+    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_hasNightFlag ? (s.night_allowance === true) : _isOvernight(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
     const leadMap = {}; (ctrlR.data || []).forEach(c => { leadMap[(c.branch_id || '') + '|' + c.work_date + '|' + (grpOf[c.shift_id] || c.shift_id)] = c.emp_id; });
     const saCfg = cfg.shift_allowance || {};
     const shiftAllowBy = {};

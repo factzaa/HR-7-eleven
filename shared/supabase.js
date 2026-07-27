@@ -2065,7 +2065,7 @@
       empQ,
       sb.from('branches').select('branch_id,name').order('branch_id'),
       sb.from('attendance').select('emp_id,work_date,check_in,ot_hours,late_min,day_value,shift_id,status,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb.from('shifts').select('shift_id,day_value,name,start_time,end_time,main_shift'),
+      sb.from('shifts').select('shift_id,day_value,name,start_time,end_time,main_shift,night_allowance'),
       sb.from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('payroll_review').select('*').eq('period_start', cyc.start),
@@ -2090,7 +2090,8 @@
     try { const srow = (pcfgR.data || []).find(x => x.key === 'shift_allowance'); if (srow && srow.value && typeof srow.value === 'object') saCfg = Object.assign(saCfg, srow.value); } catch (_e) {}
     const _isOvn = (s, e) => (s && e) ? (String(e).slice(0, 5) <= String(s).slice(0, 5)) : false;
     const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
-    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
+    const _hasNightFlag = (shR.data || []).some(s => s.night_allowance === true);
+    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_hasNightFlag ? (s.night_allowance === true) : _isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
     // ผู้คุมผลัด = หัวหน้าผลัดของกะนั้น (shift_leads แยกตามกะ) · จับคู่ (สาขา|วัน|กลุ่มกะ)
     const leadMap = {}; (ctrlR.data || []).forEach(c => { leadMap[(c.branch_id || '') + '|' + c.work_date + '|' + (grpOf[c.shift_id] || c.shift_id)] = c.emp_id; });
     const shiftAllowBy = {};
@@ -2155,14 +2156,15 @@
       sb.from('employees').select('emp_id,name,nickname'),
       sb.from('branches').select('branch_id,name'),
       sb.from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in').gte('work_date', cyc.start).lte('work_date', cyc.end),
-      sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift'),
+      sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift,night_allowance'),
     ]);
     const empN = {}; (empR.data || []).forEach(e => empN[e.emp_id] = e.nickname || e.name || e.emp_id);
     const brN = {}; (brR.data || []).forEach(b => brN[b.branch_id] = b.name);
     const shName = {}; (shR.data || []).forEach(s => shName[s.shift_id] = s.name || s.shift_id);
     const grpOf = {}; (shR.data || []).forEach(s => grpOf[s.shift_id] = s.main_shift || s.shift_id);
     const _isOvn = (s, e) => (s && e) ? (String(e).slice(0, 5) <= String(s).slice(0, 5)) : false;
-    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
+    const _hasNightFlag = (shR.data || []).some(s => s.night_allowance === true);
+    const nightSet = new Set(); (shR.data || []).forEach(s => { if (_hasNightFlag ? (s.night_allowance === true) : _isOvn(s.start_time, s.end_time)) nightSet.add(s.shift_id); });
     // หัวหน้าผลัดต่อ (สาขา|วัน|กลุ่มกะ)
     const leadMap = {}; (leadR.data || []).forEach(l => { leadMap[(l.branch_id || '') + '|' + l.work_date + '|' + (grpOf[l.shift_id] || l.shift_id)] = l.emp_id; });
     // รวมใบลงเวลากะดึกเป็นรายคืน (สาขา|วัน|กลุ่มกะ)
