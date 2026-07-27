@@ -6060,7 +6060,8 @@
     const noAbsent = !dcfg.require_no_absent || (Number(stats.absent_count || 0) === 0);
     const lateOk = Number(stats.late_count || 0) <= Number(dcfg.allow_late_count || 0);
     if (noAbsent && lateOk && !stats.dil_off) diligence = Number(prof.diligence_amount || 0);   // dil_off = ผจก.ปิดเบี้ยวินัย (เช่น พนักงานใหม่ยังไม่ผ่านประเมิน)
-    const bonus = Number(stats.bonus || 0);
+    // เบี้ยวินัยในระบบนี้ = โบนัสตามแบนด์คะแนน (bonus) · ปิด dil_off → ตัดทั้งโบนัสแบนด์ + เบี้ยขยัน
+    const bonus = stats.dil_off ? 0 : Number(stats.bonus || 0);
     const addSum = (additions || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
     const gross = _pr2(base_pay + ot_pay + position_allowance + diligence + bonus + addSum);
     let sso = 0;
