@@ -63,7 +63,7 @@
   <div class="login">
     <h2>ตรวจข้อมูลเข้าเงินเดือน</h2>
     <p>สำหรับผู้จัดการระดับสูง — ตรวจ/แก้วัน OT เบิก เบี้ย รายการหัก<br>(หน้านี้ไม่แสดงยอดเงินเดือน)</p>
-    <input id="pw" type="password" inputmode="numeric" placeholder="รหัสหน้าตรวจ" autocomplete="off">
+    <input id="pw" type="password" placeholder="รหัสหน้าตรวจ" autocomplete="off">
     <button class="btn" id="loginBtn">เข้าสู่ระบบ</button>
     <div id="loginMsg" style="color:#b91c1c;font-size:13px;margin-top:10px"></div>
   </div>
@@ -252,8 +252,8 @@ function render(){
      +'<td data-l="เงินเบิก"><div><input class="f-adv" type="number" step="1" min="0" placeholder="'+(r.auto_advance||0)+'" value="'+val(r.advance_override)+'"><div class="hint">ระบบเบิก '+(r.auto_advance||0).toLocaleString()+'</div></div></td>'
      +'<td data-l="เบี้ยพิเศษ"><input class="f-sp" type="number" step="1" min="0" placeholder="0" value="'+val(r.add_special)+'"></td>'
      +'<td data-l="สินค้าเสื่อม"><input class="f-dm" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_damaged)+'"></td>'
-     +'<td data-l="หักอื่นๆ"><input class="f-ot2" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_other)+'"><input class="f-ot2n lbl-in" type="text" placeholder="ระบุว่าหักอะไร" value="'+esc(val(r.ded_other_note))+'"></td>'
-     +'<td data-l="หมายเหตุ"><input class="f-note wide" type="text" placeholder="—" value="'+esc(val(r.note))+'"></td>'
+     +'<td data-l="หักอื่นๆ"><input class="f-ot2" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_other)+'"><input class="f-ot2n lbl-in" type="text" inputmode="text" enterkeyhint="done" placeholder="ระบุว่าหักอะไร" value="'+esc(val(r.ded_other_note))+'"></td>'
+     +'<td data-l="หมายเหตุ"><input class="f-note wide" type="text" inputmode="text" enterkeyhint="done" placeholder="—" value="'+esc(val(r.note))+'"></td>'
      +'<td data-l=""><button class="btn sec sm shiftBtn" title="ดู/แก้ตารางกะรายวัน">📅 กะ</button>'
        +'<button class="btn sec sm instBtn" title="แผนผ่อนหัก" style="margin-top:5px">💳 ผ่อน</button>'
        +'<button class="btn sm saveRow" style="margin-top:5px">บันทึก</button><div class="rowsaved" style="display:none">✓ บันทึก</div></td></tr>';

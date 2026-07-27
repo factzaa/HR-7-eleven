@@ -5527,7 +5527,7 @@ function _akRoundOpts(){
     const cm=new Date(t.getFullYear(), t.getMonth()+i, 1);
     const ym=cm.getFullYear()+'-'+String(cm.getMonth()+1).padStart(2,'0');
     const pay=new Date(cm.getFullYear(), cm.getMonth()+1, 1);
-    const lbl=(i===0?'รอบปัจจุบัน':i===1?'รอบถัดไป':'อีก '+i+' รอบ')+' · จ่าย 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2);
+    const lbl=(i===0?'รอบปัจจุบัน':i===1?'รอบถัดไป':'อีก '+i+' รอบ')+' · หัก 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2);
     h+='<option value="'+ym+'">'+lbl+'</option>';
   }
   return h;
@@ -6075,9 +6075,9 @@ function rfBadge(s){ const c={submitted:'#a06515',approved:'#16a34a',rejected:'#
 function _fuelPayLabel(ym){
   if(!ym||!/^\d{4}-\d{2}$/.test(ym)) return ym||'—';
   const [y,m]=ym.split('-').map(Number);
-  const pay=new Date(y, m, 1);   // เดือนสิ้นรอบ m → จ่าย 1 ของเดือนถัดไป
+  const pay=new Date(y, m, 1);   // เดือนสิ้นรอบ m → หักในรอบจ่าย 1 ของเดือนถัดไป
   const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  return 'จ่าย 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2);
+  return 'หัก 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2);
 }
 function _fuelKeyDate(iso){
   if(!iso) return '—';
@@ -6093,7 +6093,7 @@ function _fuelRoundOpts(sel){
     const cm=new Date(t.getFullYear(), t.getMonth()+i, 1);
     const ym=cm.getFullYear()+'-'+String(cm.getMonth()+1).padStart(2,'0'); seen.add(ym);
     const pay=new Date(cm.getFullYear(), cm.getMonth()+1, 1);
-    const lbl='จ่าย 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2)+(i===0?' (ปัจจุบัน)':i===1?' (ถัดไป)':'');
+    const lbl='หัก 1 '+TM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2)+(i===0?' (ปัจจุบัน)':i===1?' (ถัดไป)':'');
     h+='<option value="'+ym+'"'+(ym===sel?' selected':'')+'>'+lbl+'</option>';
   }
   if(sel && !seen.has(sel)) h='<option value="'+esc(sel)+'" selected>รอบ '+esc(sel)+'</option>'+h;
