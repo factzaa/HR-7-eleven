@@ -821,7 +821,10 @@ async function refreshRiderCard(){
     +'<div style="font-weight:800;color:#0f766e;font-size:14px">🏍️ ไรเดอร์ · เบิกซ่อมบำรุงรถ</div>'
     +'<div style="font-size:12.5px;color:#134e4a;margin-top:2px">'+(RIDER.vehicles.length?('รถของคุณ '+RIDER.vehicles.length+' คัน'):'ยังไม่มีรถลงทะเบียน — แจ้งผู้จัดการ')+'</div>'
     +'<button type="button" id="rcOdoBtn" style="width:100%;margin-top:9px;padding:11px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">📍 บันทึกเลขไมล์ (ก่อน/หลังงาน)</button>'
-    +'<button type="button" id="rcFuelBtn" style="width:100%;margin-top:8px;padding:11px;border:0;border-radius:11px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer">⛽ เบิกค่าน้ำมัน</button>'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<button type="button" id="rcFuelBtn" style="flex:1;padding:11px;border:0;border-radius:11px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer">⛽ เบิกค่าน้ำมัน</button>'
+    +'<button type="button" id="fuMineBtn" style="padding:11px 14px;border:1.5px solid #ea580c;border-radius:11px;background:#fff;color:#c2410c;font-weight:700;font-size:14px;cursor:pointer">สถานะ</button>'
+    +'</div>'
     +'<div style="display:flex;gap:8px;margin-top:8px">'
     +'<button type="button" id="rcNewBtn" style="flex:1;padding:11px;border:0;border-radius:11px;background:#0d9488;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ ขอเบิกซ่อม</button>'
     +'<button type="button" id="rcMineBtn" style="padding:11px 14px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">คำขอของฉัน</button>'
@@ -830,6 +833,7 @@ async function refreshRiderCard(){
   $('rcMineBtn').onclick=openRiderMine;
   $('rcOdoBtn').onclick=openRiderOdo;
   $('rcFuelBtn').onclick=openFuelClaim;
+  $('fuMineBtn').onclick=openFuelMine;
 }
 
 // ⛽ เบิกค่าน้ำมัน
@@ -1057,6 +1061,29 @@ async function openRiderMine(){
     +'<button type="button" id="rcMineX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'+list+'</div>';
   document.body.appendChild(ov);
   $('rcMineX').onclick=()=>ov.remove();
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+}
+// ⛽ เบิกน้ำมันของฉัน — ให้ไรเดอร์เห็นสถานะ (รออนุมัติ/อนุมัติ/ไม่อนุมัติ) + เหตุผลจาก HR
+async function openFuelMine(){
+  let rows=[]; try{ rows=await HR.riderFuelMyList(empMatch.emp_id); }catch(e){}
+  const ST={ submitted:'รออนุมัติ', approved:'อนุมัติแล้ว', deducted:'เข้ารอบเงินเดือนแล้ว', rejected:'ไม่อนุมัติ', cancelled:'ยกเลิก' };
+  const CL={ submitted:'#a06515', approved:'#0369a1', deducted:'#16a34a', rejected:'#dc2626', cancelled:'#64748b' };
+  const ov=document.createElement('div'); ov.id='fuMineOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  const list=rows.length?rows.map(r=>{
+    const d=r.created_at?(window.beDate?beDate(String(r.created_at).slice(0,10)):String(r.created_at).slice(0,10)):'';
+    return '<div style="border:1px solid #e5e7eb;border-radius:11px;padding:10px 12px;margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px">⛽ '+riderMoney(r.amount||0)+' บาท</b>'
+      +'<span style="font-size:11px;font-weight:700;color:'+(CL[r.status]||'#64748b')+'">'+(ST[r.status]||r.status)+'</span></div>'
+      +'<div style="font-size:12px;color:#6b7280;margin-top:2px">'+escH(r.claim_no||'')+(d?(' · '+d):'')+(r.vehicle_plate?(' · '+escH(r.vehicle_plate)):'')+'</div>'
+      +(r.review_note?'<div style="font-size:11.5px;color:'+(r.status==='rejected'?'#b91c1c':'#6b7280')+';margin-top:2px">หมายเหตุจาก HR: '+escH(r.review_note)+'</div>':'')
+      +'</div>';
+  }).join(''):'<div style="text-align:center;color:#9ca3af;padding:24px">— ยังไม่มีคำขอเบิกน้ำมัน —</div>';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h2 style="flex:1;font-size:18px;margin:0">⛽ เบิกน้ำมันของฉัน</h2>'
+    +'<button type="button" id="fuMineX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'+list+'</div>';
+  document.body.appendChild(ov);
+  $('fuMineX').onclick=()=>ov.remove();
   ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
 }
 
@@ -1378,7 +1405,7 @@ function renderMyLeaves(rows){
       :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
     const range=(r.end_date&&r.end_date!==r.start_date)?(beDate(r.start_date)+' – '+beDate(r.end_date)):beDate(r.start_date);
     const reason=r.reason?('<div style="color:var(--muted);margin-top:2px">เหตุผล: '+escH(r.reason)+'</div>'):'';
-    const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจากผู้จัดการ: '+escH(r.hr_note)+'</div>'):'';
+    const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+escH(r.hr_note)+'</div>'):'';
     return '<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px">'
       +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+escH(range)+'</b>'+badge+'</div>'
       +'<div style="color:var(--txt);margin-top:2px">ประเภท: '+escH(r.type||'-')+'</div>'+reason+note+'</div>';

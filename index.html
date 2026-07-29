@@ -245,7 +245,7 @@ async function myLeaves(){
         :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
       const range=(r.end_date&&r.end_date!==r.start_date)?(beDate(r.start_date)+' – '+beDate(r.end_date)):beDate(r.start_date);
       const reason=r.reason?('<div style="color:#6b7280;margin-top:2px">เหตุผล: '+lvEsc(r.reason)+'</div>'):'';
-      const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจากผู้จัดการ: '+lvEsc(r.hr_note)+'</div>'):'';
+      const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+lvEsc(r.hr_note)+'</div>'):'';
       return '<div style="border:1px solid #eceef1;border-radius:11px;padding:9px 11px;margin-bottom:7px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+range+'</b>'+badge+'</div>'
         +'<div style="color:#374151;margin-top:2px">ประเภท: '+lvEsc(r.type||'-')+'</div>'+reason+note+'</div>';
