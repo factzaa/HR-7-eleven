@@ -1066,7 +1066,7 @@ async function openRiderMine(){
 // ⛽ เบิกน้ำมันของฉัน — ให้ไรเดอร์เห็นสถานะ (รออนุมัติ/อนุมัติ/ไม่อนุมัติ) + เหตุผลจาก HR
 async function openFuelMine(){
   let rows=[]; try{ rows=await HR.riderFuelMyList(empMatch.emp_id); }catch(e){}
-  const ST={ submitted:'รออนุมัติ', approved:'อนุมัติแล้ว', deducted:'เข้ารอบเงินเดือนแล้ว', rejected:'ไม่อนุมัติ', cancelled:'ยกเลิก' };
+  const ST={ submitted:'รออนุมัติ', approved:'อนุมัติแล้ว', deducted:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', cancelled:'ยกเลิก' };
   const CL={ submitted:'#a06515', approved:'#0369a1', deducted:'#16a34a', rejected:'#dc2626', cancelled:'#64748b' };
   const ov=document.createElement('div'); ov.id='fuMineOv';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
