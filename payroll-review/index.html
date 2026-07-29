@@ -275,8 +275,10 @@ async function toggleDil(empId){
 
 function rowPayload(tr){
   const g=cls=>{ const el=tr.querySelector(cls); return el?el.value.trim():''; };
+  const r=(DATA.rows||[]).find(x=>String(x.emp_id)===String(tr.dataset.emp));
   return {
     period_start:DATA.period_start, emp_id:tr.dataset.emp, by:'ผจก.ตรวจ',
+    dil_off: r ? r.dil_off===true : false,   // ★ คงสถานะเบี้ยวินัยที่ปุ่ม toggle ตั้งไว้ (กันปุ่มบันทึกเขียนทับกลับเป็น false)
     days_override:g('.f-days'), ot_override:g('.f-ot'), shift_allowance_override:g('.f-sa'), delivery:g('.f-deliv'), advance_override:g('.f-adv'),
     add_special:g('.f-sp'), ded_damaged:g('.f-dm'), ded_other:g('.f-ot2'), ded_other_note:g('.f-ot2n'), note:g('.f-note'),
   };
