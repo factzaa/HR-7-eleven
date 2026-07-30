@@ -4553,7 +4553,16 @@
     if (empId) q = q.eq('emp_id', empId);
     const { data, error } = await q;
     if (error) throw error;
-    return { ok: true, rows: data || [] };
+    const rows = data || [];
+    // แนบชื่อคนขับ (ผู้ใช้รถ) ให้แต่ละคัน — ทะเบียนรถจะได้บอกว่าเป็นของใคร
+    const ids = [...new Set(rows.map(r => r.emp_id).filter(Boolean))];
+    const nameById = {};
+    if (ids.length) {
+      const { data: emps } = await sb().from('employees').select('emp_id,name,nickname').in('emp_id', ids);
+      (emps || []).forEach(e => { nameById[e.emp_id] = e.nickname || e.name || e.emp_id; });
+    }
+    rows.forEach(r => { r.emp_name = r.emp_id ? (nameById[r.emp_id] || r.emp_id) : null; });
+    return { ok: true, rows };
   }
   async function hrRiderVehicleSave(d) {
     d = d || {};

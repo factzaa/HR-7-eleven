@@ -6038,9 +6038,9 @@ function loadRdStats(){
       +(t.flagged?('<div style="color:#b45309">⚠️ ไม่สอดคล้อง <b>'+t.flagged+'</b> คน</div>'):'<div style="color:#16a34a">✓ สอดคล้องทุกคน</div>')+'</div>';
     h+='<div class="tablewrap"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f6f7f9">'
       +'<th style="text-align:left;padding:8px">ไรเดอร์</th><th style="text-align:right;padding:8px">ระยะทาง (กม.)</th><th style="text-align:right;padding:8px">ค่าน้ำมัน (฿)</th><th style="text-align:right;padding:8px">฿/กม.</th><th style="text-align:right;padding:8px">ค่าซ่อม (฿)</th><th style="text-align:left;padding:8px">หมายเหตุ</th></tr></thead><tbody>';
-    r.rows.forEach(x=>{
+    r.rows.forEach((x,i)=>{
       const warn = x.flags&&x.flags.length;
-      h+='<tr style="border-top:1px solid var(--line)'+(warn?';background:#fffbeb':'')+'">'
+      h+='<tr data-statrow="'+i+'" title="คลิกดูรายละเอียด (รถ + ประวัติเลขไมล์)" style="cursor:pointer;border-top:1px solid var(--line)'+(warn?';background:#fffbeb':'')+'">'
         +'<td style="padding:8px"><b>'+esc(x.name)+'</b><div style="font-size:11px;color:var(--muted)">'+esc(x.branch||'')+(x.plates?(' · '+esc(x.plates)):'')+'</div></td>'
         +'<td style="padding:8px;text-align:right">'+Number(x.distance).toLocaleString()+'</td>'
         +'<td style="padding:8px;text-align:right">'+Number(x.fuel).toLocaleString()+'<div style="font-size:10.5px;color:var(--muted)">'+x.fuel_count+' ครั้ง</div></td>'
@@ -6049,8 +6049,31 @@ function loadRdStats(){
         +'<td style="padding:8px;font-size:11.5px;color:#b45309">'+(warn?x.flags.map(esc).join('<br>'):'<span style="color:#16a34a">✓</span>')+'</td></tr>';
     });
     h+='</tbody></table></div>';
+    h+='<div style="font-size:11.5px;color:var(--muted);margin:6px 2px 0">💡 คลิกที่แถวไรเดอร์เพื่อดูรายละเอียด (รถที่ผูก + ประวัติเลขไมล์)</div>';
     box.innerHTML=h;
+    RD.stats=r.rows;
+    box.querySelectorAll('[data-statrow]').forEach(tr=>tr.onclick=()=>openRdStatDetail(RD.stats[Number(tr.dataset.statrow)]));
   }).catch(e=>{ box.innerHTML='<div class="empty">'+esc(e.message||'ผิดพลาด')+'</div>'; });
+}
+// รายละเอียดไรเดอร์รายคน (กดจากตารางสถิติ) — สรุป + รถที่ผูก + ปุ่มดูประวัติเลขไมล์
+async function openRdStatDetail(x){
+  if(!x) return;
+  let vehs=[];
+  try{ const r=await post({ action:'rider_vehicles_list', ...authBody(), emp_id:x.emp_id }); vehs=(r&&r.ok&&r.rows)||[]; }catch(e){}
+  let body='<div class="card" style="padding:9px 13px;margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;font-size:13px">'
+    +'<div>ระยะทาง <b>'+Number(x.distance).toLocaleString()+'</b> กม.</div>'
+    +'<div>ค่าน้ำมัน <b>'+Number(x.fuel).toLocaleString()+'</b> ฿ ('+x.fuel_count+' ครั้ง)</div>'
+    +'<div>฿/กม. <b>'+(x.baht_per_km!=null?x.baht_per_km.toLocaleString():'—')+'</b></div>'
+    +'<div>ค่าซ่อม <b>'+Number(x.maint).toLocaleString()+'</b> ฿ ('+x.maint_count+' ครั้ง)</div></div>';
+  if(x.flags&&x.flags.length) body+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:9px 11px;font-size:12.5px;color:#b45309;margin-bottom:10px">⚠️ '+x.flags.map(esc).join('<br>')+'</div>';
+  if(!vehs.length) body+='<div class="empty">— ไรเดอร์คนนี้ยังไม่มีรถผูกอยู่ → ระยะทาง = 0 (ให้ผูกรถในแท็บทะเบียนรถ) —</div>';
+  else body+=vehs.map(v=>'<div class="card" style="padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px">'
+    +'<div><b>'+esc(v.plate||'(ไม่มีทะเบียน)')+'</b> <span style="font-size:11px;color:var(--muted)">'+esc([v.brand,v.model].filter(Boolean).join(' '))+'</span>'
+    +'<div style="font-size:12px;color:var(--muted)">ไมล์ล่าสุด '+Number(v.odo_last||v.odo_start||0).toLocaleString()+' กม.</div></div>'
+    +'<button class="btn btn-sec btn-sm" data-statodo="'+v.id+'">📍 ประวัติเลขไมล์</button></div>').join('');
+  openModal('🏍️ '+esc(x.name||x.emp_id), body);
+  RD.vehicles=vehs;   // ให้ openRdOdo หาแผ่นป้ายทะเบียนเจอ
+  document.querySelectorAll('#gmBody [data-statodo]').forEach(b=>b.onclick=()=>openRdOdo(b.dataset.statodo));
 }
 // ⛽ ค่าน้ำมัน (HR อนุมัติ)
 function loadRdFuel(){
@@ -6294,6 +6317,7 @@ function renderRdVehicles(){
      + '<div style="display:flex;justify-content:space-between;align-items:start"><b style="font-size:15px">'+esc(v.plate||'(ไม่มีทะเบียน)')+'</b>'
      + '<span style="font-size:11px;color:'+(v.owner_type==='company'?'#0369a1':'#a06515')+'">'+(v.owner_type==='company'?'รถบริษัท':'รถส่วนตัว')+'</span></div>'
      + '<div style="font-size:12.5px;color:var(--muted);margin-top:3px">'+esc([v.brand,v.model,v.year].filter(Boolean).join(' '))+'</div>'
+     + '<div style="font-size:12.5px;margin-top:3px">'+(v.emp_name?('🧍 <b>'+esc(v.emp_name)+'</b>'):'<span style="color:#9ca3af">— ยังไม่ผูกคนขับ (รถกลาง) —</span>')+'</div>'
      + '<div style="font-size:12px;margin-top:4px">'+(v.drivetrain==='cvt'?'ออโตเมติก (สายพาน)':'โซ่-สเตอร์')+' · '+(v.cooling==='liquid'?'ระบายน้ำ':'ระบายอากาศ')+'</div>'
      + '<div style="font-size:12px;color:var(--muted)">ไมล์ล่าสุด '+Number(v.odo_last||v.odo_start||0).toLocaleString()+' กม.</div>'
      + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-sec btn-sm" data-rdvodo="'+v.id+'">📍 ไมล์</button>'
@@ -6319,7 +6343,10 @@ async function openRdOdo(vehicleId){
     body+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f6f7f9;text-align:left">'
       +'<th style="padding:7px">วันที่</th><th style="padding:7px">ช่วง</th><th style="padding:7px;text-align:right">เลขไมล์</th><th style="padding:7px">GPS</th><th style="padding:7px">รูป</th></tr></thead><tbody>';
     // เรียงเก่า→ใหม่เพื่อเช็คถอยหลัง
-    const asc=rows.slice().sort((a,b)=>(a.log_date+a.phase).localeCompare(b.log_date+b.phase));
+    // ★ เรียงตามเวลาจริง: วันเดียวกันให้ "ก่อนงาน(start)" มาก่อน "หลังงาน(end)" เสมอ
+    //   (เดิม sort สตริง log_date+phase → 'end' < 'start' ตามตัวอักษร ทำให้ค่าก่อนงานถูกธง ⚠ ผิด ทั้งที่ปกติ)
+    const _phr=p=>(p==='end'?1:0);
+    const asc=rows.slice().sort((a,b)=> a.log_date<b.log_date?-1 : a.log_date>b.log_date?1 : _phr(a.phase)-_phr(b.phase));
     const warnSet=new Set(); let last=null;
     asc.forEach(x=>{ if(last!=null && Number(x.odo)<last) warnSet.add(x.id); last=Number(x.odo); });
     rows.forEach(x=>{
