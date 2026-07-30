@@ -6331,6 +6331,7 @@ function renderRdVehicles(){
   $('rd_veh_box').querySelectorAll('[data-rdvodo]').forEach(b=>b.onclick=()=>openRdOdo(b.dataset.rdvodo));
 }
 async function openRdOdo(vehicleId){
+  RD.curOdoVeh=vehicleId;
   const v=RD.vehicles.find(x=>String(x.id)===String(vehicleId));
   const r=await post({ action:'rider_odo_list', ...authBody(), vehicle_id:vehicleId, limit:40 });
   if(!r||!r.ok){ toast('err','โหลดไม่สำเร็จ'); return; }
@@ -6341,7 +6342,7 @@ async function openRdOdo(vehicleId){
   if(!rows.length) body+='<div class="empty">— ยังไม่มีบันทึกเลขไมล์ —</div>';
   else {
     body+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f6f7f9;text-align:left">'
-      +'<th style="padding:7px">วันที่</th><th style="padding:7px">ช่วง</th><th style="padding:7px;text-align:right">เลขไมล์</th><th style="padding:7px">GPS</th><th style="padding:7px">รูป</th></tr></thead><tbody>';
+      +'<th style="padding:7px">วันที่</th><th style="padding:7px">ช่วง</th><th style="padding:7px;text-align:right">เลขไมล์</th><th style="padding:7px">GPS</th><th style="padding:7px">รูป</th><th style="padding:7px"></th></tr></thead><tbody>';
     // เรียงเก่า→ใหม่เพื่อเช็คถอยหลัง
     // ★ เรียงตามเวลาจริง: วันเดียวกันให้ "ก่อนงาน(start)" มาก่อน "หลังงาน(end)" เสมอ
     //   (เดิม sort สตริง log_date+phase → 'end' < 'start' ตามตัวอักษร ทำให้ค่าก่อนงานถูกธง ⚠ ผิด ทั้งที่ปกติ)
@@ -6354,16 +6355,49 @@ async function openRdOdo(vehicleId){
       body+='<tr style="border-top:1px solid var(--line)'+(warn?';background:#fef2f2':'')+'">'
         +'<td style="padding:7px;white-space:nowrap">'+esc(x.log_date||'')+'</td>'
         +'<td style="padding:7px">'+(x.phase==='end'?'หลังงาน':'ก่อนงาน')+'</td>'
-        +'<td style="padding:7px;text-align:right">'+Number(x.odo).toLocaleString()+(warn?' <span style="color:#dc2626" title="ต่ำกว่าครั้งก่อน">⚠</span>':'')+'</td>'
-        +'<td style="padding:7px">'+(x.gps_ok===true?'<span style="color:#16a34a">✓</span>':x.gps_ok===false?'<span style="color:#dc2626" title="นอกรัศมีสาขา">✕</span>':'—')+'</td>'
-        +'<td style="padding:7px">'+(x.photo_url?'<img src="'+esc(x.photo_url)+'" onclick="lightbox(this)" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:zoom-in">':'—')+'</td></tr>';
+        +'<td style="padding:7px;text-align:right">'+Number(x.odo).toLocaleString()+(warn?' <span style="color:#dc2626" title="ต่ำกว่าครั้งก่อน">⚠</span>':'')+(x.edited_by?'<div style="font-size:10px;color:#2563eb;font-weight:400">✏️ '+esc(x.edited_by)+'</div>':'')+'</td>'
+        +'<td style="padding:7px">'+((x.gps_lat!=null&&x.gps_lng!=null)
+            ?'<a href="https://www.google.com/maps?q='+x.gps_lat+','+x.gps_lng+'" target="_blank" rel="noopener" style="text-decoration:none;font-weight:700;white-space:nowrap;color:'+(x.gps_ok===false?'#dc2626':'#16a34a')+'" title="'+(x.gps_ok===false?'นอกรัศมีสาขา — กดดูตำแหน่งที่บันทึกจริง':'ในรัศมีสาขา — กดดูตำแหน่ง')+'">'+(x.gps_ok===false?'✕':'✓')+' 📍</a>'
+            :(x.gps_ok===true?'<span style="color:#16a34a">✓</span>':x.gps_ok===false?'<span style="color:#dc2626" title="นอกรัศมีสาขา">✕</span>':'—'))+'</td>'
+        +'<td style="padding:7px">'+(x.photo_url?'<img src="'+esc(x.photo_url)+'" onclick="lightbox(this)" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:zoom-in">':'—')+'</td>'
+        +'<td style="padding:7px"><button class="btn btn-sec btn-sm" data-odoedit="'+x.id+'" data-odoval="'+x.odo+'" title="แก้เลขไมล์ (บันทึกว่าแก้โดย HR)">✏️</button></td></tr>';
     });
     body+='</tbody></table></div>';
   }
   $('rdc_body').innerHTML=body;
-  $('rdc_foot').innerHTML='<button class="btn btn-sec" id="rdcClose3">ปิด</button>';
+  $('rdc_body').querySelectorAll('[data-odoedit]').forEach(b=>b.onclick=()=>rdOdoEdit(b.dataset.odoedit,b.dataset.odoval));
+  $('rdc_foot').innerHTML='<div style="display:flex;gap:8px;align-items:center;width:100%"><button class="btn btn-pri btn-sm" id="rdcAddOdo">➕ เพิ่มเลขไมล์ย้อนหลัง</button><span style="flex:1"></span><button class="btn btn-sec" id="rdcClose3">ปิด</button></div>';
+  $('rdcAddOdo').onclick=rdOdoAdd;
   $('rdcClose3').onclick=()=>$('rdClaimOverlay').classList.remove('show');
   $('rdClaimOverlay').classList.add('show');
+}
+// ✏️ HR แก้เลขไมล์รายรายการ (บันทึกว่าแก้โดย HR)
+async function rdOdoEdit(id, cur){
+  const nv=prompt('แก้เลขไมล์ (ระบบจะบันทึกว่า "แก้ไขโดย HR")\nค่าเดิม: '+Number(cur).toLocaleString(), cur);
+  if(nv==null) return;
+  const odo=parseInt(nv);
+  if(!isFinite(odo)||odo<0){ toast('err','เลขไมล์ต้องเป็นตัวเลข ≥ 0'); return; }
+  const r=await post({ action:'rider_odo_edit', ...authBody(), data:{ id, odo } });
+  if(r&&r.ok){ toast('ok','แก้เลขไมล์แล้ว (โดย HR)'); openRdOdo(RD.curOdoVeh); }
+  else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+// ➕ HR คีย์เลขไมล์ย้อนหลัง (บันทึกว่าแก้โดย HR)
+function rdOdoAdd(){
+  const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
+  openModal('➕ เพิ่มเลขไมล์ย้อนหลัง',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:9px">คีย์แทนพนักงานที่ลืมบันทึก — ระบบจะบันทึกว่า "แก้ไขโดย HR" · ถ้ามีวัน+ช่วงนี้อยู่แล้วจะเขียนทับ</div>'
+    +'<label style="font-size:13px;font-weight:600;display:block;margin-bottom:3px">วันที่</label><input id="oa_date" type="date" value="'+today+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-bottom:9px">'
+    +'<label style="font-size:13px;font-weight:600;display:block;margin-bottom:3px">ช่วง</label><select id="oa_phase" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-bottom:9px"><option value="start">ก่อนงาน</option><option value="end">หลังงาน</option></select>'
+    +'<label style="font-size:13px;font-weight:600;display:block;margin-bottom:3px">เลขไมล์</label><input id="oa_odo" type="number" inputmode="numeric" placeholder="เช่น 34500" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-bottom:12px">'
+    +'<button class="btn btn-pri" id="oa_save" style="width:100%">บันทึก (โดย HR)</button>');
+  $('oa_save').onclick=async()=>{
+    const date=$('oa_date').value, phase=$('oa_phase').value, odo=$('oa_odo').value;
+    if(!date||odo===''){ toast('err','กรอกวันที่และเลขไมล์'); return; }
+    $('oa_save').disabled=true;
+    const r=await post({ action:'rider_odo_add', ...authBody(), data:{ vehicle_id:RD.curOdoVeh, log_date:date, phase, odo } });
+    if(r&&r.ok){ toast('ok','เพิ่มเลขไมล์ย้อนหลังแล้ว (โดย HR)'); closeModal(); openRdOdo(RD.curOdoVeh); }
+    else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); $('oa_save').disabled=false; }
+  };
 }
 function openRdVeh(id){
   const v=id?RD.vehicles.find(x=>String(x.id)===String(id)):{};

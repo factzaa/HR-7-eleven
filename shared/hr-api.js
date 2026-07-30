@@ -306,6 +306,8 @@
         case 'rider_odo_log':        return await hrRiderOdoLog(p.data);
         case 'rider_odo_list':       return await hrRiderOdoList(p.vehicle_id, p.limit);
         case 'rider_odo_today':      return await hrRiderOdoToday(p.vehicle_id);
+        case 'rider_odo_edit':       return await hrRiderOdoEdit(p.data, p);
+        case 'rider_odo_add':        return await hrRiderOdoAdd(p.data, p);
         case 'rider_fuel_list':      return await hrFuelList(p);
         case 'rider_fuel_review':    return await hrFuelReview(p.data, p);
         case 'rider_fuel_create':    return await hrFuelCreate(p.data, p);
@@ -4928,6 +4930,52 @@
     const { data } = await sb().from('rider_odometer').select('phase,odo,gps_ok').eq('vehicle_id', vehicleId).eq('log_date', bkkToday());
     const map = {}; (data || []).forEach(r => map[r.phase] = r);
     return { ok: true, start: map.start || null, end: map.end || null };
+  }
+  // อัปเดตเลขไมล์ล่าสุดของรถ = ค่าสูงสุดในบันทึกทั้งหมด (ให้ตรงหลังแก้/เพิ่ม)
+  async function _riderSyncOdoLast(vehicleId) {
+    try {
+      if (!vehicleId) return;
+      const { data: mx } = await sb().from('rider_odometer').select('odo').eq('vehicle_id', vehicleId).order('odo', { ascending: false }).limit(1).maybeSingle();
+      if (mx) await sb().from('rider_vehicles').update({ odo_last: mx.odo }).eq('id', vehicleId);
+    } catch (_e) { /* ข้าม */ }
+  }
+  function _riderActorLabel(me) { return me.role === 'hr' ? 'สำนักงาน (HR)' : ('ผจก. ' + (me.branch_id || '')); }
+  // ★ HR แก้เลขไมล์รายรายการ (พนักงานคีย์ผิด) — บันทึก edited_by/edited_at
+  async function hrRiderOdoEdit(d, p) {
+    const me = await _termActor(p); if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    d = d || {};
+    if (!d.id) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const odo = parseInt(d.odo);
+    if (!isFinite(odo) || odo < 0) return { ok: false, error: 'เลขไมล์ต้องเป็นตัวเลข ≥ 0' };
+    const { data: rec } = await sb().from('rider_odometer').select('id,vehicle_id,odo,log_date,phase').eq('id', d.id).maybeSingle();
+    if (!rec) return { ok: false, error: 'ไม่พบรายการเลขไมล์' };
+    const by = _riderActorLabel(me);
+    const { error } = await sb().from('rider_odometer').update({ odo, edited_by: by, edited_at: new Date().toISOString() }).eq('id', d.id);
+    if (error) throw error;
+    await _riderSyncOdoLast(rec.vehicle_id);
+    await logAct('แก้เลขไมล์ไรเดอร์', null, (rec.log_date || '') + ' ' + rec.phase + ' ' + rec.odo + '→' + odo + ' · โดย ' + by);
+    return { ok: true };
+  }
+  // ★ HR คีย์เลขไมล์ย้อนหลัง (เพิ่มรายการที่พนักงานลืม/คีย์แทน) — บันทึก edited_by · ทับได้ถ้ามีวัน+ช่วงนั้นแล้ว
+  async function hrRiderOdoAdd(d, p) {
+    const me = await _termActor(p); if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    d = d || {};
+    if (!d.vehicle_id || !d.log_date) return { ok: false, error: 'ต้องระบุรถและวันที่' };
+    const odo = parseInt(d.odo);
+    if (!isFinite(odo) || odo < 0) return { ok: false, error: 'เลขไมล์ต้องเป็นตัวเลข ≥ 0' };
+    const phase = d.phase === 'end' ? 'end' : 'start';
+    const { data: veh } = await sb().from('rider_vehicles').select('emp_id,branch_id').eq('id', d.vehicle_id).maybeSingle();
+    const by = _riderActorLabel(me);
+    const row = {
+      vehicle_id: d.vehicle_id, emp_id: (veh && veh.emp_id) || null, branch_id: (veh && veh.branch_id) || null,
+      log_date: d.log_date, phase, odo, gps_ok: null,
+      edited_by: by + ' · คีย์ย้อนหลัง', edited_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('rider_odometer').upsert(row, { onConflict: 'vehicle_id,log_date,phase' });
+    if (error) throw error;
+    await _riderSyncOdoLast(d.vehicle_id);
+    await logAct('คีย์เลขไมล์ย้อนหลัง (ไรเดอร์)', null, d.log_date + ' ' + phase + ' ' + odo + ' · โดย ' + by);
+    return { ok: true };
   }
 
   // ---------- เบิกค่าน้ำมันไรเดอร์ (HR อนุมัติ · หักคืนเงินเดือน) ----------
