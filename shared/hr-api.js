@@ -316,6 +316,7 @@
         case 'rider_fuel_cfg_save':  return await hrFuelCfgSave(p.data, p);
         case 'rider_pending':        return await hrRiderPending(p);
         case 'rider_stats':          return await hrRiderStats(p);
+        case 'rider_daily_distance': return await hrRiderDailyDistance(p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
@@ -5013,6 +5014,38 @@
       return { emp_id: s.emp_id, name: s.name, branch: s.branch, plates: s.plates.join(', '), distance: Math.round(s.distance), fuel: Math.round(s.fuel), fuel_count: s.fuel_count, maint: Math.round(s.maint), maint_count: s.maint_count, baht_per_km: bpk != null ? Math.round(bpk * 100) / 100 : null, flags };
     }).sort((a, b) => b.distance - a.distance);
     return { ok: true, year, rows, totals: { distance: rows.reduce((a, b) => a + b.distance, 0), fuel: rows.reduce((a, b) => a + b.fuel, 0), maint: rows.reduce((a, b) => a + b.maint, 0), flagged: rows.filter(r => r.flags.length).length } };
+  }
+  // ★ สรุประยะทางรายวันของแต่ละไรเดอร์ (จับการคีย์เลขไมล์ผิด) — ระยะวันนั้น = หลังงาน − ก่อนงาน
+  async function hrRiderDailyDistance(p) {
+    p = p || {};
+    const month = String(p.month || bkkToday().slice(0, 7));   // YYYY-MM
+    const mStart = month + '-01', mEnd = month + '-31';
+    const TH = 200;   // เกณฑ์ผิดปกติ กม./วัน
+    const [odoR, vehR, empR, brR] = await Promise.all([
+      sb().from('rider_odometer').select('vehicle_id,log_date,phase,odo,edited_by').gte('log_date', mStart).lte('log_date', mEnd),
+      sb().from('rider_vehicles').select('id,emp_id,plate'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    const veh = {}; (vehR.data || []).forEach(v => veh[v.id] = v);
+    const emp = {}; (empR.data || []).forEach(e => emp[e.emp_id] = e);
+    const brN = {}; (brR.data || []).forEach(b => brN[b.branch_id] = b.name);
+    const byVD = {};   // vehicle|date → {start,end}
+    (odoR.data || []).forEach(o => { const k = o.vehicle_id + '|' + o.log_date; const g = byVD[k] || (byVD[k] = { vehicle_id: o.vehicle_id, log_date: o.log_date }); g[o.phase] = o; });
+    const byEmp = {};
+    Object.values(byVD).forEach(g => {
+      const v = veh[g.vehicle_id]; const empId = v ? v.emp_id : null; if (!empId) return;
+      const s = g.start ? Number(g.start.odo) : null, e = g.end ? Number(g.end.odo) : null;
+      let dist = null; const flags = [];
+      if (s != null && e != null) { dist = e - s; if (dist < 0) flags.push('เลขไมล์ถอยหลัง (หลังงาน < ก่อนงาน)'); else if (dist > TH) flags.push('ระยะทางต่อวันสูงผิดปกติ (' + dist.toLocaleString() + ' กม.)'); }
+      else flags.push('ข้อมูลไม่ครบ (มีแค่' + (g.start ? 'ก่อนงาน' : 'หลังงาน') + ')');
+      const edited = !!((g.start && g.start.edited_by) || (g.end && g.end.edited_by));
+      const rec = { log_date: g.log_date, plate: (v && v.plate) || '', start: s, end: e, distance: dist, flags, edited };
+      const E = byEmp[empId] || (byEmp[empId] = { emp_id: empId, name: (emp[empId] && (emp[empId].nickname || emp[empId].name)) || empId, branch: (emp[empId] && brN[emp[empId].branch_id]) || '', days: [], total: 0, flagged: 0 });
+      E.days.push(rec); if (dist != null && dist > 0) E.total += dist; if (flags.length) E.flagged++;
+    });
+    const riders = Object.values(byEmp).map(E => { E.days.sort((a, b) => a.log_date < b.log_date ? 1 : -1); return E; }).sort((a, b) => b.total - a.total);
+    return { ok: true, month, threshold: TH, riders, totals: { riders: riders.length, flagged_days: riders.reduce((s, r) => s + r.flagged, 0), distance: riders.reduce((s, r) => s + r.total, 0) } };
   }
   async function hrFuelList(p) {
     p = p || {};

@@ -716,6 +716,7 @@
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="fuel" data-hronly="1">⛽ ค่าน้ำมัน</button>
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="items" data-hronly="1">🧰 รายการเบิก (เปิด/ปิด)</button>
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="stats" data-hronly="1">📊 สถิติระยะทาง</button>
+    <button class="btn btn-sec btn-sm rd-sub" data-rdsec="daily" data-hronly="1">📅 ระยะทางรายวัน</button>
     <button class="btn btn-sec btn-sm rd-sub" data-rdsec="config" data-hronly="1">⚙️ ตั้งค่า</button>
     <span style="flex:1"></span>
     <select id="rd_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
@@ -757,6 +758,18 @@
       <button class="btn btn-sec btn-sm" id="rs_reload">รีเฟรช</button>
     </div>
     <div id="rd_stats_box"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+
+  <!-- 📅 ระยะทางรายวัน -->
+  <div id="rd_sec_daily" class="rd-sec" style="display:none">
+    <div class="card" style="padding:11px 14px;margin-bottom:10px;background:#fff7ed;font-size:13px;color:#9a3412">
+      ระยะทาง <b>ต่อวัน</b> = เลขไมล์หลังงาน − ก่อนงาน ของวันเดียวกัน · ไฮไลต์วันที่ <b>สูงผิดปกติ (&gt; 200 กม./วัน)</b> · เลขไมล์ถอยหลัง · ข้อมูลไม่ครบ — ไว้จับการคีย์เลขไมล์ผิด
+    </div>
+    <div class="toolbar" style="margin-bottom:8px;gap:6px;flex-wrap:wrap">
+      <input id="rdd_month" type="month" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
+      <button class="btn btn-sec btn-sm" id="rdd_reload">รีเฟรช</button>
+    </div>
+    <div id="rd_daily_box"><div class="empty">กำลังโหลด…</div></div>
   </div>
 
   <!-- ตั้งค่า -->
@@ -6010,13 +6023,51 @@ function loadRider(){
 function rdShowSec(sec){
   RD.sec=sec;
   document.querySelectorAll('.rd-sub').forEach(b=>b.classList.toggle('on', b.dataset.rdsec===sec));
-  ['claims','vehicles','items','config','fuel','stats'].forEach(s=>{ const el=$('rd_sec_'+s); if(el) el.style.display=(s===sec?'block':'none'); });
+  ['claims','vehicles','items','config','fuel','stats','daily'].forEach(s=>{ const el=$('rd_sec_'+s); if(el) el.style.display=(s===sec?'block':'none'); });
   if(sec==='claims') loadRdClaims();
   else if(sec==='vehicles') loadRdVehicles();
   else if(sec==='items') loadRdItems();
   else if(sec==='config') loadRdConfig();
   else if(sec==='fuel') loadRdFuel();
   else if(sec==='stats') loadRdStats();
+  else if(sec==='daily') loadRdDaily();
+}
+// 📅 ระยะทางรายวัน (จับการคีย์เลขไมล์ผิด) — จัดกลุ่มตามคนขับ
+function loadRdDaily(){
+  if(!RD._dailyWired){
+    if($('rdd_month')&&!$('rdd_month').value) $('rdd_month').value=(typeof bkkTodayStr==='function'?bkkTodayStr():new Date().toISOString().slice(0,10)).slice(0,7);
+    $('rdd_reload')&&($('rdd_reload').onclick=loadRdDaily);
+    $('rdd_month')&&($('rdd_month').onchange=loadRdDaily);
+    RD._dailyWired=true;
+  }
+  const box=$('rd_daily_box'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  post({ action:'rider_daily_distance', password:pwd, month:$('rdd_month')?$('rdd_month').value:undefined }).then(r=>{
+    if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+    if(!r.riders.length){ box.innerHTML='<div class="empty">— ยังไม่มีข้อมูลเลขไมล์ในเดือนนี้ —</div>'; return; }
+    const t=r.totals||{};
+    let h='<div class="card" style="padding:10px 13px;margin-bottom:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:13px">'
+      +'<div>ไรเดอร์ <b>'+t.riders+'</b> คน</div><div>ระยะทางรวม <b>'+Number(t.distance||0).toLocaleString()+'</b> กม.</div>'
+      +(t.flagged_days?('<div style="color:#b45309">⚠️ วันผิดปกติ <b>'+t.flagged_days+'</b> วัน (> '+r.threshold+' กม./วัน หรือข้อมูลผิด)</div>'):'<div style="color:#16a34a">✓ ปกติทุกวัน</div>')+'</div>';
+    r.riders.forEach(rd=>{
+      h+='<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">'
+        +'<div style="padding:9px 13px;background:#f6f7f9;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
+        +'<b>'+esc(rd.name)+' <span style="font-weight:400;font-size:12px;color:var(--muted)">'+esc(rd.branch||'')+'</span></b>'
+        +'<span style="font-size:12.5px">รวม '+Number(rd.total).toLocaleString()+' กม.'+(rd.flagged?(' · <span style="color:#b45309">⚠️ '+rd.flagged+' วัน</span>'):'')+'</span></div>'
+        +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:6px 10px">วันที่</th><th style="padding:6px 10px">รถ</th><th style="padding:6px 10px;text-align:right">ก่อนงาน</th><th style="padding:6px 10px;text-align:right">หลังงาน</th><th style="padding:6px 10px;text-align:right">ระยะวันนั้น</th><th style="padding:6px 10px">หมายเหตุ</th></tr></thead><tbody>';
+      rd.days.forEach(d=>{
+        const warn=d.flags&&d.flags.length;
+        h+='<tr style="border-top:1px solid var(--line)'+(warn?';background:#fef2f2':'')+'">'
+          +'<td style="padding:6px 10px;white-space:nowrap">'+esc(d.log_date)+(d.edited?' <span title="มีการแก้โดย HR" style="color:#2563eb">✏️</span>':'')+'</td>'
+          +'<td style="padding:6px 10px">'+esc(d.plate||'—')+'</td>'
+          +'<td style="padding:6px 10px;text-align:right">'+(d.start!=null?Number(d.start).toLocaleString():'—')+'</td>'
+          +'<td style="padding:6px 10px;text-align:right">'+(d.end!=null?Number(d.end).toLocaleString():'—')+'</td>'
+          +'<td style="padding:6px 10px;text-align:right;font-weight:700;'+(warn?'color:#dc2626':'')+'">'+(d.distance!=null?Number(d.distance).toLocaleString():'—')+'</td>'
+          +'<td style="padding:6px 10px;font-size:11.5px;color:#b45309">'+(warn?d.flags.map(esc).join('<br>'):'<span style="color:#16a34a">✓</span>')+'</td></tr>';
+      });
+      h+='</tbody></table></div></div>';
+    });
+    box.innerHTML=h;
+  }).catch(e=>{ box.innerHTML='<div class="empty">'+esc(e.message||'ผิดพลาด')+'</div>'; });
 }
 // 📊 สถิติระยะทางไรเดอร์
 function loadRdStats(){
@@ -6335,7 +6386,7 @@ async function openRdOdo(vehicleId){
   const v=RD.vehicles.find(x=>String(x.id)===String(vehicleId));
   const r=await post({ action:'rider_odo_list', ...authBody(), vehicle_id:vehicleId, limit:40 });
   if(!r||!r.ok){ toast('err','โหลดไม่สำเร็จ'); return; }
-  const rows=r.rows||[];
+  const rows=r.rows||[]; RD._odoRows=rows;
   $('rdc_title').textContent='ประวัติเลขไมล์ · '+(v?esc(v.plate||''):'');
   let prev=null, body='';
   body+='<div class="card" style="padding:9px 13px;margin-bottom:10px;background:#f0fdfa;font-size:13px"><b>ระยะทางปฏิบัติงานปีนี้: '+Number(r.distance_year||0).toLocaleString()+' กม.</b></div>';
@@ -6366,7 +6417,8 @@ async function openRdOdo(vehicleId){
   }
   $('rdc_body').innerHTML=body;
   $('rdc_body').querySelectorAll('[data-odoedit]').forEach(b=>b.onclick=()=>rdOdoEdit(b.dataset.odoedit,b.dataset.odoval));
-  $('rdc_foot').innerHTML='<div style="display:flex;gap:8px;align-items:center;width:100%"><button class="btn btn-pri btn-sm" id="rdcAddOdo">➕ เพิ่มเลขไมล์ย้อนหลัง</button><span style="flex:1"></span><button class="btn btn-sec" id="rdcClose3">ปิด</button></div>';
+  $('rdc_foot').innerHTML='<div style="display:flex;gap:8px;align-items:center;width:100%;flex-wrap:wrap"><button class="btn btn-sec btn-sm" id="rdcDaily">📅 ระยะทางรายวัน</button><button class="btn btn-pri btn-sm" id="rdcAddOdo">➕ เพิ่มเลขไมล์ย้อนหลัง</button><span style="flex:1"></span><button class="btn btn-sec" id="rdcClose3">ปิด</button></div>';
+  $('rdcDaily').onclick=rdOdoDaily;
   $('rdcAddOdo').onclick=rdOdoAdd;
   $('rdcClose3').onclick=()=>$('rdClaimOverlay').classList.remove('show');
   $('rdClaimOverlay').classList.add('show');
@@ -6398,6 +6450,27 @@ function rdOdoAdd(){
     if(r&&r.ok){ toast('ok','เพิ่มเลขไมล์ย้อนหลังแล้ว (โดย HR)'); closeModal(); openRdOdo(RD.curOdoVeh); }
     else { toast('err',(r&&r.error)||'ไม่สำเร็จ'); $('oa_save').disabled=false; }
   };
+}
+// 📅 ระยะทางรายวันของรถคันนี้ (คำนวณจากรายการที่โหลดมาแล้ว — ไม่ต้องเรียก API ใหม่)
+function rdOdoDaily(){
+  const rows=RD._odoRows||[];
+  const byDate={};
+  rows.forEach(x=>{ const g=byDate[x.log_date]||(byDate[x.log_date]={}); g[x.phase]=Number(x.odo); });
+  const dates=Object.keys(byDate).sort((a,b)=>a<b?1:-1);
+  let body='<div style="font-size:12px;color:var(--muted);margin-bottom:9px">ระยะทางต่อวัน = หลังงาน − ก่อนงาน · ไฮไลต์ &gt; 200 กม./วัน หรือข้อมูลผิด</div>';
+  if(!dates.length) body+='<div class="empty">— ไม่มีข้อมูล —</div>';
+  else{
+    body+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f6f7f9;text-align:left"><th style="padding:7px">วันที่</th><th style="padding:7px;text-align:right">ก่อนงาน</th><th style="padding:7px;text-align:right">หลังงาน</th><th style="padding:7px;text-align:right">ระยะ</th><th style="padding:7px">หมายเหตุ</th></tr></thead><tbody>';
+    dates.forEach(dt=>{ const g=byDate[dt]; const s=(g.start!=null?g.start:null), e=(g.end!=null?g.end:null); let dist=null,note='';
+      if(s!=null&&e!=null){ dist=e-s; if(dist<0) note='เลขไมล์ถอยหลัง'; else if(dist>200) note='สูงผิดปกติ (>200 กม.)'; }
+      else note='ข้อมูลไม่ครบ ('+(s!=null?'มีแค่ก่อนงาน':'มีแค่หลังงาน')+')';
+      const warn=!!note;
+      body+='<tr style="border-top:1px solid var(--line)'+(warn?';background:#fef2f2':'')+'"><td style="padding:7px;white-space:nowrap">'+esc(dt)+'</td><td style="padding:7px;text-align:right">'+(s!=null?s.toLocaleString():'—')+'</td><td style="padding:7px;text-align:right">'+(e!=null?e.toLocaleString():'—')+'</td><td style="padding:7px;text-align:right;font-weight:700;'+(warn?'color:#dc2626':'')+'">'+(dist!=null?dist.toLocaleString():'—')+'</td><td style="padding:7px;font-size:11.5px;color:#b45309">'+(note?esc(note):'<span style="color:#16a34a">✓</span>')+'</td></tr>';
+    });
+    body+='</tbody></table></div>';
+  }
+  const plate=((RD.vehicles||[]).find(v=>String(v.id)===String(RD.curOdoVeh))||{}).plate||'';
+  openModal('📅 ระยะทางรายวัน · '+esc(plate), body);
 }
 function openRdVeh(id){
   const v=id?RD.vehicles.find(x=>String(x.id)===String(id)):{};
