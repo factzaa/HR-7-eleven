@@ -1020,6 +1020,8 @@
       request_id: ins.id, emp_id: q.emp.emp_id, event: 'submit', actor: q.emp.nickname || q.emp.name, role: 'emp',
       note: (isEmg ? '[ฉุกเฉิน] ' : '') + rs.slice(0, 200), amount_after: amt,
     });
+    // แจ้งเตือน HR ทันที (push) ว่ามีคำขอเบิกเงินใหม่รออนุมัติ — กัน HR หลุดการอนุมัติเพราะไม่ได้เปิดหน้าเบิกทุกวัน
+    try { const base = String((window.SUPABASE_CONFIG || {}).url || '').replace(/\/$/, ''); if (base) fetch(base + '/functions/v1/hr-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' } }); } catch (_e) {}
     return { ok: true, id: ins.id, req_no: ins.req_no, amount: amt };
   }
   function _nextMonth(m) {

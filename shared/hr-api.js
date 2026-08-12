@@ -316,6 +316,7 @@
         case 'rider_fuel_cfg_get':   return await hrFuelCfgGet();
         case 'rider_fuel_cfg_save':  return await hrFuelCfgSave(p.data, p);
         case 'rider_pending':        return await hrRiderPending(p);
+        case 'advance_pending':      return await hrAdvancePending(p);
         case 'rider_stats':          return await hrRiderStats(p);
         case 'rider_daily_distance': return await hrRiderDailyDistance(p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
@@ -5174,6 +5175,23 @@
       fuel_amount: fuel.reduce((s, r) => s + Number(r.amount || 0), 0),
       maint_amount: maint.reduce((s, r) => s + Number(r.amount_est || 0), 0),
       fuel: fuel.slice(0, 8), maint: maint.slice(0, 8),
+    };
+  }
+
+  // แจ้งเตือน HR: คำขอเบิกเงินล่วงหน้า "รออนุมัติ" (status='submitted')
+  async function hrAdvancePending(p) {
+    p = p || {};
+    let q = sb().from('advance_requests').select('id,req_no,emp_id,emp_name,nickname,amount,kind,branch_id,branch_name,created_at')
+      .eq('status', 'submitted').order('created_at', { ascending: false }).limit(50);
+    if (p.branch) q = q.eq('branch_id', p.branch);
+    const { data } = await q;
+    const rows = data || [];
+    return {
+      ok: true,
+      count: rows.length,
+      amount: rows.reduce((s, r) => s + Number(r.amount || 0), 0),
+      emergency_count: rows.filter(r => r.kind === 'emergency').length,
+      rows: rows.slice(0, 8),
     };
   }
 

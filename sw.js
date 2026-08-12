@@ -47,8 +47,9 @@ self.addEventListener('push', (e) => {
     badge: './icons/icon-192.png',
     tag: d.tag || 'hr-notify',          // tag เดียวกัน = รวมเป็นอันเดียว ไม่รก
     renotify: true,
+    requireInteraction: !!d.requireInteraction,   // ฉุกเฉิน = ค้างจอจนกดปิด
     data: { url: d.url || './hr/' },
-    vibrate: [120, 60, 120]
+    vibrate: d.vibrate || [120, 60, 120]           // ฉุกเฉินส่ง pattern สั่นแรงกว่ามาได้
   };
   e.waitUntil(self.registration.showNotification(title, opts));
 });

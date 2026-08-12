@@ -427,6 +427,7 @@
   <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="dash_date" type="date" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="dash_today" title="กลับมาวันนี้">วันนี้</button><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
   <div id="coCorrPanel"></div>
   <div id="riderPendingPanel"></div>
+  <div id="advancePendingPanel"></div>
   <div id="openTasksPanel"></div>
   <div id="notifPanel"></div>
   <div id="dash_body"><div class="empty">กำลังโหลด…</div></div>
@@ -5343,7 +5344,7 @@ function renderAdvRows(){
   $('adv_approveall') && ($('adv_approveall').onclick=async()=>{
     if(!confirm('อนุมัติคำขอที่รออยู่ทั้งหมด '+pend.length+' รายการ (เต็มยอดที่ขอ)?')) return;
     const r=await post({ action:'hr_advance_review', ...authBody(), data:{ ids:pend.map(x=>x.id), action:'approve', by:'สำนักงาน (HR)' } });
-    if(r.ok){ toast('ok','อนุมัติแล้ว '+r.done+' รายการ'); loadAdvance(); } else toast('err', r.error||'ไม่สำเร็จ');
+    if(r.ok){ toast('ok','อนุมัติแล้ว '+r.done+' รายการ'); loadAdvance(); try{loadAdvancePending();}catch(_e){} } else toast('err', r.error||'ไม่สำเร็จ');
   });
 }
 function advFind(id){ return (ADV.rows||[]).find(x=>String(x.id)===String(id)); }
@@ -5396,7 +5397,7 @@ async function advApprove(id){
     if(!amt||amt>Number(r.amount)){ toast('err','ยอดอนุมัติต้องมากกว่า 0 และไม่เกินยอดที่ขอ'); return; }
     $('adv_ok').disabled=true;
     const rr=await post({ action:'hr_advance_review', ...authBody(), data:{ id:r.id, action:'approve', approved_amount:amt, note:$('adv_note').value.trim()||null, by:'สำนักงาน (HR)' } });
-    if(rr.ok && rr.done){ closeModal(); toast('ok','อนุมัติแล้ว'); loadAdvance(); }
+    if(rr.ok && rr.done){ closeModal(); toast('ok','อนุมัติแล้ว'); loadAdvance(); try{loadAdvancePending();}catch(_e){} }
     else { toast('err', (rr.failed&&rr.failed[0]&&rr.failed[0].error)||rr.error||'ไม่สำเร็จ'); $('adv_ok').disabled=false; }
   };
 }
@@ -7544,7 +7545,7 @@ async function loadMdailyDash(){
 const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
-  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadDutyRecords(); loadMdailyDash(); }
+  if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
@@ -10915,6 +10916,34 @@ async function loadRiderPending(){
 function updateRiderBadge(n){
   document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{
     if(NAV_GROUPS[i] && NAV_GROUPS[i].label==='ไรเดอร์'){
+      let bd=b.querySelector('.navbadge');
+      if(n>0){ if(!bd){ bd=document.createElement('span'); bd.className='navbadge'; bd.style.cssText='margin-left:5px;min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:#dc2626;color:#fff;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center'; b.appendChild(bd);} bd.textContent=n; }
+      else if(bd) bd.remove();
+    }
+  });
+}
+// แจ้งเตือน HR: คำขอเบิกเงินล่วงหน้ารออนุมัติ
+async function loadAdvancePending(){
+  const box=$('advancePendingPanel'); if(!box) return;
+  let r; try{ r=await post({ action:'advance_pending', password:pwd, branch:(MGR_MODE?MGR_BRANCH:undefined) }); }catch(e){ box.innerHTML=''; return; }
+  if(!r||!r.ok){ box.innerHTML=''; return; }
+  const total=r.count||0;
+  updateNavBadge('การเงิน', total);
+  if(!total){ box.innerHTML=''; return; }
+  let h='<div class="card" style="padding:13px 16px;margin-bottom:12px;border:1.5px solid #86efac;background:#f0fdf4;cursor:pointer" onclick="showTab(\'advance\')">'
+    +'<div style="display:flex;align-items:center;gap:10px"><div style="font-size:22px">💰</div>'
+    +'<div style="flex:1"><div style="font-weight:800;color:#166534;font-size:14.5px">มีคำขอเบิกเงินล่วงหน้ารออนุมัติ '+total+' รายการ'+(r.emergency_count?(' · ฉุกเฉิน '+r.emergency_count):'')+'</div>'
+    +'<div style="font-size:12.5px;color:#14532d;margin-top:2px">รวม '+Number(r.amount||0).toLocaleString()+' บาท</div></div>'
+    +'<div style="font-size:12px;color:#166534;white-space:nowrap">แตะเพื่ออนุมัติ ›</div></div>';
+  const items=(r.rows||[]).map(x=>(x.kind==='emergency'?'🚨 ':'')+(x.nickname||x.emp_name||'')+' '+Number(x.amount||0).toLocaleString()+' บ.');
+  if(items.length) h+='<div style="font-size:11.5px;color:#14532d;margin-top:6px;padding-left:32px">'+items.slice(0,6).map(esc).join(' · ')+(items.length>6?' …':'')+'</div>';
+  h+='</div>';
+  box.innerHTML=h;
+}
+// badge บนกลุ่มเมนูตาม label (ใช้ร่วมได้หลายกลุ่ม)
+function updateNavBadge(label, n){
+  document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{
+    if(NAV_GROUPS[i] && NAV_GROUPS[i].label===label){
       let bd=b.querySelector('.navbadge');
       if(n>0){ if(!bd){ bd=document.createElement('span'); bd.className='navbadge'; bd.style.cssText='margin-left:5px;min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:#dc2626;color:#fff;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center'; b.appendChild(bd);} bd.textContent=n; }
       else if(bd) bd.remove();
