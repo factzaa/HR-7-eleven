@@ -4460,7 +4460,17 @@
     if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
     const { data: a } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
     if (!a) return { ok: false, error: 'ไม่พบผู้สมัคร' };
-    if (a.hired_emp_id) return { ok: true, emp_id: a.hired_emp_id, already: true };
+    // เดิม: ถ้ามี hired_emp_id ก็ return ทันที → บั๊ก: ถ้ารหัสค้างแต่ไม่มีพนักงานจริง (attempt เก่าไม่สมบูรณ์)
+    // การ์ดจะค้างที่สถานะเดิมตลอด กดรับเข้าอีกกี่ครั้งก็ไม่ขยับ · แก้: ตรวจว่ามีพนักงานจริงก่อน
+    if (a.hired_emp_id) {
+      const { data: exEmp } = await sb().from('employees').select('emp_id').eq('emp_id', a.hired_emp_id).maybeSingle();
+      if (exEmp) {
+        // มีพนักงานจริงแล้ว → แค่ทำให้สถานะตรง (การ์ดย้ายไป "รับเริ่มงาน")
+        if (a.status !== 'hired') await sb().from('applicants').update({ status: 'hired', updated_at: new Date().toISOString() }).eq('id', id);
+        return { ok: true, emp_id: a.hired_emp_id, already: true };
+      }
+      // hired_emp_id ค้างแต่ไม่มีพนักงานจริง → ถือว่ายังไม่ได้รับเข้า รับเข้าใหม่ด้วยรหัสที่กรอกด้านล่าง
+    }
     const branch = branchId || a.branch_id;
     if (!branch) return { ok: false, error: 'เลือกสาขาที่รับเข้า' };
 
