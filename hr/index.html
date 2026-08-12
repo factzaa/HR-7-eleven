@@ -6752,6 +6752,10 @@ function renderRcActions(a){
   } else {
     btns.push('<button class="btn btn-sec btn-sm" data-rcact="reviewing">↩ กลับไปรอพิจารณา</button>');
   }
+  // ลบใบสมัครได้เฉพาะที่ยังไม่รับเข้าทำงาน (ใบซ้ำ/ไม่ผ่าน) — คนที่รับเข้าแล้วต้องไปลบที่หน้าพนักงาน
+  if(a.status!=='hired' && !a.hired_emp_id){
+    btns.push('<button class="btn btn-sm" data-rcact="delete" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca">🗑 ลบใบสมัคร</button>');
+  }
   $('rc_foot').innerHTML=btns.join('');
   $('rc_foot').querySelectorAll('[data-rcact]').forEach(b=>b.onclick=()=>rcAct(b.dataset.rcact, a));
 }
@@ -6760,6 +6764,12 @@ async function rcAct(act, a){
   if(act==='reviewing'){
     const r=await post({ action:'hr_applicant_stage', password:pwd, id:a.id, status:'reviewing' });
     if(r.ok){ toast('ok','ย้ายไปรอพิจารณา'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ไม่สำเร็จ');
+    return;
+  }
+  if(act==='delete'){
+    if(!confirm('ลบใบสมัครของ '+a.full_name+' ?\n(ใช้กับใบซ้ำ/ไม่ผ่าน · ลบแล้วกู้คืนไม่ได้)')) return;
+    const r=await post({ action:'hr_applicant_delete', password:pwd, id:a.id });
+    if(r.ok){ toast('ok','ลบใบสมัครแล้ว'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ลบไม่สำเร็จ');
     return;
   }
   if(act==='reject'){
@@ -6810,18 +6820,27 @@ async function rcAct(act, a){
       +'<div id="hire_err" style="color:var(--red);font-size:12.5px;display:none;margin-bottom:6px"></div>'
       +'<button class="btn btn-pri btn-sm" id="hire_go">ยืนยันรับเข้าทำงาน</button></div>';
     $('hire_emp').addEventListener('input',e=>{ e.target.value=e.target.value.replace(/\D/g,''); $('hire_err').style.display='none'; });
-    $('hire_go').onclick=async()=>{
+    async function doHire(linkExisting){
       const code=($('hire_emp').value||'').trim();
       if(!/^\d+$/.test(code)){ $('hire_err').textContent='กรุณากรอกรหัสพนักงานเป็นตัวเลขล้วน'; $('hire_err').style.display='block'; $('hire_emp').focus(); return; }
       const sd=($('hire_start').value||'').trim();
       if(!sd){ $('hire_err').textContent='กรุณาระบุวันที่นัดเริ่มงาน'; $('hire_err').style.display='block'; $('hire_start').focus(); return; }
-      if(!confirm('ยืนยันรับ '+a.full_name+' เข้าทำงาน · รหัส '+code+'\nวันเริ่มงาน '+beDate(sd)+' ?')) return;
+      const confMsg = linkExisting
+        ? ('เชื่อมใบสมัคร '+a.full_name+' กับพนักงานรหัส '+code+' ที่มีอยู่แล้ว?\n(ไม่สร้างพนักงานใหม่ · ใช้กรณีเพิ่มพนักงานเองไปแล้ว)')
+        : ('ยืนยันรับ '+a.full_name+' เข้าทำงาน · รหัส '+code+'\nวันเริ่มงาน '+beDate(sd)+' ?');
+      if(!confirm(confMsg)) return;
       $('hire_go').disabled=true; $('hire_go').innerHTML='<span class="spin"></span>';
       const r=await post({ action:'hr_applicant_hire', password:pwd, id:a.id, branch_id:$('hire_branch').value, emp_id:code,
-                           start_date:sd, default_shift:$('hire_shift').value||null });
-      if(r.ok){ toast('ok','รับเข้าทำงานแล้ว · รหัส '+r.emp_id); closeApplicant(); loadRecruit(); if(typeof loadAll==='function') await loadAll(); }
-      else { $('hire_err').textContent=r.error||'ไม่สำเร็จ'; $('hire_err').style.display='block'; toast('err', r.error||'ไม่สำเร็จ'); $('hire_go').disabled=false; $('hire_go').textContent='ยืนยันรับเข้าทำงาน'; }
-    };
+                           start_date:sd, default_shift:$('hire_shift').value||null, link_existing:linkExisting?true:undefined });
+      if(r.ok){ toast('ok', r.linked?('เชื่อมกับพนักงานรหัส '+r.emp_id+' แล้ว'):('รับเข้าทำงานแล้ว · รหัส '+r.emp_id)); closeApplicant(); loadRecruit(); if(typeof loadAll==='function') await loadAll(); }
+      else {
+        $('hire_err').innerHTML = esc(r.error||'ไม่สำเร็จ') + (r.code_exists?('<br><button class="btn btn-pri btn-sm" id="hire_link" style="margin-top:6px">🔗 เชื่อมกับพนักงานรหัสนี้ (เพิ่มเองไปแล้ว)</button>'):'');
+        $('hire_err').style.display='block'; toast('err', r.error||'ไม่สำเร็จ');
+        $('hire_go').disabled=false; $('hire_go').textContent='ยืนยันรับเข้าทำงาน';
+        if($('hire_link')) $('hire_link').onclick=()=>doHire(true);
+      }
+    }
+    $('hire_go').onclick=()=>doHire(false);
     return;
   }
 }

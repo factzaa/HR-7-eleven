@@ -287,7 +287,8 @@
         case 'hr_applicant_stage':   return await hrApplicantStage(p.id, p.status);
         case 'hr_applicant_interview': return await hrApplicantInterview(p.id, p.interview_at, p.note);
         case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason);
-        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id, { start_date: p.start_date, default_shift: p.default_shift });
+        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id, { start_date: p.start_date, default_shift: p.default_shift, link_existing: p.link_existing });
+        case 'hr_applicant_delete':  return await hrApplicantDelete(p.id);
         case 'hr_positions_list':    return await hrPositionsList();
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
@@ -4478,12 +4479,23 @@
     const code = String(empId || '').trim();
     if (!code) return { ok: false, error: 'กรุณากำหนดรหัสพนักงาน (ตัวเลขล้วน)' };
     if (!/^\d+$/.test(code)) return { ok: false, error: 'รหัสพนักงานต้องเป็นตัวเลขล้วน (หน้าลงเวลาพิมพ์ตัวอักษรไม่ได้)' };
-    const { data: dup } = await sb().from('employees').select('emp_id,name').eq('emp_id', code).maybeSingle();
-    if (dup) return { ok: false, error: 'รหัส ' + code + ' ถูกใช้แล้ว (' + (dup.name || '') + ') กรุณาใช้รหัสอื่น' };
     // ★ วันเริ่มงาน = "วันที่นัดเริ่มงาน" ที่ HR กรอกตอนรับเข้า (เดิมบันทึกเป็นวันนี้เสมอ → อายุงาน/รายงานเพี้ยน)
     const startDate = (opt.start_date && /^\d{4}-\d{2}-\d{2}$/.test(String(opt.start_date)))
       ? String(opt.start_date)
       : (a.start_date || bkkToday());
+    const { data: dup } = await sb().from('employees').select('emp_id,name').eq('emp_id', code).maybeSingle();
+    if (dup) {
+      // รหัสนี้มีพนักงานแล้ว — ปกติกันไว้ (กันรับซ้ำ) · แต่ถ้า HR เพิ่มพนักงานเองไปแล้วและยืนยันว่าคนเดียวกัน
+      // (link_existing) ให้ "เชื่อม" ใบสมัครกับพนักงานรหัสนี้แทน insert ซ้ำ → การ์ดย้ายไปรับเริ่มงาน
+      if (opt.link_existing) {
+        const patchL = { status: 'hired', hired_emp_id: code, updated_at: new Date().toISOString() };
+        const { error: eL } = await sb().from('applicants').update({ ...patchL, start_date: startDate }).eq('id', id);
+        if (eL) { const { error: eL2 } = await sb().from('applicants').update(patchL).eq('id', id); if (eL2) throw eL2; }
+        await logAct('เชื่อมใบสมัครกับพนักงานที่มีอยู่', code, a.full_name + ' · รหัส ' + code + ' · สาขา ' + branch);
+        return { ok: true, emp_id: code, linked: true };
+      }
+      return { ok: false, error: 'รหัส ' + code + ' ถูกใช้แล้ว (' + (dup.name || '') + ')', code_exists: true, exist_name: dup.name || '' };
+    }
 
     const emp = {
       emp_id: code, name: a.full_name, nickname: a.nickname || null,
@@ -4506,6 +4518,18 @@
     }
     await logAct('รับผู้สมัครเข้าทำงาน', code, a.full_name + ' · สาขา ' + branch + ' · เริ่มงาน ' + startDate);
     return { ok: true, emp_id: code, start_date: startDate };
+  }
+  // ลบใบสมัคร (สำหรับใบซ้ำ/ไม่ผ่าน เพื่อไม่ให้รก) — ลบได้เฉพาะที่ "ยังไม่รับเข้าทำงาน"
+  //   ถ้ารับเข้าแล้ว (เป็นพนักงาน) ห้ามลบใบสมัครที่นี่ → ต้องไปลบที่หน้าพนักงานแทน (กันข้อมูลพนักงานหลุด)
+  async function hrApplicantDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุใบสมัคร' };
+    const { data: a } = await sb().from('applicants').select('id,full_name,status,hired_emp_id').eq('id', id).maybeSingle();
+    if (!a) return { ok: false, error: 'ไม่พบใบสมัคร' };
+    if (a.status === 'hired' || a.hired_emp_id) return { ok: false, error: 'ผู้สมัครนี้รับเข้าทำงานแล้ว ลบใบสมัครไม่ได้ — หากต้องการนำออกให้ไปลบที่หน้าพนักงาน' };
+    const { error } = await sb().from('applicants').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ลบใบสมัคร', null, (a.full_name || '') + ' · สถานะ ' + (a.status || ''));
+    return { ok: true };
   }
   // ---------- ตำแหน่งงาน (สำหรับหน้าสมัคร) ----------
   async function hrPositionsList() {
