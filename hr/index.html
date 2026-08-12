@@ -4657,7 +4657,11 @@ function openPayrollMail(){
     +'<td>'+esc(it.emp_name)+'<div style="font-size:11px;color:var(--muted)">'+esc(it.emp_id)+(it.branch_name?(' · '+esc(it.branch_name)):'')+'</div></td>'
     +'<td style="font-size:12px">'+(it.email?esc(it.email):'<span style="color:#c2410c">ไม่มีอีเมล</span>')+'</td>'
     +'<td class="pl-mailst" style="text-align:center">'+plMailStatusHtml(it)+'</td>'
-    +'<td style="text-align:right">'+(it.email?'<button class="btn btn-sec btn-sm" data-mailone="'+esc(it.emp_id)+'">'+(it.mail_status==='sent'?'ส่งซ้ำ':'ส่ง')+'</button>':'')+'</td></tr>').join('');
+    +'<td style="text-align:right;white-space:nowrap">'
+      +'<button class="btn btn-sec btn-sm" title="พรีวิวสลิป" data-mailprev="'+esc(it.emp_id)+'">👁</button> '
+      +'<button class="btn btn-sec btn-sm" title="พิมพ์สลิป" data-mailprint="'+esc(it.emp_id)+'">🖨</button> '
+      +(it.email?'<button class="btn btn-sec btn-sm" data-mailone="'+esc(it.emp_id)+'">'+(it.mail_status==='sent'?'ส่งซ้ำ':'ส่ง')+'</button>':'')
+    +'</td></tr>').join('');
   openModal('📧 ส่งสลิปทางอีเมล'+((PAY.range&&PAY.range.label)?(' · '+esc(PAY.range.label)):''),
     '<div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">ผู้ส่ง: <b>'+esc(mail.from_name||'')+' &lt;'+esc(mail.from||'')+'&gt;</b> · เปลี่ยนได้ที่หน้า ⚙️ ตั้งค่า</div>'
     +(testMode?'<div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:10px">⚠️ โหมดทดสอบ (onboarding@resend.dev): Resend ส่งได้เฉพาะเข้าอีเมลเจ้าของบัญชี Resend เท่านั้น · ตั้งโดเมนแล้วเปลี่ยนผู้ส่งก่อนใช้จริง</div>':'')
@@ -4665,6 +4669,30 @@ function openPayrollMail(){
     +'<div class="tablewrap" style="max-height:52vh;overflow:auto"><table style="font-size:13px"><thead><tr><th>พนักงาน</th><th>อีเมล</th><th style="text-align:center">สถานะ</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>');
   const allBtn=$('pl_mail_all'); if(allBtn) allBtn.onclick=()=>plMailSend(withEmail.map(it=>it.emp_id));
   document.querySelectorAll('#gmBody [data-mailone]').forEach(b=>b.onclick=()=>plMailSend([b.dataset.mailone]));
+  document.querySelectorAll('#gmBody [data-mailprev]').forEach(b=>b.onclick=()=>plPreviewOne(b.dataset.mailprev));
+  document.querySelectorAll('#gmBody [data-mailprint]').forEach(b=>b.onclick=()=>plPrintOne(b.dataset.mailprint));
+}
+// พรีวิวสลิป 1 คน (เปิดหน้าต่างใหม่ + มีปุ่มพิมพ์ในตัว)
+function plPreviewOne(empId){
+  const it=(PAY&&PAY.items||[]).find(x=>String(x.emp_id)===String(empId));
+  if(!it){ toast('err','ไม่พบข้อมูลสลิป'); return; }
+  const w=window.open('','_blank','width=760,height=920');
+  if(!w){ toast('err','เบราว์เซอร์บล็อกป๊อปอัพ — อนุญาตป๊อปอัพก่อน'); return; }
+  const html=plSlipDocHtml(it).replace('</body>','<div style="text-align:center;margin:14px 0"><button onclick="window.print()" style="padding:9px 22px;font-size:15px;border-radius:9px;border:0;background:#16a34a;color:#fff;cursor:pointer">🖨 พิมพ์สลิปนี้</button></div></body>');
+  w.document.open(); w.document.write(html); w.document.close();
+}
+// พิมพ์สลิป 1 คน (A4 · ผ่าน iframe ซ่อน — เลี่ยงป๊อปอัพ)
+function plPrintOne(empId){
+  const it=(PAY&&PAY.items||[]).find(x=>String(x.emp_id)===String(empId));
+  if(!it){ toast('err','ไม่พบข้อมูลสลิป'); return; }
+  const css='@page{size:A4 portrait;margin:10mm} body{margin:0} .ps-slip{max-width:none;padding:0}'+PL_SLIP_STYLE;
+  const old=document.getElementById('slipFrame1'); if(old) old.remove();
+  const fr=document.createElement('iframe'); fr.id='slipFrame1'; fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(fr);
+  const d=fr.contentWindow.document; d.open();
+  d.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap"><style>'+css+'</style></head><body>'+plSlipInner(it, plSlipMeta())+'</body></html>');
+  d.close();
+  setTimeout(()=>{ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast('err','พิมพ์ไม่สำเร็จ'); } setTimeout(()=>{ const f=document.getElementById('slipFrame1'); if(f) f.remove(); },60000); }, 500);
 }
 async function plMailSend(empIds){
   if(PL_MAIL_BUSY||!empIds||!empIds.length) return;
