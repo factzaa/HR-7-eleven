@@ -1960,16 +1960,32 @@
     if (!veh) throw new Error('ไม่พบรถ');
     const lastOdo = veh.odo_last != null ? veh.odo_last : veh.odo_start;
     if (lastOdo != null && n < Number(lastOdo)) throw new Error('เลขไมล์ (' + n.toLocaleString() + ') น้อยกว่าครั้งก่อน (' + Number(lastOdo).toLocaleString() + ') — ตรวจสอบอีกครั้ง');
-    // GPS อยู่ในรัศมีสาขาไหม
+    // GPS อยู่ในรัศมีสาขาไหม — เช็กกับ "สาขาที่ไปทำงานจริงวันนี้" ด้วย ไม่ใช่แค่สาขาประจำของรถ
+    //   (กันเคสไรเดอร์ไปวิ่งแทนสาขาอื่น แล้วขึ้น "นอกเขต" ทั้งที่อยู่ที่สาขาที่ไปแทนจริง)
     let gps_ok = null;
-    if (lat != null && lng != null && veh.branch_id) {
-      const { data: br } = await sb.from('branches').select('lat,lng,radius_m').eq('branch_id', veh.branch_id).maybeSingle();
-      if (br && br.lat != null && br.lng != null) {
+    if (lat != null && lng != null) {
+      const eid = empId || veh.emp_id || null;
+      const brIds = new Set(); if (veh.branch_id) brIds.add(veh.branch_id);   // สาขาประจำของรถ
+      if (eid) {
+        const today = bangkokDate();
+        const [schR, attR] = await Promise.all([
+          sb.from('schedules').select('branch_id').eq('emp_id', eid).eq('work_date', today),          // สาขาที่ถูกจัดกะ (รวมไปแทน)
+          sb.from('attendance').select('branch_id').eq('emp_id', eid).eq('work_date', today).not('branch_id', 'is', null),   // สาขาที่เช็กอินจริง
+        ]);
+        (schR.data || []).forEach(s => { if (s.branch_id) brIds.add(s.branch_id); });
+        (attR.data || []).forEach(a => { if (a.branch_id) brIds.add(a.branch_id); });
+      }
+      if (brIds.size) {
+        const { data: brs } = await sb.from('branches').select('branch_id,lat,lng,radius_m').in('branch_id', [...brIds]);
         const R = 6371000, toRad = x => x * Math.PI / 180;
-        const dLat = toRad(br.lat - lat), dLng = toRad(br.lng - lng);
-        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat)) * Math.cos(toRad(br.lat)) * Math.sin(dLng / 2) ** 2;
-        const dist = 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        gps_ok = dist <= (Number(br.radius_m || 200) + 200);
+        (brs || []).forEach(br => {
+          if (br.lat == null || br.lng == null) return;
+          const dLat = toRad(br.lat - lat), dLng = toRad(br.lng - lng);
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat)) * Math.cos(toRad(br.lat)) * Math.sin(dLng / 2) ** 2;
+          const dist = 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const ok = dist <= (Number(br.radius_m || 200) + 200);
+          gps_ok = (gps_ok === null) ? ok : (gps_ok || ok);   // อยู่ในรัศมีสาขาใดสาขาหนึ่งที่เกี่ยวข้องวันนี้ = ผ่าน
+        });
       }
     }
     let photo_url = null;
