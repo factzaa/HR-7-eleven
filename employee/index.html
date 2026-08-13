@@ -842,13 +842,19 @@ async function openFuelClaim(){
   FUEL_PHOTO=null;
   let q; try{ q=await HR.riderFuelQuota(empMatch.emp_id); }catch(e){ showToast('err', e.message||'โหลดไม่สำเร็จ'); return; }
   if(!q.enabled){ showToast('err','ระบบเบิกน้ำมันปิดอยู่'); return; }
+  if(q.is_open_today===false){
+    const ov2=document.createElement('div'); ov2.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov2.innerHTML='<div style="background:#fff;border-radius:16px;max-width:380px;width:100%;padding:22px;text-align:center"><div style="font-size:40px;margin-bottom:6px">⛽</div><div style="font-weight:800;font-size:17px;color:#9a3412;margin-bottom:8px">ยังไม่เปิดให้เบิกวันนี้</div><div style="font-size:13.5px;color:#7c2d12;line-height:1.7">เบิกค่าน้ำมันได้เฉพาะ<b>วัน'+escH(q.open_day_th||'จันทร์')+'</b>เท่านั้น<br>เบิกวัน'+escH(q.open_day_th||'จันทร์')+' · รับเงินวัน'+escH(q.payout_day_th||'อังคาร')+'</div><button type="button" id="fuClose2" style="margin-top:16px;padding:10px 22px;border:0;border-radius:10px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer">รับทราบ</button></div>';
+    ov2.addEventListener('click',e=>{ if(e.target===ov2||e.target.id==='fuClose2') ov2.remove(); });
+    document.body.appendChild(ov2); return;
+  }
   const vehOpts=(RIDER.vehicles||[]).map(v=>'<option value="'+v.id+'">'+escH(v.plate||'(ไม่มีทะเบียน)')+'</option>').join('');
   const ov=document.createElement('div'); ov.id='fuelOv';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">⛽ เบิกค่าน้ำมัน</h2>'
       +'<button type="button" id="fuX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
-    +'<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:9px 11px;font-size:12px;color:#7c2d12;margin-bottom:10px;line-height:1.6">เงินหมุนเวียนสำหรับเติมน้ำมัน (ไม่ใช่สวัสดิการ) · <b>จะถูกหักคืนจากเงินเดือนสิ้นเดือน</b><br>ครั้งละไม่เกิน <b>'+q.per_claim_max.toLocaleString()+'</b> · รอบนี้เบิกได้อีก <b>'+q.remaining.toLocaleString()+'</b> บาท (จาก '+q.total_max.toLocaleString()+')</div>'
+    +'<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:9px 11px;font-size:12px;color:#7c2d12;margin-bottom:10px;line-height:1.6">เงินหมุนเวียนสำหรับเติมน้ำมัน (ไม่ใช่สวัสดิการ) · <b>จะถูกหักคืนจากเงินเดือนสิ้นเดือน</b><br>ครั้งละไม่เกิน <b>'+q.per_claim_max.toLocaleString()+'</b> · รอบนี้เบิกได้อีก <b>'+q.remaining.toLocaleString()+'</b> บาท (จาก '+q.total_max.toLocaleString()+')<br>📅 เปิดเบิกเฉพาะวัน<b>'+escH(q.open_day_th||'จันทร์')+'</b> · รับเงินวัน<b>'+escH(q.payout_day_th||'อังคาร')+'</b> (วันถัดไป)</div>'
     +(vehOpts?('<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">รถ</label><select id="fuVeh" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box;margin-bottom:9px">'+vehOpts+'</select>'):'')
     +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">ยอดเบิก (บาท)</label>'
       +'<input id="fuAmt" type="number" inputmode="numeric" max="'+q.per_claim_max+'" style="width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;font-size:18px;text-align:center;font-weight:700;box-sizing:border-box"></div>'

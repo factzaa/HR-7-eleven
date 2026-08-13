@@ -5159,7 +5159,7 @@
 
   async function _fuelCfg() {
     const { data } = await sb().from('rider_fuel_config').select('*').eq('id', 1).maybeSingle();
-    return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false };
+    return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false, open_weekday: 1 };
   }
   // นับรายการเบิกน้ำมัน + เบิกซ่อม ที่ "รออนุมัติ" (แจ้งเตือน HR)
   async function hrRiderPending(p) {
@@ -5220,6 +5220,7 @@
     if (d.per_claim_max !== undefined) row.per_claim_max = parseInt(d.per_claim_max) || 500;
     if (d.total_max !== undefined) row.total_max = parseInt(d.total_max) || 1500;
     if (d.require_odometer !== undefined) row.require_odometer = d.require_odometer === true;
+    if (d.open_weekday !== undefined) { const w = parseInt(d.open_weekday); row.open_weekday = (w >= 0 && w <= 6) ? w : 1; }
     const { error } = await sb().from('rider_fuel_config').upsert(row, { onConflict: 'id' });
     if (error) throw error;
     await logAct('บันทึกตั้งค่าเบิกน้ำมัน', null, null);

@@ -6279,11 +6279,12 @@ async function openRfCfg(){
   openModal('⚙️ ตั้งค่าเบิกค่าน้ำมัน',
     '<div class="field" style="margin-bottom:9px"><label style="font-size:13px">เพดานต่อครั้ง (บาท)</label><input id="rfc_per" type="number" value="'+(c.per_claim_max||500)+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px"></div>'
     +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">เพดานรวมต่อรอบ/คน (บาท)</label><input id="rfc_total" type="number" value="'+(c.total_max||1500)+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px"></div>'
+    +'<div class="field" style="margin-bottom:9px"><label style="font-size:13px">เปิดให้เบิกเฉพาะวัน (รับเงินวันถัดไป)</label><select id="rfc_wd" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:8px;margin-top:3px">'+['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'].map((d,i)=>'<option value="'+i+'"'+((c.open_weekday==null?1:Number(c.open_weekday))===i?' selected':'')+'>'+d+'</option>').join('')+'</select></div>'
     +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:9px"><input type="checkbox" id="rfc_odo"'+(c.require_odometer?' checked':'')+'> บังคับกรอกเลขไมล์</label>'
     +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px"><input type="checkbox" id="rfc_en"'+(c.enabled!==false?' checked':'')+'> เปิดใช้งานระบบเบิกน้ำมัน</label>'
     +'<button class="btn btn-pri" id="rfc_save" style="width:100%;padding:10px">บันทึก</button>');
   $('rfc_save').onclick=async()=>{
-    const rr=await post({ action:'rider_fuel_cfg_save', ...authBody(), data:{ per_claim_max:$('rfc_per').value, total_max:$('rfc_total').value, require_odometer:$('rfc_odo').checked, enabled:$('rfc_en').checked } });
+    const rr=await post({ action:'rider_fuel_cfg_save', ...authBody(), data:{ per_claim_max:$('rfc_per').value, total_max:$('rfc_total').value, require_odometer:$('rfc_odo').checked, enabled:$('rfc_en').checked, open_weekday:$('rfc_wd').value } });
     if(rr&&rr.ok){ toast('ok','บันทึกแล้ว'); closeModal(); } else toast('err',(rr&&rr.error)||'ไม่สำเร็จ');
   };
 }

@@ -1985,22 +1985,36 @@
   // ============================================================
   // เบิกค่าน้ำมันไรเดอร์ (เงินหมุนเวียน — หักคืนจากเงินเดือน)
   // ============================================================
+  const _DOW_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+  const _bkkNow = () => new Date(Date.now() + 7 * 3600 * 1000);       // เวลาไทย
   async function riderFuelConfig() {
     const { data } = await sb.from('rider_fuel_config').select('*').eq('id', 1).maybeSingle();
-    return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false };
+    return data || { enabled: true, per_claim_max: 500, total_max: 1500, require_odometer: false, open_weekday: 1 };
   }
   async function riderFuelQuota(empId, cycleMonth) {
     const cfg = await riderFuelConfig();
     const m = cycleMonth || _cycleMonth();   // เดือนสิ้นรอบ 21–20
     const { data } = await sb.from('rider_fuel_claims').select('amount,status').eq('emp_id', empId).eq('cycle_month', m).in('status', ['submitted', 'approved']);
     const used = (data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
-    return { per_claim_max: Number(cfg.per_claim_max || 500), total_max: Number(cfg.total_max || 1500), used, remaining: Math.max(0, Number(cfg.total_max || 1500) - used), enabled: cfg.enabled !== false, require_odometer: cfg.require_odometer === true, month: m };
+    const openWd = (cfg.open_weekday == null) ? 1 : Number(cfg.open_weekday);   // ดีฟอลต์ = จันทร์
+    const todayWd = _bkkNow().getUTCDay();
+    return {
+      per_claim_max: Number(cfg.per_claim_max || 500), total_max: Number(cfg.total_max || 1500),
+      used, remaining: Math.max(0, Number(cfg.total_max || 1500) - used),
+      enabled: cfg.enabled !== false, require_odometer: cfg.require_odometer === true, month: m,
+      open_weekday: openWd, is_open_today: todayWd === openWd,
+      open_day_th: _DOW_TH[openWd], payout_day_th: _DOW_TH[(openWd + 1) % 7],
+    };
   }
   async function riderFuelSubmit({ empId, vehicle_id, amount, odometer, liters, shop_name, receipt, note, lat, lng }) {
     const emp = await lookupEmployee(empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const cfg = await riderFuelConfig();
     if (cfg.enabled === false) throw new Error('ระบบเบิกน้ำมันปิดใช้งานอยู่');
+    // เปิดให้เบิกเฉพาะวันที่กำหนด (ดีฟอลต์ = จันทร์) · รับเงินวันถัดไป
+    const openWd = (cfg.open_weekday == null) ? 1 : Number(cfg.open_weekday);
+    const bkkNow = _bkkNow();
+    if (bkkNow.getUTCDay() !== openWd) throw new Error('เบิกค่าน้ำมันได้เฉพาะวัน' + _DOW_TH[openWd] + 'เท่านั้น (วันนี้วัน' + _DOW_TH[bkkNow.getUTCDay()] + ') · เบิกวัน' + _DOW_TH[openWd] + ' รับเงินวัน' + _DOW_TH[(openWd + 1) % 7]);
     const amt = Math.floor(Number(amount) || 0);
     if (amt <= 0) throw new Error('ระบุยอดเบิก');
     if (amt > Number(cfg.per_claim_max || 500)) throw new Error('เบิกได้ครั้งละไม่เกิน ' + Number(cfg.per_claim_max || 500) + ' บาท');
@@ -2027,6 +2041,7 @@
       liters: liters != null && liters !== '' ? Number(liters) : null,
       shop_name: shop_name || null, gps_lat: lat != null ? lat : null, gps_lng: lng != null ? lng : null,
       receipt_url, note: (note || '').trim() || null, cycle_month: month, status: 'submitted', device: 'employee',
+      payout_due_date: new Date(bkkNow.getTime() + 86400000).toISOString().slice(0, 10),   // รับเงินวันถัดไป
     };
     const { data: ins, error } = await sb.from('rider_fuel_claims').insert(row).select('id').maybeSingle();
     if (error) throw error;
