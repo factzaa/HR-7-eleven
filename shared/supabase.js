@@ -1234,7 +1234,8 @@
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const nameOf = {}; (empsR.data || []).forEach(e => { nameOf[e.emp_id] = e.nickname || e.name; });
     const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
-    const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group).map(r => r.emp_id))];
+    // คนในกะ = จากตารางเวร แต่ตัดคนที่ปิดใช้งานออก (nameOf มีเฉพาะ active) — กันคนที่ลาออก/ปิดใช้งานโผล่ในรายชื่อ+ดรอปดาวน์มอบงาน
+    const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group && nameOf[r.emp_id]).map(r => r.emp_id))];
     const defs = (defsR.data || []).filter(d => !d.shift_id || d.shift_id === group);
     const byDef = {}; (asgR.data || []).forEach(a => { byDef[a.task_def_id] = a; });
     return {

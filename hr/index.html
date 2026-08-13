@@ -5575,7 +5575,7 @@ function _akRoundOpts(){
   return h;
 }
 function openAdvKey(){
-  const rows=(DATA.rows||[]).filter(e=>!MGR_MODE || String(e.branch_id)===String(MGR_BRANCH));
+  const rows=(DATA.rows||[]).filter(e=>e.active!==false).filter(e=>!MGR_MODE || String(e.branch_id)===String(MGR_BRANCH));
   if(!rows.length){ toast('err','ไม่มีพนักงาน'); return; }
   const opts=rows.map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</option>').join('');
   openModal('＋ คีย์เบิกให้พนักงาน',
@@ -6244,8 +6244,9 @@ let RFK_PHOTO=null;
 function openRfKey(){
   if(MGR_MODE){ toast('err','เฉพาะ HR'); return; }
   RFK_PHOTO=null;
-  const emps=(DATA.rows||[]).filter(e=>e.is_rider);
-  const list=emps.length?emps:(DATA.rows||[]);
+  const actives=(DATA.rows||[]).filter(e=>e.active!==false);
+  const emps=actives.filter(e=>e.is_rider);
+  const list=emps.length?emps:actives;
   const opts=list.map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</option>').join('');
   const nowM=(new Date()).toISOString().slice(0,7);
   openModal('＋ คีย์เบิกน้ำมัน (ย้อนหลัง)',
@@ -6504,7 +6505,7 @@ function rdOdoDaily(){
 function openRdVeh(id){
   const v=id?RD.vehicles.find(x=>String(x.id)===String(id)):{};
   RD.editVehId=id||null;
-  const empOpts=(DATA.rows||[]).map(e=>'<option value="'+esc(e.emp_id)+'"'+((v&&v.emp_id===e.emp_id)?' selected':'')+'>'+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</option>').join('');
+  const empOpts=(DATA.rows||[]).filter(e=>e.active!==false || (v&&v.emp_id===e.emp_id)).map(e=>'<option value="'+esc(e.emp_id)+'"'+((v&&v.emp_id===e.emp_id)?' selected':'')+'>'+esc(e.emp_id+' · '+(e.nickname||e.name||''))+'</option>').join('');
   const brOpts=(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(((v&&v.branch_id===b.branch_id)||(MGR_MODE&&b.branch_id===MGR_BRANCH))?' selected':'')+'>'+esc(b.name)+'</option>').join('');
   $('rdv_title').textContent=id?'แก้ไขรถ':'เพิ่มรถ';
   const F=(l,inner)=>'<div class="field" style="margin-bottom:9px"><label style="font-size:12px;color:var(--muted)">'+l+'</label>'+inner+'</div>';
@@ -8220,7 +8221,7 @@ let ES_DATA=null;
 function esDate(s){ if(!s) return '-'; const d=new Date(s+'T00:00:00'); if(isNaN(d)) return s; const M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return d.getDate()+' '+M[d.getMonth()]+' '+(d.getFullYear()+543); }
 function initEmpSum(){
   if(DATA && DATA.rows && $('es_emp') && !$('es_emp').dataset.filled){
-    fillSelect($('es_emp'), DATA.rows.map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
+    fillSelect($('es_emp'), DATA.rows.filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
     $('es_emp').dataset.filled='1';
   }
   const mode=$('es_mode');
@@ -11025,7 +11026,7 @@ function renderDutyList(){
 function dutyYmd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
 function initDuty(){
   if($('duty_emp') && !$('duty_emp').dataset.filled){
-    fillSelect($('duty_emp'), (DATA.rows||[]).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
+    fillSelect($('duty_emp'), (DATA.rows||[]).filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
     $('duty_emp').dataset.filled='1';
     $('duty_save').onclick=saveDuty;
   }
