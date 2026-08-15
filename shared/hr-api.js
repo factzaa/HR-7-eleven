@@ -6396,12 +6396,18 @@
       }
     } catch (_e) { /* ไม่มีรอบเก่า ก็ข้าม */ }
     const addCur = finalized ? 0 : 1;   // รอบนี้ยังไม่ปิด → บวกยอดรอบนี้เข้าไปด้วย (ถ้าปิดแล้ว อยู่ในผลรวมข้างบนแล้ว)
-    const outItems = (finalItems || items).map(it => Object.assign({}, it, {
+    // ★ รีเฟรช "อีเมล + บัญชีธนาคาร" จากข้อมูลพนักงานปัจจุบันเสมอ (เป็นข้อมูลติดต่อ/โอน ไม่ใช่ยอดเงินที่ตรึง)
+    //   กันเคส: รอบถูกปิดก่อนพนักงานกรอกอีเมล → payroll_items.email ค้างว่าง → ส่งสลิปไม่ได้ทั้งที่กรอกแล้ว
+    const _empInfo = {}; (empR.data || []).forEach(e => { _empInfo[e.emp_id] = e; });
+    const outItems = (finalItems || items).map(it => { const _e = _empInfo[it.emp_id] || {}; return Object.assign({}, it, {
+      email: _e.email || it.email || null,
+      bank_name: _e.bank_name || it.bank_name || null,
+      bank_account: _e.bank_account || it.bank_account || null,
       ytd_earnings: _pr2((ytdEarn[it.emp_id] || 0) + addCur * Number(it.gross || 0)),
       ytd_sso: _pr2((ytdSso[it.emp_id] || 0) + addCur * Number(it.sso || 0)),
       ytd_tax: 0,
       delivery: (reviewMap[it.emp_id] && reviewMap[it.emp_id].delivery != null) ? Number(reviewMap[it.emp_id].delivery) : null,   // ค่า Delivery (จาก payroll_review) — โมดัลแก้รายคนใช้
-    }));
+    }); });
     return {
       ok: true,
       run: { id: run.id, period_start: run.period_start, period_end: run.period_end, pay_month: run.pay_month, status: run.status },
