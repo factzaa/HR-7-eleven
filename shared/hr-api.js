@@ -829,11 +829,12 @@
       };
     });
     // ★ วันควบกะ = มี ≥2 กะในวันเดียวกัน (จากตารางเวร หรือแถวลงเวลาจริง) — ติดป้ายให้เห็นชัดในรายงาน
-    const _shName = {}; (shR2.data || []).forEach(s => { _shName[s.shift_id] = s.name || s.shift_id; });
-    const _dualSh = {};   // 'emp|date' → Set(shift_id)
+    const _shName = {}, _shDV = {}; (shR2.data || []).forEach(s => { _shName[s.shift_id] = s.name || s.shift_id; _shDV[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
+    const _dualSh = {};   // 'emp|date' → Set(shift_id) (จากตาราง + ลงเวลา)
+    const _schDVsum = {}, _attDVsum = {};   // ผลรวม day_value ต่อ emp|date ของ "ตารางเวร" กับ "ลงเวลา"
     const _addSh = (emp, date, sid) => { if (!sid) return; const k = emp + '|' + date; (_dualSh[k] = _dualSh[k] || new Set()).add(sid); };
-    (schR.data || []).forEach(s => _addSh(s.emp_id, s.work_date, s.shift_id));
-    (data || []).forEach(r => { if (r.check_in) _addSh(r.emp_id, r.work_date, r.shift_id); });
+    (schR.data || []).forEach(s => { if (s.shift_id) { _addSh(s.emp_id, s.work_date, s.shift_id); const k = s.emp_id + '|' + s.work_date; _schDVsum[k] = (_schDVsum[k] || 0) + (_shDV[s.shift_id] != null ? _shDV[s.shift_id] : 1); } });
+    (data || []).forEach(r => { if (r.check_in && r.shift_id) { _addSh(r.emp_id, r.work_date, r.shift_id); const k = r.emp_id + '|' + r.work_date; _attDVsum[k] = (_attDVsum[k] || 0) + ((r.day_value != null) ? Number(r.day_value) : (_shDV[r.shift_id] != null ? _shDV[r.shift_id] : 1)); } });
     const _dualSet = new Set(), _dualNames = {};
     Object.keys(_dualSh).forEach(k => { if (_dualSh[k].size >= 2) { _dualSet.add(k); _dualNames[k] = [...(_dualSh[k])].map(id => _shName[id] || id).join('/'); } });
     rows.forEach(r => { const k = r.emp_id + '|' + r.work_date; r.dual_shift = _dualSet.has(k); r.dual_label = _dualNames[k] || ''; });
@@ -874,6 +875,11 @@
       }
       if (r.late_min > 0) { m.late_count++; m.late_total += r.late_min; }
       if (Number(r.ot_hours) > 0) { m.ot += otAdj(r.ot_hours, otWhole); m.ot_days++; }
+    });
+    // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงานจริง แต่ลงเวลาน้อยกว่าตาราง → เติมให้ครบตามควบ (เช่น สแกนครั้งเดียว = 1 → เติมเป็น 2)
+    _dualSet.forEach(k => {
+      const sched = _schDVsum[k] || 0, att = _attDVsum[k] || 0;
+      if (att > 0 && sched > att) { const i = k.indexOf('|'); const emp = k.slice(0, i); const m = map[emp]; if (m) { m.days += (sched - att); m.days_home += (sched - att); } }
     });
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงาน
     const workedByEmp = {};
@@ -6299,7 +6305,7 @@
     const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
-    const [profR, empR, brR, attR, shR, ctrlR, instR, instChR] = await Promise.all([
+    const [profR, empR, brR, attR, shR, ctrlR, instR, instChR, schPR] = await Promise.all([
       sb().from('payroll_profiles').select('*'),
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
@@ -6308,6 +6314,7 @@
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
       sb().from('payroll_installment_charges').select('*').lte('period_start', cyc.start),
+      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),   // ตารางเวร — ใช้เครดิตควบกะที่สแกนไม่ครบ
     ]);
     const profM = {}; (profR.data || []).forEach(x => { profM[x.emp_id] = x; });
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
@@ -6335,6 +6342,13 @@
       if (a.check_in) { const dv = a.day_value != null ? Number(a.day_value) : (dvMap[a.shift_id] != null ? dvMap[a.shift_id] : 1); const _wd = workedDV[a.emp_id] || (workedDV[a.emp_id] = {}); _wd[a.work_date] = (_wd[a.work_date] || 0) + dv; }   // ควบกะ: บวกทุกกะในวัน (2 กะ = 2 วัน)
       otByEmp[a.emp_id] = (otByEmp[a.emp_id] || 0) + otAdj(a.ot_hours, otWhole);
     });
+    // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงาน แต่ลงเวลาน้อยกว่าตาราง → ใช้ยอดตามตารางเวร (ให้ตรงกับหน้ารายงาน · ควบ=2)
+    const _schDVsumPR = {}, _schCntPR = {};
+    (schPR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schDVsumPR[k] = (_schDVsumPR[k] || 0) + (dvMap[s.shift_id] != null ? dvMap[s.shift_id] : 1); (_schCntPR[k] = _schCntPR[k] || new Set()).add(s.shift_id); } });
+    Object.keys(workedDV).forEach(emp => { Object.keys(workedDV[emp]).forEach(date => {
+      const k = emp + '|' + date, sched = _schDVsumPR[k] || 0, att = workedDV[emp][date] || 0;
+      if (_schCntPR[k] && _schCntPR[k].size >= 2 && sched > att) workedDV[emp][date] = sched;   // ควบ + สแกนไม่ครบ → เครดิตตามตาราง
+    }); });
     // ★ หักเงินเบิก "ตามรอบจริงไม่เว้นเดือน" — ดึงทุกใบที่ "จ่ายแล้ว + ยังไม่หัก" มาหักในรอบนี้ทันที
     //   (กันพนักงานเบิกเกินค่าแรงแล้วหาย · ไม่ผูกกับ deduct_month ที่อาจเป็นเดือนถัดไป)
     const runMonth = cyc.end.slice(0, 7);          // เดือนสิ้นรอบของรอบที่กำลังคิด
@@ -6464,11 +6478,15 @@
     // ★ รีเฟรช "อีเมล + บัญชีธนาคาร" จากข้อมูลพนักงานปัจจุบันเสมอ (เป็นข้อมูลติดต่อ/โอน ไม่ใช่ยอดเงินที่ตรึง)
     //   กันเคส: รอบถูกปิดก่อนพนักงานกรอกอีเมล → payroll_items.email ค้างว่าง → ส่งสลิปไม่ได้ทั้งที่กรอกแล้ว
     const _empInfo = {}; (empR.data || []).forEach(e => { _empInfo[e.emp_id] = e; });
-    // ★ วันควบกะต่อคน (ลงเวลา ≥2 กะในวันเดียว) — ตรงกับที่นับวันทำงานจ่ายจริง (บวกทุกกะ)
+    // ★ วันควบกะต่อคน = จัดเวร ≥2 กะ (หรือลงเวลา ≥2 กะ) ในวันเดียว "และมาทำงานจริง" — ตรงกับหน้ารายงาน
     const _shNm = {}; (shR.data || []).forEach(s => { _shNm[s.shift_id] = s.name || s.shift_id; });
-    const _byED = {}; (attR.data || []).forEach(a => { if (a.check_in && a.shift_id) { const k = a.emp_id + '|' + a.work_date; (_byED[k] = _byED[k] || new Set()).add(a.shift_id); } });
+    const _workedDatesPR = {}; (attR.data || []).forEach(a => { if (a.check_in) { (_workedDatesPR[a.emp_id] = _workedDatesPR[a.emp_id] || new Set()).add(a.work_date); } });
+    const _shSetPR = {};
+    const _addSetPR = (emp, date, sid) => { if (!sid) return; const k = emp + '|' + date; (_shSetPR[k] = _shSetPR[k] || new Set()).add(sid); };
+    (schPR.data || []).forEach(s => _addSetPR(s.emp_id, s.work_date, s.shift_id));
+    (attR.data || []).forEach(a => { if (a.check_in) _addSetPR(a.emp_id, a.work_date, a.shift_id); });
     const dualByEmp = {};
-    Object.keys(_byED).forEach(k => { if (_byED[k].size >= 2) { const i = k.indexOf('|'); const emp = k.slice(0, i), date = k.slice(i + 1); (dualByEmp[emp] = dualByEmp[emp] || []).push({ date, label: [...(_byED[k])].map(id => _shNm[id] || id).join('/') }); } });
+    Object.keys(_shSetPR).forEach(k => { if (_shSetPR[k].size >= 2) { const i = k.indexOf('|'); const emp = k.slice(0, i), date = k.slice(i + 1); if (_workedDatesPR[emp] && _workedDatesPR[emp].has(date)) { (dualByEmp[emp] = dualByEmp[emp] || []).push({ date, label: [...(_shSetPR[k])].map(id => _shNm[id] || id).join('/') }); } } });
     Object.values(dualByEmp).forEach(arr => arr.sort((a, b) => a.date < b.date ? -1 : 1));
     const outItems = (finalItems || items).map(it => { const _e = _empInfo[it.emp_id] || {}; return Object.assign({}, it, {
       email: _e.email || it.email || null,
