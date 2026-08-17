@@ -2281,6 +2281,10 @@
     const schByEmp = {};
     (schR.data || []).forEach(s => { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; });
     const bandFor = (sc) => bands.find(b => sc >= b.min_score && sc <= b.max_score) || null;
+    // ★ เกณฑ์วันทำงานขั้นต่ำต่อรอบ — ไม่ถึง = หักคะแนน (ที่นี่) + ตัดเบี้ยวินัย (หน้าเงินเดือน) · 0 = ปิด
+    const minWD = await getSettingNum('min_work_days', 0);
+    const minWDpen = await getSettingNum('min_work_days_penalty', 0);
+    const schSum = {}; (schR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; schSum[k] = (schSum[k] || 0) + dvOf(s.shift_id); } });   // ผลรวม day_value ตารางเวร (เครดิตควบ)
 
     const employees = (empsR.data || []).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id && a.check_in);
@@ -2314,6 +2318,14 @@
         items.push({ label: ra.label, count: absWeighted, points: sum, source: 'auto' });
       }
 
+      // ★ วันทำงานไม่ถึงเกณฑ์ขั้นต่ำ → หักคะแนน (เครดิตควบตามตารางเวร ให้ตรงกับหน้าเงินเดือน)
+      const attByDate = {}; myAtt.forEach(a => { attByDate[a.work_date] = (attByDate[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });
+      let days_worked = 0;
+      Object.keys(attByDate).forEach(d => { const scS = schSum[e.emp_id + '|' + d] || 0, at = attByDate[d] || 0; days_worked += (scS > at ? scS : at); });
+      days_worked = Math.round(days_worked * 10) / 10;
+      const below_min = minWD > 0 && days_worked < minWD;
+      if (below_min && minWDpen > 0) { const pts = -Math.abs(minWDpen); autoDeduct += pts; items.push({ label: 'วันทำงานไม่ถึงเกณฑ์ (' + days_worked + '/' + minWD + ' วัน)', count: 1, points: pts, source: 'auto' }); }
+
       // เหตุการณ์ที่ HR เพิ่มเอง
       const myEv = events.filter(ev => ev.emp_id === e.emp_id);
       let manualDeduct = 0;
@@ -2327,6 +2339,7 @@
         start, score, auto_deduct: autoDeduct, manual_deduct: manualDeduct, total_deduct: autoDeduct + manualDeduct,
         items,
         late_count, late_total, absent_count: absWeighted,     // สแนปช็อตตัวเลขหลักฐาน (ใช้ตอนออกใบเตือน)
+        days_worked, min_work_days: minWD, below_min,           // วันทำงาน + เกณฑ์ขั้นต่ำ + ไม่ถึงเกณฑ์
         band_label: band ? band.label : '', band_color: band ? band.color : '#475569',
         bonus: band && band.bonus_amount ? band.bonus_amount : 0,
         warn_level: band ? band.warn_level : null, warn_name: band ? band.warn_name : null,
@@ -6325,9 +6338,10 @@
     const dcfg = cfg.diligence || {};
     const noAbsent = !dcfg.require_no_absent || (Number(stats.absent_count || 0) === 0);
     const lateOk = Number(stats.late_count || 0) <= Number(dcfg.allow_late_count || 0);
-    if (noAbsent && lateOk && !stats.dil_off) diligence = Number(prof.diligence_amount || 0);   // dil_off = ผจก.ปิดเบี้ยวินัย (เช่น พนักงานใหม่ยังไม่ผ่านประเมิน)
-    // เบี้ยวินัยในระบบนี้ = โบนัสตามแบนด์คะแนน (bonus) · ปิด dil_off → ตัดทั้งโบนัสแบนด์ + เบี้ยขยัน
-    const bonus = stats.dil_off ? 0 : Number(stats.bonus || 0);
+    // dil_off = ผจก.ปิดเบี้ยวินัย · below_min = วันทำงานไม่ถึงเกณฑ์ขั้นต่ำ → ทั้งคู่ตัดเบี้ยวินัย
+    if (noAbsent && lateOk && !stats.dil_off && !stats.below_min) diligence = Number(prof.diligence_amount || 0);
+    // เบี้ยวินัยในระบบนี้ = โบนัสตามแบนด์คะแนน (bonus) · ปิด/ไม่ถึงเกณฑ์ → ตัดทั้งโบนัสแบนด์ + เบี้ยขยัน
+    const bonus = (stats.dil_off || stats.below_min) ? 0 : Number(stats.bonus || 0);
     const addSum = (additions || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
     const gross = _pr2(base_pay + ot_pay + position_allowance + diligence + bonus + addSum);
     let sso = 0;
@@ -6351,6 +6365,7 @@
     const cyc = cycleRange(cycleBack(which));
     const payMonth = p.pay_month || cyc.end.slice(0, 7);
     const cfg = await _payrollConfig();
+    const minWorkDays = await getSettingNum('min_work_days', 0);   // เกณฑ์วันทำงานขั้นต่ำ (ไม่ถึง = ตัดเบี้ยวินัย) · 0 = ปิด
     const sc = await hrScoreGet(which, null);
     const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
     const today = bkkToday();
@@ -6487,7 +6502,7 @@
       (instByEmp[e.emp_id] || []).forEach(x => deductions.push({ label: 'ผ่อน: ' + x.label + (x.remain_after > 0 ? (' (เหลือ ' + x.remain_after.toLocaleString() + ')') : ' (งวดสุดท้าย)'), amount: x.amount, src: 'inst', inst_id: x.id }));
       // เบิกค่าน้ำมัน (อนุมัติแล้ว) → หักคืน
       if (Number(fuelByEmp[e.emp_id]) > 0) deductions.push({ label: 'ค่าน้ำมัน (เบิก)', amount: _pr2(Number(fuelByEmp[e.emp_id])), src: 'fuel' });
-      const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0, dil_off: rv.dil_off === true };
+      const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0, dil_off: rv.dil_off === true, below_min: minWorkDays > 0 && Number(days_worked) < minWorkDays };
       const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
       items.push({
         run_id: run.id, emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '',

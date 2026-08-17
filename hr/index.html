@@ -1773,6 +1773,19 @@
     <div style="font-size:12px;color:var(--muted);margin-top:6px">ทำผิดซ้ำภายในช่วงนี้ = เลื่อนขั้นสูงขึ้น (วาจา→ลายลักษณ์→ใบเตือน 1→2→3) · ทำดีต่อเนื่องเกินช่วงนี้ = เคลียร์เริ่มใหม่ · ครบ 3 ใบสะสม = เปิดเคสพิจารณาเลิกจ้างให้ HR ตัดสิน · ดีฟอลต์ 6 เดือน</div>
   </div>
 
+  <div class="card" style="margin-top:12px;padding:12px 14px;border:1.5px solid #bae6fd;background:#f0f9ff">
+    <div style="font-weight:700;color:#0369a1;margin-bottom:6px">📅 เกณฑ์วันทำงานขั้นต่ำต่อรอบ</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:13px">ต้องทำงานอย่างน้อย</label>
+      <input id="minWorkDays" type="number" min="0" max="31" step="0.5" style="width:72px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;text-align:center;font:inherit">
+      <label style="font-size:13px">วัน/รอบ · ไม่ถึง → หัก</label>
+      <input id="minWorkPenalty" type="number" min="0" max="100" style="width:72px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;text-align:center;font:inherit">
+      <label style="font-size:13px">คะแนน</label>
+      <button class="btn btn-pri btn-sm" id="minWorkSave">บันทึก</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">เช่น 26 วัน — ถ้าวันทำงานในรอบไม่ถึงเกณฑ์: <b>ไม่ได้รับเบี้ยวินัย</b> (โบนัส + เบี้ยขยัน) <b>และหักคะแนน</b>ตามที่ตั้ง · ตั้งวัน = 0 หรือคะแนน = 0 เพื่อปิดส่วนนั้น · นับควบกะตามตารางเวรให้ด้วย</div>
+  </div>
+
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
   <div class="card"><div class="tablewrap"><table>
     <thead><tr><th>งาน</th><th>กะ</th><th>รูปขั้นต่ำ</th><th>ลำดับ</th><th>เปิดใช้</th><th>ผจก.ตรวจ</th><th></th></tr></thead>
@@ -10076,13 +10089,25 @@ async function loadScoreSettings(silent){
     <td><select id="scb_a_${i}" style="width:190px;padding:6px;border:1.5px solid var(--line2);border-radius:7px">${ACT_OPTS.map(([v,l])=>`<option value="${v}"${String(b.action_type||'')===v?' selected':''}>${l}</option>`).join('')}</select></td>
     <td><input type="number" min="0" value="${b.warn_level==null?'':b.warn_level}" placeholder="—" id="scb_w_${i}" style="width:80px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
   </tr>`).join('');
-  // โหลดค่า "ช่วงวินัยสะสม (เดือน)"
-  if($('discWindowMonths')){ try{ const sg=await post({ action:'hr_settings_get', password:pwd }); const v=sg&&sg.settings?(sg.settings.disc_window_months):null; $('discWindowMonths').value=(v!=null&&v!=='')?v:6; }catch(_e){ $('discWindowMonths').value=6; } }
+  // โหลดค่าตั้งค่าวินัย (ช่วงสะสม + เกณฑ์วันทำงานขั้นต่ำ)
+  if($('discWindowMonths')||$('minWorkDays')){ try{ const sg=await post({ action:'hr_settings_get', password:pwd }); const S=(sg&&sg.settings)||{};
+    if($('discWindowMonths')){ const v=S.disc_window_months; $('discWindowMonths').value=(v!=null&&v!=='')?v:6; }
+    if($('minWorkDays')){ const v=S.min_work_days; $('minWorkDays').value=(v!=null&&v!=='')?v:0; }
+    if($('minWorkPenalty')){ const v=S.min_work_days_penalty; $('minWorkPenalty').value=(v!=null&&v!=='')?v:0; }
+  }catch(_e){ if($('discWindowMonths'))$('discWindowMonths').value=6; if($('minWorkDays'))$('minWorkDays').value=0; if($('minWorkPenalty'))$('minWorkPenalty').value=0; } }
 }
 $('discWindowSave') && ($('discWindowSave').onclick=async()=>{
   const v=Math.max(1,Math.min(60,parseInt($('discWindowMonths').value)||6));
   const r=await post({ action:'hr_settings_save', password:pwd, key:'disc_window_months', value:String(v) });
   if(r&&r.ok){ toast('ok','บันทึกช่วงวินัยสะสม '+v+' เดือนแล้ว'); $('discWindowMonths').value=v; } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+});
+$('minWorkSave') && ($('minWorkSave').onclick=async()=>{
+  const d=Math.max(0,Math.min(31,parseFloat($('minWorkDays').value)||0));
+  const p=Math.max(0,Math.min(100,parseInt($('minWorkPenalty').value)||0));
+  const r1=await post({ action:'hr_settings_save', password:pwd, key:'min_work_days', value:String(d) });
+  const r2=await post({ action:'hr_settings_save', password:pwd, key:'min_work_days_penalty', value:String(p) });
+  if(r1&&r1.ok&&r2&&r2.ok){ toast('ok', d>0?('บันทึกแล้ว: ขั้นต่ำ '+d+' วัน · หัก '+p+' คะแนน'):'ปิดเกณฑ์วันทำงานขั้นต่ำแล้ว'); $('minWorkDays').value=d; $('minWorkPenalty').value=p; }
+  else toast('err','บันทึกไม่สำเร็จ');
 });
 async function saveScoreConfig(){
   const r=await post({ action:'hr_score_config_save', password:pwd, data:{ start_score:$('scCfg_start').value } });
