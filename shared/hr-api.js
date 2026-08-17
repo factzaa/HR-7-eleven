@@ -957,7 +957,7 @@
 
       // ถ่วงน้ำหนักวันด้วย day_value (ครึ่งวัน=0.5) — มีผลกับ "วันทำงาน/ขาด/วินัย"
       // ลำดับ: ค่าที่ปรับรายวันในแถวลงเวลา (เช่น ลาฉุกเฉินครึ่งวัน) → ค่าจากกะ → 1
-      const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });
+      const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });   // ควบกะ: บวกทุกกะในวัน
       const days_worked = Math.round([...workedSet].reduce((s, d) => s + (attDV[d] || 1), 0) * 10) / 10;
       // ออกก่อนเวลา (เกินผ่อนผัน) — เก็บจำนวนครั้ง + รวมนาที
       const earlyRows = myAtt.filter(a => a.early_out_min != null && a.early_out_min > earlyGrace);
@@ -3861,7 +3861,7 @@
     const schMap = {}; (schR.data || []).forEach(s => { if (s.shift_id) schMap[s.work_date] = s.shift_id; });
     const pastSched = Object.keys(schMap).filter(d => d < today);
     // ★ ใช้ฐานเดียวกับหน้าวินัยเป๊ะ ๆ: มาทำงาน = ทุกวันที่มี check_in (รวมวันที่ไม่ได้จัดเวร เช่น ไปช่วยสาขาอื่น)
-    const attDV = {}; att.forEach(a => { if (a.check_in) attDV[a.work_date] = (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });
+    const attDV = {}; att.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });   // ควบกะ: บวกทุกกะในวัน
     const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
     const days_worked = Math.round([...workedSet].reduce((s, d) => s + (attDV[d] || 1), 0) * 10) / 10;
     const absentDays = pastSched.filter(d => !workedSet.has(d) && !onLeave(d)).sort();
@@ -6267,7 +6267,7 @@
     const otWhole = await getSettingBool('ot_whole_day');
     const workedDV = {}, otByEmp = {};
     (attR.data || []).forEach(a => {
-      if (a.check_in) { const dv = a.day_value != null ? Number(a.day_value) : (dvMap[a.shift_id] != null ? dvMap[a.shift_id] : 1); (workedDV[a.emp_id] || (workedDV[a.emp_id] = {}))[a.work_date] = dv; }
+      if (a.check_in) { const dv = a.day_value != null ? Number(a.day_value) : (dvMap[a.shift_id] != null ? dvMap[a.shift_id] : 1); const _wd = workedDV[a.emp_id] || (workedDV[a.emp_id] = {}); _wd[a.work_date] = (_wd[a.work_date] || 0) + dv; }   // ควบกะ: บวกทุกกะในวัน (2 กะ = 2 วัน)
       otByEmp[a.emp_id] = (otByEmp[a.emp_id] || 0) + otAdj(a.ot_hours, otWhole);
     });
     // ★ หักเงินเบิก "ตามรอบจริงไม่เว้นเดือน" — ดึงทุกใบที่ "จ่ายแล้ว + ยังไม่หัก" มาหักในรอบนี้ทันที
