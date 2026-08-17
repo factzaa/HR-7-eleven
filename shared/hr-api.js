@@ -1008,17 +1008,22 @@
     const sc = await hrScoreGet(which, range);
     const scMap = {}; (sc.employees || []).forEach(s => { scMap[s.emp_id] = s; });
 
-    // การดำเนินการที่ทำไปแล้วในรอบนี้ (ตักเตือนวาจา / ใบเตือน ฯลฯ)
-    // ★ ตัดแถวที่ถูกยกเลิก และแถวที่ผูกกับใบเตือนที่ถูกลบ/ยกเลิกไปแล้วออก
-    const [{ data: actsRaw }, { data: wAll }] = await Promise.all([
+    // การดำเนินการที่ทำไปแล้ว "ในรอบนี้" (ไว้เช็กว่ารอบนี้ทำขั้นถัดไปหรือยัง) + "ช่วงสะสม (window)" (ไว้คิดบันไดสะสม)
+    // ★ วินัยสะสมแบบ rolling window: นับใบเตือน/ขั้นวินัยย้อนหลัง N เดือน (ทำดีต่อเนื่องเกิน window = เคลียร์)
+    const winMonths = await getSettingNum('disc_window_months', 6);
+    const _wStart = new Date(bkkToday() + 'T00:00:00'); _wStart.setMonth(_wStart.getMonth() - (winMonths > 0 ? winMonths : 6));
+    const winStart = _wStart.toISOString().slice(0, 10);
+    const [{ data: actsRaw }, { data: wAll }, { data: winActsRaw }] = await Promise.all([
       sb().from('disc_actions').select('*').eq('cycle_start', cyc.start),
       sb().from('warnings').select('warning_id,status'),
+      sb().from('disc_actions').select('emp_id,action_type,status,performed_at,warning_id').gte('performed_at', winStart),
     ]);
     const liveWarn = new Set((wAll || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
-    const acts = (actsRaw || [])
-      .filter(a => a.status !== 'cancelled')
-      .filter(a => !a.warning_id || liveWarn.has(String(a.warning_id)));
+    const _live = a => a.status !== 'cancelled' && (!a.warning_id || liveWarn.has(String(a.warning_id)));
+    const acts = (actsRaw || []).filter(_live);
     const actMap = {}; (acts || []).forEach(a => { (actMap[a.emp_id] || (actMap[a.emp_id] = [])).push(a); });
+    // สะสมภายใน window (ต่อคน)
+    const winMap = {}; (winActsRaw || []).filter(_live).forEach(a => { (winMap[a.emp_id] || (winMap[a.emp_id] = [])).push(a); });
 
     // ★ เคสพิจารณาเลิกจ้าง — คนที่ผ่านมติแล้ว ไม่ต้องเร่งให้ออกใบเตือนซ้ำ แค่เปลี่ยนสถานะให้เห็น
     const TERM_DEC_LABEL = {
@@ -1038,17 +1043,24 @@
       const s = scMap[e.emp_id] || {};
       const tc = termMap[e.emp_id] || null;
       const mine = (actMap[e.emp_id] || []).sort((a, b) => String(b.performed_at).localeCompare(String(a.performed_at)));
-      // ★ บันไดวินัย: คะแนนกำหนด "ปลายทาง" · แต่ขั้นที่ต้องทำต่อไป = ขั้นแรกในบันไดที่ยังไม่ได้ทำ (บังคับตามลำดับ ไม่กระโดดข้าม)
-      const target = s.action_type || null;                     // ปลายทางตามคะแนน (verbal/written/warning)
-      const STEP_RANK = { verbal: 1, written: 2, warning: 3 };
-      const doneTypes = new Set(mine.map(a => a.action_type));
-      let ladder = [], need = target;
-      if (target && STEP_RANK[target]) {
-        ladder = ['verbal', 'written', 'warning'].filter(t => STEP_RANK[t] <= STEP_RANK[target]).map(t => ({ type: t, label: ACT_LABEL[t], done: doneTypes.has(t) }));
-        const nx = ladder.find(x => !x.done);
-        need = nx ? nx.type : null;                             // ทำครบทุกขั้นแล้ว = ไม่เหลือขั้นถัดไป
-      }
-      const doneOfNeed = need ? mine.find(a => a.action_type === need) : null;
+      // ★ บันไดวินัย "สะสม" (rolling window · ไม่รีเซ็ตรายรอบ):
+      //   แบนด์คะแนนรอบนี้ = ตัวจับว่า "รอบนี้ทำผิดถึงเกณฑ์" (breach) · ประวัติสะสมใน window = ขั้นที่เคยทำ
+      //   ขั้นต่อไป = ขั้นเหนือจากที่เคยทำ (วาจา→ลายลักษณ์→ใบเตือน 1→2→3) · เตือนเฉพาะรอบที่ breach เท่านั้น
+      const breach = !!s.action_type;                           // คะแนนรอบนี้ตกถึงเกณฑ์ต้องดำเนินการ (แบนด์ใดก็ตามที่มี action)
+      const winMine = winMap[e.emp_id] || [];
+      const verbalDone = winMine.some(a => a.action_type === 'verbal');
+      const writtenDone = winMine.some(a => a.action_type === 'written');
+      const warningCount = winMine.filter(a => a.action_type === 'warning').length;
+      const nearTermination = warningCount >= 3;                // ครบ 3 ใบสะสม → พิจารณาเลิกจ้าง
+      // ขั้นถัดไปในบันไดสะสม
+      let cumNext = !verbalDone ? 'verbal' : (!writtenDone ? 'written' : 'warning');
+      const need = (breach && !nearTermination) ? cumNext : null;   // เตือนเฉพาะรอบที่ทำผิดซ้ำ · รอบสะอาด = null
+      const ladder = [
+        { type: 'verbal', label: ACT_LABEL.verbal, done: verbalDone },
+        { type: 'written', label: ACT_LABEL.written, done: writtenDone },
+        { type: 'warning', label: 'ใบเตือน ' + warningCount + '/3', done: nearTermination, count: warningCount },
+      ];
+      const doneOfNeed = need ? mine.find(a => a.action_type === need) : null;   // รอบนี้ทำขั้นนั้นหรือยัง
       const lastAct = mine[0] || null;
       const pendingAck = mine.filter(a => a.need_ack && !a.ack_at).length;
       return {
@@ -1059,22 +1071,25 @@
         band_label: s.band_label || '',
         band_color: s.band_color || '#475569',
         bonus: s.bonus || 0,
-        level: s.warn_level != null ? s.warn_level : (need === 'verbal' ? 1 : (need === 'written' ? 2 : 0)),
-        level_name: s.warn_name || (need ? ACT_LABEL[need] : (s.band_label || 'ปกติ')),
+        level: s.warn_level != null ? s.warn_level : (need === 'verbal' ? 1 : (need === 'written' ? 2 : (need === 'warning' ? 3 : 0))),
+        level_name: s.warn_name || (need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need]) : (s.band_label || 'ปกติ')),
         level_color: s.band_color || '#16a34a',
         action_needed: need,
-        action_needed_label: need ? ACT_LABEL[need] : '',
-        target_action: target,                                  // ปลายทางตามคะแนน
-        target_action_label: target ? ACT_LABEL[target] : '',
-        ladder,                                                 // บันไดทั้งเส้นถึงปลายทาง (พร้อมสถานะทำแล้ว/ค้าง) — ให้ UI + พนักงานเห็นครบทุกขั้น
+        action_needed_label: need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need]) : '',
+        breach_this_cycle: breach,                              // รอบนี้คะแนนตกถึงเกณฑ์ทำผิดหรือไม่
+        warning_total: warningCount,                            // ใบเตือนสะสมใน window
+        near_termination: nearTermination,                      // ครบ 3 ใบ → พิจารณาเลิกจ้าง
+        verbal_done: verbalDone, written_done: writtenDone,
+        window_months: winMonths,
+        ladder,                                                 // บันไดสะสม (วาจา/ลายลักษณ์/ใบเตือน x/3)
         ladder_done: ladder.filter(x => x.done).length,
         ladder_total: ladder.length,
         action_done: !!doneOfNeed,
         action_done_at: doneOfNeed ? doneOfNeed.performed_at : null,
         action_done_by: doneOfNeed ? doneOfNeed.performed_by : null,
-        // ★ ถ้ามีเคสพิจารณาที่ "ปิดแล้ว" = ผ่านมติ ไม่ต้องเร่งให้ออกใบเตือนอีก
+        // สถานะ: ปิดเคสแล้ว / มีเคสเปิด / ครบ 3 ใบรอเปิดเคส / รอบนี้ต้องทำขั้นถัดไป / ทำแล้ว / ไม่ต้องทำ
         action_status: (tc && tc.status === 'closed') ? 'case_closed'
-          : (tc ? 'case_open' : (!need ? 'none' : (doneOfNeed ? 'done' : 'pending'))),
+          : (tc ? 'case_open' : (nearTermination ? 'need_termination' : (!need ? 'none' : (doneOfNeed ? 'done' : 'pending')))),
         term_case: tc ? {
           id: tc.id, case_no: tc.case_no, status: tc.status,
           decision: tc.decision || null,
@@ -1121,9 +1136,10 @@
         return { ok: false, error: 'ต้องแนบหลักฐาน (รูปเอกสาร/ใบเซ็นรับทราบ) สำหรับขั้น "' + ACT_LABEL[type] + '" ทุกครั้ง' };
       }
       if (STEP_RANK[type] > 1) {
-        let pq = sb().from('disc_actions').select('action_type,status').eq('emp_id', emp.emp_id).neq('status', 'cancelled');
-        if (d.cycle_start) pq = pq.eq('cycle_start', d.cycle_start);
-        const { data: prior } = await pq;
+        // ★ เช็กขั้นก่อนหน้าจาก "ช่วงสะสม (window)" ไม่ใช่รายรอบ — วาจา/ลายลักษณ์จากเดือนก่อนนับต่อได้
+        const _wm = await getSettingNum('disc_window_months', 6);
+        const _ws = new Date(bkkToday() + 'T00:00:00'); _ws.setMonth(_ws.getMonth() - (_wm > 0 ? _wm : 6));
+        const { data: prior } = await sb().from('disc_actions').select('action_type,status').eq('emp_id', emp.emp_id).neq('status', 'cancelled').gte('performed_at', _ws.toISOString().slice(0, 10));
         const done = new Set((prior || []).map(a => a.action_type));
         const missing = [];
         if (!done.has('verbal')) missing.push(ACT_LABEL['verbal']);
@@ -1219,7 +1235,7 @@
     if (branch) list = list.filter(e => String(e.branch_id) === String(branch));
     return {
       ok: true, cycle: r.cycle,
-      todo: list.filter(e => e.action_status === 'pending'),
+      todo: list.filter(e => e.action_status === 'pending' || e.action_status === 'need_termination'),
       waiting_ack: list.filter(e => e.pending_ack > 0),
     };
   }
@@ -1249,10 +1265,12 @@
     if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุสาเหตุ' };
     // ★ บังคับบันไดวินัย: ออกใบเตือนได้ต่อเมื่อ "ตักเตือนวาจา + ลายลักษณ์อักษร" ทำครบ+มีหลักฐานแล้ว
     if (!Array.isArray(d.photos) || !d.photos.length) return { ok: false, error: 'ต้องแนบหลักฐาน (เอกสารใบเตือน/ใบเซ็นรับทราบ) ก่อนออกใบเตือน' };
+    // ★ เช็กขั้นก่อนหน้าจาก "ช่วงสะสม (window)" ไม่ใช่รายรอบ
+    const _wmW = await getSettingNum('disc_window_months', 6);
+    const _wsW = new Date(bkkToday() + 'T00:00:00'); _wsW.setMonth(_wsW.getMonth() - (_wmW > 0 ? _wmW : 6));
+    const _winStartW = _wsW.toISOString().slice(0, 10);
     {
-      let pq = sb().from('disc_actions').select('action_type,status').eq('emp_id', String(d.emp_id)).neq('status', 'cancelled');
-      if (d.cycle_start) pq = pq.eq('cycle_start', d.cycle_start);
-      const { data: prior } = await pq;
+      const { data: prior } = await sb().from('disc_actions').select('action_type,status').eq('emp_id', String(d.emp_id)).neq('status', 'cancelled').gte('performed_at', _winStartW);
       const done = new Set((prior || []).map(a => a.action_type));
       const missing = [];
       if (!done.has('verbal')) missing.push('ตักเตือนด้วยวาจา');
@@ -1289,7 +1307,35 @@
     } catch (_e) { /* ไม่ให้ไทม์ไลน์พังการออกใบเตือน */ }
 
     await logAct('ออกใบเตือน ' + warning_id, d.emp_id, (d.level_name || '') + ' · สาย ' + (d.late_count || 0) + ' ครั้ง · ขาด ' + (d.absent_count || 0) + ' วัน');
-    return { ok: true, warning_id };
+
+    // ★ ครบ 3 ใบเตือนสะสมใน window → เปิดเคสพิจารณาเลิกจ้างอัตโนมัติ (ให้ HR ตัดสิน · ไม่เลิกจ้างเอง)
+    let term_opened = null;
+    try {
+      const { data: wact } = await sb().from('disc_actions').select('id').eq('emp_id', d.emp_id).eq('action_type', 'warning').neq('status', 'cancelled').gte('performed_at', _winStartW);
+      const warnCnt = (wact || []).length;   // รวมใบล่าสุดที่เพิ่งออก
+      if (warnCnt >= 3) {
+        const { data: openTc } = await sb().from('termination_cases').select('id,case_no').eq('emp_id', d.emp_id).not('status', 'in', '(cancelled,closed)').maybeSingle();
+        if (!openTc) {
+          const yrBE = new Date().getFullYear() + 543, pre = 'TC-' + yrBE + '-';
+          const { data: lastTc } = await sb().from('termination_cases').select('case_no').like('case_no', pre + '%').order('case_no', { ascending: false }).limit(1);
+          let n = 0; if (lastTc && lastTc.length) { const m = String(lastTc[0].case_no).match(/(\d+)$/); if (m) n = parseInt(m[1], 10) || 0; }
+          const case_no = pre + String(n + 1).padStart(4, '0');
+          const { data: emp2 } = await sb().from('employees').select('name,nickname,photo_url,branch_id').eq('emp_id', d.emp_id).maybeSingle();
+          const { data: ins2 } = await sb().from('termination_cases').insert({
+            case_no, emp_id: d.emp_id, emp_name: emp2 ? emp2.name : null, nickname: emp2 ? emp2.nickname : null, photo_url: emp2 ? emp2.photo_url : null, branch_id: emp2 ? emp2.branch_id : null,
+            status: 'proposed',
+            reasons: [{ key: 'warn_count', name: 'ใบเตือนสะสมครบเกณฑ์', severity: 'high', detail: 'ครบใบเตือนสะสม ' + warnCnt + ' ใบ ภายใน ' + _wmW + ' เดือน' }],
+            evidence: { warning_count: warnCnt, window_months: _wmW, latest_warning: warning_id },
+            detail: 'เปิดอัตโนมัติ: ครบใบเตือนสะสม ' + warnCnt + ' ใบ (ภายใน ' + _wmW + ' เดือน) — เข้าเกณฑ์พิจารณาเลิกจ้างตามระเบียบ',
+            opened_by: d.issued_by || 'ระบบ (อัตโนมัติ)', opened_role: 'hr',
+          }).select('id,case_no').maybeSingle();
+          term_opened = ins2 ? ins2.case_no : case_no;
+          await logAct('เปิดเคสพิจารณาเลิกจ้าง (อัตโนมัติ) ' + term_opened, d.emp_id, 'ครบใบเตือนสะสม ' + warnCnt + ' ใบ');
+        }
+      }
+    } catch (_e) { /* ยังไม่ได้ติดตั้ง termination_cases ก็ข้าม (จะได้ไม่พังการออกใบเตือน) */ }
+
+    return { ok: true, warning_id, term_opened };
   }
 
   async function hrWarningUpdate(d) {

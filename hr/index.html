@@ -2554,7 +2554,9 @@ function discMiniTimeline(e){
   });
   // ขั้นต่อไปที่เกณฑ์คะแนนบอกว่าควรทำ (ถ้ายังไม่ได้ทำ)
   let next = '';
-  if(!e.term_case && e.action_status==='pending' && e.action_needed_label)
+  if(!e.term_case && e.action_status==='need_termination')
+    next = `<span class="pill" style="background:#fee2e2;color:#b91c1c;font-weight:700;white-space:nowrap">⛔ ครบใบเตือน 3/3 → พิจารณาเลิกจ้าง</span>`;
+  else if(!e.term_case && e.action_status==='pending' && e.action_needed_label)
     next = `<span class="pill" style="background:#fee2e2;color:#b91c1c;font-weight:700;white-space:nowrap">➡️ ขั้นต่อไป: ${esc(e.action_needed_label)}</span>`;
   if(!steps.length && !next)
     return '<div style="font-size:11.5px;color:var(--muted)">ยังไม่มีการดำเนินการในรอบนี้</div>';
@@ -2569,17 +2571,21 @@ function discMiniTimeline(e){
 //   เดิมเห็นแต่ระดับตามคะแนน (เช่น "ใบเตือนระดับ 2") แยกไม่ออกว่าออกใบไปแล้วหรือยัง / พนักงานรับทราบหรือยัง
 function discActionPill(e){
   const pill=(txt,bg,fg,title)=>`<span class="pill" style="background:${bg};color:${fg};font-weight:700" title="${esc(title||'')}">${txt}</span>`;
+  // ป้ายใบเตือนสะสม (rolling window) — เห็นว่าใกล้ครบ 3 ใบแค่ไหน
+  const warnBadge = (Number(e.warning_total)>0 && !e.term_case) ? pill('📄 ใบเตือนสะสม '+e.warning_total+'/3', '#faf5ff', '#7c3aed', 'ใบเตือนสะสมภายใน '+(e.window_months||6)+' เดือน (ทำดีต่อเนื่องเกินช่วงนี้ = เคลียร์)')+' ' : '';
   if(e.term_case) return '';                                   // มีเคสพิจารณาแล้ว → ป้ายเคสจะบอกเอง
+  if(e.action_status==='need_termination')
+    return pill('⛔ ครบใบเตือน '+(e.warning_total||3)+'/3 → เปิดพิจารณาเลิกจ้าง', '#fee2e2', '#b91c1c', 'ครบเกณฑ์ตามระเบียบ — ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)');
   if(e.action_status==='pending')
-    return pill('🔴 ยังไม่ได้ '+esc(e.action_needed_label||'ดำเนินการ'), '#fee2e2', '#b91c1c', 'ยังไม่ได้ออกใบเตือน/ตักเตือน');
+    return warnBadge + pill('🔴 ยังไม่ได้ '+esc(e.action_needed_label||'ดำเนินการ'), '#fee2e2', '#b91c1c', 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม');
   if(e.action_status==='done'){
     if(e.pending_ack>0)
-      return pill('🟡 ออกแล้ว · รอพนักงานรับทราบ', '#fef3c7', '#a16207', 'ระบบจะบังคับให้กดรับทราบในหน้ารับส่งผลัด');
-    return pill('🟢 ' + esc(e.action_needed_label||'ดำเนินการ') + 'แล้ว · รับทราบแล้ว', '#dcfce7', '#166534',
+      return warnBadge + pill('🟡 ออกแล้ว · รอพนักงานรับทราบ', '#fef3c7', '#a16207', 'ระบบจะบังคับให้กดรับทราบในหน้ารับส่งผลัด');
+    return warnBadge + pill('🟢 ' + esc(e.action_needed_label||'ดำเนินการ') + 'แล้ว · รับทราบแล้ว', '#dcfce7', '#166534',
                 (e.last_action&&e.last_action.at) ? ('รับทราบเมื่อ ' + (e.last_action.ack_at||'-')) : '');
   }
-  if(e.pending_ack>0) return pill('🟡 รอพนักงานรับทราบ', '#fef3c7', '#a16207', '');
-  return '';
+  if(e.pending_ack>0) return warnBadge + pill('🟡 รอพนักงานรับทราบ', '#fef3c7', '#a16207', '');
+  return warnBadge;
 }
 async function loadDashboard(){
   if($('dash_branch') && !$('dash_branch').dataset.filled){
