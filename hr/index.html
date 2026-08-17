@@ -3468,6 +3468,7 @@ const DACT_LABEL={ verbal:'ตักเตือนด้วยวาจา', wr
 function openDiscAction(empId){
   const x=(DISC.employees||[]).find(v=>String(v.emp_id)===String(empId)); if(!x) return;
   const suggest = x.action_needed && DACT_LABEL[x.action_needed] ? x.action_needed : 'verbal';
+  const DA_PHOTOS=[];
   const html=`
     <div style="font-weight:800;font-size:16px;margin-bottom:2px">${esc(x.emp_name)} <span class="muted" style="font-size:13px;font-weight:500">· รหัส ${esc(x.emp_id)}</span></div>
     <div class="muted" style="font-size:12.5px;margin-bottom:12px">คะแนน ${x.score!=null?x.score:'—'} · ${esc(x.band_label||'')} · สาย ${x.late_count} ครั้ง (${x.late_total} นาที) · ขาด ${x.absent} วัน</div>
@@ -3483,19 +3484,29 @@ function openDiscAction(empId){
       <textarea id="da_reason" rows="2" placeholder="เช่น มาสายเกินกำหนด 3 ครั้งในรอบนี้ / ไม่ส่งมอบผลัด" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea></div>
     <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">รายละเอียด / ข้อตกลงที่คุยกัน (ไม่บังคับ)</label>
       <textarea id="da_detail" rows="2" placeholder="เช่น พนักงานรับปากว่าจะมาก่อนเวลา 15 นาที" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea></div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">พนักงานจะต้องกดรับทราบในหน้ารับส่งผลัด (ยกเว้นประเภท "บันทึกเพิ่มเติม") ระบบเก็บวันเวลาและอุปกรณ์ไว้เป็นหลักฐาน</div>
+    <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">หลักฐาน (รูปเอกสาร/ใบเซ็นรับทราบ) — <b style="color:#b91c1c">บังคับ</b>สำหรับตักเตือนวาจา/ลายลักษณ์อักษร</label><br>
+      <label style="display:inline-block;padding:8px 13px;border:1.5px solid var(--line2);border-radius:9px;cursor:pointer;font-size:13px;margin-top:4px">📷 แนบรูปหลักฐาน<input type="file" accept="image/*" multiple id="da_file" style="display:none"></label>
+      <div id="da_thumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">พนักงานจะต้องกดรับทราบในหน้ารับส่งผลัด (ยกเว้นประเภท "บันทึกเพิ่มเติม") ระบบเก็บวันเวลาและอุปกรณ์ไว้เป็นหลักฐาน · <b>บังคับตามลำดับ:</b> วาจา → ลายลักษณ์อักษร → ใบเตือน</div>
     <button class="btn btn-pri" id="da_save" style="width:100%;padding:12px">บันทึกการดำเนินการ</button>`;
   openModal('บันทึกการดำเนินการทางวินัย', html);
+  if($('da_file')) $('da_file').addEventListener('change', async e=>{
+    for(const f of [...(e.target.files||[])]){ try{ const d=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(f); }); DA_PHOTOS.push(d); }catch(_e){} }
+    e.target.value='';
+    $('da_thumbs').innerHTML=DA_PHOTOS.map((d,i)=>'<span style="position:relative;display:inline-block"><img src="'+d+'" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button type="button" data-darm="'+i+'" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:999px;width:20px;height:20px;cursor:pointer;font-size:12px">×</button></span>').join('');
+    $('da_thumbs').querySelectorAll('[data-darm]').forEach(b=>b.onclick=()=>{ DA_PHOTOS.splice(Number(b.dataset.darm),1); $('da_file').dispatchEvent(new Event('change')); });
+  });
   $('da_save').onclick=async()=>{
     const type=$('da_type').value, reason=$('da_reason').value.trim();
     if(!reason){ toast('err','ต้องระบุสาเหตุ'); return; }
+    if((type==='verbal'||type==='written') && !DA_PHOTOS.length){ toast('err','ต้องแนบหลักฐานสำหรับการตักเตือน'); return; }
     $('da_save').disabled=true; $('da_save').textContent='กำลังบันทึก…';
     const r=await post({ action:'hr_disc_action_add', password:pwd, ...authBody(), data:{
       emp_id:x.emp_id, action_type:type, reason, detail:$('da_detail').value.trim(),
       level:x.level, level_name:DACT_LABEL[type], score:x.score, band_label:x.band_label,
       cycle_start:DISC.cycle.start, cycle_end:DISC.cycle.end,
       late_count:x.late_count, late_total:x.late_total, absent_count:x.absent,
-      need_ack: type!=='note',
+      need_ack: type!=='note', photos: DA_PHOTOS,
       performed_by: MGR_MODE ? ('ผู้จัดการสาขา '+(MGR_BRANCH||'')) : 'สำนักงาน (HR)',
       performed_role: MGR_MODE ? 'mgr' : 'hr',
     }});
@@ -3612,21 +3623,41 @@ function openIssueWarning(empId){
     ? (base + ' · คะแนนวินัยคงเหลือ '+x.score+'/'+(x.start_score||100)+' ซึ่งเข้าข่าย "'+(x.band_label||'')+'" ตามระเบียบบริษัท')
     : '';
   $('w_reason').placeholder = 'ระบุเหตุแห่งการออกใบเตือน (บังคับ) เช่น ละทิ้งหน้าที่ระหว่างกะเมื่อวันที่ ...';
+  // ★ บันไดวินัย + ช่องแนบหลักฐาน (บังคับ) — ออกใบเตือนต้องผ่านวาจา+ลายลักษณ์อักษรมาก่อน
+  W_PHOTOS=[];
+  if($('w_stepbox')) $('w_stepbox').remove();
+  const lad=(x.ladder||[]);
+  const ladHtml = lad.length ? ('<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'+lad.map(s=>'<span class="pill '+(s.done?'ok':'bad')+'" style="font-size:11.5px">'+(s.done?'✅ ':'⬜ ')+esc(s.label)+'</span>').join('')+'</div>') : '';
+  const miss=lad.filter(s=>s.type!=='warning'&&!s.done).map(s=>s.label);
+  $('w_reason').insertAdjacentHTML('afterend',
+    '<div id="w_stepbox" style="margin-top:10px">'+ladHtml
+    +(miss.length?('<div style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">⚠️ ต้องทำขั้นก่อนหน้าให้ครบก่อน: <b>'+esc(miss.join(' → '))+'</b> (พร้อมหลักฐาน) จึงจะออกใบเตือนได้</div>'):'')
+    +'<label style="font-size:12px;color:#b91c1c;font-weight:700">หลักฐาน (เอกสารใบเตือน/ใบเซ็นรับทราบ) — บังคับ</label><br>'
+    +'<label style="display:inline-block;padding:8px 13px;border:1.5px solid var(--line2);border-radius:9px;cursor:pointer;font-size:13px;margin-top:4px">📷 แนบรูปหลักฐาน<input type="file" accept="image/*" multiple id="w_file" style="display:none"></label>'
+    +'<div id="w_thumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div></div>');
+  $('w_file').addEventListener('change', async e=>{
+    for(const f of [...(e.target.files||[])]){ try{ const d=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(f); }); W_PHOTOS.push(d); }catch(_e){} }
+    e.target.value='';
+    $('w_thumbs').innerHTML=W_PHOTOS.map((d,i)=>'<span style="position:relative;display:inline-block"><img src="'+d+'" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button type="button" data-wrm="'+i+'" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:999px;width:20px;height:20px;cursor:pointer;font-size:12px">×</button></span>').join('');
+    $('w_thumbs').querySelectorAll('[data-wrm]').forEach(b=>b.onclick=()=>{ W_PHOTOS.splice(Number(b.dataset.wrm),1); $('w_file').dispatchEvent(new Event('change')); });
+  });
   $('w_pkg') ['ctx'] = x;
   $('issueOverlay').classList.add('show');
 }
+let W_PHOTOS=[];
 $('issueClose').onclick = ()=>$('issueOverlay').classList.remove('show');
 $('issueCancel').onclick = ()=>$('issueOverlay').classList.remove('show');
 $('issueSave').onclick = async ()=>{
   const x = $('w_pkg').ctx;
   if(!$('w_reason').value.trim()){ toast('err','ต้องระบุเหตุผลในการออกใบเตือน'); return; }
+  if(!W_PHOTOS.length){ toast('err','ต้องแนบหลักฐานก่อนออกใบเตือน'); return; }
   $('issueSave').innerHTML='<span class="spin"></span>';
   const r = await post({ action:'hr_warning_issue', password:pwd, data:{
     emp_id: $('w_emp_id').value, level: $('w_level').value, level_name: $('w_level_name').value,
     cycle_start: DISC.cycle.startStr, cycle_end: DISC.cycle.endStr,
     late_count: x.late_count, late_total: x.late_total, absent_count: x.absent,
     score: x.score, band_label: x.band_label,
-    reason: $('w_reason').value
+    reason: $('w_reason').value, photos: W_PHOTOS
   }});
   $('issueSave').textContent='ออกใบเตือน';
   if(r.ok){ toast('ok','ออกใบเตือน '+r.warning_id+' แล้ว'); $('issueOverlay').classList.remove('show'); loadDiscipline(); openWarningView(r.warning_id); }

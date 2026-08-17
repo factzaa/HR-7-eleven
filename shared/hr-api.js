@@ -695,6 +695,12 @@
     const action = existing ? 'updated' : 'created';
     const { error } = await sb().from('employees').upsert(row, { onConflict: 'emp_id' });
     if (error) throw error;
+    // ★ กำหนดวันสิ้นสุดงาน (หรือปิดใช้งาน) → ลบตารางเวร "หลังวันสิ้นสุด" ที่จัดล่วงหน้าไว้
+    //   กันเคสลาออกแล้วยังขึ้น "ขาด" + หักคะแนน/มีผลใบเตือน เพราะมีเวรค้างล่วงหน้า
+    try {
+      const cutoff = row.end_date || (row.active === false ? bkkToday() : null);
+      if (cutoff) await sb().from('schedules').delete().eq('emp_id', row.emp_id).gt('work_date', cutoff);
+    } catch (_e) { /* ลบเวรไม่สำเร็จก็ไม่ให้พังการบันทึก */ }
     return { ok: true, action };
   }
 
@@ -926,7 +932,7 @@
     const endEff = cyc.end < today ? cyc.end : today;
     const discRules = await loadDisciplineRules();
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,branch_id').eq('active', true),
+      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id').eq('active', true),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -966,7 +972,8 @@
       // นับเฉพาะ "วันที่มีการจัดเวรที่ผ่านไปแล้ว (ก่อนวันนี้)" · ขาด = จัดเวรแต่ไม่มา+ไม่ลา (ถ่วง day_value)
       const basis = 'roster';
       const mySchedMap = schByEmp[e.emp_id] || {};
-      const pastSched = Object.keys(mySchedMap).filter(d => d < today);
+      // ★ ไม่นับ "ขาด/วันควรทำ" หลังวันสิ้นสุดการทำงาน (end_date) — พนักงานลาออกแล้วไม่ควรโดนขาด/หักคะแนน แม้มีเวรจัดล่วงหน้าค้างอยู่
+      const pastSched = Object.keys(mySchedMap).filter(d => d < today && (!e.end_date || d <= e.end_date));
       const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(mySchedMap[d]), 0) * 10) / 10;
       let absent = 0;
       pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent += dvOf(mySchedMap[d]); });
@@ -1016,7 +1023,16 @@
       const s = scMap[e.emp_id] || {};
       const tc = termMap[e.emp_id] || null;
       const mine = (actMap[e.emp_id] || []).sort((a, b) => String(b.performed_at).localeCompare(String(a.performed_at)));
-      const need = s.action_type || null;                       // ต้องทำอะไรตามคะแนน
+      // ★ บันไดวินัย: คะแนนกำหนด "ปลายทาง" · แต่ขั้นที่ต้องทำต่อไป = ขั้นแรกในบันไดที่ยังไม่ได้ทำ (บังคับตามลำดับ ไม่กระโดดข้าม)
+      const target = s.action_type || null;                     // ปลายทางตามคะแนน (verbal/written/warning)
+      const STEP_RANK = { verbal: 1, written: 2, warning: 3 };
+      const doneTypes = new Set(mine.map(a => a.action_type));
+      let ladder = [], need = target;
+      if (target && STEP_RANK[target]) {
+        ladder = ['verbal', 'written', 'warning'].filter(t => STEP_RANK[t] <= STEP_RANK[target]).map(t => ({ type: t, label: ACT_LABEL[t], done: doneTypes.has(t) }));
+        const nx = ladder.find(x => !x.done);
+        need = nx ? nx.type : null;                             // ทำครบทุกขั้นแล้ว = ไม่เหลือขั้นถัดไป
+      }
       const doneOfNeed = need ? mine.find(a => a.action_type === need) : null;
       const lastAct = mine[0] || null;
       const pendingAck = mine.filter(a => a.need_ack && !a.ack_at).length;
@@ -1033,6 +1049,11 @@
         level_color: s.band_color || '#16a34a',
         action_needed: need,
         action_needed_label: need ? ACT_LABEL[need] : '',
+        target_action: target,                                  // ปลายทางตามคะแนน
+        target_action_label: target ? ACT_LABEL[target] : '',
+        ladder,                                                 // บันไดทั้งเส้นถึงปลายทาง (พร้อมสถานะทำแล้ว/ค้าง) — ให้ UI + พนักงานเห็นครบทุกขั้น
+        ladder_done: ladder.filter(x => x.done).length,
+        ladder_total: ladder.length,
         action_done: !!doneOfNeed,
         action_done_at: doneOfNeed ? doneOfNeed.performed_at : null,
         action_done_by: doneOfNeed ? doneOfNeed.performed_by : null,
@@ -1076,6 +1097,25 @@
 
     const { data: emp } = await sb().from('employees').select('emp_id,name,branch_id').eq('emp_id', String(d.emp_id)).maybeSingle();
     if (!emp) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้' };
+
+    // ★ บังคับ "บันไดวินัย" ตามลำดับ + มีหลักฐานทุกขั้น (verbal → written → warning)
+    //   coaching/note = บันทึกทั่วไป ไม่บังคับลำดับ
+    const STEP_RANK = { verbal: 1, written: 2, warning: 3 };
+    if (STEP_RANK[type]) {
+      if (!Array.isArray(d.photos) || !d.photos.length) {
+        return { ok: false, error: 'ต้องแนบหลักฐาน (รูปเอกสาร/ใบเซ็นรับทราบ) สำหรับขั้น "' + ACT_LABEL[type] + '" ทุกครั้ง' };
+      }
+      if (STEP_RANK[type] > 1) {
+        let pq = sb().from('disc_actions').select('action_type,status').eq('emp_id', emp.emp_id).neq('status', 'cancelled');
+        if (d.cycle_start) pq = pq.eq('cycle_start', d.cycle_start);
+        const { data: prior } = await pq;
+        const done = new Set((prior || []).map(a => a.action_type));
+        const missing = [];
+        if (!done.has('verbal')) missing.push(ACT_LABEL['verbal']);
+        if (type === 'warning' && !done.has('written')) missing.push(ACT_LABEL['written']);
+        if (missing.length) return { ok: false, error: 'ต้องทำขั้นก่อนหน้าให้ครบก่อน (บังคับตามลำดับ + มีหลักฐานทุกขั้น): ยังขาด ' + missing.join(' → ') };
+      }
+    }
 
     const photos = (Array.isArray(d.photos) && d.photos.length) ? await _uploadMany('disc', d.photos) : null;
     const needAck = d.need_ack === false ? false : true;
@@ -1189,6 +1229,21 @@
   }
 
   async function hrWarningIssue(d) {
+    d = d || {};
+    if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุสาเหตุ' };
+    // ★ บังคับบันไดวินัย: ออกใบเตือนได้ต่อเมื่อ "ตักเตือนวาจา + ลายลักษณ์อักษร" ทำครบ+มีหลักฐานแล้ว
+    if (!Array.isArray(d.photos) || !d.photos.length) return { ok: false, error: 'ต้องแนบหลักฐาน (เอกสารใบเตือน/ใบเซ็นรับทราบ) ก่อนออกใบเตือน' };
+    {
+      let pq = sb().from('disc_actions').select('action_type,status').eq('emp_id', String(d.emp_id)).neq('status', 'cancelled');
+      if (d.cycle_start) pq = pq.eq('cycle_start', d.cycle_start);
+      const { data: prior } = await pq;
+      const done = new Set((prior || []).map(a => a.action_type));
+      const missing = [];
+      if (!done.has('verbal')) missing.push('ตักเตือนด้วยวาจา');
+      if (!done.has('written')) missing.push('ตักเตือนลายลักษณ์อักษร');
+      if (missing.length) return { ok: false, error: 'ออกใบเตือนไม่ได้ — ยังขาดขั้นก่อนหน้า: ' + missing.join(' → ') + ' (ต้องทำ + มีหลักฐานให้ครบก่อน)' };
+    }
     const warning_id = await _nextWarningId();
     const row = {
       warning_id, emp_id: d.emp_id, issue_date: bkkToday(),
@@ -1214,6 +1269,7 @@
         reason: d.reason || (d.level_name || 'ออกใบเตือน'),
         detail: 'เลขที่ใบเตือน ' + warning_id,
         warning_id, performed_by: d.issued_by || 'สำนักงาน (HR)', performed_role: 'hr',
+        photos: d.photos,   // แนบหลักฐานเดียวกับใบเตือนเข้าไทม์ไลน์วินัย
       });
     } catch (_e) { /* ไม่ให้ไทม์ไลน์พังการออกใบเตือน */ }
 
