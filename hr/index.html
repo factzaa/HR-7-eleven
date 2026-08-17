@@ -2581,14 +2581,18 @@ function discMiniTimeline(e){
 // ★ ป้ายบอก "สถานะการดำเนินการ" ในกลุ่มเสี่ยงวินัย
 //   เดิมเห็นแต่ระดับตามคะแนน (เช่น "ใบเตือนระดับ 2") แยกไม่ออกว่าออกใบไปแล้วหรือยัง / พนักงานรับทราบหรือยัง
 function discActionPill(e){
-  const pill=(txt,bg,fg,title)=>`<span class="pill" style="background:${bg};color:${fg};font-weight:700" title="${esc(title||'')}">${txt}</span>`;
+  const pill=(txt,bg,fg,title,extra)=>`<span class="pill" style="background:${bg};color:${fg};font-weight:700;${extra||''}" title="${esc(title||'')}">${txt}</span>`;
   const wt = Number(e.warning_total)||0;
   const suffix = (wt>0 && !e.term_case) ? (' · ใบเตือน '+wt+'/3') : '';   // พับจำนวนสะสมเป็นหางข้อความ ไม่แยกป้าย
+  // ★ สีไล่ตามความรุนแรง: วาจา=เหลือง → ลายลักษณ์=ส้ม → ใบเตือน=แดง → เลิกจ้าง=แดงเข้มทึบ
+  const SEV={ verbal:['#fef9c3','#a16207','🟡'], written:['#ffedd5','#c2410c','🟠'], warning:['#fee2e2','#dc2626','🔴'] };
   if(e.term_case) return '';                                   // มีเคสพิจารณาแล้ว → ป้ายเคสจะบอกเอง
   if(e.action_status==='need_termination')
-    return pill('⛔ ครบใบเตือน '+(wt||3)+'/3 · พิจารณาเลิกจ้าง', '#fee2e2', '#b91c1c', 'ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)');
-  if(e.action_status==='pending')
-    return pill('🔴 ต้อง'+esc(e.action_needed_label||'ดำเนินการ')+suffix, '#fee2e2', '#b91c1c', 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม');
+    return pill('⛔ ครบใบเตือน '+(wt||3)+'/3 · พิจารณาเลิกจ้าง', '#dc2626', '#ffffff', 'รุนแรงสุด — ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)', 'box-shadow:0 0 0 1px #b91c1c inset');
+  if(e.action_status==='pending'){
+    const sv=SEV[e.action_needed]||['#fee2e2','#b91c1c','🔴'];
+    return pill(sv[2]+' ต้อง'+esc(e.action_needed_label||'ดำเนินการ')+suffix, sv[0], sv[1], 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม (สีไล่ตามความรุนแรง)');
+  }
   if(e.action_status==='done'){
     if(e.pending_ack>0) return pill('🟡 ออกแล้ว รอรับทราบ'+suffix, '#fef3c7', '#a16207', 'บังคับกดรับทราบในหน้ารับส่งผลัด');
     return pill('🟢 '+esc(e.action_needed_label||'ดำเนินการ')+'แล้ว'+suffix, '#dcfce7', '#166534', '');
