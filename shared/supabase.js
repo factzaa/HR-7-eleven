@@ -446,6 +446,25 @@
     } catch (e) { console.error('ack disc', e); return { ok: false, error: 'บันทึกไม่สำเร็จ' }; }
   }
 
+  // บันไดวินัยสะสมของพนักงาน (rolling window) — ให้พนักงานเห็นว่าอยู่ขั้นไหน + ครบ 3 ใบ = พิจารณาเลิกจ้าง
+  async function myDisciplineLadder(empId) {
+    try {
+      let winMonths = 6;
+      try { const { data: st } = await sb.from('app_settings').select('value').eq('key', 'disc_window_months').maybeSingle(); if (st && st.value) { const n = parseInt(st.value); if (n > 0) winMonths = n; } } catch (_e) {}
+      const d = new Date(Date.now() + 7 * 3600 * 1000); d.setMonth(d.getMonth() - winMonths);
+      const winStart = d.toISOString().slice(0, 10);
+      const { data } = await sb.from('disc_actions').select('action_type,status,warning_id,performed_at')
+        .eq('emp_id', String(empId)).neq('status', 'cancelled').gte('performed_at', winStart);
+      let rows = data || [];
+      const wids = [...new Set(rows.map(a => a.warning_id).filter(Boolean))];
+      if (wids.length) { const { data: ws } = await sb.from('warnings').select('warning_id,status').in('warning_id', wids); const live = new Set((ws || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id))); rows = rows.filter(a => !a.warning_id || live.has(String(a.warning_id))); }
+      const verbal_done = rows.some(a => a.action_type === 'verbal');
+      const written_done = rows.some(a => a.action_type === 'written');
+      const warning_count = rows.filter(a => a.action_type === 'warning').length;
+      return { verbal_done, written_done, warning_count, near_termination: warning_count >= 3, window_months: winMonths, has_history: rows.length > 0 };
+    } catch (e) { return { verbal_done: false, written_done: false, warning_count: 0, near_termination: false, window_months: 6, has_history: false }; }
+  }
+
   // ประกาศแบบ "รูปภาพ" (สไลด์) ที่ยังแสดงอยู่ — ไม่ต้องกดรับทราบ
   async function getImageAnnouncements(empId, branchId) {
     try {
@@ -2387,6 +2406,6 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

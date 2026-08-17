@@ -1762,6 +1762,17 @@
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">โบนัส "ความรับผิดชอบ" แสดงผล/คำนวณสิทธิให้ (ระบบไม่จ่ายเงินจริง) · ระดับใบเตือน 3=ครั้งที่ 1, 4=ครั้งที่ 2 (ใช้กับปุ่ม "ออกใบเตือนตามคะแนน")</div>
 
+  <div class="card" style="margin-top:14px;padding:12px 14px;border:1.5px solid #ddd6fe;background:#faf5ff">
+    <div style="font-weight:700;color:#6d28d9;margin-bottom:6px">⚖️ วินัยสะสม (Progressive Discipline)</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:13px">นับใบเตือน/ขั้นวินัยสะสมย้อนหลัง</label>
+      <input id="discWindowMonths" type="number" min="1" max="60" style="width:80px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;text-align:center;font:inherit">
+      <label style="font-size:13px">เดือน</label>
+      <button class="btn btn-pri btn-sm" id="discWindowSave">บันทึก</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">ทำผิดซ้ำภายในช่วงนี้ = เลื่อนขั้นสูงขึ้น (วาจา→ลายลักษณ์→ใบเตือน 1→2→3) · ทำดีต่อเนื่องเกินช่วงนี้ = เคลียร์เริ่มใหม่ · ครบ 3 ใบสะสม = เปิดเคสพิจารณาเลิกจ้างให้ HR ตัดสิน · ดีฟอลต์ 6 เดือน</div>
+  </div>
+
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
   <div class="card"><div class="tablewrap"><table>
     <thead><tr><th>งาน</th><th>กะ</th><th>รูปขั้นต่ำ</th><th>ลำดับ</th><th>เปิดใช้</th><th>ผจก.ตรวจ</th><th></th></tr></thead>
@@ -2571,21 +2582,19 @@ function discMiniTimeline(e){
 //   เดิมเห็นแต่ระดับตามคะแนน (เช่น "ใบเตือนระดับ 2") แยกไม่ออกว่าออกใบไปแล้วหรือยัง / พนักงานรับทราบหรือยัง
 function discActionPill(e){
   const pill=(txt,bg,fg,title)=>`<span class="pill" style="background:${bg};color:${fg};font-weight:700" title="${esc(title||'')}">${txt}</span>`;
-  // ป้ายใบเตือนสะสม (rolling window) — เห็นว่าใกล้ครบ 3 ใบแค่ไหน
-  const warnBadge = (Number(e.warning_total)>0 && !e.term_case) ? pill('📄 ใบเตือนสะสม '+e.warning_total+'/3', '#faf5ff', '#7c3aed', 'ใบเตือนสะสมภายใน '+(e.window_months||6)+' เดือน (ทำดีต่อเนื่องเกินช่วงนี้ = เคลียร์)')+' ' : '';
+  const wt = Number(e.warning_total)||0;
+  const suffix = (wt>0 && !e.term_case) ? (' · ใบเตือน '+wt+'/3') : '';   // พับจำนวนสะสมเป็นหางข้อความ ไม่แยกป้าย
   if(e.term_case) return '';                                   // มีเคสพิจารณาแล้ว → ป้ายเคสจะบอกเอง
   if(e.action_status==='need_termination')
-    return pill('⛔ ครบใบเตือน '+(e.warning_total||3)+'/3 → เปิดพิจารณาเลิกจ้าง', '#fee2e2', '#b91c1c', 'ครบเกณฑ์ตามระเบียบ — ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)');
+    return pill('⛔ ครบใบเตือน '+(wt||3)+'/3 · พิจารณาเลิกจ้าง', '#fee2e2', '#b91c1c', 'ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)');
   if(e.action_status==='pending')
-    return warnBadge + pill('🔴 ยังไม่ได้ '+esc(e.action_needed_label||'ดำเนินการ'), '#fee2e2', '#b91c1c', 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม');
+    return pill('🔴 ต้อง'+esc(e.action_needed_label||'ดำเนินการ')+suffix, '#fee2e2', '#b91c1c', 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม');
   if(e.action_status==='done'){
-    if(e.pending_ack>0)
-      return warnBadge + pill('🟡 ออกแล้ว · รอพนักงานรับทราบ', '#fef3c7', '#a16207', 'ระบบจะบังคับให้กดรับทราบในหน้ารับส่งผลัด');
-    return warnBadge + pill('🟢 ' + esc(e.action_needed_label||'ดำเนินการ') + 'แล้ว · รับทราบแล้ว', '#dcfce7', '#166534',
-                (e.last_action&&e.last_action.at) ? ('รับทราบเมื่อ ' + (e.last_action.ack_at||'-')) : '');
+    if(e.pending_ack>0) return pill('🟡 ออกแล้ว รอรับทราบ'+suffix, '#fef3c7', '#a16207', 'บังคับกดรับทราบในหน้ารับส่งผลัด');
+    return pill('🟢 '+esc(e.action_needed_label||'ดำเนินการ')+'แล้ว'+suffix, '#dcfce7', '#166534', '');
   }
-  if(e.pending_ack>0) return warnBadge + pill('🟡 รอพนักงานรับทราบ', '#fef3c7', '#a16207', '');
-  return warnBadge;
+  if(e.pending_ack>0) return pill('🟡 รอรับทราบ', '#fef3c7', '#a16207', '');
+  return '';
 }
 async function loadDashboard(){
   if($('dash_branch') && !$('dash_branch').dataset.filled){
@@ -2665,25 +2674,20 @@ async function loadDashboard(){
       ${MGR_MODE ? '' : `<div class="kpi"><div class="lbl">OT รวม ${sumScope}</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>`}
     </div>`;
 
-  const risk = demps.filter(e=>e.level>=1).slice(0,6);
+  // ★ โชว์เฉพาะคนที่ "ต้องทำอะไรจริง" รอบนี้ — ต้องดำเนินการ / ครบ 3 ใบ / มีเคสพิจารณา (ไม่โชว์ทุกคนที่คะแนนตกแบนด์)
+  const risk = demps.filter(e=> e.action_status==='pending' || e.action_status==='need_termination' || e.term_case).slice(0,8);
   const watch = !dr.ok ? '<div class="empty" style="padding:24px">โหลดข้อมูลวินัยไม่ได้</div>'
     : (risk.length ? risk.map(e=>`
-      <div class="shift-row" style="flex-direction:column;align-items:stretch;gap:6px">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <div class="name-cell" style="flex:1;min-width:150px">
-            ${e.photo_url ? `<div class="thumb"><img src="${esc(e.photo_url)}"></div>` : `<div class="thumb">${esc(pickInitial(e.emp_name))}</div>`}
-            <div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)} · คะแนน ${e.score!=null?e.score:'—'}</span></div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-            <span class="pill" style="background:${esc(e.level_color||'#999')}1f;color:${esc(e.level_color||'#666')};font-weight:600" title="ระดับตามคะแนนวินัย">${esc(e.level_name||('ระดับ '+e.level))}</span>
-            ${discActionPill(e)}
-            ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}">⚖️ ${e.term_case.status==='closed'?'มีมติแล้ว':'พิจารณาอยู่'}</span>` : ''}
-            <span class="stats">สาย ${e.late_count} · ขาด ${e.absent}</span>
-            <button class="btn btn-sec btn-sm" onclick="openDiscTimeline('${esc(e.emp_id)}')" title="ดูไทม์ไลน์วินัยทั้งหมด">🧾</button>
-          </div>
+      <div class="shift-row" style="align-items:center;gap:8px">
+        <div class="name-cell" style="flex:1;min-width:140px">
+          ${e.photo_url ? `<div class="thumb"><img src="${esc(e.photo_url)}"></div>` : `<div class="thumb">${esc(pickInitial(e.emp_name))}</div>`}
+          <div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)} · คะแนน ${e.score!=null?e.score:'—'} · สาย ${e.late_count} ขาด ${e.absent}</span></div>
         </div>
-        ${discMiniTimeline(e)}
-      </div>`).join('') : '<div class="empty" style="padding:24px">ยังไม่มีใครเข้าเกณฑ์ใบเตือนในรอบนี้ 🎉</div>');
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}">⚖️ พิจารณาเลิกจ้าง${e.term_case.status==='closed'?' · มีมติแล้ว':''}</span>` : discActionPill(e)}
+          <button class="btn btn-sec btn-sm" onclick="openDiscTimeline('${esc(e.emp_id)}')" title="ดูไทม์ไลน์/บันไดวินัยทั้งหมด">🧾</button>
+        </div>
+      </div>`).join('') : '<div class="empty" style="padding:24px">ไม่มีใครต้องดำเนินการทางวินัยรอบนี้ 🎉</div>');
 
   // ---- การลาที่จะถึง (14 วัน) ----
   const ul = r.upcoming_leaves || [];
@@ -10068,7 +10072,14 @@ async function loadScoreSettings(silent){
     <td><select id="scb_a_${i}" style="width:190px;padding:6px;border:1.5px solid var(--line2);border-radius:7px">${ACT_OPTS.map(([v,l])=>`<option value="${v}"${String(b.action_type||'')===v?' selected':''}>${l}</option>`).join('')}</select></td>
     <td><input type="number" min="0" value="${b.warn_level==null?'':b.warn_level}" placeholder="—" id="scb_w_${i}" style="width:80px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
   </tr>`).join('');
+  // โหลดค่า "ช่วงวินัยสะสม (เดือน)"
+  if($('discWindowMonths')){ try{ const sg=await post({ action:'hr_settings_get', password:pwd }); const v=sg&&sg.settings?(sg.settings.disc_window_months):null; $('discWindowMonths').value=(v!=null&&v!=='')?v:6; }catch(_e){ $('discWindowMonths').value=6; } }
 }
+$('discWindowSave') && ($('discWindowSave').onclick=async()=>{
+  const v=Math.max(1,Math.min(60,parseInt($('discWindowMonths').value)||6));
+  const r=await post({ action:'hr_settings_save', password:pwd, key:'disc_window_months', value:String(v) });
+  if(r&&r.ok){ toast('ok','บันทึกช่วงวินัยสะสม '+v+' เดือนแล้ว'); $('discWindowMonths').value=v; } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+});
 async function saveScoreConfig(){
   const r=await post({ action:'hr_score_config_save', password:pwd, data:{ start_score:$('scCfg_start').value } });
   if(r.ok){ toast('ok','บันทึกคะแนนเริ่มต้นแล้ว'); SCORE_SETTINGS=null; } else toast('err',r.error||'ไม่สำเร็จ');
