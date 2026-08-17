@@ -3244,7 +3244,7 @@ function renderReportDetail(){
       <tr${r.is_holiday
             ? ' style="background:#fef2f2;outline:2px solid #dc2626;outline-offset:-2px" title="ทำงานในวันหยุดบริษัท: '+esc(r.holiday_name||'')+'"'
             : (r.is_cover?' style="background:#fff7ed"':'')}>
-        <td class="mono">${beDate(r.work_date)}${r.is_holiday?`<div><span class="pill bad" style="font-size:10.5px;padding:1px 7px">🎌 วันหยุดบริษัท</span></div>`:''}${r.unscheduled?`<div><span class="pill" style="font-size:10.5px;padding:1px 7px;background:#fef3c7;color:#a16207">⚠️ นอกตาราง</span></div>`:''}</td>
+        <td class="mono">${beDate(r.work_date)}${r.is_holiday?`<div><span class="pill bad" style="font-size:10.5px;padding:1px 7px">🎌 วันหยุดบริษัท</span></div>`:''}${r.dual_shift?`<div><span class="pill" style="font-size:10.5px;padding:1px 7px;background:#ede9fe;color:#6d28d9;font-weight:700" title="ควบกะ: ${esc(r.dual_label||'')}">🔁 ควบกะ${r.dual_label?(' '+esc(r.dual_label)):''}</span></div>`:''}${r.unscheduled?`<div><span class="pill" style="font-size:10.5px;padding:1px 7px;background:#fef3c7;color:#a16207">⚠️ นอกตาราง</span></div>`:''}</td>
         <td><div class="ntext"><span class="nm">${esc(r.emp_name)}</span><span class="nick">${esc(r.emp_id)}</span></div></td>
         <td>${esc(r.shift_name)}${Number(r.day_value)!==1?` <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700" title="${esc(r.day_note||'')}">นับ ${r.day_value} วัน</span>`:''}</td>
         <td>${esc(r.branch_name)}${r.is_cover?` <span class="pill" style="background:#ffedd5;color:#c2410c">ไปแทน · ประจำ ${esc(r.home_branch)}</span>`:''}</td>
@@ -4211,7 +4211,7 @@ function renderPayrollItems(){
       +'<td class="mono" style="color:var(--muted)">'+(i+1)+'</td>'
       +'<td style="min-width:150px"><div style="font-weight:600;font-size:13px">'+esc(it.emp_name)+'</div><div style="font-size:11px;color:var(--muted)">'+esc(it.emp_id)+(it.branch_name?(' · '+esc(it.branch_name)):'')+'</div></td>'
       +'<td style="font-size:11px;color:var(--muted);white-space:nowrap">'+(it.bank_account?(esc(it.bank_account)+'<br>'+esc(it.bank_name||'')):'<span style="color:#cbd5e1">—</span>')+'</td>'
-      +'<td class="mono" style="text-align:center">'+(daily?plB(it.days_worked):'<span style="color:#cbd5e1">—</span>')+'</td>'
+      +'<td class="mono" style="text-align:center">'+(daily?plB(it.days_worked):'<span style="color:#cbd5e1">—</span>')+(Number(it.dual_days)>0?('<div><span class="pill" style="font-size:9.5px;padding:0 5px;background:#ede9fe;color:#6d28d9;font-weight:700" title="วันที่ควบกะ: '+esc((it.dual_dates||[]).map(x=>beDate(x.date)+' ('+x.label+')').join(', '))+'">🔁 ควบ '+it.dual_days+'</span></div>'):'')+'</td>'
       +'<td class="mono" style="text-align:right">'+plB(daily? (Number(it.base_pay)/(Number(it.days_worked)||1)) : it.base_pay)+'</td>'
       +'<td class="mono" style="text-align:right">'+plB(it.base_pay)+'</td>'
       +'<td class="mono" style="text-align:right">'+(Number(it.ot_pay)?('<span style="font-size:10px;color:var(--muted)">'+plB(it.ot_hours)+' ชม.</span><br>'+plB(it.ot_pay)):'<span style="color:#cbd5e1">–</span>')+'</td>'
@@ -4378,6 +4378,7 @@ function openPlItem(empId){
       +'<input id="pli_days" type="number" step="0.5" min="0" placeholder="ตามลงเวลา" value="'+esc(ovVal)+'" style="width:120px;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:center;font-weight:700">'
       +'<div style="font-size:12px;color:var(--muted)">ปัจจุบันคิดฐานจาก <b>'+esc(it.days_worked!=null?it.days_worked:0)+'</b> วัน · เว้นว่าง = ใช้ตามลงเวลา</div></div>'
       +'<div style="font-size:11.5px;color:var(--muted);margin-top:5px">💡 ใช้ตอนเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ — กรอกวันจริง ระบบจะคิดฐาน = วัน × อัตราให้ใหม่ + ประกันสังคมใหม่</div></div>'):'')
+    +(Number(it.dual_days)>0?('<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:9px 12px;margin-bottom:14px"><div style="font-weight:700;color:#6d28d9;margin-bottom:3px">🔁 ควบกะ '+it.dual_days+' วัน</div><div style="font-size:12px;color:#5b21b6;line-height:1.6">'+esc((it.dual_dates||[]).map(x=>beDate(x.date)+' ('+x.label+')').join(' · '))+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px">นับรวมในวันทำงานแล้ว (แต่ละกะ = +1 วัน)</div></div>'):'')
     +'<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:10px 12px;margin-bottom:14px"><div style="font-weight:700;color:#0f766e;margin-bottom:5px">🛵 Delivery (รายได้เพิ่ม)</div>'
       +'<input id="pli_deliv" type="number" step="1" min="0" placeholder="0" value="'+esc(it.delivery!=null?it.delivery:"")+'" style="width:140px;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:right">'
       +'<div style="font-size:11.5px;color:var(--muted);margin-top:5px">บวกเข้ารายได้ (แสดงในสลิปช่อง "เงินได้อื่นๆ") · เก็บพร้อมหน้าตรวจ</div></div>'

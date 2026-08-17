@@ -789,7 +789,7 @@
       sq, lq,
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id'),
       wq,
-      sb().from('shifts').select('shift_id,day_value'),
+      sb().from('shifts').select('shift_id,day_value,name'),
       sb().from('holidays').select('date,name').eq('active', true).gte('date', f.start).lte('date', f.end),   // วันหยุดบริษัทในช่วง
     ]);
     if (error) throw error;
@@ -828,6 +828,15 @@
         photo_url: r.photo_url || '', checkout_photo_url: r.checkout_photo_url || '', gps_lat: r.gps_lat, gps_lng: r.gps_lng, status: r.status,
       };
     });
+    // ★ วันควบกะ = มี ≥2 กะในวันเดียวกัน (จากตารางเวร หรือแถวลงเวลาจริง) — ติดป้ายให้เห็นชัดในรายงาน
+    const _shName = {}; (shR2.data || []).forEach(s => { _shName[s.shift_id] = s.name || s.shift_id; });
+    const _dualSh = {};   // 'emp|date' → Set(shift_id)
+    const _addSh = (emp, date, sid) => { if (!sid) return; const k = emp + '|' + date; (_dualSh[k] = _dualSh[k] || new Set()).add(sid); };
+    (schR.data || []).forEach(s => _addSh(s.emp_id, s.work_date, s.shift_id));
+    (data || []).forEach(r => { if (r.check_in) _addSh(r.emp_id, r.work_date, r.shift_id); });
+    const _dualSet = new Set(), _dualNames = {};
+    Object.keys(_dualSh).forEach(k => { if (_dualSh[k].size >= 2) { _dualSet.add(k); _dualNames[k] = [...(_dualSh[k])].map(id => _shName[id] || id).join('/'); } });
+    rows.forEach(r => { const k = r.emp_id + '|' + r.work_date; r.dual_shift = _dualSet.has(k); r.dual_label = _dualNames[k] || ''; });
     const earlyGrace = await getSettingNum('early_out_grace_min', 10);
     // ติดธง "ออกก่อนเวลา" (เกินเวลาผ่อนผัน) ให้แต่ละแถว — ใช้ทั้งกรองและแสดงผล
     rows.forEach(r => { r.early_out_flag = (r.early_out_min != null && r.early_out_min > earlyGrace); });
@@ -6295,7 +6304,7 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance'),
+      sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance,name'),
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
       sb().from('payroll_installment_charges').select('*').lte('period_start', cyc.start),
@@ -6455,10 +6464,18 @@
     // ★ รีเฟรช "อีเมล + บัญชีธนาคาร" จากข้อมูลพนักงานปัจจุบันเสมอ (เป็นข้อมูลติดต่อ/โอน ไม่ใช่ยอดเงินที่ตรึง)
     //   กันเคส: รอบถูกปิดก่อนพนักงานกรอกอีเมล → payroll_items.email ค้างว่าง → ส่งสลิปไม่ได้ทั้งที่กรอกแล้ว
     const _empInfo = {}; (empR.data || []).forEach(e => { _empInfo[e.emp_id] = e; });
+    // ★ วันควบกะต่อคน (ลงเวลา ≥2 กะในวันเดียว) — ตรงกับที่นับวันทำงานจ่ายจริง (บวกทุกกะ)
+    const _shNm = {}; (shR.data || []).forEach(s => { _shNm[s.shift_id] = s.name || s.shift_id; });
+    const _byED = {}; (attR.data || []).forEach(a => { if (a.check_in && a.shift_id) { const k = a.emp_id + '|' + a.work_date; (_byED[k] = _byED[k] || new Set()).add(a.shift_id); } });
+    const dualByEmp = {};
+    Object.keys(_byED).forEach(k => { if (_byED[k].size >= 2) { const i = k.indexOf('|'); const emp = k.slice(0, i), date = k.slice(i + 1); (dualByEmp[emp] = dualByEmp[emp] || []).push({ date, label: [...(_byED[k])].map(id => _shNm[id] || id).join('/') }); } });
+    Object.values(dualByEmp).forEach(arr => arr.sort((a, b) => a.date < b.date ? -1 : 1));
     const outItems = (finalItems || items).map(it => { const _e = _empInfo[it.emp_id] || {}; return Object.assign({}, it, {
       email: _e.email || it.email || null,
       bank_name: _e.bank_name || it.bank_name || null,
       bank_account: _e.bank_account || it.bank_account || null,
+      dual_days: (dualByEmp[it.emp_id] || []).length,
+      dual_dates: dualByEmp[it.emp_id] || [],
       ytd_earnings: _pr2((ytdEarn[it.emp_id] || 0) + addCur * Number(it.gross || 0)),
       ytd_sso: _pr2((ytdSso[it.emp_id] || 0) + addCur * Number(it.sso || 0)),
       ytd_tax: 0,
