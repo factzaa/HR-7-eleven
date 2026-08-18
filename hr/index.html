@@ -423,6 +423,15 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   .uinfo b{font-size:13px;font-weight:600}.uinfo i{font-size:11px;color:var(--muted);font-style:normal}
 }
 @media(max-width:640px){ .uchip{display:none} }
+
+/* ==== แก้ป้ายในรายการ (โดยเฉพาะวินัย) ไม่ให้ม้วนเป็นก้อนกลมบนมือถือ ==== */
+.shift-row .pill{border-radius:10px !important;white-space:normal;text-align:left;line-height:1.35;display:inline-flex;align-items:center}
+@media(max-width:640px){
+  .card-b .shift-row{flex-wrap:wrap}
+  .card-b .shift-row > div:last-child:has(.pill){width:100%;justify-content:flex-start !important;margin-top:8px}
+  .card-b .shift-row .name-cell{min-width:0 !important}
+  .shift-row .pill{max-width:100%}
+}
 </style>
 </head>
 <body>
