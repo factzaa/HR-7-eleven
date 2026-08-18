@@ -454,6 +454,15 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   #view_dashboard .card.collapsed > .card-h::after{transform:rotate(-135deg);top:calc(50% - 2px)}
   #view_dashboard .card.collapsed > .card-b{display:none}
 }
+
+/* ==== มือถือ: หัวข้อ toolbar ขึ้นบรรทัดเต็ม (กันตกบรรทัดทีละคำ) + รูปสไลด์แนวนอน ==== */
+@media(max-width:640px){
+  .toolbar{align-items:stretch}
+  .toolbar h3{width:100% !important;min-width:0 !important;flex:none !important;font-size:19px !important;margin-bottom:2px}
+  .toolbar > select,.toolbar > input:not([type=checkbox]),.toolbar > .search{flex:1 1 auto;min-width:0}
+}
+.imgrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+@media(max-width:640px){ .imgrow{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px} .imgrow::-webkit-scrollbar{height:5px} .imgrow > *{flex:none} }
 </style>
 </head>
 <body>
@@ -2472,7 +2481,7 @@ async function chatLoadPeerThread(roomKey, markRead){
     let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%">';
     if(!mine) c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||'ผจก.')+'</div>';
     c+='<div style="'+bg+';border-radius:12px;padding:8px 11px;font-size:13px;line-height:1.5;white-space:pre-wrap">'+esc(m.text||'')+'</div>';
-    if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:70px;height:70px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+    if(Array.isArray(m.photos)&&m.photos.length) c+='<div class="imgrow">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:70px;height:70px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
     c+='<div style="text-align:'+(mine?'right':'left')+';margin-top:2px;font-size:10px;color:var(--muted)">'+chatTime(m.created_at)+' '+readTick+'</div>';
     return c+'</div></div>';
   }).join('')||'<div class="empty">เริ่มบทสนทนากับ ผจก.สาขานี้ได้เลย</div>';
@@ -2580,7 +2589,7 @@ async function chatLoadThread(branch, markRead){
     let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%">';
     if(!mine||m.sender_role==='nida') c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+who+'</div>';
     c+='<div style="'+bg+';border-radius:12px;padding:8px 11px;font-size:13px;line-height:1.5;white-space:pre-wrap">'+esc(m.text||'')+'</div>';
-    if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:70px;height:70px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+    if(Array.isArray(m.photos)&&m.photos.length) c+='<div class="imgrow">'+m.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:70px;height:70px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
     c+='<div style="text-align:'+(mine?'right':'left')+';margin-top:2px;font-size:10px;color:var(--muted)">'+chatTime(m.created_at)+' '+readTick+'</div>';
     return c+'</div></div>';
   }).join('')||'<div class="empty">เริ่มบทสนทนาได้เลย</div>';
@@ -5682,7 +5691,7 @@ async function advTimeline(id){
         +'</div>'
       ):'')
     +'<div style="background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:13px;line-height:1.7;margin-bottom:12px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(q.reason||'')+'</div>'
-    +((q.photos&&q.photos.length)?('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+q.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:78px;height:78px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>'):'')
+    +((q.photos&&q.photos.length)?('<div class="imgrow" style="margin-bottom:12px">'+q.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:78px;height:78px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>'):'')
     +'<div class="es-dsec" style="background:#f1f5f9;border-left:4px solid #0f766e">ไทม์ไลน์</div>'
     +'<div style="margin-top:6px">'+ev.map((e,i)=>'<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)">'
         +'<div style="width:24px;height:24px;border-radius:50%;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none">'+(i+1)+'</div>'
@@ -7242,7 +7251,7 @@ function renderMtDetail(){
   let h='';
   if(t.detail) h+='<div style="font-size:13.5px;white-space:pre-wrap;margin-bottom:6px">'+esc(t.detail)+'</div>';
   h+='<div style="font-size:12px;color:var(--muted)"><svg class="ei" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg> '+esc(t.branch_name||'—')+(t.due_date?(' · <svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> ส่ง '+beDate(t.due_date)):'')+(t.priority==='urgent'?' · <svg class="ed" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.3"/></svg> ด่วน':'')+' · สถานะ: '+mtStLabel(t.status)+'</div>';
-  if(Array.isArray(t.hr_photos)&&t.hr_photos.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
+  if(Array.isArray(t.hr_photos)&&t.hr_photos.length) h+='<div class="imgrow">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
   // มอบต่อให้พนักงาน (ผจก.เลือกได้ · HR เห็นชื่อ)
   if(MGR_MODE){
     const emps=(DATA.rows||[]).filter(e=>e.active!==false && String(e.branch_id)===String(MGR_BRANCH));
@@ -7310,7 +7319,7 @@ function mtFeedRow(m){
   let c='<div style="display:flex;justify-content:'+align+';margin:5px 0"><div style="max-width:82%;background:'+bg+';border-radius:12px;padding:7px 11px">';
   c+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:2px">'+esc(m.sender_name||who)+(m.role==='emp'?' <svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M5 20a7 7 0 0 1 14 0"/><path d="M6 8a6 6 0 0 1 12 0"/></svg>':'')+' · '+beDateTime(m.created_at)+'</div>';
   if(m.message) c+='<div style="font-size:13.5px;white-space:pre-wrap">'+esc(m.message)+'</div>';
-  if(Array.isArray(m.photos)&&m.photos.length) c+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">'+m.photos.map(u=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" onclick="lightbox(this)" style="width:82px;height:82px;object-fit:cover;border-radius:8px;cursor:zoom-in"><button type="button" data-mtedit="'+esc(u)+'" title="วาดทับ/แก้ไขรูปนี้" style="position:absolute;bottom:-4px;right:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:11px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button></span>').join('')+'</div>';
+  if(Array.isArray(m.photos)&&m.photos.length) c+='<div class="imgrow">'+m.photos.map(u=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" onclick="lightbox(this)" style="width:82px;height:82px;object-fit:cover;border-radius:8px;cursor:zoom-in"><button type="button" data-mtedit="'+esc(u)+'" title="วาดทับ/แก้ไขรูปนี้" style="position:absolute;bottom:-4px;right:-4px;background:#7c3aed;color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:11px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button></span>').join('')+'</div>';
   return c+'</div></div>';
 }
 function mtAddFiles(input){
@@ -7458,7 +7467,7 @@ async function loadMtaskFixing(boxId){
         +'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(t.review_note||'-')
         +'<div style="color:#7f1d1d;margin-top:3px">ผู้ส่งงานเดิม: '+esc(t.submitter_name)+' · <b>ผู้ต้องแก้: '+esc(t.fix_name)+'</b>'+(t.fix_shift_name?(' (กะ '+esc(t.fix_shift_name)+')'):'')
         +(t.fix_to_checker?' <span class="pill" style="background:#ffedd5;color:#9a3412">ผู้ตรวจผ่านเป็นผู้แก้</span>':' <span class="pill muted">ผู้ส่งเป็นผู้แก้</span>')+'</div></div>'
-      +(mk.length?'<div class="muted" style="font-size:12px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่สั่งแก้</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0">'+mk.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:54px;height:54px;object-fit:cover;border-radius:7px;cursor:zoom-in;border:1px solid #fecaca">').join('')+'</div>':'')
+      +(mk.length?'<div class="muted" style="font-size:12px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่สั่งแก้</div><div class="imgrow">'+mk.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:54px;height:54px;object-fit:cover;border-radius:7px;cursor:zoom-in;border:1px solid #fecaca">').join('')+'</div>':'')
       +(imgs.length?'<div class="muted" style="font-size:12px">รูปที่ส่งมาก่อนหน้า</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:54px;height:54px;object-fit:cover;border-radius:7px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'')
       +'<button class="btn btn-sec btn-sm" data-flow="'+t.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> ดูไทม์ไลน์งานนี้</button>'
       +'<div id="flow_'+t.id+'" style="font-size:12.5px;line-height:1.6;margin-top:6px"></div>'
