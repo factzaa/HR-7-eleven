@@ -1452,7 +1452,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
   <div class="dash-grid-2">
     <div>
-      <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">ใบลา</h3><button class="btn btn-pri btn-sm" id="lv_new">+ เพิ่มใบลา</button></div>
+      <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600; min-width:70px">ใบลา</h3><input id="lv_q" type="text" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;flex:1;min-width:110px"><select id="lv_cycle" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกรอบ</option><option value="current">รอบปัจจุบัน</option><option value="previous">รอบก่อนหน้า</option><option value="prev2">2 รอบก่อน</option></select><select id="lv_type" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกประเภท</option></select><select id="lv_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกสถานะ</option><option value="pending">รออนุมัติ</option><option value="approved">อนุมัติ</option><option value="rejected">ปฏิเสธ</option></select><button class="btn btn-pri btn-sm" id="lv_new">+ เพิ่มใบลา</button></div>
       <div id="lv_body"></div>
     </div>
     <div>
@@ -2645,10 +2645,10 @@ async function loadAll(){
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
   DATA = { headers:r.headers, rows:r.rows, branches:r.branches, shifts:r.shifts };
   fillSelect($('f_branch_id'), DATA.branches.map(b=>[b.branch_id, b.name]));
-  fillSelect($('r_emp'), DATA.rows.map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— ทั้งหมด —');
+  fillSelect($('r_emp'), DATA.rows.filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— ทั้งหมด —');
   fillSelect($('r_branch'), DATA.branches.map(b=>[b.branch_id, b.name]), '— ทั้งหมด —');
   fillSelect($('r_shift'), DATA.shifts.map(s=>[s.shift_id, s.name]), '— ทั้งหมด —');
-  fillSelect($('lv_emp'), DATA.rows.map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือก —');
+  fillSelect($('lv_emp'), DATA.rows.filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือก —');
 }
 function fillSelect(sel, pairs, emptyLabel){
   sel.innerHTML = (emptyLabel ? `<option value="">${emptyLabel}</option>` : '<option value="">— เลือก —</option>')
@@ -5955,12 +5955,39 @@ function lvCard(l){
     <div class="lvcard-act">${lvActionButtons(l)}</div>
   </div>`;
 }
-async function loadLeaves(){
-  const r = await post({ action:'hr_leaves_list', password:pwd });
-  if(!r.ok){ $('lv_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  LEAVES_ROWS = r.rows;
-  if(!r.rows.length){ $('lv_body').innerHTML='<div class="empty">ยังไม่มีใบลา</div>'; return; }
-  const sorted = r.rows.slice().sort((a,b)=>((b.status==='pending'||b.status==='proposed')?1:0)-((a.status==='pending'||a.status==='proposed')?1:0));
+function lvCycleRange(which){
+  const t=bkkToday(); const p=t.split('-').map(Number); let sy=p[0], sm=p[1], D=p[2];
+  if(D<=20){ sm-=1; if(sm<1){sm=12;sy-=1;} }              // รอบที่ครอบวันนี้ (21 เดือนก่อน–20 เดือนนี้)
+  const back = which==='previous'?1:(which==='prev2'?2:0); sm-=back; while(sm<1){sm+=12;sy-=1;}
+  let ey=sy, em=sm+1; if(em>12){em=1;ey+=1;}
+  const pad=n=>String(n).padStart(2,'0');
+  return { start: sy+'-'+pad(sm)+'-21', end: ey+'-'+pad(em)+'-20' };
+}
+['lv_q','lv_cycle','lv_type','lv_status'].forEach(id=>{ const el=$(id); if(el) el.addEventListener(el.tagName==='SELECT'?'change':'input', ()=>loadLeaves(false)); });
+async function loadLeaves(refetch){
+  if(refetch!==false){
+    const r = await post({ action:'hr_leaves_list', password:pwd });
+    if(!r.ok){ $('lv_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
+    LEAVES_ROWS = r.rows;
+    const _types=[...new Set((LEAVES_ROWS||[]).map(l=>l.type).filter(Boolean))].sort();
+    const _sel=$('lv_type'); if(_sel){ const _cur=_sel.value; _sel.innerHTML='<option value="">ทุกประเภท</option>'+_types.map(t=>'<option'+(t===_cur?' selected':'')+'>'+esc(t)+'</option>').join(''); }
+  }
+  const _all = LEAVES_ROWS||[];
+  if(!_all.length){ $('lv_body').innerHTML='<div class="empty">ยังไม่มีใบลา</div>'; return; }
+  const _q=(($('lv_q')||{}).value||'').trim().toLowerCase();
+  const _typ=(($('lv_type')||{}).value||'');
+  const _cyc=(($('lv_cycle')||{}).value||'');
+  const _st=(($('lv_status')||{}).value||'');
+  const _cr=_cyc?lvCycleRange(_cyc):null;
+  const _rows=_all.filter(l=>{
+    if(_q && !(String(l.emp_name||'').toLowerCase().includes(_q)||String(l.emp_id||'').toLowerCase().includes(_q))) return false;
+    if(_typ && String(l.type||'')!==_typ) return false;
+    if(_st){ if(_st==='pending'){ if(!(l.status==='pending'||l.status==='proposed')) return false; } else if(l.status!==_st) return false; }
+    if(_cr){ const sd=l.start_date||'', ed=l.end_date||sd; if(!((sd>=_cr.start&&sd<=_cr.end)||(ed>=_cr.start&&ed<=_cr.end))) return false; }
+    return true;
+  });
+  if(!_rows.length){ $('lv_body').innerHTML='<div class="empty">ไม่พบใบลาตามตัวกรอง</div>'; return; }
+  const sorted = _rows.slice().sort((a,b)=>((b.status==='pending'||b.status==='proposed')?1:0)-((a.status==='pending'||a.status==='proposed')?1:0));
   const tableHtml = `<div class="card lv-desktop"><div class="tablewrap"><table>
     <thead><tr><th>เลขที่</th><th>พนักงาน</th><th>ตั้งแต่</th><th>ถึง</th><th>วัน</th><th>ประเภท</th><th>เหตุผล</th><th>สถานะ</th><th></th></tr></thead>
     <tbody>${sorted.map(l=>`
