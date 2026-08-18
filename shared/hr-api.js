@@ -947,7 +947,7 @@
     const endEff = cyc.end < today ? cyc.end : today;
     const discRules = await loadDisciplineRules();
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id').eq('active', true),
+      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -2261,7 +2261,7 @@
       sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb().from('score_rules').select('*').order('sort'),
       sb().from('score_bands').select('*').order('sort'),
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,end_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -2340,6 +2340,7 @@
         items,
         late_count, late_total, absent_count: absWeighted,     // สแนปช็อตตัวเลขหลักฐาน (ใช้ตอนออกใบเตือน)
         days_worked, min_work_days: minWD, below_min,           // วันทำงาน + เกณฑ์ขั้นต่ำ + ไม่ถึงเกณฑ์
+        ended: !!(e.end_date && String(e.end_date) < today),    // สิ้นสุดการทำงานแล้ว (ไว้ซ่อนจากหน้าคะแนน/วินัย)
         band_label: band ? band.label : '', band_color: band ? band.color : '#475569',
         bonus: band && band.bonus_amount ? band.bonus_amount : 0,
         warn_level: band ? band.warn_level : null, warn_name: band ? band.warn_name : null,
@@ -2617,7 +2618,7 @@
 
     const [rulesR, empR, wrR, caseR] = await Promise.all([
       sb().from('termination_rules').select('*').eq('enabled', true).order('sort'),
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id').eq('active', true),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,end_date').eq('active', true),
       // ★ ใบเตือนที่ถูกยกเลิกแล้ว ไม่นับเป็นหลักฐานเข้าข่ายพิจารณา
       sb().from('warnings').select('warning_id,emp_id,level,level_name,issue_date,reason,status')
         .or('status.is.null,status.neq.cancelled').order('issue_date', { ascending: false }),
@@ -2661,6 +2662,7 @@
     const handled = [];                                   // คนที่มีเคสอยู่แล้ว (เปิดค้าง หรือ ปิดไปแล้ว)
     (sc.employees || []).forEach(e => {
       const emp = empById[e.emp_id]; if (!emp) return;
+      if (emp.end_date && String(emp.end_date) < today) return;   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว
       // ★ ผจก. เห็นเฉพาะพนักงานสาขาตัวเอง
       if (me.role === 'mgr' && String(emp.branch_id || '') !== me.branch_id) return;
       const st = streakOf(e.emp_id);

@@ -3401,7 +3401,7 @@ function renderDiscipline(){
   $('d_cycleinfo').textContent = beDate(DISC.cycle.startStr) + ' ถึง ' + beDate(DISC.cycle.endStr) + ' · ระดับตัดสินจาก "คะแนนวินัย"';
 
   // สรุปหัวตาราง: ต้องดำเนินการกี่คน / ค้างรับทราบกี่คน
-  const todo = e.filter(x=>x.action_status==='pending');
+  const todo = e.filter(x=>x.action_status==='pending' || x.action_status==='need_termination');
   const wait = e.filter(x=>x.pending_ack>0);
   const groups = {};
   e.forEach(x=>{ const k=x.band_label||'ปกติ'; (groups[k]||(groups[k]=[])).push(x); });
@@ -3422,8 +3422,11 @@ function renderDiscipline(){
         <div style="font-size:11.5px;color:var(--muted)">จะเด้งบังคับในหน้ารับส่งผลัด</div></div>`:''}
     </div>` : '';
 
+  const SEV={ verbal:['#fef9c3','#a16207'], written:['#ffedd5','#c2410c'], warning:['#fee2e2','#dc2626'] };   // ไล่สีตามความรุนแรง
   const actPill = x=>{
     const tc = x.term_case;
+    const wt = Number(x.warning_total)||0;
+    const suffix = (wt>0 && !tc) ? (' · ใบเตือน '+wt+'/3') : '';
     // ★ ผ่านมติเคสพิจารณาแล้ว → ไม่ต้องเร่งออกใบเตือนอีก แสดงมติแทน
     if(x.action_status==='case_closed' && tc){
       return `<span class="pill" style="background:${tc.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'};color:${tc.decision==='terminate_proposed'?'#b91c1c':'#15803d'};font-weight:700">⚖️ ผ่านมติแล้ว</span>`
@@ -3434,12 +3437,15 @@ function renderDiscipline(){
       return `<span class="pill" style="background:#fef3c7;color:#a16207;font-weight:700">⚖️ อยู่ระหว่างพิจารณา</span>`
         + `<a href="javascript:void(0)" onclick="showTab('terminate');setTimeout(()=>openTermCase('${tc.id}'),400)" style="display:block;font-size:11px;color:#1d4ed8;margin-top:2px">${esc(tc.case_no||'')} · ดูเคส</a>`;
     }
+    if(x.action_status==='need_termination')
+      return `<span class="pill" style="background:#dc2626;color:#fff;font-weight:700">⛔ ครบใบเตือน ${wt||3}/3 · พิจารณาเลิกจ้าง</span>`;
     if(x.action_status==='none') return '<span style="color:var(--muted);font-size:12.5px">—</span>';
     if(x.action_status==='done'){
       const ackTxt = x.pending_ack>0 ? '<div style="font-size:11px;color:#1d4ed8;margin-top:2px">รอพนักงานรับทราบ</div>' : '';
-      return `<span class="pill ok">✓ ${esc(x.action_needed_label)}แล้ว</span>${ackTxt}`;
+      return `<span class="pill ok">✓ ${esc(x.action_needed_label)}แล้ว${esc(suffix)}</span>${ackTxt}`;
     }
-    return `<span class="pill bad">ต้อง${esc(x.action_needed_label)}</span>`;
+    const sv=SEV[x.action_needed]||['#fee2e2','#b91c1c'];
+    return `<span class="pill" style="background:${sv[0]};color:${sv[1]};font-weight:700">ต้อง${esc(x.action_needed_label)}${esc(suffix)}</span>`;
   };
 
   $('d_body').innerHTML = `
@@ -10027,10 +10033,11 @@ async function loadScore(){
   $('sc_startinfo').textContent = r.start_score;
   $('sc_legend').innerHTML = (r.bands||[]).slice().sort((a,b)=>b.min_score-a.min_score).map(b=>
     `<span class="pill" style="background:${esc(b.color)};color:#fff;font-weight:600">${b.min_score}–${b.max_score}: ${esc(b.label)}${b.bonus_amount?(' · ฿'+b.bonus_amount):''}</span>`).join('');
-  if(!r.employees.length){ $('sc_body').innerHTML='<div class="empty">ยังไม่มีพนักงาน</div>'; return; }
+  const scEmps=(r.employees||[]).filter(e=>!e.ended);   // ★ ซ่อนคนที่สิ้นสุดการทำงานแล้ว
+  if(!scEmps.length){ $('sc_body').innerHTML='<div class="empty">ยังไม่มีพนักงาน</div>'; return; }
   $('sc_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
     <thead><tr><th>พนักงาน</th><th>คะแนน</th><th>ผล</th><th>เคสพิจารณา</th><th>โบนัส</th><th>หักรวม</th><th></th></tr></thead>
-    <tbody>${r.employees.map(e=>`<tr>
+    <tbody>${scEmps.map(e=>`<tr>
       <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.nickname||e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
       <td><span style="font-weight:800;font-size:17px;color:${esc(e.band_color)}">${e.score}</span><span style="color:var(--muted)">/${e.start}</span></td>
       <td><span class="pill" style="background:${esc(e.band_color)};color:#fff;font-weight:600">${esc(e.band_label||'—')}</span>${e.warn_level!=null?' ⚠️':''}</td>
@@ -11360,7 +11367,7 @@ if(pwd) tryLogin(pwd);
 
 </script>
 <script>
-if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js').catch(function(){});});}
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js',{updateViaCache:'none'}).then(function(r){try{r.update();}catch(e){}}).catch(function(){});});}
 
 // ========== Web Push (แจ้งเตือนฝั่ง HR แม้ปิดแอป) ==========
 (function(){
