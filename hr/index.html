@@ -381,6 +381,48 @@
   .navgrp-menu{border-radius:14px;border:1px solid var(--line);box-shadow:0 16px 40px rgba(17,24,39,.14);padding:7px}
   .navgrp-menu .tab{border-radius:9px}
 }
+
+/* ==== Modern SaaS layer (ให้ตรงพรีวิว) ==== */
+body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;background:#f4f6f4}
+.container{max-width:1200px !important;padding:22px 22px 64px !important}
+.topbar{padding:12px 22px !important}
+.toolbar{margin-bottom:18px !important}
+.toolbar h3{font-size:22px !important;font-weight:600 !important;letter-spacing:-.2px}
+.card{border-radius:16px !important;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05) !important;border:1px solid #eceef1 !important}
+.card-h{padding:15px 18px !important}
+.card-h h3{font-size:15px !important;font-weight:600 !important}
+.kpi-grid{gap:15px !important;margin-bottom:16px !important}
+.kpi{display:flex !important;flex-direction:column;padding:18px !important;border-radius:16px !important;box-shadow:0 1px 2px rgba(17,24,39,.05) !important;border:1px solid #eceef1 !important}
+.kpi .lbl{font-size:12.5px !important;color:var(--muted);margin:13px 0 0 !important;font-weight:500}
+.kpi .val{font-size:28px !important;font-weight:600 !important;letter-spacing:-.5px;line-height:1.06;margin-top:2px}
+.kpi .val .sm{font-size:14px !important}
+.kpi .delta{font-size:11.5px !important;margin-top:5px !important}
+.kpi-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none}
+.kpi-ic svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.85;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.kpi-ic.g{background:#e7f3ec;color:#00582f}.kpi-ic.o{background:#fff2e6;color:#c2600d}.kpi-ic.r{background:#fdeaea;color:#e11f26}.kpi-ic.a{background:#fef9c3;color:#a16207}.kpi-ic.gy{background:#eef0ed;color:#737a73}
+.shift-row{padding:12px 14px !important}
+.btn{border-radius:11px !important}
+.btn-pri{background:linear-gradient(135deg,var(--green),var(--green-d)) !important;box-shadow:0 4px 14px rgba(0,112,60,.22)}
+
+/* ==== Single-row header (แถบเดียวแบบดีไซน์) ==== */
+@media(min-width:641px){
+  .topbar{position:sticky;top:0;z-index:34;display:flex;align-items:center;gap:16px;padding:10px 22px !important;flex-wrap:nowrap}
+  .hamburger{display:none !important}
+  #tabbar{display:flex !important;flex:1 1 auto;min-width:0;position:static !important;transform:none !important;box-shadow:none !important;border:0 !important;padding:0 !important;background:transparent !important;overflow-x:auto;overflow-y:visible;gap:2px;height:auto;top:auto !important}
+  #tabbar::-webkit-scrollbar{height:0}
+  .htext{flex:none}
+  .topact{margin-left:auto;display:flex !important;align-items:center;gap:6px;flex:none}
+  .hicon{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--muted);padding:0;position:relative;cursor:pointer}
+  .hicon:hover{color:var(--txt);border-color:var(--line2);background:#fafbfa}
+  .hicon .ei{width:19px;height:19px}
+  #pushBtn.on{color:var(--green-d);border-color:var(--green)}
+  #pushBtn.on::after{content:"";position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--green);border:2px solid #fff}
+  .uchip{display:flex;align-items:center;gap:9px;padding:4px 12px 4px 5px;border:1px solid var(--line);border-radius:30px;margin-left:2px}
+  .uav{width:30px;height:30px;border-radius:50%;background:var(--green-soft);color:var(--green-d);display:grid;place-items:center;font-weight:600;font-size:13px;flex:none}
+  .uinfo{display:flex;flex-direction:column;line-height:1.15}
+  .uinfo b{font-size:13px;font-weight:600}.uinfo i{font-size:11px;color:var(--muted);font-style:normal}
+}
+@media(max-width:640px){ .uchip{display:none} }
 </style>
 </head>
 <body>
@@ -394,9 +436,10 @@
   </div>
   <div class="topact" id="topact" style="display:none">
     <span id="mgrBadge" style="display:none;font-size:13px;font-weight:600;color:#0369a1;background:#e0f2fe;padding:6px 12px;border-radius:999px"></span>
-    <button class="btn-ghost" id="pushBtn" title="แจ้งเตือนอุปกรณ์นี้"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg> แจ้งเตือน: ปิด</button>
-    <a class="btn-ghost" href="../" title="หน้าแรก" style="text-decoration:none"> หน้าแรก</a>
-    <button class="btn-ghost" id="logoutBtn">ออกจากระบบ</button>
+    <button class="hicon" id="pushBtn" title="แจ้งเตือน: ปิด"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg></button>
+    <a class="hicon" id="homeBtn" href="../" title="หน้าแรก"><svg class="ei" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg></a>
+    <button class="hicon" id="logoutBtn" title="ออกจากระบบ"><svg class="ei" viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></button>
+    <div class="uchip" id="uchip"><span class="uav">ฝ</span><span class="uinfo"><b>ฝ่ายบุคคล</b><i>สำนักงานใหญ่</i></span></div>
   </div>
 </div>
 
@@ -506,7 +549,7 @@
     <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> รับสมัครงาน</h3>
     <input id="rc_search" type="text" placeholder="ค้นหาชื่อ/เบอร์/ตำแหน่ง" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <select id="rc_position" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกตำแหน่ง</option></select>
-    <select id="rc_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสถานะ</option><option value="new">🆕 สมัครใหม่</option><option value="reviewing"><svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รอพิจารณา</option><option value="interview"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> นัดสัมภาษณ์</option><option value="hired"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน</option><option value="rejected"><svg class="ei" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> ไม่ผ่าน</option></select>
+    <select id="rc_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสถานะ</option><option value="new">สมัครใหม่</option><option value="reviewing"><svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รอพิจารณา</option><option value="interview"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> นัดสัมภาษณ์</option><option value="hired"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน</option><option value="rejected"><svg class="ei" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> ไม่ผ่าน</option></select>
     <select id="rc_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <label style="font-size:12px;color:var(--muted)">สมัคร:</label>
     <input id="rc_from" type="date" title="ตั้งแต่วันที่" style="padding:6px 8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
@@ -1382,9 +1425,9 @@
 <div id="view_schedule" class="container" style="display:none">
   <div class="filterbar">
     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-      <button class="btn btn-sec btn-sm" id="sc_prev">◀ ก่อนหน้า</button>
+      <button class="btn btn-sec btn-sm" id="sc_prev"><svg class="ei" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> ก่อนหน้า</button>
       <b id="sc_weeklabel" style="min-width:190px; text-align:center">—</b>
-      <button class="btn btn-sec btn-sm" id="sc_next">ถัดไป ▶</button>
+      <button class="btn btn-sec btn-sm" id="sc_next">ถัดไป <svg class="ei" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
       <button class="btn btn-sec btn-sm" id="sc_thisweek">สัปดาห์นี้</button>
       <span style="flex:1"></span>
       <button class="btn btn-sec btn-sm" id="sc_copy">⧉ คัดลอกสัปดาห์ก่อนมาวาง</button>
@@ -2718,10 +2761,10 @@ async function loadDashboard(){
       <span style="font-size:12px;color:var(--muted)">${sumRange}</span>
     </div>`;
   const scorecard = sumBar + `<div class="kpi-grid" style="margin-bottom:14px">
-      <div class="kpi ${punc<90?'warn':'ok'}"><div class="lbl">มาตรงเวลา ${sumScope}</div><div class="val">${punc}<span class="sm">%</span></div><div class="delta">${sWork} วัน-คน ที่ลงเวลา</div></div>
-      <div class="kpi ${sLateC?'bad':''}"><div class="lbl">มาสายรวม</div><div class="val">${sLateC}<span class="sm"> ครั้ง</span></div><div class="delta">${sLateM} นาที</div></div>
-      <div class="kpi ${sAbsent?'warn':''}"><div class="lbl">ขาด (ไม่มา/ไม่ลา)</div><div class="val">${sAbsent}<span class="sm"> วัน-คน</span></div></div>
-      ${MGR_MODE ? '' : `<div class="kpi"><div class="lbl">OT รวม ${sumScope}</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>`}
+      <div class="kpi ${punc<90?'warn':'ok'}"><div class="kpi-ic g"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div><div class="lbl">มาตรงเวลา ${sumScope}</div><div class="val">${punc}<span class="sm">%</span></div><div class="delta">${sWork} วัน-คน ที่ลงเวลา</div></div>
+      <div class="kpi ${sLateC?'bad':''}"><div class="kpi-ic o"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div><div class="lbl">มาสายรวม</div><div class="val">${sLateC}<span class="sm"> ครั้ง</span></div><div class="delta">${sLateM} นาที</div></div>
+      <div class="kpi ${sAbsent?'warn':''}"><div class="kpi-ic r"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg></div><div class="lbl">ขาด (ไม่มา/ไม่ลา)</div><div class="val">${sAbsent}<span class="sm"> วัน-คน</span></div></div>
+      ${MGR_MODE ? '' : `<div class="kpi"><div class="kpi-ic a"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div><div class="lbl">OT รวม ${sumScope}</div><div class="val">${sOT}<span class="sm"> ชม.</span></div></div>`}
     </div>`;
 
   // ★ โชว์เฉพาะคนที่ "ต้องทำอะไรจริง" รอบนี้ — ต้องดำเนินการ / ครบ 3 ใบ / มีเคสพิจารณา (ไม่โชว์ทุกคนที่คะแนนตกแบนด์)
@@ -2794,11 +2837,11 @@ async function loadDashboard(){
   $('dash_body').innerHTML = `
     ${_isToday?'':`<div style="background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;border-radius:11px;padding:9px 13px;margin-bottom:12px;font-size:13.5px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> กำลังดูข้อมูลย้อนหลัง: ${beDate(ddt)} — กดปุ่ม "วันนี้" เพื่อกลับสู่ปัจจุบัน</div>`}
     <div class="kpi-grid">
-      <div class="kpi" style="cursor:pointer" onclick="dashList('checked_in')"><div class="lbl">ลงเวลาแล้ว (${_dayLbl}) ›</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
-      <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="lbl">มาสาย (${_dayLbl}) ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
-      <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
-      ${(c.term_open>0) ? `<div class="kpi bad" style="cursor:pointer" onclick="showTab('terminate')"><div class="lbl">เคสพิจารณาเลิกจ้าง ›</div><div class="val">${c.term_open}<span class="sm"> เคส</span></div><div class="delta">${c.term_wait_hr?('รอ HR ตรวจสอบ '+c.term_wait_hr):'รอผู้มีอำนาจชี้ขาด'}</div></div>` : ''}
-      <div class="kpi"><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${beDate(c.cycle_start)}<br>ถึง ${beDate(c.cycle_end)}</div></div>
+      <div class="kpi" style="cursor:pointer" onclick="dashList('checked_in')"><div class="kpi-ic g"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div><div class="lbl">ลงเวลาแล้ว (${_dayLbl}) ›</div><div class="val">${c.checked_in}<span class="sm">/${c.total_emp}</span></div></div>
+      <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="kpi-ic o"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div><div class="lbl">มาสาย (${_dayLbl}) ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
+      <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="kpi-ic gy"><svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></svg></div><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
+      ${(c.term_open>0) ? `<div class="kpi bad" style="cursor:pointer" onclick="showTab('terminate')"><div class="kpi-ic r"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg></div><div class="lbl">เคสพิจารณาเลิกจ้าง ›</div><div class="val">${c.term_open}<span class="sm"> เคส</span></div><div class="delta">${c.term_wait_hr?('รอ HR ตรวจสอบ '+c.term_wait_hr):'รอผู้มีอำนาจชี้ขาด'}</div></div>` : ''}
+      <div class="kpi"><div class="kpi-ic g"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg></div><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${beDate(c.cycle_start)}<br>ถึง ${beDate(c.cycle_end)}</div></div>
     </div>
     ${scorecard}
     <div class="dash-grid">
@@ -6771,7 +6814,7 @@ function renderRdConfig(){
 // ========== รับสมัครงาน (Recruitment) ==========
 let RC_ROWS = [], RC_CUR = null;
 const RC_STAGES = [
-  { key:'new',       label:'🆕 สมัครใหม่',  color:'#0ea5e9' },
+  { key:'new',       label:'สมัครใหม่',  color:'#0ea5e9' },
   { key:'reviewing', label:'<svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รอพิจารณา',  color:'#a06515' },
   { key:'interview', label:'<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> นัดสัมภาษณ์', color:'#7c3aed' },
   { key:'hired',     label:'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน', color:'#16a34a' },
@@ -7026,7 +7069,7 @@ function mtSb(){ return (window.HR && window.HR.sb) ? window.HR.sb : null; }
 function mtUnsub(){ if(MT_CH){ try{ mtSb() && mtSb().removeChannel(MT_CH); }catch(e){} MT_CH=null; } }
 function mtBoardDebounced(){ clearTimeout(MT_BOARD_T); MT_BOARD_T=setTimeout(()=>{ const v=$('view_mgrtasks'); if(v && v.style.display!=='none') loadMtasks(); }, 800); }
 const MT_STAGES=[
-  {key:'todo',  label:'🆕 งานใหม่/ค้าง', color:'#0ea5e9'},
+  {key:'todo',  label:'งานใหม่/ค้าง', color:'#0ea5e9'},
   {key:'doing', label:'<svg class="ei" viewBox="0 0 24 24"><path d="M14 7a4 4 0 0 1 5 5l-8 8-3-3 8-8a4 4 0 0 1-2-2z"/></svg> กำลังทำ',       color:'#a06515'},
   {key:'review',label:'<svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> ใกล้เสร็จ',      color:'#7c3aed'},
   {key:'done',  label:'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> สำเร็จ',         color:'#16a34a'},
@@ -7620,7 +7663,7 @@ async function loadMdailyDefs(){
   if(!r.rows.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีรายการ</div>'; return; }
   MDD_ROWS=r.rows;
   box.innerHTML=r.rows.map((d,i)=>'<div style="display:flex;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'
-    +'<div style="display:flex;flex-direction:column;gap:1px"><button class="btn btn-sec btn-sm" style="padding:0 6px;line-height:1.4"'+(i===0?' disabled':'')+' data-mddup="'+i+'">▲</button><button class="btn btn-sec btn-sm" style="padding:0 6px;line-height:1.4"'+(i===r.rows.length-1?' disabled':'')+' data-mdddown="'+i+'">▼</button></div>'
+    +'<div style="display:flex;flex-direction:column;gap:1px"><button class="btn btn-sec btn-sm" style="padding:0 6px;line-height:1.4"'+(i===0?' disabled':'')+' data-mddup="'+i+'"><svg class="ei" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button class="btn btn-sec btn-sm" style="padding:0 6px;line-height:1.4"'+(i===r.rows.length-1?' disabled':'')+' data-mdddown="'+i+'"><svg class="ei" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>'
     +'<span style="flex:1;font-size:14px'+(d.active===false?';color:var(--muted);text-decoration:line-through':'')+'">'+esc(d.title)+(d.min_photos>0?' <span style="font-size:11px;color:var(--muted)"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>'+d.min_photos+'</span>':'')+'</span>'
     +'<button class="btn btn-sec btn-sm" data-mddtog="'+d.id+'">'+(d.active===false?'เปิด':'ปิด')+'</button>'
     +'<button class="btn btn-danger btn-sm" data-mdddel="'+d.id+'">ลบ</button></div>').join('');
@@ -8145,7 +8188,7 @@ function fixHeader(){
     bar.style.top=''; if(tabs) tabs.style.top='';
     return;
   }
-  document.body.classList.add('hdr-fixed');
+  document.body.classList.remove('hdr-fixed'); document.body.style.paddingTop=''; var _b=document.querySelector('.topbar'); if(_b)_b.style.top=''; return;
   const hs = stripe ? stripe.offsetHeight : 0;
   bar.style.top = hs+'px';
   let total = hs + bar.offsetHeight;
@@ -8158,6 +8201,7 @@ function fixHeader(){
 window.addEventListener('resize', fixHeader);
 window.addEventListener('load', fixHeader);
 setTimeout(fixHeader, 0);
+(function(){var b=document.querySelector('.topbar'),t=document.getElementById('tabbar'),a=document.getElementById('topact');if(b&&t&&a&&t.parentNode!==b){b.insertBefore(t,a);}})();
 
 // ---------- เมนูมือถือ (Drawer <svg class="ei" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>) ----------
 function toggleDrawer(open){
@@ -10703,15 +10747,15 @@ anSetKind('text');
 
 function anRenderImgs(){
   const box=$('an_imgthumbs'); if(!box) return;
-  $('an_imgcount').textContent = AN_IMGS.length ? ('แนบแล้ว '+AN_IMGS.length+' รูป · ลากจัดลำดับด้วยปุ่ม ◀ ▶') : 'ยังไม่มีรูป';
+  $('an_imgcount').textContent = AN_IMGS.length ? ('แนบแล้ว '+AN_IMGS.length+' รูป · ลากจัดลำดับด้วยปุ่ม <svg class="ei" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> <svg class="ei" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>') : 'ยังไม่มีรูป';
   box.innerHTML = AN_IMGS.map((u,i)=>
     '<div style="position:relative;width:110px">'
     +'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;display:block">'
     +'<div style="position:absolute;top:3px;left:3px;background:rgba(0,0,0,.6);color:#fff;border-radius:6px;padding:1px 6px;font-size:11px">'+(i+1)+'</div>'
     +'<button class="an_imgrm" data-i="'+i+'" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:13px;line-height:1;cursor:pointer">×</button>'
     +'<div style="display:flex;gap:4px;margin-top:4px">'
-      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="-1" style="flex:1"'+(i===0?' disabled':'')+'>◀</button>'
-      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="1" style="flex:1"'+(i===AN_IMGS.length-1?' disabled':'')+'>▶</button>'
+      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="-1" style="flex:1"'+(i===0?' disabled':'')+'><svg class="ei" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>'
+      +'<button class="btn btn-sec btn-sm an_imgmv" data-i="'+i+'" data-d="1" style="flex:1"'+(i===AN_IMGS.length-1?' disabled':'')+'><svg class="ei" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>'
     +'</div></div>').join('');
   box.querySelectorAll('.an_imgrm').forEach(b=>{ b.onclick=()=>{ AN_IMGS.splice(Number(b.dataset.i),1); anRenderImgs(); }; });
   box.querySelectorAll('.an_imgmv').forEach(b=>{ b.onclick=()=>{
@@ -11406,7 +11450,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   const btn = document.getElementById('pushBtn');
   if(!btn) return;
   const supported = ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
-  function setLabel(on){ btn.textContent = on ? 'แจ้งเตือน: เปิด' : 'แจ้งเตือน: ปิด'; btn.style.color = on ? 'var(--green-d)' : ''; }
+  function setLabel(on){ btn.title = on ? 'แจ้งเตือน: เปิด' : 'แจ้งเตือน: ปิด'; btn.classList.toggle('on', !!on); }
   function b64ToU8(base64){
     const pad='='.repeat((4-base64.length%4)%4);
     const s=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
