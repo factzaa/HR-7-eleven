@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -20,7 +20,7 @@
     --txt:#1b1f1c; --muted:#737a73; --mono:'IBM Plex Mono',monospace;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
-  body{font-family:'Anuphan',sans-serif; background:var(--bg); color:var(--txt); min-height:100dvh;}
+  body{font-family:'Kanit','Anuphan',sans-serif; background:var(--bg); color:var(--txt); min-height:100dvh;}
   button{font-family:inherit; cursor:pointer;}
   a{color:var(--green-d); text-decoration:none;} a:hover{text-decoration:underline;}
 
@@ -350,6 +350,31 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="HR 7-Eleven">
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<style id="ui-refresh">
+/* ===== UI Refresh · Modern SaaS skin (design only) ===== */
+.tabicon .tic{width:17px;height:17px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+.tabicon{display:inline-flex;align-items:center;margin-right:7px}
+.emblem{border-radius:12px;box-shadow:0 3px 10px rgba(0,0,0,.12)}
+.btn{border-radius:11px}
+.btn-pri{background:linear-gradient(135deg,var(--green),var(--green-d));box-shadow:0 4px 14px rgba(0,112,60,.24)}
+.card{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05)}
+.kpi{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.05)}
+.kpi .val{letter-spacing:-.4px}
+.search input{border-radius:12px}
+.pill{border-radius:999px}
+@media(min-width:641px){
+  .topbar{padding:11px 22px}
+  .tabs{padding:6px 14px;gap:4px}
+  .navgrp-btn{border-radius:10px;border-bottom:0 !important;padding:9px 13px}
+  .navgrp-btn:hover{background:#f2f5f2;color:var(--txt)}
+  .navgrp-btn.on{background:var(--green-soft);color:var(--green-d);border-bottom:0 !important}
+  .tab{border-radius:9px;border-bottom:0 !important}
+  .tab:hover{background:#f5f7f5}
+  .tab.active{border-bottom:0 !important;background:var(--green-soft);color:var(--green-d)}
+  .navgrp-menu{border-radius:14px;border:1px solid var(--line);box-shadow:0 16px 40px rgba(17,24,39,.14);padding:7px}
+  .navgrp-menu .tab{border-radius:9px}
+}
+</style>
 </head>
 <body>
 <div class="stripe"><i class="g"></i><i class="o"></i><i class="r"></i></div>
@@ -370,35 +395,35 @@
 
 <div class="drawer-ov" id="drawerOv"></div>
 <div class="tabs" id="tabbar" style="display:none">
-  <button class="tab" id="tab_mgrtasks"><span class="tabicon">📌</span>งาน ผจก.</button>
-  <button class="tab active" id="tab_dashboard"><span class="tabicon">📊</span>Dashboard</button>
-  <button class="tab" id="tab_board"><span class="tabicon">🗒️</span>บอร์ดวันนี้</button>
-  <button class="tab" id="tab_employees"><span class="tabicon">👥</span>พนักงาน</button>
-  <button class="tab" id="tab_recruit"><span class="tabicon">🧑‍💼</span>รับสมัครงาน</button>
-  <button class="tab" id="tab_mgrdailyrev"><span class="tabicon">📋</span>ตรวจงานประจำวัน</button>
-  <button class="tab" id="tab_report"><span class="tabicon">📋</span>รายงาน</button>
-  <button class="tab" id="tab_discipline"><span class="tabicon">⚠️</span>วินัย & ใบเตือน</button>
-  <button class="tab" id="tab_score"><span class="tabicon">🎯</span>คะแนนวินัย</button>
-  <button class="tab" id="tab_terminate"><span class="tabicon">⛔</span>พิจารณาเลิกจ้าง</button>
-  <button class="tab" id="tab_advance"><span class="tabicon">💵</span>เบิกเงินล่วงหน้า</button>
-  <button class="tab" id="tab_payroll"><span class="tabicon">💰</span>เงินเดือน</button>
-  <button class="tab" id="tab_rider"><span class="tabicon">🏍️</span>เบิกซ่อมรถ (ไรเดอร์)</button>
-  <button class="tab" id="tab_empsum"><span class="tabicon">📄</span>สรุปรายบุคคล</button>
-  <button class="tab" id="tab_mgreval"><span class="tabicon">🏅</span>ประเมิน ผจก.</button>
-  <button class="tab" id="tab_analytics"><span class="tabicon">📈</span>วิเคราะห์</button>
-  <button class="tab" id="tab_handover"><span class="tabicon">🔄</span>ส่ง/รับผลัด</button>
-  <button class="tab" id="tab_special"><span class="tabicon">⭐</span>งานพิเศษ</button>
-  <button class="tab" id="tab_qa"><span class="tabicon">🗓️</span>QA สินค้า</button>
-  <button class="tab" id="tab_shelf"><span class="tabicon">🗄️</span>เชลฟ์ประจำเดือน</button>
-  <button class="tab" id="tab_leaves"><span class="tabicon">🏖️</span>ลา & วันหยุด</button>
-  <button class="tab" id="tab_schedule"><span class="tabicon">🗓️</span>ตารางงาน</button>
-  <button class="tab" id="tab_branches"><span class="tabicon">🏪</span>สาขา</button>
-  <button class="tab" id="tab_goods"><span class="tabicon">🎁</span>รับสินค้า</button>
-  <button class="tab" id="tab_poster"><span class="tabicon">🖼️</span>สร้างสื่อ</button>
-  <button class="tab" id="tab_settings"><span class="tabicon">⚙️</span>ตั้งค่ากะ</button>
-  <button class="tab" id="tab_submissions"><span class="tabicon">📥</span>ข้อมูลรอตรวจ</button>
-  <button class="tab" id="tab_activity"><span class="tabicon">🕘</span>บันทึกกิจกรรม</button>
-  <button class="tab" id="tab_notifylog"><span class="tabicon">📢</span>ประกาศ &amp; แจ้งเตือน</button>
+  <button class="tab" id="tab_mgrtasks"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 17v4"/></svg></span>งาน ผจก.</button>
+  <button class="tab active" id="tab_dashboard"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span>Dashboard</button>
+  <button class="tab" id="tab_board"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg></span>บอร์ดวันนี้</button>
+  <button class="tab" id="tab_employees"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg></span>พนักงาน</button>
+  <button class="tab" id="tab_recruit"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M4 20a6 6 0 0 1 12 0"/><path d="M19 8v6M16 11h6"/></svg></span>รับสมัครงาน</button>
+  <button class="tab" id="tab_mgrdailyrev"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg></span>ตรวจงานประจำวัน</button>
+  <button class="tab" id="tab_report"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg></span>รายงาน</button>
+  <button class="tab" id="tab_discipline"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg></span>วินัย & ใบเตือน</button>
+  <button class="tab" id="tab_score"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/></svg></span>คะแนนวินัย</button>
+  <button class="tab" id="tab_terminate"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></span>พิจารณาเลิกจ้าง</button>
+  <button class="tab" id="tab_advance"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.4"/></svg></span>เบิกเงินล่วงหน้า</button>
+  <button class="tab" id="tab_payroll"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg></span>เงินเดือน</button>
+  <button class="tab" id="tab_rider"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg></span>เบิกซ่อมรถ (ไรเดอร์)</button>
+  <button class="tab" id="tab_empsum"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>สรุปรายบุคคล</button>
+  <button class="tab" id="tab_mgreval"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M9 13l-1.5 8 4.5-3 4.5 3-1.5-8"/></svg></span>ประเมิน ผจก.</button>
+  <button class="tab" id="tab_analytics"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg></span>วิเคราะห์</button>
+  <button class="tab" id="tab_handover"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 8l4-4 4 4M8 4v9"/><path d="M20 16l-4 4-4-4M16 20v-9"/></svg></span>ส่ง/รับผลัด</button>
+  <button class="tab" id="tab_special"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg></span>งานพิเศษ</button>
+  <button class="tab" id="tab_qa"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3l2.3 1.7 2.8-.2 1 2.7 2.4 1.5-.9 2.7.9 2.7-2.4 1.5-1 2.7-2.8-.2L12 21l-2.3-1.7-2.8.2-1-2.7L3.5 15l.9-2.7-.9-2.7 2.4-1.5 1-2.7 2.8.2z"/><path d="M9 12l2 2 4-4"/></svg></span>QA สินค้า</button>
+  <button class="tab" id="tab_shelf"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg></span>เชลฟ์ประจำเดือน</button>
+  <button class="tab" id="tab_leaves"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9z"/><path d="M12 12v7a2 2 0 0 0 4 0"/></svg></span>ลา & วันหยุด</button>
+  <button class="tab" id="tab_schedule"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span>ตารางงาน</button>
+  <button class="tab" id="tab_branches"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg></span>สาขา</button>
+  <button class="tab" id="tab_goods"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8v13"/><path d="M12 8S10.5 4 8.5 4a2 2 0 0 0 0 4zM12 8s1.5-4 3.5-4a2 2 0 0 1 0 4z"/></svg></span>รับสินค้า</button>
+  <button class="tab" id="tab_poster"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg></span>สร้างสื่อ</button>
+  <button class="tab" id="tab_settings"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg></span>ตั้งค่ากะ</button>
+  <button class="tab" id="tab_submissions"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M4 13V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7"/><path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg></span>ข้อมูลรอตรวจ</button>
+  <button class="tab" id="tab_activity"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></span>บันทึกกิจกรรม</button>
+  <button class="tab" id="tab_notifylog"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l9 5V5L6 10H4a1 1 0 0 0-1 1z"/><path d="M18 9a3 3 0 0 1 0 6"/></svg></span>ประกาศ &amp; แจ้งเตือน</button>
 </div>
 
 <div class="login" id="loginView">
@@ -8011,14 +8036,14 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
 const NAV_GROUPS=[
-  { icon:'📊', label:'ภาพรวม',     tabs:['dashboard','board','analytics'] },
-  { icon:'👥', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
-  { icon:'✅', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
-  { icon:'🕒', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
-  { icon:'⚠️', label:'วินัย',       tabs:['discipline','score','terminate'] },
-  { icon:'💵', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'🧾', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
-  { icon:'🏍️', label:'ไรเดอร์',     tabs:['rider'] },
-  { icon:'⚙️', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','board','analytics'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg>', label:'ไรเดอร์',     tabs:['rider'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg>', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
 function updateNavActive(name){ document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{ if(NAV_GROUPS[i]) b.classList.toggle('on', NAV_GROUPS[i].tabs.includes(name)); }); }
@@ -11439,15 +11464,14 @@ html,body{max-width:100%;overflow-x:hidden;}
 #chatFab{position:fixed;right:18px;bottom:104px;width:56px;height:56px;border-radius:50%;background:#0369a1;color:#fff;border:0;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:860;font-size:24px;display:none;-webkit-tap-highlight-color:transparent}
 body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่มีปุ่มนิดา → ลงมาอยู่มุมล่างปกติ */
 @media(max-width:640px){ #chatFab{right:14px;width:52px;height:52px;font-size:22px;} }
-#asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 8px 16px rgba(0,0,0,.28));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
+#asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 12px 24px rgba(96,72,190,.32)) drop-shadow(0 4px 9px rgba(0,0,0,.16));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
 body.is-logged #asstFab{display:block}
 body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
 body.mgr-mode #adv_keybtn{display:none !important}   /* คีย์เบิกให้พนักงาน = เฉพาะ HR */
 body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหัส/สาขา = เฉพาะ HR */
 #asstFab img{width:100%;height:100%;object-fit:contain;pointer-events:none;position:relative;z-index:2}
 #asstFab .fbadge{position:absolute;top:2px;right:0;z-index:3;background:#ea580c;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
-#asstFab::before,#asstFab::after{content:"";position:absolute;left:50%;top:56%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;border:3px solid rgba(16,163,74,.6);z-index:0;pointer-events:none;animation:asstRing 2.4s ease-out infinite}
-#asstFab::after{animation-delay:1.2s}
+#asstFab::before,#asstFab::after{content:none;}
 #asstFab.dragging::before,#asstFab.dragging::after{display:none}
 @keyframes asstRing{0%{transform:scale(.5);opacity:.75}70%{opacity:.18}100%{transform:scale(1.85);opacity:0}}
 #asstFab.dragging{animation:none;cursor:grabbing}
@@ -11469,7 +11493,7 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
 #asstPop .prow .btn{white-space:nowrap}
 @media(max-width:640px){#asstPop{right:8px;left:8px;width:auto;bottom:104px;height:74vh}#asstFab{width:74px;height:74px;right:14px;bottom:14px}}
 </style>
-<button id="asstFab" aria-label="ผู้ช่วย AI น้องนิดา"><img src="./assistant-mascot.png" alt="ผู้ช่วย AI"><span class="fbadge">AI</span></button>
+<button id="asstFab" aria-label="ผู้ช่วย AI น้องนิดา"><img src="../icons/nida-orb.webp" alt="ผู้ช่วย AI"><span class="fbadge">AI</span></button>
 <div id="asstPop">
   <div class="ph"><img src="./assistant-mascot.png" alt=""><div class="nm">น้องนิดา<small>ผู้ช่วย AI · ฝ่ายบุคคล</small></div><button id="asst_clear" title="ล้างแชท">🗑</button><button id="asstClose" title="ปิด">✕</button></div>
   <div class="pb">
