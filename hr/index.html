@@ -11709,15 +11709,190 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
 (function initAsstFab(){
   const fab=document.getElementById('asstFab'), pop=document.getElementById('asstPop'); if(!fab||!pop) return;
   const g=id=>document.getElementById(id);
-  if(g('asst_voice')) g('asst_voice').onclick=()=>{ if(typeof toast==='function') toast('ok','โหมดสนทนาเสียงเรียลไทม์กำลังพัฒนา (เฟส 2) — เร็ว ๆ นี้'); };
+  if(g('asst_voice')) g('asst_voice').onclick=()=>{ if(window.NIDALive){ pop.classList.remove('open'); window.NIDALive.start(); } };
   let sx,sy,ox,oy,moved=false,dragging=false;
   function openPop(){ pop.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); setTimeout(()=>{ const i=g('asst_in'); if(i) i.focus(); },60); }
   function closePop(){ pop.classList.remove('open'); }
   fab.addEventListener('pointerdown',e=>{ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; const r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
   fab.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; fab.classList.add('dragging'); } if(moved){ let nx=ox+dx, ny=oy+dy; nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4,nx)); ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4,ny)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; } });
-  fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ pop.classList.contains('open')?closePop():openPop(); } });
+  fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ if(pop.classList.contains('open')){ closePop(); } else if(window.NIDALive){ window.NIDALive.start(); } else { openPop(); } } });
   const cl=g('asstClose'); if(cl) cl.onclick=closePop;
 })();
 </script>
+<script>
+/* ═══════════ น้องนิดา — เสียงเรียลไทม์ (Gemini Live) · เฟส 2+3 ═══════════
+   ต่อผ่าน ephemeral token (มินต์ที่ edge hr-assistant?mode=live_token)
+   คุมค่าใช้จ่าย: เงียบ 15 วิ = ตัดสาย · เพดาน 5 นาที/สาย
+   เฟส 3: Live เรียก tool ask_nida → พร็อกซีเข้าสมองนิดาข้อความเดิม (เครื่องมือ HR ครบ) */
+window.NIDALive=(function(){
+  const SILENCE_MS=15000, MAX_MS=5*60*1000, VAD=0.012;
+  const SDK='https://esm.sh/@google/genai@1';
+  let session=null,micStream=null,micCtx=null,outCtx=null,proc=null,srcNode=null;
+  let playHead=0,speaking=false,level=0,lastVoice=0,startedAt=0,tick=null,raf=null,ov=null,busy=false;
+  function curPwd(){ try{ return (typeof pwd!=='undefined'&&pwd)?pwd:''; }catch(_e){ return ''; } }
+  function base(){ const c=window.SUPABASE_CONFIG||{}; return {url:String(c.url||'').replace(/\/$/,''),key:c.anonKey||''}; }
+  function b64FromBytes(u8){ let s=''; for(let i=0;i<u8.length;i+=0x8000){ s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); } return btoa(s); }
+  function bytesFromB64(b64){ const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8; }
+
+  function buildUI(){
+    if(ov) return ov;
+    const s=document.createElement('style'); s.textContent=`
+      #nidaVoice{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(10,14,20,.55);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+      #nidaVoice.on{display:flex}
+      #nidaVoice .vcard{width:min(360px,92vw);background:rgba(20,24,32,.74);border:1px solid rgba(255,255,255,.14);border-radius:26px;padding:26px 22px;text-align:center;color:#fff;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+      #nidaVoice .vorb{width:104px;height:104px;border-radius:50%;margin:2px auto 14px;object-fit:cover;display:block;animation:nvpulse 2s ease-in-out infinite}
+      @keyframes nvpulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,.45)}50%{box-shadow:0 0 0 16px rgba(124,58,237,0)}}
+      #nidaVoice .vst{font-size:15px;font-weight:600;margin-bottom:4px}
+      #nidaVoice .vsub{font-size:12.5px;opacity:.72;margin-bottom:16px;min-height:16px}
+      #nidaVoice .vwave{display:flex;gap:4px;align-items:center;justify-content:center;height:46px;margin-bottom:20px}
+      #nidaVoice .vwave i{width:5px;border-radius:4px;background:linear-gradient(180deg,#a78bfa,#3b82f6);height:8px}
+      #nidaVoice .vbtns{display:flex;gap:10px;justify-content:center}
+      #nidaVoice button{border:0;border-radius:14px;padding:12px 18px;font:inherit;font-weight:600;cursor:pointer}
+      #nidaVoice .vend{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;flex:1}
+      #nidaVoice .vtype{background:rgba(255,255,255,.15);color:#fff}
+    `;
+    document.head.appendChild(s);
+    ov=document.createElement('div'); ov.id='nidaVoice';
+    ov.innerHTML='<div class="vcard"><img class="vorb" src="../icons/nida-orb.webp" alt="">'
+      +'<div class="vst" id="nv_st">กำลังเชื่อมต่อ…</div><div class="vsub" id="nv_sub">พูดได้เลย นิดาฟังอยู่</div>'
+      +'<div class="vwave" id="nv_wave">'+'<i></i>'.repeat(11)+'</div>'
+      +'<div class="vbtns"><button class="vtype" id="nv_type">พิมพ์แทน</button><button class="vend" id="nv_end">วางสาย</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#nv_end').onclick=()=>stop('วางสายแล้ว');
+    ov.querySelector('#nv_type').onclick=()=>{ stop(); const p=document.getElementById('asstPop'); if(p){ p.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); } };
+    return ov;
+  }
+  function setStatus(a,b){ const st=document.getElementById('nv_st'),sb=document.getElementById('nv_sub'); if(st&&a!=null)st.textContent=a; if(sb&&b!=null)sb.textContent=b; }
+  function drawWave(){
+    raf=requestAnimationFrame(drawWave);
+    const bars=ov?ov.querySelectorAll('#nv_wave i'):[]; if(!bars.length) return;
+    const amp=speaking?(0.55+Math.random()*0.45):Math.min(1,level*14);
+    bars.forEach((b,i)=>{ const mid=Math.abs(i-(bars.length-1)/2)/((bars.length-1)/2); const h=8+(1-mid*0.7)*amp*38*(0.7+Math.random()*0.6); b.style.height=Math.max(8,Math.min(46,h))+'px'; });
+  }
+
+  async function mintToken(){
+    const {url,key}=base(); if(!url) throw new Error('ไม่พบ SUPABASE_CONFIG');
+    const r=await fetch(url+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:curPwd(),mode:'live_token'})});
+    const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||('HTTP '+r.status)); return j;
+  }
+  async function askNida(question){
+    const {url,key}=base();
+    try{
+      const r=await fetch(url+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:curPwd(),messages:[{role:'user',text:String(question||'')}]})});
+      const j=await r.json(); return String((j&&(j.reply||j.error))||'ไม่พบข้อมูล');
+    }catch(e){ return 'ดึงข้อมูลไม่สำเร็จ: '+e; }
+  }
+
+  function playChunk(b64){
+    if(!outCtx) return;
+    const u8=bytesFromB64(b64); const i16=new Int16Array(u8.buffer,u8.byteOffset,Math.floor(u8.byteLength/2));
+    const f32=new Float32Array(i16.length); for(let i=0;i<i16.length;i++) f32[i]=i16[i]/32768;
+    const buf=outCtx.createBuffer(1,f32.length,24000); buf.getChannelData(0).set(f32);
+    const snode=outCtx.createBufferSource(); snode.buffer=buf; snode.connect(outCtx.destination);
+    const t=Math.max(outCtx.currentTime,playHead); snode.start(t); playHead=t+buf.duration; speaking=true; lastVoice=Date.now();
+    snode.onended=()=>{ if(playHead<=outCtx.currentTime+0.03) speaking=false; };
+  }
+  function stopPlayback(){ playHead=0; speaking=false; }
+
+  async function start(){
+    if(busy||session) return; busy=true;
+    buildUI(); ov.classList.add('on'); setStatus('กำลังเชื่อมต่อ…','เตรียมไมโครโฟน'); if(!raf) drawWave();
+    try{
+      const GK=await import(SDK);
+      const tk=await mintToken();
+      micStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
+      const ai=new GK.GoogleGenAI({apiKey:tk.token,httpOptions:{apiVersion:tk.apiVersion||'v1alpha'}});
+      const tools=[{functionDeclarations:[{name:'ask_nida',description:'ค้นและวิเคราะห์ข้อมูล HR ทั้งหมด (พนักงาน วันทำงาน มาสาย/ขาด เงินเดือน วินัย/ใบเตือน ใบลา สาขา คลัง ไรเดอร์ ฯลฯ) ใช้ทุกครั้งที่ผู้ใช้ถามข้อมูลจริง ห้ามเดาเอง',parameters:{type:'object',properties:{question:{type:'string',description:'คำถามภาษาไทยที่จะส่งให้ระบบค้นข้อมูล'}},required:['question']}}]}];
+      session=await ai.live.connect({
+        model:tk.model,
+        config:{
+          responseModalities:[GK.Modality?GK.Modality.AUDIO:'AUDIO'],
+          systemInstruction:{parts:[{text:'คุณคือ "น้องนิดา" ผู้ช่วยฝ่ายบุคคลของ 7-Eleven พูดภาษาไทย สุภาพ เป็นกันเอง กระชับ เมื่อผู้ใช้ถามข้อมูลพนักงาน วันทำงาน เงินเดือน วินัย ใบลา หรือข้อมูลใด ๆ ในระบบ ให้เรียกเครื่องมือ ask_nida เสมอ แล้วสรุปคำตอบด้วยเสียงสั้น ๆ ห้ามเดาข้อมูลเอง ถ้าไม่พบข้อมูลให้บอกตรง ๆ ตอบเป็นภาษาไทยเท่านั้น'}]},
+          tools
+        },
+        callbacks:{
+          onopen:()=>{ setStatus('กำลังฟัง…','พูดได้เลยค่ะ'); startMic(); startedAt=Date.now(); lastVoice=Date.now(); startGuards(); },
+          onmessage:onMsg,
+          onerror:(e)=>{ console.error('[NIDALive] ws error',e); stop('การเชื่อมต่อมีปัญหา'); },
+          onclose:(e)=>{ console.warn('[NIDALive] closed',e&&e.reason); }
+        }
+      });
+    }catch(e){
+      console.error('[NIDALive] start failed',e); busy=false; stop();
+      if(typeof toast==='function') toast('err','เริ่มสนทนาเสียงไม่สำเร็จ: '+(e&&e.message||e));
+      const p=document.getElementById('asstPop'); if(p){ p.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); }
+      return;
+    }
+    busy=false;
+  }
+
+  function startMic(){
+    micCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+    outCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});
+    srcNode=micCtx.createMediaStreamSource(micStream);
+    proc=micCtx.createScriptProcessor(4096,1,1);
+    proc.onaudioprocess=(e)=>{
+      if(!session) return;
+      const f32=e.inputBuffer.getChannelData(0);
+      let sum=0; for(let i=0;i<f32.length;i++) sum+=f32[i]*f32[i];
+      level=Math.sqrt(sum/f32.length); if(level>VAD) lastVoice=Date.now();
+      const i16=new Int16Array(f32.length);
+      for(let i=0;i<f32.length;i++){ let v=Math.max(-1,Math.min(1,f32[i])); i16[i]=v<0?v*0x8000:v*0x7fff; }
+      try{ session.sendRealtimeInput({audio:{data:b64FromBytes(new Uint8Array(i16.buffer)),mimeType:'audio/pcm;rate=16000'}}); }catch(_e){}
+    };
+    srcNode.connect(proc); proc.connect(micCtx.destination);
+  }
+
+  function onMsg(msg){
+    try{
+      if(msg.serverContent&&msg.serverContent.interrupted) stopPlayback();
+      const parts=msg.serverContent&&msg.serverContent.modelTurn&&msg.serverContent.modelTurn.parts;
+      if(parts) for(const p of parts){ const d=p.inlineData&&p.inlineData.data; if(d) playChunk(d); }
+      if(msg.data) playChunk(msg.data);
+      if(msg.toolCall&&Array.isArray(msg.toolCall.functionCalls)){
+        setStatus('นิดากำลังค้นข้อมูล…',null);
+        (async()=>{
+          const responses=[];
+          for(const fc of msg.toolCall.functionCalls){
+            let result='ไม่มีเครื่องมือนี้';
+            if(fc.name==='ask_nida') result=await askNida(fc.args&&fc.args.question);
+            responses.push({id:fc.id,name:fc.name,response:{result}});
+          }
+          try{ session.sendToolResponse({functionResponses:responses}); }catch(_e){}
+          setStatus('กำลังฟัง…',null);
+        })();
+      }
+    }catch(e){ console.error('[NIDALive] msg',e); }
+  }
+
+  function startGuards(){
+    clearInterval(tick);
+    tick=setInterval(()=>{
+      const idle=Date.now()-lastVoice;
+      if(!speaking&&idle>SILENCE_MS){ stop('เงียบเกิน 15 วิ — ตัดสายอัตโนมัติ'); return; }
+      if(Date.now()-startedAt>MAX_MS){ stop('ครบเวลาสูงสุด 5 นาที'); return; }
+      if(speaking) setStatus('นิดากำลังพูด…',null);
+      else setStatus('กำลังฟัง…','จะตัดสายใน '+Math.max(0,Math.ceil((SILENCE_MS-idle)/1000))+' วิ ถ้าเงียบ');
+    },1000);
+  }
+
+  function stop(reason){
+    clearInterval(tick); tick=null;
+    try{ if(proc){ proc.disconnect(); proc.onaudioprocess=null; } }catch(_e){}
+    try{ if(srcNode) srcNode.disconnect(); }catch(_e){}
+    try{ if(micStream) micStream.getTracks().forEach(t=>t.stop()); }catch(_e){}
+    try{ if(micCtx) micCtx.close(); }catch(_e){}
+    try{ if(outCtx) outCtx.close(); }catch(_e){}
+    try{ if(session) session.close(); }catch(_e){}
+    session=null; micStream=null; micCtx=null; outCtx=null; proc=null; srcNode=null; playHead=0; speaking=false; level=0; busy=false;
+    if(raf){ cancelAnimationFrame(raf); raf=null; }
+    if(ov) ov.classList.remove('on');
+    if(reason&&typeof toast==='function') toast('ok',reason);
+  }
+
+  return {start,stop};
+})();
+</script>
+
 </body>
 </html>

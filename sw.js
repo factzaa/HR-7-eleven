@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v3';       // ★ ขึ้นเวอร์ชัน = ล้าง cache เก่าที่ทำให้หน้า ผจก. เด้งเป็นหน้า HR
+const CACHE = 'hr7-eleven-v5';       // ★ ขึ้นเวอร์ชัน = ล้าง cache เก่า (v5: แชทนิดาโฉมใหม่ + เสียงเรียลไทม์ Gemini Live)
 const ASSETS = [
   './',
   './index.html',
@@ -75,7 +75,11 @@ self.addEventListener('fetch', (e) => {
 
   e.respondWith((async () => {
     try {
-      const res = await fetch(req);
+      // ★ บังคับ revalidate กับเซิร์ฟเวอร์ (ไม่ใช้ HTTP cache ของเบราว์เซอร์) — กันมือถือได้ไฟล์เก่าค้าง
+      //   ถ้าไฟล์ไม่เปลี่ยน เซิร์ฟเวอร์ตอบ 304 (เบา) · ถ้าเปลี่ยนได้ไฟล์ใหม่ทันที
+      let res;
+      try { res = await fetch(new Request(req, { cache: 'no-cache' })); }
+      catch (_e) { res = await fetch(req, { cache: 'no-cache' }); }
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(req, copy));
       return res;
