@@ -42,13 +42,16 @@
   .note.err{background:#fee2e2;border:1px solid #fca5a5;color:#7f1d1d}
   .doc .old{font-size:11.5px;color:var(--muted);display:block;margin-top:6px}
 </style>
+<style>.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
+</style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
     <img src="../icons/icon-192.png" alt="7-11">
     <h1>กรอกข้อมูลพนักงาน</h1>
-    <a class="home" href="../">🏠 หน้าแรก</a>
+    <a class="home" href="../"> หน้าแรก</a>
   </div>
 
   <div class="card" id="step1">
@@ -107,7 +110,7 @@
   </div>
 
   <div class="card done" id="done" style="display:none">
-    <div class="big">✅</div>
+    <div class="big"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg></div>
     <h2 style="font-size:18px;margin:8px 0">ส่งข้อมูลเรียบร้อย</h2>
     <p style="color:var(--muted)">รอผู้จัดการตรวจสอบและอนุมัติ ขอบคุณครับ</p>
     <a class="home" style="display:inline-block;margin-top:14px" href="../">กลับหน้าแรก</a>
@@ -163,13 +166,13 @@ $('checkBtn').onclick = async ()=>{
     if(note){
       if(r.pending){
         note.style.display='block'; note.className='note warn';
-        note.textContent = '⏳ คุณมีข้อมูลที่ส่งไปแล้วและกำลังรอผู้จัดการตรวจสอบ — ด้านล่างคือข้อมูลชุดนั้น แก้ไขแล้วส่งใหม่ได้';
+        note.textContent = 'คุณมีข้อมูลที่ส่งไปแล้วและกำลังรอผู้จัดการตรวจสอบ — ด้านล่างคือข้อมูลชุดนั้น แก้ไขแล้วส่งใหม่ได้';
       } else if(r.last_status==='rejected'){
         note.style.display='block'; note.className='note err';
-        note.textContent = '❌ ข้อมูลชุดก่อนไม่ผ่านการตรวจสอบ' + (r.reject_note?(' — '+r.reject_note):'') + ' กรุณาแก้ไขแล้วส่งใหม่';
+        note.textContent = 'ข้อมูลชุดก่อนไม่ผ่านการตรวจสอบ' + (r.reject_note?(' — '+r.reject_note):'') + ' กรุณาแก้ไขแล้วส่งใหม่';
       } else if(r.last_status==='approved'){
         note.style.display='block'; note.className='note ok';
-        note.textContent = '✅ ข้อมูลของคุณได้รับการอนุมัติแล้ว — ด้านล่างคือข้อมูลปัจจุบัน หากมีอะไรเปลี่ยนแปลง แก้แล้วส่งใหม่ได้';
+        note.textContent = 'ข้อมูลของคุณได้รับการอนุมัติแล้ว — ด้านล่างคือข้อมูลปัจจุบัน หากมีอะไรเปลี่ยนแปลง แก้แล้วส่งใหม่ได้';
       } else {
         note.style.display='none';
       }

@@ -47,6 +47,8 @@
   @keyframes sp{to{transform:rotate(360deg)}}
 </style>
 <style id="ui-refresh">
+.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
 .card{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05)}
 .btn{border-radius:11px}
 .btn-pri{background:linear-gradient(135deg,#00703c,#00582f);box-shadow:0 4px 14px rgba(0,112,60,.22)}
@@ -56,7 +58,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><span class="ic">🗄️</span><h1>ดูแลเชลฟ์ประจำเดือน</h1><a class="home" href="../">🏠 หน้าแรก</a></div>
+  <div class="top"><span class="ic"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><h1>ดูแลเชลฟ์ประจำเดือน</h1><a class="home" href="../"> หน้าแรก</a></div>
   <div class="body">
 
     <!-- step_id -->
@@ -82,7 +84,7 @@
       <div class="who"><div><div class="nm" id="c_title">—</div><div class="sub" id="c_sub"></div></div><span class="ch" id="c_back">‹ เชลฟ์</span></div>
 
       <div class="card" id="c_detail_card" style="display:none">
-        <div style="font-weight:600;font-size:13px;color:var(--green-d);margin-bottom:4px">📋 รายละเอียดงานที่ได้รับมอบหมาย</div>
+        <div style="font-weight:600;font-size:13px;color:var(--green-d);margin-bottom:4px"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> รายละเอียดงานที่ได้รับมอบหมาย</div>
         <div class="muted" id="c_detail" style="white-space:pre-wrap"></div>
       </div>
 
@@ -93,15 +95,15 @@
       <textarea id="c_note" placeholder="เช่น พบสินค้าใกล้หมดอายุ 3 รายการ"></textarea>
 
       <label style="margin-top:12px">รูปถ่ายหลักฐาน * (ถ่ายได้หลายรูป)</label>
-      <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block;width:auto">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="c_photo" style="display:none"></label>
+      <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block;width:auto"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="c_photo" style="display:none"></label>
       <div class="thumbs" id="c_thumbs" style="margin:8px 0"></div>
 
       <div style="height:4px"></div>
       <button class="btn btn-pri" id="c_save">บันทึกการดูแลวันนี้</button>
 
       <h3 class="sec">พบสินค้าใกล้หมดอายุ — บันทึกเข้าระบบ QA</h3>
-      <button class="btn btn-danger btn-sm" id="c_qa_removed" style="margin-bottom:8px">🗑️ ใกล้หมดอายุ 1–2 เดือน · เก็บออก (ต้องถ่ายรูป+จำนวน)</button>
-      <button class="btn btn-warn btn-sm" id="c_qa_watch">👀 ใกล้หมดอายุ ~4 เดือน · เฝ้าระวัง</button>
+      <button class="btn btn-danger btn-sm" id="c_qa_removed" style="margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ใกล้หมดอายุ 1–2 เดือน · เก็บออก (ต้องถ่ายรูป+จำนวน)</button>
+      <button class="btn btn-warn btn-sm" id="c_qa_watch"> ใกล้หมดอายุ ~4 เดือน · เฝ้าระวัง</button>
       <div class="muted" style="margin-top:8px">ปุ่มจะเปิดหน้า QA พร้อมข้อมูลเชลฟ์นี้ให้อัตโนมัติ และมีปุ่มกลับมาหน้านี้</div>
     </div>
 
@@ -175,14 +177,14 @@ async function loadShelves(){
     let pill;
     if(st==='sent_back') pill='<span class="pill bad">✗ ถูกตีกลับ — แก้ไข</span>';
     else if(st==='approved') pill='<span class="pill ok">✓ ผ่านแล้ว</span>';
-    else if(tc) pill='<span class="pill warn">⏳ ส่งแล้ว รอตรวจ</span>';
+    else if(tc) pill='<span class="pill warn"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3c0 4 5 5 5 9s-5 5-5 9M17 3c0 4-5 5-5 9s5 5 5 9"/></svg> ส่งแล้ว รอตรวจ</span>';
     else pill='<span class="pill warn">ยังไม่ได้ตรวจ</span>';
     const sbNote=(st==='sent_back'&&tc.review_note)?'<div style="margin-top:4px;font-size:13px;color:#b91c1c">↳ สั่งแก้: '+esc(tc.review_note)+'</div>':'';
     return '<div class="scard'+(st==='sent_back'?' sentback':'')+'" data-sid="'+s.shelf_id+'">'
-      +'<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-weight:700;font-size:15px">🗄️ '+esc(s.name)+(s.shelf_code?(' <span class="muted">['+esc(s.shelf_code)+']</span>'):'')+'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-weight:700;font-size:15px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '+esc(s.name)+(s.shelf_code?(' <span class="muted">['+esc(s.shelf_code)+']</span>'):'')+'</div>'
       +pill+'</div>'
       +'<div class="muted" style="margin-top:3px">สาขา '+esc(branchName(s.branch_id))+'</div>'
-      +(s.detail?'<div class="muted" style="margin-top:3px">📋 '+esc(s.detail)+'</div>':'')
+      +(s.detail?'<div class="muted" style="margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> '+esc(s.detail)+'</div>':'')
       +sbNote
       +'</div>';
   }).join('');
@@ -198,7 +200,7 @@ function openShelf(s){
   const prev={}; if(tc&&Array.isArray(tc.items)) tc.items.forEach(it=>{ prev[it.label]=!!it.done; });
   STATE=labels.map(l=>({ label:l, done:!!prev[l] }));
   $('c_note').value=tc?(tc.note||''):'';
-  $('c_title').textContent='🗄️ '+s.name;
+  $('c_title').textContent=' '+s.name;
   $('c_sub').textContent=(s.shelf_code?('['+s.shelf_code+'] · '):'')+'สาขา '+branchName(s.branch_id);
   $('c_detail_card').style.display=s.detail?'':'none'; $('c_detail').textContent=s.detail||'';
   renderSbBanner(tc);
@@ -215,7 +217,7 @@ function renderSbBanner(tc){
   div.id='sb_banner';
   div.style.cssText='background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:12px 14px;margin-bottom:12px';
   div.innerHTML='<div style="font-weight:700;color:#b91c1c">✗ งานนี้ถูกตีกลับ — กรุณาแก้ไขแล้วส่งใหม่</div>'
-    +(tc.review_note?'<div style="margin-top:5px;font-size:14px;color:#7f1d1d">📝 '+esc(tc.review_note)+'</div>':'')
+    +(tc.review_note?'<div style="margin-top:5px;font-size:14px;color:#7f1d1d"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(tc.review_note)+'</div>':'')
     +mk;
   const anchor=document.getElementById('c_detail_card');
   if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(div, anchor.nextSibling);

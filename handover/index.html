@@ -50,6 +50,8 @@
   .imgbtn:active{transform:scale(.99);}
 </style>
 <style id="ui-refresh">
+.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
 .card{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05)}
 .btn{border-radius:11px}
 .btn-pri{background:linear-gradient(135deg,#00703c,#00582f);box-shadow:0 4px 14px rgba(0,112,60,.22)}
@@ -59,7 +61,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><span class="ic">🔄</span><h1>งานผลัด</h1><a class="home" href="../">🏠 หน้าแรก</a></div>
+  <div class="top"><span class="ic"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg></span><h1>งานผลัด</h1><a class="home" href="../"> หน้าแรก</a></div>
   <div class="body">
 
     <!-- step_id -->
@@ -81,8 +83,8 @@
       <button class="imgbtn" id="bMenu2" style="position:relative"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"><span id="spBadge" style="display:none;position:absolute;top:8px;right:10px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;min-width:24px;height:24px;line-height:24px;border-radius:999px;padding:0 7px;box-shadow:0 2px 6px rgba(0,0,0,.3)">0</span></button>
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
       <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
-      <button class="btn btn-pri" id="bGoods" style="width:100%;margin-top:4px;display:none">🚚 รับสินค้าจากคลัง (ผู้คุมผลัด)</button>
-      <button class="btn btn-sec" id="bNotify" style="width:100%;margin-top:4px;display:none">🔔 เปิดแจ้งเตือนงานบนมือถือนี้</button>
+      <button class="btn btn-pri" id="bGoods" style="width:100%;margin-top:4px;display:none"> รับสินค้าจากคลัง (ผู้คุมผลัด)</button>
+      <button class="btn btn-sec" id="bNotify" style="width:100%;margin-top:4px;display:none"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg> เปิดแจ้งเตือนงานบนมือถือนี้</button>
     </div>
 
     <!-- menu1: leader -->
@@ -311,7 +313,7 @@ function discRender(){
   const c=DISC_COLOR[a.action_type]||DISC_COLOR.note;
   document.getElementById('discStep').textContent='รายการที่ต้องรับทราบ '+(DISC_IDX+1)+' / '+DISC_QUEUE.length;
   const bd=document.getElementById('discBadge');
-  bd.textContent = (a.action_type==='warning' ? '📄 ' : '⚠️ ') + (a.level_name || DISC_LABEL[a.action_type] || 'การดำเนินการทางวินัย') + (a.warning_id ? (' · เลขที่ '+a.warning_id) : '');
+  bd.textContent = (a.action_type==='warning' ? '' : ' ') + (a.level_name || DISC_LABEL[a.action_type] || 'การดำเนินการทางวินัย') + (a.warning_id ? (' · เลขที่ '+a.warning_id) : '');
   bd.style.background=c[0]; bd.style.color=c[1];
   // บันไดวินัยสะสม — ให้พนักงานเห็นว่าอยู่ขั้นไหน + ครบ 3 ใบ = พิจารณาเลิกจ้าง
   const ld=document.getElementById('discLadder');
@@ -319,11 +321,11 @@ function discRender(){
     ld.style.display='none';
     window.HR.myDisciplineLadder(EMP.emp_id).then(m=>{
       if(!m) return;
-      const pill=(txt,done)=>'<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin:2px;background:'+(done?'#dcfce7':'#eef2ff')+';color:'+(done?'#166534':'#64748b')+'">'+(done?'✓ ':'⬜ ')+txt+'</span>';
-      const wpill='<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin:2px;background:'+(m.warning_count>=3?'#fee2e2':'#f3e8ff')+';color:'+(m.warning_count>=3?'#b91c1c':'#7c3aed')+'">📄 ใบเตือน '+m.warning_count+'/3</span>';
-      ld.innerHTML='<div style="font-size:12px;color:#6d28d9;font-weight:700;margin-bottom:5px">📋 ขั้นวินัยสะสมของคุณ (ย้อนหลัง '+m.window_months+' เดือน)</div>'
+      const pill=(txt,done)=>'<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin:2px;background:'+(done?'#dcfce7':'#eef2ff')+';color:'+(done?'#166534':'#64748b')+'">'+(done?'✓ ':'<svg class="ei" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg> ')+txt+'</span>';
+      const wpill='<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin:2px;background:'+(m.warning_count>=3?'#fee2e2':'#f3e8ff')+';color:'+(m.warning_count>=3?'#b91c1c':'#7c3aed')+'"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> ใบเตือน '+m.warning_count+'/3</span>';
+      ld.innerHTML='<div style="font-size:12px;color:#6d28d9;font-weight:700;margin-bottom:5px"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> ขั้นวินัยสะสมของคุณ (ย้อนหลัง '+m.window_months+' เดือน)</div>'
         +pill('ตักเตือนวาจา', m.verbal_done)+'<span style="color:#cbd5e1">→</span>'+pill('ลายลักษณ์อักษร', m.written_done)+'<span style="color:#cbd5e1">→</span>'+wpill
-        +'<div style="font-size:11.5px;color:#7c3aed;margin-top:6px;line-height:1.5">'+(m.warning_count>=3?'⛔ ครบใบเตือน 3 ใบ — เข้าเกณฑ์พิจารณาเลิกจ้าง':'⚠️ ทำผิดซ้ำจะเลื่อนขั้นสูงขึ้นเรื่อยๆ · ครบ 3 ใบ = พิจารณาเลิกจ้าง · ทำดีต่อเนื่องเกิน '+m.window_months+' เดือน = เคลียร์เริ่มใหม่')+'</div>';
+        +'<div style="font-size:11.5px;color:#7c3aed;margin-top:6px;line-height:1.5">'+(m.warning_count>=3?'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> ครบใบเตือน 3 ใบ — เข้าเกณฑ์พิจารณาเลิกจ้าง':'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ทำผิดซ้ำจะเลื่อนขั้นสูงขึ้นเรื่อยๆ · ครบ 3 ใบ = พิจารณาเลิกจ้าง · ทำดีต่อเนื่องเกิน '+m.window_months+' เดือน = เคลียร์เริ่มใหม่')+'</div>';
       ld.style.display='block';
     }).catch(()=>{});
   }
@@ -397,7 +399,7 @@ function ensureAnnOverlay(){
     +'<div id="annTitle" style="font-size:18px;font-weight:800;line-height:1.4;margin-bottom:8px"></div>'
     +'<div id="annMsg" style="font-size:15px;line-height:1.65;white-space:pre-wrap;margin-bottom:14px"></div>'
     +'<div id="annQuiz" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;margin-bottom:12px">'
-      +'<div style="font-weight:700;font-size:14px;margin-bottom:8px">❓ คำถามยืนยันความเข้าใจ</div>'
+      +'<div style="font-weight:700;font-size:14px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7M12 17h.01"/></svg> คำถามยืนยันความเข้าใจ</div>'
       +'<div id="annQuizQ" style="font-size:14.5px;margin-bottom:10px"></div>'
       +'<div id="annQuizOpts"></div>'
     +'</div>'
@@ -415,7 +417,7 @@ function annRender(){
   const mand=a.priority==='mandatory';
   document.getElementById('annStep').textContent='ประกาศที่ต้องรับทราบ '+(ANN_IDX+1)+' / '+ANN_QUEUE.length;
   const bd=document.getElementById('annBadge');
-  bd.textContent = mand ? '🔴 บังคับ — ต้องรับทราบ' : '🟠 สำคัญ — ต้องรับทราบ';
+  bd.textContent = mand ? 'บังคับ — ต้องรับทราบ' : 'สำคัญ — ต้องรับทราบ';
   bd.style.background = mand ? '#fee2e2' : '#ffedd5';
   bd.style.color      = mand ? '#b91c1c' : '#c2410c';
   document.getElementById('annTitle').textContent = a.title || 'ประกาศจากผู้จัดการ';
@@ -533,7 +535,7 @@ async function openLeaderPanel(){
   const memOpts=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'">'+esc(m.name)+'</option>').join('');
   if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (ผู้จัดการตั้งที่ "ตั้งค่ากะ")</div>'; return; }
   $('l_board').innerHTML=b.defs.map(d=>{
-    const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.require_photo?' <span class="pill muted2">📷</span>':'')+'</div>';
+    const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
     if(a){ const s=ST(a.status); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
     if(!(b.members||[]).length) body+='<div class="muted">ยังไม่มีคนในกะ — เพิ่มคนด้านบนก่อน</div>';
     else body+='<div class="row2"><select id="lg_'+d.id+'">'+memOpts+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
@@ -590,7 +592,7 @@ async function openM2(){
   // ★ งานพิเศษที่เพิ่งตรวจผ่านวันนี้ (แสดงเป็นบรรทัดสั้น ๆ แล้วหายไปเอง — ไม่ค้างเป็นการ์ดใหญ่)
   if((sp.done_today||[]).length){
     html += '<div class="card" style="border-left:3px solid #16a34a;background:#f0fdf4;padding:9px 11px">'
-      + '<div style="font-size:13px;color:#166534;font-weight:700">✅ งานพิเศษที่ตรวจผ่านแล้ววันนี้ ('+sp.done_today.length+')</div>'
+      + '<div style="font-size:13px;color:#166534;font-weight:700"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> งานพิเศษที่ตรวจผ่านแล้ววันนี้ ('+sp.done_today.length+')</div>'
       + sp.done_today.map(a=>'<div style="font-size:12.5px;color:#166534;margin-top:2px">• '+esc(a.title)+'</div>').join('')
       + '</div>';
   }
@@ -607,18 +609,18 @@ async function openM2(){
     else if(a.status==='approved' && a.needs_mgr===true && !a.mgr_checked_at) s=['ผ่านผลัดถัดไป · รอ ผจก.','ok'];
     const min=(r.unassigned.find(x=>x.id===a.task_def_id)||{}).min_photos; // อาจ undefined → ใช้ require_photo
     let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
-    if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px">⚠️ ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
-    if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:2px 0 4px">📍 จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
+    if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
+    if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:2px 0 4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
     if(isEdit){ c+=flowStepsHTML(a); }
     if(!canDo) c+=flowStepsHTML(a)+thumbsHtml(a.photos);
     if(!canDo&&a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุ: '+esc(a.emp_note)+'</div>';
     if(canDo){
       c+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
-        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="mfc_'+a.id+'" style="display:none"></label>'
+        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="mfc_'+a.id+'" style="display:none"></label>'
         +'</div>'
         +'<div class="thumbs" id="mt_'+a.id+'" style="margin:2px 0 4px"></div>'
         +'<div class="muted" id="mc_'+a.id+'" style="margin-bottom:4px">'+(a.require_photo?'ต้องแนบรูป — ถ่ายได้หลายรูป (บังคับกล้อง กันใช้รูปเก่า)':'ถ่ายรูปได้ตามต้องการ (บังคับกล้อง)')+'</div>'
-        +'<div style="font-size:11.5px;color:#0369a1;margin-bottom:8px">💾 ระบบเก็บรูปที่ถ่ายไว้ให้อัตโนมัติ — สลับแอป/คนอื่นใช้มือถือแล้วกลับมาถ่ายต่อได้ ไม่ต้องเริ่มใหม่</div>'
+        +'<div style="font-size:11.5px;color:#0369a1;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7"/><rect x="8" y="13" width="8" height="5"/></svg> ระบบเก็บรูปที่ถ่ายไว้ให้อัตโนมัติ — สลับแอป/คนอื่นใช้มือถือแล้วกลับมาถ่ายต่อได้ ไม่ต้องเริ่มใหม่</div>'
         +'<input type="text" id="mn_'+a.id+'" placeholder="หมายเหตุ (ถ้ามี)" value="'+esc(a.emp_note||'')+'" style="margin-bottom:8px">'
         +'<button class="btn btn-pri" data-sub="'+a.id+'">'+(isEdit?'อัปเดต / ส่งใหม่':'ส่งงาน')+'</button>';
     }
@@ -627,7 +629,7 @@ async function openM2(){
   // งานที่ยังว่าง (รายการ)
   html+='<h3 class="sec">งานที่ยังว่าง (ดึงมาทำเองได้)</h3>';
   if(!r.unassigned.length) html+='<div class="muted" style="padding:4px 2px">ไม่มีงานว่าง</div>';
-  else html+=r.unassigned.map(d=>'<div class="listrow"><div class="t">'+esc(d.title)+(d.min_photos>0?' <span class="pill muted2">📷'+d.min_photos+'</span>':'')+'</div><button class="btn btn-sec btn-sm" data-pull="'+d.id+'">ดึงมาทำ</button></div>').join('');
+  else html+=r.unassigned.map(d=>'<div class="listrow"><div class="t">'+esc(d.title)+(d.min_photos>0?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>'+d.min_photos+'</span>':'')+'</div><button class="btn btn-sec btn-sm" data-pull="'+d.id+'">ดึงมาทำ</button></div>').join('');
   // สถานะทีม
   html+='<h3 class="sec">สถานะทีมในผลัด</h3>';
   if(!r.team.length) html+='<div class="muted" style="padding:4px 2px">ยังไม่มีการมอบหมาย</div>';
@@ -681,28 +683,28 @@ function fmtDeadline(dl){
   let tag='';
   if(diff<0) tag=' <span style="color:#dc2626;font-weight:700">· เลยกำหนดแล้ว</span>';
   else if(diff<24*3600*1000) tag=' <span style="color:#b45309;font-weight:700">· ใกล้ครบกำหนด</span>';
-  return '<div class="muted" style="margin-top:2px">⏰ ครบกำหนด: '+dtxt+tag+'</div>';
+  return '<div class="muted" style="margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> ครบกำหนด: '+dtxt+tag+'</div>';
 }
 function renderSpecialHTML(rows){
   if(!rows||!rows.length) return '';
-  let h='<h3 class="sec">⭐ งานพิเศษจากผู้จัดการ</h3>';
+  let h='<h3 class="sec"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> งานพิเศษจากผู้จัดการ</h3>';
   h+=rows.map(a=>{
     const s=spST(a.status); const canDo=(a.status==='todo'||a.status==='sent_back');
     let c='<div class="card" style="border-left:3px solid var(--green)"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:700;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     if(a.detail) c+='<div style="font-size:13.5px;margin-bottom:4px;white-space:pre-wrap">'+esc(a.detail)+'</div>';
     c+=fmtDeadline(a.deadline);
-    if(a.hr_note) c+='<div class="muted" style="margin-top:4px">📝 หมายเหตุจากผู้จัดการ: '+esc(a.hr_note)+'</div>';
+    if(a.hr_note) c+='<div class="muted" style="margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> หมายเหตุจากผู้จัดการ: '+esc(a.hr_note)+'</div>';
     if(a.hr_photos&&a.hr_photos.length) c+='<div style="margin-top:6px"><div class="muted" style="font-size:12px">รูปตัวอย่าง/อ้างอิงจากผู้จัดการ</div>'+thumbsHtml(a.hr_photos)+'</div>';
-    if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-top:8px">⚠️ ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
-    if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:6px 0 4px">📍 จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
+    if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-top:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
+    if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:6px 0 4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
     if(!canDo){
       if(a.photos&&a.photos.length) c+='<div style="margin-top:8px"><div class="muted" style="font-size:12px">รูปที่คุณส่ง</div>'+thumbsHtml(a.photos)+'</div>';
       if(a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุของคุณ: '+esc(a.emp_note)+'</div>';
-      if(a.status==='submitted') c+='<div class="muted" style="margin-top:4px">⏳ รอผู้จัดการตรวจ'+(a.submitted_at?(' · ส่งเมื่อ '+fmt(a.submitted_at)):'')+'</div>';
+      if(a.status==='submitted') c+='<div class="muted" style="margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3c0 4 5 5 5 9s-5 5-5 9M17 3c0 4-5 5-5 9s5 5 5 9"/></svg> รอผู้จัดการตรวจ'+(a.submitted_at?(' · ส่งเมื่อ '+fmt(a.submitted_at)):'')+'</div>';
     }
     if(canDo){
       c+='<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:10px">'
-        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">📷 ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" id="spfc_'+a.id+'" style="display:none"></label>'
+        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" id="spfc_'+a.id+'" style="display:none"></label>'
         +'<div class="thumbs" id="spt_'+a.id+'" style="margin:6px 0 4px"></div>'
         +'<div class="muted" id="spc_'+a.id+'" style="margin-bottom:8px">ถ่ายรูปได้หลายรูป (บังคับกล้อง · สแตมป์ชื่อ/เวลา/สาขาอัตโนมัติ)</div>'
         +'<input type="text" id="spn_'+a.id+'" placeholder="หมายเหตุถึงผู้จัดการ (ถ้ามี)" style="margin-bottom:8px">'
@@ -747,7 +749,7 @@ function updateSpBadge(rows){
 async function refreshSpBadge(){ try{ const sp=await window.HR.getSpecialTasks(EMP.emp_id); updateSpBadge(sp.rows||[]); }catch(e){} }
 
 // ============================================================
-// 🗄️ เชลฟ์ที่รับผิดชอบเดือนนี้ — แสดงในหน้า "งานของฉัน" (เดิมต้องเข้าอีกหน้าแยก)
+// <svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> เชลฟ์ที่รับผิดชอบเดือนนี้ — แสดงในหน้า "งานของฉัน" (เดิมต้องเข้าอีกหน้าแยก)
 //    ตรวจ + ถ่ายรูป + ส่งได้จากหน้านี้เลย
 // ============================================================
 let SHV_DATA=null;
@@ -762,7 +764,7 @@ function renderMyShelvesHTML(shv){
   const rows=(shv&&shv.rows)||[];
   if(!rows.length) return '';
   const todo = rows.filter(r=>!r.today_check || r.today_check.status==='sent_back').length;
-  let h='<h3 class="sec">🗄️ เชลฟ์ที่ฉันดูแล (เดือนนี้)'+(todo?(' <span class="pill bad">ยังไม่ตรวจ '+todo+'</span>'):' <span class="pill ok">ตรวจครบแล้ววันนี้</span>')+'</h3>';
+  let h='<h3 class="sec"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> เชลฟ์ที่ฉันดูแล (เดือนนี้)'+(todo?(' <span class="pill bad">ยังไม่ตรวจ '+todo+'</span>'):' <span class="pill ok">ตรวจครบแล้ววันนี้</span>')+'</h3>';
   h+=rows.map(r=>{
     const c=r.today_check;
     const canDo = !c || c.status==='sent_back';
@@ -772,16 +774,16 @@ function renderMyShelvesHTML(shv){
         +shvPill(c)
       +'</div>';
     if(r.detail) s+='<div class="muted" style="font-size:12.5px;margin-bottom:4px">'+esc(r.detail)+'</div>';
-    if(c && c.status==='sent_back' && c.review_note) s+='<div style="color:#b91c1c;font-size:13px;margin:6px 0">⚠️ ตีกลับ: '+esc(c.review_note)+(c.reviewer?(' (โดย '+esc(c.reviewer)+')'):'')+'</div>';
+    if(c && c.status==='sent_back' && c.review_note) s+='<div style="color:#b91c1c;font-size:13px;margin:6px 0"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(c.review_note)+(c.reviewer?(' (โดย '+esc(c.reviewer)+')'):'')+'</div>';
     if(c && c.status==='sent_back' && Array.isArray(c.review_markup) && c.review_markup.length) s+=thumbsHtml(c.review_markup);
     if(!canDo){
       if(c && c.photos && c.photos.length) s+='<div class="muted" style="font-size:12px;margin-top:6px">รูปที่คุณส่ง</div>'+thumbsHtml(c.photos);
-      if(c && c.status==='submitted') s+='<div class="muted" style="margin-top:4px">⏳ รอผู้จัดการ/HR ตรวจ</div>';
+      if(c && c.status==='submitted') s+='<div class="muted" style="margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3c0 4 5 5 5 9s-5 5-5 9M17 3c0 4-5 5-5 9s5 5 5 9"/></svg> รอผู้จัดการ/HR ตรวจ</div>';
     } else {
       s+='<div style="border-top:1px dashed var(--line);margin-top:8px;padding-top:8px">'
         +(r.checklist||[]).map((it,i)=>'<label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px;font-size:13.5px">'
           +'<input type="checkbox" class="shvck_'+r.shelf_id+'" data-label="'+esc(it)+'" style="margin-top:3px">'+esc(it)+'</label>').join('')
-        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:6px;display:inline-block">📷 ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" multiple id="shvfc_'+r.shelf_id+'" style="display:none"></label>'
+        +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:6px;display:inline-block"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" multiple id="shvfc_'+r.shelf_id+'" style="display:none"></label>'
         +'<div class="thumbs" id="shvt_'+r.shelf_id+'" style="margin:6px 0 4px"></div>'
         +'<input type="text" id="shvn_'+r.shelf_id+'" placeholder="หมายเหตุ (ถ้ามี)" style="margin-bottom:8px">'
         +'<button class="btn btn-pri" data-shvsub="'+r.shelf_id+'">ส่งการตรวจเชลฟ์</button>'
@@ -865,19 +867,19 @@ function flowStepsHTML(a){
 // ============ งานที่ ผจก.ตีกลับให้แก้ (อาจเป็นงานที่เรา "ตรวจผ่าน" ไม่ใช่งานที่เราส่ง) ============
 function renderFixTasksHTML(rows){
   if(!rows||!rows.length) return '';
-  let h='<h3 class="sec" style="color:#b91c1c">⚠️ งานที่ผู้จัดการตีกลับ — ต้องแก้ ('+rows.length+')</h3>';
+  let h='<h3 class="sec" style="color:#b91c1c"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> งานที่ผู้จัดการตีกลับ — ต้องแก้ ('+rows.length+')</h3>';
   h+=rows.map(a=>{
     let c='<div class="card" style="border-left:4px solid #dc2626;background:#fef2f2">'
       +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:700;flex:1">'+esc(a.title)+'</div><span class="pill bad">ต้องแก้</span></div>'
       +'<div class="muted" style="font-size:12px">งานของกะ '+esc(a.shift_name||'-')+' · วันที่ '+esc(fmtD(a.work_date))+'</div>';
     if(a.i_was_checker) c+='<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:7px 9px;margin-top:6px;font-size:12.5px;color:#9a3412">'
-      +'ℹ️ คุณเป็นผู้ <b>ตรวจผ่าน</b> งานนี้ในผลัดของคุณ เมื่อผู้จัดการตรวจซ้ำแล้วไม่ผ่าน <b>ผลัดที่ตรวจ (คุณ) เป็นผู้รับผิดชอบแก้ไข</b></div>';
-    if(a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-top:6px">⚠️ ผู้จัดการตีกลับ: '+esc(a.review_note)+'</div>';
-    if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:6px 0 4px">📍 จุดที่ต้องแก้ (ผู้จัดการวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
+      +'ℹ คุณเป็นผู้ <b>ตรวจผ่าน</b> งานนี้ในผลัดของคุณ เมื่อผู้จัดการตรวจซ้ำแล้วไม่ผ่าน <b>ผลัดที่ตรวจ (คุณ) เป็นผู้รับผิดชอบแก้ไข</b></div>';
+    if(a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-top:6px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ผู้จัดการตีกลับ: '+esc(a.review_note)+'</div>';
+    if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:6px 0 4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่ต้องแก้ (ผู้จัดการวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
     c+='<div class="muted" style="font-size:12px;margin-top:8px">รูปของงานนี้ (รูปเดิมอยู่ครบ — ลบรูปที่ผิดออก แล้วถ่ายรูปที่แก้แล้วเพิ่ม)</div>'
       +'<div id="fxth_'+a.id+'" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>'
       +'<div id="fxc_cnt_'+a.id+'" class="muted" style="font-size:12px;margin-bottom:6px"></div>'
-      +'<label class="btn2" style="display:inline-block;cursor:pointer">📷 ถ่ายรูปที่แก้แล้ว<input type="file" accept="image/*" capture="environment" multiple id="fxc_'+a.id+'" style="display:none"></label>'
+      +'<label class="btn2" style="display:inline-block;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูปที่แก้แล้ว<input type="file" accept="image/*" capture="environment" multiple id="fxc_'+a.id+'" style="display:none"></label>'
       +'<input type="text" id="fxn_'+a.id+'" placeholder="หมายเหตุถึงผู้จัดการ (ถ้ามี)" style="margin:8px 0">'
       +'<button class="btn" data-fixsub="'+a.id+'">ส่งงานที่แก้แล้ว</button></div>';
     return c;
@@ -934,18 +936,18 @@ function fmtD(d){ try{ return beDate(d); }catch(e){ return d||''; } }
 function mtEmpST(s){ return ({ todo:['มอบหมายใหม่','warn'], doing:['กำลังทำ','warn'], review:['ส่งแล้ว รอ ผจก.ตรวจ','ok'] })[s]||['มอบหมายใหม่','warn']; }
 function renderMgrTasksHTML(rows){
   if(!rows||!rows.length) return '';
-  let h='<h3 class="sec">📋 งานที่ผู้จัดการมอบหมาย</h3>';
+  let h='<h3 class="sec"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> งานที่ผู้จัดการมอบหมาย</h3>';
   h+=rows.map(a=>{
     const s=mtEmpST(a.status);
     let c='<div class="card" style="border-left:3px solid #2563eb"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:700;flex:1">'+esc(a.title)+'</div>'
       +(a.priority==='urgent'?'<span class="pill bad">ด่วน</span>':'')+'<span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     if(a.detail) c+='<div style="font-size:13.5px;margin-bottom:4px;white-space:pre-wrap">'+esc(a.detail)+'</div>';
-    if(a.due_date) c+='<div class="muted" style="font-size:12.5px">⏰ กำหนดส่ง: '+esc(String(a.due_date))+'</div>';
+    if(a.due_date) c+='<div class="muted" style="font-size:12.5px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> กำหนดส่ง: '+esc(String(a.due_date))+'</div>';
     if(a.hr_photos&&a.hr_photos.length) c+='<div style="margin-top:6px"><div class="muted" style="font-size:12px">รูปอ้างอิงจากผู้จัดการ</div>'+thumbsHtml(a.hr_photos)+'</div>';
     if(a.emp_photos&&a.emp_photos.length) c+='<div style="margin-top:8px"><div class="muted" style="font-size:12px">รูปที่คุณส่งล่าสุด'+(a.emp_submitted_at?(' · '+fmt(a.emp_submitted_at)):'')+'</div>'+thumbsHtml(a.emp_photos)+'</div>';
     if(a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุล่าสุดของคุณ: '+esc(a.emp_note)+'</div>';
     c+='<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:10px">'
-      +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer">📷 ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" id="mgtfc_'+a.id+'" style="display:none"></label>'
+      +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" id="mgtfc_'+a.id+'" style="display:none"></label>'
       +'<div class="thumbs" id="mgtt_'+a.id+'" style="margin:6px 0 4px"></div>'
       +'<div class="muted" id="mgtc_'+a.id+'" style="margin-bottom:8px">ถ่ายรูปได้หลายรูป · ส่งความคืบหน้าให้ผู้จัดการเห็นได้หลายครั้ง</div>'
       +'<input type="text" id="mgtn_'+a.id+'" placeholder="หมายเหตุถึงผู้จัดการ (ถ้ามี)" style="margin-bottom:8px">'
@@ -995,7 +997,7 @@ async function openM3(){
   let head='<div class="card"><div style="font-weight:600">ตรวจงานผลัดก่อนหน้า: '+esc(r.prev_name||'-')+'</div><div class="muted">วันที่ '+esc(String(r.prev_date))+'</div>'
     +(r.canReview?'<div class="pill ok" style="margin-top:6px">คุณเป็นหัวหน้าผลัด — ตรวจ/ตีกลับได้</div>':'<div class="pill warn" style="margin-top:6px">ดูได้อย่างเดียว (เฉพาะหัวหน้าผลัดตรวจได้)</div>')
     +(r.canReview&&pend?'<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12.5px;color:#92400e">'
-        +'⚠️ <b>มีงานรอคุณตรวจ '+pend+' รายการ</b><br>งานเหล่านี้ต้องให้ <b>คุณ (ผลัดถัดไป) ตรวจก่อน</b> — ผู้จัดการจะตรวจซ้ำทีหลัง ไม่ใช่ตรวจแทนคุณ'
+        +'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> <b>มีงานรอคุณตรวจ '+pend+' รายการ</b><br>งานเหล่านี้ต้องให้ <b>คุณ (ผลัดถัดไป) ตรวจก่อน</b> — ผู้จัดการจะตรวจซ้ำทีหลัง ไม่ใช่ตรวจแทนคุณ'
         +'<br>ถ้าคุณตรวจผ่านแล้วผู้จัดการตรวจซ้ำไม่ผ่าน <b>ผลัดของคุณจะเป็นผู้รับผิดชอบแก้ไข</b></div>':'')
     +'</div>';
   if(!r.tasks.length){ $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานบันทึกไว้</div>'; return; }
@@ -1003,9 +1005,9 @@ async function openM3(){
     const s=ST(a.status); let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     c+='<div class="muted">ผู้ทำ: '+esc(a.emp_name||a.emp_id||'—')+(a.submitted_at?(' · ส่ง '+fmt(a.submitted_at)):'')+'</div>';
     if(a.review_note) c+='<div style="color:#b45309;font-size:13px;margin-top:4px">↳ '+esc(a.review_note)+'</div>';
-    if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12px;font-weight:700;margin-top:6px">📍 จุดที่สั่งแก้</div>'+thumbsHtml(a.review_markup);
+    if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12px;font-weight:700;margin-top:6px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่สั่งแก้</div>'+thumbsHtml(a.review_markup);
     c+=thumbsHtml(a.photos);
-    if(r.canReview && a.status==='submitted') c+='<div class="row2" style="margin-top:10px"><button class="btn btn-pri btn-sm" data-ap="'+a.id+'">✅ ผ่าน</button><button class="btn btn-warn btn-sm" data-rb="'+a.id+'">⤴ ตีกลับ</button></div>';
+    if(r.canReview && a.status==='submitted') c+='<div class="row2" style="margin-top:10px"><button class="btn btn-pri btn-sm" data-ap="'+a.id+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน</button><button class="btn btn-warn btn-sm" data-rb="'+a.id+'">⤴ ตีกลับ</button></div>';
     return c+'</div>';
   }).join('');
   PVTASKS={}; r.tasks.forEach(a=>{ PVTASKS[a.id]=a; });
@@ -1029,9 +1031,9 @@ function mkEnsureUI(){
   const o=document.createElement('div'); o.id='mkOverlay';
   o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.95);z-index:100000;display:none;flex-direction:column;padding:10px;gap:8px';
   o.innerHTML='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#fff">'
-    +'<b style="font-size:14px;margin-right:4px">✏️ วาดชี้จุดที่ต้องแก้</b>'
-    +'<button class="mkt on" data-tool="circle">⭕ วงกลม</button><button class="mkt" data-tool="rect">▭ กรอบ</button><button class="mkt" data-tool="pen">✎ ปากกา</button>'
-    +'<button id="mkUndo" class="mkt">↶ ย้อน</button><button id="mkClear" class="mkt">🗑 ล้าง</button>'
+    +'<b style="font-size:14px;margin-right:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg> วาดชี้จุดที่ต้องแก้</b>'
+    +'<button class="mkt on" data-tool="circle"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/></svg> วงกลม</button><button class="mkt" data-tool="rect">▭ กรอบ</button><button class="mkt" data-tool="pen"><svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg> ปากกา</button>'
+    +'<button id="mkUndo" class="mkt">↶ ย้อน</button><button id="mkClear" class="mkt"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ล้าง</button>'
     +'<span style="flex:1"></span><button id="mkPrev" class="mkt">‹</button><span id="mkNav" style="color:#e2e8f0;font-size:13px">1/1</span><button id="mkNext" class="mkt">›</button></div>'
     +'<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:auto"><canvas id="mkCanvas" style="max-width:100%;max-height:100%;background:#000;border-radius:8px;touch-action:none"></canvas></div>'
     +'<textarea id="mkNote" placeholder="ระบุสิ่งที่ต้องแก้…" style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:9px;border:0;font:inherit;font-size:14px;min-height:48px"></textarea>'
@@ -1089,8 +1091,8 @@ async function refreshGoodsBtn(){
   try{
     const sc=await window.HR.getShiftController(EMP.emp_id);
     if(!sc||!sc.branch) return;
-    if(sc.is_me){ b.textContent='🚚 รับสินค้าจากคลัง (ผู้คุมผลัด)'; b.style.display=''; }
-    else if(!sc.controller){ b.textContent='🚚 กดรับเป็นผู้คุมผลัด (รับสินค้าจากคลัง)'; b.style.display=''; }
+    if(sc.is_me){ b.textContent='รับสินค้าจากคลัง (ผู้คุมผลัด)'; b.style.display=''; }
+    else if(!sc.controller){ b.textContent='กดรับเป็นผู้คุมผลัด (รับสินค้าจากคลัง)'; b.style.display=''; }
     else { b.style.display='none'; }   // มีผู้คุมผลัดคนอื่นแล้ว
   }catch(e){}
 }
@@ -1101,7 +1103,7 @@ async function openGoods(){
   $('gd_sub').textContent='สาขา '+esc(branchName(sc.branch))+' · '+esc(String(sc.work_date));
   if(!sc.branch){ $('gd_body').innerHTML='<div class="card muted">วันนี้ยังไม่มีข้อมูลสาขา/กะของคุณ จึงยังใช้เมนูรับสินค้าไม่ได้</div>'; return; }
   if(!sc.controller){
-    $('gd_body').innerHTML='<div class="card"><div style="font-weight:700;margin-bottom:6px">ยังไม่มีผู้คุมผลัดของสาขานี้วันนี้</div><div class="muted" style="margin-bottom:10px">กดรับเป็นผู้คุมผลัดเพื่อเปิดเมนูรับสินค้า (1 คน/สาขา/วัน)</div><button class="btn btn-pri" id="gd_claim" style="width:100%">✋ กดรับเป็นผู้คุมผลัด</button></div>';
+    $('gd_body').innerHTML='<div class="card"><div style="font-weight:700;margin-bottom:6px">ยังไม่มีผู้คุมผลัดของสาขานี้วันนี้</div><div class="muted" style="margin-bottom:10px">กดรับเป็นผู้คุมผลัดเพื่อเปิดเมนูรับสินค้า (1 คน/สาขา/วัน)</div><button class="btn btn-pri" id="gd_claim" style="width:100%"> กดรับเป็นผู้คุมผลัด</button></div>';
     $('gd_claim').onclick=async()=>{ $('gd_claim').innerHTML='<span class="spin"></span>'; try{ await window.HR.claimShiftController({empId:EMP.emp_id}); toast('ok','คุณเป็นผู้คุมผลัดแล้ว'); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } openGoods(); };
     return;
   }
@@ -1115,12 +1117,12 @@ function renderGoods(){
   let h='<div class="card" style="padding:10px;margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1"><b>ผู้คุมผลัด:</b> '+esc(EMP.nickname||EMP.name)+'</div><span class="ch" id="gd_release">ปล่อยสิทธิ์</span></div></div>';
   if(!g.warehouses.length){ h+='<div class="card muted">ยังไม่มีคลังในระบบ — ให้ผู้จัดการเพิ่มคลังก่อน</div>'; }
   else {
-    h+='<div class="card"><h3 class="sec" style="margin-top:0">'+(GD_EDIT?'✏️ แก้ไขใบรับสินค้า':'บันทึกรับสินค้า')+'</h3>'
+    h+='<div class="card"><h3 class="sec" style="margin-top:0">'+(GD_EDIT?'<svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg> แก้ไขใบรับสินค้า':'บันทึกรับสินค้า')+'</h3>'
       +'<label>คลัง</label><select id="gd_wh">'+goodsWhOptions(GD_EDIT?GD_EDIT.warehouse_id:'')+'</select>'
       +'<label style="margin-top:8px">เลขที่เอกสาร (เลขรัน 6 หลัก)</label><input id="gd_ref" type="text" inputmode="numeric" maxlength="6" placeholder="เช่น 004521" style="font-size:20px;padding:12px;letter-spacing:2px;text-align:center;font-weight:700" value="'+esc(GD_EDIT?(GD_EDIT.ref_no||''):'')+'">'
       +'<label style="margin-top:8px">ลังเข้าวันนี้ (จำนวนลัง)</label><input id="gd_in" type="number" min="0" inputmode="numeric" style="font-size:20px;padding:12px;letter-spacing:2px;text-align:center;font-weight:700;background:#dcfce7" value="'+(GD_EDIT?(GD_EDIT.crates_in||0):0)+'">'
       +'<label style="margin-top:8px">ลังคืนวันนี้ (จำนวนลัง) <span class="muted" id="gd_exp"></span></label><input id="gd_ret" type="number" min="0" inputmode="numeric" style="font-size:20px;padding:12px;letter-spacing:2px;text-align:center;font-weight:700;background:#fee2e2" value="0"><div class="muted" id="gd_diff" style="font-size:12.5px;margin-top:2px"></div>'
-      +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:10px;display:inline-block">📷 ถ่ายรูป / เลือกรูป ลัง/บิล<input type="file" accept="image/*" multiple id="gd_fc" style="display:none"></label>'
+      +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:10px;display:inline-block"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป / เลือกรูป ลัง/บิล<input type="file" accept="image/*" multiple id="gd_fc" style="display:none"></label>'
       +'<div class="thumbs" id="gd_thumbs" style="margin:6px 0 4px"></div>'
       +'<label style="margin-top:8px">หมายเหตุ</label><input id="gd_note" type="text" placeholder="(ถ้ามี)" value="'+esc(GD_EDIT?(GD_EDIT.note||''):'')+'">'
       +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-pri" id="gd_save" style="flex:1">'+(GD_EDIT?'อัปเดต':'บันทึก')+'</button>'+(GD_EDIT?'<button class="btn btn-sec" id="gd_cancel" style="flex:none">ยกเลิก</button>':'')+'</div>'
@@ -1131,7 +1133,7 @@ function renderGoods(){
   else h+=g.today.map(r=>{ const dcls=(r.diff||0)===0?'ok':'bad';
     return '<div class="card" style="padding:10px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(r.warehouse_name||('คลัง #'+r.warehouse_id))+'</b> <span class="muted">· เลขที่ '+esc(r.ref_no||'-')+'</span></div><span class="ch" data-gedit="'+r.id+'">แก้ไข</span></div>'
       +'<div style="font-size:13px;margin-top:4px">ลังเข้า <b>'+(r.crates_in||0)+'</b> · ลังคืน <b>'+(r.crates_return||0)+'</b> · ควรคืน '+(r.return_expected||0)+' · ส่วนต่าง <span class="pill '+dcls+'">'+((r.diff||0)>0?'+':'')+(r.diff||0)+'</span></div>'
-      +(r.note?'<div class="muted" style="margin-top:2px">📝 '+esc(r.note)+'</div>':'')
+      +(r.note?'<div class="muted" style="margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(r.note)+'</div>':'')
       +((r.in_photos&&r.in_photos.length)?thumbsHtml(r.in_photos):'')
       +'</div>';
   }).join('');
@@ -1232,7 +1234,7 @@ async function refreshCoCard(){
     if(eff && Date.now() >= eff.getTime()+CO_GRACE_MIN*60000){
       const endTxt=s.shift?s.shift.end_time.slice(0,5):'';
       box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'
-        +'<div style="font-weight:600">⏰ อย่าลืมกดออกงาน</div>'
+        +'<div style="font-weight:600"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> อย่าลืมกดออกงาน</div>'
         +'<div style="margin-top:2px">กะเลิก '+esc(endTxt)+' แล้ว — ถ้าเลิกแล้วไปกด "ออกงาน" ที่หน้าลงเวลา หรือถ้ายังทำต่อ (ควบกะ) เลือกด้านล่าง</div>'
         +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
         +'<button class="btn btn-sec btn-sm" data-ext="2">ควบกะต่อ +2 ชม.</button>'
@@ -1276,7 +1278,7 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
   if(!supported){ btn.style.display='none'; return; }
   function b64ToU8(s){ const pad='='.repeat((4-s.length%4)%4); const b=(s+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(b); const arr=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i); return arr; }
   async function cur(){ const reg=await navigator.serviceWorker.ready; return reg.pushManager.getSubscription(); }
-  async function refresh(){ btn.style.display=''; try{ const s=await cur(); btn.textContent=s?'🔔 แจ้งเตือนงานเปิดอยู่ (แตะเพื่อปิด)':'🔔 เปิดแจ้งเตือนงานบนมือถือนี้'; }catch(e){} }
+  async function refresh(){ btn.style.display=''; try{ const s=await cur(); btn.textContent=s?'แจ้งเตือนงานเปิดอยู่ (แตะเพื่อปิด)':'เปิดแจ้งเตือนงานบนมือถือนี้'; }catch(e){} }
   window.refreshNotifyBtn=refresh;
   btn.onclick=async()=>{
     if(!EMP){ toast('err','กรอกรหัสพนักงานก่อน'); return; }

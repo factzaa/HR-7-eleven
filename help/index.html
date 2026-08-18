@@ -41,12 +41,15 @@
 </style>
 <link rel="manifest" href="../manifest.webmanifest">
 <meta name="theme-color" content="#16a34a">
+<style>.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
+</style>
 </head>
 <body>
   <div class="app">
     <div class="topbar">
-      <div><div class="tt1">📖 คู่มือการใช้งาน</div><div class="tt2">สำหรับพนักงาน · ระบบ HR 7-Eleven</div></div>
-      <a class="home" href="../">🏠 หน้าแรก</a>
+      <div><div class="tt1"> คู่มือการใช้งาน</div><div class="tt2">สำหรับพนักงาน · ระบบ HR 7-Eleven</div></div>
+      <a class="home" href="../"> หน้าแรก</a>
     </div>
 
     <div class="intro">
@@ -55,20 +58,20 @@
     </div>
 
     <div class="toc">
-      <a href="#s-install">📲 ติดตั้งแอป</a>
-      <a href="#s-checkin">⏰ ลงเวลา</a>
-      <a href="#s-leave">📝 ขอลา</a>
-      <a href="#s-handover">🔄 รับส่งผลัด</a>
-      <a href="#s-profile">🪪 ข้อมูล/เอกสาร</a>
-      <a href="#s-rules">📋 ระเบียบ</a>
-      <a href="#s-faq">❓ ปัญหาพบบ่อย</a>
+      <a href="#s-install"> ติดตั้งแอป</a>
+      <a href="#s-checkin"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> ลงเวลา</a>
+      <a href="#s-leave"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> ขอลา</a>
+      <a href="#s-handover"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg> รับส่งผลัด</a>
+      <a href="#s-profile"> ข้อมูล/เอกสาร</a>
+      <a href="#s-rules"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> ระเบียบ</a>
+      <a href="#s-faq"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7M12 17h.01"/></svg> ปัญหาพบบ่อย</a>
     </div>
 
     <div class="wrap">
 
       <!-- ติดตั้ง -->
       <div class="card" id="s-install">
-        <div class="head" onclick="tg(this)"><div class="ic" style="background:#eef2ff">📲</div><div class="t">ติดตั้งแอปลงมือถือ<small>เปิดเร็วขึ้น เหมือนแอปจริง (ไม่บังคับ)</small></div><div class="ar">▶</div></div>
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#eef2ff"></div><div class="t">ติดตั้งแอปลงมือถือ<small>เปิดเร็วขึ้น เหมือนแอปจริง (ไม่บังคับ)</small></div><div class="ar">▶</div></div>
         <div class="body">
           <div class="sub">ไอโฟน (Safari)</div>
           <ol class="steps">
@@ -82,13 +85,13 @@
             <li>แตะจุด 3 จุดมุมขวาบน</li>
             <li>เลือก <b>"ติดตั้งแอป"</b> หรือ "เพิ่มไปยังหน้าจอหลัก"</li>
           </ol>
-          <div class="tip">💡 จะมีไอคอนแอปขึ้นหน้าจอ กดเปิดได้เลยไม่ต้องพิมพ์ลิงก์</div>
+          <div class="tip"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> จะมีไอคอนแอปขึ้นหน้าจอ กดเปิดได้เลยไม่ต้องพิมพ์ลิงก์</div>
         </div>
       </div>
 
       <!-- ลงเวลา -->
       <div class="card" id="s-checkin">
-        <div class="head" onclick="tg(this)"><div class="ic" style="background:#eff6ff">⏰</div><div class="t">ลงเวลาเข้า–ออกงาน<small>ถ่ายรูป + ระบุพิกัด GPS หน้าร้าน</small></div><div class="ar">▶</div></div>
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#eff6ff"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div><div class="t">ลงเวลาเข้า–ออกงาน<small>ถ่ายรูป + ระบุพิกัด GPS หน้าร้าน</small></div><div class="ar">▶</div></div>
         <div class="body">
           <ol class="steps">
             <li>หน้าแรก แตะ <span class="pill">ลงเวลาเข้า-ออกงาน</span></li>
@@ -98,15 +101,15 @@
             <li>กดปุ่ม <b>เข้างาน</b> — ระบบบันทึกเวลาให้ทันที</li>
             <li>ตอนเลิกงาน เปิดเมนูเดิม กรอกรหัส แล้วกด <b>ออกงาน</b></li>
           </ol>
-          <div class="ok">✅ หลังเข้างานแล้ว ปุ่มจะเปลี่ยนเป็น <b>"ออกงาน"</b> ให้อัตโนมัติ</div>
-          <div class="warn">⚠️ ลงเวลาซ้ำไม่ได้ — ถ้าเข้างานไปแล้ว ระบบจะแจ้งเวลาที่ลงไว้ และไม่ให้กดซ้ำ</div>
-          <div class="tip">💡 ต้องอยู่ในรัศมีร้านที่กำหนด ระบบถึงจะรับลงเวลา และกล้อง/GPS ทำงานเฉพาะบนลิงก์ HTTPS เท่านั้น</div>
+          <div class="ok"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> หลังเข้างานแล้ว ปุ่มจะเปลี่ยนเป็น <b>"ออกงาน"</b> ให้อัตโนมัติ</div>
+          <div class="warn"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ลงเวลาซ้ำไม่ได้ — ถ้าเข้างานไปแล้ว ระบบจะแจ้งเวลาที่ลงไว้ และไม่ให้กดซ้ำ</div>
+          <div class="tip"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> ต้องอยู่ในรัศมีร้านที่กำหนด ระบบถึงจะรับลงเวลา และกล้อง/GPS ทำงานเฉพาะบนลิงก์ HTTPS เท่านั้น</div>
         </div>
       </div>
 
       <!-- ขอลา -->
       <div class="card" id="s-leave">
-        <div class="head" onclick="tg(this)"><div class="ic" style="background:#fef3c7">📝</div><div class="t">ยื่นคำขอลา<small>ลาป่วย / แจ้งหยุดฉุกเฉิน / แจ้งหยุด</small></div><div class="ar">▶</div></div>
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#fef3c7"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg></div><div class="t">ยื่นคำขอลา<small>ลาป่วย / แจ้งหยุดฉุกเฉิน / แจ้งหยุด</small></div><div class="ar">▶</div></div>
         <div class="body">
           <ol class="steps">
             <li>หน้าแรก แตะ <span class="pill">ยื่นคำขอลางาน</span></li>
@@ -116,51 +119,51 @@
             <li>ถ้าระบบขอ ให้ <b>แนบใบรับรองแพทย์/เอกสาร</b> (เช่น ลาป่วย)</li>
             <li>กด <b>ส่งคำขอลา</b> — รอผู้จัดการอนุมัติ</li>
           </ol>
-          <div class="tip">💡 ดูสถานะคำขอ (รออนุมัติ/อนุมัติ/ปฏิเสธ) ได้ที่ด้านล่างของหน้าต่างขอลา ถ้าถูกปฏิเสธจะเห็นเหตุผลด้วย</div>
-          <div class="warn">⚠️ ลาบางประเภทต้องแจ้งล่วงหน้า ถ้ายื่นไม่ทันกำหนดหรือเกินโควตา ระบบ/ผู้จัดการ อาจไม่อนุมัติ</div>
+          <div class="tip"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> ดูสถานะคำขอ (รออนุมัติ/อนุมัติ/ปฏิเสธ) ได้ที่ด้านล่างของหน้าต่างขอลา ถ้าถูกปฏิเสธจะเห็นเหตุผลด้วย</div>
+          <div class="warn"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ลาบางประเภทต้องแจ้งล่วงหน้า ถ้ายื่นไม่ทันกำหนดหรือเกินโควตา ระบบ/ผู้จัดการ อาจไม่อนุมัติ</div>
         </div>
       </div>
 
       <!-- รับส่งผลัด -->
       <div class="card" id="s-handover">
-        <div class="head" onclick="tg(this)"><div class="ic" style="background:#dcfce7">🔄</div><div class="t">รับส่งผลัด (งานในกะ)<small>มอบหมายงาน · ทำงาน+ส่งรูป · ตรวจผลัดก่อนหน้า · รายงาน</small></div><div class="ar">▶</div></div>
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#dcfce7"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg></div><div class="t">รับส่งผลัด (งานในกะ)<small>มอบหมายงาน · ทำงาน+ส่งรูป · ตรวจผลัดก่อนหน้า · รายงาน</small></div><div class="ar">▶</div></div>
         <div class="body">
           เข้าจากหน้าแรก แตะ <span class="pill">ตรวจรับ-ส่งผลัด</span> แล้วกรอกรหัสพนักงาน จะเห็น 4 เมนู:
 
-          <div class="sub">👔 1. หัวหน้าผลัด · มอบหมายงาน</div>
+          <div class="sub"> 1. หัวหน้าผลัด · มอบหมายงาน</div>
           <ol class="steps">
             <li>กด <b>รับเป็นหัวหน้าผลัด</b> (ยืนยัน 1 ครั้งต่อกะ) — ถ้ามีคนรับไว้แล้ว สามารถกดรับช่วงต่อได้</li>
             <li>เลือกงานจากรายการ แล้ว <b>แจกให้คนในผลัด</b> ของคุณ</li>
             <li>ถ้าวันนั้นยังไม่ได้จัดตารางเวร กด <b>เพิ่มคนเข้ากะ</b> ได้เอง</li>
           </ol>
 
-          <div class="sub">✅ 2. งานที่ได้รับมอบหมาย</div>
+          <div class="sub"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> 2. งานที่ได้รับมอบหมาย</div>
           <ol class="steps">
             <li>ดู <b>งานของฉัน</b> ที่ถูกแจกมา (และสถานะงานของทีม)</li>
             <li>งานที่ยัง <b>ว่าง</b> (ไม่มีคนทำ) กด <b>"ดึงมาทำ"</b> เป็นของตัวเองได้</li>
             <li>ทำงานเสร็จ <b>ถ่ายรูป</b> เป็นหลักฐาน (บางงานต้องครบจำนวนรูปขั้นต่ำ) แล้วกด <b>ส่งงาน</b></li>
           </ol>
 
-          <div class="sub">🔍 3. รับผลัด · ตรวจงานผลัดก่อนหน้า</div>
+          <div class="sub"><svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> 3. รับผลัด · ตรวจงานผลัดก่อนหน้า</div>
           <ol class="steps">
             <li>เฉพาะ <b>หัวหน้าผลัด</b> เท่านั้นที่ตรวจได้</li>
             <li>ระบบแสดงงานของ <b>ผลัดก่อนหน้า</b> ให้ตรวจ (กะเช้าจะตรวจกะดึกของเมื่อวาน)</li>
-            <li>งานไหนเรียบร้อยกด <b>✅ ผ่าน</b> · ไม่เรียบร้อยกด <b>⤴ ตีกลับ</b> พร้อมเขียนเหตุผล</li>
+            <li>งานไหนเรียบร้อยกด <b><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน</b> · ไม่เรียบร้อยกด <b>⤴ ตีกลับ</b> พร้อมเขียนเหตุผล</li>
           </ol>
 
-          <div class="sub">🖼️ 4. รายงานรับส่งผลัด</div>
+          <div class="sub"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> 4. รายงานรับส่งผลัด</div>
           <ol class="steps">
             <li>เลือกวันที่ ดูสรุปงานทั้งหมดของร้าน แยกตามกะ</li>
             <li>เห็นรูปงาน + ใครทำ / ใครตรวจ / เวลา / ส่งแก้กี่ครั้ง</li>
           </ol>
 
-          <div class="tip">💡 "ผลัดหลัก" คือ เช้า / บ่าย / ดึก — กะพิเศษ (เช่น วิ่งส่ง Delivery) ทำงานและส่งงานได้ แต่ไม่อยู่ในวงจรตรวจรับผลัด</div>
+          <div class="tip"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> "ผลัดหลัก" คือ เช้า / บ่าย / ดึก — กะพิเศษ (เช่น วิ่งส่ง Delivery) ทำงานและส่งงานได้ แต่ไม่อยู่ในวงจรตรวจรับผลัด</div>
         </div>
       </div>
 
       <!-- โปรไฟล์ -->
       <div class="card" id="s-profile">
-        <div class="head" onclick="tg(this)"><div class="ic" style="background:#f3e8ff">🪪</div><div class="t">กรอกข้อมูล / อัปโหลดเอกสาร<small>ข้อมูลส่วนตัว + สำเนาบัตร/เอกสาร</small></div><div class="ar">▶</div></div>
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#f3e8ff"></div><div class="t">กรอกข้อมูล / อัปโหลดเอกสาร<small>ข้อมูลส่วนตัว + สำเนาบัตร/เอกสาร</small></div><div class="ar">▶</div></div>
         <div class="body">
           <ol class="steps">
             <li>หน้าแรก แตะ <span class="pill">กรอกข้อมูล/เอกสาร</span></li>
@@ -168,26 +171,26 @@
             <li><b>อัปโหลดเอกสาร</b> ที่ต้องใช้ (เช่น สำเนาบัตรประชาชน) — ถ่ายรูปหรือเลือกไฟล์</li>
             <li>กด <b>บันทึก/ส่ง</b> — ข้อมูลจะส่งให้ผู้จัดการตรวจและอนุมัติ</li>
           </ol>
-          <div class="tip">💡 กรอกให้ถูกต้องครบถ้วน จะช่วยให้ผู้จัดการอนุมัติได้เร็วขึ้น</div>
+          <div class="tip"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> กรอกให้ถูกต้องครบถ้วน จะช่วยให้ผู้จัดการอนุมัติได้เร็วขึ้น</div>
         </div>
       </div>
 
       <!-- ระเบียบ -->
       <div class="card" id="s-rules">
-        <div class="head" onclick="tg(this)"><div class="ic" style="background:#e0f2fe">📋</div><div class="t">รับทราบระเบียบการทำงาน<small>อ่าน + กดยอมรับเก็บเป็นหลักฐาน</small></div><div class="ar">▶</div></div>
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#e0f2fe"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg></div><div class="t">รับทราบระเบียบการทำงาน<small>อ่าน + กดยอมรับเก็บเป็นหลักฐาน</small></div><div class="ar">▶</div></div>
         <div class="body">
           <ol class="steps">
             <li>หน้าแรก แตะ <span class="pill">ระเบียบการทำงาน</span></li>
             <li>อ่านระเบียบให้ครบ</li>
             <li>กรอกรหัสพนักงาน แล้ว <b>ติ๊กช่องยอมรับ</b> เพื่อยืนยันการรับทราบ</li>
           </ol>
-          <div class="tip">💡 การกดยอมรับจะถูกบันทึกพร้อมวันเวลา ใช้เป็นหลักฐานว่าได้อ่านระเบียบแล้ว</div>
+          <div class="tip"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> การกดยอมรับจะถูกบันทึกพร้อมวันเวลา ใช้เป็นหลักฐานว่าได้อ่านระเบียบแล้ว</div>
         </div>
       </div>
 
       <!-- FAQ -->
       <div class="card" id="s-faq">
-        <div class="head" onclick="tg(this)"><div class="ic" style="background:#fee2e2">❓</div><div class="t">ปัญหาที่พบบ่อย<small>ลงเวลาไม่ได้ · กล้องไม่ขึ้น · อื่น ๆ</small></div><div class="ar">▶</div></div>
+        <div class="head" onclick="tg(this)"><div class="ic" style="background:#fee2e2"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7M12 17h.01"/></svg></div><div class="t">ปัญหาที่พบบ่อย<small>ลงเวลาไม่ได้ · กล้องไม่ขึ้น · อื่น ๆ</small></div><div class="ar">▶</div></div>
         <div class="body">
           <div class="sub">กล้อง/ตำแหน่งไม่ทำงาน?</div>
           ต้องเปิดผ่านลิงก์ <b>HTTPS</b> และกด <b>อนุญาต</b> สิทธิ์กล้อง+ตำแหน่งของเบราว์เซอร์ ถ้าเคยกดปฏิเสธ ให้ไปเปิดสิทธิ์ใหม่ในตั้งค่าเบราว์เซอร์/แอป

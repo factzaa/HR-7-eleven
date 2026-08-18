@@ -49,6 +49,8 @@
   .scanframe::after{content:'';position:absolute;left:8%;right:8%;top:50%;height:2px;background:rgba(245,130,31,.9);box-shadow:0 0 8px rgba(245,130,31,.8);}
 </style>
 <style id="ui-refresh">
+.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
 .card{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05)}
 .btn{border-radius:11px}
 .btn-pri{background:linear-gradient(135deg,#00703c,#00582f);box-shadow:0 4px 14px rgba(0,112,60,.22)}
@@ -58,7 +60,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><span class="ic">🗓️</span><h1>QA สินค้า · ตรวจวันหมดอายุ</h1><a class="home" href="../">🏠 หน้าแรก</a></div>
+  <div class="top"><span class="ic"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg></span><h1>QA สินค้า · ตรวจวันหมดอายุ</h1><a class="home" href="../"> หน้าแรก</a></div>
   <div class="body">
 
     <!-- แถบกลับหน้าเชลฟ์ (เมื่อเปิดมาจากงานดูแลเชลฟ์) -->
@@ -81,7 +83,7 @@
     <!-- step_folders -->
     <div id="step_folders" class="hide">
       <div class="who"><div><div class="nm" id="f_nm">—</div><div class="sub" id="f_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
-      <button class="btn btn-sec" id="bNotify" style="margin-bottom:12px;display:none">🔔 เปิดแจ้งเตือนงานบนมือถือนี้</button>
+      <button class="btn btn-sec" id="bNotify" style="margin-bottom:12px;display:none"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg> เปิดแจ้งเตือนงานบนมือถือนี้</button>
       <h3 class="sec">โฟลเดอร์ที่ได้รับมอบหมาย</h3>
       <button class="btn btn-sec btn-sm" id="mkFolder" style="margin-bottom:10px;width:auto">＋ สร้างโฟลเดอร์เดือนนี้</button>
       <div id="folders_body"><div class="card muted">กำลังโหลด…</div></div>
@@ -99,7 +101,7 @@
       <div class="who"><div><div class="nm">เพิ่มสินค้า</div><div class="sub" id="add_sub"></div></div><span class="ch" id="add_back">‹ ยกเลิก</span></div>
       <div class="card">
         <label>บาร์โค้ด / รหัสสินค้า</label>
-        <div class="row2" style="margin-bottom:10px"><input id="ai_barcode" type="text" inputmode="numeric" placeholder="สแกนหรือพิมพ์"><button class="btn btn-sec btn-sm" id="ai_scan" style="flex:none;white-space:nowrap">📷 สแกน</button></div>
+        <div class="row2" style="margin-bottom:10px"><input id="ai_barcode" type="text" inputmode="numeric" placeholder="สแกนหรือพิมพ์"><button class="btn btn-sec btn-sm" id="ai_scan" style="flex:none;white-space:nowrap"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> สแกน</button></div>
         <div id="ai_found" class="muted" style="margin:-4px 0 10px"></div>
 
         <label>ชื่อสินค้า *</label>
@@ -115,7 +117,7 @@
         <input id="ai_zone" type="text" placeholder="เช่น ตู้แช่ A / ชั้น 2" style="margin-bottom:10px">
 
         <label>รูปสินค้า (ถ่ายได้หลายรูป)</label>
-        <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="ai_photo" style="display:none"></label>
+        <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="ai_photo" style="display:none"></label>
         <div class="thumbs" id="ai_thumbs" style="margin:8px 0"></div>
 
         <div style="height:6px"></div>
@@ -203,9 +205,9 @@ async function loadFolders(){
   $('folders_body').innerHTML=r.rows.map(f=>{
     const s=f.stats||{total:0,on_shelf:0,expiring:0};
     return '<div class="fcard" data-fid="'+f.id+'">'
-      +'<div style="font-weight:700;font-size:15px">📁 '+esc(f.title)+(s.expiring>0?'<span class="badge">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
+      +'<div style="font-weight:700;font-size:15px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '+esc(f.title)+(s.expiring>0?'<span class="badge">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
       +(f.target_month?'<div class="muted" style="margin-top:2px">เดือนเป้าหมาย: '+esc(f.target_month)+'</div>':'')
-      +(f.note?'<div class="muted" style="margin-top:2px">📝 '+esc(f.note)+'</div>':'')
+      +(f.note?'<div class="muted" style="margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(f.note)+'</div>':'')
       +'<div class="muted" style="margin-top:4px">บันทึกแล้ว '+s.total+' รายการ · ยังอยู่บนเชลฟ์ '+s.on_shelf+'</div>'
       +'</div>';
   }).join('');
@@ -223,11 +225,11 @@ function expiryText(dstr){
   else if(dl<=7){ col='#b45309'; tag=' · เหลือ '+dl+' วัน'; }
   else if(dl<=30){ col='#a06515'; tag=' · เหลือ '+dl+' วัน'; }
   else tag=' · เหลือ '+dl+' วัน';
-  return '<span style="color:'+col+';font-weight:600">📅 หมดอายุ '+dt+tag+'</span>';
+  return '<span style="color:'+col+';font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> หมดอายุ '+dt+tag+'</span>';
 }
 async function openFolder(f){
   if(!f) return; CUR_FOLDER=f;
-  show('step_items'); $('it_title').textContent='📁 '+f.title; $('it_sub').textContent=f.target_month||'';
+  show('step_items'); $('it_title').textContent=''+f.title; $('it_sub').textContent=f.target_month||'';
   $('items_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
   let r; try{ r=await window.HR.getQaItems(f.id); }catch(e){ $('items_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   if(!r.rows.length){ $('items_body').innerHTML='<div class="card muted">ยังไม่มีสินค้าในโฟลเดอร์นี้ กด "＋ เพิ่มสินค้า"</div>'; return; }
@@ -366,7 +368,7 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
   if(!supported){ btn.style.display='none'; return; }
   function b64ToU8(s){ const pad='='.repeat((4-s.length%4)%4); const b=(s+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(b); const arr=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i); return arr; }
   async function cur(){ const reg=await navigator.serviceWorker.ready; return reg.pushManager.getSubscription(); }
-  async function refresh(){ btn.style.display=''; try{ const s=await cur(); btn.textContent=s?'🔔 แจ้งเตือนเปิดอยู่ (แตะเพื่อปิด)':'🔔 เปิดแจ้งเตือนงานบนมือถือนี้'; }catch(e){} }
+  async function refresh(){ btn.style.display=''; try{ const s=await cur(); btn.textContent=s?'แจ้งเตือนเปิดอยู่ (แตะเพื่อปิด)':'เปิดแจ้งเตือนงานบนมือถือนี้'; }catch(e){} }
   window.refreshNotifyBtn=refresh;
   btn.onclick=async()=>{
     if(!EMP){ toast('err','กรอกรหัสพนักงานก่อน'); return; }

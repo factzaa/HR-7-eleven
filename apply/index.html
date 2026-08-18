@@ -47,6 +47,9 @@
   .done h2{font-size:22px;font-weight:700;color:var(--green-d)}
   .done p{font-size:15px;color:var(--muted);margin-top:8px;line-height:1.6}
 </style>
+<style>.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -58,13 +61,13 @@
 
   <div class="body" id="formBody">
     <div class="sec">
-      <h2>👤 ข้อมูลส่วนตัว</h2>
+      <h2><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> ข้อมูลส่วนตัว</h2>
       <div class="field"><label>ชื่อ-นามสกุล <span class="req">*</span></label><input id="f_full_name" type="text" placeholder="เช่น สมชาย ใจดี"></div>
       <div class="row2">
         <div class="field"><label>ชื่อเล่น</label><input id="f_nickname" type="text"></div>
         <div class="field"><label>เบอร์โทร <span class="req">*</span></label><input id="f_phone" type="tel" inputmode="tel" placeholder="08x-xxx-xxxx"></div>
       </div>
-      <div class="field"><label>LINE ID</label><input id="f_line_id" type="text" placeholder="ไอดีไลน์ของคุณ"><div class="hint" style="color:var(--green-d);font-weight:600">📩 เบอร์โทร/LINE นี้ ใช้เป็นช่องทางนัดสัมภาษณ์และแจ้งผล</div></div>
+      <div class="field"><label>LINE ID</label><input id="f_line_id" type="text" placeholder="ไอดีไลน์ของคุณ"><div class="hint" style="color:var(--green-d);font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 7l8 6 8-6"/></svg> เบอร์โทร/LINE นี้ ใช้เป็นช่องทางนัดสัมภาษณ์และแจ้งผล</div></div>
       <div class="row2">
         <div class="field"><label>วันเกิด <span class="req">*</span></label><input id="f_birth_date" type="date"><div class="hint">ต้องอายุ 18 ปีขึ้นไป</div></div>
         <div class="field"><label>อีเมล</label><input id="f_email" type="email" inputmode="email"></div>
@@ -74,7 +77,7 @@
     </div>
 
     <div class="sec">
-      <h2>🚨 ผู้ติดต่อฉุกเฉิน</h2>
+      <h2><svg class="ei" viewBox="0 0 24 24"><path d="M6 18v-4a6 6 0 0 1 12 0v4z"/><path d="M4 21h16"/><path d="M12 4V2M5 6L4 5M19 6l1-1"/></svg> ผู้ติดต่อฉุกเฉิน</h2>
       <div class="row2">
         <div class="field"><label>ชื่อผู้ติดต่อ</label><input id="f_em_name" type="text" placeholder="ชื่อ-นามสกุล"></div>
         <div class="field"><label>ความสัมพันธ์</label><input id="f_em_relation" type="text" placeholder="เช่น บิดา / มารดา / คู่สมรส"></div>
@@ -83,7 +86,7 @@
     </div>
 
     <div class="sec">
-      <h2>💼 ตำแหน่งที่สมัคร</h2>
+      <h2><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/></svg> ตำแหน่งที่สมัคร</h2>
       <div class="row2">
         <div class="field"><label>สาขาที่สมัคร <span class="req">*</span></label><select id="f_branch_id"><option value="">— เลือกสาขา —</option></select></div>
         <div class="field"><label>ตำแหน่ง <span class="req">*</span></label><select id="f_position"><option value="">— เลือกตำแหน่ง —</option></select></div>
@@ -96,7 +99,7 @@
     </div>
 
     <div class="sec">
-      <h2>📎 เอกสารแนบ</h2>
+      <h2><svg class="ei" viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></svg> เอกสารแนบ</h2>
       <div id="docs"></div>
     </div>
 
@@ -125,10 +128,10 @@ const DOC_DATA={};   // key -> dataURL
 function renderDocs(){
   $('docs').innerHTML=DOCS.map(([k,label,req])=>
     '<div class="doc" id="doc_'+k+'">'
-    +'<div class="dh">📄 '+label+(req?' <span class="req">*</span>':'')+'</div>'
+    +'<div class="dh"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> '+label+(req?' <span class="req">*</span>':'')+'</div>'
     +'<div class="btns">'
-    +'<label class="btn btn-sec">📷 ถ่าย/สแกน<input type="file" accept="image/*" capture="environment" data-doc="'+k+'" style="display:none"></label>'
-    +'<label class="btn btn-sec">🖼️ เลือกรูป<input type="file" accept="image/*" data-doc="'+k+'" style="display:none"></label>'
+    +'<label class="btn btn-sec"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่าย/สแกน<input type="file" accept="image/*" capture="environment" data-doc="'+k+'" style="display:none"></label>'
+    +'<label class="btn btn-sec"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> เลือกรูป<input type="file" accept="image/*" data-doc="'+k+'" style="display:none"></label>'
     +'</div>'
     +'<div class="prev" id="prev_'+k+'"><img><button type="button" class="rm" data-rm="'+k+'">×</button></div>'
     +'</div>').join('');

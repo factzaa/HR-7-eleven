@@ -124,6 +124,8 @@
 <meta name="apple-mobile-web-app-title" content="HR 7-Eleven">
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 <style id="ui-refresh">
+.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
 .linei{stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
 .emblem{border-radius:13px;box-shadow:0 2px 8px rgba(0,0,0,.14)}
 .statusbar{border-radius:15px}
@@ -181,9 +183,9 @@ button.in{box-shadow:0 6px 16px rgba(0,112,60,.24)}
       </div>
       <div class="lockmsg" id="lockMsg"></div>
       <div id="coCard" style="margin-top:10px"></div>
-      <!-- 🚨 เบิกฉุกเฉิน — โผล่เฉพาะคนที่ ผจก. เปิดสิทธิ์ให้ และยังไม่หมดอายุ -->
+      <!-- <svg class="ei" viewBox="0 0 24 24"><path d="M6 18v-4a6 6 0 0 1 12 0v4z"/><path d="M4 21h16"/><path d="M12 4V2M5 6L4 5M19 6l1-1"/></svg> เบิกฉุกเฉิน — โผล่เฉพาะคนที่ ผจก. เปิดสิทธิ์ให้ และยังไม่หมดอายุ -->
       <div id="advEmgCard" style="margin-top:10px"></div>
-      <!-- 🏍️ เบิกซ่อมรถ — โผล่เฉพาะตำแหน่งไรเดอร์ -->
+      <!-- <svg class="ei" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg> เบิกซ่อมรถ — โผล่เฉพาะตำแหน่งไรเดอร์ -->
       <div id="riderCard" style="margin-top:10px"></div>
     </div>
   </div>
@@ -224,14 +226,14 @@ button.in{box-shadow:0 6px 16px rgba(0,112,60,.24)}
 
 <div class="overlay" id="propOverlay">
   <div class="sheet" style="gap:0; padding:0; overflow-y:auto;">
-    <div style="padding:16px 18px; color:#fff; text-align:center; background:var(--orange)">📩 ข้อความจากฝ่ายบุคคล<div style="font-size:13px;opacity:.92;margin-top:2px;font-weight:400">เรื่องคำขอลาของคุณ</div></div>
+    <div style="padding:16px 18px; color:#fff; text-align:center; background:var(--orange)"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 7l8 6 8-6"/></svg> ข้อความจากฝ่ายบุคคล<div style="font-size:13px;opacity:.92;margin-top:2px;font-weight:400">เรื่องคำขอลาของคุณ</div></div>
     <div id="propBody" style="padding:16px 18px; display:flex; flex-direction:column; gap:11px;"></div>
   </div>
 </div>
 
 <div class="overlay" id="notifOverlay">
   <div class="sheet" style="gap:0; padding:0; overflow-y:auto;">
-    <div id="notifHead" style="padding:16px 18px; color:#fff; text-align:center; font-weight:600; background:var(--green)">🔔 แจ้งเตือนจากระบบ</div>
+    <div id="notifHead" style="padding:16px 18px; color:#fff; text-align:center; font-weight:600; background:var(--green)"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg> แจ้งเตือนจากระบบ</div>
     <div id="notifBody" style="padding:16px 18px; display:flex; flex-direction:column; gap:11px;"></div>
   </div>
 </div>
@@ -240,7 +242,7 @@ button.in{box-shadow:0 6px 16px rgba(0,112,60,.24)}
   <div class="sheet" style="gap:12px;">
     <h2>ยอมรับระเบียบการทำงาน</h2>
     <p style="font-size:13.5px; color:#6b7280; margin:0">ก่อนเริ่มลงเวลา กรุณาอ่านและยอมรับระเบียบการทำงานของบริษัท</p>
-    <a class="link" href="../rules/" target="_blank" style="font-size:14px">📋 เปิดอ่านระเบียบการทำงาน</a>
+    <a class="link" href="../rules/" target="_blank" style="font-size:14px"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> เปิดอ่านระเบียบการทำงาน</a>
     <label style="display:flex; gap:10px; align-items:flex-start; font-size:14px; font-weight:600; text-align:left; cursor:pointer">
       <input type="checkbox" id="rulesAgree" style="width:20px; height:20px; margin-top:1px; flex:none">
       <span>ข้าพเจ้าได้อ่านและยอมรับระเบียบการทำงาน และยินยอมให้เก็บข้อมูลตำแหน่ง/ภาพถ่าย/ใบหน้า</span>
@@ -278,9 +280,9 @@ async function init(){
 // ====== ประกาศจาก HR (แบนเนอร์ + ใช้ในป๊อปอัพ) ======
 let ANNOUNCE = [];
 function annStyle(level){
-  if(level==='urgent') return {bg:'var(--red-soft)', bd:'var(--red)', fg:'var(--red)', ic:'🚨'};
-  if(level==='warn')   return {bg:'#fff7ed', bd:'var(--orange)', fg:'#c2410c', ic:'⚠️'};
-  return {bg:'var(--green-soft)', bd:'var(--green)', fg:'var(--green-d)', ic:'📢'};
+  if(level==='urgent') return {bg:'var(--red-soft)', bd:'var(--red)', fg:'var(--red)', ic:'<svg class="ei" viewBox="0 0 24 24"><path d="M6 18v-4a6 6 0 0 1 12 0v4z"/><path d="M4 21h16"/><path d="M12 4V2M5 6L4 5M19 6l1-1"/></svg>'};
+  if(level==='warn')   return {bg:'#fff7ed', bd:'var(--orange)', fg:'#c2410c', ic:'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>'};
+  return {bg:'var(--green-soft)', bd:'var(--green)', fg:'var(--green-d)', ic:'<svg class="ei" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l9 5V5L6 10H4a1 1 0 0 0-1 1z"/><path d="M18 9a3 3 0 0 1 0 6"/></svg>'};
 }
 // หมายเหตุ: ประกาศแบบ "รูปภาพ" (สไลด์) ไม่แสดงที่หน้าลงเวลา — กันพนักงานมัวปิดประกาศจนลืมกดลงเวลา
 //   · หน้าแรก (index)      = บอร์ดข่าวสาร แสดงสไลด์ให้ดู ไม่นับยอด
@@ -527,8 +529,8 @@ function drawStamp(ctx,w,h){
   // บรรทัดสถานที่
   const locY=bottom-subSize-Math.round(h*0.018);
   ctx.font='600 '+locSize+'px '+F;
-  ctx.fillStyle='#fb923c'; ctx.fillText('📍',pad,locY);
-  const pinW=ctx.measureText('📍 ').width;
+  ctx.fillStyle='#fb923c'; ctx.fillText('<svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>',pad,locY);
+  const pinW=ctx.measureText('<svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> ').width;
   ctx.fillStyle='#fff'; ctx.fillText(locName,pad+pinW,locY);
   // แถวเวลา + วันที่
   const timeY=locY-locSize-Math.round(h*0.020);
@@ -583,7 +585,7 @@ async function submit(action){
   if(!(await ensureRulesAccepted(empMatch.emp_id))) return;   // ต้องยอมรับระเบียบก่อน
   // กันลงเวลาผิดสาขา: ถ้าระบบจับได้คนละสาขากับสาขาประจำ ให้ยืนยันว่า "ไปแทนสาขา"
   if(action==='checkin' && gps.branch && empMatch.branch_id && gps.branch.branch_id!==empMatch.branch_id){
-    if(!confirm('⚠️ คุณอยู่นอกสาขาประจำ ('+branchNm(empMatch.branch_id)+')\nระบบจับได้ว่าคุณอยู่ในพื้นที่สาขา "'+gps.branch.name+'"\n\nยืนยันลงเวลาที่สาขา '+gps.branch.name+' (ไปแทนสาขา) ใช่หรือไม่?')) return;
+    if(!confirm(' คุณอยู่นอกสาขาประจำ ('+branchNm(empMatch.branch_id)+')\nระบบจับได้ว่าคุณอยู่ในพื้นที่สาขา "'+gps.branch.name+'"\n\nยืนยันลงเวลาที่สาขา '+gps.branch.name+' (ไปแทนสาขา) ใช่หรือไม่?')) return;
   }
   // กดออกงาน: ต้องอยู่ในเขตสาขา (นอกเขตทุกสาขา = บล็อก)
   if(action==='checkout' && !gps.branch){ showToast('err','ต้องอยู่ในเขตสาขาก่อนกดออกงาน'); return; }
@@ -606,22 +608,22 @@ async function submit(action){
       const adv = await HR.checkInAdvisory(empMatch.emp_id).catch(()=>null);
       if(adv && adv.openRecord){
         const o=adv.openRecord;
-        if(!confirm('⚠️ คุณยังมีงานที่ "ยังไม่ได้กดออก" (เข้างานวันที่ '+o.workDate+' เวลา '+o.checkinTime+')\n\nถ้าต้องการเลิกงาน กรุณากดปุ่ม "ออกงาน" แทน\n\nยืนยันว่าต้องการ "เข้างานใหม่" ใช่หรือไม่?')) return;
+        if(!confirm(' คุณยังมีงานที่ "ยังไม่ได้กดออก" (เข้างานวันที่ '+o.workDate+' เวลา '+o.checkinTime+')\n\nถ้าต้องการเลิกงาน กรุณากดปุ่ม "ออกงาน" แทน\n\nยืนยันว่าต้องการ "เข้างานใหม่" ใช่หรือไม่?')) return;
       } else if(adv && adv.recentCheckout){
         const rc=adv.recentCheckout;
         const when = rc.hoursAgo < 1 ? Math.round(rc.hoursAgo*60)+' นาที' : rc.hoursAgo+' ชม.';
         const msg = (rc.autoClosed
-            ? '⚠️ ระบบเพิ่งปิดงาน (ออกงานอัตโนมัติ) ให้เมื่อ '+when+'ที่แล้ว เวลา '+rc.checkoutTime
-            : '⚠️ คุณเพิ่งกดออกงานเมื่อ '+when+'ที่แล้ว เวลา '+rc.checkoutTime)
+            ? '<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ระบบเพิ่งปิดงาน (ออกงานอัตโนมัติ) ให้เมื่อ '+when+'ที่แล้ว เวลา '+rc.checkoutTime
+            : '<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> คุณเพิ่งกดออกงานเมื่อ '+when+'ที่แล้ว เวลา '+rc.checkoutTime)
           + '\n\nถ้าคุณตั้งใจจะ "ออกงานกะดึก" กรุณากดปุ่ม "ออกงาน" แทน\n\nยืนยันว่าต้องการ "เข้างานใหม่" ใช่หรือไม่?';
         if(!confirm(msg)) return;
       } else if(adv && adv.offSchedule){
-        if(!confirm('⚠️ ช่วงเวลานี้คุณไม่มีกะตามตารางเวร\n\nยืนยันว่าต้องการเข้างานใช่หรือไม่?')) return;
+        if(!confirm(' ช่วงเวลานี้คุณไม่มีกะตามตารางเวร\n\nยืนยันว่าต้องการเข้างานใช่หรือไม่?')) return;
       }
       // ★ ไม่มีตารางเวรของวันนี้เลย → ต้องยืนยัน + ระบบบันทึกเป็น "เข้างานนอกตาราง" ให้ HR ตรวจสอบ
       let unschedOk = false;
       if(adv && adv.noSchedule){
-        if(!confirm('⚠️ วันนี้คุณไม่มีตารางเวร\n\nหากยืนยันเข้างาน ระบบจะบันทึกเป็น "เข้างานนอกตาราง" และแจ้งให้ HR ตรวจสอบ\n\nยืนยันเข้างานใช่หรือไม่?')) return;
+        if(!confirm(' วันนี้คุณไม่มีตารางเวร\n\nหากยืนยันเข้างาน ระบบจะบันทึกเป็น "เข้างานนอกตาราง" และแจ้งให้ HR ตรวจสอบ\n\nยืนยันเข้างานใช่หรือไม่?')) return;
         unschedOk = true;
       }
       const r = await HR.checkIn({
@@ -638,7 +640,7 @@ async function submit(action){
       let co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, photoDataUrl: outPhoto });
       // ข้ามสาขา → เด้งป๊อปอัพให้ใส่เหตุผล (จำเป็น) แล้วกดออกอีกครั้ง
       if(co && co.needReason){
-        const reason = prompt('⚠️ คุณกำลังกดออกงานที่สาขา "'+(gps.branch?gps.branch.name:'')+'"\nซึ่งต่างจากสาขาที่เข้างาน ('+branchNm(co.checkinBranch)+')\n\nกรุณาระบุเหตุผล (จำเป็น เช่น ถูกเรียกไปช่วยอีกสาขา):');
+        const reason = prompt(' คุณกำลังกดออกงานที่สาขา "'+(gps.branch?gps.branch.name:'')+'"\nซึ่งต่างจากสาขาที่เข้างาน ('+branchNm(co.checkinBranch)+')\n\nกรุณาระบุเหตุผล (จำเป็น เช่น ถูกเรียกไปช่วยอีกสาขา):');
         if(reason===null || !reason.trim()){ showToast('err','ต้องระบุเหตุผลการกดออกข้ามสาขา'); return; }
         co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, reason:reason.trim(), photoDataUrl: outPhoto });
       }
@@ -649,7 +651,7 @@ async function submit(action){
   }catch(e){
     // ★ กันพลาด: ถ้า advisory โหลดไม่ทันแล้ว checkIn เด้ง NO_SCHEDULE → ถามยืนยันแล้วลองใหม่
     if(e && e.code==='NO_SCHEDULE' && action==='checkin'){
-      if(confirm('⚠️ วันนี้คุณไม่มีตารางเวร\n\nหากยืนยันเข้างาน ระบบจะบันทึกเป็น "เข้างานนอกตาราง" และแจ้งให้ HR ตรวจสอบ\n\nยืนยันเข้างานใช่หรือไม่?')){
+      if(confirm(' วันนี้คุณไม่มีตารางเวร\n\nหากยืนยันเข้างาน ระบบจะบันทึกเป็น "เข้างานนอกตาราง" และแจ้งให้ HR ตรวจสอบ\n\nยืนยันเข้างานใช่หรือไม่?')){
         try{
           const shiftId=empMatch.default_shift, branchId=gps.branch?gps.branch.branch_id:empMatch.branch_id, timeStr=new Date().toLocaleTimeString('th-TH',{hour12:false});
           const r=await HR.checkIn({ empId:empMatch.emp_id, shiftId, branchId, lat:gps.lat, lng:gps.lng, accuracy:gps.accuracy, photoDataUrl:capturePhoto(), faceMatch, unscheduledOk:true });
@@ -687,7 +689,7 @@ $('btnIn').onclick  = ()=>submit('checkin');
 $('btnOut').onclick = ()=>submit('checkout');
 
 // ============================================================
-// 🚨 เบิกฉุกเฉิน — โผล่เฉพาะคนที่ ผจก. เปิดสิทธิ์ให้ (นับถอยหลังหมดอายุ)
+// <svg class="ei" viewBox="0 0 24 24"><path d="M6 18v-4a6 6 0 0 1 12 0v4z"/><path d="M4 21h16"/><path d="M12 4V2M5 6L4 5M19 6l1-1"/></svg> เบิกฉุกเฉิน — โผล่เฉพาะคนที่ ผจก. เปิดสิทธิ์ให้ (นับถอยหลังหมดอายุ)
 //    ต้องระบุเหตุฉุกเฉิน + แนบหลักฐาน + ยืนยันตัวตนด้วยใบหน้า (หน้านี้มีกล้อง/ระบบใบหน้าอยู่แล้ว)
 // ============================================================
 let ADV_EMG=null, ADV_TICK=null, ADV_PHOTOS=[];
@@ -710,7 +712,7 @@ async function refreshAdvEmg(){
     const left=advLeftTxt(q.emergency_window.expires_at);
     if(!left){ box.innerHTML=''; if(ADV_TICK) clearInterval(ADV_TICK); return; }
     box.innerHTML='<div style="border:1.5px solid #ea580c;background:#fff7ed;border-radius:14px;padding:12px 14px">'
-      +'<div style="font-weight:800;color:#9a3412;font-size:14px">🚨 คุณมีสิทธิ์เบิกฉุกเฉิน</div>'
+      +'<div style="font-weight:800;color:#9a3412;font-size:14px"><svg class="ei" viewBox="0 0 24 24"><path d="M6 18v-4a6 6 0 0 1 12 0v4z"/><path d="M4 21h16"/><path d="M12 4V2M5 6L4 5M19 6l1-1"/></svg> คุณมีสิทธิ์เบิกฉุกเฉิน</div>'
       +'<div style="font-size:12.5px;color:#7c2d12;margin-top:2px">ผู้จัดการเปิดสิทธิ์ให้ · เหลือเวลาอีก <b>'+left+'</b></div>'
       +'<div style="font-size:12.5px;color:#7c2d12;margin-top:2px">วงเงินที่เบิกได้ <b>'+advMoney(q.remaining)+' บาท</b></div>'
       +'<button type="button" id="advEmgBtn" style="width:100%;margin-top:9px;padding:11px;border:0;border-radius:11px;background:#ea580c;color:#fff;font-weight:700;font-size:15px;cursor:pointer">เบิกฉุกเฉิน</button>'
@@ -735,7 +737,7 @@ function openAdvEmg(){
   ov.id='advEmgOv';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto';
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">🚨 เบิกฉุกเฉิน</h2>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0"><svg class="ei" viewBox="0 0 24 24"><path d="M6 18v-4a6 6 0 0 1 12 0v4z"/><path d="M4 21h16"/><path d="M12 4V2M5 6L4 5M19 6l1-1"/></svg> เบิกฉุกเฉิน</h2>'
       +'<button type="button" id="advEmgX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
     +'<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:9px 11px;font-size:12.5px;color:#7c2d12;line-height:1.6;margin-bottom:10px">'
       +'ต้องระบุเหตุฉุกเฉินให้ชัดเจน + <b>แนบหลักฐานอย่างน้อย 1 รูป</b> + ยืนยันใบหน้า<br>HR เป็นผู้อนุมัติ · จ่ายภายใน 2 วันทำการหลังอนุมัติ</div>'
@@ -744,7 +746,7 @@ function openAdvEmg(){
     +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">เหตุฉุกเฉิน (อย่างน้อย '+q.config.min_reason_len+' ตัวอักษร)</label>'
     +'<textarea id="advEmgReason" rows="3" placeholder="เช่น ลูกป่วยต้องเข้าโรงพยาบาลวันนี้ ต้องสำรองค่ารักษา" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box"></textarea>'
     +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">หลักฐาน (บังคับ)</label>'
-    +'<label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 แนบรูป<input type="file" accept="image/*" multiple id="advEmgFile" style="display:none"></label>'
+    +'<label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> แนบรูป<input type="file" accept="image/*" multiple id="advEmgFile" style="display:none"></label>'
     +'<div id="advEmgThumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>'
     +'<button type="button" id="advEmgSend" style="width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#ea580c;color:#fff;font-weight:700;font-size:15px;cursor:pointer">ยืนยันใบหน้า + ส่งคำขอ</button>'
     +'</div>';
@@ -787,7 +789,7 @@ function openAdvEmg(){
 }
 
 // ============================================================
-// 🏍️ ไรเดอร์: เบิกซ่อมบำรุงรถ
+// <svg class="ei" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg> ไรเดอร์: เบิกซ่อมบำรุงรถ
 // ============================================================
 let RIDER = { on:false, vehicles:[], items:[], photos:{} };
 function riderMoney(n){ return Number(n||0).toLocaleString('th-TH'); }
@@ -826,11 +828,11 @@ async function refreshRiderCard(){
   RIDER.on=true;
   try{ RIDER.vehicles = await HR.riderMyVehicles(empMatch.emp_id); }catch(e){ RIDER.vehicles=[]; }
   box.innerHTML='<div style="border:1.5px solid #0d9488;background:#f0fdfa;border-radius:14px;padding:12px 14px">'
-    +'<div style="font-weight:800;color:#0f766e;font-size:14px">🏍️ ไรเดอร์ · เบิกซ่อมบำรุงรถ</div>'
+    +'<div style="font-weight:800;color:#0f766e;font-size:14px"><svg class="ei" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg> ไรเดอร์ · เบิกซ่อมบำรุงรถ</div>'
     +'<div style="font-size:12.5px;color:#134e4a;margin-top:2px">'+(RIDER.vehicles.length?('รถของคุณ '+RIDER.vehicles.length+' คัน'):'ยังไม่มีรถลงทะเบียน — แจ้งผู้จัดการ')+'</div>'
-    +'<button type="button" id="rcOdoBtn" style="width:100%;margin-top:9px;padding:11px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer">📍 บันทึกเลขไมล์ (ก่อน/หลังงาน)</button>'
+    +'<button type="button" id="rcOdoBtn" style="width:100%;margin-top:9px;padding:11px;border:1.5px solid #0d9488;border-radius:11px;background:#fff;color:#0f766e;font-weight:700;font-size:14px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> บันทึกเลขไมล์ (ก่อน/หลังงาน)</button>'
     +'<div style="display:flex;gap:8px;margin-top:8px">'
-    +'<button type="button" id="rcFuelBtn" style="flex:1;padding:11px;border:0;border-radius:11px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer">⛽ เบิกค่าน้ำมัน</button>'
+    +'<button type="button" id="rcFuelBtn" style="flex:1;padding:11px;border:0;border-radius:11px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M5 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M15 9h2.5L20 11.5V17a1.5 1.5 0 0 1-3 0"/><path d="M3 21h14M8 9h6"/></svg> เบิกค่าน้ำมัน</button>'
     +'<button type="button" id="fuMineBtn" style="padding:11px 14px;border:1.5px solid #ea580c;border-radius:11px;background:#fff;color:#c2410c;font-weight:700;font-size:14px;cursor:pointer">สถานะ</button>'
     +'</div>'
     +'<div style="display:flex;gap:8px;margin-top:8px">'
@@ -844,7 +846,7 @@ async function refreshRiderCard(){
   $('fuMineBtn').onclick=openFuelMine;
 }
 
-// ⛽ เบิกค่าน้ำมัน
+// <svg class="ei" viewBox="0 0 24 24"><path d="M5 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M15 9h2.5L20 11.5V17a1.5 1.5 0 0 1-3 0"/><path d="M3 21h14M8 9h6"/></svg> เบิกค่าน้ำมัน
 let FUEL_PHOTO=null;
 async function openFuelClaim(){
   FUEL_PHOTO=null;
@@ -852,7 +854,7 @@ async function openFuelClaim(){
   if(!q.enabled){ showToast('err','ระบบเบิกน้ำมันปิดอยู่'); return; }
   if(q.is_open_today===false){
     const ov2=document.createElement('div'); ov2.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-    ov2.innerHTML='<div style="background:#fff;border-radius:16px;max-width:380px;width:100%;padding:22px;text-align:center"><div style="font-size:40px;margin-bottom:6px">⛽</div><div style="font-weight:800;font-size:17px;color:#9a3412;margin-bottom:8px">ยังไม่เปิดให้เบิกวันนี้</div><div style="font-size:13.5px;color:#7c2d12;line-height:1.7">เบิกค่าน้ำมันได้เฉพาะ<b>วัน'+escH(q.open_day_th||'จันทร์')+'</b>เท่านั้น<br>เบิกวัน'+escH(q.open_day_th||'จันทร์')+' · รับเงินวัน'+escH(q.payout_day_th||'อังคาร')+'</div><button type="button" id="fuClose2" style="margin-top:16px;padding:10px 22px;border:0;border-radius:10px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer">รับทราบ</button></div>';
+    ov2.innerHTML='<div style="background:#fff;border-radius:16px;max-width:380px;width:100%;padding:22px;text-align:center"><div style="font-size:40px;margin-bottom:6px"><svg class="ei" viewBox="0 0 24 24"><path d="M5 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M15 9h2.5L20 11.5V17a1.5 1.5 0 0 1-3 0"/><path d="M3 21h14M8 9h6"/></svg></div><div style="font-weight:800;font-size:17px;color:#9a3412;margin-bottom:8px">ยังไม่เปิดให้เบิกวันนี้</div><div style="font-size:13.5px;color:#7c2d12;line-height:1.7">เบิกค่าน้ำมันได้เฉพาะ<b>วัน'+escH(q.open_day_th||'จันทร์')+'</b>เท่านั้น<br>เบิกวัน'+escH(q.open_day_th||'จันทร์')+' · รับเงินวัน'+escH(q.payout_day_th||'อังคาร')+'</div><button type="button" id="fuClose2" style="margin-top:16px;padding:10px 22px;border:0;border-radius:10px;background:#ea580c;color:#fff;font-weight:700;font-size:14px;cursor:pointer">รับทราบ</button></div>';
     ov2.addEventListener('click',e=>{ if(e.target===ov2||e.target.id==='fuClose2') ov2.remove(); });
     document.body.appendChild(ov2); return;
   }
@@ -860,9 +862,9 @@ async function openFuelClaim(){
   const ov=document.createElement('div'); ov.id='fuelOv';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">⛽ เบิกค่าน้ำมัน</h2>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0"><svg class="ei" viewBox="0 0 24 24"><path d="M5 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M15 9h2.5L20 11.5V17a1.5 1.5 0 0 1-3 0"/><path d="M3 21h14M8 9h6"/></svg> เบิกค่าน้ำมัน</h2>'
       +'<button type="button" id="fuX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
-    +'<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:9px 11px;font-size:12px;color:#7c2d12;margin-bottom:10px;line-height:1.6">เงินหมุนเวียนสำหรับเติมน้ำมัน (ไม่ใช่สวัสดิการ) · <b>จะถูกหักคืนจากเงินเดือนสิ้นเดือน</b><br>ครั้งละไม่เกิน <b>'+q.per_claim_max.toLocaleString()+'</b> · รอบนี้เบิกได้อีก <b>'+q.remaining.toLocaleString()+'</b> บาท (จาก '+q.total_max.toLocaleString()+')<br>📅 เปิดเบิกเฉพาะวัน<b>'+escH(q.open_day_th||'จันทร์')+'</b> · รับเงินวัน<b>'+escH(q.payout_day_th||'อังคาร')+'</b> (วันถัดไป)</div>'
+    +'<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:9px 11px;font-size:12px;color:#7c2d12;margin-bottom:10px;line-height:1.6">เงินหมุนเวียนสำหรับเติมน้ำมัน (ไม่ใช่สวัสดิการ) · <b>จะถูกหักคืนจากเงินเดือนสิ้นเดือน</b><br>ครั้งละไม่เกิน <b>'+q.per_claim_max.toLocaleString()+'</b> · รอบนี้เบิกได้อีก <b>'+q.remaining.toLocaleString()+'</b> บาท (จาก '+q.total_max.toLocaleString()+')<br><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> เปิดเบิกเฉพาะวัน<b>'+escH(q.open_day_th||'จันทร์')+'</b> · รับเงินวัน<b>'+escH(q.payout_day_th||'อังคาร')+'</b> (วันถัดไป)</div>'
     +(vehOpts?('<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">รถ</label><select id="fuVeh" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box;margin-bottom:9px">'+vehOpts+'</select>'):'')
     +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">ยอดเบิก (บาท)</label>'
       +'<input id="fuAmt" type="number" inputmode="numeric" max="'+q.per_claim_max+'" style="width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;font-size:18px;text-align:center;font-weight:700;box-sizing:border-box"></div>'
@@ -871,7 +873,7 @@ async function openFuelClaim(){
     +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">ปั๊ม/ร้าน (ถ้ามี)</label>'
     +'<input id="fuShop" type="text" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box">'
     +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">รูปบิลน้ำมัน (บังคับ) — ส่งบิลตัวจริงให้ HR ด้วย</label>'
-    +'<label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 ถ่าย/แนบบิล<input type="file" accept="image/*" capture="environment" id="fuFile" style="display:none"></label>'
+    +'<label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่าย/แนบบิล<input type="file" accept="image/*" capture="environment" id="fuFile" style="display:none"></label>'
     +'<div id="fuThumb" style="margin-top:8px"></div>'
     +'<button type="button" id="fuSend" style="width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#ea580c;color:#fff;font-weight:700;font-size:15px;cursor:pointer">ส่งคำขอเบิกน้ำมัน</button></div>';
   document.body.appendChild(ov);
@@ -896,7 +898,7 @@ async function openRiderOdo(){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
   const vehOpts=RIDER.vehicles.map(v=>'<option value="'+v.id+'">'+escH(v.plate||'(ไม่มีทะเบียน)')+'</option>').join('');
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:440px;width:100%;padding:18px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">📍 บันทึกเลขไมล์</h2>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> บันทึกเลขไมล์</h2>'
       +'<button type="button" id="rcoX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
     +'<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">รถ</label>'
     +'<select id="rcoVeh" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;box-sizing:border-box">'+vehOpts+'</select>'
@@ -907,7 +909,7 @@ async function openRiderOdo(){
     +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">เลขไมล์ปัจจุบัน</label>'
     +'<input id="rcoOdo" type="number" inputmode="numeric" style="width:100%;padding:11px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit;font-size:18px;text-align:center;font-weight:700;box-sizing:border-box">'
     +'<label style="font-size:12.5px;font-weight:700;display:block;margin:9px 0 4px">รูปหน้าปัด (บังคับ)</label>'
-    +'<label style="display:inline-block;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="rcoFile" style="display:none"></label>'
+    +'<label style="display:inline-block;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="rcoFile" style="display:none"></label>'
     +'<div id="rcoThumb" style="margin-top:6px"></div>'
     +'<div id="rcoGps" style="font-size:11.5px;color:#6b7280;margin-top:6px"></div>'
     +'<button type="button" id="rcoSend" style="width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:#0d9488;color:#fff;font-weight:700;font-size:15px;cursor:pointer">บันทึก</button>'
@@ -925,7 +927,7 @@ async function openRiderOdo(){
     else if(!t.end){ document.querySelector('input[name=rcoPhase][value=end]').checked=true; }
   };
   $('rcoVeh').onchange=refreshStatus; refreshStatus();
-  $('rcoGps').textContent=(gps.lat!=null)?('📍 พิกัด '+gps.lat.toFixed(5)+', '+gps.lng.toFixed(5)):'📍 กำลังหาพิกัด GPS…';
+  $('rcoGps').textContent=(gps.lat!=null)?('พิกัด '+gps.lat.toFixed(5)+', '+gps.lng.toFixed(5)):'กำลังหาพิกัด GPS…';
   $('rcoFile').addEventListener('change', async e=>{
     const f=e.target.files&&e.target.files[0]; if(!f) return;
     const d=await riderStampFile(f);
@@ -939,7 +941,7 @@ async function openRiderOdo(){
     const btn=$('rcoSend'); btn.disabled=true; btn.textContent='กำลังบันทึก…';
     try{
       const r=await HR.riderLogOdometer({ empId:empMatch.emp_id, vehicle_id:$('rcoVeh').value, phase, odo, photo:RIDER_ODO.photo, lat:gps.lat, lng:gps.lng });
-      showToast('ok','บันทึกเลขไมล์แล้ว'+(r.gps_ok===false?' ⚠ พิกัดนอกรัศมีสาขา':''));
+      showToast('ok','บันทึกเลขไมล์แล้ว'+(r.gps_ok===false?' <svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> พิกัดนอกรัศมีสาขา':''));
       close();
     }catch(e){ showToast('err', e.message||'บันทึกไม่สำเร็จ'); btn.disabled=false; btn.textContent='บันทึก'; }
   };
@@ -964,7 +966,7 @@ async function riderCheckElig(){
   const odo=$('rcOdo')?$('rcOdo').value:'';
   let e; try{ e=await HR.riderEligibility({ empId:empMatch.emp_id, vehicle:v, item, odoCurrent:(odo!==''?Number(odo):null) }); }catch(_e){ box.innerHTML=''; return; }
   box.innerHTML='<div style="padding:8px 11px;border-radius:9px;font-size:12.5px;background:'+(e.ok?'#f0fdf4':'#fef2f2')+';color:'+(e.ok?'#166534':'#991b1b')+'">'
-    +(e.ok?'✅ ':'⚠ ')+escH(e.note||'')+(e.allowed!=null?(' · ใช้สิทธิ์ปีนี้ '+(e.used||0)+'/'+e.allowed):'')+'</div>';
+    +(e.ok?'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ':'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ')+escH(e.note||'')+(e.allowed!=null?(' · ใช้สิทธิ์ปีนี้ '+(e.used||0)+'/'+e.allowed):'')+'</div>';
 }
 // เปิด/ปิดช่องหลักฐานตามที่รายการกำหนด
 function riderApplyReq(item){
@@ -982,7 +984,7 @@ function riderThumb(slot){
 function riderPhotoSlot(label, slot, reqSpanId){
   return '<div id="rcSlot'+slot.charAt(0).toUpperCase()+slot.slice(1)+'" style="display:none">'
     +'<label style="font-size:12.5px;font-weight:700;display:block;margin:8px 0 4px">'+label+(reqSpanId?'<span id="'+reqSpanId+'" style="color:#dc2626"></span>':'')+'</label>'
-    +'<label style="display:inline-block;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📷 ถ่าย/แนบรูป'
+    +'<label style="display:inline-block;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่าย/แนบรูป'
     +'<input type="file" accept="image/*" capture="environment" data-rcslot="'+slot+'" style="display:none"></label>'
     +'<div id="rcThumb_'+slot+'" style="margin-top:6px"></div></div>';
 }
@@ -993,7 +995,7 @@ function openRiderClaim(){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
   const vehOpts=RIDER.vehicles.map(v=>'<option value="'+v.id+'">'+escH(v.plate||'(ไม่มีทะเบียน)')+(v.brand?(' · '+escH(v.brand)):'')+'</option>').join('');
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:480px;width:100%;padding:18px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0">🏍️ ขอเบิกซ่อมรถ</h2>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="flex:1;font-size:18px;margin:0"><svg class="ei" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg> ขอเบิกซ่อมรถ</h2>'
       +'<button type="button" id="rcX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'
     +'<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:8px 11px;font-size:12px;color:#134e4a;margin-bottom:10px">ถ่ายรูปหลักฐานผ่านกล้องในระบบ · ระบบเช็คสิทธิ์ให้อัตโนมัติ · ผู้จัดการ/สำนักงานเป็นผู้อนุมัติ</div>'
     +'<label style="font-size:12.5px;font-weight:700;display:block;margin-bottom:4px">รถ</label>'
@@ -1066,7 +1068,7 @@ async function openRiderMine(){
       +'<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px">'+escH(r.item_name||'')+'</b>'
       +'<span style="font-size:11px;font-weight:700;color:'+(CL[r.status]||'#64748b')+'">'+(ST[r.status]||r.status)+'</span></div>'
       +'<div style="font-size:12px;color:#6b7280;margin-top:2px">'+escH(r.claim_no||'')+' · '+escH(r.vehicle_plate||'—')+' · '+riderMoney(amt)+' บาท</div>'
-      +(r.elig_ok?'':'<div style="font-size:11.5px;color:#b45309;margin-top:2px">⚠ '+escH(r.elig_note||'')+'</div>')
+      +(r.elig_ok?'':'<div style="font-size:11.5px;color:#b45309;margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> '+escH(r.elig_note||'')+'</div>')
       +(r.review_note?'<div style="font-size:11.5px;color:#6b7280;margin-top:2px">หมายเหตุ: '+escH(r.review_note)+'</div>':'')
       +'</div>';
   }).join(''):'<div style="text-align:center;color:#9ca3af;padding:24px">— ยังไม่มีคำขอ —</div>';
@@ -1077,7 +1079,7 @@ async function openRiderMine(){
   $('rcMineX').onclick=()=>ov.remove();
   ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
 }
-// ⛽ เบิกน้ำมันของฉัน — ให้ไรเดอร์เห็นสถานะ (รออนุมัติ/อนุมัติ/ไม่อนุมัติ) + เหตุผลจาก HR
+// <svg class="ei" viewBox="0 0 24 24"><path d="M5 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M15 9h2.5L20 11.5V17a1.5 1.5 0 0 1-3 0"/><path d="M3 21h14M8 9h6"/></svg> เบิกน้ำมันของฉัน — ให้ไรเดอร์เห็นสถานะ (รออนุมัติ/อนุมัติ/ไม่อนุมัติ) + เหตุผลจาก HR
 async function openFuelMine(){
   let rows=[]; try{ rows=await HR.riderFuelMyList(empMatch.emp_id); }catch(e){}
   const ST={ submitted:'รออนุมัติ', approved:'อนุมัติแล้ว', deducted:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', cancelled:'ยกเลิก' };
@@ -1087,14 +1089,14 @@ async function openFuelMine(){
   const list=rows.length?rows.map(r=>{
     const d=r.created_at?(window.beDate?beDate(String(r.created_at).slice(0,10)):String(r.created_at).slice(0,10)):'';
     return '<div style="border:1px solid #e5e7eb;border-radius:11px;padding:10px 12px;margin-bottom:8px">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px">⛽ '+riderMoney(r.amount||0)+' บาท</b>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px"><svg class="ei" viewBox="0 0 24 24"><path d="M5 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M15 9h2.5L20 11.5V17a1.5 1.5 0 0 1-3 0"/><path d="M3 21h14M8 9h6"/></svg> '+riderMoney(r.amount||0)+' บาท</b>'
       +'<span style="font-size:11px;font-weight:700;color:'+(CL[r.status]||'#64748b')+'">'+(ST[r.status]||r.status)+'</span></div>'
       +'<div style="font-size:12px;color:#6b7280;margin-top:2px">'+escH(r.claim_no||'')+(d?(' · '+d):'')+(r.vehicle_plate?(' · '+escH(r.vehicle_plate)):'')+'</div>'
       +(r.review_note?'<div style="font-size:11.5px;color:'+(r.status==='rejected'?'#b91c1c':'#6b7280')+';margin-top:2px">หมายเหตุจาก HR: '+escH(r.review_note)+'</div>':'')
       +'</div>';
   }).join(''):'<div style="text-align:center;color:#9ca3af;padding:24px">— ยังไม่มีคำขอเบิกน้ำมัน —</div>';
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:18px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h2 style="flex:1;font-size:18px;margin:0">⛽ เบิกน้ำมันของฉัน</h2>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h2 style="flex:1;font-size:18px;margin:0"><svg class="ei" viewBox="0 0 24 24"><path d="M5 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M15 9h2.5L20 11.5V17a1.5 1.5 0 0 1-3 0"/><path d="M3 21h14M8 9h6"/></svg> เบิกน้ำมันของฉัน</h2>'
     +'<button type="button" id="fuMineX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>'+list+'</div>';
   document.body.appendChild(ov);
   $('fuMineX').onclick=()=>ov.remove();
@@ -1230,7 +1232,7 @@ async function showAckPopup(action, info){
   const ov=$('ackOverlay'), head=$('ackHead'), body=$('ackBody'), btn=$('ackBtn');
   ov.classList.add('show');
   head.style.background='var(--green)';
-  head.innerHTML = (action==='checkin'?'✅ บันทึกเข้างานแล้ว':'👋 บันทึกออกงานแล้ว')
+  head.innerHTML = (action==='checkin'?'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> บันทึกเข้างานแล้ว':' บันทึกออกงานแล้ว')
     + '<div style="font-size:13px;opacity:.92;margin-top:2px;font-weight:400">'+escH(info.name)+'</div>';
   body.innerHTML='<p style="text-align:center;color:var(--muted)">กำลังโหลดสถานะ…</p>';
   btn.disabled=true; btn.textContent='รับทราบ';
@@ -1254,13 +1256,13 @@ function renderAck(action, info, s){
     html += '<div style="text-align:center">'
       + '<div style="font-size:12.5px;color:var(--muted)">กะ '+escH(info.shift_name)+(info.branch_name?' · '+escH(info.branch_name):'')+' · '+escH(info.time)+'</div>'
       + (info.late_min>0
-          ? '<div style="margin-top:6px;font-size:20px;font-weight:800;color:var(--red)">⏰ สายวันนี้ '+info.late_min+' นาที</div>'
+          ? '<div style="margin-top:6px;font-size:20px;font-weight:800;color:var(--red)"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> สายวันนี้ '+info.late_min+' นาที</div>'
           : '<div style="margin-top:6px;font-size:20px;font-weight:800;color:var(--green)">✓ ตรงเวลา</div>')
-      + (info.faceMatch===false?'<div style="font-size:12px;color:var(--red);margin-top:4px">⚠️ ใบหน้าไม่ตรงกับที่ลงทะเบียน</div>':'')
+      + (info.faceMatch===false?'<div style="font-size:12px;color:var(--red);margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ใบหน้าไม่ตรงกับที่ลงทะเบียน</div>':'')
       + '</div>';
   } else {
-    html += '<div style="text-align:center;font-size:14px">ออกงานเวลา '+escH(info.time)+' · ขอบคุณที่ทำงานวันนี้ 🙏</div>';
-    if(info.cross) html += '<div style="text-align:center;font-size:12.5px;color:#a06515;margin-top:4px">📍 บันทึกกดออกข้ามสาขาที่ '+escH(info.branch_name||'')+' แล้ว</div>';
+    html += '<div style="text-align:center;font-size:14px">ออกงานเวลา '+escH(info.time)+' · ขอบคุณที่ทำงานวันนี้ </div>';
+    if(info.cross) html += '<div style="text-align:center;font-size:12.5px;color:#a06515;margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> บันทึกกดออกข้ามสาขาที่ '+escH(info.branch_name||'')+' แล้ว</div>';
   }
   if(!s){ html += '<div style="font-size:12px;color:var(--muted);text-align:center">(โหลดสถานะสะสมไม่สำเร็จ)</div>'; return html; }
   const st=s.stats, d=s.discipline, sc=s.score;
@@ -1275,7 +1277,7 @@ function renderAck(action, info, s){
     const parts=[];
     if(d.next.need_late!=null) parts.push('สายอีก '+d.next.need_late+' ครั้ง');
     if(d.next.need_absent!=null) parts.push('ขาดอีก '+d.next.need_absent+' วัน');
-    html += '<div style="font-size:12.5px;margin-top:3px">⚠️ '+parts.join(' หรือ ')+' → '+escH(d.next.name)+'</div>';
+    html += '<div style="font-size:12.5px;margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> '+parts.join(' หรือ ')+' → '+escH(d.next.name)+'</div>';
   } else { html += '<div style="font-size:12.5px;margin-top:3px">'+escH(d.message)+'</div>'; }
   html += '</div>';
   if(sc && sc.enabled){
@@ -1283,7 +1285,7 @@ function renderAck(action, info, s){
       + '<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:700;color:'+sc.band_color+'">คะแนนเดือนนี้</span><span style="font-size:22px;font-weight:800;color:'+sc.band_color+'">'+sc.score+'<span style="font-size:12px;color:var(--muted)">/'+sc.start+'</span></span></div>'
       + (sc.band_label?'<div style="font-size:12.5px;margin-top:2px">ผล: '+escH(sc.band_label)+(sc.bonus?' · โบนัส '+sc.bonus+' บาท':'')+'</div>':'');
     if(sc.to_warn){
-      if(sc.to_warn.already) html += '<div style="font-size:12.5px;color:var(--red);margin-top:3px">⚠️ คะแนนเข้าโซน '+escH(sc.to_warn.warn_name)+'</div>';
+      if(sc.to_warn.already) html += '<div style="font-size:12.5px;color:var(--red);margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> คะแนนเข้าโซน '+escH(sc.to_warn.warn_name)+'</div>';
       else html += '<div style="font-size:12.5px;margin-top:3px">เหลืออีก '+sc.to_warn.gap+' คะแนนจะถึงโซน '+escH(sc.to_warn.warn_name)+'</div>';
     }
     html += '</div>';
@@ -1322,7 +1324,7 @@ function showOneProposal(list, idx, empId){
     +'<textarea id="propNote" rows="2" placeholder="พิมพ์ข้อความถึงผู้จัดการ…" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:10px;font:inherit;font-size:14px;resize:vertical;box-sizing:border-box"></textarea>'
     +'<div id="propErr" style="color:var(--red);font-size:12.5px;display:none"></div>'
     +'<div style="display:flex;gap:8px">'
-      +'<button id="propNo" class="act" style="flex:1;background:#fff;color:var(--red);border:1.5px solid #f1bcbe">✖ ไม่ยอมรับ</button>'
+      +'<button id="propNo" class="act" style="flex:1;background:#fff;color:var(--red);border:1.5px solid #f1bcbe"> ไม่ยอมรับ</button>'
       +'<button id="propYes" class="act in" style="flex:1">✓ ยอมรับ</button>'
     +'</div>';
   $('propOverlay').classList.add('show');
@@ -1347,9 +1349,9 @@ async function showMyNotifications(empId){
   if(list.length) showOneNotif(list, 0, empId);
 }
 function notifStyle(kind){
-  if(kind==='score_deduct') return {bg:'var(--red)', ic:'⛔'};
-  if(kind==='score_add'||kind==='leave_restored') return {bg:'var(--green)', ic:kind==='leave_restored'?'✅':'➕'};
-  return {bg:'var(--green)', ic:'🔔'};
+  if(kind==='score_deduct') return {bg:'var(--red)', ic:'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>'};
+  if(kind==='score_add'||kind==='leave_restored') return {bg:'var(--green)', ic:kind==='leave_restored'?'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg>':'<svg class="ei" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>'};
+  return {bg:'var(--green)', ic:'<svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>'};
 }
 function showOneNotif(list, idx, empId){
   if(idx>=list.length){ $('notifOverlay').classList.remove('show'); return; }
@@ -1405,7 +1407,7 @@ function renderProposalHistory(rows, cyc){
       const rb=p.response==='accepted'?'<span class="pill ok">คุณยอมรับ</span>':p.response==='declined'?'<span class="pill bad">คุณไม่ยอมรับ</span>':(p.status==='proposed'?'<span class="pill idle">รอคุณตอบ</span>':'');
       return '<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+escH(range)+'</b>'+rb+'</div>'
-        +(p.proposal_msg?'<div style="margin-top:3px;font-size:13px;color:#9a3412;white-space:pre-wrap">📩 ผู้จัดการ: '+escH(p.proposal_msg)+'</div>':'')
+        +(p.proposal_msg?'<div style="margin-top:3px;font-size:13px;color:#9a3412;white-space:pre-wrap"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 7l8 6 8-6"/></svg> ผู้จัดการ: '+escH(p.proposal_msg)+'</div>':'')
         +(p.response_msg?'<div style="margin-top:2px;font-size:13px;color:#1d4ed8;white-space:pre-wrap">↩ คุณ: '+escH(p.response_msg)+'</div>':'')
         +'</div>';
     }).join('');
@@ -1417,7 +1419,7 @@ function renderMyLeaves(rows, cyc){
   return head+list.map(r=>{
     const badge=r.status==='approved'?'<span style="background:#dcfce7;color:#166534;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✓ อนุมัติแล้ว</span>'
       :r.status==='rejected'?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✗ ไม่อนุมัติ</span>'
-      :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
+      :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3c0 4 5 5 5 9s-5 5-5 9M17 3c0 4-5 5-5 9s5 5 5 9"/></svg> รออนุมัติ</span>';
     const range=(r.end_date&&r.end_date!==r.start_date)?(beDate(r.start_date)+' – '+beDate(r.end_date)):beDate(r.start_date);
     const reason=r.reason?('<div style="color:var(--muted);margin-top:2px">เหตุผล: '+escH(r.reason)+'</div>'):'';
     const note=r.hr_note?('<div style="margin-top:2px;color:'+(r.status==='rejected'?'#b91c1c':'#166534')+'">หมายเหตุจาก HR: '+escH(r.hr_note)+'</div>'):'';

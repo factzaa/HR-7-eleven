@@ -57,6 +57,8 @@
   }
 </style>
 <style id="ui-refresh">
+.ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
+.ed{width:.72em;height:.72em;fill:currentColor;stroke:none;vertical-align:.02em;display:inline-block;margin-right:1px}
 .btn{border-radius:11px}
 .card{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05)}
 </style>
@@ -76,13 +78,13 @@
 <div id="mainView" style="display:none">
   <div class="top">
     <a href="../hr/" class="btn sec sm" style="text-decoration:none">← หน้า HR</a>
-    <h1>🧾 ตรวจข้อมูลเข้าเงินเดือน</h1>
+    <h1><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> ตรวจข้อมูลเข้าเงินเดือน</h1>
     <span class="badge">ไม่แสดงยอดเงิน</span>
     <select id="which"><option value="current">รอบปัจจุบัน</option></select>
     <select id="branch"><option value="">ทุกสาขา</option></select>
     <button class="btn sec sm" id="reload">รีเฟรช</button>
-    <button class="btn sec sm" id="ctrlBtn">👥 ผู้คุมผลัด</button>
-    <button class="btn sm" id="saveAll">💾 บันทึกทั้งหมด</button>
+    <button class="btn sec sm" id="ctrlBtn"><svg class="ei" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg> ผู้คุมผลัด</button>
+    <button class="btn sm" id="saveAll"><svg class="ei" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7"/><rect x="8" y="13" width="8" height="5"/></svg> บันทึกทั้งหมด</button>
   </div>
   <div class="wrap">
     <div class="note">
@@ -106,7 +108,7 @@
 
 <div id="instOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
   <div style="background:#fff;border-radius:16px;max-width:500px;width:100%;padding:18px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 id="inTitle" style="flex:1;font-size:17px;margin:0">💳 แผนผ่อนหัก</h2>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 id="inTitle" style="flex:1;font-size:17px;margin:0"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg> แผนผ่อนหัก</h2>
       <button id="inX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>
     <div id="inList" style="margin-bottom:12px"><div style="color:var(--muted);text-align:center;padding:12px">กำลังโหลด…</div></div>
     <div style="border-top:1px solid var(--line);padding-top:12px">
@@ -125,7 +127,7 @@
 
 <div id="ctrlOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
   <div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:18px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 style="flex:1;font-size:17px;margin:0">👥 ผู้คุมผลัด (กะดึก)</h2>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 style="flex:1;font-size:17px;margin:0"><svg class="ei" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg> ผู้คุมผลัด (กะดึก)</h2>
       <button id="ctrlX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>
     <div id="ctrlSub" class="sub" style="margin-bottom:10px"></div>
     <div id="ctrlBody"><div style="color:var(--muted);text-align:center;padding:16px">กำลังโหลด…</div></div>
@@ -189,7 +191,7 @@ async function openCtrl(){
   $('ctrlSub').textContent='รอบ '+d.period_start+' ถึง '+d.period_end+' · คืนกะดึก '+d.night_keys+' คืน · มีหัวหน้าผลัดได้ 15 '+d.matched_keys+' คืน';
   let h='';
   if(!d.night_shifts.length){
-    h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:11px;font-size:13px;color:#b91c1c;margin-bottom:10px">⚠️ ระบบไม่พบ "กะดึก" เลย (ไม่มีกะที่เวลาเลิก ≤ เวลาเข้า) — ตรวจการตั้งเวลากะ</div>';
+    h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:11px;font-size:13px;color:#b91c1c;margin-bottom:10px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ระบบไม่พบ "กะดึก" เลย (ไม่มีกะที่เวลาเลิก ≤ เวลาเข้า) — ตรวจการตั้งเวลากะ</div>';
   }
   h+='<div style="background:'+(d.matched_keys>0?'#f0fdf4;border:1px solid #86efac;color:#166534':'#fff7ed;border:1px solid #fdba74;color:#9a3412')+';border-radius:10px;padding:11px;font-size:12.5px;margin-bottom:10px">คืนกะดึก '+d.night_keys+' คืน · <b>มีหัวหน้าผลัดมาลงเวลากะดึก '+d.matched_keys+' คืน (คนนั้นได้ 15)</b>'+(d.nolead_keys>0?(' · ไม่มีหัวหน้าผลัดของกะ '+d.nolead_keys+' คืน (ทุกคนได้ 10)'):'')+'</div>';
   if(!d.rows.length){
@@ -198,7 +200,7 @@ async function openCtrl(){
     h+='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="color:var(--muted);font-size:11px"><th style="text-align:left;padding:3px 6px">วัน</th><th style="text-align:left;padding:3px 6px">สาขา/กะ</th><th style="text-align:left;padding:3px 6px">หัวหน้าผลัด (15)</th><th style="text-align:right;padding:3px 6px">สถานะ</th></tr></thead><tbody>';
     d.rows.forEach(x=>{
       const badge = x.matched ? '<span style="color:#16a34a;font-weight:700">✓ '+esc(x.lead_name)+' ได้ 15</span>'
-        : (x.has_lead ? '<span style="color:#b45309;font-weight:700">⚠ หน.ผลัดไม่ลงเวลาคืนนี้→10</span>' : '<span style="color:#dc2626;font-weight:700">✗ ไม่มีหน.ผลัด→10</span>');
+        : (x.has_lead ? '<span style="color:#b45309;font-weight:700"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> หน.ผลัดไม่ลงเวลาคืนนี้→10</span>' : '<span style="color:#dc2626;font-weight:700">✗ ไม่มีหน.ผลัด→10</span>');
       const ppl = '<div style="font-size:10.5px;color:#6b7280">ในผลัด: '+(x.people||[]).map(esc).join(', ')+'</div>';
       h+='<tr style="border-top:1px solid var(--line)"><td style="padding:6px 6px;white-space:nowrap;vertical-align:top">'+esc(x.work_date)+'</td><td style="padding:6px 6px;color:var(--muted);vertical-align:top">'+esc(x.branch_name)+'<div style="font-size:10.5px">'+esc(x.shift_name||'')+'</div></td><td style="padding:6px 6px;vertical-align:top"><b>'+esc(x.lead_name||'—')+'</b>'+ppl+'</td><td style="padding:6px 6px;text-align:right;white-space:nowrap;vertical-align:top">'+badge+'</td></tr>';
     });
@@ -236,7 +238,7 @@ function render(){
       : '<span class="chip" style="background:#e5e7eb;color:#6b7280">ยังไม่มีคะแนน</span>';
     const dilStyle = r.dil_off ? 'background:#f59e0b22;color:#b45309;border:1px dashed #f59e0b'
                     : (r.dil_ok===false ? 'background:#dc262622;color:#dc2626' : 'background:#16a34a22;color:#16a34a');
-    const dilText = r.dil_off ? '🚫 เบี้ยวินัย: ปิดไว้' : (r.dil_ok===false ? 'เบี้ยวินัย ✗ ไม่เข้าเกณฑ์' : 'เบี้ยวินัย ✓ ได้');
+    const dilText = r.dil_off ? '<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> เบี้ยวินัย: ปิดไว้' : (r.dil_ok===false ? 'เบี้ยวินัย ✗ ไม่เข้าเกณฑ์' : 'เบี้ยวินัย ✓ ได้');
     const dilChip = (r.dil_ok==null && !r.dil_off) ? ''
       : ' <span class="chip dilbtn" data-diloff="'+esc(r.emp_id)+'" style="cursor:pointer;'+dilStyle+'" title="คลิกเพื่อ'+(r.dil_off?'เปิด (พนักงานผ่านประเมินแล้ว)':'ปิด (พนักงานใหม่ยังไม่ผ่านประเมิน)')+'">'+dilText+' <span style="opacity:.6">'+(r.dil_off?'(คลิกเปิด)':'(คลิกปิด)')+'</span></span>';
     const sum='<div class="sumbar">'
@@ -244,7 +246,7 @@ function render(){
       +'<span>ลา <b>'+r.leave_days+'</b></span>'
       +'<span>สาย <b style="color:'+(r.late_count>0?'#b45309':'#111827')+'">'+r.late_count+'</b></span></div>';
     const instBadge = r.installments
-      ? '<div class="sumbar"><span style="color:#7c3aed">💳 ผ่อน '+r.installments.count+' รายการ · หักรอบนี้ '+Number(r.installments.next).toLocaleString()+' · เหลือ '+Number(r.installments.remaining).toLocaleString()+'</span></div>'
+      ? '<div class="sumbar"><span style="color:#7c3aed"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg> ผ่อน '+r.installments.count+' รายการ · หักรอบนี้ '+Number(r.installments.next).toLocaleString()+' · เหลือ '+Number(r.installments.remaining).toLocaleString()+'</span></div>'
       : '';
     h+='<tr data-emp="'+esc(r.emp_id)+'">'
      +'<td data-l="พนักงาน"><div class="nm">'+esc(r.name||r.emp_id)+(r.nickname?(' <span class="sub">('+esc(r.nickname)+')</span>'):'')+'</div>'
@@ -258,8 +260,8 @@ function render(){
      +'<td data-l="สินค้าเสื่อม"><input class="f-dm" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_damaged)+'"></td>'
      +'<td data-l="หักอื่นๆ"><input class="f-ot2" type="number" step="1" min="0" placeholder="0" value="'+val(r.ded_other)+'"><input class="f-ot2n lbl-in" type="text" inputmode="text" enterkeyhint="done" placeholder="ระบุว่าหักอะไร" value="'+esc(val(r.ded_other_note))+'"></td>'
      +'<td data-l="หมายเหตุ"><input class="f-note wide" type="text" inputmode="text" enterkeyhint="done" placeholder="—" value="'+esc(val(r.note))+'"></td>'
-     +'<td data-l=""><button class="btn sec sm shiftBtn" title="ดู/แก้ตารางกะรายวัน">📅 กะ</button>'
-       +'<button class="btn sec sm instBtn" title="แผนผ่อนหัก" style="margin-top:5px">💳 ผ่อน</button>'
+     +'<td data-l=""><button class="btn sec sm shiftBtn" title="ดู/แก้ตารางกะรายวัน"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> กะ</button>'
+       +'<button class="btn sec sm instBtn" title="แผนผ่อนหัก" style="margin-top:5px"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg> ผ่อน</button>'
        +'<button class="btn sm saveRow" style="margin-top:5px">บันทึก</button><div class="rowsaved" style="display:none">✓ บันทึก</div></td></tr>';
   });
   h+='</tbody></table></div>';
@@ -352,7 +354,7 @@ function inPreview(){ const t=Number($('in_total').value)||0, p=Number($('in_per
 $('in_total').oninput=inPreview; $('in_per').oninput=inPreview;
 async function openInst(empId){
   IN_EMP=empId; const r=(DATA.rows||[]).find(x=>x.emp_id===empId);
-  $('inTitle').textContent='💳 ผ่อนหัก · '+((r&&(r.name||r.nickname))||empId);
+  $('inTitle').textContent='ผ่อนหัก · '+((r&&(r.name||r.nickname))||empId);
   $('in_label').value=''; $('in_total').value=''; $('in_per').value=''; $('in_preview').textContent='';
   $('inList').innerHTML='<div style="color:var(--muted);text-align:center;padding:12px">กำลังโหลด…</div>';
   $('instOv').style.display='flex'; await loadInst();
@@ -404,7 +406,7 @@ async function saveAll(){
   $('saveAll').disabled=true; $('saveAll').textContent='กำลังบันทึก…';
   let n=0;
   for(const tr of trs){ try{ await HR.reviewSave(rowPayload(tr)); n++; }catch(_e){} }
-  $('saveAll').disabled=false; $('saveAll').textContent='💾 บันทึกทั้งหมด';
+  $('saveAll').disabled=false; $('saveAll').textContent='บันทึกทั้งหมด';
   toast('บันทึกแล้ว '+n+' คน');
 }
 </script>
