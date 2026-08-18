@@ -11729,6 +11729,16 @@ window.NIDALive=(function(){
   const SDK='https://esm.sh/@google/genai';
   let session=null,micStream=null,micCtx=null,outCtx=null,proc=null,srcNode=null;
   let playHead=0,speaking=false,level=0,lastVoice=0,startedAt=0,tick=null,raf=null,ov=null,busy=false,live=false;
+  let vMsgU=null,vMsgF=null,hadLog=false;
+  // บันทึกบทสนทนาเสียงลงหน้าต่างแชทเดิม (ASST_MSGS) เพื่ออ่านย้อนหลังหลังวางสาย
+  function logAppend(role,txt){
+    try{ if(typeof ASST_MSGS==='undefined') return;
+      let ref=role==='user'?vMsgU:vMsgF;
+      if(!ref){ ref={role:role,text:''}; ASST_MSGS.push(ref); if(role==='user') vMsgU=ref; else vMsgF=ref; }
+      ref.text+=txt; hadLog=true;
+      if(typeof asstRender==='function') asstRender();
+    }catch(_e){}
+  }
   function curPwd(){ try{ return (typeof pwd!=='undefined'&&pwd)?pwd:''; }catch(_e){ return ''; } }
   function base(){ const c=window.SUPABASE_CONFIG||{}; return {url:String(c.url||'').replace(/\/$/,''),key:c.anonKey||''}; }
   function b64FromBytes(u8){ let s=''; for(let i=0;i<u8.length;i+=0x8000){ s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); } return btoa(s); }
@@ -11796,7 +11806,7 @@ window.NIDALive=(function(){
   function stopPlayback(){ playHead=0; speaking=false; }
 
   async function start(){
-    if(busy||session) return; busy=true;
+    if(busy||session) return; busy=true; vMsgU=null; vMsgF=null; hadLog=false;
     buildUI(); ov.classList.add('on'); setStatus('กำลังเชื่อมต่อ…','เตรียมไมโครโฟน'); if(!raf) drawWave();
     // สร้าง+ปลุก AudioContext ขาออก "ระหว่างจังหวะแตะ" (กันถูก suspend → ตอบแต่ไม่มีเสียง)
     try{ outCtx=new (window.AudioContext||window.webkitAudioContext)(); await outCtx.resume(); }catch(_e){}
@@ -11856,12 +11866,17 @@ window.NIDALive=(function(){
   function onMsg(msg){
     try{
       try{ console.debug('[NIDALive] msg',Object.keys(msg||{}), msg.serverContent?Object.keys(msg.serverContent):''); }catch(_e){}
-      const it=msg.serverContent&&msg.serverContent.inputTranscription; if(it&&it.text) setStatus(null,'คุณ: '+it.text);
-      const otx=msg.serverContent&&msg.serverContent.outputTranscription; if(otx&&otx.text) setStatus('นิดากำลังพูด…','นิดา: '+otx.text);
-      if(msg.serverContent&&msg.serverContent.interrupted) stopPlayback();
-      const parts=msg.serverContent&&msg.serverContent.modelTurn&&msg.serverContent.modelTurn.parts;
-      if(parts) for(const p of parts){ const d=p.inlineData&&p.inlineData.data; if(d) playChunk(d); }
-      if(msg.data) playChunk(msg.data);
+      const sc=msg.serverContent;
+      if(sc){
+        if(sc.interrupted) stopPlayback();
+        if(sc.inputTranscription&&sc.inputTranscription.text){ setStatus(null,'คุณ: '+sc.inputTranscription.text); logAppend('user',sc.inputTranscription.text); }
+        if(sc.outputTranscription&&sc.outputTranscription.text){ setStatus('นิดากำลังพูด…',null); logAppend('assistant',sc.outputTranscription.text); }
+        if(sc.turnComplete){ vMsgU=null; vMsgF=null; }
+      }
+      // เล่นเสียงแหล่งเดียวต่อข้อความ (เอา msg.data ก่อน ไม่มีค่อย fallback ไป parts) — กันเล่นซ้ำ→เสียงซ้อน→สดุด
+      let audio=msg.data;
+      if(!audio){ const parts=msg.serverContent&&msg.serverContent.modelTurn&&msg.serverContent.modelTurn.parts; if(parts){ for(const p of parts){ if(p.inlineData&&p.inlineData.data){ audio=p.inlineData.data; break; } } } }
+      if(audio) playChunk(audio);
       const tc=msg.toolCall||(msg.serverContent&&msg.serverContent.toolCall);
       if(tc&&Array.isArray(tc.functionCalls)){
         setStatus('นิดากำลังค้นข้อมูล…',null);
@@ -11901,6 +11916,8 @@ window.NIDALive=(function(){
     live=false; session=null; micStream=null; micCtx=null; outCtx=null; proc=null; srcNode=null; playHead=0; speaking=false; level=0; busy=false;
     if(raf){ cancelAnimationFrame(raf); raf=null; }
     if(ov) ov.classList.remove('on');
+    // เปิดหน้าต่างแชทให้อ่านบทสนทนาที่บันทึกไว้ หลังวางสาย
+    if(hadLog){ const p=document.getElementById('asstPop'); if(p){ p.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); if(typeof asstRender==='function') asstRender(); } }
     if(reason&&typeof toast==='function') toast('ok',reason);
   }
 
