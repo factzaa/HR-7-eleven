@@ -787,7 +787,7 @@
       q,
       sb().from('branches').select('branch_id,name'),
       sq, lq,
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id'),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,is_manager'),
       wq,
       sb().from('shifts').select('shift_id,day_value,name'),
       sb().from('holidays').select('date,name').eq('active', true).gte('date', f.start).lte('date', f.end),   // วันหยุดบริษัทในช่วง
@@ -879,7 +879,7 @@
     // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงานจริง แต่ลงเวลาน้อยกว่าตาราง → เติมให้ครบตามควบ (เช่น สแกนครั้งเดียว = 1 → เติมเป็น 2)
     _dualSet.forEach(k => {
       const sched = _schDVsum[k] || 0, att = _attDVsum[k] || 0;
-      if (att > 0 && sched > att) { const i = k.indexOf('|'); const emp = k.slice(0, i); const m = map[emp]; if (m) { m.days += (sched - att); m.days_home += (sched - att); } }
+      if (att > 0 && sched > att) { const i = k.indexOf('|'); const emp = k.slice(0, i); const m = map[emp]; if (m && !(empById[emp] || {}).is_manager) { m.days += (sched - att); m.days_home += (sched - att); } }
     });
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงาน
     const workedByEmp = {};
@@ -2261,7 +2261,7 @@
       sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb().from('score_rules').select('*').order('sort'),
       sb().from('score_bands').select('*').order('sort'),
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,end_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,end_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -2320,8 +2320,8 @@
 
       // ★ วันทำงานไม่ถึงเกณฑ์ขั้นต่ำ → หักคะแนน (เครดิตควบตามตารางเวร ให้ตรงกับหน้าเงินเดือน)
       const attByDate = {}; myAtt.forEach(a => { attByDate[a.work_date] = (attByDate[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });
-      let days_worked = 0;
-      Object.keys(attByDate).forEach(d => { const scS = schSum[e.emp_id + '|' + d] || 0, at = attByDate[d] || 0; days_worked += (scS > at ? scS : at); });
+      let days_worked = 0; const _isMgr = !!e.is_manager;
+      Object.keys(attByDate).forEach(d => { const scS = schSum[e.emp_id + '|' + d] || 0, at = attByDate[d] || 0; days_worked += ((!_isMgr && scS > at) ? scS : at); });
       days_worked = Math.round(days_worked * 10) / 10;
       const below_min = minWD > 0 && days_worked < minWD;
       if (below_min && minWDpen > 0) { const pts = -Math.abs(minWDpen); autoDeduct += pts; items.push({ label: 'วันทำงานไม่ถึงเกณฑ์ (' + days_worked + '/' + minWD + ' วัน)', count: 1, points: pts, source: 'auto' }); }
@@ -6375,7 +6375,7 @@
     const endEff = cyc.end < today ? cyc.end : today;
     const [profR, empR, brR, attR, shR, ctrlR, instR, instChR, schPR] = await Promise.all([
       sb().from('payroll_profiles').select('*'),
-      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance,name'),
@@ -6415,7 +6415,7 @@
     (schPR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schDVsumPR[k] = (_schDVsumPR[k] || 0) + (dvMap[s.shift_id] != null ? dvMap[s.shift_id] : 1); (_schCntPR[k] = _schCntPR[k] || new Set()).add(s.shift_id); } });
     Object.keys(workedDV).forEach(emp => { Object.keys(workedDV[emp]).forEach(date => {
       const k = emp + '|' + date, sched = _schDVsumPR[k] || 0, att = workedDV[emp][date] || 0;
-      if (_schCntPR[k] && _schCntPR[k].size >= 2 && sched > att) workedDV[emp][date] = sched;   // ควบ + สแกนไม่ครบ → เครดิตตามตาราง
+      if (_schCntPR[k] && _schCntPR[k].size >= 2 && sched > att && !(empById[emp] || {}).is_manager) workedDV[emp][date] = sched;   // ควบ + สแกนไม่ครบ → เครดิตตามตาราง
     }); });
     // ★ หักเงินเบิก "ตามรอบจริงไม่เว้นเดือน" — ดึงทุกใบที่ "จ่ายแล้ว + ยังไม่หัก" มาหักในรอบนี้ทันที
     //   (กันพนักงานเบิกเกินค่าแรงแล้วหาย · ไม่ผูกกับ deduct_month ที่อาจเป็นเดือนถัดไป)

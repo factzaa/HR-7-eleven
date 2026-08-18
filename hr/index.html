@@ -17,7 +17,7 @@
     --orange:#f5821f; --orange-soft:#fdeede;
     --red:#e11f26; --red-soft:#fdeaea;
     --bg:#eceee9; --card:#ffffff; --line:#e3e6e1; --line2:#cfd3cc;
-    --txt:#1b1f1c; --muted:#737a73; --mono:'IBM Plex Mono',monospace;
+    --txt:#1b1f1c; --muted:#737a73; --mono:'Kanit',sans-serif;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   body{font-family:'Kanit','Anuphan',sans-serif; background:var(--bg); color:var(--txt); min-height:100dvh;}
@@ -432,6 +432,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   .card-b .shift-row .name-cell{min-width:0 !important}
   .shift-row .pill{max-width:100%}
 }
+
+/* ==== หน้าวินัย: ป้ายเป็นแท็บมุมมน ไม่เป็นก้อนกลม ==== */
+.lvl-pill{border-radius:10px !important;white-space:normal;text-align:left;line-height:1.3}
+#view_discipline .pill{border-radius:10px !important;white-space:normal;text-align:left;line-height:1.3}
+#view_discipline td .lvl-pill,#view_discipline td .pill{max-width:100%}
 </style>
 </head>
 <body>
