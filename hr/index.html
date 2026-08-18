@@ -8463,11 +8463,13 @@ async function asstDlReport(empId, which){
   try{
     if(typeof showTab==='function') showTab('empsum');
     await new Promise(r=>setTimeout(r,350));
-    const sel=$('es_emp'); if(sel){ sel.value=empId; if(String(sel.value)!==String(empId)){ toast('err','ไม่พบพนักงานในรายการรายงาน (อาจปิดการใช้งานแล้ว)'); return; } }
+    const sel=$('es_emp'); if(sel){ if(![...sel.options].some(o=>String(o.value)===String(empId))){ const o=document.createElement('option'); o.value=empId; o.textContent=empId; sel.appendChild(o); } sel.value=empId; }
     if(which==='previous' && $('es_mode')){ try{ const opt=[...$('es_mode').options].find(o=>/ก่อน|previous|prev/i.test(o.textContent+o.value)); if(opt){ $('es_mode').value=opt.value; $('es_mode').dispatchEvent(new Event('change')); } }catch(_e){} }
-    if(typeof genEmpSum==='function') await genEmpSum();
-    await new Promise(r=>setTimeout(r,600));   // ให้รูป/เลย์เอาต์เรนเดอร์เสร็จ
-    const el=document.getElementById('es_body'); if(!el || !el.innerHTML.trim()){ toast('err','ยังไม่มีข้อมูลรายงาน'); return; }
+    if(typeof genEmpSum!=='function'){ toast('err','ระบบรายงานยังไม่พร้อม — ลองเปิดหน้าเว็บใหม่'); return; }
+    try{ await genEmpSum(); }catch(_e){}
+    await new Promise(r=>setTimeout(r,700));   // ให้ข้อมูล/รูป/เลย์เอาต์เรนเดอร์เสร็จ
+    const el=document.getElementById('es_body'); const emptyEl=el&&el.querySelector('.empty');
+    if(!el || !el.innerHTML.trim() || (emptyEl && !el.querySelector('table'))){ toast('err',(emptyEl&&emptyEl.textContent.trim())||'สร้างรายงานไม่ได้ (ลองเปิดเมนู "สรุปรายบุคคล" เลือกคนแล้วกดสร้างสรุป)'); return; }
     await ensurePdfLibs();
     const canvas=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     const jsPDF=window.jspdf.jsPDF; const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
