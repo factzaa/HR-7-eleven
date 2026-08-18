@@ -1359,10 +1359,10 @@ function showOneNotif(list, idx, empId){
     showOneNotif(list, idx+1, empId);
   };
 }
-function renderNotifHistory(rows){
-  const list=(rows||[]);
+function renderNotifHistory(rows, cyc){
+  const list=(rows||[]).filter(n=>!cyc || String(n.created_at||'').slice(0,10)>=cyc.start);   // เฉพาะรอบปัจจุบัน
   if(!list.length) return '';
-  return '<div style="font-weight:700;margin-top:14px;margin-bottom:6px">การแจ้งเตือนจากระบบ</div>'
+  return '<div style="font-weight:700;margin-top:14px;margin-bottom:6px">การแจ้งเตือนจากระบบ <span style="font-weight:400;color:var(--muted);font-size:12px">(รอบนี้)</span></div>'
     + list.slice(0,10).map(n=>{
       const st=notifStyle(n.kind);
       return '<div style="border:1px solid var(--line);border-left:4px solid '+st.bg+';border-radius:11px;padding:9px 11px;margin-bottom:7px">'
@@ -1384,14 +1384,14 @@ async function showSelf(){
       (HR.getLeaveProposals?HR.getLeaveProposals(empMatch.emp_id):Promise.resolve({history:[]})).catch(()=>({history:[]})),
       (HR.getMyNotifications?HR.getMyNotifications(empMatch.emp_id):Promise.resolve({all:[]})).catch(()=>({all:[]}))
     ]);
-    body.innerHTML = renderSelf(s, ms&&ms.score) + renderNotifHistory(notifs&&notifs.all) + renderProposalHistory(props&&props.history) + renderMyLeaves(leaves);
+    body.innerHTML = renderSelf(s, ms&&ms.score) + renderNotifHistory(notifs&&notifs.all, s.cycle) + renderProposalHistory(props&&props.history, s.cycle) + renderMyLeaves(leaves, s.cycle);
   }catch(e){ console.error(e); body.innerHTML='<p style="color:var(--red)">โหลดไม่สำเร็จ: '+escH(e.message||'')+'</p>'; }
 }
 // ประวัติข้อเสนอ/การสื่อสารกับ HR (แสดงในสถานะของฉัน)
-function renderProposalHistory(rows){
-  const list=(rows||[]).filter(r=>r.proposal_at);
+function renderProposalHistory(rows, cyc){
+  const list=(rows||[]).filter(r=>r.proposal_at).filter(r=>!cyc || (String(r.start_date)<=cyc.end && String(r.end_date||r.start_date)>=cyc.start));   // เฉพาะรอบปัจจุบัน
   if(!list.length) return '';
-  return '<div style="font-weight:700;margin-top:14px;margin-bottom:6px">ข้อเสนอ/การสื่อสารกับผู้จัดการ</div>'
+  return '<div style="font-weight:700;margin-top:14px;margin-bottom:6px">ข้อเสนอ/การสื่อสารกับผู้จัดการ <span style="font-weight:400;color:var(--muted);font-size:12px">(รอบนี้)</span></div>'
     + list.map(p=>{
       const range=(p.end_date&&p.end_date!==p.start_date)?(beDate(p.start_date)+' – '+beDate(p.end_date)):beDate(p.start_date);
       const rb=p.response==='accepted'?'<span class="pill ok">คุณยอมรับ</span>':p.response==='declined'?'<span class="pill bad">คุณไม่ยอมรับ</span>':(p.status==='proposed'?'<span class="pill idle">รอคุณตอบ</span>':'');
@@ -1402,10 +1402,11 @@ function renderProposalHistory(rows){
         +'</div>';
     }).join('');
 }
-function renderMyLeaves(rows){
-  const head='<div style="font-weight:700;margin-top:14px;margin-bottom:6px">สถานะใบลาของฉัน</div>';
-  if(!rows || !rows.length) return head+'<div style="font-size:12.5px;color:var(--muted)">ยังไม่มีคำขอลา</div>';
-  return head+rows.map(r=>{
+function renderMyLeaves(rows, cyc){
+  const head='<div style="font-weight:700;margin-top:14px;margin-bottom:6px">สถานะใบลาของฉัน <span style="font-weight:400;color:var(--muted);font-size:12px">(รอบนี้)</span></div>';
+  const list=(rows||[]).filter(r=>!cyc || (String(r.start_date)<=cyc.end && String(r.end_date||r.start_date)>=cyc.start));   // เฉพาะรอบปัจจุบัน
+  if(!list.length) return head+'<div style="font-size:12.5px;color:var(--muted)">ไม่มีคำขอลาในรอบนี้</div>';
+  return head+list.map(r=>{
     const badge=r.status==='approved'?'<span style="background:#dcfce7;color:#166534;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✓ อนุมัติแล้ว</span>'
       :r.status==='rejected'?'<span style="background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">✗ ไม่อนุมัติ</span>'
       :'<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:11px;font-weight:600;font-size:12px">⏳ รออนุมัติ</span>';
@@ -1464,7 +1465,7 @@ function renderSelf(s, sc){
 }
 </script>
 <script>
-if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js').catch(function(){});});}
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('../sw.js',{updateViaCache:'none'}).then(function(r){try{r.update();}catch(e){}}).catch(function(){});});}
 </script>
 </body>
 </html>
