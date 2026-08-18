@@ -7,7 +7,7 @@
 <title>7-Eleven · ลงเวลาเข้างาน</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
@@ -22,7 +22,7 @@
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
-  body{font-family:'Anuphan',sans-serif; background:var(--bg); color:var(--txt);
+  body{font-family:'Kanit','Anuphan',sans-serif; background:var(--bg); color:var(--txt);
        display:flex; justify-content:center; overflow:hidden;}
   .app{width:100%; max-width:460px; height:100dvh; background:var(--card);
        display:flex; flex-direction:column; box-shadow:0 0 40px rgba(0,0,0,.06); position:relative;}
@@ -123,6 +123,14 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="HR 7-Eleven">
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<style id="ui-refresh">
+.linei{stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.emblem{border-radius:13px;box-shadow:0 2px 8px rgba(0,0,0,.14)}
+.statusbar{border-radius:15px}
+button.in{box-shadow:0 6px 16px rgba(0,112,60,.24)}
+.minibtn{border-radius:999px}
+.sheet{border-radius:20px}
+</style>
 </head>
 <body>
 <div class="app">
@@ -134,7 +142,7 @@
         <div class="t1">สำหรับพนักงาน</div>
         <div class="t2">ระบบลงเวลาเข้างาน</div>
       </div>
-      <a href="../" title="หน้าแรก" style="text-decoration:none;font-size:18px;background:rgba(0,0,0,.06);border-radius:9px;padding:6px 10px;margin-left:auto;margin-right:8px;line-height:1">🏠</a>
+      <a href="../" title="หน้าแรก" style="text-decoration:none;font-size:18px;background:rgba(0,0,0,.06);border-radius:9px;padding:6px 10px;margin-left:auto;margin-right:8px;line-height:1"><svg class="linei" style="width:18px;height:18px" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg></a>
       <div id="clock">--:--:--</div>
     </header>
 
@@ -146,14 +154,14 @@
       <div class="facebadge"><span class="dot" id="facedot"></span><span id="facetext">กำลังเตรียมกล้อง…</span></div>
       <div class="camnote" id="camnote">แตะ "อนุญาต" เพื่อเปิดกล้อง</div>
       <div class="toast" id="toast"></div>
-      <button class="camfab" id="selfBtn"><span class="ic">📊</span>สถานะของฉัน</button>
+      <button class="camfab" id="selfBtn"><span class="ic"><svg class="linei" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg></span>สถานะของฉัน</button>
     </div>
 
     <div class="controls">
       <div>
         <div class="labelrow">
           <label>รหัสพนักงาน</label>
-          <span class="reglink" id="regBtn"><span class="ic">📷</span>ลงทะเบียนใบหน้า</span>
+          <span class="reglink" id="regBtn"><span class="ic"><svg class="linei" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>ลงทะเบียนใบหน้า</span>
         </div>
         <input id="empId" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="กรอกรหัสตัวเลข">
         <div class="hint idle" id="empHint"></div>

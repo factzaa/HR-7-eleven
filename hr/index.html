@@ -351,6 +351,11 @@
 <meta name="apple-mobile-web-app-title" content="HR 7-Eleven">
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 <style id="ui-refresh">
+.pemo{width:9px;height:9px;fill:currentColor;stroke:none;display:inline-block;vertical-align:0;margin-right:3px}
+.pline{width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px;margin-right:3px}
+.dico{width:14px;height:14px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;margin-right:2px}
+.hico{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-4px;margin-right:6px}
+
 /* ===== UI Refresh · Modern SaaS skin (design only) ===== */
 .tabicon .tic{width:17px;height:17px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
 .tabicon{display:inline-flex;align-items:center;margin-right:7px}
@@ -2591,7 +2596,7 @@ function dashList(key){
 ['dlClose','dlCloseBtn'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('dashListOverlay').classList.remove('show'); });
 $('dashListOverlay') && $('dashListOverlay').addEventListener('click', e=>{ if(e.target.id==='dashListOverlay') $('dashListOverlay').classList.remove('show'); });
 // ★ ไทม์ไลน์ย่อ "รอบนี้โดนอะไรมาแล้วบ้าง" — ให้ HR ตัดสินใจได้ว่าขั้นต่อไปควรทำอะไร
-const DISC_ICON = { verbal:'🗣️', written:'📝', warning:'📄', coaching:'💬', note:'🗒️' };
+const DISC_ICON = { verbal:'<svg class="dico" viewBox="0 0 24 24"><path d="M4 5h16v10H9l-4 4v-4H4z"/></svg>', written:'<svg class="dico" viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>', warning:'<svg class="dico" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>', coaching:'<svg class="dico" viewBox="0 0 24 24"><path d="M4 5h16v10H9l-4 4v-4H4z"/></svg>', note:'<svg class="dico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg>' };
 function discMiniTimeline(e){
   const tl = e.timeline || [];
   const dOnly = s => { try{ return new Date(s).toLocaleDateString('th-TH',{day:'numeric',month:'short'}); }catch(_){ return ''; } };
@@ -2600,14 +2605,14 @@ function discMiniTimeline(e){
     const bg = acked ? '#dcfce7' : '#fef3c7', fg = acked ? '#166534' : '#a16207';
     return `<span class="pill" style="background:${bg};color:${fg};font-weight:600;white-space:nowrap"
               title="${esc(t.reason||'')}${t.warning_id?(' · '+esc(t.warning_id)):''}${t.by?(' · โดย '+esc(t.by)):''}">
-              ${DISC_ICON[t.type]||'•'} ${esc(t.label)} ${dOnly(t.at)} ${acked?'✓':'⏳'}</span>`;
+              ${DISC_ICON[t.type]||'•'} ${esc(t.label)} ${dOnly(t.at)} ${acked?`<svg class="pline" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`:`<svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`}</span>`;
   });
   // ขั้นต่อไปที่เกณฑ์คะแนนบอกว่าควรทำ (ถ้ายังไม่ได้ทำ)
   let next = '';
   if(!e.term_case && e.action_status==='need_termination')
-    next = `<span class="pill" style="background:#fee2e2;color:#b91c1c;font-weight:700;white-space:nowrap">⛔ ครบใบเตือน 3/3 → พิจารณาเลิกจ้าง</span>`;
+    next = `<span class="pill" style="background:#fee2e2;color:#b91c1c;font-weight:700;white-space:nowrap"><svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> ครบใบเตือน 3/3 → พิจารณาเลิกจ้าง</span>`;
   else if(!e.term_case && e.action_status==='pending' && e.action_needed_label)
-    next = `<span class="pill" style="background:#fee2e2;color:#b91c1c;font-weight:700;white-space:nowrap">➡️ ขั้นต่อไป: ${esc(e.action_needed_label)}</span>`;
+    next = `<span class="pill" style="background:#fee2e2;color:#b91c1c;font-weight:700;white-space:nowrap"><svg class="pline" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg> ขั้นต่อไป: ${esc(e.action_needed_label)}</span>`;
   if(!steps.length && !next)
     return '<div style="font-size:11.5px;color:var(--muted)">ยังไม่มีการดำเนินการในรอบนี้</div>';
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11.5px;padding-left:2px">
@@ -2624,19 +2629,19 @@ function discActionPill(e){
   const wt = Number(e.warning_total)||0;
   const suffix = (wt>0 && !e.term_case) ? (' · ใบเตือน '+wt+'/3') : '';   // พับจำนวนสะสมเป็นหางข้อความ ไม่แยกป้าย
   // ★ สีไล่ตามความรุนแรง: วาจา=เหลือง → ลายลักษณ์=ส้ม → ใบเตือน=แดง → เลิกจ้าง=แดงเข้มทึบ
-  const SEV={ verbal:['#fef9c3','#a16207','🟡'], written:['#ffedd5','#c2410c','🟠'], warning:['#fee2e2','#dc2626','🔴'] };
+  const SEV={ verbal:['#fef9c3','#a16207','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'], written:['#ffedd5','#c2410c','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'], warning:['#fee2e2','#dc2626','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'] };
   if(e.term_case) return '';                                   // มีเคสพิจารณาแล้ว → ป้ายเคสจะบอกเอง
   if(e.action_status==='need_termination')
-    return pill('⛔ ครบใบเตือน '+(wt||3)+'/3 · พิจารณาเลิกจ้าง', '#dc2626', '#ffffff', 'รุนแรงสุด — ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)', 'box-shadow:0 0 0 1px #b91c1c inset');
+    return pill('<svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> ครบใบเตือน '+(wt||3)+'/3 · พิจารณาเลิกจ้าง', '#dc2626', '#ffffff', 'รุนแรงสุด — ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)', 'box-shadow:0 0 0 1px #b91c1c inset');
   if(e.action_status==='pending'){
-    const sv=SEV[e.action_needed]||['#fee2e2','#b91c1c','🔴'];
+    const sv=SEV[e.action_needed]||['#fee2e2','#b91c1c','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'];
     return pill(sv[2]+' ต้อง'+esc(e.action_needed_label||'ดำเนินการ')+suffix, sv[0], sv[1], 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม (สีไล่ตามความรุนแรง)');
   }
   if(e.action_status==='done'){
-    if(e.pending_ack>0) return pill('🟡 ออกแล้ว รอรับทราบ'+suffix, '#fef3c7', '#a16207', 'บังคับกดรับทราบในหน้ารับส่งผลัด');
-    return pill('🟢 '+esc(e.action_needed_label||'ดำเนินการ')+'แล้ว'+suffix, '#dcfce7', '#166534', '');
+    if(e.pending_ack>0) return pill('<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg> ออกแล้ว รอรับทราบ'+suffix, '#fef3c7', '#a16207', 'บังคับกดรับทราบในหน้ารับส่งผลัด');
+    return pill('<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg> '+esc(e.action_needed_label||'ดำเนินการ')+'แล้ว'+suffix, '#dcfce7', '#166534', '');
   }
-  if(e.pending_ack>0) return pill('🟡 รอรับทราบ', '#fef3c7', '#a16207', '');
+  if(e.pending_ack>0) return pill('<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg> รอรับทราบ', '#fef3c7', '#a16207', '');
   return '';
 }
 async function loadDashboard(){
@@ -2696,7 +2701,7 @@ async function loadDashboard(){
   const sumRange = (dr && dr.cycle) ? (beDate(dr.cycle.startStr)+' – '+beDate(dr.cycle.endStr)) : '';
   const sumScope = DASH_SUM.mode==='range' ? '(ช่วงที่เลือก)' : (DASH_SUM.cycle==='current' ? '(รอบนี้)' : '(รอบที่เลือก)');
   const sumBar = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-      <b style="font-size:13px">📊 สถิติสรุป:</b>
+      <b style="font-size:13px"><svg class="hico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>สถิติสรุป:</b>
       <select id="sum_cycle" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
         <option value="current">รอบปัจจุบัน</option>
         <option value="previous">รอบก่อนหน้า</option>
@@ -2727,8 +2732,8 @@ async function loadDashboard(){
           <div class="ntext"><span class="nm">${esc(e.emp_name)}</span><span class="nick">${esc(e.emp_id)} · คะแนน ${e.score!=null?e.score:'—'} · สาย ${e.late_count} ขาด ${e.absent}</span></div>
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}">⚖️ พิจารณาเลิกจ้าง${e.term_case.status==='closed'?' · มีมติแล้ว':''}</span>` : discActionPill(e)}
-          <button class="btn btn-sec btn-sm" onclick="openDiscTimeline('${esc(e.emp_id)}')" title="ดูไทม์ไลน์/บันไดวินัยทั้งหมด">🧾</button>
+          ${e.term_case ? `<span class="pill" style="background:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'):'#fef3c7'};color:${e.term_case.status==='closed'?(e.term_case.decision==='terminate_proposed'?'#b91c1c':'#15803d'):'#a16207'};font-weight:700" title="${esc(e.term_case.decision_label||e.term_case.case_no||'')}"><svg class="pline" viewBox="0 0 24 24"><path d="M12 3v18M6 7h12M12 5l-4 1M12 5l4 1"/><path d="M6 7l-2.5 5a2.5 2.5 0 0 0 5 0zM18 7l-2.5 5a2.5 2.5 0 0 0 5 0z"/><path d="M8 21h8"/></svg> พิจารณาเลิกจ้าง${e.term_case.status==='closed'?' · มีมติแล้ว':''}</span>` : discActionPill(e)}
+          <button class="btn btn-sec btn-sm" onclick="openDiscTimeline('${esc(e.emp_id)}')" title="ดูไทม์ไลน์/บันไดวินัยทั้งหมด"><svg class="dico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg></button>
         </div>
       </div>`).join('') : '<div class="empty" style="padding:24px">ไม่มีใครต้องดำเนินการทางวินัยรอบนี้ 🎉</div>');
 
@@ -2796,7 +2801,7 @@ async function loadDashboard(){
     ${scorecard}
     <div class="dash-grid">
       <div class="card">
-        <div class="card-h"><h3>⚠️ กลุ่มเสี่ยงวินัย (รอบนี้)</h3><span style="font-size:12px;color:var(--muted)">เรียงตามระดับ</span></div>
+        <div class="card-h"><h3><svg class="hico" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>กลุ่มเสี่ยงวินัย (รอบนี้)</h3><span style="font-size:12px;color:var(--muted)">เรียงตามระดับ</span></div>
         <div class="card-b">${watch}</div>
       </div>
       <div class="card">
@@ -11182,8 +11187,8 @@ async function loadNotifications(){
   const list=(title,arr,fmt)=> arr.length?`<div style="margin-top:10px"><div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:3px">${title}</div>${arr.map(fmt).join('')}</div>`:'';
   $('notifPanel').innerHTML = `<div class="card" style="margin-bottom:14px;padding:13px 16px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <b style="font-size:15px">🔔 แจ้งเตือน</b>
-      ${chip(c.new_applicants||0,'🧑‍💼 ใบสมัครใหม่','#0891b2')}
+      <b style="font-size:15px"><svg class="hico" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>แจ้งเตือน</b>
+      ${chip(c.new_applicants||0,'<svg class="dico" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.2"/><path d="M4 19a6 6 0 0 1 12 0"/><path d="M19 8v5M21.5 10.5h-5"/></svg> ใบสมัครใหม่','#0891b2')}
       ${chip(c.pending_leaves,'ใบลารออนุมัติ','#d97706')}
       ${chip(c.pending_profiles||0,'ข้อมูลรอตรวจ','#7c3aed')}
       ${chip(c.absent_roster,'ขาด/ยังไม่มา','#b91c1c')}

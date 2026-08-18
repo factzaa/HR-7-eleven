@@ -6,11 +6,11 @@
 <meta name="theme-color" content="#00703c">
 <title>ดูแลเชลฟ์ประจำเดือน · 7-Eleven</title>
 <link rel="manifest" href="../manifest.webmanifest">
-<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{--green:#00703c;--green-d:#00582f;--green-soft:#e7f3ec;--orange:#f5821f;--red:#e11f26;--bg:#eef1ec;--line:#dbe2dc;--muted:#6b756d;--txt:#1b2a20;}
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-  body{font-family:'Anuphan',sans-serif;background:var(--bg);color:var(--txt);min-height:100dvh;}
+  body{font-family:'Kanit','Anuphan',sans-serif;background:var(--bg);color:var(--txt);min-height:100dvh;}
   .wrap{max-width:480px;margin:0 auto;min-height:100dvh;background:#fff;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.06);}
   .top{background:linear-gradient(135deg,var(--green),var(--green-d));color:#fff;padding:18px;display:flex;align-items:center;gap:12px;}
   .top .ic{font-size:24px;} .top h1{font-size:18px;font-weight:600;flex:1;}
@@ -45,6 +45,13 @@
   .toast.ok{background:var(--green);} .toast.err{background:var(--red);} .toast.show{display:block;}
   .hide{display:none;} .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-2px;}
   @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+<style id="ui-refresh">
+.card{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05)}
+.btn{border-radius:11px}
+.btn-pri{background:linear-gradient(135deg,#00703c,#00582f);box-shadow:0 4px 14px rgba(0,112,60,.22)}
+.pill{border-radius:999px}
+.emblem{border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 </style>
 </head>
 <body>
@@ -250,7 +257,7 @@ loadBranches().then(()=>{
   const pre=qp.get('emp')||(function(){ try{return HRSession.getEmp();}catch(_e){return '';} })();
   if(pre){ $('empId').value=pre; doLogin(pre); }
 });
-if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('../sw.js').catch(function(){}); }); }
+if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('../sw.js',{updateViaCache:'none'}).then(function(r){try{r.update();}catch(e){}}).catch(function(){}); }); }
 </script>
 </body>
 </html>
