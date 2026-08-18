@@ -8415,6 +8415,7 @@ function asstCardsHtml(cards){
       payslip:'<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 12h.01M17 12h.01"/></svg>',
       warning:'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',
       report:'<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+      ack_form:'<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 14l2 2 4-4"/></svg>',
       file:'<svg class="ei" viewBox="0 0 24 24"><path d="M21 12.5V7a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M16 19l2 2 4-4"/></svg>'
     };
     return wrap('<div style="display:flex;flex-direction:column;gap:7px">'+items.map(d=>{
@@ -8422,7 +8423,8 @@ function asstCardsHtml(cards){
       if(d.kind==='file') act='<a class="btn btn-pri btn-sm" href="'+esc(d.url)+'" target="_blank" rel="noopener" download style="text-decoration:none">ดาวน์โหลด</a>';
       else if(d.kind==='payslip') act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'payslip\',\''+esc(d.emp_id)+'\',\''+esc(d.which||'current')+'\')">สลิป PDF</button>';
       else if(d.kind==='warning') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'warning\',\''+esc(d.warning_id)+'\')">เปิด/พิมพ์</button>';
-      else if(d.kind==='report') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'report\',\''+esc(d.emp_id)+'\',\''+esc(d.which||'current')+'\')">เปิดรายงาน</button>';
+      else if(d.kind==='report') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'report\',\''+esc(d.emp_id)+'\',\''+esc(d.which||'current')+'\')">รายงาน PDF</button>';
+      else if(d.kind==='ack_form'){ let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d)))); }catch(_e){} act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'ack_form\',\''+enc+'\')">ใบเซ็นรับทราบ PDF</button>'; }
       return '<div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:11px;padding:9px 11px"><span style="color:var(--green);flex:none;display:flex">'+svg+'</span><span style="flex:1;font-size:13px;line-height:1.35">'+esc(d.label||d.kind)+'</span>'+act+'</div>';
     }).join('')+'</div>');
   }
@@ -8433,6 +8435,7 @@ async function asstDoc(kind,a1,a2){
   try{
     if(kind==='warning'){ if(typeof openWarningView==='function') openWarningView(a1); else toast('err','เปิดใบเตือนไม่ได้'); return; }
     if(kind==='report'){ await asstDlReport(a1,a2); return; }
+    if(kind==='ack_form'){ let d=null; try{ d=JSON.parse(decodeURIComponent(escape(atob(a1)))); }catch(_e){} if(d) await asstDlAckForm(d); else toast('err','ข้อมูลเอกสารไม่ถูกต้อง'); return; }
     if(kind==='payslip'){ await asstDlSlip(a1,a2); return; }
   }catch(e){ toast('err','เปิดเอกสารไม่สำเร็จ'); }
 }
@@ -8486,6 +8489,55 @@ async function asstDlReport(empId, which){
     const a=document.createElement('a'); a.href=pdf.output('datauristring'); a.download=fn; document.body.appendChild(a); a.click(); a.remove();
     toast('ok','ดาวน์โหลดรายงาน PDF แล้ว');
   }catch(e){ toast('err','สร้างรายงานไม่สำเร็จ'); }
+}
+// สร้าง HTML หนังสือตักเตือน/ใบเซ็นรับทราบ (ทุกขั้น) — ใช้ header+สไตล์เอกสารทางการเดิม
+function buildAckDocHtml(d){
+  const cfg=(typeof DOC_CFG!=='undefined'&&DOC_CFG)||{};
+  const t=new Date(); const td=t.getDate()+'/'+(t.getMonth()+1)+'/'+(t.getFullYear()+543);
+  const brName=(typeof branchName==='function')?branchName(d.branch_id):(d.branch_id||'');
+  const title=(d.level>=3)?'ใบเตือนการทำงาน':'หนังสือตักเตือนพนักงาน';
+  const reason=(String(d.reason||'').trim())?esc(d.reason).replace(/\n/g,'<br>'):'<span style="color:#888">(ระบุเหตุแห่งการตักเตือน)</span>';
+  const start=(typeof beDate==='function'&&d.start_date)?beDate(d.start_date):'—';
+  let h='<div class="es-doc" style="display:block">';
+  h+=(typeof docHeadHTML==='function')?docHeadHTML(cfg,title,'ประเภท: '+esc(d.level_name||''),'เอกสารสำหรับให้พนักงานลงลายมือชื่อรับทราบ','วันที่ออกเอกสาร: '+td):('<h2 style="text-align:center">'+esc(title)+'</h2>');
+  h+='<table class="es-dt">'
+    +'<tr><td class="k" style="width:22%">ถึง (ชื่อ–สกุล)</td><td>'+esc(d.full_name||d.name||'')+((d.name&&d.name!==d.full_name)?(' ("'+esc(d.name)+'")'):'')+'</td><td class="k" style="width:20%">รหัสพนักงาน</td><td>'+esc(d.emp_id||'')+'</td></tr>'
+    +'<tr><td class="k">สาขา</td><td>'+esc(brName||'—')+'</td><td class="k">วันที่เริ่มงาน</td><td>'+esc(start)+'</td></tr>'
+    +'<tr><td class="k">ประเภทการดำเนินการ</td><td colspan="3" style="font-weight:700">'+esc(d.level_name||'')+'</td></tr>'
+    +'</table>';
+  h+='<div class="es-dsec">เหตุแห่งการตักเตือน</div>'
+    +'<table class="es-dt"><tr><td style="padding:8px 10px;line-height:1.7">'+reason+'</td></tr></table>';
+  h+='<div class="es-dsec">คำเตือนและผลของการฝ่าฝืน</div>'
+    +'<div class="es-note" style="line-height:1.85">บริษัทฯ ขอตักเตือนให้พนักงานปรับปรุงแก้ไขพฤติกรรมการปฏิบัติงานให้เป็นไปตามระเบียบข้อบังคับเกี่ยวกับการทำงาน หากยังคงกระทำผิดซ้ำในลักษณะเดียวกันหรือลักษณะอื่นใดอีก บริษัทฯ จะพิจารณาดำเนินการทางวินัยในขั้นที่สูงขึ้นตามลำดับ ซึ่งอาจถึงขั้น<b>เลิกจ้างโดยไม่จ่ายค่าชดเชย</b>ตามพระราชบัญญัติคุ้มครองแรงงาน มาตรา 119 (4)</div>';
+  h+='<div class="es-note" style="margin-top:8px;line-height:1.9"><b>คำรับทราบของพนักงาน:</b> ข้าพเจ้าได้อ่านและรับทราบข้อความในหนังสือฉบับนี้แล้ว และจะปรับปรุงแก้ไขตามที่บริษัทฯ ตักเตือน</div>';
+  h+='<div class="es-sign">'
+    +'<div><div class="ln"></div>(............................................)<br>ผู้ตักเตือน / ฝ่ายบุคคล<br>วันที่ ........./........./.........</div>'
+    +'<div><div class="ln"></div>(............................................)<br>พยาน<br>วันที่ ........./........./.........</div>'
+    +'<div><div class="ln"></div>(............................................)<br>พนักงานผู้รับทราบ<br>วันที่ ........./........./.........</div>'
+    +'</div>';
+  h+='<div class="es-note" style="margin-top:10px;font-size:10.5px">หมายเหตุ: กรณีพนักงานปฏิเสธการลงลายมือชื่อ ให้พยานลงลายมือชื่อรับรองว่าได้อ่านและแจ้งข้อความในหนังสือฉบับนี้ให้พนักงานทราบแล้ว</div>';
+  h+=(typeof docFootHTML==='function')?docFootHTML(cfg,'เอกสารนี้จัดทำโดยระบบบริหารบุคลากร','ออกเมื่อ '+td):'';
+  h+='</div>';
+  return h;
+}
+// สร้าง+ดาวน์โหลด "ใบเซ็นรับทราบ" ทุกขั้น เป็น PDF (พิมพ์→เซ็น→ถ่ายมาแนบเป็นหลักฐาน)
+async function asstDlAckForm(d){
+  toast('ok','กำลังสร้างใบเซ็นรับทราบ…');
+  try{
+    if(typeof loadDocSettings==='function'){ try{ await loadDocSettings(); }catch(_e){} }
+    const wrap=document.createElement('div'); wrap.style.cssText='position:fixed;left:-99999px;top:0;width:900px;background:#fff;padding:16px';
+    wrap.innerHTML=buildAckDocHtml(d); document.body.appendChild(wrap);
+    await ensurePdfLibs();
+    let canvas; try{ canvas=await html2canvas(wrap.querySelector('.es-doc')||wrap,{scale:2,backgroundColor:'#ffffff',useCORS:true}); } finally { wrap.remove(); }
+    const jsPDF=window.jspdf.jsPDF; const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const iw=pw-40, ihFull=iw*canvas.height/canvas.width;
+    if(ihFull<=ph-40){ pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,ihFull); }
+    else { const pageH=Math.floor((ph-40)*canvas.width/iw); let sy=0,first=true; while(sy<canvas.height){ const hh=Math.min(pageH,canvas.height-sy); const c2=document.createElement('canvas'); c2.width=canvas.width; c2.height=hh; c2.getContext('2d').drawImage(canvas,0,sy,canvas.width,hh,0,0,canvas.width,hh); if(!first) pdf.addPage(); pdf.addImage(c2.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,iw*hh/canvas.width); first=false; sy+=hh; } }
+    const fn=('ack_'+d.emp_id+'_'+(d.action_type||'')).replace(/[^\w\-]+/g,'_')+'.pdf';
+    const a=document.createElement('a'); a.href=pdf.output('datauristring'); a.download=fn; document.body.appendChild(a); a.click(); a.remove();
+    toast('ok','ดาวน์โหลดใบเซ็นรับทราบแล้ว');
+  }catch(e){ toast('err','สร้างใบเซ็นรับทราบไม่สำเร็จ'); }
 }
 function asstRender(){
   const box=$('asst_log'); if(!box) return;
@@ -11910,6 +11962,14 @@ window.NIDALive=(function(){
     snode.onended=()=>{ if(playHead<=outCtx.currentTime+0.03) speaking=false; };
   }
   function stopPlayback(){ playHead=0; speaking=false; }
+  // เสียงสัญญาณ (บี๊บ) — 'ready' ตอนพร้อมสนทนา / 'bye' ตอนวางสาย
+  function beep(kind){
+    try{
+      if(!outCtx) return; const now=outCtx.currentTime;
+      const seq = kind==='bye' ? [[600,0],[420,0.14]] : [[660,0],[990,0.12]];
+      seq.forEach(p=>{ const o=outCtx.createOscillator(), g=outCtx.createGain(); o.type='sine'; o.frequency.value=p[0]; o.connect(g); g.connect(outCtx.destination); const st=now+p[1]; g.gain.setValueAtTime(0.0001,st); g.gain.exponentialRampToValueAtTime(0.25,st+0.02); g.gain.exponentialRampToValueAtTime(0.0001,st+0.16); o.start(st); o.stop(st+0.22); });
+    }catch(_e){}
+  }
 
   async function start(){
     if(busy||session) return; busy=true; vMsgU=null; vMsgF=null; hadLog=false; pendingVoiceAction=null;
@@ -11936,7 +11996,12 @@ window.NIDALive=(function(){
           tools
         },
         callbacks:{
-          onopen:()=>{ live=true; setStatus('กำลังฟัง…','พูดได้เลยค่ะ'); startMic(); startedAt=Date.now(); lastVoice=Date.now(); startGuards(); },
+          onopen:()=>{ live=true; setStatus('พร้อมแล้ว','พูดได้เลยค่ะ'); startMic(); startedAt=Date.now(); lastVoice=Date.now(); startGuards();
+            beep('ready');   // เสียงสัญญาณ "พร้อมสนทนา"
+            // ให้นิดาทักเปิดประโยคเองเมื่อพร้อม (สัญญาณด้วยเสียงพูด)
+            const greet=(n)=>{ try{ if(session){ session.sendClientContent({ turns:[{role:'user',parts:[{text:'(ระบบ: เริ่มสนทนาด้วยเสียงแล้ว โปรดทักทายผู้ใช้สั้น ๆ 1 ประโยคว่า "นิดา" พร้อมแล้ว และถามว่าให้ช่วยอะไรคะ)'}]}], turnComplete:true }); } else if(n>0){ setTimeout(()=>greet(n-1),90); } }catch(_e){} };
+            setTimeout(()=>greet(20),150);
+          },
           onmessage:onMsg,
           onerror:(e)=>{ console.error('[NIDALive] ws error',e); stop('การเชื่อมต่อมีปัญหา'); },
           onclose:(e)=>{ console.warn('[NIDALive] closed code=',e&&e.code,'reason=',e&&e.reason); const rs=(e&&e.reason)?String(e.reason):''; if(session){ stop(rs?('สายถูกปิด: '+rs):'สายถูกปิดจากเซิร์ฟเวอร์ (ดู console)'); } }
