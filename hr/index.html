@@ -437,6 +437,23 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 .lvl-pill{border-radius:10px !important;white-space:normal;text-align:left;line-height:1.3}
 #view_discipline .pill{border-radius:10px !important;white-space:normal;text-align:left;line-height:1.3}
 #view_discipline td .lvl-pill,#view_discipline td .pill{max-width:100%}
+
+/* ==== หน้ารายงาน (มือถือ): การ์ด accordion กดกางรายละเอียด ==== */
+.rcard.acc .rcard-top{cursor:pointer;align-items:center}
+.rcard.acc .rcard-sum{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);white-space:nowrap;flex:none}
+.rcard.acc .rcard-sum b{font-size:16px;color:var(--txt);font-weight:600}
+.rcard.acc .rcard-chev{width:18px;height:18px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s;color:#9aa19a;flex:none}
+.rcard.acc:not(.open) .rcard-stats,.rcard.acc:not(.open) .rcard-info,.rcard.acc:not(.open) .rcard-act{display:none}
+.rcard.acc.open .rcard-chev{transform:rotate(180deg)}
+.rcard.acc.open{box-shadow:0 6px 20px rgba(0,0,0,.07)}
+
+/* ==== แดชบอร์ด (มือถือ): การ์ดรายการยาวพับได้ ==== */
+@media(max-width:640px){
+  #view_dashboard .card > .card-h{cursor:pointer;user-select:none;position:relative;padding-right:40px !important}
+  #view_dashboard .card > .card-h::after{content:"";position:absolute;right:17px;top:calc(50% - 6px);width:9px;height:9px;border-right:2px solid #9aa19a;border-bottom:2px solid #9aa19a;transform:rotate(45deg);transition:transform .2s}
+  #view_dashboard .card.collapsed > .card-h::after{transform:rotate(-135deg);top:calc(50% - 2px)}
+  #view_dashboard .card.collapsed > .card-b{display:none}
+}
 </style>
 </head>
 <body>
@@ -3411,8 +3428,8 @@ function renderReportSummary(){
       </tr>`).join('')}</tbody></table></div>
     <div style="font-size:12px;color:var(--muted);padding:8px 12px">* ขาด = วันที่จัดเวรไว้และผ่านไปแล้ว แต่ไม่มา/ไม่ลา · วันทำงาน &amp; OT อิงการลงเวลาจริง · สาย(วัน) = จำนวนวันที่มาสาย · กะครึ่งวันนับ 0.5 · ออกก่อน = ออกก่อนเวลาเลิกกะเกินผ่อนผัน</div></div>`;
   const cardsHtml = `<div class="only-mobile">${sumRows.map(e=>`
-    <div class="rcard">
-      <div class="rcard-top"><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}${e.nickname?' ('+esc(e.nickname)+')':''}</span><span class="nick">${esc(e.emp_id)}</span></div></div></div>
+    <div class="rcard acc">
+      <div class="rcard-top"><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}${e.nickname?' ('+esc(e.nickname)+')':''}</span><span class="nick">${esc(e.emp_id)}</span></div></div><div class="rcard-sum"><b>${e.days}</b> วัน<svg class="rcard-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
       <div class="rcard-stats">
         <div class="rcard-stat"><div class="v">${e.days}</div><div class="l">วันทำงาน</div></div>
         <div class="rcard-stat"><div class="v" style="${e.late_count>0?'color:var(--red)':''}">${e.late_count||0}</div><div class="l">สาย(วัน)</div></div>
@@ -3540,7 +3557,7 @@ function renderDiscipline(){
   $('d_body').innerHTML = `
     ${alertBar}
     <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap">${summary}</div>
-    <div class="card"><div class="tablewrap"><table>
+    <div class="card only-desktop"><div class="tablewrap"><table>
       <thead><tr><th>คะแนน</th><th>ระดับ</th><th>พนักงาน</th><th>สาย</th><th>นาทีรวม</th><th>ขาด</th><th>มาทำงาน</th><th>ออกก่อน</th><th>OT</th><th>ดำเนินการ</th><th></th></tr></thead>
       <tbody>${e.map(x=>`
         <tr${x.action_status==='pending'?' style="background:#fff7ed"':''}>
@@ -3560,6 +3577,12 @@ function renderDiscipline(){
             <button class="btn btn-sec btn-sm" data-dtl="${esc(x.emp_id)}">ไทม์ไลน์</button>
           </td>
         </tr>`).join('')}</tbody></table></div></div>`;
+  const _dcard = x => {
+    const thumb = x.photo_url?`<div class="thumb"><img src="${esc(x.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(x.emp_name))}</div>`;
+    const warnBtn = !MGR_MODE?`<button class="btn ${x.action_needed==='warning'?'btn-warn':'btn-sec'} btn-sm" data-warn="${esc(x.emp_id)}"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> ออกใบเตือน</button>`:'';
+    return `<div class="rcard acc"><div class="rcard-top"><div class="name-cell">${thumb}<div class="ntext"><span class="nm">${esc(x.emp_name)}</span><span class="nick">${esc(x.emp_id)}${x.actions_count?(' · '+x.actions_count+' ครั้ง'):''}</span></div></div><div class="rcard-sum"><span style="width:10px;height:10px;border-radius:50%;background:${esc(x.band_color||'#64748b')};display:inline-block"></span><b>${x.score!=null?x.score:'—'}</b><svg class="rcard-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="rcard-stats"><div class="rcard-stat"><div class="v">${x.late_count}</div><div class="l">สาย(ครั้ง)</div></div><div class="rcard-stat"><div class="v">${x.late_total}</div><div class="l">นาที</div></div><div class="rcard-stat"><div class="v" style="${x.absent>0?'color:var(--red)':''}">${x.absent}/${x.days_should}</div><div class="l">ขาด</div></div><div class="rcard-stat"><div class="v">${x.days_worked}</div><div class="l">มาทำงาน</div></div><div class="rcard-stat"><div class="v">${x.early_out_count||0}</div><div class="l">ออกก่อน</div></div><div class="rcard-stat"><div class="v">${fmtOT(x.ot_hours)}</div><div class="l">OT</div></div></div><div class="rcard-info"><div style="font-size:11px;color:var(--muted);margin-bottom:5px">ระดับ / ดำเนินการ</div><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="lvl-pill" style="background:${esc(x.band_color||'#64748b')}"><span class="lvl-dot"></span> ${esc(x.band_label||'ปกติ')}</span>${actPill(x)}</div></div><div class="rcard-act"><button class="btn btn-sec btn-sm" data-dact="${esc(x.emp_id)}">＋ บันทึกดำเนินการ</button>${warnBtn}<button class="btn btn-sec btn-sm" data-dtl="${esc(x.emp_id)}">ไทม์ไลน์</button></div></div>`;
+  };
+  $('d_body').insertAdjacentHTML('beforeend', '<div class="only-mobile">'+e.map(_dcard).join('')+'</div>');
   document.querySelectorAll('[data-warn]').forEach(b=>b.onclick=()=>openIssueWarning(b.dataset.warn));
   document.querySelectorAll('[data-dact]').forEach(b=>b.onclick=()=>openDiscAction(b.dataset.dact));
   document.querySelectorAll('[data-dtl]').forEach(b=>b.onclick=()=>openDiscTimeline(b.dataset.dtl));
@@ -4362,9 +4385,31 @@ function renderPayrollItems(){
       +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">รวมจ่ายสุทธิ</div><div style="font-size:20px;font-weight:800;color:#166534">'+plB(sumNet)+'</div></div>'
     +'</div>'
     +'<div style="font-size:11px;color:var(--muted);margin:0 2px 6px"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> เลื่อนตารางแนวนอนเพื่อดูครบทุกคอลัมน์ · ชี้เมาส์ที่ตัวเลข "เบี้ย/โบนัส" และ "อื่นๆ" เพื่อดูรายละเอียด</div>'
-    +'<div class="tablewrap pl-fullbleed"><table style="font-size:12.5px;white-space:nowrap"><thead><tr>'
+    +'<div class="tablewrap pl-fullbleed only-desktop"><table style="font-size:12.5px;white-space:nowrap"><thead><tr>'
       +'<th>#</th><th>ชื่อ / รหัส · สาขา</th><th>บัญชีรับเงิน</th><th style="text-align:center">วัน</th><th style="text-align:right">อัตรา/วัน</th><th style="text-align:right">ฐาน</th><th style="text-align:right">OT</th><th style="text-align:right">เบี้ย/โบนัส</th><th style="text-align:right">เพิ่มอื่น</th><th style="text-align:right;border-left:1px solid var(--line2);color:#0f766e">รวมเงินเพิ่ม</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมรับ</th><th style="text-align:right">ปกส.</th><th style="text-align:right">หักเบิก</th><th style="text-align:right">หักอื่น</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมหัก</th><th style="text-align:right;border-left:2px solid #0f172a">สุทธิ</th><th></th>'
     +'</tr></thead><tbody>'+items.map(rowHtml).join('')+'</tbody></table></div>';
+  const _plrow=(l,v,ex)=>'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;'+(ex||'')+'"><span style="color:var(--muted)">'+l+'</span><b class="mono">'+v+'</b></div>';
+  const _pcard=(it)=>{
+    const daily=it.wage_type==='daily';
+    const allowBonus=Number(it.position_allowance||0)+Number(it.diligence||0)+Number(it.bonus||0);
+    const addSum=(it.additions||[]).reduce((x,a)=>x+Number(a.amount||0),0);
+    const dedSum=(it.deductions||[]).reduce((x,a)=>x+Number(a.amount||0),0);
+    const editBtn=fin?'<span class="pill ok" style="font-size:11px">ปิดแล้ว</span>':'<button class="btn btn-sec btn-sm" data-pledit="'+esc(it.emp_id)+'">แก้ไขรายคน</button>';
+    return '<div class="rcard acc"><div class="rcard-top"><div class="name-cell"><div class="ntext"><span class="nm">'+esc(it.emp_name)+'</span><span class="nick">'+esc(it.emp_id)+(it.branch_name?(' · '+esc(it.branch_name)):'')+'</span></div></div><div class="rcard-sum"><b style="color:#166534">'+plB(it.net)+'</b><svg class="rcard-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="rcard-info">'
+      +_plrow('วันทำงาน', daily?plB(it.days_worked):'—')
+      +_plrow('ฐานเงินเดือน', plB(it.base_pay))
+      +_plrow('OT', nz(it.ot_pay))
+      +_plrow('เบี้ย/โบนัส', nz(allowBonus))
+      +_plrow('เพิ่มอื่น', nz(addSum))
+      +_plrow('รวมรับ', '<span style="color:#166534">'+plB(it.gross)+'</span>', 'border-top:1px solid var(--line);font-weight:700')
+      +_plrow('ประกันสังคม', nz(it.sso,'color:#b91c1c'))
+      +_plrow('หักเบิกล่วงหน้า', nz(it.advance_deduct,'color:#b91c1c'))
+      +_plrow('หักอื่น', nz(dedSum,'color:#b91c1c'))
+      +_plrow('รวมหัก', '<span style="color:#b91c1c">'+plB(it.total_deduct)+'</span>', 'font-weight:700')
+      +_plrow('จ่ายสุทธิ', '<span style="color:#166534">'+plB(it.net)+'</span>', 'border-top:1px solid var(--line);font-weight:800;font-size:14px')
+      +'</div><div class="rcard-act">'+editBtn+'</div></div>';
+  };
+  $('pl_run_body').insertAdjacentHTML('beforeend','<div class="only-mobile">'+items.map(_pcard).join('')+'</div>');
   $('pl_run_body').querySelectorAll('[data-pledit]').forEach(b=>b.onclick=()=>openPlItem(b.dataset.pledit));
 }
 $('pl_run_branch') && ($('pl_run_branch').onchange=renderPayrollItems);
@@ -8216,6 +8261,25 @@ window.addEventListener('resize', fixHeader);
 window.addEventListener('load', fixHeader);
 setTimeout(fixHeader, 0);
 function placeNav(){var b=document.querySelector('.topbar'),t=document.getElementById('tabbar'),a=document.getElementById('topact'),ov=document.getElementById('drawerOv');if(!b||!t)return;if(window.innerWidth>640){if(t.parentNode!==b)b.insertBefore(t,a||null);}else{if(t.parentNode===b){var par=(ov&&ov.parentNode)?ov.parentNode:b.parentNode;par.insertBefore(t, ov?ov.nextSibling:b.nextSibling);}}}placeNav();window.addEventListener('resize',placeNav);
+function setupDashAccordion(){
+  if(window.innerWidth>640) return;
+  var dv=document.getElementById('view_dashboard'); if(!dv) return;
+  dv.querySelectorAll('.card').forEach(function(c){
+    var h=c.querySelector(':scope > .card-h'); if(!h) return;
+    if(c.dataset.acc) return; c.dataset.acc='1';
+    if(/กลุ่มเสี่ยงวินัย|กะ/.test(h.textContent||'')) c.classList.add('collapsed');
+  });
+}
+(function(){
+  var dv=document.getElementById('view_dashboard'); if(!dv) return;
+  var t; new MutationObserver(function(){clearTimeout(t);t=setTimeout(setupDashAccordion,80);}).observe(dv,{childList:true,subtree:true});
+  document.addEventListener('click',function(ev){
+    if(window.innerWidth>640) return;
+    if(ev.target.closest('a,button,select,input,label,textarea')) return;
+    var h=ev.target.closest('#view_dashboard .card > .card-h'); if(h) h.parentNode.classList.toggle('collapsed');
+  });
+})();
+document.addEventListener('click',function(ev){var t=ev.target.closest?ev.target.closest('.rcard.acc .rcard-top'):null;if(t){var c=t.closest('.rcard.acc');if(c)c.classList.toggle('open');}});
 
 // ---------- เมนูมือถือ (Drawer <svg class="ei" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>) ----------
 function toggleDrawer(open){
@@ -10125,7 +10189,7 @@ async function loadScore(){
     `<span class="pill" style="background:${esc(b.color)};color:#fff;font-weight:600">${b.min_score}–${b.max_score}: ${esc(b.label)}${b.bonus_amount?(' · ฿'+b.bonus_amount):''}</span>`).join('');
   const scEmps=(r.employees||[]).filter(e=>!e.ended);   // ★ ซ่อนคนที่สิ้นสุดการทำงานแล้ว
   if(!scEmps.length){ $('sc_body').innerHTML='<div class="empty">ยังไม่มีพนักงาน</div>'; return; }
-  $('sc_body').innerHTML = `<div class="card"><div class="tablewrap"><table>
+  $('sc_body').innerHTML = `<div class="card only-desktop"><div class="tablewrap"><table>
     <thead><tr><th>พนักงาน</th><th>คะแนน</th><th>ผล</th><th>เคสพิจารณา</th><th>โบนัส</th><th>หักรวม</th><th></th></tr></thead>
     <tbody>${scEmps.map(e=>`<tr>
       <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.nickname||e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
@@ -10137,6 +10201,11 @@ async function loadScore(){
       <td><button class="btn btn-sec btn-sm" data-scd="${esc(e.emp_id)}">รายละเอียด</button></td>
     </tr>`).join('')}</tbody></table></div>
     <div style="font-size:12px;color:var(--muted);padding:8px 12px">* คอลัมน์ “เคสพิจารณา” = สถานะเคสพิจารณาเลิกจ้าง · คนที่มีมติแล้วไม่ต้องเร่งออกใบเตือนซ้ำ · กดที่เลขเคสเพื่อเปิดดู</div></div>`;
+  const _scard = e => {
+    const thumb = e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`;
+    return `<div class="rcard acc"><div class="rcard-top"><div class="name-cell">${thumb}<div class="ntext"><span class="nm">${esc(e.nickname||e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div><div class="rcard-sum"><span style="width:10px;height:10px;border-radius:50%;background:${esc(e.band_color||'#64748b')};display:inline-block"></span><b>${e.score}</b><span style="color:var(--muted);font-size:12px">/${e.start}</span><svg class="rcard-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="rcard-info"><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="pill" style="background:${esc(e.band_color||'#64748b')};color:#fff;font-weight:600">${esc(e.band_label||'—')}</span>${scTermCell(e)}</div></div><div class="rcard-stats" style="grid-template-columns:repeat(2,1fr)"><div class="rcard-stat"><div class="v">${e.bonus?('฿'+Number(e.bonus).toLocaleString()):'—'}</div><div class="l">โบนัส</div></div><div class="rcard-stat"><div class="v" style="${e.total_deduct?'color:var(--red)':''}">${e.total_deduct||0}</div><div class="l">หักรวม</div></div></div><div class="rcard-act"><button class="btn btn-sec btn-sm" data-scd="${esc(e.emp_id)}">รายละเอียด</button></div></div>`;
+  };
+  $('sc_body').insertAdjacentHTML('beforeend', '<div class="only-mobile">'+scEmps.map(_scard).join('')+'</div>');
   document.querySelectorAll('[data-scd]').forEach(b=>b.onclick=()=>openScoreDetail(b.dataset.scd));
 }
 function openScoreDetail(empId){
