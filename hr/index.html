@@ -463,6 +463,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 }
 .imgrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 @media(max-width:640px){ .imgrow{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px} .imgrow::-webkit-scrollbar{height:5px} .imgrow > *{flex:none} }
+@media(max-width:640px){ .kpi.kpi-wide{grid-column:1 / -1} }
 </style>
 </head>
 <body>
@@ -2883,7 +2884,7 @@ async function loadDashboard(){
       <div class="kpi ${c.late_today>0?'bad':''}" style="cursor:pointer" onclick="dashList('late')"><div class="kpi-ic o"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div><div class="lbl">มาสาย (${_dayLbl}) ›</div><div class="val">${c.late_today}<span class="sm"> คน</span></div></div>
       <div class="kpi ${c.still_open>0?'warn':''}" style="cursor:pointer" onclick="dashList('still_open')"><div class="kpi-ic gy"><svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></svg></div><div class="lbl">ลืมกดออก (เลยเวลาเลิก) ›</div><div class="val">${c.still_open}<span class="sm"> คน</span></div></div>
       ${(c.term_open>0) ? `<div class="kpi bad" style="cursor:pointer" onclick="showTab('terminate')"><div class="kpi-ic r"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg></div><div class="lbl">เคสพิจารณาเลิกจ้าง ›</div><div class="val">${c.term_open}<span class="sm"> เคส</span></div><div class="delta">${c.term_wait_hr?('รอ HR ตรวจสอบ '+c.term_wait_hr):'รอผู้มีอำนาจชี้ขาด'}</div></div>` : ''}
-      <div class="kpi"><div class="kpi-ic g"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg></div><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:15px; font-weight:500">${beDate(c.cycle_start)}<br>ถึง ${beDate(c.cycle_end)}</div></div>
+      <div class="kpi kpi-wide"><div class="kpi-ic g"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg></div><div class="lbl">รอบปัจจุบัน</div><div class="val" style="font-size:16px; font-weight:600; white-space:nowrap">${beDate(c.cycle_start)} – ${beDate(c.cycle_end)}</div></div>
     </div>
     ${scorecard}
     <div class="dash-grid">
