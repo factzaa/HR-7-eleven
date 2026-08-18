@@ -8210,7 +8210,7 @@ function fixHeader(){
 window.addEventListener('resize', fixHeader);
 window.addEventListener('load', fixHeader);
 setTimeout(fixHeader, 0);
-(function(){var b=document.querySelector('.topbar'),t=document.getElementById('tabbar'),a=document.getElementById('topact');if(b&&t&&a&&t.parentNode!==b){b.insertBefore(t,a);}})();
+function placeNav(){var b=document.querySelector('.topbar'),t=document.getElementById('tabbar'),a=document.getElementById('topact'),ov=document.getElementById('drawerOv');if(!b||!t)return;if(window.innerWidth>640){if(t.parentNode!==b)b.insertBefore(t,a||null);}else{if(t.parentNode===b){var par=(ov&&ov.parentNode)?ov.parentNode:b.parentNode;par.insertBefore(t, ov?ov.nextSibling:b.nextSibling);}}}placeNav();window.addEventListener('resize',placeNav);
 
 // ---------- เมนูมือถือ (Drawer <svg class="ei" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>) ----------
 function toggleDrawer(open){
