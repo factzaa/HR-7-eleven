@@ -6411,6 +6411,7 @@
       otByEmp[a.emp_id] = (otByEmp[a.emp_id] || 0) + otAdj(a.ot_hours, otWhole);
     });
     // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงาน แต่ลงเวลาน้อยกว่าตาราง → ใช้ยอดตามตารางเวร (ให้ตรงกับหน้ารายงาน · ควบ=2)
+    const empById = {}; (empR.data || []).forEach(e => { empById[e.emp_id] = e; });   // แผนที่พนักงาน (ใช้กันควบให้ ผจก.)
     const _schDVsumPR = {}, _schCntPR = {};
     (schPR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schDVsumPR[k] = (_schDVsumPR[k] || 0) + (dvMap[s.shift_id] != null ? dvMap[s.shift_id] : 1); (_schCntPR[k] = _schCntPR[k] || new Set()).add(s.shift_id); } });
     Object.keys(workedDV).forEach(emp => { Object.keys(workedDV[emp]).forEach(date => {
