@@ -8432,11 +8432,7 @@ function asstCardsHtml(cards){
 async function asstDoc(kind,a1,a2){
   try{
     if(kind==='warning'){ if(typeof openWarningView==='function') openWarningView(a1); else toast('err','เปิดใบเตือนไม่ได้'); return; }
-    if(kind==='report'){
-      if(typeof showTab==='function') showTab('empsum');
-      setTimeout(()=>{ const s=$('es_emp'); if(!s) return; s.value=a1; if(String(s.value)!==String(a1)){ toast('err','ไม่พบพนักงานในรายการรายงาน (อาจปิดการใช้งานแล้ว)'); return; } if(typeof genEmpSum==='function') genEmpSum(); toast('ok','เปิดรายงานแล้ว — กดปุ่มพิมพ์เอกสารในหน้านี้เพื่อบันทึก PDF'); }, 320);
-      return;
-    }
+    if(kind==='report'){ await asstDlReport(a1,a2); return; }
     if(kind==='payslip'){ await asstDlSlip(a1,a2); return; }
   }catch(e){ toast('err','เปิดเอกสารไม่สำเร็จ'); }
 }
@@ -8455,6 +8451,41 @@ async function asstDlSlip(empId, which){
     const a=document.createElement('a'); a.href='data:application/pdf;base64,'+b64; a.download=fn; document.body.appendChild(a); a.click(); a.remove();
     toast('ok','ดาวน์โหลดสลิปแล้ว');
   }catch(e){ toast('err','สร้างสลิปไม่สำเร็จ'); }
+}
+// สร้าง+ดาวน์โหลด "รายงานสรุปรายบุคคล" เป็น PDF ในแชท (มีช่องเซ็นผู้รับทราบในตัว = ใช้เป็นใบเซ็นรับทราบได้)
+async function asstDlReport(empId, which){
+  toast('ok','กำลังสร้างรายงาน PDF…');
+  try{
+    if(typeof showTab==='function') showTab('empsum');
+    await new Promise(r=>setTimeout(r,350));
+    const sel=$('es_emp'); if(sel){ sel.value=empId; if(String(sel.value)!==String(empId)){ toast('err','ไม่พบพนักงานในรายการรายงาน (อาจปิดการใช้งานแล้ว)'); return; } }
+    if(which==='previous' && $('es_mode')){ try{ const opt=[...$('es_mode').options].find(o=>/ก่อน|previous|prev/i.test(o.textContent+o.value)); if(opt){ $('es_mode').value=opt.value; $('es_mode').dispatchEvent(new Event('change')); } }catch(_e){} }
+    if(typeof genEmpSum==='function') await genEmpSum();
+    await new Promise(r=>setTimeout(r,600));   // ให้รูป/เลย์เอาต์เรนเดอร์เสร็จ
+    const el=document.getElementById('es_body'); if(!el || !el.innerHTML.trim()){ toast('err','ยังไม่มีข้อมูลรายงาน'); return; }
+    await ensurePdfLibs();
+    const canvas=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const jsPDF=window.jspdf.jsPDF; const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const iw=pw-40, ihFull=iw*canvas.height/canvas.width;
+    if(ihFull<=ph-40){
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,ihFull);
+    } else {
+      const pageCanvasH=Math.floor((ph-40)*canvas.width/iw);   // ความสูง (px) ต่อหน้า
+      let sy=0, first=true;
+      while(sy<canvas.height){
+        const hh=Math.min(pageCanvasH,canvas.height-sy);
+        const c2=document.createElement('canvas'); c2.width=canvas.width; c2.height=hh;
+        c2.getContext('2d').drawImage(canvas,0,sy,canvas.width,hh,0,0,canvas.width,hh);
+        if(!first) pdf.addPage();
+        pdf.addImage(c2.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,iw*hh/canvas.width);
+        first=false; sy+=hh;
+      }
+    }
+    const fn=('report_'+empId).replace(/[^\w\-]+/g,'_')+'.pdf';
+    const a=document.createElement('a'); a.href=pdf.output('datauristring'); a.download=fn; document.body.appendChild(a); a.click(); a.remove();
+    toast('ok','ดาวน์โหลดรายงาน PDF แล้ว');
+  }catch(e){ toast('err','สร้างรายงานไม่สำเร็จ'); }
 }
 function asstRender(){
   const box=$('asst_log'); if(!box) return;
@@ -8506,6 +8537,7 @@ $('sms_test_btn') && ($('sms_test_btn').onclick=async()=>{
 });
 async function asstConfirm(idx){
   const m=ASST_MSGS[idx]; if(!m||!m.pending) return; const p=m.pending; m.pending=null;
+  if(p.action==='issue_discipline'){ await asstIssueDiscipline(idx,p); return; }   // ทำจริงฝั่ง client (ต้องแนบหลักฐาน)
   ASST_MSGS.push({role:'assistant',text:'กำลังดำเนินการ…'}); asstRender();
   const {base,key}=asstApiBase();
   try{ const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,confirm:p})});
@@ -8514,6 +8546,24 @@ async function asstConfirm(idx){
   asstRender();
 }
 function asstCancel(idx){ const m=ASST_MSGS[idx]; if(m) m.pending=null; ASST_MSGS.push({role:'assistant',text:'ยกเลิกแล้วค่ะ ไม่ได้ทำรายการ'}); asstRender(); }
+// บันทึกตักเตือน วาจา/ลายลักษณ์ ผ่านนิดา — ใช้ตรรกะ hr_disc_action_add เดิม (บังคับแนบรูปหลักฐาน + ตรวจลำดับ + แจ้งพนักงาน)
+async function asstIssueDiscipline(idx, p){
+  const a=p.args||{};
+  let evidence=[];   // หลักฐาน = รูปที่ผู้ใช้แนบมาในข้อความล่าสุดก่อนหน้า
+  for(let i=idx;i>=0;i--){ const mm=ASST_MSGS[i]; if(mm && mm.role==='user' && Array.isArray(mm.images) && mm.images.length){ evidence=mm.images.slice(); break; } }
+  if(!evidence.length){ ASST_MSGS.push({role:'assistant',text:'ยังบันทึกไม่ได้ค่ะ — ต้องแนบรูป "เอกสาร/ใบเซ็นรับทราบ" เป็นหลักฐานก่อน (กดปุ่มกล้องแนบรูป แล้วสั่งอีกครั้ง)'}); asstRender(); return; }
+  const type = String(a.action_type)==='written' ? 'written' : 'verbal';
+  const level = type==='written' ? 2 : 1;
+  const level_name = type==='written' ? 'ตักเตือนลายลักษณ์อักษร' : 'ตักเตือนด้วยวาจา';
+  ASST_MSGS.push({role:'assistant',text:'กำลังบันทึก + อัปโหลดหลักฐาน…'}); asstRender();
+  try{
+    const r=await post({ action:'hr_disc_action_add', password:pwd, ...authBody(), data:{ emp_id:a.emp_id, action_type:type, level, level_name, reason:a.reason, photos:evidence, need_ack:true, performed_by:'สำนักงาน (HR) · ผ่านนิดา' } });
+    ASST_MSGS.pop();
+    if(r&&r.ok){ ASST_MSGS.push({role:'assistant',text:'บันทึก'+level_name+'เรียบร้อยแล้วค่ะ ✓ พนักงานจะเห็นให้กดรับทราบในหน้ารับส่งผลัด และดูได้ในเมนู "วินัย & ใบเตือน"'}); }
+    else { ASST_MSGS.push({role:'assistant',text:'บันทึกไม่สำเร็จค่ะ: '+((r&&r.error)||'ไม่ทราบสาเหตุ')}); }
+  }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'บันทึกไม่สำเร็จค่ะ: '+(e.message||e)}); }
+  asstRender();
+}
 // ---- แนบรูปให้นิดาอ่าน (บิลรับสินค้า / ตารางเวร / เอกสาร / รูปหน้าร้าน) ----
 let ASST_PHOTOS=[];
 function asstFileToData(file){
