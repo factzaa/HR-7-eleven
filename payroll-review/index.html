@@ -319,8 +319,8 @@ async function loadShift(){
     d.rows.forEach(x=>{
       const st=SH_ST[x.status]||SH_ST.none;
       const editable=(x.status==='absent'||x.status==='scheduled'||(x.has_att&&x.source==='backfill'));
-      h+='<tr style="border-top:1px solid var(--line)">'
-        +'<td style="padding:7px 6px;white-space:nowrap">'+esc(x.work_date)+'<div style="font-size:11px;color:var(--muted)">'+esc(x.shift_name||'')+'</div></td>'
+      h+='<tr style="border-top:1px solid var(--line)'+(x.is_holiday?';background:#fef2f2':'')+'">'
+        +'<td style="padding:7px 6px;white-space:nowrap'+(x.is_holiday?';border-left:3px solid #dc2626':'')+'">'+esc(x.work_date)+(x.is_holiday?'<div style="margin-top:2px"><span style="display:inline-flex;align-items:center;gap:3px;background:#fee2e2;color:#b91c1c;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:6px"><svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round"><path d="M5 21V4M5 4h11l-2 3 2 3H5"/></svg> วันหยุดบริษัท'+(x.holiday_name?(': '+esc(x.holiday_name)):'')+'</span></div>':'')+'<div style="font-size:11px;color:var(--muted)">'+esc(x.shift_name||'')+'</div></td>'
         +'<td style="padding:7px 6px"><span class="chip" style="background:'+st.c+'22;color:'+st.c+'">'+st.t+'</span>'
           +(x.late_min?(' <span style="font-size:11px;color:#b45309">สาย '+x.late_min+' น.</span>'):'')
           +(x.source==='backfill'?' <span style="font-size:10.5px;color:#6b7280">(เติมย้อนหลัง)</span>':'')+'</td>'

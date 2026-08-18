@@ -2349,12 +2349,14 @@
   async function reviewShiftDetail(empId, which) {
     const cyc = reviewCycleRange(which);
     const today = bangkokDate();
-    const [attR, schR, lvR, shR] = await Promise.all([
+    const [attR, schR, lvR, shR, holR] = await Promise.all([
       sb.from('attendance').select('work_date,check_in,late_min,ot_hours,shift_id,source,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
       sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
       sb.from('leaves').select('start_date,end_date,type,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('shifts').select('shift_id,name'),
+      sb.from('holidays').select('date,name').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
     ]);
+    const holiName = {}; (holR.data || []).forEach(h => holiName[h.date] = h.name || 'วันหยุดบริษัท');
     const shN = {}; (shR.data || []).forEach(s => shN[s.shift_id] = s.name);
     const attM = {}; (attR.data || []).forEach(a => attM[a.work_date] = a);
     const schM = {}; (schR.data || []).forEach(s => schM[s.work_date] = s);
@@ -2376,6 +2378,7 @@
         shift_name: shN[(a && a.shift_id) || (s && s.shift_id)] || '',
         status, has_att: !!a, late_min: a ? (a.late_min || 0) : 0, ot_hours: a ? (a.ot_hours || 0) : 0,
         source: a ? a.source : null, leave_type: l ? (l.type || 'ลา') : null,
+        is_holiday: !!holiName[d], holiday_name: holiName[d] || '',
       };
     });
     return { period_start: cyc.start, period_end: cyc.end, rows };
