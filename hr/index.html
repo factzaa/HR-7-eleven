@@ -8383,7 +8383,9 @@ function initAssistant(){
   asstRenderThumbs(); asstRender();
 }
 function asstCardsHtml(cards){
-  if(!cards||!Array.isArray(cards.groups)||!cards.groups.length) return '';
+  if(!cards) return '';
+  // การ์ดเอกสารใช้ cards.documents (ไม่ใช่ groups) — อย่าตัดทิ้งด้วยตัวกันของ groups
+  if(cards.type!=='documents' && (!Array.isArray(cards.groups)||!cards.groups.length)) return '';
   const wrap=(inner)=>'<div style="align-self:flex-start;max-width:96%;display:flex;flex-direction:column;gap:8px;width:100%">'+inner+'</div>';
   if(cards.type==='tasks'){
     return wrap(cards.groups.map(g=>{
