@@ -8409,7 +8409,52 @@ function asstCardsHtml(cards){
       +'<span style="color:#d97706">รอตรวจ '+(g.submitted||0)+'</span> · <span style="color:#dc2626">ตีกลับ '+(g.sent_back||0)+'</span> · ค้าง '+(g.todo||0)+'</div>'
     ).join(''));
   }
+  if(cards.type==='documents'){
+    const items=(cards.documents||[]); if(!items.length) return '';
+    const ic={
+      payslip:'<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 12h.01M17 12h.01"/></svg>',
+      warning:'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',
+      report:'<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+      file:'<svg class="ei" viewBox="0 0 24 24"><path d="M21 12.5V7a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M16 19l2 2 4-4"/></svg>'
+    };
+    return wrap('<div style="display:flex;flex-direction:column;gap:7px">'+items.map(d=>{
+      const svg=ic[d.kind]||ic.file; let act='';
+      if(d.kind==='file') act='<a class="btn btn-pri btn-sm" href="'+esc(d.url)+'" target="_blank" rel="noopener" download style="text-decoration:none">ดาวน์โหลด</a>';
+      else if(d.kind==='payslip') act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'payslip\',\''+esc(d.emp_id)+'\',\''+esc(d.which||'current')+'\')">สลิป PDF</button>';
+      else if(d.kind==='warning') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'warning\',\''+esc(d.warning_id)+'\')">เปิด/พิมพ์</button>';
+      else if(d.kind==='report') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'report\',\''+esc(d.emp_id)+'\',\''+esc(d.which||'current')+'\')">เปิดรายงาน</button>';
+      return '<div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:11px;padding:9px 11px"><span style="color:var(--green);flex:none;display:flex">'+svg+'</span><span style="flex:1;font-size:13px;line-height:1.35">'+esc(d.label||d.kind)+'</span>'+act+'</div>';
+    }).join('')+'</div>');
+  }
   return '';
+}
+// เปิด/ดาวน์โหลดเอกสารจากการ์ดในแชทนิดา
+async function asstDoc(kind,a1,a2){
+  try{
+    if(kind==='warning'){ if(typeof openWarningView==='function') openWarningView(a1); else toast('err','เปิดใบเตือนไม่ได้'); return; }
+    if(kind==='report'){
+      if(typeof showTab==='function') showTab('empsum');
+      setTimeout(()=>{ const s=$('es_emp'); if(!s) return; s.value=a1; if(String(s.value)!==String(a1)){ toast('err','ไม่พบพนักงานในรายการรายงาน (อาจปิดการใช้งานแล้ว)'); return; } if(typeof genEmpSum==='function') genEmpSum(); toast('ok','เปิดรายงานแล้ว — กดปุ่มพิมพ์เอกสารในหน้านี้เพื่อบันทึก PDF'); }, 320);
+      return;
+    }
+    if(kind==='payslip'){ await asstDlSlip(a1,a2); return; }
+  }catch(e){ toast('err','เปิดเอกสารไม่สำเร็จ'); }
+}
+// สร้าง+ดาวน์โหลดสลิป PDF โดยไม่ต้องเปิดหน้าเงินเดือน (โหลดรอบเอง → plMakePdf)
+async function asstDlSlip(empId, which){
+  toast('ok','กำลังสร้างสลิป…');
+  try{
+    const r=await post({ action:'hr_payroll_run', password:pwd, which:(which==='previous'?'previous':'current') });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'โหลดเงินเดือนไม่สำเร็จ'); return; }
+    PAY=r;
+    const it=(r.items||[]).find(x=>String(x.emp_id)===String(empId));
+    if(!it){ toast('err','ไม่พบสลิปของพนักงานคนนี้ในรอบนี้ (อาจยังไม่ได้คำนวณ)'); return; }
+    const b64=await plMakePdf(it);
+    if(!b64){ toast('err','สร้าง PDF ไม่สำเร็จ'); return; }
+    const fn=('slip_'+empId+'_'+((r.range&&r.range.label)||which||'')).replace(/[^\w\-]+/g,'_')+'.pdf';
+    const a=document.createElement('a'); a.href='data:application/pdf;base64,'+b64; a.download=fn; document.body.appendChild(a); a.click(); a.remove();
+    toast('ok','ดาวน์โหลดสลิปแล้ว');
+  }catch(e){ toast('err','สร้างสลิปไม่สำเร็จ'); }
 }
 function asstRender(){
   const box=$('asst_log'); if(!box) return;
@@ -11729,7 +11774,7 @@ window.NIDALive=(function(){
   const SDK='https://esm.sh/@google/genai';
   let session=null,micStream=null,micCtx=null,outCtx=null,proc=null,srcNode=null;
   let playHead=0,speaking=false,level=0,lastVoice=0,startedAt=0,tick=null,raf=null,ov=null,busy=false,live=false;
-  let vMsgU=null,vMsgF=null,hadLog=false;
+  let vMsgU=null,vMsgF=null,hadLog=false,pendingVoiceAction=null;
   // บันทึกบทสนทนาเสียงลงหน้าต่างแชทเดิม (ASST_MSGS) เพื่ออ่านย้อนหลังหลังวางสาย
   function logAppend(role,txt){
     try{ if(typeof ASST_MSGS==='undefined') return;
@@ -11789,8 +11834,19 @@ window.NIDALive=(function(){
     const {url,key}=base();
     try{
       const r=await fetch(url+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:curPwd(),messages:[{role:'user',text:String(question||'')}]})});
-      const j=await r.json(); return String((j&&(j.reply||j.error))||'ไม่พบข้อมูล');
+      const j=await r.json();
+      if(j&&j.pendingAction){ pendingVoiceAction=j.pendingAction; return String(j.reply||j.error||'')+' [ระบบ: รายการนี้ต้องยืนยันก่อนทำจริง — พูดสรุปให้ผู้ใช้ฟังแล้วถามยืนยัน ถ้าผู้ใช้ยืนยัน (ใช่/ยืนยัน/ตกลง) ค่อยเรียก confirm_action]'; }
+      return String((j&&(j.reply||j.error))||'ไม่พบข้อมูล');
     }catch(e){ return 'ดึงข้อมูลไม่สำเร็จ: '+e; }
+  }
+  // ยืนยันทำรายการแก้ไข (เสนอไว้จาก ask_nida) — เรียกเมื่อผู้ใช้ยืนยันด้วยเสียง
+  async function confirmVoiceAction(){
+    if(!pendingVoiceAction) return 'ไม่มีรายการที่รอยืนยันค่ะ';
+    const {url,key}=base(); const act=pendingVoiceAction; pendingVoiceAction=null;
+    try{
+      const r=await fetch(url+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:curPwd(),confirm:act})});
+      const j=await r.json(); return String((j&&(j.reply||j.error))||'ทำรายการเรียบร้อยแล้วค่ะ');
+    }catch(e){ return 'ทำรายการไม่สำเร็จ: '+e; }
   }
 
   function playChunk(b64){
@@ -11806,7 +11862,7 @@ window.NIDALive=(function(){
   function stopPlayback(){ playHead=0; speaking=false; }
 
   async function start(){
-    if(busy||session) return; busy=true; vMsgU=null; vMsgF=null; hadLog=false;
+    if(busy||session) return; busy=true; vMsgU=null; vMsgF=null; hadLog=false; pendingVoiceAction=null;
     buildUI(); ov.classList.add('on'); setStatus('กำลังเชื่อมต่อ…','เตรียมไมโครโฟน'); if(!raf) drawWave();
     // สร้าง+ปลุก AudioContext ขาออก "ระหว่างจังหวะแตะ" (กันถูก suspend → ตอบแต่ไม่มีเสียง)
     try{ outCtx=new (window.AudioContext||window.webkitAudioContext)(); await outCtx.resume(); }catch(_e){}
@@ -11816,14 +11872,17 @@ window.NIDALive=(function(){
       micStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
       const tk=await mintToken();
       const ai=new GK.GoogleGenAI({apiKey:tk.token,httpOptions:{apiVersion:'v1beta'}});
-      const tools=[{functionDeclarations:[{name:'ask_nida',description:'ค้นและวิเคราะห์ข้อมูล HR ทั้งหมด (พนักงาน วันทำงาน มาสาย/ขาด เงินเดือน วินัย/ใบเตือน ใบลา สาขา คลัง ไรเดอร์ ฯลฯ) ใช้ทุกครั้งที่ผู้ใช้ถามข้อมูลจริง ห้ามเดาเอง',parameters:{type:'object',properties:{question:{type:'string',description:'คำถามภาษาไทยที่จะส่งให้ระบบค้นข้อมูล'}},required:['question']}}]}];
+      const tools=[{functionDeclarations:[
+        {name:'ask_nida',description:'ค้น/วิเคราะห์ข้อมูล HR ทั้งหมด และใช้ "สั่งแก้ไขข้อมูล" ได้ด้วย (อนุมัติ/ปฏิเสธลา แก้-ลบเวลา เพิ่ม-เปลี่ยน-ลบกะ หัก/เพิ่มคะแนน ประกาศ อนุมัติเบิก ฯลฯ) — ส่งคำถามหรือคำสั่งเป็นภาษาไทย ใช้ทุกครั้งที่ผู้ใช้ถาม/สั่งข้อมูลจริง ห้ามเดาเอง',parameters:{type:'object',properties:{question:{type:'string',description:'คำถามหรือคำสั่งภาษาไทย'}},required:['question']}},
+        {name:'confirm_action',description:'ยืนยัน "ทำจริง" รายการแก้ไขข้อมูลที่เพิ่งเสนอไว้จาก ask_nida — เรียกเฉพาะหลังผู้ใช้ยืนยันด้วยเสียงชัดเจน (พูดว่า ใช่/ยืนยัน/ตกลง/ทำเลย) เท่านั้น ห้ามเรียกก่อนผู้ใช้ยืนยัน',parameters:{type:'object',properties:{}}}
+      ]}];
       session=await ai.live.connect({
         model:tk.model,
         config:{
           responseModalities:[GK.Modality?GK.Modality.AUDIO:'AUDIO'],
           speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:VOICE } } },  // ล็อกเสียงเดียว กันเสียงเปลี่ยนไปมา
           inputAudioTranscription:{}, outputAudioTranscription:{},
-          systemInstruction:{parts:[{text:'คุณคือ "น้องนิดา" ผู้ช่วยฝ่ายบุคคลของ 7-Eleven พูดภาษาไทย สุภาพ เป็นกันเอง กระชับ เมื่อผู้ใช้ถามข้อมูลพนักงาน วันทำงาน เงินเดือน วินัย ใบลา หรือข้อมูลใด ๆ ในระบบ ให้เรียกเครื่องมือ ask_nida เสมอ แล้วสรุปคำตอบด้วยเสียงสั้น ๆ ห้ามเดาข้อมูลเอง ถ้าไม่พบข้อมูลให้บอกตรง ๆ ตอบเป็นภาษาไทยเท่านั้น'}]},
+          systemInstruction:{parts:[{text:'คุณคือ "น้องนิดา" ผู้ช่วยฝ่ายบุคคลของ 7-Eleven พูดภาษาไทย สุภาพ เป็นกันเอง แต่วางตัวเป็นนักวิเคราะห์ HR ที่เข้มงวดกับกฎระเบียบบริษัท เมื่อผู้ใช้ถามข้อมูลพนักงาน วันทำงาน เงินเดือน วินัย ใบลา หรือข้อมูลใด ๆ ในระบบ ให้เรียกเครื่องมือ ask_nida เสมอ แล้วสื่อสารด้วยเสียง — ถ้าเป็นคำถามวิเคราะห์/ภาพรวม/วินัย/ผลการทำงาน ให้วิเคราะห์เชิงลึกครอบคลุม (ตัวเลขจริง ประเด็นวินัย ผลกระทบถ้าพนักงานทำผิดซ้ำหรือถ้าผู้จัดการไม่ดำเนินการ และสิ่งที่ต้องทำต่อ) พูดเป็นข้อ ๆ ให้ฟังเข้าใจ ไม่ต้องรวบสั้น · คำถามข้อเท็จจริงสั้น ๆ ตอบตรงประเด็น · ห้ามเดาข้อมูลเอง ถ้าไม่พบข้อมูลให้บอกตรง ๆ. เมื่อผู้ใช้ "สั่งให้แก้ไข/อนุมัติ/เพิ่ม/ลบข้อมูล" ให้เรียก ask_nida เพื่อเสนอรายการก่อน แล้วพูดสรุปสิ่งที่จะทำ + ถามยืนยัน ("ยืนยันไหมคะ") — ต่อเมื่อผู้ใช้ยืนยันด้วยเสียงชัดเจน (ใช่/ยืนยัน/ตกลง/ทำเลย) จึงเรียก confirm_action เพื่อทำจริง ห้ามเรียก confirm_action ก่อนได้รับการยืนยัน และห้ามบอกว่าทำเสร็จก่อนเรียก confirm_action. ตอบเป็นภาษาไทยเท่านั้น'}]},
           tools
         },
         callbacks:{
@@ -11887,6 +11946,7 @@ window.NIDALive=(function(){
           for(const fc of tc.functionCalls){
             let result='ไม่มีเครื่องมือนี้';
             if(fc.name==='ask_nida') result=await askNida(fc.args&&fc.args.question);
+            else if(fc.name==='confirm_action') result=await confirmVoiceAction();
             responses.push({id:fc.id,name:fc.name,response:{result}});
           }
           try{ session.sendToolResponse({functionResponses:responses}); }catch(_e){}
