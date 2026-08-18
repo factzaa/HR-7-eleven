@@ -2707,6 +2707,8 @@ function discActionPill(e){
   // ★ สีไล่ตามความรุนแรง: วาจา=เหลือง → ลายลักษณ์=ส้ม → ใบเตือน=แดง → เลิกจ้าง=แดงเข้มทึบ
   const SEV={ verbal:['#fef9c3','#a16207','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'], written:['#ffedd5','#c2410c','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'], warning:['#fee2e2','#dc2626','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'] };
   if(e.term_case) return '';                                   // มีเคสพิจารณาแล้ว → ป้ายเคสจะบอกเอง
+  if(e.action_status==='await_doc') return pill('<svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> รอ HR ทำเอกสาร', '#fff7ed', '#9a3412', 'ออกตักเตือนแล้ว รอ HR แนบเอกสารเซ็นให้สมบูรณ์');
+  if(e.action_status==='observing') return pill('<svg class="pline" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg> อยู่ระหว่างสังเกต'+(e.obs_since?(' · หลัง '+beDate(e.obs_since)):''), '#eff6ff', '#1d4ed8', 'ปิดเอกสารแล้ว รอดูพฤติกรรม · ยังไม่มีผิดใหม่');
   if(e.action_status==='need_termination')
     return pill('<svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> ครบใบเตือน '+(wt||3)+'/3 · พิจารณาเลิกจ้าง', '#dc2626', '#ffffff', 'รุนแรงสุด — ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)', 'box-shadow:0 0 0 1px #b91c1c inset');
   if(e.action_status==='pending'){
@@ -3533,6 +3535,8 @@ function renderDiscipline(){
     const tc = x.term_case;
     const wt = Number(x.warning_total)||0;
     const suffix = (wt>0 && !tc) ? (' · ใบเตือน '+wt+'/3') : '';
+    if(x.action_status==='await_doc') return `<span class="pill" style="background:#fff7ed;color:#9a3412;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> รอ HR ทำเอกสารให้สมบูรณ์</span>`;
+    if(x.action_status==='observing') return `<span class="pill" style="background:#eff6ff;color:#1d4ed8;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg> อยู่ระหว่างสังเกต${x.obs_since?(' · หลัง '+beDate(x.obs_since)):''}</span>`;
     // ★ ผ่านมติเคสพิจารณาแล้ว → ไม่ต้องเร่งออกใบเตือนอีก แสดงมติแทน
     if(x.action_status==='case_closed' && tc){
       return `<span class="pill" style="background:${tc.decision==='terminate_proposed'?'#fee2e2':'#dcfce7'};color:${tc.decision==='terminate_proposed'?'#b91c1c':'#15803d'};font-weight:700"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v18M6 7h12M12 5l-4 1M12 5l4 1"/><path d="M6 7l-2.5 5a2.5 2.5 0 0 0 5 0zM18 7l-2.5 5a2.5 2.5 0 0 0 5 0z"/><path d="M8 21h8"/></svg> ผ่านมติแล้ว</span>`
@@ -3689,9 +3693,26 @@ async function openDiscTimeline(empId){
             : (i.ack_at ? `<span class="pill ok">✓ พนักงานรับทราบแล้ว · ${fmt(i.ack_at)}</span>${i.ack_note?`<div style="font-size:12px;color:var(--muted);margin-top:3px">ความเห็นพนักงาน: ${esc(i.ack_note)}</div>`:''}`
                         : '<span class="pill bad">รอพนักงานกดรับทราบ</span>')
           }</div>
+          ${['verbal','written','warning'].includes(i.type)?`<div style="margin-top:6px">${
+            i.doc_at
+              ? `<span class="pill ok"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><path d="M20 6L9 17l-5-5"/></svg> เอกสารสมบูรณ์ · ${fmt(i.doc_at)}${i.doc_by?(' · โดย '+esc(i.doc_by)):''}</span>${i.doc_url?` <a href="${esc(i.doc_url)}" target="_blank" style="font-size:12px">ดูเอกสาร</a>`:''}`
+              : `<button class="btn btn-warn btn-sm" onclick="discDocComplete('${esc(String(i.id))}','${esc(empId)}')"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> แนบเอกสารสมบูรณ์ (บังคับ)</button><div style="font-size:11.5px;color:var(--orange);margin-top:3px">— ยังไม่เริ่มนับความผิดครั้งถัดไป จนกว่า HR จะปิดเอกสาร</div>`
+          }</div>`:''}
         </div></div>`).join('');
   openModal('ไทม์ไลน์เคสวินัย · '+esc((r.emp&&r.emp.name)||empId),
     `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${ladder}</div>${body}`);
+}
+async function discDocComplete(id, empId){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  inp.onchange=async ()=>{
+    const fl=inp.files&&inp.files[0]; if(!fl) return;
+    let b64; try{ b64=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(fl); }); }catch(_e){ toast('err','อ่านไฟล์ไม่สำเร็จ'); return; }
+    if(!confirm('ยืนยันว่าได้แนบเอกสารที่เซ็น + คุยกับพนักงานเรียบร้อยแล้ว?\nระบบจะถือว่าการตักเตือนนี้สมบูรณ์ และเริ่มนับความผิดครั้งถัดไปหลังจากนี้')) return;
+    const r=await post({ action:'hr_disc_doc_complete', password:pwd, ...authBody(), data:{ id:id, doc_image:b64 } });
+    if(r.ok){ toast('ok','บันทึกเอกสารสมบูรณ์แล้ว'); openDiscTimeline(empId); if(typeof loadDiscipline==='function') loadDiscipline(); }
+    else toast('err', r.error||'บันทึกไม่สำเร็จ');
+  };
+  inp.click();
 }
 $('d_cycle').addEventListener('change', loadDiscipline);
 $('d_refresh').onclick = loadDiscipline;

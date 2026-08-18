@@ -182,6 +182,7 @@
         case 'hr_disc_rules_get': return await hrDiscRulesGet();
         case 'hr_disc_rules_save':return await hrDiscRulesSave(p.data);
         case 'hr_disc_action_add':return await hrDiscActionAdd(p.data);
+        case 'hr_disc_doc_complete': return await hrDiscDocComplete(p.data);
         case 'hr_disc_timeline':  return await hrDiscTimeline(p.emp_id);
         case 'hr_disc_pending':   return await hrDiscPending(p.cycle, p.branch);
         case 'hr_score_get':         return await hrScoreGet(p.cycle, p.range);
@@ -997,6 +998,7 @@
       return {
         emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '', branch_id: e.branch_id || '',
         late_count, late_total, ot_hours, absent,
+        late_dates: late.map(a => a.work_date), absent_dates: pastSched.filter(d => !workedSet.has(d) && !onLeave(d)),
         early_out_count, early_out_hours: Math.round((early_out_min / 60) * 10) / 10,
         early_out_warn: early_out_count >= earlyWarnDays,
         days_should, days_worked, basis,
@@ -1016,7 +1018,7 @@
     const [{ data: actsRaw }, { data: wAll }, { data: winActsRaw }] = await Promise.all([
       sb().from('disc_actions').select('*').eq('cycle_start', cyc.start),
       sb().from('warnings').select('warning_id,status'),
-      sb().from('disc_actions').select('emp_id,action_type,status,performed_at,warning_id').gte('performed_at', winStart),
+      sb().from('disc_actions').select('emp_id,action_type,status,performed_at,warning_id,ack_at,doc_at').gte('performed_at', winStart),
     ]);
     const liveWarn = new Set((wAll || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
     const _live = a => a.status !== 'cancelled' && (!a.warning_id || liveWarn.has(String(a.warning_id)));
@@ -1054,7 +1056,18 @@
       const nearTermination = warningCount >= 3;                // ครบ 3 ใบสะสม → พิจารณาเลิกจ้าง
       // ขั้นถัดไปในบันไดสะสม
       let cumNext = !verbalDone ? 'verbal' : (!writtenDone ? 'written' : 'warning');
-      const need = (breach && !nearTermination) ? cumNext : null;   // เตือนเฉพาะรอบที่ทำผิดซ้ำ · รอบสะอาด = null
+      // ★ Rule A: เลื่อนขั้นได้เมื่อ "เอกสารตักเตือนก่อนหน้าสมบูรณ์ (HR ปิด+แนบเอกสารเซ็น) และมีสาย/ขาดวันใหม่หลังวันปิดเอกสาร"
+      const ladderActs = winMine.filter(a => a.action_type === 'verbal' || a.action_type === 'written' || a.action_type === 'warning')
+        .sort((a, b) => String(b.performed_at).localeCompare(String(a.performed_at)));
+      const lastLadder = ladderActs[0] || null;
+      const _infrDates = [...(e.late_dates || []), ...(e.absent_dates || [])];
+      let observing = false, obsState = null, obsSince = null;
+      if (lastLadder) {
+        const _docAt = lastLadder.doc_at || null;
+        if (!_docAt) { observing = true; obsState = 'await_doc'; }                       // ยังไม่ปิดเอกสาร → รอ HR
+        else { obsSince = String(_docAt).slice(0, 10); if (!_infrDates.some(d => d > obsSince)) { observing = true; obsState = 'watching'; } }  // ปิดแล้ว ยังไม่ผิดใหม่ → สังเกต
+      }
+      const need = (breach && !nearTermination && !observing) ? cumNext : null;
       const ladder = [
         { type: 'verbal', label: ACT_LABEL.verbal, done: verbalDone },
         { type: 'written', label: ACT_LABEL.written, done: writtenDone },
@@ -1089,7 +1102,10 @@
         action_done_by: doneOfNeed ? doneOfNeed.performed_by : null,
         // สถานะ: ปิดเคสแล้ว / มีเคสเปิด / ครบ 3 ใบรอเปิดเคส / รอบนี้ต้องทำขั้นถัดไป / ทำแล้ว / ไม่ต้องทำ
         action_status: (tc && tc.status === 'closed') ? 'case_closed'
-          : (tc ? 'case_open' : (nearTermination ? 'need_termination' : (!need ? 'none' : (doneOfNeed ? 'done' : 'pending')))),
+          : (tc ? 'case_open' : (nearTermination ? 'need_termination' : ((lastLadder && !lastLadder.doc_at) ? 'await_doc' : ((observing && breach) ? 'observing' : (!need ? 'none' : (doneOfNeed ? 'done' : 'pending')))))),
+        observing: observing, obs_state: obsState, obs_since: obsSince,
+        last_action_type: lastLadder ? lastLadder.action_type : null,
+        last_action_doc_at: lastLadder ? (lastLadder.doc_at || null) : null,
         term_case: tc ? {
           id: tc.id, case_no: tc.case_no, status: tc.status,
           decision: tc.decision || null,
@@ -1187,6 +1203,16 @@
   }
 
   // ไทม์ไลน์เคสวินัยรายบุคคล (การดำเนินการ + ใบเตือน รวมกัน เรียงตามเวลา)
+  async function hrDiscDocComplete(d) {
+    if (!d || d.id == null) return { ok: false, error: 'ไม่ระบุรายการ' };
+    if (!d.doc_image) return { ok: false, error: 'ต้องแนบรูปเอกสารที่เซ็นแล้วก่อน (บังคับ)' };
+    const urls = await _uploadMany('disc', [d.doc_image]);
+    const doc_url = urls && urls[0];
+    if (!doc_url) return { ok: false, error: 'อัปโหลดเอกสารไม่สำเร็จ' };
+    const { error } = await sb().from('disc_actions').update({ doc_url, doc_at: new Date().toISOString(), doc_by: d.by || 'สำนักงาน (HR)' }).eq('id', d.id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, doc_url };
+  }
   async function hrDiscTimeline(empId) {
     if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
     const [{ data: emp }, { data: acts }, { data: wrs }] = await Promise.all([
@@ -1208,6 +1234,7 @@
       late_count: a.late_count, late_total: a.late_total, absent_count: a.absent_count,
       warning_id: a.warning_id, need_ack: a.need_ack, ack_at: a.ack_at, ack_note: a.ack_note,
       status: a.status, photos: a.photos || [],
+      doc_url: a.doc_url || null, doc_at: a.doc_at || null, doc_by: a.doc_by || null,
     }));
     // ใบเตือนเก่าที่ยังไม่มีแถวใน disc_actions (ออกก่อนมีระบบนี้)
     (wrs || []).forEach(w => {
@@ -1235,7 +1262,7 @@
     if (branch) list = list.filter(e => String(e.branch_id) === String(branch));
     return {
       ok: true, cycle: r.cycle,
-      todo: list.filter(e => e.action_status === 'pending' || e.action_status === 'need_termination'),
+      todo: list.filter(e => e.action_status === 'pending' || e.action_status === 'need_termination' || e.action_status === 'await_doc'),
       waiting_ack: list.filter(e => e.pending_ack > 0),
     };
   }
