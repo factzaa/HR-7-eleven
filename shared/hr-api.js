@@ -2632,11 +2632,12 @@
     // ใบเตือนในกรอบเวลาที่กำหนดของแต่ละเกณฑ์
     const warnByEmp = {}; (wrR.data || []).forEach(w => { (warnByEmp[w.emp_id] || (warnByEmp[w.emp_id] = [])).push(w); });
 
-    // ---- ขาดงานติดต่อกัน (นับ "วันที่ถูกจัดเวรติดกัน" ที่ไม่มา + ไม่ลา) ----
-    const back = new Date(new Date(today + 'T00:00:00').getTime() - 90 * 86400000).toISOString().slice(0, 10);
+    // ---- ขาดงานติดต่อกัน (นับ "วันที่ถูกจัดเวรติดกัน" ที่ไม่มา + ไม่ลา) — ★ ยึด "รอบปัจจุบัน" ให้ตรงกับหน้าคะแนน/รายงาน (เดิมย้อน 90 วันข้ามหลายรอบ) ----
+    const back = cyc.start;
+    const endEff = cyc.end < today ? cyc.end : today;
     const [schR, attR, lvR] = await Promise.all([
-      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', back).lte('work_date', today),
-      sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', back).lte('work_date', today),
+      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', back).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', back).lte('work_date', endEff),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').gte('end_date', back),
     ]);
     const workedBy = {}; (attR.data || []).forEach(a => { (workedBy[a.emp_id] || (workedBy[a.emp_id] = new Set())).add(a.work_date); });

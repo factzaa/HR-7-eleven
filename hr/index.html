@@ -1783,7 +1783,8 @@
       <label style="font-size:13px">คะแนน</label>
       <button class="btn btn-pri btn-sm" id="minWorkSave">บันทึก</button>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-top:6px">เช่น 26 วัน — ถ้าวันทำงานในรอบไม่ถึงเกณฑ์: <b>ไม่ได้รับเบี้ยวินัย</b> (โบนัส + เบี้ยขยัน) <b>และหักคะแนน</b>ตามที่ตั้ง · ตั้งวัน = 0 หรือคะแนน = 0 เพื่อปิดส่วนนั้น · นับควบกะตามตารางเวรให้ด้วย</div>
+    <div id="minWorkCycleHint" style="font-size:12px;color:#0369a1;margin-top:6px;font-weight:600"></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px">รอบเงินเดือน = วันที่ <b>21 เดือนก่อน ถึง 20 เดือนปัจจุบัน</b> · เช่น 26 วัน — ถ้าวันทำงานในรอบไม่ถึงเกณฑ์: <b>ไม่ได้รับเบี้ยวินัย</b> (โบนัส + เบี้ยขยัน) <b>และหักคะแนน</b>ตามที่ตั้ง · ตั้งวัน = 0 หรือคะแนน = 0 เพื่อปิดส่วนนั้น · นับควบกะตามตารางเวรให้ด้วย</div>
   </div>
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
@@ -4226,11 +4227,13 @@ function renderPayrollItems(){
   const sumNet=items.reduce((s,it)=>s+Number(it.net||0),0);
   const sumSso=items.reduce((s,it)=>s+Number(it.sso||0),0);
   const sumAdv=items.reduce((s,it)=>s+Number(it.advance_deduct||0),0);
+  const sumExtra=items.reduce((s,it)=>{ const ab=Number(it.position_allowance||0)+Number(it.diligence||0)+Number(it.bonus||0); const ad=(it.additions||[]).reduce((x,a)=>x+Number(a.amount||0),0); return s+Number(it.ot_pay||0)+ab+ad; },0);
   const nz=(v,cls)=>{ const n=Number(v||0); return n?('<span'+(cls?(' style="'+cls+'"'):'')+'>'+plB(n)+'</span>'):'<span style="color:#cbd5e1">–</span>'; };
   const rowHtml=(it,i)=>{ const daily=it.wage_type==='daily';
     const allowBonus=Number(it.position_allowance||0)+Number(it.diligence||0)+Number(it.bonus||0);
     const abTitle='ตำแหน่ง '+plB(it.position_allowance)+' · ขยัน '+plB(it.diligence)+' · โบนัส '+plB(it.bonus);
     const adds=(it.additions||[]); const addSum=adds.reduce((s,a)=>s+Number(a.amount||0),0);
+    const extraSum=Number(it.ot_pay||0)+allowBonus+addSum;   // รวมเงินเพิ่มทั้งหมด (ไม่รวมฐานเงินเดือน)
     const deds=(it.deductions||[]); const dedSum=deds.reduce((s,a)=>s+Number(a.amount||0),0);
     const addTitle=adds.map(a=>a.label+' '+plB(a.amount)).join(' · ')||'ไม่มี';
     const dedTitle=deds.map(a=>a.label+' '+plB(a.amount)).join(' · ')||'ไม่มี';
@@ -4244,6 +4247,7 @@ function renderPayrollItems(){
       +'<td class="mono" style="text-align:right">'+(Number(it.ot_pay)?('<span style="font-size:10px;color:var(--muted)">'+plB(it.ot_hours)+' ชม.</span><br>'+plB(it.ot_pay)):'<span style="color:#cbd5e1">–</span>')+'</td>'
       +'<td class="mono" style="text-align:right" title="'+esc(abTitle)+'">'+nz(allowBonus)+'</td>'
       +'<td class="mono" style="text-align:right" title="'+esc(addTitle)+'">'+nz(addSum)+'</td>'
+      +'<td class="mono" style="text-align:right;font-weight:700;color:#0f766e;border-left:1px solid var(--line2)" title="OT + เบี้ย/โบนัส + เพิ่มอื่น (ไม่รวมฐานเงินเดือน)">'+nz(extraSum,'color:#0f766e')+'</td>'
       +'<td class="mono" style="text-align:right;font-weight:700;color:#166534;border-left:1px solid var(--line2)">'+plB(it.gross)+'</td>'
       +'<td class="mono" style="text-align:right">'+nz(it.sso,'color:#b91c1c')+'</td>'
       +'<td class="mono" style="text-align:right">'+nz(it.advance_deduct,'color:#b91c1c')+'</td>'
@@ -4256,6 +4260,7 @@ function renderPayrollItems(){
   $('pl_run_body').innerHTML=
     '<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;align-items:baseline;margin:0 2px 10px">'
       +'<div style="margin-right:auto;font-size:12.5px;color:var(--muted);align-self:center">'+items.length+' คน'+(br?' (กรองสาขา)':'')+'</div>'
+      +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">รวมเงินเพิ่ม (ไม่รวมฐาน)</div><div style="font-size:15px;font-weight:700;color:#0f766e">'+plB(sumExtra)+'</div></div>'
       +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">รวมรับ</div><div style="font-size:15px;font-weight:700;color:#166534">'+plB(sumGross)+'</div></div>'
       +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">ประกันสังคมนำส่ง</div><div style="font-size:15px;font-weight:700;color:#b45309">'+plB(sumSso)+'</div></div>'
       +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted)">หักเบิกล่วงหน้า</div><div style="font-size:15px;font-weight:700;color:#b91c1c">'+plB(sumAdv)+'</div></div>'
@@ -4263,7 +4268,7 @@ function renderPayrollItems(){
     +'</div>'
     +'<div style="font-size:11px;color:var(--muted);margin:0 2px 6px">💡 เลื่อนตารางแนวนอนเพื่อดูครบทุกคอลัมน์ · ชี้เมาส์ที่ตัวเลข "เบี้ย/โบนัส" และ "อื่นๆ" เพื่อดูรายละเอียด</div>'
     +'<div class="tablewrap pl-fullbleed"><table style="font-size:12.5px;white-space:nowrap"><thead><tr>'
-      +'<th>#</th><th>ชื่อ / รหัส · สาขา</th><th>บัญชีรับเงิน</th><th style="text-align:center">วัน</th><th style="text-align:right">อัตรา/วัน</th><th style="text-align:right">ฐาน</th><th style="text-align:right">OT</th><th style="text-align:right">เบี้ย/โบนัส</th><th style="text-align:right">เพิ่มอื่น</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมรับ</th><th style="text-align:right">ปกส.</th><th style="text-align:right">หักเบิก</th><th style="text-align:right">หักอื่น</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมหัก</th><th style="text-align:right;border-left:2px solid #0f172a">สุทธิ</th><th></th>'
+      +'<th>#</th><th>ชื่อ / รหัส · สาขา</th><th>บัญชีรับเงิน</th><th style="text-align:center">วัน</th><th style="text-align:right">อัตรา/วัน</th><th style="text-align:right">ฐาน</th><th style="text-align:right">OT</th><th style="text-align:right">เบี้ย/โบนัส</th><th style="text-align:right">เพิ่มอื่น</th><th style="text-align:right;border-left:1px solid var(--line2);color:#0f766e">รวมเงินเพิ่ม</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมรับ</th><th style="text-align:right">ปกส.</th><th style="text-align:right">หักเบิก</th><th style="text-align:right">หักอื่น</th><th style="text-align:right;border-left:1px solid var(--line2)">รวมหัก</th><th style="text-align:right;border-left:2px solid #0f172a">สุทธิ</th><th></th>'
     +'</tr></thead><tbody>'+items.map(rowHtml).join('')+'</tbody></table></div>';
   $('pl_run_body').querySelectorAll('[data-pledit]').forEach(b=>b.onclick=()=>openPlItem(b.dataset.pledit));
 }
@@ -10095,6 +10100,14 @@ async function loadScoreSettings(silent){
     if($('minWorkDays')){ const v=S.min_work_days; $('minWorkDays').value=(v!=null&&v!=='')?v:0; }
     if($('minWorkPenalty')){ const v=S.min_work_days_penalty; $('minWorkPenalty').value=(v!=null&&v!=='')?v:0; }
   }catch(_e){ if($('discWindowMonths'))$('discWindowMonths').value=6; if($('minWorkDays'))$('minWorkDays').value=0; if($('minWorkPenalty'))$('minWorkPenalty').value=0; } }
+  // บอกจำนวนวันในรอบปัจจุบัน (21 เดือนก่อน–20 เดือนนี้)
+  if($('minWorkCycleHint')){ try{ const t=new Date(); const d=t.getDate();
+    const end = d<=20 ? new Date(t.getFullYear(),t.getMonth(),20) : new Date(t.getFullYear(),t.getMonth()+1,20);
+    const start = new Date(end.getFullYear(),end.getMonth()-1,21);
+    const days = Math.round((end-start)/86400000)+1;
+    const M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    $('minWorkCycleHint').textContent='📆 รอบปัจจุบันมี '+days+' วัน ('+start.getDate()+' '+M[start.getMonth()]+' – '+end.getDate()+' '+M[end.getMonth()]+' '+(end.getFullYear()+543)+')';
+  }catch(_e){} }
 }
 $('discWindowSave') && ($('discWindowSave').onclick=async()=>{
   const v=Math.max(1,Math.min(60,parseInt($('discWindowMonths').value)||6));
