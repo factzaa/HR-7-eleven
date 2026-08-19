@@ -25,7 +25,7 @@
   a{color:var(--green-d); text-decoration:none;} a:hover{text-decoration:underline;}
 
   .stripe{height:6px; display:flex;} .stripe i{flex:1;}
-  .stripe .g{background:var(--green);} .stripe .o{background:var(--orange);} .stripe .r{background:var(--red);}
+  .stripe .g{background:#8b7fe6;} .stripe .o{background:#6ea6f2;} .stripe .r{background:#f4a487;}
 
   .topbar{background:#fff; border-bottom:1px solid var(--line); padding:11px 18px; display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:5;}
   .emblem{width:42px; height:42px; border-radius:11px; overflow:hidden; flex:none; box-shadow:0 2px 0 rgba(0,0,0,.07);}
@@ -8570,6 +8570,8 @@ async function asstDlAckForm(d){
     toast('ok','ดาวน์โหลดใบเซ็นรับทราบแล้ว');
   }catch(e){ toast('err','สร้างใบเซ็นรับทราบไม่สำเร็จ'); }
 }
+// เรนเดอร์ markdown เบา ๆ (ตัวหนา **x** + บุลเล็ต) ให้อ่านง่าย
+function asstMd(t){ let s=esc(t); s=s.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); s=s.replace(/(^|\n)[ \t]*[\*\-•]\s+/g,'$1• '); return s; }
 function asstRender(){
   const box=$('asst_log'); if(!box) return;
   const home=$('asst_home');
@@ -8583,7 +8585,9 @@ function asstRender(){
     if(me && Array.isArray(m.images) && m.images.length){
       html+='<div style="align-self:flex-end;display:flex;gap:5px;flex-wrap:wrap;max-width:82%;justify-content:flex-end">'+m.images.map(u=>/^data:application\/pdf/.test(u)?'<span style="width:86px;height:86px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#fee2e2;color:#b91c1c;font-weight:800;border:1px solid #fecaca">PDF</span>':'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:86px;height:86px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>';
     }
-    html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:82%;background:'+(me?'#00582f':'#eef1ef')+';color:'+(me?'#fff':'#1f2937')+';padding:10px 13px;border-radius:13px;font-size:14.5px;white-space:pre-wrap;line-height:1.55">'+esc(txt||(cardsHtml?'<svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> รายการงาน':(imgs.length?'<svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รูปงาน':' ')))+'</div>';
+    const _emptyIco=cardsHtml?'<svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> รายการงาน':(imgs.length?'<svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รูปงาน':' ');
+    const _bodyHtml=(txt&&txt.length)?(me?esc(txt):asstMd(txt)):_emptyIco;
+    html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:87%;'+(me?'background:linear-gradient(135deg,#8b7fe6,#7166dd);color:#fff;border-bottom-right-radius:5px':'background:rgba(255,255,255,.74);border:1px solid rgba(124,104,190,.14);color:#2d2745;border-bottom-left-radius:5px;box-shadow:0 4px 14px rgba(120,100,180,.08)')+';padding:11px 14px;border-radius:16px;font-size:14px;white-space:pre-wrap;line-height:1.58;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)">'+_bodyHtml+'</div>';
     if(!me && txt && txt.trim().length>8 && !/^(กำลัง|ยกเลิก)/.test(txt.trim())){ html+='<div style="align-self:flex-start;margin-top:-3px;margin-bottom:2px"><button class="btn btn-sec btn-sm" data-copy="'+idx+'" style="padding:3px 9px;font-size:12px"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg> คัดลอก</button></div>'; }
     if(cardsHtml) html+=cardsHtml;
     if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'; }
@@ -8644,14 +8648,14 @@ function histLoadChat(id){ const c=histGet(HIST_CHATS).find(x=>x.id===id); if(!c
 const ASST_HOME_CARDS=[
   {ic:'a',t:'ใครมาสายวันนี้',s:'สรุปการเข้างานล่าสุด',q:'ใครมาสายบ้างวันนี้'},
   {ic:'c',t:'สรุปวินัยสาขา',s:'ใครใกล้โดนใบเตือน',q:'ใครใกล้โดนใบเตือนบ้างรอบนี้'},
-  {ic:'b',t:'ขอสลิป/เอกสาร',s:'ดาวน์โหลดเป็น PDF',q:'ขอสลิปเงินเดือนของ '},
+  {ic:'b',t:'เอกสาร',s:'ดาวน์โหลดเป็น PDF',q:'ขอเอกสารของ '},
   {ic:'d',t:'ประวัติย้อนหลัง',s:'แชท & เอกสารที่ขอ',q:'__HIST__'}
 ];
 function asstRenderHome(){
   const el=$('asst_home'); if(!el) return;
   const cg={a:'linear-gradient(135deg,#a89bf0,#7c6ce0)',b:'linear-gradient(135deg,#8fbbf6,#5f8fe8)',c:'linear-gradient(135deg,#f6b79c,#ef8f74)',d:'linear-gradient(135deg,#eaa6e0,#c579c4)'};
   const ic={a:'<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>',b:'<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>',c:'<svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',d:'<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg>'};
-  el.innerHTML='<img class="bo" src="../icons/nida-orb.webp" alt=""><h2>สวัสดี <span>คุณฝ่ายบุคคล</span></h2><div class="sub">สั่งงานด้วยภาษาธรรมชาติได้เลย — ถามข้อมูล วิเคราะห์ ร่างเอกสาร ออกใบเตือน หรือพูดคุยด้วยเสียง</div><div class="hcards">'+ASST_HOME_CARDS.map((c,i)=>'<div class="hc" data-q="'+i+'"><div class="ci" style="background:'+cg[c.ic]+'">'+ic[c.ic]+'</div><b>'+esc(c.t)+'</b><small>'+esc(c.s)+'</small></div>').join('')+'</div>';
+  el.innerHTML='<img class="bo" src="../icons/nida-orb.webp" alt=""><h2>สวัสดี <span>คุณผู้จัดการ</span></h2><div class="sub">สั่งงานด้วยภาษาธรรมชาติได้เลย — ถามข้อมูล วิเคราะห์ ร่างเอกสาร ออกใบเตือน หรือพูดคุยด้วยเสียง</div><div class="hcards">'+ASST_HOME_CARDS.map((c,i)=>'<div class="hc" data-q="'+i+'"><div class="ci" style="background:'+cg[c.ic]+'">'+ic[c.ic]+'</div><b>'+esc(c.t)+'</b><small>'+esc(c.s)+'</small></div>').join('')+'</div>';
   el.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ const c=ASST_HOME_CARDS[+b.dataset.q]; if(c.q==='__HIST__'){ asstHistOpen(true); return; } const inp=$('asst_in'); if(inp){ inp.value=c.q; inp.focus(); } });
 }
 function asstApiBase(){ return {base:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey||''}; }
@@ -11913,7 +11917,7 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
 #asstFab.dragging{animation:none;cursor:grabbing}
 @keyframes asstBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
 /* ===== นิดา แชทเต็มจอ · ธีมออร์บ (พาสเทลสว่าง) ===== */
-#asstPop{position:fixed;inset:0;z-index:61;display:none;flex-direction:column;overflow:hidden;color:#2d2745;font-family:'Kanit','Anuphan',sans-serif;background:radial-gradient(90% 50% at 82% 3%,rgba(244,164,135,.16),transparent 60%),radial-gradient(85% 52% at 10% 2%,rgba(139,127,230,.18),transparent 60%),linear-gradient(180deg,#f6f4fe,#faf9ff 42%,#fff)}
+#asstPop{position:fixed;inset:0;z-index:900;display:none;flex-direction:column;overflow:hidden;color:#2d2745;font-family:'Kanit','Anuphan',sans-serif;background:radial-gradient(90% 50% at 82% 3%,rgba(244,164,135,.16),transparent 60%),radial-gradient(85% 52% at 10% 2%,rgba(139,127,230,.18),transparent 60%),linear-gradient(180deg,#f6f4fe,#faf9ff 42%,#fff)}
 #asstPop.open{display:flex;animation:asstPopIn .22s ease-out}
 @keyframes asstPopIn{from{opacity:0;transform:scale(.99)}to{opacity:1;transform:none}}
 #asstPop .np{width:100%;max-width:540px;margin:0 auto;flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
@@ -11941,7 +11945,9 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
 #asst_home .hc small{font-size:11.5px;color:#8b86a6;display:block;margin-top:2px;line-height:1.35}
 #asstPop .prow{display:flex;gap:9px;padding:12px 16px 16px;align-items:center;max-width:540px;margin:0 auto;width:100%;background:linear-gradient(to top,#fff 45%,rgba(255,255,255,0))}
 #asstPop .prow>label{width:44px;height:44px;border-radius:50%!important;padding:0!important;display:grid;place-items:center;background:rgba(255,255,255,.7)!important;border:1px solid rgba(124,104,190,.14)!important;color:#5a5478!important;box-shadow:0 2px 8px rgba(120,100,180,.08);flex:none}
-#asstPop .prow input#asst_in{flex:1;padding:13px 16px;border:1px solid rgba(124,104,190,.16);border-radius:26px;font:inherit;font-size:14.5px;background:rgba(255,255,255,.72);color:#2d2745;box-shadow:0 4px 14px rgba(120,100,180,.08)}
+#asstPop .prow input#asst_in{flex:1;min-width:0;padding:13px 16px;border:1px solid rgba(124,104,190,.16);border-radius:26px;font:inherit;font-size:14.5px;background:rgba(255,255,255,.72);color:#2d2745;box-shadow:0 4px 14px rgba(120,100,180,.08)}
+#asstPop .prow #asst_send{flex:none}
+@media(max-width:480px){#asstPop .prow{gap:7px;padding:10px 12px 14px}#asstPop .prow>label,.asst-voice{width:40px;height:40px}#asstPop .prow #asst_send{padding:11px 14px}}
 #asstPop .prow input#asst_in:focus{outline:none;border-color:#8b7fe6;box-shadow:0 0 0 3px rgba(139,127,230,.16)}
 #asstPop .prow #asst_send{white-space:nowrap;border-radius:24px;background:linear-gradient(135deg,#8b7fe6,#7c6ce0)!important;border:0;color:#fff;font-weight:600;padding:12px 18px;box-shadow:0 5px 15px rgba(124,108,224,.4)}
 .asst-voice{flex:none;width:44px;height:44px;border-radius:50%;border:0;cursor:pointer;background:linear-gradient(135deg,#7ba6f2,#8b7fe6);box-shadow:0 6px 16px rgba(124,108,224,.35);display:grid;place-items:center;padding:0}
@@ -12009,6 +12015,19 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
   fab.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; fab.classList.add('dragging'); } if(moved){ let nx=ox+dx, ny=oy+dy; nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4,nx)); ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4,ny)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; } });
   fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ pop.classList.contains('open')?closePop():openPop(); } });
   const cl=g('asstClose'); if(cl) cl.onclick=closePop;
+})();
+/* กันปุ่ม back บนมือถือเด้งออก/ล็อกเอาต์ — ปิด overlay/แชท/ลิ้นชักที่เปิดอยู่ แล้วอยู่หน้าแอปต่อ */
+(function backGuard(){
+  try{ history.pushState({hrapp:1},''); }catch(e){}
+  window.addEventListener('popstate', function(){
+    if(!document.body.classList.contains('is-logged')) return;   // ยังไม่ล็อกอิน ปล่อยปกติ
+    let did=false;
+    const pop=document.getElementById('asstPop'); if(pop&&pop.classList.contains('open')){ pop.classList.remove('open'); did=true; }
+    if(!did){ const nv=document.getElementById('nidaVoice'); if(nv&&nv.classList.contains('on')){ try{ if(window.NIDALive) window.NIDALive.stop(); }catch(_e){} did=true; } }
+    if(!did){ const tb=document.getElementById('tabbar'); if(tb&&tb.classList.contains('open')&&typeof toggleDrawer==='function'){ toggleDrawer(false); did=true; } }
+    if(!did){ const ovs=[].slice.call(document.querySelectorAll('.modal-overlay.show, [id$="Overlay"].show, .show')).filter(function(el){ try{ return getComputedStyle(el).position==='fixed'; }catch(_e){ return false; } }); if(ovs.length){ ovs[ovs.length-1].classList.remove('show'); did=true; } }
+    try{ history.pushState({hrapp:1},''); }catch(e){}   // ดันสถานะกลับเสมอ กันหลุดออกจากแอป
+  });
 })();
 </script>
 <script>
