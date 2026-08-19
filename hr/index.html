@@ -213,12 +213,13 @@
   /* Modal */
   .overlay{position:fixed; inset:0; background:rgba(20,24,21,.55); backdrop-filter:blur(3px); display:none; align-items:flex-start; justify-content:center; padding:30px 16px; z-index:9; overflow-y:auto;}
   .overlay.show{display:flex;}
-  .modal{background:var(--card); border-radius:18px; width:100%; max-width:720px; border-top:6px solid var(--green); overflow:hidden;}
+  .modal{background:var(--card); border-radius:18px; width:100%; max-width:720px; border-top:6px solid var(--green); overflow:hidden; max-height:calc(100dvh - 60px); display:flex; flex-direction:column;}
   .modal.wide{max-width:920px;}
   .modal-h{padding:16px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between;}
   .modal-h h2{font-size:17px; font-weight:600;}
   .modal-h .close{background:transparent; border:0; font-size:22px; color:var(--muted); padding:4px 10px;}
-  .modal-b{padding:18px 22px; max-height:calc(100dvh - 200px); overflow-y:auto;}
+  .modal-b{padding:18px 22px; flex:1 1 auto; min-height:0; overflow-y:auto;}
+  .modal-h,.modal-f{flex:none;}
   .modal-f{padding:13px 22px; border-top:1px solid var(--line); display:flex; gap:9px; justify-content:flex-end; background:#fafbf9; flex-wrap:wrap;}
 
   /* บอร์ด Kanban — เดสก์ท็อปเลื่อนแนวนอน · มือถือเรียงลงเต็มจอ (ไม่ต้องเลื่อนซ้ายขวา) */
@@ -358,6 +359,7 @@
 
     /* Modal แบบเต็มจอ + แถบปุ่มติดล่าง กดง่าย */
     .overlay{padding:0; align-items:stretch;}
+    .modal{max-height:100dvh; border-radius:0;}
     /* มือถือ: ให้ modal เป็นตัวเลื่อนเอง (เนื้อหายาวเลื่อนดูได้ครบ ทั้ง modal ที่มี/ไม่มี .modal-b) */
     .modal, .modal.wide{max-width:100%; height:100dvh; max-height:100dvh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:0; border-top:0;}
     .modal-h{padding:14px 16px; position:sticky; top:0; background:var(--card); z-index:3; border-top:4px solid var(--green);}
