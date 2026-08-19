@@ -8363,7 +8363,13 @@ function initAssistant(){
     chips.querySelectorAll('[data-chip]').forEach(b=>b.onclick=()=>{ $('asst_in').value=b.dataset.chip; $('asst_in').focus(); });
     $('asst_send').onclick=asstSend;
     $('asst_in').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); asstSend(); } });
-    $('asst_clear').onclick=()=>{ ASST_MSGS=[]; ASST_PHOTOS=[]; asstRenderThumbs(); asstRender(); };
+    $('asst_clear').onclick=()=>{ histSaveCurrent(); ASST_MSGS=[]; ASST_SID=null; ASST_PHOTOS=[]; asstRenderThumbs(); asstRender(); };
+    if($('asst_hbtn')) $('asst_hbtn').onclick=()=>asstHistOpen(true);
+    if($('asst_hclose')) $('asst_hclose').onclick=()=>asstHistOpen(false);
+    if($('asst_hist')) $('asst_hist').onclick=(e)=>{ if(e.target.id==='asst_hist') asstHistOpen(false); };
+    if($('asst_htab1')) $('asst_htab1').onclick=()=>histTab(1);
+    if($('asst_htab2')) $('asst_htab2').onclick=()=>histTab(2);
+    if($('asst_hsrch')) $('asst_hsrch').addEventListener('input',histRenderList);
     const f=$('asst_file');
     if(f) f.addEventListener('change', async(e)=>{
       const fs=[...(e.target.files||[])].slice(0,4);
@@ -8566,7 +8572,9 @@ async function asstDlAckForm(d){
 }
 function asstRender(){
   const box=$('asst_log'); if(!box) return;
-  if(!ASST_MSGS.length){ box.innerHTML='<div style="color:var(--muted);text-align:center;padding:30px 10px;font-size:14px">สวัสดีค่ะ น้องนิดา ผู้ช่วย HR พร้อมช่วยแล้ว <br>ถามข้อมูลพนักงาน/เวลา/งาน/ลา/สินค้า หรือให้ช่วยวิเคราะห์-ร่างเอกสารได้เลยค่ะ</div>'; return; }
+  const home=$('asst_home');
+  if(!ASST_MSGS.length){ box.style.display='none'; box.innerHTML=''; if(home){ home.classList.add('on'); asstRenderHome(); } return; }
+  if(home) home.classList.remove('on'); box.style.display='flex';
   let html='';
   ASST_MSGS.forEach((m,idx)=>{ const me=m.role==='user';
     let txt=m.text, imgs=[];
@@ -8596,6 +8604,56 @@ function asstCopy(idx,btn){
   catch(_e){ fallbackCopy(t,done); }
 }
 function fallbackCopy(t,cb){ try{ const ta=document.createElement('textarea'); ta.value=t; ta.style.cssText='position:fixed;left:-9999px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); cb&&cb(); }catch(e){ toast('err','คัดลอกไม่ได้'); } }
+// ===== หน้าโฮม + ประวัติ (แชท/เอกสาร) เก็บใน localStorage =====
+let ASST_SID=null; let HIST_TAB=1;
+const HIST_CHATS='nida_hist_chats', HIST_DOCS='nida_hist_docs';
+function histGet(k){ try{ return JSON.parse(localStorage.getItem(k)||'[]'); }catch(e){ return []; } }
+function histSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v.slice(0,80))); }catch(e){} }
+function histSaveCurrent(){ try{
+  const users=ASST_MSGS.filter(m=>m.role==='user'&&m.text); if(!users.length) return;
+  if(!ASST_SID) ASST_SID=Date.now();
+  const arr=histGet(HIST_CHATS).filter(c=>c.id!==ASST_SID);
+  arr.unshift({id:ASST_SID,title:(users[0].text||'').slice(0,70),at:Date.now(),n:ASST_MSGS.length,msgs:ASST_MSGS.slice(-60)});
+  histSet(HIST_CHATS,arr);
+}catch(e){} }
+function histLogDoc(kind,label){ try{ const a=histGet(HIST_DOCS); a.unshift({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),kind:kind||'',label:label||kind||'เอกสาร',at:Date.now()}); histSet(HIST_DOCS,a); }catch(e){} }
+function _agoTxt(ts){ const d=new Date(ts),n=new Date(); const t=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+  if(d.toDateString()===n.toDateString()) return 'วันนี้ '+t;
+  if(d.toDateString()===new Date(n-864e5).toDateString()) return 'เมื่อวาน '+t;
+  const M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return d.getDate()+' '+M[d.getMonth()]+' '+t; }
+function asstHistOpen(on){ const h=$('asst_hist'); if(!h) return; if(on){ histSaveCurrent(); histRenderList(); } h.classList.toggle('on',on); }
+function histTab(n){ HIST_TAB=n; if($('asst_htab1'))$('asst_htab1').classList.toggle('on',n===1); if($('asst_htab2'))$('asst_htab2').classList.toggle('on',n===2); histRenderList(); }
+function histRenderList(){
+  const wrap=$('asst_hlist'); if(!wrap) return;
+  const q=(($('asst_hsrch')||{}).value||'').trim().toLowerCase();
+  const chatIc='<svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5a8.5 8.5 0 0 1-.9-4A8.4 8.4 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5z"/></svg>';
+  const docIc='<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
+  const delIc='<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13h10l1-13"/></svg>';
+  if(HIST_TAB===1){
+    let arr=histGet(HIST_CHATS); if(q) arr=arr.filter(c=>(c.title||'').toLowerCase().includes(q));
+    wrap.innerHTML=arr.length?arr.map(c=>'<div class="hitem" data-load="'+c.id+'"><div class="hic">'+chatIc+'</div><div class="htx"><b>'+esc(c.title||'บทสนทนา')+'</b><small>'+_agoTxt(c.at)+' · '+(c.n||0)+' ข้อความ</small></div><button class="del" data-delc="'+c.id+'">'+delIc+'</button></div>').join(''):'<div class="hempty">ยังไม่มีประวัติแชท</div>';
+    wrap.querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>histLoadChat(Number(b.dataset.load)));
+    wrap.querySelectorAll('[data-delc]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); histSet(HIST_CHATS,histGet(HIST_CHATS).filter(c=>String(c.id)!==b.dataset.delc)); histRenderList(); });
+  } else {
+    let arr=histGet(HIST_DOCS); if(q) arr=arr.filter(d=>(d.label||'').toLowerCase().includes(q));
+    wrap.innerHTML=arr.length?arr.map(d=>'<div class="hitem"><div class="hic">'+docIc+'</div><div class="htx"><b>'+esc(d.label||'เอกสาร')+'</b><small>'+_agoTxt(d.at)+'</small></div><button class="del" data-deld="'+esc(String(d.id))+'">'+delIc+'</button></div>').join(''):'<div class="hempty">ยังไม่มีประวัติเอกสาร</div>';
+    wrap.querySelectorAll('[data-deld]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); histSet(HIST_DOCS,histGet(HIST_DOCS).filter(d=>String(d.id)!==b.dataset.deld)); histRenderList(); });
+  }
+}
+function histLoadChat(id){ const c=histGet(HIST_CHATS).find(x=>x.id===id); if(!c) return; ASST_MSGS=(c.msgs||[]).slice(); ASST_SID=c.id; asstHistOpen(false); asstRender(); }
+const ASST_HOME_CARDS=[
+  {ic:'a',t:'ใครมาสายวันนี้',s:'สรุปการเข้างานล่าสุด',q:'ใครมาสายบ้างวันนี้'},
+  {ic:'c',t:'สรุปวินัยสาขา',s:'ใครใกล้โดนใบเตือน',q:'ใครใกล้โดนใบเตือนบ้างรอบนี้'},
+  {ic:'b',t:'ขอสลิป/เอกสาร',s:'ดาวน์โหลดเป็น PDF',q:'ขอสลิปเงินเดือนของ '},
+  {ic:'d',t:'ประวัติย้อนหลัง',s:'แชท & เอกสารที่ขอ',q:'__HIST__'}
+];
+function asstRenderHome(){
+  const el=$('asst_home'); if(!el) return;
+  const cg={a:'linear-gradient(135deg,#a89bf0,#7c6ce0)',b:'linear-gradient(135deg,#8fbbf6,#5f8fe8)',c:'linear-gradient(135deg,#f6b79c,#ef8f74)',d:'linear-gradient(135deg,#eaa6e0,#c579c4)'};
+  const ic={a:'<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>',b:'<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>',c:'<svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',d:'<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg>'};
+  el.innerHTML='<img class="bo" src="../icons/nida-orb.webp" alt=""><h2>สวัสดี <span>คุณฝ่ายบุคคล</span></h2><div class="sub">สั่งงานด้วยภาษาธรรมชาติได้เลย — ถามข้อมูล วิเคราะห์ ร่างเอกสาร ออกใบเตือน หรือพูดคุยด้วยเสียง</div><div class="hcards">'+ASST_HOME_CARDS.map((c,i)=>'<div class="hc" data-q="'+i+'"><div class="ci" style="background:'+cg[c.ic]+'">'+ic[c.ic]+'</div><b>'+esc(c.t)+'</b><small>'+esc(c.s)+'</small></div>').join('')+'</div>';
+  el.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ const c=ASST_HOME_CARDS[+b.dataset.q]; if(c.q==='__HIST__'){ asstHistOpen(true); return; } const inp=$('asst_in'); if(inp){ inp.value=c.q; inp.focus(); } });
+}
 function asstApiBase(){ return {base:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey||''}; }
 
 // ★ ปุ่มทดสอบส่ง SMS (หน้าตั้งค่ากะ) — ยิงเข้า edge function เดียวกับที่ใช้ส่งนัดสัมภาษณ์
@@ -8679,6 +8737,8 @@ async function asstSend(){
     const j=await r.json(); ASST_MSGS.pop();
     const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.pendingAction) msg.pending=j.pendingAction; if(j&&j.cards) msg.cards=j.cards;
     ASST_MSGS.push(msg);
+    if(j&&j.cards&&j.cards.type==='documents'&&Array.isArray(j.cards.documents)){ j.cards.documents.forEach(d=>{ if(d.kind!=='nav') histLogDoc(d.kind,d.label); }); }
+    try{ histSaveCurrent(); }catch(_e){}
   }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'เชื่อมต่อไม่สำเร็จ: '+(e.message||'')}); }
   asstRender();
 }
@@ -11852,42 +11912,90 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
 @keyframes asstRing{0%{transform:scale(.5);opacity:.75}70%{opacity:.18}100%{transform:scale(1.85);opacity:0}}
 #asstFab.dragging{animation:none;cursor:grabbing}
 @keyframes asstBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-#asstPop{position:fixed;right:22px;bottom:118px;width:380px;max-width:92vw;height:70vh;max-height:560px;z-index:61;background:rgba(248,250,249,.42);-webkit-backdrop-filter:blur(32px) saturate(180%);backdrop-filter:blur(32px) saturate(180%);border:1px solid rgba(255,255,255,.5);border-radius:22px;box-shadow:0 24px 64px rgba(16,24,40,.28),inset 0 1px 0 rgba(255,255,255,.6);display:none;flex-direction:column;overflow:hidden}
-#asstPop.open{display:flex;animation:asstPopIn .18s ease-out}
-@keyframes asstPopIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-#asstPop .ph{background:linear-gradient(135deg,rgba(0,88,47,.9),rgba(10,122,67,.85));color:#fff;padding:12px 13px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.25)}
-#asstPop .ph img{width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover;flex:none}
-#asstPop .ph .nm{flex:1;font-weight:700;font-size:15px;line-height:1.15}
-#asstPop .ph .nm small{display:block;font-weight:400;font-size:11px;opacity:.85}
-#asstPop .ph button{background:rgba(255,255,255,.18);border:0;color:#fff;width:32px;height:32px;border-radius:8px;font-size:15px;cursor:pointer;flex:none}
-#asstPop .pb{flex:1;display:flex;flex-direction:column;min-height:0;padding:12px}
-#asstPop #asst_chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-#asstPop #asst_chips .btn{font-size:12px;padding:6px 9px}
-#asstPop #asst_log{flex:1;overflow-y:auto;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:9px}
-#asstPop .prow{display:flex;gap:7px;margin-top:9px;align-items:center}
-#asstPop .prow input#asst_in{flex:1;padding:11px 13px;border:1.5px solid rgba(255,255,255,.6);border-radius:12px;font:inherit;font-size:14.5px;background:rgba(255,255,255,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-#asstPop .prow input#asst_in:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(0,112,60,.15)}
-#asstPop .prow .btn{white-space:nowrap}
-.asst-voice{flex:none;width:42px;height:42px;border-radius:50%;border:0;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#3b82f6);box-shadow:0 6px 16px rgba(96,72,190,.35);display:grid;place-items:center;padding:0}
-.asst-voice:hover{filter:brightness(1.08)}
+/* ===== นิดา แชทเต็มจอ · ธีมออร์บ (พาสเทลสว่าง) ===== */
+#asstPop{position:fixed;inset:0;z-index:61;display:none;flex-direction:column;overflow:hidden;color:#2d2745;font-family:'Kanit','Anuphan',sans-serif;background:radial-gradient(90% 50% at 82% 3%,rgba(244,164,135,.16),transparent 60%),radial-gradient(85% 52% at 10% 2%,rgba(139,127,230,.18),transparent 60%),linear-gradient(180deg,#f6f4fe,#faf9ff 42%,#fff)}
+#asstPop.open{display:flex;animation:asstPopIn .22s ease-out}
+@keyframes asstPopIn{from{opacity:0;transform:scale(.99)}to{opacity:1;transform:none}}
+#asstPop .np{width:100%;max-width:540px;margin:0 auto;flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+#asstPop .ph{padding:14px 16px 10px;display:flex;align-items:center;gap:11px;border-bottom:1px solid rgba(124,104,190,.12)}
+#asstPop .ph img{width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;box-shadow:0 4px 16px rgba(139,127,230,.3)}
+#asstPop .ph .nm{flex:1;font-weight:700;font-size:15.5px;line-height:1.15}
+#asstPop .ph .nm small{display:block;font-weight:400;font-size:11px;color:#8b86a6}
+#asstPop .ph button{background:rgba(255,255,255,.62);border:1px solid rgba(124,104,190,.14);color:#5a5478;width:36px;height:36px;border-radius:11px;cursor:pointer;flex:none;display:grid;place-items:center;box-shadow:0 2px 8px rgba(120,100,180,.08);font-size:16px}
+#asstPop .ph button .ei{width:18px;height:18px}
+#asstPop .pb{flex:1;display:flex;flex-direction:column;min-height:0;padding:0 16px}
+#asstPop #asst_chips{display:none}
+#asstPop #asst_log{flex:1;overflow-y:auto;background:none;border:0;padding:10px 0 8px;display:flex;flex-direction:column;gap:11px}
+#asst_home{flex:1;display:none;flex-direction:column;align-items:center;text-align:center;padding:6px 2px 10px;overflow-y:auto}
+#asst_home.on{display:flex}
+#asst_home .bo{width:104px;height:104px;border-radius:50%;object-fit:cover;margin:18px 0 14px;box-shadow:0 14px 40px rgba(139,127,230,.32),0 6px 22px rgba(110,166,242,.2);animation:asstBob 3.8s ease-in-out infinite}
+#asst_home h2{font-size:22px;font-weight:700;margin:0 0 6px}
+#asst_home h2 span{background:linear-gradient(90deg,#8b7fe6,#f4a487);-webkit-background-clip:text;background-clip:text;color:transparent}
+#asst_home .sub{font-size:13px;color:#8b86a6;margin:0 0 20px;line-height:1.55;max-width:330px}
+#asst_home .hcards{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:480px}
+#asst_home .hc{background:rgba(255,255,255,.66);border:1px solid rgba(124,104,190,.14);border-radius:18px;padding:14px;text-align:left;cursor:pointer;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 8px 24px rgba(120,100,180,.1);transition:transform .15s,box-shadow .15s}
+#asst_home .hc:active{transform:scale(.97)}
+#asst_home .hc .ci{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;margin-bottom:11px;box-shadow:0 6px 15px rgba(0,0,0,.1)}
+#asst_home .hc .ci svg{width:20px;height:20px;stroke:#fff;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+#asst_home .hc b{font-size:14px;font-weight:600;display:block}
+#asst_home .hc small{font-size:11.5px;color:#8b86a6;display:block;margin-top:2px;line-height:1.35}
+#asstPop .prow{display:flex;gap:9px;padding:12px 16px 16px;align-items:center;max-width:540px;margin:0 auto;width:100%;background:linear-gradient(to top,#fff 45%,rgba(255,255,255,0))}
+#asstPop .prow>label{width:44px;height:44px;border-radius:50%!important;padding:0!important;display:grid;place-items:center;background:rgba(255,255,255,.7)!important;border:1px solid rgba(124,104,190,.14)!important;color:#5a5478!important;box-shadow:0 2px 8px rgba(120,100,180,.08);flex:none}
+#asstPop .prow input#asst_in{flex:1;padding:13px 16px;border:1px solid rgba(124,104,190,.16);border-radius:26px;font:inherit;font-size:14.5px;background:rgba(255,255,255,.72);color:#2d2745;box-shadow:0 4px 14px rgba(120,100,180,.08)}
+#asstPop .prow input#asst_in:focus{outline:none;border-color:#8b7fe6;box-shadow:0 0 0 3px rgba(139,127,230,.16)}
+#asstPop .prow #asst_send{white-space:nowrap;border-radius:24px;background:linear-gradient(135deg,#8b7fe6,#7c6ce0)!important;border:0;color:#fff;font-weight:600;padding:12px 18px;box-shadow:0 5px 15px rgba(124,108,224,.4)}
+.asst-voice{flex:none;width:44px;height:44px;border-radius:50%;border:0;cursor:pointer;background:linear-gradient(135deg,#7ba6f2,#8b7fe6);box-shadow:0 6px 16px rgba(124,108,224,.35);display:grid;place-items:center;padding:0}
+.asst-voice:hover{filter:brightness(1.05)}
 .asst-voice .wv{display:flex;gap:2.5px;align-items:center;height:20px}
 .asst-voice .wv i{width:2.6px;border-radius:3px;background:#fff;height:6px;animation:wvbar 1.1s ease-in-out infinite}
 .asst-voice .wv i:nth-child(2){animation-delay:.15s}.asst-voice .wv i:nth-child(3){animation-delay:.3s}.asst-voice .wv i:nth-child(4){animation-delay:.45s}.asst-voice .wv i:nth-child(5){animation-delay:.6s}
 @keyframes wvbar{0%,100%{height:6px}50%{height:18px}}
-@media(max-width:640px){#asstPop{right:8px;left:8px;width:auto;bottom:104px;height:74vh}#asstFab{width:74px;height:74px;right:14px;bottom:14px}}
+#asst_hist{position:absolute;inset:0;background:rgba(60,50,90,.28);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);display:none;z-index:6}
+#asst_hist.on{display:block}
+#asst_hist .hp{position:absolute;top:0;right:0;bottom:0;width:min(360px,92%);background:linear-gradient(160deg,#fbfaff,#f4f2fd);border-left:1px solid rgba(124,104,190,.14);display:flex;flex-direction:column;box-shadow:-14px 0 40px rgba(90,70,150,.14);animation:asstHistIn .25s ease}
+@keyframes asstHistIn{from{transform:translateX(24px);opacity:.5}to{transform:none;opacity:1}}
+#asst_hist .hh{display:flex;align-items:center;gap:10px;padding:15px 15px 11px;border-bottom:1px solid rgba(124,104,190,.12)}
+#asst_hist .hh b{flex:1;font-size:15px}
+#asst_hist .hh .hx{background:rgba(255,255,255,.6);border:1px solid rgba(124,104,190,.14);color:#5a5478;width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:16px}
+#asst_hist .htabs{display:flex;gap:8px;padding:11px 14px}
+#asst_hist .htabs button{flex:1;padding:8px;border-radius:10px;border:1px solid rgba(124,104,190,.14);background:rgba(255,255,255,.5);color:#8b86a6;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+#asst_hist .htabs button.on{background:linear-gradient(135deg,#8b7fe6,#7c6ce0);color:#fff;border-color:transparent}
+#asst_hist .hsrch{margin:2px 14px 8px;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.6);border:1px solid rgba(124,104,190,.14);border-radius:11px;padding:9px 12px}
+#asst_hist .hsrch svg{width:16px;height:16px;stroke:#8b86a6;stroke-width:1.8;fill:none}
+#asst_hist .hsrch input{flex:1;background:none;border:0;outline:none;color:#2d2745;font:inherit;font-size:13.5px}
+#asst_hist .hlist{flex:1;overflow-y:auto;padding:2px 12px 16px}
+#asst_hist .hitem{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:13px;background:rgba(255,255,255,.66);border:1px solid rgba(124,104,190,.14);margin-bottom:8px;cursor:pointer;box-shadow:0 3px 10px rgba(120,100,180,.06)}
+#asst_hist .hitem .hic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex:none;background:rgba(139,127,230,.12)}
+#asst_hist .hitem .hic svg{width:17px;height:17px;stroke:#7c6ce0;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+#asst_hist .hitem .htx{flex:1;min-width:0}
+#asst_hist .hitem .htx b{font-size:13.5px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#asst_hist .hitem .htx small{font-size:11.5px;color:#8b86a6}
+#asst_hist .hitem .del{width:30px;height:30px;border-radius:8px;border:1px solid rgba(231,138,138,.3);background:rgba(240,120,120,.1);color:#d9736f;display:grid;place-items:center;cursor:pointer;flex:none}
+#asst_hist .hitem .del svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+#asst_hist .hempty{text-align:center;color:#a49ec0;font-size:13px;padding:44px 10px}
+@media(max-width:640px){#asstPop .np,#asstPop .prow{max-width:none}}
 </style>
 <button id="asstFab" aria-label="ผู้ช่วย AI น้องนิดา"><img src="../icons/nida-orb.webp" alt="ผู้ช่วย AI"><span class="fbadge">AI</span></button>
 <div id="asstPop">
-  <div class="ph"><img src="../icons/nida-orb.webp" alt=""><div class="nm">น้องนิดา<small>ผู้ช่วย AI · ฝ่ายบุคคล</small></div><button id="asst_clear" title="ล้างแชท"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg></button><button id="asstClose" title="ปิด">✕</button></div>
-  <div class="pb">
-    <div id="asst_chips"></div>
-    <div id="asst_log"></div>
-    <div id="asst_thumbs" style="display:none;gap:5px;flex-wrap:wrap;margin:0 0 6px"></div>
+  <div class="np">
+    <div class="ph"><img src="../icons/nida-orb.webp" alt=""><div class="nm">น้องนิดา<small>ผู้ช่วย AI · ฝ่ายบุคคล</small></div><button id="asst_hbtn" title="ประวัติ"><svg class="ei" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button><button id="asst_clear" title="ล้างแชท"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg></button><button id="asstClose" class="x" title="ปิด">✕</button></div>
+    <div class="pb">
+      <div id="asst_home"></div>
+      <div id="asst_chips"></div>
+      <div id="asst_log"></div>
+    </div>
+    <div id="asst_thumbs" style="display:none;gap:5px;flex-wrap:wrap;margin:0 16px 4px;max-width:540px;margin-left:auto;margin-right:auto;width:100%"></div>
     <div class="prow">
-      <label class="btn btn-sec" style="cursor:pointer;margin:0;flex:none;padding:8px 10px" title="แนบรูป/ไฟล์ให้นิดาอ่าน (รูป · PDF · เอกสาร)"><svg class="ei" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="asst_file" accept="image/*,application/pdf" multiple style="display:none"></label>
-      <input id="asst_in" placeholder="พิมพ์คำถาม หรือแนบรูปให้นิดาอ่านข้อมูล"><button class="asst-voice" id="asst_voice" type="button" title="สนทนาด้วยเสียง (เร็ว ๆ นี้)"><span class="wv"><i></i><i></i><i></i><i></i><i></i></span></button><button class="btn btn-pri" id="asst_send">ส่ง</button>
+      <label title="แนบรูป/ไฟล์ให้นิดาอ่าน (รูป · PDF · เอกสาร)"><svg class="ei" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="asst_file" accept="image/*,application/pdf" multiple style="display:none"></label>
+      <input id="asst_in" placeholder="พิมพ์คำถาม หรือสั่งงานนิดา…"><button class="asst-voice" id="asst_voice" type="button" title="พูดคุยด้วยเสียง"><span class="wv"><i></i><i></i><i></i><i></i><i></i></span></button><button class="btn btn-pri" id="asst_send">ส่ง</button>
     </div>
   </div>
+  <div id="asst_hist"><div class="hp">
+    <div class="hh"><b>ประวัติย้อนหลัง</b><button class="hx" id="asst_hclose" title="ปิด">✕</button></div>
+    <div class="htabs"><button class="on" id="asst_htab1">แชท</button><button id="asst_htab2">เอกสารที่ขอ</button></div>
+    <div class="hsrch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg><input id="asst_hsrch" placeholder="ค้นหาย้อนหลัง…"></div>
+    <div class="hlist" id="asst_hlist"></div>
+  </div></div>
 </div>
 <script>
 (function initAsstFab(){
@@ -11899,7 +12007,7 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
   function closePop(){ pop.classList.remove('open'); }
   fab.addEventListener('pointerdown',e=>{ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; const r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
   fab.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; fab.classList.add('dragging'); } if(moved){ let nx=ox+dx, ny=oy+dy; nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4,nx)); ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4,ny)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; } });
-  fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ if(pop.classList.contains('open')){ closePop(); } else if(window.NIDALive){ window.NIDALive.start(); } else { openPop(); } } });
+  fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ pop.classList.contains('open')?closePop():openPop(); } });
   const cl=g('asstClose'); if(cl) cl.onclick=closePop;
 })();
 </script>
