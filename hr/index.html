@@ -12276,7 +12276,7 @@ window.NIDALive=(function(){
   const SILENCE_MS=60000, MAX_MS=10*60*1000, VAD=0.012, VOICE='Leda';  // เงียบเกิน 1 นาที=ตัด · เพดานสาย 10 นาที · ล็อกเสียงนิดา (หญิงสดใส) เปลี่ยนได้ เช่น Aoede/Kore/Sulafat/Vindemiatrix
   const SDK='https://esm.sh/@google/genai';
   let session=null,micStream=null,micCtx=null,outCtx=null,proc=null,srcNode=null;
-  let playHead=0,speaking=false,level=0,lastVoice=0,startedAt=0,tick=null,raf=null,ov=null,busy=false,live=false;
+  let playHead=0,speaking=false,level=0,lastVoice=0,startedAt=0,tick=null,raf=null,ov=null,busy=false,live=false,srcNodes=[];
   let vMsgU=null,vMsgF=null,hadLog=false,pendingVoiceAction=null;
   // บันทึกบทสนทนาเสียงลงหน้าต่างแชทเดิม (ASST_MSGS) เพื่ออ่านย้อนหลังหลังวางสาย
   function logAppend(role,txt){
@@ -12360,9 +12360,11 @@ window.NIDALive=(function(){
     for(let i=0;i<n;i++){ let v=(bin.charCodeAt(i*2+1)<<8)|bin.charCodeAt(i*2); if(v>=0x8000) v-=0x10000; ch[i]=v/32768; }
     const snode=outCtx.createBufferSource(); snode.buffer=buf; snode.connect(outCtx.destination);
     const t=Math.max(outCtx.currentTime,playHead); snode.start(t); playHead=t+buf.duration; speaking=true; lastVoice=Date.now();
-    snode.onended=()=>{ if(playHead<=outCtx.currentTime+0.03) speaking=false; };
+    srcNodes.push(snode);
+    snode.onended=()=>{ const i=srcNodes.indexOf(snode); if(i>=0) srcNodes.splice(i,1); if(!srcNodes.length && playHead<=outCtx.currentTime+0.03) speaking=false; };
   }
-  function stopPlayback(){ playHead=0; speaking=false; }
+  // หยุดเสียงที่กำลังเล่น/คิวไว้ "จริง ๆ" (กันเสียงเก่าเล่นทับเสียงใหม่ = เสียงซ้อน ตอนผู้ใช้พูดแทรก/ขึ้นเทิร์นใหม่)
+  function stopPlayback(){ for(const s of srcNodes.slice()){ try{ s.onended=null; s.stop(); }catch(_e){} } srcNodes.length=0; playHead=0; speaking=false; }
   // เสียงสัญญาณ (บี๊บ) — 'ready' ตอนพร้อมสนทนา / 'bye' ตอนวางสาย
   function beep(kind){
     try{
@@ -12373,7 +12375,7 @@ window.NIDALive=(function(){
   }
 
   async function start(){
-    if(busy||session) return; busy=true; vMsgU=null; vMsgF=null; hadLog=false; pendingVoiceAction=null;
+    if(busy||session) return; busy=true; vMsgU=null; vMsgF=null; hadLog=false; pendingVoiceAction=null; srcNodes.length=0;
     buildUI(); ov.classList.add('on'); setStatus('กำลังเชื่อมต่อ…','เตรียมไมโครโฟน'); if(!raf) drawWave();
     // สร้าง+ปลุก AudioContext ขาออก "ระหว่างจังหวะแตะ" (กันถูก suspend → ตอบแต่ไม่มีเสียง)
     try{ outCtx=new (window.AudioContext||window.webkitAudioContext)(); await outCtx.resume(); }catch(_e){}
@@ -12393,7 +12395,7 @@ window.NIDALive=(function(){
           responseModalities:[GK.Modality?GK.Modality.AUDIO:'AUDIO'],
           speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:VOICE } } },  // ล็อกเสียงเดียว กันเสียงเปลี่ยนไปมา
           inputAudioTranscription:{}, outputAudioTranscription:{},
-          systemInstruction:{parts:[{text:'คุณคือ "น้องนิดา" ผู้ช่วยฝ่ายบุคคลของ 7-Eleven พูดภาษาไทย สุภาพ เป็นกันเอง แต่วางตัวเป็นนักวิเคราะห์ HR ที่เข้มงวดกับกฎระเบียบบริษัท เมื่อผู้ใช้ถามข้อมูลพนักงาน วันทำงาน เงินเดือน วินัย ใบลา หรือข้อมูลใด ๆ ในระบบ ให้เรียกเครื่องมือ ask_nida เสมอ แล้วสื่อสารด้วยเสียง — ถ้าเป็นคำถามวิเคราะห์/ภาพรวม/วินัย/ผลการทำงาน ให้วิเคราะห์เชิงลึกครอบคลุม (ตัวเลขจริง ประเด็นวินัย ผลกระทบถ้าพนักงานทำผิดซ้ำหรือถ้าผู้จัดการไม่ดำเนินการ และสิ่งที่ต้องทำต่อ) พูดเป็นข้อ ๆ ให้ฟังเข้าใจ ไม่ต้องรวบสั้น · คำถามข้อเท็จจริงสั้น ๆ ตอบตรงประเด็น · ห้ามเดาข้อมูลเอง ถ้าไม่พบข้อมูลให้บอกตรง ๆ. เมื่อผู้ใช้ "สั่งให้แก้ไข/อนุมัติ/เพิ่ม/ลบข้อมูล" ให้เรียก ask_nida เพื่อเสนอรายการก่อน แล้วพูดสรุปสิ่งที่จะทำ + ถามยืนยัน ("ยืนยันไหมคะ") — ต่อเมื่อผู้ใช้ยืนยันด้วยเสียงชัดเจน (ใช่/ยืนยัน/ตกลง/ทำเลย) จึงเรียก confirm_action เพื่อทำจริง ห้ามเรียก confirm_action ก่อนได้รับการยืนยัน และห้ามบอกว่าทำเสร็จก่อนเรียก confirm_action. ★ การ "ออกเอกสาร/ขอสลิป/ใบเตือน/ใบเซ็นรับทราบ/รายงาน" เป็นการดึงข้อมูลให้เฉย ๆ — เรียก ask_nida ได้ทันที ไม่ต้องขอยืนยัน และห้ามใช้ confirm_action กับการออกเอกสาร (confirm_action ใช้เฉพาะการแก้ไข/เพิ่ม/ลบ/อนุมัติข้อมูลจริงเท่านั้น). ตอบเป็นภาษาไทยเท่านั้น'}]},
+          systemInstruction:{parts:[{text:'คุณคือ "น้องนิดา" ผู้ช่วยฝ่ายบุคคลของ 7-Eleven พูดภาษาไทย สุภาพ เป็นกันเอง แต่วางตัวเป็นนักวิเคราะห์ HR ที่เข้มงวดกับกฎระเบียบบริษัท. ★★ คนที่คุยด้วยคือ "ผู้จัดการสาขา" — เรียกเขาว่า "คุณผู้จัดการ" เสมอ · ❌ ห้ามเรียกว่า "ลูกค้า" หรือ "คุณนิดา" เด็ดขาด ("นิดา" คือชื่อของคุณเอง อย่าสับสนเรียกผู้ใช้ด้วยชื่อตัวเอง). ★ พูดให้เป็นธรรมชาติ ลื่นไหล อบอุ่น เหมือนเพื่อนร่วมงานที่ตั้งใจช่วย — ตอบรับสั้น ๆ ก่อนลงมือ (เช่น "ได้เลยค่ะ เดี๋ยวนิดาเช็คให้นะคะ") · ใช้คำเชื่อม/คำรับรู้ธรรมชาติ ไม่ท่องแข็ง ๆ ไม่ขึ้นต้นประโยคซ้ำเดิมทุกครั้ง · ตอบกระชับได้ใจความ ไม่เยิ่นเย้อ · ระหว่างดึงข้อมูลนาน ๆ พูดคั่นสั้น ๆ ว่ากำลังดูให้ ไม่เงียบหายไปเฉย ๆ. เมื่อผู้ใช้ถามข้อมูลพนักงาน วันทำงาน เงินเดือน วินัย ใบลา หรือข้อมูลใด ๆ ในระบบ ให้เรียกเครื่องมือ ask_nida เสมอ แล้วสื่อสารด้วยเสียง — ถ้าเป็นคำถามวิเคราะห์/ภาพรวม/วินัย/ผลการทำงาน ให้วิเคราะห์เชิงลึกครอบคลุม (ตัวเลขจริง ประเด็นวินัย ผลกระทบถ้าพนักงานทำผิดซ้ำหรือถ้าผู้จัดการไม่ดำเนินการ และสิ่งที่ต้องทำต่อ) พูดเป็นข้อ ๆ ให้ฟังเข้าใจ ไม่ต้องรวบสั้น · คำถามข้อเท็จจริงสั้น ๆ ตอบตรงประเด็น · ห้ามเดาข้อมูลเอง ถ้าไม่พบข้อมูลให้บอกตรง ๆ. เมื่อผู้ใช้ "สั่งให้แก้ไข/อนุมัติ/เพิ่ม/ลบข้อมูล" ให้เรียก ask_nida เพื่อเสนอรายการก่อน แล้วพูดสรุปสิ่งที่จะทำ + ถามยืนยัน ("ยืนยันไหมคะ") — ต่อเมื่อผู้ใช้ยืนยันด้วยเสียงชัดเจน (ใช่/ยืนยัน/ตกลง/ทำเลย) จึงเรียก confirm_action เพื่อทำจริง ห้ามเรียก confirm_action ก่อนได้รับการยืนยัน และห้ามบอกว่าทำเสร็จก่อนเรียก confirm_action. ★ การ "ออกเอกสาร/ขอสลิป/ใบเตือน/ใบเซ็นรับทราบ/รายงาน" เป็นการดึงข้อมูลให้เฉย ๆ — เรียก ask_nida ได้ทันที ไม่ต้องขอยืนยัน และห้ามใช้ confirm_action กับการออกเอกสาร (confirm_action ใช้เฉพาะการแก้ไข/เพิ่ม/ลบ/อนุมัติข้อมูลจริงเท่านั้น). ตอบเป็นภาษาไทยเท่านั้น'}]},
           tools
         },
         callbacks:{
@@ -12489,7 +12491,7 @@ window.NIDALive=(function(){
     try{ if(micCtx) micCtx.close(); }catch(_e){}
     try{ if(outCtx) outCtx.close(); }catch(_e){}
     try{ if(session) session.close(); }catch(_e){}
-    live=false; session=null; micStream=null; micCtx=null; outCtx=null; proc=null; srcNode=null; playHead=0; speaking=false; level=0; busy=false;
+    live=false; session=null; micStream=null; micCtx=null; outCtx=null; proc=null; srcNode=null; srcNodes.length=0; playHead=0; speaking=false; level=0; busy=false;
     if(raf){ cancelAnimationFrame(raf); raf=null; }
     if(ov) ov.classList.remove('on');
     // เด้งเข้าหน้าแชททุกครั้งหลังวางสาย (เห็นบทสนทนาที่บันทึกไว้)
