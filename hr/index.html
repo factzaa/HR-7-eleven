@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#00703c">
+<meta name="theme-color" content="#7c6ce0">
 <title>7-Eleven · HR</title>
 <link rel="icon" href="../icons/icon-192.png">
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
@@ -13,11 +13,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
-    --green:#00703c; --green-d:#00582f; --green-soft:#e7f3ec;
-    --orange:#f5821f; --orange-soft:#fdeede;
-    --red:#e11f26; --red-soft:#fdeaea;
-    --bg:#eceee9; --card:#ffffff; --line:#e3e6e1; --line2:#cfd3cc;
-    --txt:#1b1f1c; --muted:#737a73; --mono:'Kanit',sans-serif;
+    /* ===== ธีม Orb (พาสเทลม่วง) — แบรนด์=ม่วง / สถานะสำเร็จ=เขียว(--ok) ===== */
+    --green:#7c6ce0; --green-d:#6a5bd0; --green-soft:#efeafb;   /* แบรนด์หลัก (เดิมเขียว) */
+    --ok:#16a34a; --ok-d:#15803d; --ok-soft:#e7f6ec;            /* สถานะสำเร็จ/active */
+    --orange:#f0913a; --orange-soft:#fdefe0;
+    --red:#e5484d; --red-soft:#fdeaea;
+    --bg:#f4f3fb; --card:#ffffff; --line:#e8e5f3; --line2:#d8d3ec;
+    --txt:#241f36; --muted:#7d7796; --mono:'Kanit',sans-serif;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   body{font-family:'Kanit','Anuphan',sans-serif; background:var(--bg); color:var(--txt); min-height:100dvh;}
@@ -54,13 +56,13 @@
   .navgrp.open .navgrp-menu{display:block;}
   .navgrp-menu .tab{display:flex; width:100%; text-align:left; padding:10px 12px; border:0; border-radius:8px; white-space:normal;}
   .navgrp-menu .tab:hover{background:#f6f7f9;}
-  .navgrp-menu .tab.active{background:#f3faf6; color:var(--green-d); border:0;}
+  .navgrp-menu .tab.active{background:#efeafb; color:var(--green-d); border:0;}
   .hamburger{display:none; background:none; border:0; font-size:22px; line-height:1; cursor:pointer; color:var(--green-d); padding:4px 8px; margin-right:2px;}
   .drawer-ov{display:none; position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:19;}
   .drawer-ov.show{display:block;}
 
   .pill{font-size:12.5px; padding:5px 12px; border-radius:999px; font-weight:600; display:inline-block;}
-  .pill.ok{background:var(--green-soft); color:var(--green-d);}
+  .pill.ok{background:var(--ok-soft); color:var(--ok-d);}
   .pill.bad{background:var(--red-soft); color:var(--red);}
   .pill.warn{background:#fff4e0; color:#a06515;}
   .pill.muted{background:#eef0ec; color:var(--muted);}
@@ -283,7 +285,7 @@
     .tabs{position:fixed; top:0; left:0; bottom:0; width:74%; max-width:290px; height:100dvh; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; transform:translateX(-100%); transition:transform .25s ease; z-index:20; box-shadow:2px 0 14px rgba(0,0,0,.18); padding:8px 0 24px; gap:0; border-bottom:0; border-right:1px solid var(--line);}
     .tabs.open{transform:translateX(0);}
     .tabs .tab{width:100%; text-align:left; padding:14px 18px; font-size:14.5px; white-space:normal; border-bottom:1px solid var(--line); border-left:3px solid transparent;}
-    .tabs .tab.active{border-bottom-color:var(--line); border-left-color:var(--green); background:#f3faf6;}
+    .tabs .tab.active{border-bottom-color:var(--line); border-left-color:var(--green); background:#efeafb;}
     /* กลุ่มเมนูในมือถือ: กางเป็นหมวด (หัวข้อ + รายการ) */
     .navgrp{flex-direction:column; width:100%;}
     .navgrp-btn{width:100%; padding:11px 18px; background:#eef4f0; color:var(--green-d); font-weight:700; border-bottom:1px solid var(--line); border-radius:0;}
@@ -344,7 +346,7 @@
 <script src="../shared/supabase.js"></script>
 <script src="../shared/hr-api.js"></script>
 <link rel="manifest" href="../manifest.webmanifest">
-<meta name="theme-color" content="#16a34a">
+<meta name="theme-color" content="#7c6ce0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -363,7 +365,7 @@
 .tabicon{display:inline-flex;align-items:center;margin-right:7px}
 .emblem{border-radius:12px;box-shadow:0 3px 10px rgba(0,0,0,.12)}
 .btn{border-radius:11px}
-.btn-pri{background:linear-gradient(135deg,var(--green),var(--green-d));box-shadow:0 4px 14px rgba(0,112,60,.24)}
+.btn-pri{background:linear-gradient(135deg,var(--green),var(--green-d));box-shadow:0 4px 14px rgba(124,108,224,.24)}
 .card{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.04),0 8px 24px rgba(17,24,39,.05)}
 .kpi{border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.05)}
 .kpi .val{letter-spacing:-.4px}
@@ -399,10 +401,10 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 .kpi .delta{font-size:11.5px !important;margin-top:5px !important}
 .kpi-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none}
 .kpi-ic svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.85;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.kpi-ic.g{background:#e7f3ec;color:#00582f}.kpi-ic.o{background:#fff2e6;color:#c2600d}.kpi-ic.r{background:#fdeaea;color:#e11f26}.kpi-ic.a{background:#fef9c3;color:#a16207}.kpi-ic.gy{background:#eef0ed;color:#737a73}
+.kpi-ic.g{background:#e7f3ec;color:#6a5bd0}.kpi-ic.o{background:#fff2e6;color:#c2600d}.kpi-ic.r{background:#fdeaea;color:#e11f26}.kpi-ic.a{background:#fef9c3;color:#a16207}.kpi-ic.gy{background:#eef0ed;color:#737a73}
 .shift-row{padding:12px 14px !important}
 .btn{border-radius:11px !important}
-.btn-pri{background:linear-gradient(135deg,var(--green),var(--green-d)) !important;box-shadow:0 4px 14px rgba(0,112,60,.22)}
+.btn-pri{background:linear-gradient(135deg,var(--green),var(--green-d)) !important;box-shadow:0 4px 14px rgba(124,108,224,.22)}
 
 /* ==== Single-row header (แถบเดียวแบบดีไซน์) ==== */
 @media(min-width:641px){
@@ -859,7 +861,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
   <!-- รายการเบิก (แคตตาล็อก) -->
   <div id="rd_sec_items" class="rd-sec" style="display:none">
-    <div class="card" style="padding:11px 14px;margin-bottom:10px;background:#f3faf6;font-size:13px;color:var(--muted)">
+    <div class="card" style="padding:11px 14px;margin-bottom:10px;background:#efeafb;font-size:13px;color:var(--muted)">
       สลับสวิตช์เพื่อ <b>เปิด/ปิด</b> ให้ไรเดอร์เบิกรายการนั้น ๆ · กด "แก้เงื่อนไข" เพื่อตั้งระยะ กม. เพดานต่อปี วงเงิน และหลักฐานที่ต้องแนบ
     </div>
     <div id="rd_items_box"><div class="empty">กำลังโหลด…</div></div>
@@ -1079,14 +1081,14 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 </div>
 <style>
 .es-report{background:#fff;color:#111;max-width:820px;margin:8px auto;padding:10px 6px;font-size:13px}
-.es-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #00582f;padding-bottom:8px;margin-bottom:10px}
-.es-title{font-size:18px;font-weight:700;color:#00582f}
+.es-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #6a5bd0;padding-bottom:8px;margin-bottom:10px}
+.es-title{font-size:18px;font-weight:700;color:#6a5bd0}
 .es-sub{font-size:12px;color:#555;margin-top:2px}
 .es-org{font-weight:700;color:#e0803a}
 .es-info{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12.5px}
 .es-info td{border:1px solid #ddd;padding:5px 8px}
 .es-info td:nth-child(odd){background:#f6f7f8;color:#555;width:108px;white-space:nowrap}
-.es-sec{font-weight:700;color:#00582f;border-left:4px solid #00582f;padding-left:8px;margin:14px 0 8px;font-size:14px}
+.es-sec{font-weight:700;color:#6a5bd0;border-left:4px solid #6a5bd0;padding-left:8px;margin:14px 0 8px;font-size:14px}
 .es-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:6px}
 .es-stat{border:1px solid #e3e6e8;border-radius:8px;padding:8px 6px;text-align:center;background:#fafbfc}
 .es-stat-v{font-size:20px;font-weight:700;color:#111}
@@ -8410,7 +8412,7 @@ function asstCardsHtml(cards){
           +im+'</div>';
       }).join('');
       return '<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px">'
-        +'<div style="font-weight:700;font-size:13px;color:#00582f"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> '+head+' <span style="color:var(--muted);font-weight:500">('+(g.items||[]).length+')</span></div>'+items+'</div>';
+        +'<div style="font-weight:700;font-size:13px;color:#6a5bd0"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> '+head+' <span style="color:var(--muted);font-weight:500">('+(g.items||[]).length+')</span></div>'+items+'</div>';
     }).join(''));
   }
   if(cards.type==='open_tasks'){
@@ -11445,7 +11447,7 @@ async function loadCheckoutCorr(){
     +'<div style="font-weight:600;font-size:14px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> คำขอแก้ไขเวลาออก รออนุมัติ ('+pend.length+')</div>'
     +pend.map(c=>'<div style="border-top:1px solid var(--line);padding:10px 0">'
       +'<div style="font-size:14px;font-weight:600">'+esc(c.emp_name||c.emp_id)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(c.branch_name)+' · '+esc(String(c.work_date))+'</span></div>'
-      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">ระบบบันทึกให้ '+coFmtDT(c.system_checkout)+' → แจ้งออกจริง <b style="color:#00582f">'+coFmtDT(c.actual_checkout)+'</b></div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">ระบบบันทึกให้ '+coFmtDT(c.system_checkout)+' → แจ้งออกจริง <b style="color:#6a5bd0">'+coFmtDT(c.actual_checkout)+'</b></div>'
       +'<div style="font-size:12.5px;margin-top:2px">OT ถ้าอนุมัติ: <b>'+(c.ot_if_approved||0)+' ชม.</b>'+(c.reason?(' · เหตุผล: '+esc(c.reason)):'')+'</div>'
       +'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-pri btn-sm" data-coap="'+c.id+'">อนุมัติ</button><button class="btn btn-sec btn-sm" data-corj="'+c.id+'">ปฏิเสธ</button></div>'
       +'</div>').join('')+'</div>';
