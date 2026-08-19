@@ -7759,15 +7759,30 @@ async function loadMdailyAdhoc(){
   if(!rows.length){ box.innerHTML=''; return; }
   const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
   const stLbl={todo:'ใหม่/ค้าง',doing:'กำลังทำ',review:'รอตรวจ'};
-  const cards=rows.map(t=>{
+  const bd=d=>esc((typeof beDate==='function')?beDate(d):d);
+  // จัดกลุ่มงานเดียวกันที่กระจายหลายสาขา (title+เดดไลน์+ความสำคัญ) → โชว์หัวเดียว แตกรายสาขาข้างใต้
+  const groups={}; const order=[];
+  rows.forEach(t=>{ const k=(t.title||'')+'|'+(t.due_date||'')+'|'+(t.priority||''); if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(t); });
+  const cards=order.map(k=>{
+    const g=groups[k], t=g[0];
     const overdue=t.due_date && String(t.due_date)<today;
-    const dd=t.due_date?(' · เดดไลน์ '+(overdue?'<span style="color:#dc2626;font-weight:700">':'<span>')+esc((typeof beDate==='function')?beDate(t.due_date):t.due_date)+(overdue?' (เลยกำหนด)':'')+'</span>'):'';
-    return '<div style="border:1px solid var(--line);border-left:4px solid '+(t.priority==='urgent'?'#dc2626':'var(--green)')+';border-radius:11px;padding:10px 12px;margin-bottom:8px;background:var(--card);display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">'
-      +'<div style="flex:1;min-width:160px"><div style="font-weight:600;font-size:14px">'+esc(t.title)+(t.priority==='urgent'?' <span style="background:#fdeaea;color:#dc2626;font-size:10.5px;padding:1px 7px;border-radius:20px;font-weight:700">ด่วน</span>':'')+'</div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-top:2px">'+esc(t.branch_name||t.branch_id||'—')+' · '+(stLbl[t.status]||t.status)+dd+'</div></div>'
-      +'<button class="btn btn-sec btn-sm" data-mtopen="'+esc(String(t.id))+'">เปิดดู/ตรวจ</button></div>';
+    const dd=t.due_date?(' · เดดไลน์ '+(overdue?'<span style="color:#dc2626;font-weight:700">':'<span>')+bd(t.due_date)+(overdue?' (เลยกำหนด)':'')+'</span>'):'';
+    const badge=t.priority==='urgent'?' <span style="background:#fdeaea;color:#dc2626;font-size:10.5px;padding:1px 7px;border-radius:20px;font-weight:700">ด่วน</span>':'';
+    const bord=(t.priority==='urgent'?'#dc2626':'var(--green)');
+    if(g.length===1){
+      return '<div style="border:1px solid var(--line);border-left:4px solid '+bord+';border-radius:11px;padding:10px 12px;margin-bottom:8px;background:var(--card);display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">'
+        +'<div style="flex:1;min-width:160px"><div style="font-weight:600;font-size:14px">'+esc(t.title)+badge+'</div>'
+        +'<div style="font-size:12px;color:var(--muted);margin-top:2px">'+esc(t.branch_name||t.branch_id||'—')+' · '+(stLbl[t.status]||t.status)+dd+'</div></div>'
+        +'<button class="btn btn-sec btn-sm" data-mtopen="'+esc(String(t.id))+'">เปิดดู/ตรวจ</button></div>';
+    }
+    const nDone=g.filter(x=>x.status==='done').length;
+    const subs=g.map(x=>'<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-top:1px dashed var(--line)"><div style="flex:1;font-size:12.5px">'+esc(x.branch_name||x.branch_id||'—')+' · '+(stLbl[x.status]||x.status)+'</div><button class="btn btn-sec btn-sm" data-mtopen="'+esc(String(x.id))+'">เปิดดู/ตรวจ</button></div>').join('');
+    return '<div style="border:1px solid var(--line);border-left:4px solid '+bord+';border-radius:11px;padding:10px 12px;margin-bottom:8px;background:var(--card)">'
+      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+badge+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin:2px 0 4px">กระจาย '+g.length+' สาขา ('+nDone+' เสร็จ · '+(g.length-nDone)+' ค้าง)'+dd+'</div>'
+      +subs+'</div>';
   }).join('');
-  box.innerHTML='<div class="card" style="padding:12px;border-left:4px solid var(--green)"><div style="font-weight:600;font-size:14px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24" style="width:16px;height:16px;vertical-align:-3px"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 17v4"/></svg> งานเฉพาะกิจจาก HR/นิดา (งาน ผจก.) — ค้าง '+rows.length+' งาน</div>'+cards+'</div>';
+  box.innerHTML='<div class="card" style="padding:12px;border-left:4px solid var(--green)"><div style="font-weight:600;font-size:14px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24" style="width:16px;height:16px;vertical-align:-3px"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 17v4"/></svg> งานเฉพาะกิจจาก HR/นิดา (งาน ผจก.) — '+order.length+' งาน · '+rows.length+' รายการค้าง</div>'+cards+'</div>';
   box.querySelectorAll('[data-mtopen]').forEach(b=>b.onclick=()=>openMtask(b.dataset.mtopen));
 }
 async function loadMdailyBoard(){
