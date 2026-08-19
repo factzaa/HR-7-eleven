@@ -42,7 +42,7 @@
     --glass:rgba(255,255,255,.055); --glass-bd:rgba(255,255,255,.10);
     color-scheme:dark;
   }
-  html[data-theme="dark"] .htext .t1{color:var(--accent);}
+  html[data-theme="dark"] .htext .t1{color:rgba(255,255,255,.72);}
   html[data-theme="dark"] img.emblem-img{filter:none;}
   /* บังคับ subtree เป็นโทนสว่างเสมอ (ใช้ตอนจับภาพ PDF/รายงาน กันตัวอักษรจางบนกระดาษขาว) */
   .force-light{--bg:#ffffff;--bg2:#f6f7f9;--card:#ffffff;--line:#e7e9ee;--line2:#d6d9e0;--txt:#111827;--muted:#555555;--accent:#1e2430;--green:#2b3242;--green-d:#1e2430;--green-soft:#eef0f4;color:#111827;background:#ffffff;}
@@ -67,12 +67,12 @@
   #themePanel .custom .cl small{display:block;color:var(--muted);font-size:11px;font-weight:400;}
   #themePanel input[type=color]{width:42px;height:34px;border:1px solid var(--line2);border-radius:9px;background:var(--card);cursor:pointer;padding:2px;}
 
-  .topbar{background:var(--card); border-bottom:1px solid var(--line); padding:11px 18px; display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:5;}
+  .topbar{background:var(--green); border-bottom:1px solid rgba(0,0,0,.14); padding:11px 18px; display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:5;}
   .emblem{width:42px; height:42px; border-radius:11px; overflow:hidden; flex:none; box-shadow:0 2px 0 rgba(0,0,0,.07);}
   .emblem img{width:100%; height:100%; object-fit:cover; display:block;}
   .htext{flex:1; line-height:1.15;}
-  .htext .t1{font-size:11px; color:var(--green); font-weight:700; letter-spacing:1px;}
-  .htext .t2{font-size:15px; font-weight:600; margin-top:1px;}
+  .htext .t1{font-size:11px; color:rgba(255,255,255,.72); font-weight:700; letter-spacing:1px;}
+  .htext .t2{font-size:15px; font-weight:600; margin-top:1px; color:#fff;}
   .topact{display:flex; gap:8px; align-items:center;}
 
   .tabs{background:var(--card); border-bottom:1px solid var(--line); padding:0 14px; display:flex; gap:2px; overflow-x:auto; position:sticky; top:65px; z-index:4;}
@@ -95,7 +95,7 @@
   .navgrp-menu .tab{display:flex; width:100%; text-align:left; padding:10px 12px; border:0; border-radius:8px; white-space:normal;}
   .navgrp-menu .tab:hover{background:var(--bg);}
   .navgrp-menu .tab.active{background:var(--green-soft); color:var(--accent); border:0;}
-  .hamburger{display:none; background:none; border:0; font-size:22px; line-height:1; cursor:pointer; color:var(--accent); padding:4px 8px; margin-right:2px;}
+  .hamburger{display:none; background:none; border:0; font-size:22px; line-height:1; cursor:pointer; color:#fff; padding:4px 8px; margin-right:2px;}
   .drawer-ov{display:none; position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:19;}
   .drawer-ov.show{display:block;}
 
@@ -452,15 +452,15 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   #tabbar::-webkit-scrollbar{height:0}
   .htext{flex:none}
   .topact{margin-left:auto;display:flex !important;align-items:center;gap:6px;flex:none}
-  .hicon{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--card);display:grid;place-items:center;color:var(--muted);padding:0;position:relative;cursor:pointer}
-  .hicon:hover{color:var(--txt);border-color:var(--line2);background:#fafbfa}
+  .hicon{width:38px;height:38px;border-radius:11px;border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.12);display:grid;place-items:center;color:rgba(255,255,255,.88);padding:0;position:relative;cursor:pointer}
+  .hicon:hover{color:#fff;border-color:rgba(255,255,255,.32);background:rgba(255,255,255,.22)}
   .hicon .ei{width:19px;height:19px}
   #pushBtn.on{color:var(--accent);border-color:var(--green)}
   #pushBtn.on::after{content:"";position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--green);border:2px solid #fff}
-  .uchip{display:flex;align-items:center;gap:9px;padding:4px 12px 4px 5px;border:1px solid var(--line);border-radius:30px;margin-left:2px}
-  .uav{width:30px;height:30px;border-radius:50%;background:var(--green-soft);color:var(--accent);display:grid;place-items:center;font-weight:600;font-size:13px;flex:none}
+  .uchip{display:flex;align-items:center;gap:9px;padding:4px 12px 4px 5px;border:1px solid rgba(255,255,255,.24);border-radius:30px;margin-left:2px}
+  .uav{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;display:grid;place-items:center;font-weight:600;font-size:13px;flex:none}
   .uinfo{display:flex;flex-direction:column;line-height:1.15}
-  .uinfo b{font-size:13px;font-weight:600}.uinfo i{font-size:11px;color:var(--muted);font-style:normal}
+  .uinfo b{font-size:13px;font-weight:600;color:#fff}.uinfo i{font-size:11px;color:rgba(255,255,255,.72);font-style:normal}
 }
 @media(max-width:640px){ .uchip{display:none} }
 
@@ -12349,6 +12349,8 @@ window.NIDALive=(function(){
     root.setProperty('--green',brand);
     root.setProperty('--green-d',brandD);
     root.setProperty('--accent',accent);
+    var m=document.getElementById('metaTheme')||document.querySelector('meta[name=theme-color]');
+    if(m) m.content=brand;   /* แถบสถานะมือถือให้ตรงกับแถบหัว */
   }
   function applyMode(mode){
     var d=(mode==='dark');
