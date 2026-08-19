@@ -7,9 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{ --green:#16a34a; --green-d:#15803d; --line:#e5e7eb; --line2:#d1d5db; --muted:#6b7280; --bg:#f5f6f8; }
+  :root{ --green:#7c6ce0; --green-d:#6a5bd0; --ok:#16a34a; --ok-d:#15803d; --line:#e8e5f3; --line2:#d8d3ec; --muted:#7d7796; --bg:#f4f3fb; }
   *{box-sizing:border-box}
-  body{margin:0;font-family:'Kanit','Anuphan',system-ui,sans-serif;background:var(--bg);color:#111827;font-size:15px}
+  body{margin:0;font-family:'Kanit','Anuphan',system-ui,sans-serif;background:radial-gradient(92% 40% at 88% 0,rgba(244,164,135,.11),transparent 55%),radial-gradient(86% 44% at 6% 0,rgba(139,127,230,.14),transparent 55%),var(--bg);background-attachment:fixed;color:#241f36;font-size:15px}
   .top{background:#fff;border-bottom:1px solid var(--line);padding:12px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .top h1{font-size:16px;margin:0;font-weight:700;flex:1;min-width:160px}
   .badge{background:#fef3c7;color:#92400e;font-size:11.5px;padding:3px 9px;border-radius:20px;font-weight:600}
@@ -45,7 +45,7 @@
   .nm{font-weight:600}
   .sub{font-size:11px;color:var(--muted)}
   .hint{font-size:10.5px;color:var(--muted);margin-top:2px}
-  .rowsaved{color:var(--green-d);font-size:11px}
+  .rowsaved{color:var(--ok-d);font-size:11px}
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#111827;color:#fff;padding:11px 18px;border-radius:11px;font-size:14px;display:none;z-index:99}
   .toast.show{display:block}
   .toast.err{background:#b91c1c}
