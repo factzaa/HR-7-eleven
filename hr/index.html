@@ -12139,6 +12139,8 @@ html,body{max-width:100%;overflow-x:clip;}   /* clip แทน hidden — กั
 #chatFab{position:fixed;right:18px;bottom:104px;width:56px;height:56px;border-radius:50%;background:#0369a1;color:#fff;border:0;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:860;font-size:24px;display:none;-webkit-tap-highlight-color:transparent}
 body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่มีปุ่มนิดา → ลงมาอยู่มุมล่างปกติ */
 @media(max-width:640px){ #chatFab{right:14px;width:52px;height:52px;font-size:22px;} }
+/* ซ่อนปุ่มลอย (แชท/นิดา) ตอนเปิดโมดัล — กันบังปุ่มส่ง/ช่องแชทในโมดัลบนมือถือ */
+body:has(.overlay.show) #chatFab, body:has(.overlay.show) #asstFab{display:none !important;}
 #asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 12px 24px rgba(96,72,190,.32)) drop-shadow(0 4px 9px rgba(0,0,0,.16));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
 body.is-logged #asstFab{display:block}
 body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
