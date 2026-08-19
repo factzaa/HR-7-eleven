@@ -550,8 +550,9 @@
     return d.toISOString().slice(0, 10);
   }
   const _iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  function cycleRange21() {
-    const t = new Date(bangkokDate() + 'T00:00:00');
+  function cycleRange21(refIso) {
+    // refIso = วันอ้างอิง (YYYY-MM-DD) ที่ต้องการหารอบ 21–20 ที่ครอบวันนั้น — ไม่ใส่ = วันนี้
+    const t = new Date(((refIso && /^\d{4}-\d{2}-\d{2}$/.test(refIso)) ? refIso : bangkokDate()) + 'T00:00:00');
     const day = t.getDate();
     const endRef = (day <= 20) ? new Date(t.getFullYear(), t.getMonth(), 20) : new Date(t.getFullYear(), t.getMonth() + 1, 20);
     const end = new Date(endRef.getFullYear(), endRef.getMonth(), 20);
@@ -655,11 +656,12 @@
     const { data } = await sb.from('leave_types').select('*').eq('active', true).order('sort');
     return data || [];
   }
-  async function getLeaveUsage(empId, ym) {
-    ym = ym || bangkokDate().slice(0, 7);   // YYYY-MM — โควตานับเป็น "รายเดือน"
+  async function getLeaveUsage(empId, refDate) {
+    // โควตานับเป็น "รายรอบเงินเดือน" (21–20) — refDate = วันอ้างอิง (ไม่ใส่ = รอบปัจจุบัน)
+    const cyc = cycleRange21(refDate);
     const { data } = await sb.from('leaves').select('type,start_date,end_date,status')
       .eq('emp_id', empId).in('status', ['approved', 'pending'])
-      .gte('start_date', ym + '-01').lte('start_date', ym + '-31');
+      .gte('start_date', cyc.start).lte('start_date', cyc.end);
     const used = {};
     (data || []).forEach(l => { used[l.type] = (used[l.type] || 0) + _inclusiveDays(l.start_date, l.end_date || l.start_date); });
     return used;
@@ -683,12 +685,14 @@
         throw new Error('ประเภท "' + type + '" ลาย้อนหลังไม่ได้');
       if (!rule.allow_backdate && rule.advance_days > 0 && _diffDays(today, start_date) < rule.advance_days)
         throw new Error('ประเภท "' + type + '" ต้องลาล่วงหน้าอย่างน้อย ' + rule.advance_days + ' วัน');
-      if (rule.quota_per_year != null) {   // quota_per_year = โควตาต่อเดือน (คงชื่อคอลัมน์เดิม)
-        const usage = await getLeaveUsage(empId, String(start_date).slice(0, 7));   // นับเฉพาะเดือนของวันที่ลา
+      if (rule.quota_per_year != null) {   // quota_per_year = โควตาต่อรอบเงินเดือน (คงชื่อคอลัมน์เดิม)
+        const usage = await getLeaveUsage(empId, start_date);   // นับตามรอบเงินเดือน (21–20) ที่ครอบวันลา
         const used = usage[type] || 0;
         const reqDays = _inclusiveDays(start_date, end);
-        if (used + reqDays > rule.quota_per_year)
-          throw new Error('เกินโควตา "' + type + '" (' + rule.quota_per_year + ' วัน/เดือน) — เดือนนี้ใช้ไปแล้ว ' + used + ' วัน ขอเพิ่ม ' + reqDays + ' วัน');
+        if (used + reqDays > rule.quota_per_year) {
+          const _cyc = cycleRange21(start_date);
+          throw new Error('เกินโควตา "' + type + '" (' + rule.quota_per_year + ' วัน/รอบ) — รอบนี้ (' + _cyc.start + ' ถึง ' + _cyc.end + ') ใช้ไปแล้ว ' + used + ' วัน ขอเพิ่ม ' + reqDays + ' วัน');
+        }
       }
       if (rule.require_doc && !doc)
         throw new Error('ประเภท "' + type + '" ต้องแนบเอกสาร (เช่น ใบรับรองแพทย์)');

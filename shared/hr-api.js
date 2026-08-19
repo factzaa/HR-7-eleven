@@ -322,6 +322,7 @@
         case 'rider_daily_distance': return await hrRiderDailyDistance(p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
+        case 'hr_nav_badges':        return await hrNavBadges(p);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
         case 'hr_mtask_stage':       return await hrMtaskStage(p.id, p.status, p.role, p.sender_name);
         case 'hr_mtask_reject':      return await hrMtaskReject(p.data);
@@ -5413,25 +5414,69 @@
       const { data: brs } = await sb().from('branches').select('branch_id').order('branch_id');
       branches = (brs || []).map(b => b.branch_id);
       if (!branches.length) return { ok: false, error: 'ไม่พบสาขาในระบบ' };
+    } else if (Array.isArray(d.branch_ids) && d.branch_ids.length) {
+      branches = d.branch_ids.map(String);
     } else {
       if (!d.branch_id) return { ok: false, error: 'เลือกสาขา' };
       branches = [d.branch_id];
     }
 
+    // บทลงโทษ (เลือกได้หลายอย่าง) → csv
+    const penModes = [];
+    if (d.penalty_note) penModes.push('note');
+    if (d.penalty_score) penModes.push('score');
+    if (d.penalty_warning) penModes.push('warning');
+    const penalty_mode = penModes.length ? penModes.join(',') : null;
+
     const photos = await _uploadMany('mtask/hr', d.hr_photos);   // อัปโหลดครั้งเดียว ใช้ร่วมทุกสาขา
-    const ids = [];
+    const baseRow = (br) => ({
+      title, detail: (d.detail || '').trim() || null, branch_id: br,
+      priority: d.priority === 'urgent' ? 'urgent' : 'normal', source: d.source || 'HR',
+      due_date: d.due_date || null, hr_photos: photos.length ? photos : null, created_by: d.created_by || 'HR', status: 'todo',
+    });
+    const extRow = (br) => ({
+      ...baseRow(br),
+      require_photo: d.require_photo === true,
+      penalty_mode, penalty_note: (d.penalty_note || '').trim() || null,
+      penalty_points: (d.penalty_score && Number(d.penalty_points) > 0) ? Math.round(Number(d.penalty_points)) : null,
+      penalty_warn_auto: d.penalty_warning === true && d.penalty_warn_auto === true,
+      task_type: (d.task_type || 'general'),
+      ack_required: d.ack_required === true,
+      source_link: (d.source_link || '').trim() || null,
+    });
+    const ids = []; let degraded = false;
     for (const br of branches) {
-      const { data, error } = await sb().from('mgr_tasks').insert({
-        title, detail: (d.detail || '').trim() || null, branch_id: br,
-        priority: d.priority === 'urgent' ? 'urgent' : 'normal', source: d.source || 'HR',
-        due_date: d.due_date || null, hr_photos: photos.length ? photos : null, created_by: 'HR', status: 'todo',
-      }).select('id').single();
-      if (error) throw error;
-      ids.push(data.id);
-      await sb().from('mgr_task_feed').insert({ task_id: data.id, role: 'hr', sender_name: 'HR', kind: 'assign', message: 'มอบหมายงาน: ' + title, photos: photos.length ? photos : null });
+      // ลองใส่คอลัมน์เต็มก่อน · ถ้ายังไม่ได้รัน mgr_task_ext.sql (คอลัมน์ใหม่ยังไม่มี) ให้ถอยไปคอลัมน์พื้นฐาน งานจะได้ขึ้นบอร์ดทันที
+      let ins = await sb().from('mgr_tasks').insert(extRow(br)).select('id').single();
+      if (ins.error) { degraded = true; ins = await sb().from('mgr_tasks').insert(baseRow(br)).select('id').single(); }
+      if (ins.error) throw ins.error;
+      ids.push(ins.data.id);
+      await sb().from('mgr_task_feed').insert({ task_id: ins.data.id, role: 'hr', sender_name: 'HR', kind: 'assign', message: 'มอบหมายงาน: ' + title, photos: photos.length ? photos : null });
     }
     await logAct('มอบหมายงาน ผจก.', null, title + ' · ' + (allBranches ? ('ทุกสาขา (' + branches.length + ')') : ('สาขา ' + branches[0])));
-    return { ok: true, id: ids[0], ids, count: ids.length, all: allBranches };
+    return { ok: true, id: ids[0], ids, count: ids.length, all: allBranches, degraded };
+  }
+  // นับคิวงาน/รออนุมัติ สำหรับ badge บนแท็บเมนู (HR = ทุกสาขา · ผจก. = สาขาตัวเอง เฉพาะงานที่เกี่ยว)
+  async function hrNavBadges(p) {
+    p = p || {};
+    const branch = p.branch || null;
+    const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    const C = async (q) => { try { const { count } = await q; return count || 0; } catch (_e) { return 0; } };
+    let mtQ = sb().from('mgr_tasks').select('*', { count: 'exact', head: true }).in('status', ['todo', 'review']);
+    if (branch) mtQ = mtQ.eq('branch_id', branch);
+    let taQ = sb().from('task_assignments').select('*', { count: 'exact', head: true }).eq('status', 'submitted').eq('work_date', today);
+    if (branch) taQ = taQ.eq('branch_id', branch);
+    const out = { mgrtasks: await C(mtQ), mgrdailyrev: await C(taQ) };
+    if (!branch) {   // คิวอนุมัติฝั่ง HR
+      out.leaves = await C(sb().from('leaves').select('*', { count: 'exact', head: true }).eq('status', 'pending'));
+      out.advance = await C(sb().from('advance_requests').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
+      out.recruit = await C(sb().from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'new'));
+      out.submissions = await C(sb().from('profile_submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending'));
+      const fuel = await C(sb().from('rider_fuel_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
+      const repair = await C(sb().from('rider_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
+      out.rider = fuel + repair;
+    }
+    return { ok: true, counts: out };
   }
   async function hrMtaskList(branch) {
     let q = sb().from('mgr_tasks').select('*').order('updated_at', { ascending: false }).limit(300);
