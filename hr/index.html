@@ -8665,11 +8665,13 @@ function asstRender(){
     if(!me && txt && txt.trim().length>8 && !/^(กำลัง|ยกเลิก)/.test(txt.trim())){ html+='<div style="align-self:flex-start;margin-top:-3px;margin-bottom:2px"><button class="btn btn-sec btn-sm" data-copy="'+idx+'" style="padding:3px 9px;font-size:12px"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg> คัดลอก</button></div>'; }
     if(cardsHtml) html+=cardsHtml;
     if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'; }
-    if(m.pending){ html+='<div style="align-self:flex-start;display:flex;gap:8px"><button class="btn btn-pri btn-sm" data-cfm="'+idx+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ยืนยัน</button><button class="btn btn-sec btn-sm" data-ccl="'+idx+'">ยกเลิก</button></div>'; }
+    if(m.pending){ if(m.pending.action==='create_mgr_task'){ html+=asstMtaskCard(idx,m.pending); } else { html+='<div style="align-self:flex-start;display:flex;gap:8px"><button class="btn btn-pri btn-sm" data-cfm="'+idx+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ยืนยัน</button><button class="btn btn-sec btn-sm" data-ccl="'+idx+'">ยกเลิก</button></div>'; } }
   });
   box.innerHTML=html;
   box.querySelectorAll('[data-cfm]').forEach(b=>b.onclick=()=>asstConfirm(+b.dataset.cfm));
   box.querySelectorAll('[data-ccl]').forEach(b=>b.onclick=()=>asstCancel(+b.dataset.ccl));
+  box.querySelectorAll('[data-mtcreate]').forEach(b=>b.onclick=()=>asstCreateMgrTask(+b.dataset.mtcreate));
+  box.querySelectorAll('[data-mttoggle]').forEach(b=>b.onchange=()=>{ const t=document.getElementById(b.dataset.mttoggle); if(t) t.style.display=b.checked?'':'none'; });
   box.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>asstCopy(+b.dataset.copy,b));
   box.scrollTop=box.scrollHeight;
 }
@@ -8759,9 +8761,65 @@ $('sms_test_btn') && ($('sms_test_btn').onclick=async()=>{
   }
   $('sms_test_btn').disabled=false; $('sms_test_btn').textContent='ส่งข้อความทดสอบ';
 });
+// ===== นิดาสร้างงาน ผจก. จากแชท: การ์ดตัวเลือก + สร้างจริง =====
+const _mtI='width:100%;padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;background:var(--card);color:var(--txt)';
+function _mtF(l,c){ return '<div style="margin-bottom:7px"><label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:3px">'+l+'</label>'+c+'</div>'; }
+function _mtChk(id,l,ck){ return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="'+id+'"'+(ck?' checked':'')+'> '+l+'</label>'; }
+function _mtChkT(id,l,wrap,ck){ return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:2px"><input type="checkbox" id="'+id+'" data-mttoggle="'+wrap+'"'+(ck?' checked':'')+'> '+l+'</label>'; }
+function asstMtaskCard(idx,p){
+  p=p||{}; const e=s=>esc(String(s==null?'':s));
+  const scope=p.all_branches?'*':(Array.isArray(p.branch_ids)&&p.branch_ids.length?p.branch_ids.join(','):'*');
+  const link=p.source_link||''; const linkWarn=link&&!/7eleven|7-eleven|cpall|allmember|dayli/i.test(link);
+  return '<div style="align-self:stretch;width:100%;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;box-shadow:0 4px 14px rgba(0,0,0,.06)">'
+    +'<div style="font-weight:700;font-size:13px;margin-bottom:10px;display:flex;align-items:center;gap:6px"><svg class="ei" style="width:16px;height:16px" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 17v4"/></svg> สร้างงาน ผจก. — ปรับตัวเลือกแล้วกดสร้าง</div>'
+    +_mtF('หัวข้องาน','<input id="mt_title_'+idx+'" value="'+e(p.title)+'" style="'+_mtI+'">')
+    +_mtF('รายละเอียด','<textarea id="mt_detail_'+idx+'" rows="4" style="'+_mtI+';resize:vertical">'+e(p.detail)+'</textarea>')
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:120px">'+_mtF('เดดไลน์','<input type="date" id="mt_due_'+idx+'" value="'+e(p.due_date)+'" style="'+_mtI+'">')+'</div>'
+    +'<div style="flex:1;min-width:120px">'+_mtF('สาขา (* = ทุกสาขา)','<input id="mt_branches_'+idx+'" value="'+e(scope)+'" style="'+_mtI+'">')+'</div></div>'
+    +'<input type="hidden" id="mt_ttype_'+idx+'" value="'+e(p.task_type||'general')+'">'
+    +'<div style="display:flex;flex-direction:column;gap:7px;margin:8px 0">'+_mtChk('mt_urgent_'+idx,'⚡ งานด่วน (urgent)',p.priority==='urgent')+_mtChk('mt_reqphoto_'+idx,'บังคับแนบรูปหลักฐานตอนกด "เสร็จ"',p.require_photo===true)+'</div>'
+    +'<div style="border-top:1px solid var(--line);padding-top:9px"><div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">บทลงโทษถ้าไม่ทำตามกำหนด (เลือกได้หลายอย่าง)</div>'
+    +_mtChkT('mt_pnote_'+idx,'ข้อความเตือนบนการ์ด','mtwrap_note_'+idx,!!p.penalty_note)
+    +'<div id="mtwrap_note_'+idx+'" style="margin:2px 0 7px 24px;'+(p.penalty_note?'':'display:none')+'"><input id="mt_pnotetext_'+idx+'" placeholder="เช่น มีผลต่อการประเมิน/หักเบี้ย" value="'+e(p.penalty_note)+'" style="'+_mtI+'"></div>'
+    +_mtChkT('mt_pscore_'+idx,'หักคะแนนวินัย','mtwrap_score_'+idx,!!p.penalty_score)
+    +'<div id="mtwrap_score_'+idx+'" style="margin:2px 0 7px 24px;'+(p.penalty_score?'':'display:none')+'"><span style="font-size:12px">หัก </span><input type="number" min="1" id="mt_ppoints_'+idx+'" value="'+(p.penalty_points||10)+'" style="width:70px;'+_mtI+'"><span style="font-size:12px"> คะแนน</span></div>'
+    +_mtChkT('mt_pwarn_'+idx,'ออกใบเตือน','mtwrap_warn_'+idx,!!p.penalty_warning)
+    +'<div id="mtwrap_warn_'+idx+'" style="margin:2px 0 4px 24px;'+(p.penalty_warning?'':'display:none')+'">'+_mtChk('mt_pwarnauto_'+idx,'ออกอัตโนมัติเมื่อเลยกำหนด (ปิด = ตั้งต้นรอ HR ยืนยัน)',p.penalty_warn_auto===true)+'</div></div>'
+    +(link?('<div style="margin:8px 0;font-size:11.5px;background:'+(linkWarn?'#fff4e0':'var(--bg)')+';border:1px solid '+(linkWarn?'#f0c674':'var(--line)')+';color:'+(linkWarn?'#9a6a00':'var(--muted)')+';border-radius:9px;padding:7px 9px;word-break:break-all">'+(linkWarn?'⚠ ลิงก์นี้อาจไม่ปลอดภัย — ตรวจสอบปลายทางก่อนเผยแพร่ให้ผู้จัดการ:<br>':'ลิงก์อ้างอิง: ')+e(link)+'</div><input type="hidden" id="mt_srclink_'+idx+'" value="'+e(link)+'">'):('<input type="hidden" id="mt_srclink_'+idx+'" value="">'))
+    +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn btn-pri btn-sm" data-mtcreate="'+idx+'"><svg class="ei" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> สร้างงาน</button><button class="btn btn-sec btn-sm" data-ccl="'+idx+'">ยกเลิก</button></div></div>';
+}
+async function asstCreateMgrTask(idx){
+  const g=id=>document.getElementById(id);
+  const title=(g('mt_title_'+idx)?g('mt_title_'+idx).value:'').trim();
+  if(!title){ toast('err','กรอกหัวข้องาน'); return; }
+  const scopeRaw=((g('mt_branches_'+idx)||{}).value||'*').trim();
+  const pscore=g('mt_pscore_'+idx)&&g('mt_pscore_'+idx).checked;
+  const pwarn=g('mt_pwarn_'+idx)&&g('mt_pwarn_'+idx).checked;
+  const pnote=g('mt_pnote_'+idx)&&g('mt_pnote_'+idx).checked;
+  let imgs=[]; for(let i=ASST_MSGS.length-1;i>=0;i--){ const mm=ASST_MSGS[i]; if(mm.role==='user'&&Array.isArray(mm.images)&&mm.images.length){ imgs=mm.images.slice(); break; } }
+  const data={ title, detail:((g('mt_detail_'+idx)||{}).value||'').trim(), due_date:((g('mt_due_'+idx)||{}).value||'')||null,
+    priority:(g('mt_urgent_'+idx)&&g('mt_urgent_'+idx).checked)?'urgent':'normal',
+    require_photo:!!(g('mt_reqphoto_'+idx)&&g('mt_reqphoto_'+idx).checked),
+    penalty_note:pnote?((g('mt_pnotetext_'+idx)||{}).value||'').trim():'',
+    penalty_score:!!pscore, penalty_points:pscore?Number(((g('mt_ppoints_'+idx)||{}).value)||0):0,
+    penalty_warning:!!pwarn, penalty_warn_auto:!!(pwarn&&g('mt_pwarnauto_'+idx)&&g('mt_pwarnauto_'+idx).checked),
+    task_type:((g('mt_ttype_'+idx)||{}).value||'general'), source_link:((g('mt_srclink_'+idx)||{}).value||'').trim()||null,
+    created_by:'นิดา (AI)', hr_photos:imgs };
+  if(scopeRaw==='*'||scopeRaw===''||/ทุก/.test(scopeRaw)) data.all=true; else data.branch_ids=scopeRaw.split(/[,\s]+/).filter(Boolean);
+  const m=ASST_MSGS[idx]; if(m) m.pending=null;
+  ASST_MSGS.push({role:'assistant',text:'กำลังสร้างงาน ผจก. …'}); asstRender();
+  try{
+    const r=await post({ action:'hr_mtask_create', password:pwd, data });
+    ASST_MSGS.pop();
+    if(r&&r.ok){ ASST_MSGS.push({role:'assistant',text:'สร้างงาน ผจก. "'+title+'" แล้วค่ะ ✓ ('+(r.all?('ทุกสาขา '+r.count+' ใบ'):(r.count+' สาขา'))+')'+(data.require_photo?' · บังคับแนบรูปตอนเสร็จ':'')+(data.priority==='urgent'?' · ⚡ด่วน':'')+' — ผู้จัดการจะเห็นในเมนู "งาน ผจก." และได้รับแจ้งเตือน'}); }
+    else ASST_MSGS.push({role:'assistant',text:'สร้างงานไม่สำเร็จค่ะ: '+((r&&r.error)||'ไม่ทราบสาเหตุ')});
+  }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'สร้างงานไม่สำเร็จค่ะ: '+(e.message||e)}); }
+  asstRender();
+}
 async function asstConfirm(idx){
   const m=ASST_MSGS[idx]; if(!m||!m.pending) return; const p=m.pending; m.pending=null;
   if(p.action==='issue_discipline'){ await asstIssueDiscipline(idx,p); return; }   // ทำจริงฝั่ง client (ต้องแนบหลักฐาน)
+  if(p.action==='create_mgr_task'){ m.pending=p; await asstCreateMgrTask(idx); return; }   // ทำจริงฝั่ง client (การ์ดตัวเลือก)
   ASST_MSGS.push({role:'assistant',text:'กำลังดำเนินการ…'}); asstRender();
   const {base,key}=asstApiBase();
   try{ const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,confirm:p})});
