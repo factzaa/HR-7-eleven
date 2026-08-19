@@ -401,7 +401,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 .kpi .delta{font-size:11.5px !important;margin-top:5px !important}
 .kpi-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none}
 .kpi-ic svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.85;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.kpi-ic.g{background:#e7f3ec;color:#6a5bd0}.kpi-ic.o{background:#fff2e6;color:#c2600d}.kpi-ic.r{background:#fdeaea;color:#e11f26}.kpi-ic.a{background:#fef9c3;color:#a16207}.kpi-ic.gy{background:#eef0ed;color:#737a73}
+.kpi-ic.g{background:#efeafb;color:#7c6ce0}.kpi-ic.o{background:#e9f0fe;color:#5f8fe8}.kpi-ic.r{background:#fdeaea;color:#e5484d}.kpi-ic.a{background:#fdefe0;color:#e08a3c}.kpi-ic.gy{background:#eef0f4;color:#7d7796}
 .shift-row{padding:12px 14px !important}
 .btn{border-radius:11px !important}
 .btn-pri{background:linear-gradient(135deg,var(--green),var(--green-d)) !important;box-shadow:0 4px 14px rgba(124,108,224,.22)}
@@ -6177,7 +6177,7 @@ async function runAnalytics(){
 function renderAnalytics(){
   const a=ANALYTICS, k=a.kpis;
   const kpi=(lbl,val,cls,sub)=>`<div class="kpi ${cls||''}"><div class="lbl">${lbl}</div><div class="val">${val}</div>${sub?`<div class="delta">${sub}</div>`:''}</div>`;
-  let html='<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">'
+  let html='<div class="kpi-grid">'
     +kpi('พนักงาน', k.total_emp)
     +kpi('วันทำงานรวม', k.worked_days)
     +kpi('มาสาย', k.late_count+'<span class="sm"> ครั้ง</span>', k.late_count?'warn':'', 'รวม '+k.late_total+' นาที')
