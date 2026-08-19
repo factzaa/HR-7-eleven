@@ -7255,7 +7255,7 @@ $('rcClose') && ($('rcClose').onclick=closeApplicant);
 $('rcOverlay') && $('rcOverlay').addEventListener('click', e=>{ if(e.target===$('rcOverlay')) closeApplicant(); });
 
 // ========== งาน ผจก. (Manager Tasks) ==========
-let MT_ROWS=[], MT_CUR=null, MT_PHOTOS=[], MT_POLL=null, MTA_PHOTOS=[], MT_CH=null, MT_BOARD_CH=null, MT_BOARD_T=null;
+let MT_ROWS=[], MT_CUR=null, MT_PHOTOS=[], MT_POLL=null, MTA_PHOTOS=[], MT_CH=null, MT_BOARD_CH=null, MT_BOARD_T=null, MT_FEED=[];
 function mtSb(){ return (window.HR && window.HR.sb) ? window.HR.sb : null; }
 function mtUnsub(){ if(MT_CH){ try{ mtSb() && mtSb().removeChannel(MT_CH); }catch(e){} MT_CH=null; } }
 function mtBoardDebounced(){ clearTimeout(MT_BOARD_T); MT_BOARD_T=setTimeout(()=>{ const v=$('view_mgrtasks'); if(v && v.style.display!=='none') loadMtasks(); }, 800); }
@@ -7353,6 +7353,17 @@ function renderMtDetail(){
   let h='';
   if(t.detail) h+='<div style="font-size:13.5px;white-space:pre-wrap;margin-bottom:6px">'+esc(t.detail)+'</div>';
   h+='<div style="font-size:12px;color:var(--muted)"><svg class="ei" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg> '+esc(t.branch_name||'—')+(t.due_date?(' · <svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> ส่ง '+beDate(t.due_date)):'')+(t.priority==='urgent'?' · <svg class="ed" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.3"/></svg> ด่วน':'')+' · สถานะ: '+mtStLabel(t.status)+'</div>';
+  // เฟส B: เดดไลน์เลยกำหนด / บังคับแนบรูป / บทลงโทษ / ลิงก์อ้างอิง
+  { const _td=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
+    if(t.due_date && String(t.due_date)<_td && t.status!=='done') h+='<div style="margin-top:6px;font-size:12.5px;color:#dc2626;font-weight:700"><svg class="ei" viewBox="0 0 24 24" style="width:15px;height:15px;vertical-align:-2px"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> เลยกำหนดส่งแล้ว ('+beDate(t.due_date)+')</div>';
+    if(t.require_photo) h+='<div style="margin-top:6px;font-size:12px;color:#9a6a00;background:#fff4e0;border:1px solid #f0c674;border-radius:8px;padding:6px 9px"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="3.2"/></svg> งานนี้ต้องแนบรูปหลักฐานก่อนกด "ส่ง/สำเร็จ"</div>';
+    const pm=String(t.penalty_mode||''); const pens=[];
+    if(pm.indexOf('note')>=0 && t.penalty_note) pens.push(esc(t.penalty_note));
+    if(pm.indexOf('score')>=0) pens.push('หักคะแนนวินัย'+(t.penalty_points?(' '+t.penalty_points+' คะแนน'):''));
+    if(pm.indexOf('warning')>=0) pens.push('ออกใบเตือน');
+    if(pens.length) h+='<div style="margin-top:6px;font-size:12.5px;color:#b91c1c;background:#fdeaea;border:1px solid #f1bcbe;border-radius:8px;padding:6px 9px"><b>⚠ บทลงโทษถ้าไม่ทำตามกำหนด:</b> '+pens.join(' · ')+'</div>';
+    if(t.source_link){ const lw=!/7eleven|7-eleven|cpall|allmember|dayli/i.test(t.source_link); h+='<div style="margin-top:6px;font-size:11.5px;color:'+(lw?'#9a6a00':'var(--muted)')+';background:'+(lw?'#fff4e0':'var(--bg)')+';border:1px solid '+(lw?'#f0c674':'var(--line)')+';border-radius:8px;padding:6px 9px;word-break:break-all">'+(lw?'⚠ ลิงก์อาจไม่ปลอดภัย ตรวจสอบก่อนกด: ':'ลิงก์อ้างอิง: ')+esc(t.source_link)+'</div>'; }
+  }
   if(Array.isArray(t.hr_photos)&&t.hr_photos.length) h+='<div class="imgrow">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>';
   // มอบต่อให้พนักงาน (ผจก.เลือกได้ · HR เห็นชื่อ)
   if(MGR_MODE){
@@ -7400,8 +7411,9 @@ async function refreshMtFeed(){
   if(!MT_CUR) return;
   const r=await post({ action:'hr_mtask_feed_list', password:pwd, task_id:MT_CUR.id });
   if(!r.ok) return;
+  MT_FEED=r.rows||[];   // เก็บไว้ตรวจว่ามีรูปหลักฐานแล้วหรือยัง (require_photo)
   const el=$('mt_feed'); if(!el) return;
-  el.innerHTML=(r.rows||[]).map(mtFeedRow).join('') || '<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px">ยังไม่มีความเคลื่อนไหว</div>';
+  el.innerHTML=MT_FEED.map(mtFeedRow).join('') || '<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px">ยังไม่มีความเคลื่อนไหว</div>';
   el.querySelectorAll('[data-mtedit]').forEach(b=>b.onclick=()=>mtEditFeedPhoto(b.dataset.mtedit));
   el.scrollTop=el.scrollHeight;
 }
@@ -7458,8 +7470,17 @@ async function mtSend(){
   if(r.ok){ $('mt_msg').value=''; MT_PHOTOS=[]; renderMtPhotoBar(); await hrwipDel('mt:'+MT_CUR.id); refreshMtFeed(); }
   else toast('err', r.error||'ส่งไม่สำเร็จ');
 }
+function mtHasEvidence(){
+  if(Array.isArray(MT_CUR&&MT_CUR.emp_photos)&&MT_CUR.emp_photos.length) return true;
+  return (MT_FEED||[]).some(m=>Array.isArray(m.photos)&&m.photos.length&&(m.role==='mgr'||m.role==='emp'));
+}
 async function mtStage(status){
   if(!MT_CUR) return;
+  // เฟส B: บังคับแนบรูปหลักฐานก่อน "ส่ง/ปิดงาน" (เฉพาะฝั่ง ผจก. และงานที่ตั้ง require_photo)
+  if(MGR_MODE && MT_CUR.require_photo && (status==='review'||status==='done') && !mtHasEvidence()){
+    toast('err','งานนี้ต้องแนบรูปหลักฐานก่อนส่ง/ปิดงานค่ะ (แนบรูปในช่องด้านล่างแล้วกด "ส่ง" ก่อน)');
+    return;
+  }
   const r=await post({ action:'hr_mtask_stage', password:pwd, id:MT_CUR.id, status, role:mtRole(), sender_name:mtName() });
   if(r.ok){ MT_CUR.status=status; renderMtDetail(); refreshMtFeed(); loadMtasks(); toast('ok','อัปเดตสถานะแล้ว'); }
   else toast('err', r.error||'ไม่สำเร็จ');
@@ -7785,9 +7806,14 @@ async function loadMdailyAdhoc(){
   box.innerHTML='<div class="card" style="padding:12px;border-left:4px solid var(--green)"><div style="font-weight:600;font-size:14px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24" style="width:16px;height:16px;vertical-align:-3px"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 17v4"/></svg> งานเฉพาะกิจจาก HR/นิดา (งาน ผจก.) — '+order.length+' งาน · '+rows.length+' รายการค้าง</div>'+cards+'</div>';
   box.querySelectorAll('[data-mtopen]').forEach(b=>b.onclick=()=>openMtask(b.dataset.mtopen));
 }
+// เฟส C: สแกนลงบทลงโทษงานเฉพาะกิจที่เลยกำหนด (idempotent ฝั่ง edge) — เรียกตอนโหลดหน้า
+async function mtPenaltyScan(){
+  try{ const {base,key}=asstApiBase(); const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,mode:'mtask_penalty_scan'})}); return await r.json(); }catch(_e){ return null; }
+}
 async function loadMdailyBoard(){
   loadMtaskIntask('mdr_intask');   // แสดง "รอตรวจจากงานในกะ" ให้ HR เห็นในหน้านี้ด้วย
   loadMdailyAdhoc();               // แสดง "งานเฉพาะกิจ" (งาน ผจก. จาก HR/นิดา) ในหน้านี้ด้วย
+  mtPenaltyScan().then(r=>{ if(r&&r.applied){ loadMdailyAdhoc(); toast('ok','ลงบทลงโทษงานเลยกำหนดอัตโนมัติ '+r.applied+' งาน (หักคะแนน '+r.scored+' · ตั้งต้นใบเตือน '+r.warned+')'); } });
   loadMtaskFixing('mdr_fixing');   // และงานที่ ผจก.สั่งแก้ ค้างรอส่งกลับ
   const box=$('mdr_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   if($('mdr_branch') && !$('mdr_branch').dataset.filled){
