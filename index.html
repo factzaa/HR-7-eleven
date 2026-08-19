@@ -200,7 +200,7 @@ function updateRule(){
   const parts=[];
   if(r.allow_backdate) parts.push('ลาย้อนหลังได้');
   else if(r.advance_days>0) parts.push('ต้องลาล่วงหน้า ≥ '+r.advance_days+' วัน');
-  if(r.quota_per_year!=null){ const used=LUSAGE[t]||0; parts.push('โควตา '+r.quota_per_year+' วัน/เดือน (เดือนนี้เหลือ '+Math.max(0,r.quota_per_year-used)+')'); }
+  if(r.quota_per_year!=null){ const used=LUSAGE[t]||0; parts.push('โควตา '+r.quota_per_year+' วัน/รอบ (รอบนี้เหลือ '+Math.max(0,r.quota_per_year-used)+')'); }
   if(r.require_doc) parts.push('ต้องแนบเอกสาร');
   $('lvRule').innerHTML = parts.length ? '<span style="color:#6b7280">เงื่อนไข: '+parts.join(' · ')+'</span>' : '';
   $('lvDocWrap').style.display = r.require_doc ? 'block' : 'none';
@@ -284,7 +284,7 @@ $('lvSubmit').onclick=async()=>{
   $('lvSubmit').disabled=false; $('lvSubmit').textContent='ส่งคำขอลา';
 };
 $('lvReason').addEventListener('input',()=>{ if($('lvReason').value.trim()) $('lvReasonErr').style.display='none'; });
-if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){try{r.update();}catch(e){}}).catch(function(){});});}
 </script>
 
 <!-- ===== น้องนิดา (ผู้ช่วยพนักงาน · ระดับสาขา) ===== -->
