@@ -8821,6 +8821,32 @@ async function asstSend(){
   asstRender();
 }
 
+// ส่งข้อความให้นิดาแบบกำหนดข้อความเอง (ใช้กับสรุปเช้าอัตโนมัติ)
+async function asstAsk(text){
+  if(!text) return;
+  ASST_MSGS.push({role:'user',text});
+  ASST_MSGS.push({role:'assistant',text:'กำลังคิด…'}); asstRender();
+  const {base,key}=asstApiBase();
+  try{
+    const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…').map(m=>({role:m.role,text:m.text}));
+    const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:send})});
+    const j=await r.json(); ASST_MSGS.pop();
+    const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.cards) msg.cards=j.cards;
+    ASST_MSGS.push(msg); try{ histSaveCurrent(); }catch(_e){}
+  }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'เชื่อมต่อไม่สำเร็จ: '+(e.message||'')}); }
+  asstRender();
+}
+// เด้ง "สรุปเช้า" อัตโนมัติครั้งแรกที่เปิดแชทในแต่ละวัน (เฉพาะแชทเปล่า จะได้ไม่ขัดจังหวะ)
+function asstMaybeMorning(){
+  try{
+    const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
+    if(localStorage.getItem('nida_digest_date')===today) return;
+    if(Array.isArray(ASST_MSGS)&&ASST_MSGS.length>0) return;   // มีบทสนทนาอยู่แล้ว ไม่แทรก
+    localStorage.setItem('nida_digest_date',today);
+    asstAsk('สรุปเช้าวันนี้ให้หน่อย มีอะไรต้องรีบทำบ้าง');
+  }catch(_e){}
+}
+
 // ========== สรุปผลการทำงาน + วินัย รายบุคคล (พิมพ์เอกสาร) ==========
 let ES_DATA=null;
 function esDate(s){ if(!s) return '-'; const d=new Date(s+'T00:00:00'); if(isNaN(d)) return s; const M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return d.getDate()+' '+M[d.getMonth()]+' '+(d.getFullYear()+543); }
@@ -12083,7 +12109,7 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
   const g=id=>document.getElementById(id);
   if(g('asst_voice')) g('asst_voice').onclick=()=>{ if(window.NIDALive){ pop.classList.remove('open'); window.NIDALive.start(); } };
   let sx,sy,ox,oy,moved=false,dragging=false;
-  function openPop(){ pop.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); setTimeout(()=>{ const i=g('asst_in'); if(i) i.focus(); },60); }
+  function openPop(){ pop.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); setTimeout(()=>{ const i=g('asst_in'); if(i) i.focus(); },60); try{ if(typeof asstMaybeMorning==='function') asstMaybeMorning(); }catch(_e){} }
   function closePop(){ pop.classList.remove('open'); }
   fab.addEventListener('pointerdown',e=>{ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; const r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
   fab.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; fab.classList.add('dragging'); } if(moved){ let nx=ox+dx, ny=oy+dy; nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4,nx)); ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4,ny)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; } });
