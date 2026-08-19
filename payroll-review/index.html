@@ -7,32 +7,32 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{ --green:#2b3242; --green-d:#1e2430; --ok:#16a34a; --ok-d:#15803d; --line:#e7e9ee; --line2:#d6d9e0; --muted:#6b7280; --bg:#f6f7f9; }
+  :root{ --green:#2b3242; --green-d:#1e2430; --accent:#1e2430; --ok:#16a34a; --ok-d:#15803d; --line:#e7e9ee; --line2:#d6d9e0; --muted:#6b7280; --bg:#f6f7f9; --bg2:#eef0f3; --card:#ffffff; }
   *{box-sizing:border-box}
-  body{margin:0;font-family:'Kanit','Anuphan',system-ui,sans-serif;background:var(--bg);color:#1f2430;font-size:15px}
-  .top{background:#fff;border-bottom:1px solid var(--line);padding:12px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  body{margin:0;font-family:'Kanit','Anuphan',system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .top h1{font-size:16px;margin:0;font-weight:700;flex:1;min-width:160px}
   .badge{background:#fef3c7;color:#92400e;font-size:11.5px;padding:3px 9px;border-radius:20px;font-weight:600}
   .wrap{max-width:1180px;margin:0 auto;padding:14px}
   select,input,button{font:inherit}
-  select,.inp{padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;background:#fff}
+  select,.inp{padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;background:var(--card)}
   .btn{padding:9px 14px;border:0;border-radius:10px;background:var(--green);color:#fff;font-weight:600;cursor:pointer}
-  .btn.sec{background:#fff;border:1.5px solid var(--line2);color:#374151}
+  .btn.sec{background:var(--card);border:1.5px solid var(--line2);color:var(--txt)}
   .btn.sm{padding:6px 11px;font-size:13px;border-radius:8px}
   /* login */
-  .login{max-width:360px;margin:12vh auto;background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px 22px;text-align:center}
+  .login{max-width:360px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 22px;text-align:center}
   .login h2{margin:0 0 4px;font-size:19px}
   .login p{color:var(--muted);font-size:13px;margin:0 0 16px}
   .login input{width:100%;padding:12px;border:1.5px solid var(--line2);border-radius:11px;text-align:center;font-size:16px;margin-bottom:12px}
   .login .btn{width:100%;padding:13px}
   /* table */
   .note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:11px;padding:10px 13px;font-size:13px;margin-bottom:12px;line-height:1.6}
-  .tblscroll{max-height:74vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
-  .tbl{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:13.5px;background:#fff}
-  .tbl th{background:#eef1f4;text-align:center;padding:9px 6px;font-weight:700;white-space:normal;line-height:1.25;position:sticky;top:0;z-index:6;border-bottom:2px solid var(--line2);box-shadow:0 1px 0 var(--line2)}
+  .tblscroll{max-height:74vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  .tbl{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:13.5px;background:var(--card)}
+  .tbl th{background:var(--bg);text-align:center;padding:9px 6px;font-weight:700;white-space:normal;line-height:1.25;position:sticky;top:0;z-index:6;border-bottom:2px solid var(--line2);box-shadow:0 1px 0 var(--line2)}
   .tbl th:first-child{text-align:left}
   .chip{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:20px;font-weight:600}
-  .sumbar{font-size:11px;color:#374151;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+  .sumbar{font-size:11px;color:var(--txt);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
   .sumbar b{font-weight:700}
   .lbl-in{width:100%;padding:6px;border:1.5px solid var(--line2);border-radius:8px;text-align:left;margin-top:4px;font-size:12px}
   .tbl td{padding:8px 6px;border-top:1px solid var(--line);vertical-align:top}
@@ -50,7 +50,7 @@
   .toast.show{display:block}
   .toast.err{background:#b91c1c}
   @media(max-width:760px){ .tblscroll{max-height:none;overflow:visible;border:0} .tbl thead{display:none} .tbl,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}
-    .tbl tr{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:#fff;padding:6px 4px}
+    .tbl tr{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--card);padding:6px 4px}
     .tbl td{border:0;display:flex;justify-content:space-between;align-items:center;gap:10px}
     .tbl td::before{content:attr(data-l);font-size:12px;color:var(--muted);font-weight:600}
     .tbl input{width:130px} .tbl input.wide{width:150px} .tbl th{position:static}
@@ -97,9 +97,9 @@
 </div>
 
 <div id="shiftOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
-  <div style="background:#fff;border-radius:16px;max-width:520px;width:100%;padding:18px">
+  <div style="background:var(--card);border-radius:16px;max-width:520px;width:100%;padding:18px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 id="shTitle" style="flex:1;font-size:17px;margin:0">ตารางกะรายวัน</h2>
-      <button id="shX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>
+      <button id="shX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--muted)">×</button></div>
     <div id="shSub" class="sub" style="margin-bottom:10px"></div>
     <div id="shBody"><div style="color:var(--muted);text-align:center;padding:16px">กำลังโหลด…</div></div>
     <div style="font-size:11.5px;color:var(--muted);margin-top:10px">แก้ได้เฉพาะวันที่ระบบเติมย้อนหลัง — วันที่พนักงานสแกนจริงจะไม่ถูกแตะ · แก้แล้วกด "รีเฟรช" หน้าหลักเพื่ออัปเดตจำนวนวัน</div>
@@ -107,9 +107,9 @@
 </div>
 
 <div id="instOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
-  <div style="background:#fff;border-radius:16px;max-width:500px;width:100%;padding:18px">
+  <div style="background:var(--card);border-radius:16px;max-width:500px;width:100%;padding:18px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 id="inTitle" style="flex:1;font-size:17px;margin:0"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg> แผนผ่อนหัก</h2>
-      <button id="inX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>
+      <button id="inX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--muted)">×</button></div>
     <div id="inList" style="margin-bottom:12px"><div style="color:var(--muted);text-align:center;padding:12px">กำลังโหลด…</div></div>
     <div style="border-top:1px solid var(--line);padding-top:12px">
       <div style="font-weight:700;font-size:14px;margin-bottom:8px">+ เพิ่มแผนผ่อนใหม่</div>
@@ -126,9 +126,9 @@
 </div>
 
 <div id="ctrlOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
-  <div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:18px">
+  <div style="background:var(--card);border-radius:16px;max-width:560px;width:100%;padding:18px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 style="flex:1;font-size:17px;margin:0"><svg class="ei" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg> ผู้คุมผลัด (กะดึก)</h2>
-      <button id="ctrlX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:#9ca3af">×</button></div>
+      <button id="ctrlX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--muted)">×</button></div>
     <div id="ctrlSub" class="sub" style="margin-bottom:10px"></div>
     <div id="ctrlBody"><div style="color:var(--muted);text-align:center;padding:16px">กำลังโหลด…</div></div>
     <div style="font-size:11.5px;color:var(--muted);margin-top:10px;border-top:1px solid var(--line);padding-top:9px">ค่ากะดึก: ผู้คุมผลัด 15 บาท · พนักงานในผลัด 10 บาท/คืน · <b>คืนที่ไม่มีผู้คุมผลัด (กดปุ่ม "รับหน้าที่คุมผลัด") ทุกคนจะได้เรทพนักงาน 10</b> — ดูรายการ "คืนที่ไม่มีผู้คุมผลัด" ด้านล่างเพื่อตรวจสอบ</div>
@@ -201,7 +201,7 @@ async function openCtrl(){
     d.rows.forEach(x=>{
       const badge = x.matched ? '<span style="color:#16a34a;font-weight:700">✓ '+esc(x.lead_name)+' ได้ 15</span>'
         : (x.has_lead ? '<span style="color:#b45309;font-weight:700"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> หน.ผลัดไม่ลงเวลาคืนนี้→10</span>' : '<span style="color:#dc2626;font-weight:700">✗ ไม่มีหน.ผลัด→10</span>');
-      const ppl = '<div style="font-size:10.5px;color:#6b7280">ในผลัด: '+(x.people||[]).map(esc).join(', ')+'</div>';
+      const ppl = '<div style="font-size:10.5px;color:var(--muted)">ในผลัด: '+(x.people||[]).map(esc).join(', ')+'</div>';
       h+='<tr style="border-top:1px solid var(--line)"><td style="padding:6px 6px;white-space:nowrap;vertical-align:top">'+esc(x.work_date)+'</td><td style="padding:6px 6px;color:var(--muted);vertical-align:top">'+esc(x.branch_name)+'<div style="font-size:10.5px">'+esc(x.shift_name||'')+'</div></td><td style="padding:6px 6px;vertical-align:top"><b>'+esc(x.lead_name||'—')+'</b>'+ppl+'</td><td style="padding:6px 6px;text-align:right;white-space:nowrap;vertical-align:top">'+badge+'</td></tr>';
     });
     h+='</tbody></table>';
@@ -235,7 +235,7 @@ function render(){
   rows.forEach(r=>{
     const scoreChip = (r.score!=null)
       ? '<span class="chip" style="background:'+(r.band_color||'#475569')+'22;color:'+(r.band_color||'#475569')+'">คะแนน '+r.score+(r.band?(' · '+esc(r.band)):'')+'</span>'
-      : '<span class="chip" style="background:#e5e7eb;color:#6b7280">ยังไม่มีคะแนน</span>';
+      : '<span class="chip" style="background:var(--line);color:var(--muted)">ยังไม่มีคะแนน</span>';
     const dilStyle = r.dil_off ? 'background:#f59e0b22;color:#b45309;border:1px dashed #f59e0b'
                     : (r.dil_ok===false ? 'background:#dc262622;color:#dc2626' : 'background:#16a34a22;color:#16a34a');
     const dilText = r.dil_off ? '<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> เบี้ยวินัย: ปิดไว้' : (r.dil_ok===false ? 'เบี้ยวินัย ✗ ไม่เข้าเกณฑ์' : 'เบี้ยวินัย ✓ ได้');
@@ -323,9 +323,9 @@ async function loadShift(){
         +'<td style="padding:7px 6px;white-space:nowrap'+(x.is_holiday?';border-left:3px solid #dc2626':'')+'">'+esc(x.work_date)+(x.is_holiday?'<div style="margin-top:2px"><span style="display:inline-flex;align-items:center;gap:3px;background:#fee2e2;color:#b91c1c;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:6px"><svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round"><path d="M5 21V4M5 4h11l-2 3 2 3H5"/></svg> วันหยุดบริษัท'+(x.holiday_name?(': '+esc(x.holiday_name)):'')+'</span></div>':'')+'<div style="font-size:11px;color:var(--muted)">'+esc(x.shift_name||'')+'</div></td>'
         +'<td style="padding:7px 6px"><span class="chip" style="background:'+st.c+'22;color:'+st.c+'">'+st.t+'</span>'
           +(x.late_min?(' <span style="font-size:11px;color:#b45309">สาย '+x.late_min+' น.</span>'):'')
-          +(x.source==='backfill'?' <span style="font-size:10.5px;color:#6b7280">(เติมย้อนหลัง)</span>':'')+'</td>'
+          +(x.source==='backfill'?' <span style="font-size:10.5px;color:var(--muted)">(เติมย้อนหลัง)</span>':'')+'</td>'
         +'<td style="padding:7px 6px;text-align:right;white-space:nowrap">';
-      if(x.status==='present'||x.status==='late'){ if(x.source==='backfill') h+='<button class="btn sec sm" data-mk="absent" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นขาด</button>'; else h+='<span style="font-size:11px;color:#9ca3af">สแกนจริง</span>'; }
+      if(x.status==='present'||x.status==='late'){ if(x.source==='backfill') h+='<button class="btn sec sm" data-mk="absent" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นขาด</button>'; else h+='<span style="font-size:11px;color:var(--muted)">สแกนจริง</span>'; }
       else { h+='<button class="btn sm" data-mk="present" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นมา</button>'; }
       h+='</td></tr>';
     });
@@ -367,7 +367,7 @@ async function loadInst(){
     const st=ST[p.status]||ST.active;
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:7px">'
      +'<div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(p.label)+'</b><span style="font-size:11px;font-weight:700;color:'+st.c+'">'+st.t+'</span></div>'
-     +'<div style="font-size:12.5px;color:#374151;margin-top:2px">ยอดรวม '+Number(p.total_amount).toLocaleString()+' · งวดละ '+Number(p.per_round).toLocaleString()
+     +'<div style="font-size:12.5px;color:var(--txt);margin-top:2px">ยอดรวม '+Number(p.total_amount).toLocaleString()+' · งวดละ '+Number(p.per_round).toLocaleString()
        +(Number(p.discount)>0?(' · <span style="color:#16a34a">ส่วนลด '+Number(p.discount).toLocaleString()+'</span>'):'')
        +' · หักแล้ว '+Number(p.paid).toLocaleString()+' · เหลือ <b>'+Number(p.remaining).toLocaleString()+'</b></div>'
      +(p.status==='active'?'<div style="display:flex;gap:6px;margin-top:6px"><button class="btn sec sm" data-indisc="'+p.id+'" style="color:#16a34a">ส่วนลด</button><button class="btn sec sm" data-incancel="'+p.id+'" style="color:#dc2626">ยกเลิกแผน</button></div>':'')
