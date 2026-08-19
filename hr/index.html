@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2b3242" id="metaTheme">
+<meta name="theme-color" content="#1b7a42" id="metaTheme">
 <script>try{if(localStorage.getItem('hr_theme')==='dark'){document.documentElement.setAttribute('data-theme','dark');var m=document.getElementById('metaTheme')||document.querySelector('meta[name=theme-color]');if(m)m.content='#0f141b';}}catch(e){}</script>
 <title>7-Eleven · HR</title>
 <link rel="icon" href="../icons/icon-192.png">
@@ -15,8 +15,8 @@
 <style>
   :root{
     /* ===== ธีมสุขุม/ผู้ใหญ่ (นิวทรัล) — แบรนด์=กราไฟต์ / รองรับ Light+Dark ===== */
-    --green:#2b3242; --green-d:#1e2430; --green-soft:#eef0f4;
-    --accent:#1e2430;               /* ข้อความ/ลิงก์/แท็บ active (สลับสว่างในโหมด Dark) */
+    --green:#1b7a42; --green-d:#155f33; --green-soft:#e9f3ec;   /* สีแบรนด์เริ่มต้น = เขียว 7-Eleven (ผู้ใช้เปลี่ยนได้) */
+    --accent:#155f33;               /* ข้อความ/ลิงก์/แท็บ active (สลับสว่างในโหมด Dark) */
     --ok:#16a34a; --ok-d:#15803d; --ok-soft:#e7f6ec;
     --orange:#e08a3c; --orange-soft:#fdefe0;
     --red:#dc2626; --red-soft:#fdeaea;
@@ -318,10 +318,13 @@
   /* ===== มือถือ (≤640px) — ใช้งานสะดวกบนจอเล็ก ===== */
   @media (max-width:640px){
     .container{padding:12px;}
-    .topbar{padding:9px 12px; gap:10px;}
+    .topbar{padding:9px 12px; gap:8px 10px; flex-wrap:wrap;}
     .emblem{width:36px; height:36px;}
-    .htext .t1{font-size:10px; letter-spacing:.6px;}
-    .htext .t2{font-size:13.5px;}
+    /* ชื่อระบบ → ลงบรรทัดใหม่เต็มความกว้างใต้แถวโลโก้ (กันข้อความบีบขึ้นหลายบรรทัด) */
+    .htext{order:10; flex-basis:100%; width:100%; padding:2px 2px 0; line-height:1.25;}
+    .htext .t1{font-size:10px; letter-spacing:.6px; display:inline;}
+    .htext .t1::after{content:" · "; opacity:.6;}
+    .htext .t2{font-size:14px; display:inline;}
     .topact .btn{padding:8px 11px; font-size:13px;}
     .tab .tabicon{margin-right:8px;}
     /* แถบเมนู → Drawer เลื่อนจากซ้าย (เปิดด้วยปุ่ม <svg class="ei" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>) */
@@ -587,7 +590,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
 <!-- Dashboard -->
 <div id="view_dashboard" class="container" style="display:none">
-  <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">ภาพรวม</h3><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="dash_date" type="date" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="dash_today" title="กลับมาวันนี้">วันนี้</button><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
+  <div class="toolbar dashbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px">ภาพรวม</h3><span style="display:inline-flex;align-items:center;gap:6px"><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="dash_date" type="date" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;max-width:100%"><button class="btn btn-sec btn-sm" id="dash_today" title="กลับมาวันนี้">วันนี้</button></span><span style="display:inline-flex;align-items:center;gap:6px;flex:1 1 auto;min-width:150px"><label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="dash_branch" style="flex:1;min-width:0;padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></span></div>
   <div id="coCorrPanel"></div>
   <div id="riderPendingPanel"></div>
   <div id="advancePendingPanel"></div>
@@ -12338,8 +12341,8 @@ window.NIDALive=(function(){
 <script>
 /* ===== ตั้งค่าธีม: โหมด Light/Dark + สีแบรนด์ (ชุดสำเร็จ + เลือกเอง) จำค่าไว้ ===== */
 (function(){
-  var PRESETS=[['กราไฟต์','#2b3242'],['กรมท่า','#1f4e79'],['ทีล','#1d5b5b'],['ป่าเขียว','#1f5c3d'],['สเลท','#35506b'],['เบอร์กันดี','#6e2536'],['กาแฟ','#5a4636'],['คราม','#2f3a66']];
-  var DEF='#2b3242';
+  var PRESETS=[['เขียว 7-11','#1b7a42'],['กราไฟต์','#2b3242'],['กรมท่า','#1f4e79'],['ทีล','#1d5b5b'],['ป่าเขียว','#1f5c3d'],['สเลท','#35506b'],['เบอร์กันดี','#6e2536'],['คราม','#2f3a66']];
+  var DEF='#1b7a42';
   var root=document.documentElement.style;
   function hx(h){h=(h||'').replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var n=parseInt(h,16)||0;return{r:(n>>16)&255,g:(n>>8)&255,b:n&255};}
   function toHex(r,g,b){return '#'+[r,g,b].map(function(x){return Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0');}).join('');}
