@@ -68,6 +68,12 @@
   #themePanel input[type=color]{width:42px;height:34px;border:1px solid var(--line2);border-radius:9px;background:var(--card);cursor:pointer;padding:2px;}
 
   .topbar{background:var(--green); border-bottom:1px solid rgba(0,0,0,.14); padding:11px 18px; display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:5;}
+  /* ปุ่มไอคอนบนแถบหัว — ไอคอนขาวล้วนบนแถบสี ไม่มีกล่อง (ใช้ได้ทุกขนาดจอ) */
+  .hicon{width:38px;height:38px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:rgba(255,255,255,.92);padding:0;position:relative;cursor:pointer;transition:background .15s;-webkit-appearance:none;appearance:none;}
+  .hicon:hover{color:#fff;background:rgba(255,255,255,.16);}
+  .hicon .ei{width:19px;height:19px;}
+  #pushBtn.on{color:#fff;background:rgba(255,255,255,.16);}
+  #pushBtn.on::after{content:"";position:absolute;top:7px;right:8px;width:8px;height:8px;border-radius:50%;background:#fbbf24;border:2px solid #fff;}
   .emblem{width:42px; height:42px; border-radius:11px; overflow:hidden; flex:none; box-shadow:0 2px 0 rgba(0,0,0,.07);}
   .emblem img{width:100%; height:100%; object-fit:cover; display:block;}
   .htext{flex:1; line-height:1.15;}
@@ -412,12 +418,12 @@
 @media(min-width:641px){
   .topbar{padding:11px 22px}
   .tabs{padding:6px 14px;gap:4px}
-  .navgrp-btn{border-radius:10px;border-bottom:0 !important;padding:9px 13px}
-  .navgrp-btn:hover{background:#f2f5f2;color:var(--txt)}
-  .navgrp-btn.on{background:var(--green-soft);color:var(--accent);border-bottom:0 !important}
-  .tab{border-radius:9px;border-bottom:0 !important}
-  .tab:hover{background:#f5f7f5}
-  .tab.active{border-bottom:0 !important;background:var(--green-soft);color:var(--accent)}
+  .navgrp-btn{border-radius:10px;border-bottom:0 !important;padding:9px 13px;color:rgba(255,255,255,.82)}
+  .navgrp-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+  .navgrp-btn.on{background:#fff;color:var(--green);border-bottom:0 !important}
+  #tabbar > .tab{border-radius:9px;border-bottom:0 !important;color:rgba(255,255,255,.82)}
+  #tabbar > .tab:hover{background:rgba(255,255,255,.15);color:#fff}
+  #tabbar > .tab.active{border-bottom:0 !important;background:#fff;color:var(--green)}
   .navgrp-menu{border-radius:14px;border:1px solid var(--line);box-shadow:0 16px 40px rgba(17,24,39,.14);padding:7px}
   .navgrp-menu .tab{border-radius:9px}
 }
