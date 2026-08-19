@@ -2112,7 +2112,7 @@
   async function reviewLoad(which, branch) {
     const cyc = reviewCycleRange(which);
     const today = bangkokDate(); const endEff = cyc.end < today ? cyc.end : today;
-    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id');
+    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id,end_date,start_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id');
     if (branch) empQ = empQ.eq('branch_id', branch);
     const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR, ctrlR] = await Promise.all([
       empQ,
@@ -2175,7 +2175,15 @@
       const worked = new Set(att.filter(a => a.check_in).map(a => a.work_date));
       const myLeaves = lvBy[e.emp_id] || [];
       const onLeave = d => myLeaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
-      let attDays = 0; att.forEach(a => { if (a.check_in) { const v = a.day_value != null ? Number(a.day_value) : (dv[a.shift_id] != null ? dv[a.shift_id] : 1); attDays += v; } });
+      // วันทำงาน = รวม day_value ต่อวัน + "เครดิตควบตามตารางเวร" (จัด ≥2 กะ/วัน = นับตามตาราง แม้สแกนครั้งเดียว) สำหรับ non-manager
+      //   → ให้ตรงกับหน้ารายงาน/เงินเดือน (hrPayrollRun) · ผจก. ไม่นับควบทุกกรณี
+      const _isMgr = e.is_manager === true;
+      const _attDVday = {};   // day_value ที่สแกนจริง ต่อวัน
+      att.forEach(a => { if (a.check_in) { const v = a.day_value != null ? Number(a.day_value) : (dv[a.shift_id] != null ? dv[a.shift_id] : 1); _attDVday[a.work_date] = (_attDVday[a.work_date] || 0) + v; } });
+      const _schDVday = {}, _schCntDay = {};   // day_value + จำนวนกะที่ "จัดเวร" ต่อวัน
+      (schBy[e.emp_id] || []).forEach(s => { if (s.shift_id) { _schDVday[s.work_date] = (_schDVday[s.work_date] || 0) + (dv[s.shift_id] != null ? dv[s.shift_id] : 1); (_schCntDay[s.work_date] = _schCntDay[s.work_date] || new Set()).add(s.shift_id); } });
+      let attDays = 0;
+      Object.keys(_attDVday).forEach(d => { const at = _attDVday[d]; const cnt = _schCntDay[d] ? _schCntDay[d].size : 0; const sd = _schDVday[d] || 0; attDays += (!_isMgr && cnt >= 2 && sd > at) ? sd : at; });
       attDays = Math.round(attDays * 10) / 10;
       const attOT = Math.round(att.reduce((s, a) => { let hh = Number(a.ot_hours) || 0; if (otWhole) hh = Math.floor(hh); return s + hh; }, 0) * 10) / 10;
       const late_count = att.filter(a => a.late_min > 0).length;
