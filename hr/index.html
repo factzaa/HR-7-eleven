@@ -95,6 +95,7 @@
   .navgrp{position:relative; display:flex;}
   .navgrp-btn{padding:13px 14px; font-size:14px; font-weight:500; color:var(--muted); cursor:pointer; border:0; border-bottom:3px solid transparent; background:none; white-space:nowrap; display:flex; align-items:center; gap:5px;}
   .navgrp-btn .caret{font-size:10px; opacity:.7;}
+  .navbadge{display:inline-flex; align-items:center; justify-content:center; min-width:17px; height:17px; padding:0 4px; margin-left:5px; border-radius:9px; background:#dc2626; color:#fff; font-size:10.5px; font-weight:700; line-height:1; vertical-align:middle; box-shadow:0 0 0 1.5px rgba(255,255,255,.65);}
   .navgrp-btn.on{color:var(--accent); border-bottom-color:var(--green); font-weight:600;}
   .navgrp-menu{position:fixed; background:var(--card); border:1px solid var(--line); border-radius:0 0 12px 12px; box-shadow:0 10px 26px rgba(0,0,0,.16); padding:6px; display:none; z-index:70; min-width:210px; max-height:78vh; overflow-y:auto;}
   .navgrp.open .navgrp-menu{display:block;}
@@ -8350,6 +8351,16 @@ const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg>', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
+// ===== ตัวเลขแจ้งเตือน (badge) บนแท็บ/ปุ่มกลุ่มเมนู — งานใหม่/รอตรวจ/รออนุมัติ =====
+function _setNavBadge(el,n){ if(!el) return; let b=el.querySelector(':scope > .navbadge'); n=Number(n)||0; if(n>0){ if(!b){ b=document.createElement('span'); b.className='navbadge'; el.appendChild(b);} b.textContent=n>99?'99+':String(n); } else if(b){ b.remove(); } }
+async function refreshNavBadges(){
+  if(typeof pwd==='undefined' || !pwd) return;
+  let r; try{ r=await post({ action:'hr_nav_badges', password:pwd, branch:(typeof MGR_MODE!=='undefined'&&MGR_MODE)?MGR_BRANCH:null }); }catch(e){ return; }
+  if(!r||!r.ok) return; const c=r.counts||{};
+  ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });
+  document.querySelectorAll('.navgrp').forEach(grp=>{ const tabs=(grp.dataset.tabs||'').split(',').filter(Boolean); const sum=tabs.reduce((s,t)=>s+(Number(c[t])||0),0); _setNavBadge(grp.querySelector('.navgrp-btn'), sum); });
+}
+setInterval(()=>{ const t=document.getElementById('topact'); if(t && t.style.display!=='none') refreshNavBadges(); }, 60000);
 function updateNavActive(name){ document.querySelectorAll('.navgrp-btn').forEach((b,i)=>{ if(NAV_GROUPS[i]) b.classList.toggle('on', NAV_GROUPS[i].tabs.includes(name)); }); }
 function buildGroupedNav(){
   const bar=$('tabbar'); if(!bar || bar.dataset.grouped) return;
@@ -8427,6 +8438,7 @@ showTab = function(name){
   __showTab_base(name);
   if(MGR_MODE) [0,200,500].forEach(ms=>setTimeout(enforceMgrBranch, ms));
   setTimeout(fixHeader, 0);
+  setTimeout(refreshNavBadges, 60);
 };
 ALL_TABS.forEach(n=>{ const t=$('tab_'+n); if(t) t.onclick = ()=>showTab(n); });
 
@@ -12123,7 +12135,7 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
 <!-- ===== ปุ่มลอยผู้ช่วย AI (น้องนิดา) + ปุ่มลอยแชทสาขา ===== -->
 <style>
 /* กัน horizontal overflow ของทั้งหน้า → ปุ่มลอย fixed ไม่หลุดขอบจอ (ตารางยังเลื่อนในกล่องตัวเองได้) */
-html,body{max-width:100%;overflow-x:hidden;}
+html,body{max-width:100%;overflow-x:clip;}   /* clip แทน hidden — กันเลื่อนแนวนอนโดยไม่ทำให้ position:sticky ของแถบหัวพัง */
 #chatFab{position:fixed;right:18px;bottom:104px;width:56px;height:56px;border-radius:50%;background:#0369a1;color:#fff;border:0;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;z-index:860;font-size:24px;display:none;-webkit-tap-highlight-color:transparent}
 body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่มีปุ่มนิดา → ลงมาอยู่มุมล่างปกติ */
 @media(max-width:640px){ #chatFab{right:14px;width:52px;height:52px;font-size:22px;} }
