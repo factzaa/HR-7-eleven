@@ -8367,7 +8367,10 @@ function initAssistant(){
     const f=$('asst_file');
     if(f) f.addEventListener('change', async(e)=>{
       const fs=[...(e.target.files||[])].slice(0,4);
-      for(const file of fs){ try{ ASST_PHOTOS.push(await asstFileToData(file)); }catch(_e){} }
+      for(const file of fs){ try{
+        if(file.type==='application/pdf'){ if(file.size>6*1024*1024){ toast('err','ไฟล์ PDF ใหญ่เกิน 6MB'); continue; } ASST_PHOTOS.push(await asstFileRaw(file)); }
+        else ASST_PHOTOS.push(await asstFileToData(file));
+      }catch(_e){} }
       e.target.value=''; asstRenderThumbs();
       if(ASST_PHOTOS.length) $('asst_in').focus();
     });
@@ -8418,6 +8421,7 @@ function asstCardsHtml(cards){
       warning:'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',
       report:'<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
       ack_form:'<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 14l2 2 4-4"/></svg>',
+      nav:'<svg class="ei" viewBox="0 0 24 24"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>',
       file:'<svg class="ei" viewBox="0 0 24 24"><path d="M21 12.5V7a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M16 19l2 2 4-4"/></svg>'
     };
     return wrap('<div style="display:flex;flex-direction:column;gap:7px">'+items.map(d=>{
@@ -8427,6 +8431,7 @@ function asstCardsHtml(cards){
       else if(d.kind==='warning') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'warning\',\''+esc(d.warning_id)+'\')">เปิด/พิมพ์</button>';
       else if(d.kind==='report') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'report\',\''+esc(d.emp_id)+'\',\''+esc(d.which||'current')+'\')">รายงาน PDF</button>';
       else if(d.kind==='ack_form'){ let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d)))); }catch(_e){} act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'ack_form\',\''+enc+'\')">ใบเซ็นรับทราบ PDF</button>'; }
+      else if(d.kind==='nav'){ act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'nav\',\''+esc(d.menu)+'\')">เปิดเมนู</button>'; }
       return '<div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:11px;padding:9px 11px"><span style="color:var(--green);flex:none;display:flex">'+svg+'</span><span style="flex:1;font-size:13px;line-height:1.35">'+esc(d.label||d.kind)+'</span>'+act+'</div>';
     }).join('')+'</div>');
   }
@@ -8435,6 +8440,7 @@ function asstCardsHtml(cards){
 // เปิด/ดาวน์โหลดเอกสารจากการ์ดในแชทนิดา
 async function asstDoc(kind,a1,a2){
   try{
+    if(kind==='nav'){ if(typeof showTab==='function'){ showTab(a1); const p=document.getElementById('asstPop'); if(p) p.classList.remove('open'); toast('ok','เปิดเมนูแล้ว'); } else toast('err','เปิดเมนูไม่ได้'); return; }
     if(kind==='warning'){ if(typeof openWarningView==='function') openWarningView(a1); else toast('err','เปิดใบเตือนไม่ได้'); return; }
     if(kind==='report'){ await asstDlReport(a1,a2); return; }
     if(kind==='ack_form'){ let d=null; try{ d=JSON.parse(decodeURIComponent(escape(atob(a1)))); }catch(_e){} if(d) await asstDlAckForm(d); else toast('err','ข้อมูลเอกสารไม่ถูกต้อง'); return; }
@@ -8457,6 +8463,38 @@ async function asstDlSlip(empId, which){
     toast('ok','ดาวน์โหลดสลิปแล้ว');
   }catch(e){ toast('err','สร้างสลิปไม่สำเร็จ'); }
 }
+// ── สร้าง PDF จาก canvas: กว้างเท่า A4 + ตัดหน้าไม่กลางบรรทัด (หาเส้นพื้นว่าง) → พิมพ์ได้จริง ──
+function _findCutRow(ctx, w, from, minY){
+  const step=2;
+  for(let y=from; y>=minY; y-=step){
+    try{
+      const d=ctx.getImageData(0,y,w,1).data; let ink=0;
+      for(let i=0;i<d.length;i+=4*6){ if(d[i]<235||d[i+1]<235||d[i+2]<235){ if(++ink>2) break; } }
+      if(ink<=2) return y;
+    }catch(_e){ return from; }
+  }
+  return from;
+}
+function asstPdfFromCanvas(canvas){
+  const jsPDF=window.jspdf.jsPDF; const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+  const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+  const M=26, iw=pw-M*2, pageH=Math.floor((ph-M*2)*canvas.width/iw);   // px ต่อหน้า
+  const ctx=canvas.getContext('2d');
+  let sy=0, first=true;
+  while(sy<canvas.height){
+    let hh=Math.min(pageH, canvas.height-sy);
+    if(sy+hh < canvas.height){                                          // ไม่ใช่หน้าสุดท้าย → หาเส้นตัดพื้นว่าง
+      const cut=_findCutRow(ctx, canvas.width, sy+hh, sy+Math.floor(hh*0.6));
+      if(cut>sy+80) hh=cut-sy;
+    }
+    const c2=document.createElement('canvas'); c2.width=canvas.width; c2.height=hh;
+    c2.getContext('2d').drawImage(canvas,0,sy,canvas.width,hh,0,0,canvas.width,hh);
+    if(!first) pdf.addPage();
+    pdf.addImage(c2.toDataURL('image/jpeg',0.94),'JPEG',M,M,iw,iw*hh/canvas.width);
+    first=false; sy+=hh;
+  }
+  return pdf;
+}
 // สร้าง+ดาวน์โหลด "รายงานสรุปรายบุคคล" เป็น PDF ในแชท (มีช่องเซ็นผู้รับทราบในตัว = ใช้เป็นใบเซ็นรับทราบได้)
 async function asstDlReport(empId, which){
   toast('ok','กำลังสร้างรายงาน PDF…');
@@ -8471,24 +8509,11 @@ async function asstDlReport(empId, which){
     const el=document.getElementById('es_body'); const emptyEl=el&&el.querySelector('.empty');
     if(!el || !el.innerHTML.trim() || (emptyEl && !el.querySelector('table'))){ toast('err',(emptyEl&&emptyEl.textContent.trim())||'สร้างรายงานไม่ได้ (ลองเปิดเมนู "สรุปรายบุคคล" เลือกคนแล้วกดสร้างสรุป)'); return; }
     await ensurePdfLibs();
-    const canvas=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true});
-    const jsPDF=window.jspdf.jsPDF; const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
-    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-    const iw=pw-40, ihFull=iw*canvas.height/canvas.width;
-    if(ihFull<=ph-40){
-      pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,ihFull);
-    } else {
-      const pageCanvasH=Math.floor((ph-40)*canvas.width/iw);   // ความสูง (px) ต่อหน้า
-      let sy=0, first=true;
-      while(sy<canvas.height){
-        const hh=Math.min(pageCanvasH,canvas.height-sy);
-        const c2=document.createElement('canvas'); c2.width=canvas.width; c2.height=hh;
-        c2.getContext('2d').drawImage(canvas,0,sy,canvas.width,hh,0,0,canvas.width,hh);
-        if(!first) pdf.addPage();
-        pdf.addImage(c2.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,iw*hh/canvas.width);
-        first=false; sy+=hh;
-      }
-    }
+    const _pw0=el.style.width, _pp0=el.style.padding, _pbg0=el.style.background;
+    el.style.width='794px'; el.style.padding='6px 10px'; el.style.background='#fff';   // A4 กว้างจริง → สัดส่วนตรงกระดาษ
+    let canvas; try{ canvas=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:840}); }
+    finally{ el.style.width=_pw0; el.style.padding=_pp0; el.style.background=_pbg0; }
+    const pdf=asstPdfFromCanvas(canvas);
     const fn=('report_'+empId).replace(/[^\w\-]+/g,'_')+'.pdf';
     const a=document.createElement('a'); a.href=pdf.output('datauristring'); a.download=fn; document.body.appendChild(a); a.click(); a.remove();
     toast('ok','ดาวน์โหลดรายงาน PDF แล้ว');
@@ -8529,15 +8554,11 @@ async function asstDlAckForm(d){
   toast('ok','กำลังสร้างใบเซ็นรับทราบ…');
   try{
     if(typeof loadDocSettings==='function'){ try{ await loadDocSettings(); }catch(_e){} }
-    const wrap=document.createElement('div'); wrap.style.cssText='position:fixed;left:-99999px;top:0;width:900px;background:#fff;padding:16px';
+    const wrap=document.createElement('div'); wrap.style.cssText='position:fixed;left:-99999px;top:0;width:794px;background:#fff;padding:30px 32px';   // A4 กว้างจริง
     wrap.innerHTML=buildAckDocHtml(d); document.body.appendChild(wrap);
     await ensurePdfLibs();
-    let canvas; try{ canvas=await html2canvas(wrap.querySelector('.es-doc')||wrap,{scale:2,backgroundColor:'#ffffff',useCORS:true}); } finally { wrap.remove(); }
-    const jsPDF=window.jspdf.jsPDF; const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
-    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-    const iw=pw-40, ihFull=iw*canvas.height/canvas.width;
-    if(ihFull<=ph-40){ pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,ihFull); }
-    else { const pageH=Math.floor((ph-40)*canvas.width/iw); let sy=0,first=true; while(sy<canvas.height){ const hh=Math.min(pageH,canvas.height-sy); const c2=document.createElement('canvas'); c2.width=canvas.width; c2.height=hh; c2.getContext('2d').drawImage(canvas,0,sy,canvas.width,hh,0,0,canvas.width,hh); if(!first) pdf.addPage(); pdf.addImage(c2.toDataURL('image/jpeg',0.92),'JPEG',20,20,iw,iw*hh/canvas.width); first=false; sy+=hh; } }
+    let canvas; try{ canvas=await html2canvas(wrap.querySelector('.es-doc')||wrap,{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:840}); } finally { wrap.remove(); }
+    const pdf=asstPdfFromCanvas(canvas);
     const fn=('ack_'+d.emp_id+'_'+(d.action_type||'')).replace(/[^\w\-]+/g,'_')+'.pdf';
     const a=document.createElement('a'); a.href=pdf.output('datauristring'); a.download=fn; document.body.appendChild(a); a.click(); a.remove();
     toast('ok','ดาวน์โหลดใบเซ็นรับทราบแล้ว');
@@ -8552,9 +8573,10 @@ function asstRender(){
     const cardsHtml=(!me&&m.cards)?asstCardsHtml(m.cards):'';
     if(!me){ const found=(m.text.match(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi)||[]); imgs=Array.from(new Set(found)); imgs.forEach(u=>{ txt=txt.split(u).join(''); }); txt=txt.replace(/[ \t]*\n{3,}/g,'\n\n').trim(); if(cardsHtml) imgs=[]; }
     if(me && Array.isArray(m.images) && m.images.length){
-      html+='<div style="align-self:flex-end;display:flex;gap:5px;flex-wrap:wrap;max-width:82%;justify-content:flex-end">'+m.images.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:86px;height:86px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>';
+      html+='<div style="align-self:flex-end;display:flex;gap:5px;flex-wrap:wrap;max-width:82%;justify-content:flex-end">'+m.images.map(u=>/^data:application\/pdf/.test(u)?'<span style="width:86px;height:86px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#fee2e2;color:#b91c1c;font-weight:800;border:1px solid #fecaca">PDF</span>':'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:86px;height:86px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>';
     }
     html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:82%;background:'+(me?'#00582f':'#eef1ef')+';color:'+(me?'#fff':'#1f2937')+';padding:10px 13px;border-radius:13px;font-size:14.5px;white-space:pre-wrap;line-height:1.55">'+esc(txt||(cardsHtml?'<svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> รายการงาน':(imgs.length?'<svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รูปงาน':' ')))+'</div>';
+    if(!me && txt && txt.trim().length>8 && !/^(กำลัง|ยกเลิก)/.test(txt.trim())){ html+='<div style="align-self:flex-start;margin-top:-3px;margin-bottom:2px"><button class="btn btn-sec btn-sm" data-copy="'+idx+'" style="padding:3px 9px;font-size:12px"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg> คัดลอก</button></div>'; }
     if(cardsHtml) html+=cardsHtml;
     if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'; }
     if(m.pending){ html+='<div style="align-self:flex-start;display:flex;gap:8px"><button class="btn btn-pri btn-sm" data-cfm="'+idx+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ยืนยัน</button><button class="btn btn-sec btn-sm" data-ccl="'+idx+'">ยกเลิก</button></div>'; }
@@ -8562,8 +8584,18 @@ function asstRender(){
   box.innerHTML=html;
   box.querySelectorAll('[data-cfm]').forEach(b=>b.onclick=()=>asstConfirm(+b.dataset.cfm));
   box.querySelectorAll('[data-ccl]').forEach(b=>b.onclick=()=>asstCancel(+b.dataset.ccl));
+  box.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>asstCopy(+b.dataset.copy,b));
   box.scrollTop=box.scrollHeight;
 }
+// คัดลอกข้อความร่างของนิดา (ตัด URL รูปที่ซ่อนไว้ออก)
+function asstCopy(idx,btn){
+  const m=ASST_MSGS[idx]; if(!m) return;
+  const t=String(m.text||'').replace(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi,'').replace(/\n{3,}/g,'\n\n').trim();
+  const done=()=>{ if(btn){ const o=btn.innerHTML; btn.innerHTML='คัดลอกแล้ว'; setTimeout(()=>{ btn.innerHTML=o; },1200); } };
+  try{ navigator.clipboard.writeText(t).then(done,()=>fallbackCopy(t,done)); }
+  catch(_e){ fallbackCopy(t,done); }
+}
+function fallbackCopy(t,cb){ try{ const ta=document.createElement('textarea'); ta.value=t; ta.style.cssText='position:fixed;left:-9999px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); cb&&cb(); }catch(e){ toast('err','คัดลอกไม่ได้'); } }
 function asstApiBase(){ return {base:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey||''}; }
 
 // ★ ปุ่มทดสอบส่ง SMS (หน้าตั้งค่ากะ) — ยิงเข้า edge function เดียวกับที่ใช้ส่งนัดสัมภาษณ์
@@ -8625,10 +8657,11 @@ let ASST_PHOTOS=[];
 function asstFileToData(file){
   return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=ev=>{ const img=new Image(); img.onload=()=>{ const M=1600; let w=img.width,h=img.height; if(w>M||h>M){ if(w>h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} } const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg',0.9)); }; img.onerror=rej; img.src=ev.target.result; }; r.onerror=rej; r.readAsDataURL(file); });
 }
+function asstFileRaw(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(file); }); }
 function asstRenderThumbs(){
   const t=$('asst_thumbs'); if(!t) return;
   t.style.display=ASST_PHOTOS.length?'flex':'none';
-  t.innerHTML=ASST_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+esc(u)+'" style="width:46px;height:46px;object-fit:cover;border-radius:8px;display:block"><button type="button" data-asrm="'+i+'" style="position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>').join('');
+  t.innerHTML=ASST_PHOTOS.map((u,i)=>{ const pdf=/^data:application\/pdf/.test(u); const inner=pdf?'<span style="width:46px;height:46px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:800;border:1px solid #fecaca">PDF</span>':'<img src="'+esc(u)+'" style="width:46px;height:46px;object-fit:cover;border-radius:8px;display:block">'; return '<span style="position:relative;display:inline-block">'+inner+'<button type="button" data-asrm="'+i+'" style="position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>'; }).join('');
   t.querySelectorAll('[data-asrm]').forEach(b=>b.onclick=()=>{ ASST_PHOTOS.splice(Number(b.dataset.asrm),1); asstRenderThumbs(); });
 }
 async function asstSend(){
@@ -11851,7 +11884,7 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
     <div id="asst_log"></div>
     <div id="asst_thumbs" style="display:none;gap:5px;flex-wrap:wrap;margin:0 0 6px"></div>
     <div class="prow">
-      <label class="btn btn-sec" style="cursor:pointer;margin:0;flex:none;padding:8px 10px" title="แนบรูปให้นิดาอ่าน (บิล/ตารางเวร/เอกสาร)"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg><input type="file" id="asst_file" accept="image/*" multiple style="display:none"></label>
+      <label class="btn btn-sec" style="cursor:pointer;margin:0;flex:none;padding:8px 10px" title="แนบรูป/ไฟล์ให้นิดาอ่าน (รูป · PDF · เอกสาร)"><svg class="ei" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="asst_file" accept="image/*,application/pdf" multiple style="display:none"></label>
       <input id="asst_in" placeholder="พิมพ์คำถาม หรือแนบรูปให้นิดาอ่านข้อมูล"><button class="asst-voice" id="asst_voice" type="button" title="สนทนาด้วยเสียง (เร็ว ๆ นี้)"><span class="wv"><i></i><i></i><i></i><i></i><i></i></span></button><button class="btn btn-pri" id="asst_send">ส่ง</button>
     </div>
   </div>
@@ -12001,10 +12034,7 @@ window.NIDALive=(function(){
         },
         callbacks:{
           onopen:()=>{ live=true; setStatus('พร้อมแล้ว','พูดได้เลยค่ะ'); startMic(); startedAt=Date.now(); lastVoice=Date.now(); startGuards();
-            beep('ready');   // เสียงสัญญาณ "พร้อมสนทนา"
-            // ให้นิดาทักเปิดประโยคเองเมื่อพร้อม (สัญญาณด้วยเสียงพูด)
-            const greet=(n)=>{ try{ if(session){ session.sendClientContent({ turns:[{role:'user',parts:[{text:'(ระบบ: เริ่มสนทนาด้วยเสียงแล้ว โปรดทักทายผู้ใช้สั้น ๆ 1 ประโยคว่า "นิดา" พร้อมแล้ว และถามว่าให้ช่วยอะไรคะ)'}]}], turnComplete:true }); } else if(n>0){ setTimeout(()=>greet(n-1),90); } }catch(_e){} };
-            setTimeout(()=>greet(20),150);
+            beep('ready');   // เสียงสัญญาณ "พร้อมสนทนา" อย่างเดียว (ไม่ให้นิดาทักเปิดประโยค กันกินเวลา/เครดิต)
           },
           onmessage:onMsg,
           onerror:(e)=>{ console.error('[NIDALive] ws error',e); stop('การเชื่อมต่อมีปัญหา'); },
