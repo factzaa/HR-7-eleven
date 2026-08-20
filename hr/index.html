@@ -1505,6 +1505,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <div class="toolbar" style="flex-wrap:wrap;gap:8px">
     <h3 style="flex:1;font-size:15px;font-weight:600;min-width:160px"><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg> คะแนนตรวจร้าน QSSI</h3>
     <select id="au_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
+    <select id="au_month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-pri btn-sm" id="au_go">ดู</button>
   </div>
   <div id="au_body"><div class="empty">กำลังโหลด…</div></div>
@@ -9939,13 +9940,21 @@ function sdDonutCard(title,items,unit){ return '<div class="card"><div class="ca
 const AU_SUBS=['S','A','V','E','Q','C','QMS'];
 async function loadAuditDash(){
   if($('au_branch') && $('au_branch').options.length<=1) $('au_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
-  if(!$('au_body').dataset.wired){ $('au_go').onclick=drawAuditDash; $('au_branch').onchange=drawAuditDash; $('au_body').dataset.wired='1'; }
+  if($('au_month') && !$('au_month').options.length){
+    const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const pad=n=>String(n).padStart(2,'0');
+    const now=new Date(Date.now()+7*3600*1000); let opts='<option value="">ทั้งหมด</option>';
+    for(let i=0;i<18;i++){ const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1)); const y=d.getUTCFullYear(),m=d.getUTCMonth(); opts+='<option value="'+y+'-'+pad(m+1)+'">'+TM[m]+' '+(y+543)+'</option>'; }
+    $('au_month').innerHTML=opts;
+  }
+  if(!$('au_body').dataset.wired){ $('au_go').onclick=drawAuditDash; $('au_branch').onchange=drawAuditDash; $('au_month').onchange=drawAuditDash; $('au_body').dataset.wired='1'; }
   drawAuditDash();
 }
 function auScoreCol(s){ return s>=800?'#16a34a':s>=650?'#d97706':'#dc2626'; }
 async function drawAuditDash(){
   $('au_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_audit_list', password:pwd, branch_id:$('au_branch').value||'' });
+  let start='',end=''; const ym=$('au_month')?$('au_month').value:'';
+  if(ym){ const pad=n=>String(n).padStart(2,'0'); const [y,m]=ym.split('-').map(Number); start=y+'-'+pad(m)+'-01'; end=y+'-'+pad(m)+'-'+pad(new Date(Date.UTC(y,m,0)).getUTCDate()); }
+  const r=await post({ action:'hr_audit_list', password:pwd, branch_id:$('au_branch').value||'', start, end });
   if(!r.ok){ $('au_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   const rows=r.rows||[];
   if(!rows.length){ $('au_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีรายงานตรวจร้าน QSSI — นำเข้าไฟล์กลุ่ม ผจก. หรือกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีดก่อน</div></div></div>'; return; }
@@ -9956,7 +9965,7 @@ async function drawAuditDash(){
   const avgAll=Math.round(branches.reduce((s,b)=>s+b.score,0)/branches.length);
   let h='';
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
-    +kpiBox('คะแนนล่าสุดเฉลี่ย', avgAll+' / 1000', branches.length+' สาขา')
+    +kpiBox('คะแนนล่าสุดเฉลี่ย', (avgAll/10).toFixed(1)+'%', avgAll+' / 1000 · '+branches.length+' สาขา')
     +kpiBox('สาขาคะแนนสูงสุด', branches.length?branches[branches.length-1].name:'—', branches.length?(branches[branches.length-1].score+' คะแนน'):'')
     +kpiBox('ต้องช่วยด่วน', branches[0]?branches[0].name:'—', branches[0]?(branches[0].score+' คะแนน'):'')
     +kpiBox('รายงานทั้งหมด', rows.length+' ฉบับ','')
@@ -9964,7 +9973,7 @@ async function drawAuditDash(){
   // แท่งคะแนนล่าสุดรายสาขา
   h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>คะแนนตรวจล่าสุดรายสาขา (เต็ม 1000)</h3></div><div class="card-b">'
     +branches.slice().sort((a,b)=>b.score-a.score).map(b=>{ const w=Math.round(b.score/1000*100); const col=auScoreCol(b.score);
-      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><b>'+esc(b.name)+'</b><span><b style="color:'+col+'">'+b.score+'</b> · เฉลี่ย '+b.avg+' · '+b.list.length+' ครั้ง</span></div>'
+      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><b>'+esc(b.name)+'</b><span><b style="color:'+col+'">'+(b.score/10).toFixed(1)+'%</b> ('+b.score+'/1000) · เฉลี่ย '+(b.avg/10).toFixed(1)+'% · '+b.list.length+' ครั้ง</span></div>'
         +'<div style="height:16px;background:#f1f5f9;border-radius:8px;overflow:hidden"><div style="height:100%;width:'+w+'%;background:'+col+';border-radius:8px"></div></div>'
         +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">ล่าสุด '+beDate(b.latest.inspect_date)+' · ผู้ตรวจ '+esc((b.latest.inspector||'').slice(0,40))+' · สินค้าขาด '+(b.latest.stockout??'—')+'</div></div>';
     }).join('')+'</div></div>';
@@ -9973,6 +9982,22 @@ async function drawAuditDash(){
   if(dates.length>1){ const lines=branches.map(b=>{ const vals={}; b.list.forEach(r=>vals[r.inspect_date]=+r.score||0); return {name:b.name,color:b.color,vals}; });
     h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>เทรนด์คะแนนตรวจ (ตามเวลา)</h3></div><div class="card-b">'+sdMultiLineChart(dates,lines)
       +'<div class="chart-legend" style="flex-wrap:wrap">'+lines.map(l=>'<span><i style="background:'+l.color+'"></i>'+esc(l.name)+'</span>').join('')+'</div></div></div>'; }
+  // กราฟแท่งคะแนนย่อย 7 หมวด (เมื่อเลือกสาขาเดียว — ใช้ได้แม้มีรายงานเดียว)
+  if($('au_branch').value && branches[0]){ const L=branches[0].latest;
+    h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>คะแนนย่อย 7 หมวด — '+esc(branches[0].name)+' (ล่าสุด '+beDate(L.inspect_date)+')</h3></div><div class="card-b">'
+      +AU_SUBS.map(k=>{ const v=+L[k.toLowerCase()]||0; const col=v>=80?'#16a34a':v>=50?'#d97706':'#dc2626';
+        return '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px"><b>'+k+'</b><b style="color:'+col+'">'+Math.round(v)+'/100</b></div><div style="height:13px;background:#f1f5f9;border-radius:7px;overflow:hidden"><div style="height:100%;width:'+Math.min(100,v)+'%;background:'+col+';border-radius:7px"></div></div></div>'; }).join('')
+      +'<div style="font-size:12px;color:var(--muted);margin-top:6px">Result '+(L.result==null?'—':(+L.result).toFixed(1))+' · สินค้าขาด '+(L.stockout??'—')+' · คะแนนรวม '+(L.score??'—')+'/1000</div>'
+      +'</div></div>';
+    // รายการหัก/บวก แต่ละหมวด (จาก extra)
+    const ex=L.extra||{}; const eks=Object.keys(ex);
+    if(eks.length){ const minus=eks.filter(k=>ex[k]<0), plus=eks.filter(k=>ex[k]>0);
+      h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>รายละเอียดข้อหัก/บวกคะแนน (ล่าสุด '+beDate(L.inspect_date)+')</h3></div><div class="card-b">'
+        +(minus.length?'<div style="font-weight:600;font-size:13px;color:#dc2626;margin-bottom:4px">⛔ ข้อหักคะแนน</div>'+minus.map(k=>'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--line)"><span>'+esc(k)+'</span><b style="color:#dc2626">'+ex[k]+'%</b></div>').join(''):'')
+        +(plus.length?'<div style="font-weight:600;font-size:13px;color:#16a34a;margin:10px 0 4px">➕ ข้อได้คะแนนเพิ่ม</div>'+plus.map(k=>'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--line)"><span>'+esc(k)+'</span><b style="color:#16a34a">+'+ex[k]+'%</b></div>').join(''):'')
+        +(!minus.length&&!plus.length?'<div class="empty">ไม่มีรายการหัก/บวก</div>':'')
+        +'</div></div>'; }
+  }
   // คะแนนย่อยล่าสุด 7 หมวด (แท่ง /100)
   h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>คะแนนย่อยล่าสุด 7 หมวด (S/A/V/E/Q/C/QMS · เต็ม 100)</h3></div><div class="tablewrap"><table style="font-size:13px"><thead><tr><th>สาขา</th>'+AU_SUBS.map(k=>'<th class="num">'+k+'</th>').join('')+'<th class="num">Result</th></tr></thead><tbody>'
     +branches.map(b=>'<tr><td>'+esc(b.name)+'</td>'+AU_SUBS.map(k=>{ const v=b.latest[k.toLowerCase()]; const c=v==null?'':(v>=80?' good':(v<50?' bad':'')); return '<td class="num'+c+'">'+(v==null?'—':Math.round(v))+'</td>'; }).join('')+'<td class="num">'+(b.latest.result==null?'—':(+b.latest.result).toFixed(1))+'</td></tr>').join('')
@@ -9989,7 +10014,7 @@ function sdMultiLineChart(dates,lines){
   if(!dates.length) return '<div class="empty">ไม่มีข้อมูล</div>';
   const W=720,H=250,pl=56,pr=14,pt=14,pb=28,iw=W-pl-pr,ih=H-pt-pb;
   const allv=[]; lines.forEach(l=>dates.forEach(d=>{ if(l.vals[d]!=null) allv.push(l.vals[d]); }));
-  const max=Math.max(1,...allv);
+  const max=Math.max(1,...allv)*1.08;   // เผื่อช่องว่างด้านบน กันเส้นค่าสูงสุดชนขอบจนมองไม่เห็น
   const xAt=i=>pl+(dates.length<=1?iw/2:iw*i/(dates.length-1)); const yAt=v=>pt+ih-(v/max*ih);
   let grid=''; for(let g=0;g<=3;g++){ const yy=pt+ih*g/3,v=Math.round(max*(3-g)/3); grid+='<line x1="'+pl+'" y1="'+yy+'" x2="'+(W-pr)+'" y2="'+yy+'" stroke="#eef0f3"/><text x="'+(pl-6)+'" y="'+(yy+3)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+_thb(v)+'</text>'; }
   const paths=lines.map(l=>{ const pts=dates.map((d,i)=>l.vals[d]!=null?{x:xAt(i),y:yAt(l.vals[d]),date:d,val:l.vals[d]}:null).filter(Boolean);
