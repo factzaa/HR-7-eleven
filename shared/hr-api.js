@@ -203,6 +203,7 @@
         case 'hr_line_group_label':  return await hrLineGroupLabel(p);
         case 'hr_line_import':       return await hrLineImport(p);
         case 'hr_sales_list':        return await hrSalesList(p);
+        case 'hr_audit_list':        return await hrAuditList(p);
         case 'hr_line_backfill':     return await hrLineBackfill(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
         case 'hr_term_rules_save':   return await hrTermRulesSave(p.data, p);
@@ -2761,6 +2762,25 @@
     return { category, msg_class: cls };
   }
 
+  // ---------- ตัวแยกรายงานตรวจร้าน QSSI ----------
+  function _qssiDate(t) { const m = String(t).match(/วันที่-เวลา\s*[:：]\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if (!m) return null; let y = +m[3]; if (y < 100) y += 2500; if (y > 2500) y -= 543; const d = +m[1], mo = +m[2]; if (d < 1 || d > 31 || mo < 1 || mo > 12) return null; const p = n => String(n).padStart(2, '0'); return y + '-' + p(mo) + '-' + p(d); }
+  function _extractQssi(t) {
+    t = String(t || ''); if (!/ร้าน 7-Eleven รหัส/.test(t) || !/คะแนน/.test(t)) return null;
+    const g = re => { const m = t.match(re); return m ? m[1].trim() : null; };
+    const nm = v => { if (v == null) return null; const n = parseFloat(String(v).replace(/,/g, '')); return isNaN(n) ? null : n; };
+    const code = g(/รหัส\s*[:：]\s*(\d+)/); if (!code) return null;
+    const sub = {}; ['S', 'A', 'V', 'E', 'Q', 'C', 'QMS'].forEach(k => { const v = nm(g(new RegExp('(?:^|\\n)\\s*' + k + '\\s*[:：]\\s*([\\d.]+)'))); if (v != null) sub[k] = v; });
+    const items = {}; const re = /([+-]?\d+)\s*[:：]\s*%\s*\(([^)]+)\)\s*-\s*([^\n]+)/g; let mm; while ((mm = re.exec(t))) { const nmv = +mm[1]; if (nmv !== 0) items[mm[3].trim().slice(0, 40)] = nmv; }
+    return { code, round: nm(g(/ครั้งที่\s*[:：]\s*(\d+)/)), inspector: g(/ตรวจโดย\s*[:：]\s*(.+)/), inspect_date: _qssiDate(t), score: nm(g(/(?:^|\n)\s*คะแนน\s*[:：]\s*(\d+)/)), max_score: nm(g(/คะแนนเต็ม\s*[:：]\s*(\d+)/)), s: sub.S ?? null, a: sub.A ?? null, v: sub.V ?? null, e: sub.E ?? null, q: sub.Q ?? null, c: sub.C ?? null, qms: sub.QMS ?? null, result: nm(g(/Result\s*[:：]\s*([\d.]+)/)), process: nm(g(/Process\s*[:：]\s*([\d.]+)/)), stockout: nm(g(/สินค้าขาดรวม\s*[:：]\s*(\d+)/)), extra: Object.keys(items).length ? items : null };
+  }
+  function _auditRow(qr, meta, hashFn) {
+    const key = 'qssi_' + hashFn(qr.code + '|' + qr.inspect_date + '|' + (qr.inspector || '') + '|' + (qr.score || ''));
+    return { report_key: key, branch_id: meta.branch_id, branch_code: qr.code, group_id: meta.group_id, source: meta.source, raw_text: (meta.raw_text || '').slice(0, 3000),
+      round: qr.round, inspector: qr.inspector, inspect_date: qr.inspect_date, score: qr.score, max_score: qr.max_score,
+      s: qr.s, a: qr.a, v: qr.v, e: qr.e, q: qr.q, c: qr.c, qms: qr.qms, result: qr.result, process: qr.process, stockout: qr.stockout, extra: qr.extra };
+  }
+  async function _branchCodeMap() { const { data } = await sb().from('branches').select('branch_id'); const m = {}; (data || []).forEach(b => { m[String(b.branch_id).replace(/^0+/, '')] = b.branch_id; }); return m; }
+
   // นำเข้าประวัติแชทจากไฟล์ export ของ LINE (.txt) — rows=[{sent_at,display_name,text}]
   async function hrLineImport(p) {
     const gid = String(p.group_id || ''); if (!gid) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
@@ -2806,7 +2826,13 @@
       const { error } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' });
       if (!error) salesSaved += chunk.length;
     }
-    return { ok: true, imported: recs.length, sales_saved: salesSaved };
+    // แยกรายงานตรวจร้าน QSSI (map สาขาจากรหัสในข้อความ — มักอยู่ในกลุ่ม ผจก.)
+    const auditMap = {}; const codeMap = await _branchCodeMap();
+    rows.forEach(r => { const qr = _extractQssi(r.text || ''); if (!qr || !qr.inspect_date) return; const bid2 = codeMap[String(qr.code).replace(/^0+/, '')] || qr.code;
+      const row = _auditRow(qr, { branch_id: bid2, group_id: gid, source: 'import', raw_text: r.text || '' }, hash); auditMap[row.report_key] = row; });
+    const auditRows = Object.values(auditMap); let auditSaved = 0;
+    for (let i = 0; i < auditRows.length; i += 200) { const chunk = auditRows.slice(i, i + 200); const { error } = await sb().from('audit_reports').upsert(chunk, { onConflict: 'report_key', ignoreDuplicates: true }); if (!error) auditSaved += chunk.length; }
+    return { ok: true, imported: recs.length, sales_saved: salesSaved, audit_saved: auditSaved };
   }
   // ดึงยอดขายมาตรฐาน (แดชบอร์ด/นิดา) — filter branch/start/end/shift
   async function hrSalesList(p) {
@@ -2820,6 +2846,19 @@
     if (error) return { ok: false, error: error.message };
     const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
     const rows = (data || []).map(r => Object.assign({}, r, { branch_name: bn[r.branch_id] || r.branch_id }));
+    return { ok: true, rows };
+  }
+  // ดึงรายงานตรวจร้าน QSSI (แดชบอร์ด/นิดา)
+  async function hrAuditList(p) {
+    let q = sb().from('audit_reports').select('*').order('inspect_date', { ascending: false });
+    if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
+    if (p.start) q = q.gte('inspect_date', p.start);
+    if (p.end) q = q.lte('inspect_date', p.end);
+    q = q.limit(Math.min(Number(p.limit) || 500, 2000));
+    const [{ data, error }, { data: brs }] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    if (error) return { ok: false, error: error.message };
+    const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
+    const rows = (data || []).map(r => Object.assign({}, r, { branch_name: bn[r.branch_id] || r.branch_code || r.branch_id }));
     return { ok: true, rows };
   }
   // Backfill: ติดป้ายหมวด/ความสำคัญ (ข้อความที่ยังไม่จัด) + แยกยอดขายใหม่ทั้งหมด (จากข้อความหมวดยอดขายในกลุ่มที่ผูกสาขา)
@@ -2861,7 +2900,20 @@
     }
     const salesRows = Object.values(salesMap); let salesSaved = 0; let saveErr = null;
     for (let i = 0; i < salesRows.length; i += 300) { const chunk = salesRows.slice(i, i + 300); const { error: e3 } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' }); if (!e3) salesSaved += chunk.length; else if (!saveErr) saveErr = e3.message; }
-    return { ok: true, updated, msgs_scanned: scanned, sales_msgs: hit, sales_saved: salesSaved, save_error: saveErr };
+
+    // ---- Pass 3: แยกรายงานตรวจร้าน QSSI จากทุกกลุ่ม (ค้นข้อความที่มีฟอร์มตรวจร้าน) ----
+    const auditMap = {}; const codeMap = await _branchCodeMap();
+    { let from = 0, page = 1000;
+      for (;;) {
+        const { data: ams, error } = await sb().from('line_messages').select('group_id,text').or('text.ilike.%ร้าน 7-Eleven รหัส%,text.ilike.%คะแนนเต็ม%').order('sent_at', { ascending: true }).range(from, from + page - 1);
+        if (error) break; if (!ams || !ams.length) break;
+        ams.forEach(m => { const qr = _extractQssi(m.text || ''); if (!qr || !qr.inspect_date) return; const bid2 = codeMap[String(qr.code).replace(/^0+/, '')] || qr.code; const row = _auditRow(qr, { branch_id: bid2, group_id: m.group_id, source: 'live', raw_text: m.text || '' }, hash); auditMap[row.report_key] = row; });
+        if (ams.length < page) break; from += page;
+      }
+    }
+    const auditRows = Object.values(auditMap); let auditSaved = 0;
+    for (let i = 0; i < auditRows.length; i += 200) { const chunk = auditRows.slice(i, i + 200); const { error: e4 } = await sb().from('audit_reports').upsert(chunk, { onConflict: 'report_key', ignoreDuplicates: true }); if (!e4) auditSaved += chunk.length; }
+    return { ok: true, updated, msgs_scanned: scanned, sales_msgs: hit, sales_saved: salesSaved, audit_saved: auditSaved, save_error: saveErr };
   }
   async function hrLineGroupLabel(p) {
     if (!p.group_id) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
