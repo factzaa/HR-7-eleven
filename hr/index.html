@@ -1464,6 +1464,22 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div><!-- /qapan_folders -->
 </div>
 
+<!-- LINE ฟีดกลุ่มสาขา -->
+<div id="view_lineFeed" class="container" style="display:none">
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:180px"><svg class="ei" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.9a8.4 8.4 0 0 1-1-4A8.38 8.38 0 0 1 12 3.6a8.38 8.38 0 0 1 9 7.9z"/></svg> ฟีดกลุ่มไลน์สาขา</h3>
+    <select id="lf_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
+    <select id="lf_hours" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <option value="24">24 ชม.</option><option value="48" selected>2 วัน</option><option value="72">3 วัน</option><option value="168">7 วัน</option>
+    </select>
+    <label class="check" style="font-size:13px"><input type="checkbox" id="lf_urgent"> เฉพาะเรื่องด่วน</label>
+    <button class="btn btn-sec btn-sm" id="lf_refresh">รีเฟรช</button>
+    <button class="btn btn-pri btn-sm" id="lf_ask"><svg class="ei" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.9a8.4 8.4 0 0 1-1-4A8.38 8.38 0 0 1 12 3.6a8.38 8.38 0 0 1 9 7.9z"/></svg> ให้นิดาสรุป</button>
+  </div>
+  <div style="font-size:12px;color:var(--muted);margin:0 2px 10px">ข้อความจริงจากกลุ่มไลน์สาขา (เก็บตั้งแต่เปิดระบบเป็นต้นไป) · <span id="lf_unmapped" style="color:#dc2626"></span></div>
+  <div id="lf_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
 <!-- เชลฟ์ประจำเดือน (Shelf Care) -->
 <div id="view_shelf" class="container" style="display:none">
   <div class="shsub" id="shsub">
@@ -8017,7 +8033,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','handover','special','qa','shelf','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -8040,6 +8056,7 @@ showTab = function(name){
   else if(name==='special'){ loadSpecialTab(); }
   else if(name==='qa'){ loadQaTab(); }
   else if(name==='shelf'){ loadShelfTab(); }
+  else if(name==='lineFeed'){ loadLineFeed(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
     if($('lvsub') && !$('lvsub').dataset.wired){
       $('lvsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>leavesTab(b.dataset.lvpan));
@@ -8421,7 +8438,7 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','board','analytics'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
@@ -9683,6 +9700,48 @@ function loadQaTab(){
 function qaTab(name){
   ['near','folders','new'].forEach(k=>{ const p=$('qapan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
   document.querySelectorAll('#qasub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.qapan===name));
+}
+// ========== LINE ฟีดกลุ่มสาขา ==========
+const LF_URGENT=["ปิดร้าน","ปิดสาขา","ของขาด","สินค้าขาด","ของหมด","สต๊อกหมด","ไฟดับ","ไฟไหม้","น้ำท่วม","น้ำรั่ว","ตู้แช่","ตู้เสีย","เครื่องเสีย","ระบบล่ม","เน็ตล่ม","ด่วน","ฉุกเฉิน","ทะเลาะ","วิวาท","ต่อยกัน","ขโมย","ของหาย","เงินหาย","เงินขาด","อุบัติเหตุ","รถชน","บาดเจ็บ","ป่วย","ลาป่วย","ลากะทันหัน","ไม่มาทำงาน","ขาดงาน","ร้องเรียน","ลูกค้าโวย","ตำรวจ","หนี","ลาออก"];
+function lfFlags(t){ const s=String(t||''); return LF_URGENT.filter(k=>s.includes(k)); }
+let LF_ROWS=[];
+async function loadLineFeed(){
+  if($('lf_branch') && $('lf_branch').options.length<=1){
+    $('lf_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+  }
+  if(!$('lf_body').dataset.wired){
+    $('lf_refresh').onclick=loadLineFeed;
+    $('lf_branch').onchange=loadLineFeed;
+    $('lf_hours').onchange=loadLineFeed;
+    $('lf_urgent').onchange=renderLineFeed;
+    $('lf_ask').onclick=()=>{ const bn=$('lf_branch').selectedOptions[0]?.textContent||'ทุกสาขา'; const h=$('lf_hours').value; if(typeof asstAsk==='function') asstAsk('สรุปความเคลื่อนไหว/ข่าวจากกลุ่มไลน์สาขา '+bn+' ย้อนหลัง '+h+' ชั่วโมง เน้นเรื่องด่วนที่ต้องรีบดู'); };
+    $('lf_body').dataset.wired='1';
+  }
+  $('lf_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_line_feed', password:pwd, branch_id:$('lf_branch').value||'', hours:Number($('lf_hours').value)||48 });
+  if(!r.ok){ $('lf_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  LF_ROWS=r.rows||[];
+  // เตือนถ้ามีกลุ่มยังไม่ผูกสาขา
+  try{ const g=await post({ action:'hr_line_groups', password:pwd }); const un=(g.rows||[]).filter(x=>!x.branch_id).length; $('lf_unmapped').textContent = un? ('มี '+un+' กลุ่มยังไม่ผูกสาขา — ตั้งค่าที่ จัดการสาขา → LINE Group ID'):''; }catch(e){}
+  renderLineFeed();
+}
+function renderLineFeed(){
+  const onlyU=$('lf_urgent')&&$('lf_urgent').checked;
+  let rows=LF_ROWS.slice();
+  if(onlyU) rows=rows.filter(m=>lfFlags(m.text).length);
+  if(!rows.length){ $('lf_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">'+(onlyU?'ไม่มีเรื่องด่วนในช่วงนี้':'ยังไม่มีข้อความในช่วงนี้ (เก็บได้เฉพาะตั้งแต่เปิด webhook)')+'</div></div></div>'; return; }
+  $('lf_body').innerHTML=rows.map(m=>{
+    const fl=lfFlags(m.text);
+    const t=String(m.sent_at).slice(0,16).replace('T',' ');
+    const body = m.text ? esc(m.text) : (m.media_url?('<a href="'+esc(m.media_url)+'" target="_blank"><img src="'+esc(m.media_url)+'" style="max-width:160px;max-height:160px;border-radius:8px;display:block;margin-top:4px"></a>'):('['+esc(m.msg_type)+']'));
+    return '<div class="card" style="margin-bottom:8px;'+(fl.length?'border-left:4px solid #dc2626':'border-left:4px solid var(--line)')+'"><div class="card-b" style="padding:10px 12px">'
+      +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:13.5px">'+esc(m.display_name)+'</b>'
+      +'<span style="font-size:12px;color:var(--muted)">'+esc(m.branch_name)+'</span>'
+      +'<span style="font-size:12px;color:var(--muted);margin-left:auto">'+t+'</span></div>'
+      +(fl.length?'<div style="margin:3px 0"><span class="pill bad" style="font-size:11px">⚠ '+fl.map(esc).join(' · ')+'</span></div>':'')
+      +'<div style="font-size:14px;margin-top:2px;white-space:pre-wrap;word-break:break-word">'+body+'</div>'
+      +'</div></div>';
+  }).join('');
 }
 let QAALL=[];
 async function loadQaAll(){

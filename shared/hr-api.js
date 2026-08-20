@@ -198,6 +198,8 @@
         case 'hr_score_issue_warnings': return await hrScoreIssueWarnings(p.cycle);
         // ---- พิจารณาเลิกจ้าง (เสนอเท่านั้น ระบบไม่เลิกจ้างเอง) ----
         // auth = { mgr_emp, mgr_pin } (ผจก.) หรือไม่มี = สำนักงาน (HR)
+        case 'hr_line_feed':         return await hrLineFeed(p);
+        case 'hr_line_groups':       return await hrLineGroups();
         case 'hr_term_rules_get':    return await hrTermRulesGet();
         case 'hr_term_rules_save':   return await hrTermRulesSave(p.data, p);
         case 'hr_term_rule_delete':  return await hrTermRuleDelete(p.key, p);
@@ -2611,6 +2613,44 @@
     { key: 'score_low_15',    name: 'คะแนนวินัยตกเกณฑ์ (≤ 15)',            kind: 'score_band',    params: { max_score: 15 },      severity: 'high',     note: 'เปิดใช้เองได้จากปุ่มเกณฑ์เข้าข่าย', enabled: false, sort: 40 },
     { key: 'late_total_20',   name: 'มาสายรวมในรอบ ≥ 20 ครั้ง',            kind: 'late_total',    params: { count: 20 },          severity: 'medium',   note: 'เปิดใช้เองได้จากปุ่มเกณฑ์เข้าข่าย', enabled: false, sort: 50 },
   ];
+
+  // ---------- LINE กลุ่มสาขา (ฟีดข้อความขาเข้า) ----------
+  async function hrLineFeed(p) {
+    const hours = Math.min(Math.max(Number(p.hours) || 48, 1), 24 * 30);
+    const limit = Math.min(Math.max(Number(p.limit) || 120, 1), 400);
+    const sinceIso = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    let q = sb().from('line_messages')
+      .select('sent_at,branch_id,display_name,msg_type,text,media_url')
+      .gte('sent_at', sinceIso).order('sent_at', { ascending: false }).limit(limit);
+    if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
+    const [{ data: msgs, error }, { data: brs }] = await Promise.all([
+      q, sb().from('branches').select('branch_id,name'),
+    ]);
+    if (error) return { ok: false, error: error.message };
+    const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
+    const rows = (msgs || []).map(m => ({
+      sent_at: m.sent_at, branch_id: m.branch_id || '',
+      branch_name: m.branch_id ? (bn[m.branch_id] || m.branch_id) : '(ยังไม่ผูกสาขา)',
+      display_name: m.display_name || 'ไม่ทราบชื่อ', msg_type: m.msg_type,
+      text: m.text || '', media_url: m.media_url || '',
+    }));
+    return { ok: true, rows, hours };
+  }
+  async function hrLineGroups() {
+    const [{ data: gs }, { data: brs }] = await Promise.all([
+      sb().from('line_groups').select('*').order('last_message_at', { ascending: false }),
+      sb().from('branches').select('branch_id,name,line_group_id'),
+    ]);
+    const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
+    const mappedGroups = new Set((brs || []).map(b => b.line_group_id).filter(Boolean));
+    const rows = (gs || []).map(g => ({
+      group_id: g.group_id, branch_id: g.branch_id || '',
+      branch_name: g.branch_id ? (bn[g.branch_id] || g.branch_id) : '',
+      mapped: mappedGroups.has(g.group_id),
+      last_message_at: g.last_message_at, last_text: g.last_text || '', msg_count: g.msg_count || 0,
+    }));
+    return { ok: true, rows };
+  }
 
   async function hrTermRulesGet() {
     const { data, error } = await sb().from('termination_rules').select('*').order('sort');
