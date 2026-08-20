@@ -2710,8 +2710,10 @@
       if (valPart === '') continue;
       _salesAssign(cur, _stripLabel(label), valPart);
     }
-    // เก็บเฉพาะผลัดที่มีตัวเลขยอดขาย/เป้าจริง
-    return Object.values(shifts).filter(s => s.sales_total != null || s.sales_product != null || s.target_total != null);
+    // เก็บเฉพาะผลัดที่มีตัวเลขยอดขาย/เป้าจริง + ถ้าไม่มี "ยอดรวม" ให้ใช้ยอดขายสินค้าเป็นยอดรวม (เช่นสาขา 8747)
+    const rows = Object.values(shifts).filter(s => s.sales_total != null || s.sales_product != null || s.target_total != null);
+    rows.forEach(s => { if (s.sales_total == null && s.sales_product != null) s.sales_total = s.sales_product; });
+    return rows;
   }
   // ทำแถวยอดขายให้มี "คอลัมน์ครบเท่ากันทุกแถว" (เติม null) — จำเป็นสำหรับ batch upsert ของ PostgREST
   const _SALES_COLS = ['target_product','target_card','target_total','sales_product','sales_card','sales_total','customers','per_head','allcafe_cups','allcafe_baht','delivery_bills','delivery_baht','truewallet_baht','truewallet_pct'];
