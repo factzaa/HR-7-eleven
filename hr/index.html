@@ -96,6 +96,14 @@
   .navgrp-btn{padding:13px 14px; font-size:14px; font-weight:500; color:var(--muted); cursor:pointer; border:0; border-bottom:3px solid transparent; background:none; white-space:nowrap; display:flex; align-items:center; gap:5px;}
   .navgrp-btn .caret{font-size:10px; opacity:.7;}
   .navbadge{display:inline-flex; align-items:center; justify-content:center; min-width:17px; height:17px; padding:0 4px; margin-left:5px; border-radius:9px; background:#dc2626; color:#fff; font-size:10.5px; font-weight:700; line-height:1; vertical-align:middle; box-shadow:0 0 0 1.5px rgba(255,255,255,.65);}
+  /* เมนูย่อยหน้าเชลฟ์ */
+  .shsub{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
+  .shsub-b{display:inline-flex; align-items:center; gap:6px; padding:9px 14px; border-radius:11px; border:1.5px solid var(--line2); background:var(--card); color:var(--muted); font:inherit; font-size:13.5px; font-weight:600; cursor:pointer;}
+  .shsub-b .ei{width:16px; height:16px;}
+  .shsub-b:hover{color:var(--txt); border-color:var(--muted);}
+  .shsub-b.on{background:var(--green); border-color:var(--green); color:#fff;}
+  .shsub-badge{display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#dc2626; color:#fff; font-size:11px; font-weight:700;}
+  .shsub-b.on .shsub-badge{background:#fff; color:var(--green);}
   .navgrp-btn.on{color:var(--accent); border-bottom-color:var(--green); font-weight:600;}
   .navgrp-menu{position:fixed; background:var(--card); border:1px solid var(--line); border-radius:0 0 12px 12px; box-shadow:0 10px 26px rgba(0,0,0,.16); padding:6px; display:none; z-index:70; min-width:210px; max-height:78vh; overflow-y:auto;}
   .navgrp.open .navgrp-menu{display:block;}
@@ -1419,6 +1427,14 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
 <!-- เชลฟ์ประจำเดือน (Shelf Care) -->
 <div id="view_shelf" class="container" style="display:none">
+  <div class="shsub" id="shsub">
+    <button class="shsub-b on" type="button" data-shpan="pending"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 4 5-4"/><path d="M4 20h16"/></svg> รอตรวจ <span id="shsub_pend" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-shpan="recent"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจผ่านแล้ว</button>
+    <button class="shsub-b" type="button" data-shpan="settings"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ตั้งค่าเชลฟ์</button>
+    <button class="shsub-b" type="button" data-shpan="assign"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> มอบหมายรายเดือน</button>
+    <button class="shsub-b" type="button" data-shpan="list"><svg class="ei" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> รายการมอบหมาย</button>
+  </div>
+  <div class="shpan" id="shpan_pending">
   <!-- ★ กล่องรอตรวจ (บนสุด — ตรวจจบได้ในหน้าเดียว ไม่ต้องเลื่อนหา) -->
   <div class="toolbar">
     <h3 style="flex:1;font-size:15px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 4 5-4"/><path d="M4 20h16"/></svg> การตรวจเชลฟ์ที่รอตรวจ <span id="shp_count" class="pill bad" style="display:none">0</span></h3>
@@ -1426,13 +1442,16 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <button class="btn btn-sec btn-sm" id="shp_refresh">รีเฟรช</button>
   </div>
   <div id="shp_body"><div class="empty">กำลังโหลด…</div></div>
+  </div><!-- /shpan_pending -->
 
-  <details id="shp_admin" style="margin-top:22px">
-    <summary style="cursor:pointer;font-size:15px;font-weight:700;padding:10px 12px;background:#f8fafc;border:1.5px solid var(--line2);border-radius:12px;list-style:none">
-      <svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg> ตั้งค่าเชลฟ์ &amp; มอบหมาย (กดเพื่อเปิด)
-    </summary>
+  <div class="shpan" id="shpan_recent" style="display:none">
+    <div class="toolbar"><h3 style="flex:1;font-size:15px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจผ่านแล้ว / ตีกลับ (14 วันล่าสุด)</h3></div>
+    <div id="shp_recent"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+
+  <div class="shpan" id="shpan_settings" style="display:none">
   <!-- A: ทะเบียนเชลฟ์ -->
-  <div class="toolbar" style="margin-top:14px"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ทะเบียนเชลฟ์</h3></div>
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ทะเบียนเชลฟ์</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">รหัสเชลฟ์ *</label>
@@ -1454,9 +1473,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <select id="sh_listbranch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-sec btn-sm" id="sh_refresh">รีเฟรช</button></div>
   <div id="sh_list"><div class="empty">กำลังโหลด…</div></div>
+  </div><!-- /shpan_settings -->
 
+  <div class="shpan" id="shpan_assign" style="display:none">
   <!-- B: มอบหมายรายเดือน -->
-  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> มอบหมายดูแลเชลฟ์รายเดือน</h3></div>
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> มอบหมายดูแลเชลฟ์รายเดือน</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex;flex-direction:column;gap:10px">
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
@@ -1481,14 +1502,16 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <div style="text-align:right"><button class="btn btn-pri" id="sh_assign">มอบหมายเชลฟ์</button></div>
     </div>
   </div>
+  </div><!-- /shpan_assign -->
 
+  <div class="shpan" id="shpan_list" style="display:none">
   <!-- C: รายการมอบหมาย -->
-  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการมอบหมาย</h3>
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">รายการมอบหมาย</h3>
     <input id="sh_view_month" type="month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <select id="sh_view_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-sec btn-sm" id="sh_view_refresh">แสดง</button></div>
   <div id="sh_asg_list"><div class="empty">เลือกเดือนแล้วกด "แสดง"</div></div>
-  </details>
+  </div><!-- /shpan_list -->
 </div>
 
 <!-- Leaves -->
@@ -9499,7 +9522,7 @@ async function loadSpecialList(){
     let h='<div class="card" style="padding:14px;margin-bottom:12px">';
     h+='<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-weight:700;font-size:15px">'+esc(t.title)+'</div>';
     if(t.detail) h+='<div style="font-size:13px;color:var(--muted);margin-top:2px;white-space:pre-wrap">'+esc(t.detail)+'</div>';
-    h+='<div style="font-size:12.5px;color:var(--muted);margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> เดดไลน์: '+spFmt(t.deadline)+' · มอบหมาย '+t.n+' คน · ผ่าน '+t.done+'/'+t.n+(t.waiting?(' · รอตรวจ '+t.waiting):'')+'</div>';
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> เดดไลน์: '+spFmt(t.deadline)+' · มอบหมาย '+t.n+' คน · ผ่าน '+t.done+'/'+t.n+(t.waiting?(' · รอตรวจ '+t.waiting):'')+'</div>'+((t.people&&t.people.length)?('<div style="font-size:12px;color:var(--muted);margin-top:2px"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> ผู้รับมอบหมาย: '+t.people.map(p=>esc(p.emp_name)+(p.status==='approved'?' ✓':p.status==='submitted'?' (รอตรวจ)':p.status==='sent_back'?' (ตีกลับ)':' (ยังไม่ส่ง)')).join(' · ')+'</div>'):'');
     if(t.hr_note) h+='<div style="font-size:12.5px;margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(t.hr_note)+'</div>';
     h+='</div><button class="btn btn-sec btn-sm" data-spdel="'+t.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ลบ</button></div>';
     if(t.hr_photos&&t.hr_photos.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+t.hr_photos.map(u=>'<img src="'+esc(u)+'" onclick="spLightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer">').join('')+'</div>';
@@ -9540,7 +9563,29 @@ function openSpecialMarkup(p){
   document.getElementById('mkOverlay').style.display='flex';
   mkLoadCur();
 }
-function spLightbox(img){ const o=document.createElement('div'); o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out'; o.innerHTML='<img src="'+img.src+'" style="max-width:92%;max-height:90%;border-radius:8px">'; o.onclick=()=>o.remove(); document.body.appendChild(o); }
+function spLightbox(img){
+  // แกลเลอรีเลื่อนดูได้ — เก็บรูปทั้งหมดในกลุ่มเดียวกัน (พาเรนต์เดียวกัน) แล้วปัด/กดถัดไปได้
+  const group=(img&&img.parentNode)?[...img.parentNode.querySelectorAll('img')]:[img];
+  const srcs=group.map(i=>i.src); let idx=Math.max(0,group.indexOf(img));
+  const o=document.createElement('div'); o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;touch-action:pan-y';
+  const big=document.createElement('img'); big.style.cssText='max-width:92%;max-height:82%;border-radius:8px;user-select:none;-webkit-user-drag:none';
+  const cap=document.createElement('div'); cap.style.cssText='color:#fff;font-size:13px;margin-top:10px;opacity:.85';
+  const many=srcs.length>1;
+  function show(){ big.src=srcs[idx]; cap.textContent=(idx+1)+' / '+srcs.length; }
+  function go(d){ idx=(idx+d+srcs.length)%srcs.length; show(); }
+  function mkNav(txt,left){ const b=document.createElement('button'); b.textContent=txt; b.style.cssText='position:absolute;top:50%;'+(left?'left':'right')+':12px;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:26px;line-height:1;cursor:pointer;display:'+(many?'grid':'none')+';place-items:center'; b.onclick=e=>{ e.stopPropagation(); go(left?-1:1); }; return b; }
+  const close=document.createElement('button'); close.textContent='×'; close.style.cssText='position:absolute;top:14px;right:16px;width:42px;height:42px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:26px;line-height:1;cursor:pointer';
+  function cleanup(){ document.removeEventListener('keydown',key); o.remove(); }
+  function key(e){ if(e.key==='ArrowLeft')go(-1); else if(e.key==='ArrowRight')go(1); else if(e.key==='Escape')cleanup(); }
+  close.onclick=e=>{ e.stopPropagation(); cleanup(); };
+  big.onclick=e=>e.stopPropagation();
+  o.onclick=()=>cleanup();
+  let sx=null; o.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; },{passive:true});
+  o.addEventListener('touchend',e=>{ if(sx==null)return; const dx=e.changedTouches[0].clientX-sx; sx=null; if(Math.abs(dx)>40) go(dx<0?1:-1); });
+  document.addEventListener('keydown',key);
+  o.appendChild(big); o.appendChild(cap); o.appendChild(mkNav('‹',true)); o.appendChild(mkNav('›',false)); o.appendChild(close);
+  document.body.appendChild(o); show();
+}
 
 // ========== QA สินค้าใกล้หมดอายุ ==========
 let QA_SEL=new Set();
@@ -9829,6 +9874,12 @@ function loadShelfTab(){
   renderShEmpList();
   loadShelves();
   loadShAssignments();
+  if(!$('shsub').dataset.wired){ $('shsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>shelfTab(b.dataset.shpan)); $('shsub').dataset.wired='1'; shelfTab('pending'); }
+}
+// สลับแผงย่อยหน้าเชลฟ์ (รอตรวจ/ตรวจผ่านแล้ว/ตั้งค่า/มอบหมาย/รายการ)
+function shelfTab(name){
+  ['pending','recent','settings','assign','list'].forEach(k=>{ const p=$('shpan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
+  document.querySelectorAll('#shsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.shpan===name));
 }
 
 // ============================================================
@@ -9873,9 +9924,12 @@ async function loadShelfPending(){
 
   const cnt=$('shp_count');
   if(cnt){ if(SHP_ROWS.length){ cnt.style.display=''; cnt.textContent=SHP_ROWS.length+' รายการ'; } else cnt.style.display='none'; }
+  // ประวัติ "ตรวจผ่านแล้ว/ตีกลับ" ย้ายไปแผงย่อยของตัวเอง
+  const rc=$('shp_recent'); if(rc) rc.innerHTML=history || '<div class="empty">ยังไม่มีประวัติใน 14 วันล่าสุด</div>';
+  const sbp=$('shsub_pend'); if(sbp){ if(SHP_ROWS.length){ sbp.style.display=''; sbp.textContent=SHP_ROWS.length; } else sbp.style.display='none'; }
   if(!SHP_ROWS.length){
     box.innerHTML='<div class="card"><div class="card-b"><div class="empty"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจครบแล้ว ไม่มีรายการค้าง'
-      +(approved.length?(' · ผ่านแล้ววันนี้ '+(r.approved_today||0)+' รายการ'):'')+'</div></div></div>' + history;
+      +(approved.length?(' · ผ่านแล้ววันนี้ '+(r.approved_today||0)+' รายการ'):'')+'</div></div></div>';
     return;
   }
 
@@ -9901,8 +9955,7 @@ async function loadShelfPending(){
         </div>
       </div></div>`;
   }).join('')
-  + '<div style="font-size:12px;color:var(--muted);padding:4px 6px">* ตรวจผ่าน = งานหายจากกล่องรอตรวจ (ดูย้อนหลังได้ที่ปุ่ม "ตรวจผ่านแล้ว" ด้านล่าง) · ตีกลับ = พนักงานเห็นในหน้างานของฉันพร้อมจุดที่ต้องแก้</div>'
-  + history;
+  + '<div style="font-size:12px;color:var(--muted);padding:4px 6px">* ตรวจผ่าน = งานหายจากกล่องรอตรวจ (ดูย้อนหลังได้ที่แท็บ "ตรวจผ่านแล้ว") · ตีกลับ = พนักงานเห็นในหน้างานของฉันพร้อมจุดที่ต้องแก้</div>';
 
   box.querySelectorAll('[data-shpok]').forEach(b=>b.onclick=async()=>{
     b.disabled=true; b.innerHTML='<span class="spin"></span>';
