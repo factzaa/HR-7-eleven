@@ -1490,6 +1490,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <div class="toolbar" style="flex-wrap:wrap;gap:8px">
     <h3 style="flex:1;font-size:15px;font-weight:600;min-width:160px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg> ยอดขายรายสาขา (จากที่แจ้งในกลุ่มไลน์)</h3>
     <select id="sd_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา (เทียบกัน)</option></select>
+    <select id="sd_month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <input id="sd_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <span style="color:var(--muted);font-size:13px">ถึง</span>
     <input id="sd_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
@@ -2441,7 +2442,7 @@ async function tryLogin(p){
     document.body.classList.add('is-logged');
     await loadAll();
     buildGroupedNav();
-    showTab('dashboard');
+    showTab('salesDash');
     chatInit();
   } else toast('err', r.error || 'เข้าระบบไม่สำเร็จ');
 }
@@ -9786,10 +9787,26 @@ async function loadLineGroupsManage(){
 const _thb=n=>Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:0});
 async function loadSalesDash(){
   if($('sd_branch') && $('sd_branch').options.length<=1) $('sd_branch').innerHTML='<option value="">ทุกสาขา (เทียบกัน)</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
-  if(!$('sd_end').value){ const t=new Date(Date.now()+7*3600*1000); const y=t.getUTCFullYear(),mo=t.getUTCMonth(); const p=n=>String(n).padStart(2,'0'); $('sd_start').value=y+'-'+p(mo+1)+'-01'; const last=new Date(Date.UTC(y,mo+1,0)).getUTCDate(); $('sd_end').value=y+'-'+p(mo+1)+'-'+p(last); }
-  if(!$('sd_body').dataset.wired){ $('sd_go').onclick=drawSalesDash; $('sd_branch').onchange=drawSalesDash; $('sd_body').dataset.wired='1'; }
+  const pad=n=>String(n).padStart(2,'0');
+  // ตัวเลือกเดือน — 18 เดือนล่าสุด + กำหนดเอง
+  if($('sd_month') && !$('sd_month').options.length){
+    const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    const now=new Date(Date.now()+7*3600*1000); let opts='';
+    for(let i=0;i<18;i++){ const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1)); const y=d.getUTCFullYear(),m=d.getUTCMonth(); opts+='<option value="'+y+'-'+pad(m+1)+'">'+TM[m]+' '+(y+543)+'</option>'; }
+    $('sd_month').innerHTML=opts+'<option value="">กำหนดเอง</option>';
+  }
+  if(!$('sd_end').value && $('sd_month')){ applySdMonth($('sd_month').value); }
+  if(!$('sd_body').dataset.wired){
+    $('sd_go').onclick=()=>{ if($('sd_month'))$('sd_month').value=''; drawSalesDash(); };
+    $('sd_branch').onchange=drawSalesDash;
+    $('sd_month').onchange=()=>{ if($('sd_month').value){ applySdMonth($('sd_month').value); drawSalesDash(); } };
+    $('sd_start').onchange=()=>{ if($('sd_month'))$('sd_month').value=''; };
+    $('sd_end').onchange=()=>{ if($('sd_month'))$('sd_month').value=''; };
+    $('sd_body').dataset.wired='1';
+  }
   drawSalesDash();
 }
+function applySdMonth(ym){ if(!ym) return; const pad=n=>String(n).padStart(2,'0'); const [y,m]=ym.split('-').map(Number); $('sd_start').value=y+'-'+pad(m)+'-01'; const last=new Date(Date.UTC(y,m,0)).getUTCDate(); $('sd_end').value=y+'-'+pad(m)+'-'+pad(last); }
 const SD_COLORS=['#1b7a42','#2563eb','#c2410c','#7c3aed','#0891b2','#db2777'];
 async function drawSalesDash(){
   $('sd_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -9877,6 +9894,17 @@ async function drawSalesDash(){
     +cols.map(c=>'<td class="num">'+_thb(sum(c[1]))+'</td>').join('')
     +'<td class="num">'+(totalTarget?(totalSales/totalTarget*100).toFixed(1)+'%':'—')+'</td><td class="num">฿'+_thb(totalCust?totalSales/totalCust:0)+'</td></tr>'
     +'</tbody></table></div></div>';
+  // ---- รายละเอียดรายวัน (เมื่อเลือกสาขาเดียว) ----
+  if(single){
+    const dr=drows.slice().sort((a,b)=>a.sale_date<b.sale_date?-1:1);
+    h+='<div class="card" style="margin-top:14px"><div class="card-h"><h3>รายละเอียดรายวัน — '+esc(branches[0]?branches[0].name:'')+' ('+dr.length+' วัน)</h3></div><div class="tablewrap"><table style="font-size:12.5px"><thead><tr><th>วันที่</th><th class="num">ยอดขาย</th><th class="num">เป้า</th><th class="num">เข้าเป้า%</th><th class="num">ลูกค้า</th><th class="num">ต่อหัว</th><th class="num">All Cafe</th><th class="num">Delivery</th><th class="num">TrueWallet</th><th class="num">บัตร</th></tr></thead><tbody>'
+      +dr.map(x=>{ const s=+x.sales_total||0,t=+x.target_total||0,ac=t?s/t*100:null;
+        return '<tr><td class="mono">'+beDate(x.sale_date)+'</td><td class="num">'+_thb(s)+'</td><td class="num">'+_thb(t)+'</td>'
+          +'<td class="num'+(ac!=null&&ac>=100?' good':(ac!=null&&ac<90?' bad':''))+'">'+(ac!=null?ac.toFixed(1)+'%':'—')+'</td>'
+          +'<td class="num">'+_thb(+x.customers||0)+'</td><td class="num">'+(x.per_head?'฿'+Math.round(x.per_head):'—')+'</td>'
+          +'<td class="num">'+_thb(+x.allcafe_baht||0)+'</td><td class="num">'+_thb(+x.delivery_baht||0)+'</td><td class="num">'+_thb(+x.truewallet_baht||0)+'</td><td class="num">'+_thb(+x.sales_card||0)+'</td></tr>'; }).join('')
+      +'</tbody></table></div></div>';
+  }
   $('sd_body').innerHTML=h;
 }
 function kpiBox(label,val,sub){ return '<div class="card"><div class="card-b" style="padding:14px"><div style="font-size:12px;color:var(--muted)">'+esc(label)+'</div><div style="font-size:22px;font-weight:800;margin-top:2px">'+esc(val)+'</div>'+(sub?'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+'</div></div>'; }
