@@ -2512,15 +2512,15 @@
       rule_key: d.rule_key, label: rule ? rule.label : (d.label || 'เหตุการณ์'),
       points, note: d.note || null,
     };
-    const { error } = await sb().from('score_events').insert(row);
+    const { data: ins, error } = await sb().from('score_events').insert(row).select('id').maybeSingle();
     if (error) throw error;
-    // แจ้งพนักงาน (โปร่งใส) — กล่องแจ้งเตือน emp_notifications
+    // แจ้งพนักงาน (โปร่งใส) — กล่องแจ้งเตือน emp_notifications · ผูก ref กับ id เพื่อลบได้เมื่อยกเลิก
     try {
       await sb().from('emp_notifications').insert({
         emp_id: d.emp_id, kind: 'score_deduct',
         title: 'คะแนนวินัยถูกหัก ' + Math.abs(points) + ' คะแนน',
         body: 'เหตุผล: ' + (d.note || row.label || '-') + '\nดูคะแนนรวมล่าสุดในหน้า "สถานะของฉัน"',
-        ref: 'score', created_by: 'ผู้จัดการ',
+        ref: ins ? ('score:' + ins.id) : 'score', created_by: 'ผู้จัดการ',
       });
     } catch (e) { console.warn('emp_notify', e); }
     await logAct('ตัดคะแนนวินัย', d.emp_id, row.label + ' (' + points + ')' + (d.note ? (' · ' + d.note) : ''));
@@ -2538,6 +2538,13 @@
     const { data: ev } = await sb().from('score_events').select('emp_id,label,points').eq('id', id).maybeSingle();
     const { error } = await sb().from('score_events').delete().eq('id', id);
     if (error) throw error;
+    // ★ ลบแจ้งเตือนฝั่งพนักงานที่ผูกกับรายการหักคะแนนนี้ด้วย (ไม่งั้นค้างในหน้าพนักงาน)
+    try {
+      await sb().from('emp_notifications').delete().eq('ref', 'score:' + id);
+      if (ev && ev.points != null) {
+        await sb().from('emp_notifications').delete().eq('emp_id', ev.emp_id).eq('kind', 'score_deduct').eq('title', 'คะแนนวินัยถูกหัก ' + Math.abs(ev.points) + ' คะแนน');
+      }
+    } catch (e) { console.warn('emp_notify del', e); }
     await logAct('ลบรายการตัดคะแนน', ev ? ev.emp_id : null, ev ? (ev.label + ' (' + ev.points + ')') : '');
     return { ok: true };
   }
