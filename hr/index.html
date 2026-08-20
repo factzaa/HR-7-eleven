@@ -9790,58 +9790,82 @@ async function loadSalesDash(){
   if(!$('sd_body').dataset.wired){ $('sd_go').onclick=drawSalesDash; $('sd_branch').onchange=drawSalesDash; $('sd_body').dataset.wired='1'; }
   drawSalesDash();
 }
+const SD_COLORS=['#1b7a42','#2563eb','#c2410c','#7c3aed','#0891b2','#db2777'];
 async function drawSalesDash(){
   $('sd_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_sales_list', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
   if(!r.ok){ $('sd_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   const rows=r.rows||[];
   if(!rows.length){ $('sd_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีข้อมูลยอดขายในช่วงนี้ — นำเข้าไฟล์แชท หรือกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีดก่อน</div></div></div>'; return; }
-  // aggregate per branch
-  const byBr={};
-  rows.forEach(x=>{ const b=(byBr[x.branch_id]=byBr[x.branch_id]||{name:x.branch_name,days:new Set(),sales:0,target:0,cust:0,ph:0,phn:0}); b.days.add(x.sale_date); b.sales+=(+x.sales_total||0); b.target+=(+x.target_total||0); b.cust+=(+x.customers||0); if(x.per_head){b.ph+=+x.per_head;b.phn++;} });
-  const branches=Object.values(byBr).map(b=>({name:b.name,days:b.days.size,sales:Math.round(b.sales),target:Math.round(b.target),ach:b.target?b.sales/b.target*100:null,cust:b.cust,pph:b.phn?b.ph/b.phn:null})).sort((a,b)=>b.sales-a.sales);
+  const single=$('sd_branch').value;
+  const exBaht=(ex,k)=>{ try{ const a=ex&&ex[k]; return Array.isArray(a)?(+a[a.length-1]||0):0; }catch(e){ return 0; } };
+  // aggregate per branch (ครบทุกมิติ)
+  const byBr={}; const allDates={};
+  rows.forEach(x=>{
+    const b=(byBr[x.branch_id]=byBr[x.branch_id]||{id:x.branch_id,name:x.branch_name,days:new Set(),sales:0,target:0,cust:0,ph:0,phn:0,card:0,cafe:0,deliv:0,tmw:0,pai:0,jeeb:0,salapao:0,daily:{}});
+    b.days.add(x.sale_date); allDates[x.sale_date]=1;
+    b.sales+=(+x.sales_total||0); b.target+=(+x.target_total||0); b.cust+=(+x.customers||0);
+    if(x.per_head){b.ph+=+x.per_head;b.phn++;}
+    b.card+=(+x.sales_card||0); b.cafe+=(+x.allcafe_baht||0); b.deliv+=(+x.delivery_baht||0); b.tmw+=(+x.truewallet_baht||0);
+    b.pai+=exBaht(x.extra,'pai'); b.jeeb+=exBaht(x.extra,'khanomjeeb'); b.salapao+=exBaht(x.extra,'salapao');
+    b.daily[x.sale_date]=(b.daily[x.sale_date]||0)+(+x.sales_total||0);
+  });
+  const branches=Object.values(byBr).map((b,i)=>({...b,color:SD_COLORS[i%SD_COLORS.length],dayN:b.days.size,ach:b.target?b.sales/b.target*100:null,pph:b.phn?b.ph/b.phn:null,avgDay:b.days.size?b.sales/b.days.size:0})).sort((a,b)=>b.sales-a.sales);
+  branches.forEach((b,i)=>b.color=SD_COLORS[i%SD_COLORS.length]);
+  const dates=Object.keys(allDates).sort();
   const totalSales=branches.reduce((s,b)=>s+b.sales,0), totalTarget=branches.reduce((s,b)=>s+b.target,0);
+  const totalCust=branches.reduce((s,b)=>s+b.cust,0), totalDays=branches.reduce((s,b)=>s+b.dayN,0);
   const maxS=Math.max(1,...branches.map(b=>b.sales));
   let h='';
-  // KPI
+  // ---- KPI ----
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
     +kpiBox('ยอดขายรวม','฿'+_thb(totalSales), totalTarget?('เป้า ฿'+_thb(totalTarget)):'')
-    +kpiBox('เข้าเป้าเฉลี่ย', totalTarget?((totalSales/totalTarget*100).toFixed(1)+'%'):'—', totalTarget&&totalSales>=totalTarget?'ถึงเป้า ✓':'')
-    +kpiBox('สาขายอดสูงสุด', branches[0]?branches[0].name:'—', branches[0]?('฿'+_thb(branches[0].sales)):'')
-    +kpiBox('ลูกค้ารวม', _thb(branches.reduce((s,b)=>s+b.cust,0))+' คน','')
+    +kpiBox('เข้าเป้าเฉลี่ย', totalTarget?((totalSales/totalTarget*100).toFixed(1)+'%'):'—', totalTarget&&totalSales>=totalTarget?'ถึงเป้า ✓':'ต่ำกว่าเป้า')
+    +kpiBox('เฉลี่ย/สาขา/วัน', '฿'+_thb(totalDays?totalSales/totalDays:0), 'ต่อหัวเฉลี่ย ฿'+_thb(totalCust?totalSales/totalCust:0))
+    +kpiBox('ลูกค้ารวม', _thb(totalCust)+' คน', 'สูงสุด: '+(branches[0]?branches[0].name:'—'))
     +'</div>';
-  // branch comparison bars
+  // ---- กราฟเส้นโค้งเทียบสาขา (รายวัน) ----
+  const lines = single
+    ? [ {name:'ยอดขาย',color:'#1b7a42',vals:branches[0].daily},
+        {name:'เป้า',color:'#94a3b8',dash:true,vals:(()=>{const m={};rows.forEach(x=>{m[x.sale_date]=(m[x.sale_date]||0)+(+x.target_total||0);});return m;})()} ]
+    : branches.map(b=>({name:b.name,color:b.color,vals:b.daily}));
+  h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>เทรนด์ยอดขายรายวัน'+(single?' — ยอดขาย vs เป้า':' (เทียบสาขา)')+'</h3></div><div class="card-b">'
+    +sdMultiLineChart(dates,lines)
+    +'<div class="chart-legend" style="flex-wrap:wrap">'+lines.map(l=>'<span><i style="background:'+l.color+'"></i>'+esc(l.name)+'</span>').join('')+'</div>'
+    +'</div></div>';
+  // ---- เทียบยอดขายรายสาขา (แท่ง) ----
   h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>เทียบยอดขายรายสาขา</h3></div><div class="card-b">'
     +branches.map(b=>{ const w=Math.round(b.sales/maxS*100); const achCol=b.ach==null?'#94a3b8':(b.ach>=100?'#16a34a':b.ach>=90?'#d97706':'#dc2626');
-      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><b>'+esc(b.name)+'</b><span>฿'+_thb(b.sales)+(b.ach!=null?(' · <span style="color:'+achCol+';font-weight:700">'+b.ach.toFixed(1)+'%</span>'):'')+'</span></div>'
-        +'<div style="height:16px;background:var(--green-soft,#e9f3ec);border-radius:8px;overflow:hidden"><div style="height:100%;width:'+w+'%;background:var(--green);border-radius:8px"></div></div>'
-        +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+b.days+' วัน · ต่อหัว ฿'+(b.pph?b.pph.toFixed(0):'—')+' · ลูกค้า '+_thb(b.cust)+'</div></div>';
+      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><b><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+b.color+';margin-right:5px"></i>'+esc(b.name)+'</b><span>฿'+_thb(b.sales)+(b.ach!=null?(' · <span style="color:'+achCol+';font-weight:700">'+b.ach.toFixed(1)+'%</span>'):'')+'</span></div>'
+        +'<div style="height:16px;background:var(--green-soft,#e9f3ec);border-radius:8px;overflow:hidden"><div style="height:100%;width:'+w+'%;background:'+b.color+';border-radius:8px"></div></div>'
+        +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+b.dayN+' วัน · เฉลี่ย/วัน ฿'+_thb(b.avgDay)+' · ต่อหัว ฿'+(b.pph?b.pph.toFixed(0):'—')+' · ลูกค้า '+_thb(b.cust)+'</div></div>';
     }).join('')+'</div></div>';
-  // daily trend (single branch) — SVG line sales vs target
-  if($('sd_branch').value){
-    const dd={}; rows.forEach(x=>{ const d=(dd[x.sale_date]=dd[x.sale_date]||{date:x.sale_date,sales:0,target:0}); d.sales+=(+x.sales_total||0); d.target+=(+x.target_total||0); });
-    const series=Object.values(dd).sort((a,b)=>a.date<b.date?-1:1);
-    h+='<div class="card"><div class="card-h"><h3>เทรนด์รายวัน — ยอดขาย vs เป้า</h3></div><div class="card-b">'+sdLineChart(series)
-      +'<div class="chart-legend"><span><i style="background:var(--green)"></i>ยอดขาย</span><span><i style="background:#94a3b8"></i>เป้า</span></div></div></div>';
-  } else {
-    h+='<div style="font-size:12px;color:var(--muted);margin:0 2px">เลือกสาขาเดียวเพื่อดูเทรนด์รายวัน</div>';
-  }
+  // ---- สินค้าโฟกัส / ช่องทางชำระ (ตารางเทียบสาขา) ----
+  const anyPai=branches.some(b=>b.pai), anyJeeb=branches.some(b=>b.jeeb), anySalapao=branches.some(b=>b.salapao);
+  const cols=[['All Cafe','cafe'],['Delivery','deliv'],['TrueWallet','tmw'],['ยอดบัตร','card']];
+  if(anyPai)cols.push(['พายอบ','pai']); if(anyJeeb)cols.push(['ขนมจีบ','jeeb']); if(anySalapao)cols.push(['ซาลาเปา','salapao']);
+  h+='<div class="card"><div class="card-h"><h3>สินค้าโฟกัส & ช่องทางชำระ (บาท รวมช่วง)</h3></div><div class="tablewrap"><table style="font-size:13px"><thead><tr><th>สาขา</th>'
+    +cols.map(c=>'<th class="num">'+esc(c[0])+'</th>').join('')+'</tr></thead><tbody>'
+    +branches.map(b=>'<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+b.color+';margin-right:5px"></i>'+esc(b.name)+'</td>'
+      +cols.map(c=>'<td class="num">'+_thb(b[c[1]])+'</td>').join('')+'</tr>').join('')
+    +'<tr style="font-weight:700;border-top:2px solid var(--line)"><td>รวม</td>'
+    +cols.map(c=>'<td class="num">'+_thb(branches.reduce((s,b)=>s+b[c[1]],0))+'</td>').join('')+'</tr>'
+    +'</tbody></table></div></div>';
   $('sd_body').innerHTML=h;
 }
 function kpiBox(label,val,sub){ return '<div class="card"><div class="card-b" style="padding:14px"><div style="font-size:12px;color:var(--muted)">'+esc(label)+'</div><div style="font-size:22px;font-weight:800;margin-top:2px">'+esc(val)+'</div>'+(sub?'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+'</div></div>'; }
-function sdLineChart(s){
-  if(!s.length) return '<div class="empty">ไม่มีข้อมูล</div>';
-  const W=680,H=200,pl=52,pr=12,pt=12,pb=24, iw=W-pl-pr, ih=H-pt-pb;
-  const max=Math.max(1,...s.map(d=>Math.max(d.sales,d.target)));
-  const xAt=i=>pl+(s.length<=1?iw/2:iw*i/(s.length-1)); const yAt=v=>pt+ih-(v/max*ih);
-  const path=arr=>arr.map((d,i)=>(i?'L':'M')+xAt(i).toFixed(1)+' '+yAt(d).toFixed(1)).join(' ');
-  let grid=''; for(let g=0;g<=3;g++){ const yy=pt+ih*g/3, v=Math.round(max*(3-g)/3); grid+='<line x1="'+pl+'" y1="'+yy+'" x2="'+(W-pr)+'" y2="'+yy+'" stroke="#eef0f3"/><text x="'+(pl-6)+'" y="'+(yy+3)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+_thb(v)+'</text>'; }
-  const dots=s.map((d,i)=>'<circle cx="'+xAt(i).toFixed(1)+'" cy="'+yAt(d.sales).toFixed(1)+'" r="2.4" style="fill:var(--green)"><title>'+esc(d.date.slice(5)+' · ฿'+_thb(d.sales)+' / เป้า ฿'+_thb(d.target))+'</title></circle>').join('');
-  const lblStep=Math.ceil(s.length/8);
-  const xlbl=s.map((d,i)=>(i%lblStep===0)?'<text x="'+xAt(i).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+d.date.slice(5)+'</text>':'').join('');
-  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block;overflow:visible">'+grid
-    +'<path d="'+path(s.map(d=>d.target))+'" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="4 3"/>'
-    +'<path d="'+path(s.map(d=>d.sales))+'" fill="none" style="stroke:var(--green)" stroke-width="2.4" stroke-linejoin="round"/>'+dots+xlbl+'</svg>';
+// เส้นโค้งมน (Catmull-Rom → Bezier)
+function sdSmooth(pts){ if(pts.length<2) return pts.length?('M'+pts[0].x.toFixed(1)+' '+pts[0].y.toFixed(1)):''; let d='M'+pts[0].x.toFixed(1)+' '+pts[0].y.toFixed(1); for(let i=0;i<pts.length-1;i++){ const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2; const c1x=p1.x+(p2.x-p0.x)/6,c1y=p1.y+(p2.y-p0.y)/6,c2x=p2.x-(p3.x-p1.x)/6,c2y=p2.y-(p3.y-p1.y)/6; d+=' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+','+c2x.toFixed(1)+' '+c2y.toFixed(1)+','+p2.x.toFixed(1)+' '+p2.y.toFixed(1); } return d; }
+function sdMultiLineChart(dates,lines){
+  if(!dates.length) return '<div class="empty">ไม่มีข้อมูล</div>';
+  const W=720,H=250,pl=56,pr=14,pt=14,pb=28,iw=W-pl-pr,ih=H-pt-pb;
+  const allv=[]; lines.forEach(l=>dates.forEach(d=>{ if(l.vals[d]!=null) allv.push(l.vals[d]); }));
+  const max=Math.max(1,...allv);
+  const xAt=i=>pl+(dates.length<=1?iw/2:iw*i/(dates.length-1)); const yAt=v=>pt+ih-(v/max*ih);
+  let grid=''; for(let g=0;g<=3;g++){ const yy=pt+ih*g/3,v=Math.round(max*(3-g)/3); grid+='<line x1="'+pl+'" y1="'+yy+'" x2="'+(W-pr)+'" y2="'+yy+'" stroke="#eef0f3"/><text x="'+(pl-6)+'" y="'+(yy+3)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+_thb(v)+'</text>'; }
+  const paths=lines.map(l=>{ const pts=dates.map((d,i)=>l.vals[d]!=null?{x:xAt(i),y:yAt(l.vals[d])}:null).filter(Boolean); return '<path d="'+sdSmooth(pts)+'" fill="none" stroke="'+l.color+'" stroke-width="2.4" stroke-linecap="round"'+(l.dash?' stroke-dasharray="5 4"':'')+'/>'; }).join('');
+  const step=Math.max(1,Math.ceil(dates.length/8)); const xlbl=dates.map((d,i)=>(i%step===0)?'<text x="'+xAt(i).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+d.slice(5)+'</text>':'').join('');
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block;overflow:visible">'+grid+paths+xlbl+'</svg>';
 }
 function lfIsoBkk(y,mo,d,hh,mm){ if(y>2500)y-=543; const pad=n=>String(n).padStart(2,'0'); return y+'-'+pad(mo)+'-'+pad(d)+'T'+pad(hh)+':'+pad(mm)+':00+07:00'; }
 function parseLineExport(txt){
