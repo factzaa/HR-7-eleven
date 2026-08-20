@@ -2851,9 +2851,9 @@
         from += page;
       }
     }
-    const salesRows = Object.values(salesMap); let salesSaved = 0;
-    for (let i = 0; i < salesRows.length; i += 300) { const chunk = salesRows.slice(i, i + 300); const { error: e3 } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' }); if (!e3) salesSaved += chunk.length; }
-    return { ok: true, updated, msgs_scanned: scanned, sales_msgs: hit, sales_saved: salesSaved };
+    const salesRows = Object.values(salesMap); let salesSaved = 0; let saveErr = null;
+    for (let i = 0; i < salesRows.length; i += 300) { const chunk = salesRows.slice(i, i + 300); const { error: e3 } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' }); if (!e3) salesSaved += chunk.length; else if (!saveErr) saveErr = e3.message; }
+    return { ok: true, updated, msgs_scanned: scanned, sales_msgs: hit, sales_saved: salesSaved, save_error: saveErr };
   }
   async function hrLineGroupLabel(p) {
     if (!p.group_id) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
