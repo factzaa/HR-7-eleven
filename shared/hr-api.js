@@ -2717,9 +2717,10 @@
   }
   // ทำแถวยอดขายให้มี "คอลัมน์ครบเท่ากันทุกแถว" (เติม null) — จำเป็นสำหรับ batch upsert ของ PostgREST
   const _SALES_COLS = ['target_product','target_card','target_total','sales_product','sales_card','sales_total','customers','per_head','allcafe_cups','allcafe_baht','delivery_bills','delivery_baht','truewallet_baht','truewallet_pct'];
+  const _SALES_CAP = { target_product:5e6, target_card:5e6, target_total:5e6, sales_product:5e6, sales_card:5e6, sales_total:5e6, customers:2e5, per_head:1e5, allcafe_cups:1e5, allcafe_baht:2e6, delivery_bills:1e5, delivery_baht:2e6, truewallet_baht:2e6, truewallet_pct:1000 };
   function _salesRow(s, meta) {
     const row = { branch_id: meta.branch_id, group_id: meta.group_id, sale_date: meta.sale_date, shift: s.shift, reporter: meta.reporter, source: meta.source, raw_text: meta.raw_text, extra: (s.extra && Object.keys(s.extra).length) ? s.extra : null };
-    _SALES_COLS.forEach(k => { row[k] = (s[k] === undefined ? null : s[k]); });
+    _SALES_COLS.forEach(k => { let v = (s[k] === undefined ? null : s[k]); if (v != null && Math.abs(v) > _SALES_CAP[k]) v = null; row[k] = v; });   // กันเลขเพี้ยน/ตัวเลขต่อกัน
     return row;
   }
   // หา "วันที่ของรายงาน" จากในข้อความ (เช่น วันที่ 01/06/69) — ถ้าไม่มีใช้วันที่ส่ง

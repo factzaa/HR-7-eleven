@@ -9799,9 +9799,17 @@ async function drawSalesDash(){
   if(!rows.length){ $('sd_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีข้อมูลยอดขายในช่วงนี้ — นำเข้าไฟล์แชท หรือกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีดก่อน</div></div></div>'; return; }
   const single=$('sd_branch').value;
   const exBaht=(ex,k)=>{ try{ const a=ex&&ex[k]; return Array.isArray(a)?(+a[a.length-1]||0):0; }catch(e){ return 0; } };
-  // ★ ยอด "รวม" ในแต่ละผลัดเป็นยอดสะสมทั้งวัน → เอาแค่แถวที่ยอดรวมสูงสุดต่อ (สาขา,วัน) = ยอดสิ้นวัน (กันนับซ้ำข้ามผลัด)
+  // ★ ยอด "รวม" แต่ละผลัด = ยอดสะสมทั้งวัน → 1 แถวต่อ (สาขา,วัน): เลือก "สิ้นวัน" ก่อน ถ้าไม่มีเอายอดรวมสูงสุด
+  //    + กรองค่าขยะ (เกิน 2 ล้าน/ผลัด เป็นไปไม่ได้สำหรับ 1 สาขา = พิมพ์เลขเพี้ยน)
+  const SANE=2000000;
   const dayBest={};
-  rows.forEach(x=>{ const k=x.branch_id+'|'+x.sale_date; const st=+x.sales_total||0; const cur=dayBest[k]; if(!cur || st>(+cur.sales_total||0)) dayBest[k]=x; });
+  rows.forEach(x=>{ const st=+x.sales_total||0; if(st>SANE||(+x.target_total||0)>SANE) return;
+    const k=x.branch_id+'|'+x.sale_date; const cur=dayBest[k]; const isEnd=x.shift==='สิ้นวัน';
+    if(!cur){ dayBest[k]=x; return; }
+    const curEnd=cur.shift==='สิ้นวัน';
+    if(isEnd&&!curEnd) dayBest[k]=x;
+    else if(isEnd===curEnd && st>(+cur.sales_total||0)) dayBest[k]=x;
+  });
   const drows=Object.values(dayBest);
   // aggregate per branch (ครบทุกมิติ) — จากยอดรวมสิ้นวันต่อวัน
   const byBr={}; const allDates={};
