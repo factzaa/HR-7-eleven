@@ -7476,8 +7476,14 @@ function mtaskLineNotify(r){
     const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
     const payload=(r.count>1 && r.batch_id) ? { batch_id:r.batch_id } : (r.id ? { task_id:r.id } : null);
     if(!payload) return;
+    if(r.event) payload.event=r.event;   // 'done' = การ์ดงานเสร็จ
     fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   }catch(e){}
+}
+// ทวงงานค้าง ผจก. เข้ากลุ่มไลน์ (สแกนเลยกำหนด+ยังไม่เสร็จ · ทวงวันละครั้ง) — ยิงตอนเปิดหน้างาน ผจก.
+function mtaskRemindScan(){
+  try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
+    fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ scan:'remind' })}); }catch(e){}
 }
 async function openMtask(id){
   const r=await post({ action:'hr_mtask_get', password:pwd, id });
@@ -7631,7 +7637,9 @@ async function mtStage(status){
     return;
   }
   const r=await post({ action:'hr_mtask_stage', password:pwd, id:MT_CUR.id, status, role:mtRole(), sender_name:mtName() });
-  if(r.ok){ MT_CUR.status=status; renderMtDetail(); refreshMtFeed(); loadMtasks(); toast('ok','อัปเดตสถานะแล้ว'); }
+  if(r.ok){ MT_CUR.status=status; renderMtDetail(); refreshMtFeed(); loadMtasks(); toast('ok','อัปเดตสถานะแล้ว');
+    if(status==='done') mtaskLineNotify({ ok:true, id:MT_CUR.id, event:'done' });   // ปิดงาน → แจ้งเข้ากลุ่ม ผจก.
+  }
   else toast('err', r.error||'ไม่สำเร็จ');
 }
 // HR ตีกลับงานที่ ผจก.ปิดว่าเสร็จ → ย้ายการ์ดกลับไป "กำลังทำ" พร้อมเหตุผล (+ แนบรูป/วาดชี้จุดได้)
@@ -7709,6 +7717,7 @@ function mdStPill(st){
 function enterMtasks(){
   loadMtaskIntask();
   loadMtaskFixing();          // งานที่สั่งแก้แล้วรอส่งกลับ
+  if(!enterMtasks._remind){ enterMtasks._remind=1; mtaskRemindScan(); }   // เตือนงานใกล้ครบ/เลยกำหนดเข้ากลุ่ม ผจก. (edge กันซ้ำวันละครั้ง)
   if(MGR_MODE){
     $('mt_switch').style.display='flex';
     if(!$('mt_switch').dataset.wired){ $('mt_switch').dataset.wired='1'; $('mtsw_daily').onclick=()=>showMtView('daily'); $('mtsw_assigned').onclick=()=>showMtView('assigned'); }
