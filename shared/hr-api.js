@@ -200,6 +200,8 @@
         // auth = { mgr_emp, mgr_pin } (ผจก.) หรือไม่มี = สำนักงาน (HR)
         case 'hr_line_feed':         return await hrLineFeed(p);
         case 'hr_line_groups':       return await hrLineGroups();
+        case 'hr_line_group_label':  return await hrLineGroupLabel(p);
+        case 'hr_line_import':       return await hrLineImport(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
         case 'hr_term_rules_save':   return await hrTermRulesSave(p.data, p);
         case 'hr_term_rule_delete':  return await hrTermRuleDelete(p.key, p);
@@ -2620,17 +2622,18 @@
     const limit = Math.min(Math.max(Number(p.limit) || 120, 1), 400);
     const sinceIso = new Date(Date.now() - hours * 3600 * 1000).toISOString();
     let q = sb().from('line_messages')
-      .select('sent_at,branch_id,display_name,msg_type,text,media_url')
+      .select('sent_at,branch_id,group_id,display_name,msg_type,text,media_url')
       .gte('sent_at', sinceIso).order('sent_at', { ascending: false }).limit(limit);
     if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
-    const [{ data: msgs, error }, { data: brs }] = await Promise.all([
-      q, sb().from('branches').select('branch_id,name'),
+    const [{ data: msgs, error }, { data: brs }, { data: gls }] = await Promise.all([
+      q, sb().from('branches').select('branch_id,name'), sb().from('line_groups').select('group_id,label'),
     ]);
     if (error) return { ok: false, error: error.message };
     const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
+    const gl = {}; (gls || []).forEach(g => { if (g.label) gl[g.group_id] = g.label; });
     const rows = (msgs || []).map(m => ({
       sent_at: m.sent_at, branch_id: m.branch_id || '',
-      branch_name: m.branch_id ? (bn[m.branch_id] || m.branch_id) : '(ยังไม่ผูกสาขา)',
+      branch_name: m.branch_id ? (bn[m.branch_id] || m.branch_id) : (gl[m.group_id] || '(ยังไม่ผูกสาขา)'),
       display_name: m.display_name || 'ไม่ทราบชื่อ', msg_type: m.msg_type,
       text: m.text || '', media_url: m.media_url || '',
     }));
@@ -2646,10 +2649,39 @@
     const rows = (gs || []).map(g => ({
       group_id: g.group_id, branch_id: g.branch_id || '',
       branch_name: g.branch_id ? (bn[g.branch_id] || g.branch_id) : '',
+      label: g.label || '',
       mapped: mappedGroups.has(g.group_id),
       last_message_at: g.last_message_at, last_text: g.last_text || '', msg_count: g.msg_count || 0,
     }));
     return { ok: true, rows };
+  }
+  // นำเข้าประวัติแชทจากไฟล์ export ของ LINE (.txt) — rows=[{sent_at,display_name,text}]
+  async function hrLineImport(p) {
+    const gid = String(p.group_id || ''); if (!gid) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
+    const rows = Array.isArray(p.rows) ? p.rows : []; if (!rows.length) return { ok: false, error: 'ไม่มีข้อมูลในไฟล์' };
+    const { data: br } = await sb().from('branches').select('branch_id').eq('line_group_id', gid).maybeSingle();
+    const bid = br ? br.branch_id : null;
+    const hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
+    const recs = rows.filter(r => r && r.sent_at && (r.text || '').trim()).map(r => ({
+      line_msg_id: 'imp_' + gid.slice(-8) + '_' + hash(gid + '|' + r.sent_at + '|' + (r.display_name || '') + '|' + (r.text || '')),
+      group_id: gid, branch_id: bid, source_type: 'import',
+      display_name: String(r.display_name || '').slice(0, 120), msg_type: 'text',
+      text: String(r.text || ''), sent_at: r.sent_at,
+    }));
+    let done = 0;
+    for (let i = 0; i < recs.length; i += 500) {
+      const chunk = recs.slice(i, i + 500);
+      const { error } = await sb().from('line_messages').upsert(chunk, { onConflict: 'line_msg_id', ignoreDuplicates: true });
+      if (error) return { ok: false, error: error.message, done };
+      done += chunk.length;
+    }
+    return { ok: true, imported: recs.length };
+  }
+  async function hrLineGroupLabel(p) {
+    if (!p.group_id) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
+    const { error } = await sb().from('line_groups').update({ label: (p.label || '').trim() || null }).eq('group_id', String(p.group_id));
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   }
 
   async function hrTermRulesGet() {

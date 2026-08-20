@@ -1474,10 +1474,12 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <option value="24">24 ชม.</option><option value="48" selected>2 วัน</option><option value="72">3 วัน</option><option value="168">7 วัน</option>
     </select>
     <label class="check" style="font-size:13px"><input type="checkbox" id="lf_urgent"> เฉพาะเรื่องด่วน</label>
+    <button class="btn btn-sec btn-sm" id="lf_manage"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> จัดการกลุ่ม</button>
     <button class="btn btn-sec btn-sm" id="lf_refresh">รีเฟรช</button>
     <button class="btn btn-pri btn-sm" id="lf_ask"><svg class="ei" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.9a8.4 8.4 0 0 1-1-4A8.38 8.38 0 0 1 12 3.6a8.38 8.38 0 0 1 9 7.9z"/></svg> ให้นิดาสรุป</button>
   </div>
   <div style="font-size:12px;color:var(--muted);margin:0 2px 10px">ข้อความจริงจากกลุ่มไลน์สาขา (เก็บตั้งแต่เปิดระบบเป็นต้นไป) · <span id="lf_unmapped" style="color:#dc2626"></span></div>
+  <div id="lf_groups" style="display:none;margin-bottom:12px"></div>
   <div id="lf_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
@@ -9716,6 +9718,7 @@ async function loadLineFeed(){
     $('lf_hours').onchange=loadLineFeed;
     $('lf_urgent').onchange=renderLineFeed;
     $('lf_ask').onclick=()=>{ const bn=$('lf_branch').selectedOptions[0]?.textContent||'ทุกสาขา'; const h=$('lf_hours').value; if(typeof asstAsk==='function') asstAsk('สรุปความเคลื่อนไหว/ข่าวจากกลุ่มไลน์สาขา '+bn+' ย้อนหลัง '+h+' ชั่วโมง เน้นเรื่องด่วนที่ต้องรีบดู'); };
+    $('lf_manage').onclick=()=>{ const el=$('lf_groups'); if(el.style.display==='none'){ el.style.display=''; loadLineGroupsManage(); } else el.style.display='none'; };
     $('lf_body').dataset.wired='1';
   }
   $('lf_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -9725,6 +9728,63 @@ async function loadLineFeed(){
   // เตือนถ้ามีกลุ่มยังไม่ผูกสาขา
   try{ const g=await post({ action:'hr_line_groups', password:pwd }); const un=(g.rows||[]).filter(x=>!x.branch_id).length; $('lf_unmapped').textContent = un? ('มี '+un+' กลุ่มยังไม่ผูกสาขา — ตั้งค่าที่ จัดการสาขา → LINE Group ID'):''; }catch(e){}
   renderLineFeed();
+}
+async function loadLineGroupsManage(){
+  const box=$('lf_groups'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_line_groups', password:pwd });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const rows=r.rows||[];
+  box.innerHTML='<div class="card"><div class="card-b" style="padding:12px">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:4px">จัดการกลุ่มไลน์ที่บอทอยู่</div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">กลุ่มที่ผูกสาขาแล้วจะขึ้นชื่อสาขาอัตโนมัติ · กลุ่มที่ไม่ใช่สาขาเดียว (เช่น กลุ่ม ผจก.) ตั้ง "ชื่อกลุ่ม" เองเพื่อให้นิดารู้จัก</div>'
+    +(rows.length?rows.map(g=>{
+      const tag = g.mapped ? '<span class="pill ok" style="font-size:11px">ผูกสาขา: '+esc(g.branch_name)+'</span>' : '<span class="pill" style="font-size:11px;background:#fef3c7;color:#a16207">ไม่ผูกสาขา</span>';
+      return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line)">'
+        +'<div style="flex:1;min-width:180px"><div style="font-size:12px;color:var(--muted);font-family:monospace;word-break:break-all">'+esc(g.group_id)+'</div>'
+        +'<div style="font-size:12px;color:var(--muted)">'+tag+' · ข้อความ '+(g.msg_count||0)+' · ล่าสุด: '+esc((g.last_text||'').slice(0,40))+'</div></div>'
+        +'<input type="text" value="'+esc(g.label||'')+'" placeholder="ชื่อกลุ่ม เช่น กลุ่ม ผจก." data-glid="'+esc(g.group_id)+'" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;min-width:180px"'+(g.mapped?' disabled':'')+'>'
+        +(g.mapped?'':'<button class="btn btn-pri btn-sm" data-glsave="'+esc(g.group_id)+'">บันทึก</button>')
+        +'<label class="btn btn-sec btn-sm" style="cursor:pointer" title="นำเข้าประวัติแชทเก่าจากไฟล์ export ของ LINE (.txt)"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg> นำเข้า .txt<input type="file" accept=".txt,text/plain" hidden data-glimp="'+esc(g.group_id)+'"></label>'
+        +'</div>';
+    }).join(''):'<div class="empty">ยังไม่มีกลุ่ม (บอทยังไม่เคยได้รับข้อความจากกลุ่มไหน)</div>')
+    +'</div></div>';
+  box.querySelectorAll('[data-glsave]').forEach(b=>b.onclick=async()=>{
+    const gid=b.dataset.glsave; const inp=box.querySelector('[data-glid="'+CSS.escape(gid)+'"]');
+    const rr=await post({ action:'hr_line_group_label', password:pwd, group_id:gid, label:inp?inp.value:'' });
+    if(rr.ok){ toast('ok','ตั้งชื่อกลุ่มแล้ว'); loadLineFeed(); } else toast('err',rr.error||'ไม่สำเร็จ');
+  });
+  box.querySelectorAll('[data-glimp]').forEach(inp=>inp.onchange=()=>lfImportFile(inp));
+}
+function lfIsoBkk(y,mo,d,hh,mm){ if(y>2500)y-=543; const pad=n=>String(n).padStart(2,'0'); return y+'-'+pad(mo)+'-'+pad(d)+'T'+pad(hh)+':'+pad(mm)+':00+07:00'; }
+function parseLineExport(txt){
+  const lines=txt.split(/\r?\n/); let cur=null,last=null; const out=[];
+  const dY=/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/;              // 2026/08/20
+  const dEN=/^[A-Za-z]{3},?\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/;      // Sat, 08/20/2026
+  const dTH=/^(?:วัน[^\d]*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/;         // 20/08/2569
+  const msg=/^(\d{1,2}):(\d{2})\t([^\t]*)\t([\s\S]*)$/;
+  for(const raw of lines){
+    const line=raw.replace(/[​﻿]/g,'');
+    let m;
+    if((m=line.match(dY))){ cur={y:+m[1],mo:+m[2],d:+m[3]}; last=null; continue; }
+    if((m=line.match(dEN))){ cur={y:+m[3],mo:+m[1],d:+m[2]}; last=null; continue; }
+    if((m=line.match(dTH))){ cur={y:+m[3],mo:+m[2],d:+m[1]}; last=null; continue; }
+    if(cur && (m=line.match(msg))){ last={ sent_at:lfIsoBkk(cur.y,cur.mo,cur.d,+m[1],+m[2]), display_name:m[3], text:m[4] }; out.push(last); continue; }
+    if(last && line.trim()!==''){ last.text+='\n'+line; }   // ข้อความหลายบรรทัด
+  }
+  return out;
+}
+async function lfImportFile(inp){
+  const gid=inp.dataset.glimp; const f=inp.files&&inp.files[0]; inp.value='';
+  if(!f) return;
+  const txt=await f.text();
+  const rows=parseLineExport(txt);
+  if(!rows.length){ toast('err','อ่านไฟล์ไม่ออก — รูปแบบ export อาจต่างออกไป ลองส่งไฟล์ให้ผมดูรูปแบบก่อนได้'); return; }
+  const a=rows[0].sent_at.slice(0,10), b=rows[rows.length-1].sent_at.slice(0,10);
+  if(!confirm('พบข้อความ '+rows.length+' รายการ\nช่วง '+a+' ถึง '+b+'\nนำเข้ากลุ่มนี้เลยไหม? (นำเข้าซ้ำได้ ระบบกันข้อความซ้ำให้อัตโนมัติ)')) return;
+  toast('ok','กำลังนำเข้า…');
+  const r=await post({ action:'hr_line_import', password:pwd, group_id:gid, rows });
+  if(r.ok){ toast('ok','นำเข้าแล้ว '+r.imported+' รายการ'); loadLineFeed(); loadLineGroupsManage(); }
+  else toast('err',r.error||'นำเข้าไม่สำเร็จ');
 }
 function renderLineFeed(){
   const onlyU=$('lf_urgent')&&$('lf_urgent').checked;
