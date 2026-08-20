@@ -9758,19 +9758,30 @@ async function loadLineGroupsManage(){
 function lfIsoBkk(y,mo,d,hh,mm){ if(y>2500)y-=543; const pad=n=>String(n).padStart(2,'0'); return y+'-'+pad(mo)+'-'+pad(d)+'T'+pad(hh)+':'+pad(mm)+':00+07:00'; }
 function parseLineExport(txt){
   const lines=txt.split(/\r?\n/); let cur=null,last=null; const out=[];
-  const dY=/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/;              // 2026/08/20
-  const dEN=/^[A-Za-z]{3},?\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/;      // Sat, 08/20/2026
-  const dTH=/^(?:วัน[^\d]*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/;         // 20/08/2569
-  const msg=/^(\d{1,2}):(\d{2})\t([^\t]*)\t([\s\S]*)$/;
+  // วันที่ (ขึ้นต้นบรรทัด): 2026.06.01 / 2026/08/20 / 20/08/2569 / Sat, 08/20/2026
+  const dY =/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})(?:\D|$)/;       // 2026.06.01 หรือ 2026/08/20
+  const dEN=/^[A-Za-z]{3},?\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/;       // Sat, 08/20/2026
+  const dTH=/^(?:วัน[ก-๙]*\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/; // 20/08/2569
+  // ข้อความ: รองรับทั้งแบบแท็บ และแบบเว้นวรรค (HH:MM ผู้ส่ง ข้อความ)
+  const mTab=/^(\d{1,2}):(\d{2})\t([^\t]*)\t?([\s\S]*)$/;
+  const mSp =/^(\d{1,2}):(\d{2})[  ]+(\S+)[  ]+([\s\S]*)$/;
+  const mSp0=/^(\d{1,2}):(\d{2})[  ]+(\S+)[  ]*$/;        // มีแค่เวลา+ชื่อ (ข้อความว่าง)
+  const isDate=l=> dY.test(l)||dEN.test(l)||dTH.test(l);
   for(const raw of lines){
     const line=raw.replace(/[​﻿]/g,'');
     let m;
     if((m=line.match(dY))){ cur={y:+m[1],mo:+m[2],d:+m[3]}; last=null; continue; }
     if((m=line.match(dEN))){ cur={y:+m[3],mo:+m[1],d:+m[2]}; last=null; continue; }
     if((m=line.match(dTH))){ cur={y:+m[3],mo:+m[2],d:+m[1]}; last=null; continue; }
-    if(cur && (m=line.match(msg))){ last={ sent_at:lfIsoBkk(cur.y,cur.mo,cur.d,+m[1],+m[2]), display_name:m[3], text:m[4] }; out.push(last); continue; }
-    if(last && line.trim()!==''){ last.text+='\n'+line; }   // ข้อความหลายบรรทัด
+    if(cur && (m=line.match(mTab))){ last={ sent_at:lfIsoBkk(cur.y,cur.mo,cur.d,+m[1],+m[2]), display_name:m[3], text:m[4]||'' }; out.push(last); continue; }
+    if(cur && (m=line.match(mSp))){  last={ sent_at:lfIsoBkk(cur.y,cur.mo,cur.d,+m[1],+m[2]), display_name:m[3], text:m[4]||'' }; out.push(last); continue; }
+    if(cur && (m=line.match(mSp0))){ last={ sent_at:lfIsoBkk(cur.y,cur.mo,cur.d,+m[1],+m[2]), display_name:m[3], text:'' }; out.push(last); continue; }
+    // บรรทัดต่อเนื่องของข้อความก่อนหน้า (รายงานยอดขายหลายบรรทัด) — เว้นบรรทัดว่าง/บรรทัดที่เป็นวันที่ใหม่
+    if(last && line.trim()!=='' && !isDate(line)){ last.text += (last.text?'\n':'') + line; }
+    else if(last && line.trim()===''){ last.text += '\n'; }
   }
+  // ตัดช่องว่าง/บรรทัดว่างท้ายข้อความ
+  out.forEach(o=>{ o.text=(o.text||'').replace(/\n+$/,'').trim(); });
   return out;
 }
 async function lfImportFile(inp){
