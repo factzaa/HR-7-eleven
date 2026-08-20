@@ -1404,6 +1404,13 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
 <!-- QA สินค้า (ตรวจนับสินค้าใกล้หมดอายุ) -->
 <div id="view_qa" class="container" style="display:none">
+  <div class="shsub" id="qasub">
+    <button class="shsub-b on" type="button" data-qapan="near"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> สินค้าใกล้หมดอายุ <span id="qasub_cnt" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-qapan="folders"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> โฟลเดอร์ทั้งหมด</button>
+    <button class="shsub-b" type="button" data-qapan="new"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18M12 14v4M10 16h4"/></svg> สร้างโฟลเดอร์ใหม่</button>
+  </div>
+
+  <div class="shpan" id="qapan_new" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> สร้างโฟลเดอร์ตรวจวันหมดอายุ</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex;flex-direction:column;gap:10px">
@@ -1429,9 +1436,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <div style="text-align:right"><button class="btn btn-pri" id="qa_create">สร้างโฟลเดอร์ + มอบหมาย</button></div>
     </div>
   </div>
+  </div><!-- /qapan_new -->
 
+  <div class="shpan" id="qapan_near">
   <!-- ภาพรวมสินค้าใกล้หมดอายุ รวมทุกโฟลเดอร์ (เรียงตามวันหมดอายุใกล้สุด) -->
-  <div class="toolbar" style="margin-top:22px;flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:200px"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> สินค้าใกล้หมดอายุ · รวมทุกโฟลเดอร์</h3>
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px"><h3 style="flex:1;font-size:15px;font-weight:600;min-width:200px"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> สินค้าใกล้หมดอายุ · รวมทุกโฟลเดอร์</h3>
     <select id="qaall_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
       <option value="on_shelf">ยังอยู่บนเชลฟ์</option>
       <option value="">ทั้งหมด</option>
@@ -1443,10 +1452,13 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <button class="btn btn-sec btn-sm" id="qaall_refresh">รีเฟรช</button>
   </div>
   <div id="qaall_body"><div class="empty">กำลังโหลด…</div></div>
+  </div><!-- /qapan_near -->
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">โฟลเดอร์ทั้งหมด</h3><button class="btn btn-sec btn-sm" id="qa_refresh">รีเฟรช</button></div>
+  <div class="shpan" id="qapan_folders" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">โฟลเดอร์ทั้งหมด</h3><button class="btn btn-sec btn-sm" id="qa_refresh">รีเฟรช</button></div>
   <div id="qa_list"><div class="empty">กำลังโหลด…</div></div>
   <div id="qa_items_wrap" style="margin-top:16px"></div>
+  </div><!-- /qapan_folders -->
 </div>
 
 <!-- เชลฟ์ประจำเดือน (Shelf Care) -->
@@ -9645,6 +9657,14 @@ function loadQaTab(){
   renderQaEmpList();
   loadQaAll();
   loadQaFolders();
+  if($('qasub') && !$('qasub').dataset.wired){
+    $('qasub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>qaTab(b.dataset.qapan));
+    $('qasub').dataset.wired='1'; qaTab('near');
+  }
+}
+function qaTab(name){
+  ['near','folders','new'].forEach(k=>{ const p=$('qapan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
+  document.querySelectorAll('#qasub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.qapan===name));
 }
 let QAALL=[];
 async function loadQaAll(){
@@ -9685,8 +9705,10 @@ function renderQaAll(){
   if(brf) rows=rows.filter(it=>String(it.branch_id)===String(brf));
   if(qq) rows=rows.filter(it=>((it.name||'')+' '+(it.barcode||'')).toLowerCase().includes(qq));
   rows=rows.slice().sort((a,b)=>{ const da=a.expiry_date||'9999-12-31',db=b.expiry_date||'9999-12-31'; return da<db?-1:da>db?1:0; });
-  if(!rows.length){ body.innerHTML='<div class="empty">ไม่มีสินค้าตามเงื่อนไข</div>'; return; }
+  const qab=$('qasub_cnt');
+  if(!rows.length){ body.innerHTML='<div class="empty">ไม่มีสินค้าตามเงื่อนไข</div>'; if(qab) qab.style.display='none'; return; }
   const near=rows.filter(it=>{ const dl=it.expiry_date?qaDaysLeft(it.expiry_date):null; return dl!=null&&dl<=7; }).length;
+  if(qab){ if(near){ qab.style.display=''; qab.textContent=near; } else qab.style.display='none'; }
   let h='<div style="font-size:12.5px;color:var(--muted);margin:0 2px 8px">รวม <b>'+rows.length+'</b> รายการ'+(near?(' · <b style="color:#dc2626">ใกล้หมด/หมดแล้ว (≤7 วัน) '+near+' รายการ</b>'):'')+'</div>';
   h+='<div class="tablewrap"><table style="font-size:13px"><thead><tr><th style="width:52px"></th><th>สินค้า</th><th>โฟลเดอร์</th><th>หมดอายุ</th><th style="text-align:center">สถานะ</th><th>สาขา</th><th></th></tr></thead><tbody>'
     + rows.map(qaAllRowHtml).join('')
