@@ -2713,6 +2713,13 @@
     // เก็บเฉพาะผลัดที่มีตัวเลขยอดขาย/เป้าจริง
     return Object.values(shifts).filter(s => s.sales_total != null || s.sales_product != null || s.target_total != null);
   }
+  // ทำแถวยอดขายให้มี "คอลัมน์ครบเท่ากันทุกแถว" (เติม null) — จำเป็นสำหรับ batch upsert ของ PostgREST
+  const _SALES_COLS = ['target_product','target_card','target_total','sales_product','sales_card','sales_total','customers','per_head','allcafe_cups','allcafe_baht','delivery_bills','delivery_baht','truewallet_baht','truewallet_pct'];
+  function _salesRow(s, meta) {
+    const row = { branch_id: meta.branch_id, group_id: meta.group_id, sale_date: meta.sale_date, shift: s.shift, reporter: meta.reporter, source: meta.source, raw_text: meta.raw_text, extra: (s.extra && Object.keys(s.extra).length) ? s.extra : null };
+    _SALES_COLS.forEach(k => { row[k] = (s[k] === undefined ? null : s[k]); });
+    return row;
+  }
   // หา "วันที่ของรายงาน" จากในข้อความ (เช่น วันที่ 01/06/69) — ถ้าไม่มีใช้วันที่ส่ง
   function _salesDate(text, fallbackIso) {
     const m = String(text).match(/วันที่\s*(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})/);
@@ -2768,12 +2775,7 @@
       if (sales.length && bid) {
         const sdate = _salesDate(text, r.sent_at);
         if (sdate) sales.forEach(s => {
-          const extra = s.extra && Object.keys(s.extra).length ? s.extra : null;
-          salesMap[bid + '|' + sdate + '|' + s.shift] = Object.assign({}, s, {
-            branch_id: bid, group_id: gid, sale_date: sdate,
-            reporter: String(r.display_name || '').slice(0, 120), source: 'import',
-            raw_text: text.slice(0, 2000), extra,
-          });
+          salesMap[bid + '|' + sdate + '|' + s.shift] = _salesRow(s, { branch_id: bid, group_id: gid, sale_date: sdate, reporter: String(r.display_name || '').slice(0, 120), source: 'import', raw_text: text.slice(0, 2000) });
         });
       }
       return {
@@ -2845,7 +2847,7 @@
           let sales = []; try { sales = _extractSales(m.text || ''); } catch (_e) {}
           if (!sales.length) continue; hit++;
           const sdate = _salesDate(m.text || '', m.sent_at); if (!sdate) continue;
-          sales.forEach(s => { const extra = s.extra && Object.keys(s.extra).length ? s.extra : null; salesMap[bid + '|' + sdate + '|' + s.shift] = Object.assign({}, s, { branch_id: bid, group_id: m.group_id, sale_date: sdate, reporter: (m.display_name || '').slice(0, 120), source: 'live', raw_text: (m.text || '').slice(0, 2000), extra }); });
+          sales.forEach(s => { salesMap[bid + '|' + sdate + '|' + s.shift] = _salesRow(s, { branch_id: bid, group_id: m.group_id, sale_date: sdate, reporter: (m.display_name || '').slice(0, 120), source: 'live', raw_text: (m.text || '').slice(0, 2000) }); });
         }
         if (sms.length < page) break;
         from += page;
