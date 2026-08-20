@@ -9786,7 +9786,7 @@ async function loadLineGroupsManage(){
 const _thb=n=>Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:0});
 async function loadSalesDash(){
   if($('sd_branch') && $('sd_branch').options.length<=1) $('sd_branch').innerHTML='<option value="">ทุกสาขา (เทียบกัน)</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
-  if(!$('sd_end').value){ const t=new Date(Date.now()+7*3600*1000); $('sd_end').value=t.toISOString().slice(0,10); const s=new Date(t.getTime()-29*86400000); $('sd_start').value=s.toISOString().slice(0,10); }
+  if(!$('sd_end').value){ const t=new Date(Date.now()+7*3600*1000); const y=t.getUTCFullYear(),mo=t.getUTCMonth(); const p=n=>String(n).padStart(2,'0'); $('sd_start').value=y+'-'+p(mo+1)+'-01'; const last=new Date(Date.UTC(y,mo+1,0)).getUTCDate(); $('sd_end').value=y+'-'+p(mo+1)+'-'+p(last); }
   if(!$('sd_body').dataset.wired){ $('sd_go').onclick=drawSalesDash; $('sd_branch').onchange=drawSalesDash; $('sd_body').dataset.wired='1'; }
   drawSalesDash();
 }
@@ -9852,20 +9852,49 @@ async function drawSalesDash(){
         +'<div style="height:16px;background:var(--green-soft,#e9f3ec);border-radius:8px;overflow:hidden"><div style="height:100%;width:'+w+'%;background:'+b.color+';border-radius:8px"></div></div>'
         +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+b.dayN+' วัน · เฉลี่ย/วัน ฿'+_thb(b.avgDay)+' · ต่อหัว ฿'+(b.pph?b.pph.toFixed(0):'—')+' · ลูกค้า '+_thb(b.cust)+'</div></div>';
     }).join('')+'</div></div>';
-  // ---- สินค้าโฟกัส / ช่องทางชำระ (ตารางเทียบสาขา) ----
-  const anyPai=branches.some(b=>b.pai), anyJeeb=branches.some(b=>b.jeeb), anySalapao=branches.some(b=>b.salapao);
-  const cols=[['All Cafe','cafe'],['Delivery','deliv'],['TrueWallet','tmw'],['ยอดบัตร','card']];
+  // ---- โดนัท: ยอดขายแยกรายผลัด + สินค้าโฟกัส/ช่องทางชำระ ----
+  const shiftAgg={}; rows.forEach(x=>{ const st=+x.sales_total||0; if(st>SANE) return; const sh=x.shift||'อื่นๆ'; shiftAgg[sh]=(shiftAgg[sh]||0)+st; });
+  const shiftColor={'เช้า':'#f59e0b','บ่าย':'#3b82f6','ดึก':'#7c3aed','สิ้นวัน':'#16a34a','อื่นๆ':'#94a3b8'};
+  const shiftOrder=['เช้า','บ่าย','ดึก','สิ้นวัน'];
+  const shiftItems=Object.keys(shiftAgg).sort((a,b)=>(shiftOrder.indexOf(a)+9)%99-(shiftOrder.indexOf(b)+9)%99).map(k=>({label:'ผลัด'+k,value:shiftAgg[k],color:shiftColor[k]||'#94a3b8'}));
+  const sum=k=>branches.reduce((s,b)=>s+b[k],0);
+  const focusItems=[{label:'All Cafe',value:sum('cafe'),color:'#16a34a'},{label:'Delivery',value:sum('deliv'),color:'#2563eb'},{label:'TrueWallet',value:sum('tmw'),color:'#f59e0b'},{label:'ยอดบัตร',value:sum('card'),color:'#7c3aed'},{label:'พายอบ',value:sum('pai'),color:'#dc2626'},{label:'ขนมจีบ',value:sum('jeeb'),color:'#0891b2'},{label:'ซาลาเปา',value:sum('salapao'),color:'#db2777'}];
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;margin-bottom:14px">'
+    +sdDonutCard('ยอดขายแยกรายผลัด (ตามที่แจ้ง)',shiftItems)
+    +sdDonutCard('สินค้าโฟกัส & ช่องทางชำระ',focusItems)
+    +'</div>';
+  // ---- ตารางรายละเอียดครบทุกตัวเลข ----
+  const anyPai=branches.some(b=>b.pai),anyJeeb=branches.some(b=>b.jeeb),anySalapao=branches.some(b=>b.salapao);
+  const cols=[['ยอดขาย','sales'],['เป้า','target'],['เฉลี่ย/วัน','avgDay'],['ลูกค้า','cust'],['All Cafe','cafe'],['Delivery','deliv'],['TrueWallet','tmw'],['ยอดบัตร','card']];
   if(anyPai)cols.push(['พายอบ','pai']); if(anyJeeb)cols.push(['ขนมจีบ','jeeb']); if(anySalapao)cols.push(['ซาลาเปา','salapao']);
-  h+='<div class="card"><div class="card-h"><h3>สินค้าโฟกัส & ช่องทางชำระ (บาท รวมช่วง)</h3></div><div class="tablewrap"><table style="font-size:13px"><thead><tr><th>สาขา</th>'
-    +cols.map(c=>'<th class="num">'+esc(c[0])+'</th>').join('')+'</tr></thead><tbody>'
+  h+='<div class="card"><div class="card-h"><h3>ตารางรายละเอียดรายสาขา (บาท รวมช่วง)</h3></div><div class="tablewrap"><table style="font-size:13px"><thead><tr><th>สาขา</th>'
+    +cols.map(c=>'<th class="num">'+esc(c[0])+'</th>').join('')+'<th class="num">เข้าเป้า%</th><th class="num">ต่อหัว</th></tr></thead><tbody>'
     +branches.map(b=>'<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+b.color+';margin-right:5px"></i>'+esc(b.name)+'</td>'
-      +cols.map(c=>'<td class="num">'+_thb(b[c[1]])+'</td>').join('')+'</tr>').join('')
+      +cols.map(c=>'<td class="num">'+_thb(b[c[1]])+'</td>').join('')
+      +'<td class="num'+(b.ach!=null&&b.ach>=100?' good':(b.ach!=null&&b.ach<90?' bad':''))+'">'+(b.ach!=null?b.ach.toFixed(1)+'%':'—')+'</td>'
+      +'<td class="num">'+(b.pph?'฿'+b.pph.toFixed(0):'—')+'</td></tr>').join('')
     +'<tr style="font-weight:700;border-top:2px solid var(--line)"><td>รวม</td>'
-    +cols.map(c=>'<td class="num">'+_thb(branches.reduce((s,b)=>s+b[c[1]],0))+'</td>').join('')+'</tr>'
+    +cols.map(c=>'<td class="num">'+_thb(sum(c[1]))+'</td>').join('')
+    +'<td class="num">'+(totalTarget?(totalSales/totalTarget*100).toFixed(1)+'%':'—')+'</td><td class="num">฿'+_thb(totalCust?totalSales/totalCust:0)+'</td></tr>'
     +'</tbody></table></div></div>';
   $('sd_body').innerHTML=h;
 }
 function kpiBox(label,val,sub){ return '<div class="card"><div class="card-b" style="padding:14px"><div style="font-size:12px;color:var(--muted)">'+esc(label)+'</div><div style="font-size:22px;font-weight:800;margin-top:2px">'+esc(val)+'</div>'+(sub?'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+'</div></div>'; }
+// โดนัท (SVG) — items=[{label,value,color}]
+function sdDonut(items,unit){
+  items=items.filter(i=>i.value>0); const tot=items.reduce((s,i)=>s+i.value,0);
+  if(!tot) return '<div class="empty">ไม่มีข้อมูล</div>';
+  const cx=80,cy=80,r=70,ir=r*0.6; let a=-Math.PI/2; let segs='';
+  items.forEach(it=>{ const frac=it.value/tot; let a2=a+frac*2*Math.PI; if(frac>0.9999)a2=a+2*Math.PI-0.0001; const large=frac>0.5?1:0;
+    const x1=cx+r*Math.cos(a),y1=cy+r*Math.sin(a),x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);
+    const xi2=cx+ir*Math.cos(a2),yi2=cy+ir*Math.sin(a2),xi1=cx+ir*Math.cos(a),yi1=cy+ir*Math.sin(a);
+    segs+='<path d="M'+x1.toFixed(1)+' '+y1.toFixed(1)+' A'+r+' '+r+' 0 '+large+' 1 '+x2.toFixed(1)+' '+y2.toFixed(1)+' L'+xi2.toFixed(1)+' '+yi2.toFixed(1)+' A'+ir+' '+ir+' 0 '+large+' 0 '+xi1.toFixed(1)+' '+yi1.toFixed(1)+' Z" fill="'+it.color+'" style="cursor:pointer"><title>'+esc(it.label+' '+(unit||'฿')+_thb(it.value)+' ('+(frac*100).toFixed(1)+'%)')+'</title></path>';
+    a=a2; });
+  const svg='<svg viewBox="0 0 160 160" style="width:150px;height:150px;flex:none">'+segs+'<text x="80" y="76" text-anchor="middle" font-size="12" fill="var(--muted)">รวม</text><text x="80" y="94" text-anchor="middle" font-size="14" font-weight="700" fill="var(--txt)">'+(unit||'฿')+_thb(tot)+'</text></svg>';
+  const legend='<div style="flex:1;min-width:150px">'+items.sort((a,b)=>b.value-a.value).map(it=>'<div style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin:3px 0"><i style="width:10px;height:10px;border-radius:2px;background:'+it.color+';flex:none"></i><span style="flex:1">'+esc(it.label)+'</span><b>'+(unit||'฿')+_thb(it.value)+'</b><span style="color:var(--muted);width:44px;text-align:right">'+(it.value/tot*100).toFixed(1)+'%</span></div>').join('')+'</div>';
+  return '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'+svg+legend+'</div>';
+}
+function sdDonutCard(title,items,unit){ return '<div class="card"><div class="card-h"><h3>'+esc(title)+'</h3></div><div class="card-b">'+sdDonut(items,unit)+'</div></div>'; }
 // เส้นโค้งมน (Catmull-Rom → Bezier)
 function sdSmooth(pts){ if(pts.length<2) return pts.length?('M'+pts[0].x.toFixed(1)+' '+pts[0].y.toFixed(1)):''; let d='M'+pts[0].x.toFixed(1)+' '+pts[0].y.toFixed(1); for(let i=0;i<pts.length-1;i++){ const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2; const c1x=p1.x+(p2.x-p0.x)/6,c1y=p1.y+(p2.y-p0.y)/6,c2x=p2.x-(p3.x-p1.x)/6,c2y=p2.y-(p3.y-p1.y)/6; d+=' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+','+c2x.toFixed(1)+' '+c2y.toFixed(1)+','+p2.x.toFixed(1)+' '+p2.y.toFixed(1); } return d; }
 function sdMultiLineChart(dates,lines){
@@ -9875,7 +9904,10 @@ function sdMultiLineChart(dates,lines){
   const max=Math.max(1,...allv);
   const xAt=i=>pl+(dates.length<=1?iw/2:iw*i/(dates.length-1)); const yAt=v=>pt+ih-(v/max*ih);
   let grid=''; for(let g=0;g<=3;g++){ const yy=pt+ih*g/3,v=Math.round(max*(3-g)/3); grid+='<line x1="'+pl+'" y1="'+yy+'" x2="'+(W-pr)+'" y2="'+yy+'" stroke="#eef0f3"/><text x="'+(pl-6)+'" y="'+(yy+3)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+_thb(v)+'</text>'; }
-  const paths=lines.map(l=>{ const pts=dates.map((d,i)=>l.vals[d]!=null?{x:xAt(i),y:yAt(l.vals[d])}:null).filter(Boolean); return '<path d="'+sdSmooth(pts)+'" fill="none" stroke="'+l.color+'" stroke-width="2.4" stroke-linecap="round"'+(l.dash?' stroke-dasharray="5 4"':'')+'/>'; }).join('');
+  const paths=lines.map(l=>{ const pts=dates.map((d,i)=>l.vals[d]!=null?{x:xAt(i),y:yAt(l.vals[d]),date:d,val:l.vals[d]}:null).filter(Boolean);
+    const line='<path d="'+sdSmooth(pts)+'" fill="none" stroke="'+l.color+'" stroke-width="2.4" stroke-linecap="round"'+(l.dash?' stroke-dasharray="5 4"':'')+'/>';
+    const dots=pts.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="2.7" fill="'+l.color+'" stroke="#fff" stroke-width="1" style="cursor:pointer"><title>'+esc((l.name?l.name+' · ':'')+p.date.slice(5)+' · ฿'+_thb(p.val))+'</title></circle>').join('');
+    return line+dots; }).join('');
   const step=Math.max(1,Math.ceil(dates.length/8)); const xlbl=dates.map((d,i)=>(i%step===0)?'<text x="'+xAt(i).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+d.slice(5)+'</text>':'').join('');
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block;overflow:visible">'+grid+paths+xlbl+'</svg>';
 }
