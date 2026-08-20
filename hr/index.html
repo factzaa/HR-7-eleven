@@ -9781,7 +9781,8 @@ async function loadLineGroupsManage(){
     +'<button class="btn btn-sec btn-sm" id="lf_backfill"><svg class="ei" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> จัดหมวด/แยกยอดขายย้อนหลัง</button></div>'
     +'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">กลุ่มที่ผูกสาขาแล้วจะขึ้นชื่อสาขาอัตโนมัติ · กลุ่มที่ไม่ใช่สาขาเดียว (เช่น กลุ่ม ผจก.) ตั้ง "ชื่อกลุ่ม" เองเพื่อให้นิดารู้จัก · ปุ่มย้อนหลัง = จัดหมวด+แยกยอดขายให้ข้อความที่เข้ามาสด ๆ (ที่ยังไม่ถูกจัด)</div>'
     +(rows.length?rows.map((g,i)=>{
-      const tag = g.mapped ? '<span class="pill ok" style="font-size:11px">ผูกสาขา: '+esc(g.branch_name)+'</span>' : '<span class="pill" style="font-size:11px;background:#fef3c7;color:#a16207">ไม่ผูกสาขา</span>'+(g.label?' <span class="pill" style="font-size:11px;background:#e0e7ff;color:#3730a3">'+esc(g.label)+'</span>':'');
+      const tag = (g.mapped ? '<span class="pill ok" style="font-size:11px">ผูกสาขา: '+esc(g.branch_name)+'</span>' : '<span class="pill" style="font-size:11px;background:#fef3c7;color:#a16207">ไม่ผูกสาขา</span>'+(g.label?' <span class="pill" style="font-size:11px;background:#e0e7ff;color:#3730a3">'+esc(g.label)+'</span>':''))
+        + (g.ignored?' <span class="pill" style="font-size:11px;background:#fee2e2;color:#b91c1c">ซ่อน (ไม่เกี่ยวข้อง)</span>':'');
       return '<div style="padding:8px 0;border-top:1px solid var(--line)">'
         +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
         +'<div style="flex:1;min-width:180px"><div style="font-size:12px;color:var(--muted);font-family:monospace;word-break:break-all">'+esc(g.group_id)+'</div>'
@@ -9794,6 +9795,7 @@ async function loadLineGroupsManage(){
             : '<input type="text" value="'+esc(g.label||'')+'" placeholder="ชื่อกลุ่ม เช่น กลุ่ม ผจก." data-glid="'+esc(g.group_id)+'" style="flex:1;padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;min-width:160px">'
               +'<button class="btn btn-pri btn-sm" data-glsave="'+esc(g.group_id)+'">บันทึกชื่อ</button>')
         +'<label class="btn btn-sec btn-sm" style="cursor:pointer" title="นำเข้าประวัติแชทเก่าจากไฟล์ export ของ LINE (.txt)"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg> นำเข้า .txt<input type="file" accept=".txt,text/plain" hidden data-glimp="'+esc(g.group_id)+'"></label>'
+        +'<button class="btn btn-sm" style="'+(g.ignored?'background:#16a34a;color:#fff;border-color:#16a34a':'background:#fee2e2;color:#b91c1c;border-color:#fecaca')+'" data-glignore="'+esc(g.group_id)+'" data-glignext="'+(g.ignored?'0':'1')+'" title="ซ่อนกลุ่มที่ไม่เกี่ยวข้อง (โปรเจกอื่น) ออกจากฟีดและนิดา">'+(g.ignored?'เลิกซ่อน (แสดงกลุ่มนี้)':'ซ่อนกลุ่มนี้ (ไม่เกี่ยวข้อง)')+'</button>'
         +'</div>'
         +'</div>';
     }).join(''):'<div class="empty">ยังไม่มีกลุ่ม (บอทยังไม่เคยได้รับข้อความจากกลุ่มไหน)</div>')
@@ -9802,6 +9804,11 @@ async function loadLineGroupsManage(){
     const gid=b.dataset.glsave; const inp=box.querySelector('[data-glid="'+CSS.escape(gid)+'"]');
     const rr=await post({ action:'hr_line_group_label', password:pwd, group_id:gid, label:inp?inp.value:'' });
     if(rr.ok){ toast('ok','ตั้งชื่อกลุ่มแล้ว'); loadLineFeed(); } else toast('err',rr.error||'ไม่สำเร็จ');
+  });
+  box.querySelectorAll('[data-glignore]').forEach(b=>b.onclick=async()=>{
+    const gid=b.dataset.glignore, ig=b.dataset.glignext==='1';
+    b.disabled=true; const rr=await post({ action:'hr_line_group_ignore', password:pwd, group_id:gid, ignored:ig });
+    if(rr.ok){ toast('ok', ig?'ซ่อนกลุ่มนี้แล้ว':'แสดงกลุ่มนี้แล้ว'); loadLineFeed(); loadLineGroupsManage(); } else { b.disabled=false; toast('err',rr.error||'ไม่สำเร็จ'); }
   });
   box.querySelectorAll('[data-glimp]').forEach(inp=>inp.onchange=()=>lfImportFile(inp));
   box.querySelectorAll('[data-gltoggle]').forEach(b=>b.onclick=()=>{ const el=$('lfg_act_'+b.dataset.gltoggle); if(el) el.style.display=(el.style.display==='none')?'flex':'none'; });

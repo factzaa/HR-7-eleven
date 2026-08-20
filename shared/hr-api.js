@@ -201,6 +201,7 @@
         case 'hr_line_feed':         return await hrLineFeed(p);
         case 'hr_line_groups':       return await hrLineGroups();
         case 'hr_line_group_label':  return await hrLineGroupLabel(p);
+        case 'hr_line_group_ignore': return await hrLineGroupIgnore(p);
         case 'hr_line_import':       return await hrLineImport(p);
         case 'hr_line_setcat':       return await hrLineSetCat(p);
         case 'hr_sales_list':        return await hrSalesList(p);
@@ -2638,12 +2639,12 @@
     if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
     if (p.category) q = q.eq('category', String(p.category));
     const [{ data: msgs, error }, { data: brs }, { data: gls }] = await Promise.all([
-      q, sb().from('branches').select('branch_id,name'), sb().from('line_groups').select('group_id,label'),
+      q, sb().from('branches').select('branch_id,name'), sb().from('line_groups').select('group_id,label,ignored'),
     ]);
     if (error) return { ok: false, error: error.message };
     const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
-    const gl = {}; (gls || []).forEach(g => { if (g.label) gl[g.group_id] = g.label; });
-    const rows = (msgs || []).map(m => ({
+    const gl = {}; const ign = new Set(); (gls || []).forEach(g => { if (g.label) gl[g.group_id] = g.label; if (g.ignored) ign.add(g.group_id); });
+    const rows = (msgs || []).filter(m => !ign.has(m.group_id)).map(m => ({
       id: m.id, sent_at: m.sent_at, branch_id: m.branch_id || '',
       branch_name: m.branch_id ? (bn[m.branch_id] || m.branch_id) : (gl[m.group_id] || '(ยังไม่ผูกสาขา)'),
       display_name: m.display_name || 'ไม่ทราบชื่อ', msg_type: m.msg_type,
@@ -2669,6 +2670,7 @@
         branch_name: bid ? (bn[bid] || bid) : '',
         label: g.label || '',
         mapped: !!grpBranch[g.group_id],
+        ignored: !!g.ignored,
         last_message_at: g.last_message_at, last_text: g.last_text || '', msg_count: g.msg_count || 0,
       };
     });
@@ -2936,6 +2938,12 @@
   async function hrLineGroupLabel(p) {
     if (!p.group_id) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
     const { error } = await sb().from('line_groups').update({ label: (p.label || '').trim() || null }).eq('group_id', String(p.group_id));
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+  async function hrLineGroupIgnore(p) {
+    if (!p.group_id) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
+    const { error } = await sb().from('line_groups').update({ ignored: !!p.ignored }).eq('group_id', String(p.group_id));
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   }
