@@ -2602,10 +2602,21 @@
   }
   const TERM_MGR_CAN = { propose: true, note: true, view: true, review: false, decide: false, cancel: false, reopen: false, edit: false, rules: false, risk: false };
 
+  // เกณฑ์เข้าข่ายพิจารณาเลิกจ้าง "เริ่มต้น" — ใช้เมื่อตาราง termination_rules ยังว่าง (HR ยังไม่เคยตั้งเกณฑ์)
+  // ทำให้หน้าพิจารณาเลิกจ้างมีเกณฑ์ทำงานได้ทันที ไม่ต้องรอ HR ไปกดตั้งค่าก่อน
+  const DEFAULT_TERM_RULES = [
+    { key: 'warn_count_3',    name: 'ใบเตือนสะสมครบ 3 ใบ',                 kind: 'warning_count', params: { count: 3, months: 12 }, severity: 'critical', note: 'ครบใบเตือนสะสมตามระเบียบ → เข้าเกณฑ์พิจารณาเลิกจ้าง', enabled: true,  sort: 10 },
+    { key: 'absent_streak_3', name: 'ขาดงานติดต่อกัน 3 วัน (ละทิ้งหน้าที่)', kind: 'absent_streak', params: { days: 3 },            severity: 'critical', note: 'ขาดงานติดต่อกันโดยไม่มีใบลา — ละทิ้งหน้าที่',       enabled: true,  sort: 20 },
+    { key: 'absent_total_7',  name: 'ขาดงานรวมในรอบ ≥ 7 วัน',              kind: 'absent_total',  params: { days: 7 },            severity: 'high',     note: null, enabled: true,  sort: 30 },
+    { key: 'score_low_15',    name: 'คะแนนวินัยตกเกณฑ์ (≤ 15)',            kind: 'score_band',    params: { max_score: 15 },      severity: 'high',     note: 'เปิดใช้เองได้จากปุ่มเกณฑ์เข้าข่าย', enabled: false, sort: 40 },
+    { key: 'late_total_20',   name: 'มาสายรวมในรอบ ≥ 20 ครั้ง',            kind: 'late_total',    params: { count: 20 },          severity: 'medium',   note: 'เปิดใช้เองได้จากปุ่มเกณฑ์เข้าข่าย', enabled: false, sort: 50 },
+  ];
+
   async function hrTermRulesGet() {
     const { data, error } = await sb().from('termination_rules').select('*').order('sort');
     if (error) throw error;
-    return { ok: true, rules: data || [], severity_label: TERM_SEV };
+    const has = data && data.length;
+    return { ok: true, rules: has ? data : DEFAULT_TERM_RULES, is_default: !has, severity_label: TERM_SEV };
   }
   async function hrTermRulesSave(arr, auth) {
     const me = await _termActor(auth);
@@ -2654,7 +2665,9 @@
       sb().from('termination_cases').select('id,case_no,emp_id,status,decision,decision_note,opened_at,closed_at')
         .neq('status', 'cancelled').order('opened_at', { ascending: false }),
     ]);
-    const rules = rulesR.data || [];
+    // ★ ถ้ายังไม่มีเกณฑ์ในตาราง (HR ยังไม่เคยตั้งค่า) → ใช้เกณฑ์เริ่มต้น เพื่อให้หน้าพิจารณาเลิกจ้างทำงานได้ทันที
+    let rules = rulesR.data || [];
+    if (!rules.length) rules = DEFAULT_TERM_RULES.filter(r => r.enabled !== false);
     const empById = {}; (empR.data || []).forEach(e => { empById[e.emp_id] = e; });
     const openCase = {}; (caseR.data || []).forEach(c => { if (!openCase[c.emp_id]) openCase[c.emp_id] = c; });   // เอาเคสล่าสุดของแต่ละคน
 
