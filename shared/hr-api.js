@@ -2645,14 +2645,26 @@
       sb().from('branches').select('branch_id,name,line_group_id'),
     ]);
     const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
-    const mappedGroups = new Set((brs || []).map(b => b.line_group_id).filter(Boolean));
-    const rows = (gs || []).map(g => ({
-      group_id: g.group_id, branch_id: g.branch_id || '',
-      branch_name: g.branch_id ? (bn[g.branch_id] || g.branch_id) : '',
-      label: g.label || '',
-      mapped: mappedGroups.has(g.group_id),
-      last_message_at: g.last_message_at, last_text: g.last_text || '', msg_count: g.msg_count || 0,
-    }));
+    // map group_id -> branch (จากการตั้งค่า LINE Group ID ในหน้าจัดการสาขา)
+    const grpBranch = {}; (brs || []).forEach(b => { if (b.line_group_id) grpBranch[b.line_group_id] = b.branch_id; });
+    const seen = new Set();
+    const rows = (gs || []).map(g => {
+      seen.add(g.group_id);
+      const bid = grpBranch[g.group_id] || g.branch_id || '';   // ยึดการผูกสาขาจาก branches ก่อน
+      return {
+        group_id: g.group_id, branch_id: bid,
+        branch_name: bid ? (bn[bid] || bid) : '',
+        label: g.label || '',
+        mapped: !!grpBranch[g.group_id],
+        last_message_at: g.last_message_at, last_text: g.last_text || '', msg_count: g.msg_count || 0,
+      };
+    });
+    // เติมกลุ่มสาขาที่ตั้ง LINE Group ID ไว้ แต่ยังไม่มีข้อความเข้ามา (จะได้เห็นครบทุกกลุ่ม)
+    (brs || []).forEach(b => {
+      if (b.line_group_id && !seen.has(b.line_group_id)) {
+        rows.push({ group_id: b.line_group_id, branch_id: b.branch_id, branch_name: bn[b.branch_id] || b.branch_id, label: '', mapped: true, last_message_at: null, last_text: '(ยังไม่มีข้อความเข้ามา)', msg_count: 0 });
+      }
+    });
     return { ok: true, rows };
   }
   // นำเข้าประวัติแชทจากไฟล์ export ของ LINE (.txt) — rows=[{sent_at,display_name,text}]
