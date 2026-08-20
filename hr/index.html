@@ -9958,28 +9958,30 @@ async function drawAuditDash(){
   if(!r.ok){ $('au_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   const rows=r.rows||[];
   if(!rows.length){ $('au_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีรายงานตรวจร้าน QSSI — นำเข้าไฟล์กลุ่ม ผจก. หรือกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีดก่อน</div></div></div>'; return; }
+  const pctOf=r=>r.qssi_adjust!=null?+r.qssi_adjust:((+r.score||0)/10);   // ★ ใช้ Qssi Adjust (%) เป็นคะแนนจริง ถ้าไม่มีใช้ score/1000
   const byBr={};
   rows.forEach(x=>{ (byBr[x.branch_id]=byBr[x.branch_id]||{name:x.branch_name,list:[]}).list.push(x); });
-  const branches=Object.values(byBr).map((b,i)=>{ const list=b.list.slice().sort((a,c)=>a.inspect_date<c.inspect_date?1:-1); const latest=list[0]; const avg=list.reduce((s,r)=>s+(+r.score||0),0)/list.length; return {name:b.name,color:SD_COLORS[i%SD_COLORS.length],list,latest,avg:Math.round(avg),score:+latest.score||0}; }).sort((a,b)=>a.score-b.score);
+  const branches=Object.values(byBr).map((b,i)=>{ const list=b.list.slice().sort((a,c)=>a.inspect_date<c.inspect_date?1:-1); const latest=list[0]; const avgPct=list.reduce((s,r)=>s+pctOf(r),0)/list.length; return {name:b.name,color:SD_COLORS[i%SD_COLORS.length],list,latest,avgPct:+avgPct.toFixed(1),pct:+pctOf(latest).toFixed(1)}; }).sort((a,b)=>a.pct-b.pct);
   branches.forEach((b,i)=>b.color=SD_COLORS[i%SD_COLORS.length]);
-  const avgAll=Math.round(branches.reduce((s,b)=>s+b.score,0)/branches.length);
+  const avgAll=+(branches.reduce((s,b)=>s+b.pct,0)/branches.length).toFixed(1);
+  const pctCol=p=>p>=90?'#16a34a':p>=75?'#d97706':'#dc2626';
   let h='';
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
-    +kpiBox('คะแนนล่าสุดเฉลี่ย', (avgAll/10).toFixed(1)+'%', avgAll+' / 1000 · '+branches.length+' สาขา')
-    +kpiBox('สาขาคะแนนสูงสุด', branches.length?branches[branches.length-1].name:'—', branches.length?(branches[branches.length-1].score+' คะแนน'):'')
-    +kpiBox('ต้องช่วยด่วน', branches[0]?branches[0].name:'—', branches[0]?(branches[0].score+' คะแนน'):'')
+    +kpiBox('คะแนน QSSI เฉลี่ย (ล่าสุด)', avgAll+'%', branches.length+' สาขา')
+    +kpiBox('สาขาคะแนนสูงสุด', branches.length?branches[branches.length-1].name:'—', branches.length?(branches[branches.length-1].pct+'%'):'')
+    +kpiBox('ต้องช่วยด่วน', branches[0]?branches[0].name:'—', branches[0]?(branches[0].pct+'%'):'')
     +kpiBox('รายงานทั้งหมด', rows.length+' ฉบับ','')
     +'</div>';
-  // แท่งคะแนนล่าสุดรายสาขา
-  h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>คะแนนตรวจล่าสุดรายสาขา (เต็ม 1000)</h3></div><div class="card-b">'
-    +branches.slice().sort((a,b)=>b.score-a.score).map(b=>{ const w=Math.round(b.score/1000*100); const col=auScoreCol(b.score);
-      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><b>'+esc(b.name)+'</b><span><b style="color:'+col+'">'+(b.score/10).toFixed(1)+'%</b> ('+b.score+'/1000) · เฉลี่ย '+(b.avg/10).toFixed(1)+'% · '+b.list.length+' ครั้ง</span></div>'
+  // แท่งคะแนนล่าสุดรายสาขา (Qssi Adjust %)
+  h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>คะแนน QSSI ล่าสุดรายสาขา (Adjust %)</h3></div><div class="card-b">'
+    +branches.slice().sort((a,b)=>b.pct-a.pct).map(b=>{ const w=Math.min(100,Math.round(b.pct)); const col=pctCol(b.pct);
+      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><b>'+esc(b.name)+'</b><span><b style="color:'+col+'">'+b.pct+'%</b> (ดิบ '+(b.latest.score??'—')+'/1000) · เฉลี่ย '+b.avgPct+'% · '+b.list.length+' ครั้ง</span></div>'
         +'<div style="height:16px;background:#f1f5f9;border-radius:8px;overflow:hidden"><div style="height:100%;width:'+w+'%;background:'+col+';border-radius:8px"></div></div>'
         +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">ล่าสุด '+beDate(b.latest.inspect_date)+' · ผู้ตรวจ '+esc((b.latest.inspector||'').slice(0,40))+' · สินค้าขาด '+(b.latest.stockout??'—')+'</div></div>';
     }).join('')+'</div></div>';
-  // เทรนด์คะแนนตามเวลา (เส้นโค้ง)
+  // เทรนด์คะแนนตามเวลา (เส้นโค้ง) — Qssi Adjust %
   const allDates={}; branches.forEach(b=>b.list.forEach(r=>allDates[r.inspect_date]=1)); const dates=Object.keys(allDates).sort();
-  if(dates.length>1){ const lines=branches.map(b=>{ const vals={}; b.list.forEach(r=>vals[r.inspect_date]=+r.score||0); return {name:b.name,color:b.color,vals}; });
+  if(dates.length>1){ const lines=branches.map(b=>{ const vals={}; b.list.forEach(r=>vals[r.inspect_date]=pctOf(r)); return {name:b.name,color:b.color,vals}; });
     h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>เทรนด์คะแนนตรวจ (ตามเวลา)</h3></div><div class="card-b">'+sdMultiLineChart(dates,lines)
       +'<div class="chart-legend" style="flex-wrap:wrap">'+lines.map(l=>'<span><i style="background:'+l.color+'"></i>'+esc(l.name)+'</span>').join('')+'</div></div></div>'; }
   // กราฟแท่งคะแนนย่อย 7 หมวด (เมื่อเลือกสาขาเดียว — ใช้ได้แม้มีรายงานเดียว)
@@ -9987,7 +9989,7 @@ async function drawAuditDash(){
     h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>คะแนนย่อย 7 หมวด — '+esc(branches[0].name)+' (ล่าสุด '+beDate(L.inspect_date)+')</h3></div><div class="card-b">'
       +AU_SUBS.map(k=>{ const v=+L[k.toLowerCase()]||0; const col=v>=80?'#16a34a':v>=50?'#d97706':'#dc2626';
         return '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px"><b>'+k+'</b><b style="color:'+col+'">'+Math.round(v)+'/100</b></div><div style="height:13px;background:#f1f5f9;border-radius:7px;overflow:hidden"><div style="height:100%;width:'+Math.min(100,v)+'%;background:'+col+';border-radius:7px"></div></div></div>'; }).join('')
-      +'<div style="font-size:12px;color:var(--muted);margin-top:6px">Result '+(L.result==null?'—':(+L.result).toFixed(1))+' · สินค้าขาด '+(L.stockout??'—')+' · คะแนนรวม '+(L.score??'—')+'/1000</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:6px">QSSI (Adjust) '+(L.qssi_adjust!=null?(+L.qssi_adjust).toFixed(1)+'%':'—')+' · คะแนนดิบ '+(L.score??'—')+'/1000 · Result '+(L.result==null?'—':(+L.result).toFixed(1))+' · สินค้าขาด '+(L.stockout??'—')+'</div>'
       +'</div></div>';
     // รายการหัก/บวก แต่ละหมวด (จาก extra)
     const ex=L.extra||{}; const eks=Object.keys(ex);
@@ -10003,8 +10005,8 @@ async function drawAuditDash(){
     +branches.map(b=>'<tr><td>'+esc(b.name)+'</td>'+AU_SUBS.map(k=>{ const v=b.latest[k.toLowerCase()]; const c=v==null?'':(v>=80?' good':(v<50?' bad':'')); return '<td class="num'+c+'">'+(v==null?'—':Math.round(v))+'</td>'; }).join('')+'<td class="num">'+(b.latest.result==null?'—':(+b.latest.result).toFixed(1))+'</td></tr>').join('')
     +'</tbody></table></div></div>';
   // ตารางรายงานทั้งหมด
-  h+='<div class="card"><div class="card-h"><h3>รายงานตรวจร้านทั้งหมด</h3></div><div class="tablewrap"><table style="font-size:12.5px"><thead><tr><th>วันที่</th><th>สาขา</th><th class="num">ครั้งที่</th><th class="num">คะแนน</th>'+AU_SUBS.map(k=>'<th class="num">'+k+'</th>').join('')+'<th class="num">ขาด</th><th>ผู้ตรวจ</th></tr></thead><tbody>'
-    +rows.slice().sort((a,b)=>a.inspect_date<b.inspect_date?1:-1).map(x=>'<tr><td class="mono">'+beDate(x.inspect_date)+'</td><td>'+esc(x.branch_name)+'</td><td class="num">'+(x.round??'')+'</td><td class="num" style="font-weight:700;color:'+auScoreCol(+x.score||0)+'">'+(x.score??'—')+'</td>'+AU_SUBS.map(k=>{ const v=x[k.toLowerCase()]; return '<td class="num">'+(v==null?'—':Math.round(v))+'</td>'; }).join('')+'<td class="num">'+(x.stockout??'—')+'</td><td style="font-size:11.5px">'+esc((x.inspector||'').slice(0,30))+'</td></tr>').join('')
+  h+='<div class="card"><div class="card-h"><h3>รายงานตรวจร้านทั้งหมด</h3></div><div class="tablewrap"><table style="font-size:12.5px"><thead><tr><th>วันที่</th><th>สาขา</th><th class="num">ครั้งที่</th><th class="num">QSSI%</th><th class="num">ดิบ</th>'+AU_SUBS.map(k=>'<th class="num">'+k+'</th>').join('')+'<th class="num">ขาด</th><th>ผู้ตรวจ</th></tr></thead><tbody>'
+    +rows.slice().sort((a,b)=>a.inspect_date<b.inspect_date?1:-1).map(x=>{ const p=x.qssi_adjust!=null?+x.qssi_adjust:((+x.score||0)/10); return '<tr><td class="mono">'+beDate(x.inspect_date)+'</td><td>'+esc(x.branch_name)+'</td><td class="num">'+(x.round??'')+'</td><td class="num" style="font-weight:700;color:'+pctCol(p)+'">'+p.toFixed(1)+'%</td><td class="num">'+(x.score??'—')+'</td>'+AU_SUBS.map(k=>{ const v=x[k.toLowerCase()]; return '<td class="num">'+(v==null?'—':Math.round(v))+'</td>'; }).join('')+'<td class="num">'+(x.stockout??'—')+'</td><td style="font-size:11.5px">'+esc((x.inspector||'').slice(0,30))+'</td></tr>'; }).join('')
     +'</tbody></table></div></div>';
   $('au_body').innerHTML=h;
 }

@@ -2771,12 +2771,12 @@
     const code = g(/รหัส\s*[:：]\s*(\d+)/); if (!code) return null;
     const sub = {}; ['S', 'A', 'V', 'E', 'Q', 'C', 'QMS'].forEach(k => { const v = nm(g(new RegExp('(?:^|\\n)\\s*' + k + '\\s*[:：]\\s*([\\d.]+)'))); if (v != null) sub[k] = v; });
     const items = {}; const re = /([+-]?\d+)\s*[:：]\s*%\s*\(([^)]+)\)\s*-\s*([^\n]+)/g; let mm; while ((mm = re.exec(t))) { const nmv = +mm[1]; if (nmv !== 0) items[mm[3].trim().slice(0, 40)] = nmv; }
-    return { code, round: nm(g(/ครั้งที่\s*[:：]\s*(\d+)/)), inspector: g(/ตรวจโดย\s*[:：]\s*(.+)/), inspect_date: _qssiDate(t), score: nm(g(/(?:^|\n)\s*คะแนน\s*[:：]\s*(\d+)/)), max_score: nm(g(/คะแนนเต็ม\s*[:：]\s*(\d+)/)), s: sub.S ?? null, a: sub.A ?? null, v: sub.V ?? null, e: sub.E ?? null, q: sub.Q ?? null, c: sub.C ?? null, qms: sub.QMS ?? null, result: nm(g(/Result\s*[:：]\s*([\d.]+)/)), process: nm(g(/Process\s*[:：]\s*([\d.]+)/)), stockout: nm(g(/สินค้าขาดรวม\s*[:：]\s*(\d+)/)), extra: Object.keys(items).length ? items : null };
+    return { code, round: nm(g(/ครั้งที่\s*[:：]\s*(\d+)/)), inspector: g(/ตรวจโดย\s*[:：]\s*(.+)/), inspect_date: _qssiDate(t), score: nm(g(/(?:^|\n)\s*คะแนน\s*[:：]\s*(\d+)/)), max_score: nm(g(/คะแนนเต็ม\s*[:：]\s*(\d+)/)), qssi_adjust: nm(g(/Qssi\s*Adjust\s*[:：]\s*([\d.]+)/i)), s: sub.S ?? null, a: sub.A ?? null, v: sub.V ?? null, e: sub.E ?? null, q: sub.Q ?? null, c: sub.C ?? null, qms: sub.QMS ?? null, result: nm(g(/Result\s*[:：]\s*([\d.]+)/)), process: nm(g(/Process\s*[:：]\s*([\d.]+)/)), stockout: nm(g(/สินค้าขาดรวม\s*[:：]\s*(\d+)/)), extra: Object.keys(items).length ? items : null };
   }
   function _auditRow(qr, meta, hashFn) {
     const key = 'qssi_' + hashFn(qr.code + '|' + qr.inspect_date + '|' + (qr.inspector || '') + '|' + (qr.score || ''));
     return { report_key: key, branch_id: meta.branch_id, branch_code: qr.code, group_id: meta.group_id, source: meta.source, raw_text: (meta.raw_text || '').slice(0, 3000),
-      round: qr.round, inspector: qr.inspector, inspect_date: qr.inspect_date, score: qr.score, max_score: qr.max_score,
+      round: qr.round, inspector: qr.inspector, inspect_date: qr.inspect_date, score: qr.score, max_score: qr.max_score, qssi_adjust: qr.qssi_adjust,
       s: qr.s, a: qr.a, v: qr.v, e: qr.e, q: qr.q, c: qr.c, qms: qr.qms, result: qr.result, process: qr.process, stockout: qr.stockout, extra: qr.extra };
   }
   async function _branchCodeMap() { const { data } = await sb().from('branches').select('branch_id'); const m = {}; (data || []).forEach(b => { m[String(b.branch_id).replace(/^0+/, '')] = b.branch_id; }); return m; }
