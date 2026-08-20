@@ -9780,7 +9780,7 @@ async function loadLineGroupsManage(){
   });
   box.querySelectorAll('[data-glimp]').forEach(inp=>inp.onchange=()=>lfImportFile(inp));
   box.querySelectorAll('[data-gltoggle]').forEach(b=>b.onclick=()=>{ const el=$('lfg_act_'+b.dataset.gltoggle); if(el) el.style.display=(el.style.display==='none')?'flex':'none'; });
-  const bf=$('lf_backfill'); if(bf) bf.onclick=async()=>{ bf.disabled=true; const old=bf.textContent; bf.textContent='กำลังจัด…'; const r=await post({ action:'hr_line_backfill', password:pwd }); bf.disabled=false; bf.textContent=old; if(r.ok){ toast('ok','จัดหมวด '+(r.updated||0)+' ข้อความ · แยกยอดขาย '+(r.sales_saved||0)+' รายการ'); loadLineFeed(); } else toast('err',r.error||'ไม่สำเร็จ'); };
+  const bf=$('lf_backfill'); if(bf) bf.onclick=async()=>{ bf.disabled=true; const old=bf.textContent; bf.textContent='กำลังจัด…'; const r=await post({ action:'hr_line_backfill', password:pwd }); bf.disabled=false; bf.textContent=old; if(r.ok){ toast('ok','สแกน '+(r.msgs_scanned||0)+' ในกลุ่มสาขา · พบฟอร์มยอดขาย '+(r.sales_msgs||0)+' · บันทึกยอดขาย '+(r.sales_saved||0)+' รายการ · จัดหมวดใหม่ '+(r.updated||0)); loadLineFeed(); } else toast('err',r.error||'ไม่สำเร็จ'); };
 }
 // ========== แดชบอร์ดยอดขาย (จากกลุ่มไลน์) ==========
 const _thb=n=>Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:0});
