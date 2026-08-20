@@ -1355,6 +1355,12 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
 <!-- Special tasks (งานพิเศษ มอบหมายรายบุคคล) -->
 <div id="view_special" class="container" style="display:none">
+  <div class="shsub" id="spsub">
+    <button class="shsub-b on" type="button" data-sppan="list"><svg class="ei" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> รายการงานพิเศษ <span id="spsub_cnt" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-sppan="assign"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> มอบหมายงานใหม่</button>
+  </div>
+
+  <div class="shpan" id="sppan_assign" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> มอบหมายงานพิเศษ (รายบุคคล)</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex;flex-direction:column;gap:10px">
@@ -1385,12 +1391,15 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <div style="text-align:right"><button class="btn btn-pri" id="sp_create">มอบหมายงานพิเศษ</button></div>
     </div>
   </div>
+  </div><!-- /sppan_assign -->
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานพิเศษที่มอบหมายไว้</h3>
+  <div class="shpan" id="sppan_list">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">งานพิเศษที่มอบหมายไว้</h3>
     <select id="sp_listbranch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-sec btn-sm" id="sp_refresh">รีเฟรช</button>
   </div>
   <div id="sp_list"><div class="empty">กำลังโหลด…</div></div>
+  </div><!-- /sppan_list -->
 </div>
 
 <!-- QA สินค้า (ตรวจนับสินค้าใกล้หมดอายุ) -->
@@ -9484,6 +9493,14 @@ function loadSpecialTab(){
   }
   renderSpEmpList();
   loadSpecialList();
+  if($('spsub') && !$('spsub').dataset.wired){
+    $('spsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>specialTab(b.dataset.sppan));
+    $('spsub').dataset.wired='1'; specialTab('list');
+  }
+}
+function specialTab(name){
+  ['list','assign'].forEach(k=>{ const p=$('sppan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
+  document.querySelectorAll('#spsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.sppan===name));
 }
 function renderSpPhotoPreview(){
   $('sp_photo_preview').innerHTML=SP_PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:60px;height:60px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="spRmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
@@ -9531,7 +9548,9 @@ function spStatusPill(s){
 async function loadSpecialList(){
   $('sp_list').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_special_list', password:pwd, branch: $('sp_listbranch').value||'' });
-  if(!r.ok){ $('sp_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const spb=$('spsub_cnt');
+  if(!r.ok){ $('sp_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; if(spb) spb.style.display='none'; return; }
+  if(spb){ if(r.rows.length){ spb.style.display=''; spb.textContent=r.rows.length; } else spb.style.display='none'; }
   if(!r.rows.length){ $('sp_list').innerHTML='<div class="empty">ยังไม่มีงานพิเศษ</div>'; return; }
   const SP_MAP={};
   $('sp_list').innerHTML=r.rows.map(t=>{
