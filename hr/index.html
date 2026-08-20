@@ -1302,6 +1302,14 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
 <!-- Handover + Tasks (ส่ง/รับผลัด + งานในกะ) -->
 <div id="view_handover" class="container" style="display:none">
+  <div class="shsub" id="hvsub">
+    <button class="shsub-b on" type="button" data-hvpan="intask"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> งานในกะ (รอตรวจ) <span id="hvsub_pend" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-hvpan="assign"><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg> มอบหมายงาน</button>
+    <button class="shsub-b" type="button" data-hvpan="handover"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รายงานรับส่งผลัด</button>
+    <button class="shsub-b" type="button" data-hvpan="log"><svg class="ei" viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg> Log ย้อนหลัง</button>
+  </div>
+
+  <div class="shpan" id="hvpan_assign" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">มอบหมายงานในกะ</h3></div>
   <div class="card" style="padding:14px">
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
@@ -1313,11 +1321,15 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     </div>
     <div id="ta_defs" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px"></div>
   </div>
+  </div><!-- /hvpan_assign -->
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><select id="tk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><select id="tk_shift" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
+  <div class="shpan" id="hvpan_intask">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><select id="tk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><select id="tk_shift" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
   <div id="tk_body"><div class="empty">กำลังโหลด…</div></div>
+  </div><!-- /hvpan_intask -->
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">Log งาน (ตรวจสอบย้อนหลัง)</h3>
+  <div class="shpan" id="hvpan_log" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">Log งาน (ตรวจสอบย้อนหลัง)</h3>
     <input id="tl_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <span style="color:var(--muted);font-size:13px">ถึง</span>
     <input id="tl_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
@@ -1326,8 +1338,10 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
   <div id="tl_leaders" style="margin:0 4px 12px"></div>
   <div id="tl_body"><div class="empty">เลือกช่วงวันที่แล้วกด "ดู Log"</div></div>
+  </div><!-- /hvpan_log -->
 
-  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รายงานรับส่งผลัด (รูปภาพ)</h3>
+  <div class="shpan" id="hvpan_handover" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รายงานรับส่งผลัด (รูปภาพ)</h3>
     <input id="rr_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <span style="color:var(--muted);font-size:13px">ถึง</span>
     <input id="rr_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
@@ -1336,6 +1350,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <button class="btn btn-pri btn-sm" id="rr_go">ดูรายงาน</button>
   </div>
   <div id="rr_body"><div class="empty">เลือกช่วงวันที่แล้วกด "ดูรายงาน"</div></div>
+  </div><!-- /hvpan_handover -->
 </div>
 
 <!-- Special tasks (งานพิเศษ มอบหมายรายบุคคล) -->
@@ -11002,6 +11017,14 @@ async function loadTaskTab(){
   if(!$('tl_start').value) $('tl_start').value=bkkTodayStr();
   if(!$('tl_end').value) $('tl_end').value=bkkTodayStr();
   loadTaskList();
+  if($('hvsub') && !$('hvsub').dataset.wired){
+    $('hvsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>handoverTab(b.dataset.hvpan));
+    $('hvsub').dataset.wired='1'; handoverTab('intask');
+  }
+}
+function handoverTab(name){
+  ['intask','assign','handover','log'].forEach(k=>{ const p=$('hvpan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
+  document.querySelectorAll('#hvsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.hvpan===name));
 }
 function renderAssign(){
   const shift=$('ta_shift').value;
@@ -11027,7 +11050,7 @@ async function loadTaskList(){
   $('tk_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_task_list', password:pwd, date:$('tk_date').value });
   if(!r.ok){ $('tk_body').innerHTML='<div class="empty">'+esc(r.error||'')+'</div>'; return; }
-  if(!r.rows.length){ $('tk_counts').innerHTML=''; $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
+  if(!r.rows.length){ $('tk_counts').innerHTML=''; const hvb0=$('hvsub_pend'); if(hvb0) hvb0.style.display='none'; $('tk_body').innerHTML='<div class="empty">ยังไม่มีงานในวันนี้</div>'; return; }
   const fmtDT=t=>{ if(!t) return '—'; try{ return new Date(t).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return '—'; } };
   const stP=s=>s==='submitted'?'<span class="pill warn">รอตรวจ</span>':s==='approved'?'<span class="pill ok">ผ่าน</span>':s==='sent_back'?'<span class="pill bad">ตีกลับ</span>':'<span class="pill muted">ยังไม่ทำ</span>';
   // ฐานข้อมูลหลังกรอง สาขา + กะ (ยังไม่กรองสถานะ) — ใช้ทั้งนับชิปและแสดงผล
@@ -11041,6 +11064,7 @@ async function loadTaskList(){
   const c={ submitted:base.filter(t=>t.status==='submitted').length, todo:base.filter(t=>(t.status||'todo')==='todo').length, sent_back:base.filter(t=>t.status==='sent_back').length, approved:base.filter(t=>t.status==='approved').length };
   const chip=(key,label,cls,n)=>'<span class="pill '+cls+' tkchip" data-st="'+key+'" style="cursor:pointer;'+(TK_STATUS===key?'outline:2.5px solid #0f172a;outline-offset:1px':'opacity:.9')+'">'+label+' '+(n||0)+'</span>';
   $('tk_counts').innerHTML=chip('submitted','รอตรวจ','warn',c.submitted)+chip('todo','ยังไม่ทำ','muted',c.todo)+chip('sent_back','ตีกลับ','bad',c.sent_back)+chip('approved','ผ่าน','ok',c.approved)+(TK_STATUS?'<span class="pill" data-st="" style="cursor:pointer;background:#e2e8f0;color:var(--txt)" title="ล้างตัวกรองสถานะ">✕ ล้างกรอง</span>':'');
+  const hvb=$('hvsub_pend'); if(hvb){ if(c.submitted){ hvb.style.display=''; hvb.textContent=c.submitted; } else hvb.style.display='none'; }
   document.querySelectorAll('#tk_counts [data-st]').forEach(el=>el.onclick=()=>{ const v=el.getAttribute('data-st'); TK_STATUS=(v&&v===TK_STATUS)?'':v; loadTaskList(); });
   // กรองสถานะ (ถ้าเลือกชิป) แล้วจัดกลุ่ม สาขา → กะ
   let rows=TK_STATUS?base.filter(t=>(t.status||'todo')===TK_STATUS):base;
