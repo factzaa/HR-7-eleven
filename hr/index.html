@@ -8670,9 +8670,20 @@ function initAssistant(){
 }
 function asstCardsHtml(cards){
   if(!cards) return '';
-  // การ์ดเอกสารใช้ cards.documents (ไม่ใช่ groups) — อย่าตัดทิ้งด้วยตัวกันของ groups
-  if(cards.type!=='documents' && (!Array.isArray(cards.groups)||!cards.groups.length)) return '';
+  // การ์ดเอกสาร/รูป ใช้ฟิลด์ของตัวเอง (ไม่ใช่ groups) — อย่าตัดทิ้งด้วยตัวกันของ groups
+  if(cards.type!=='documents' && cards.type!=='images' && (!Array.isArray(cards.groups)||!cards.groups.length)) return '';
   const wrap=(inner)=>'<div style="align-self:flex-start;max-width:96%;display:flex;flex-direction:column;gap:8px;width:100%">'+inner+'</div>';
+  if(cards.type==='images'){
+    const items=(cards.images||[]).filter(i=>i&&i.url); if(!items.length) return '';
+    const catT={announce:'ประกาศ',audit:'ตรวจร้าน',sales:'ยอดขาย'};
+    return wrap('<div style="display:flex;flex-wrap:wrap;gap:8px">'+items.map(im=>{
+      const cap=[im.branch,im.by].filter(Boolean).join(' · ');
+      const badge=im.category&&catT[im.category]?'<span style="position:absolute;top:5px;left:5px;background:var(--green);color:#fff;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:6px">'+catT[im.category]+'</span>':'';
+      return '<div style="width:132px;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden">'
+        +'<div style="position:relative"><img src="'+esc(im.url)+'" onclick="lightbox(this)" style="width:100%;height:132px;object-fit:cover;cursor:zoom-in;display:block">'+badge+'</div>'
+        +'<div style="padding:5px 7px;font-size:11px;color:var(--muted);line-height:1.35">'+(cap?esc(cap)+'<br>':'')+esc(im.time||'')+'</div></div>';
+    }).join('')+'</div>');
+  }
   if(cards.type==='tasks'){
     return wrap(cards.groups.map(g=>{
       const head='กะ '+esc(shiftName(g.shift))+' · สาขา '+esc(branchName(g.branch))+(g.date?(' · '+esc(g.date)):'');
