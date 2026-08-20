@@ -566,6 +566,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_empsum"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>สรุปรายบุคคล</button>
   <button class="tab" id="tab_mgreval"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M9 13l-1.5 8 4.5-3 4.5 3-1.5-8"/></svg></span>ประเมิน ผจก.</button>
   <button class="tab" id="tab_analytics"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg></span>วิเคราะห์</button>
+  <button class="tab" id="tab_salesDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg></span>ยอดขาย (ไลน์)</button>
   <button class="tab" id="tab_handover"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 8l4-4 4 4M8 4v9"/><path d="M20 16l-4 4-4-4M16 20v-9"/></svg></span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_special"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg></span>งานพิเศษ</button>
   <button class="tab" id="tab_qa"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3l2.3 1.7 2.8-.2 1 2.7 2.4 1.5-.9 2.7.9 2.7-2.4 1.5-1 2.7-2.8-.2L12 21l-2.3-1.7-2.8.2-1-2.7L3.5 15l.9-2.7-.9-2.7 2.4-1.5 1-2.7 2.8.2z"/><path d="M9 12l2 2 4-4"/></svg></span>QA สินค้า</button>
@@ -1473,6 +1474,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <select id="lf_hours" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
       <option value="24">24 ชม.</option><option value="48" selected>2 วัน</option><option value="72">3 วัน</option><option value="168">7 วัน</option>
     </select>
+    <select id="lf_cat" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกหมวด</option><option value="sales">ยอดขาย</option><option value="task">ส่งงาน</option><option value="handover">รับส่งผลัด</option><option value="issue">ปัญหา/ด่วน</option><option value="general">ทั่วไป</option></select>
     <label class="check" style="font-size:13px"><input type="checkbox" id="lf_urgent"> เฉพาะเรื่องด่วน</label>
     <button class="btn btn-sec btn-sm" id="lf_manage"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> จัดการกลุ่ม</button>
     <button class="btn btn-sec btn-sm" id="lf_refresh">รีเฟรช</button>
@@ -1481,6 +1483,19 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <div style="font-size:12px;color:var(--muted);margin:0 2px 10px">ข้อความจริงจากกลุ่มไลน์สาขา (เก็บตั้งแต่เปิดระบบเป็นต้นไป) · <span id="lf_unmapped" style="color:#dc2626"></span></div>
   <div id="lf_groups" style="display:none;margin-bottom:12px"></div>
   <div id="lf_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- แดชบอร์ดยอดขาย (จากกลุ่มไลน์) -->
+<div id="view_salesDash" class="container" style="display:none">
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:160px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg> ยอดขายรายสาขา (จากที่แจ้งในกลุ่มไลน์)</h3>
+    <select id="sd_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา (เทียบกัน)</option></select>
+    <input id="sd_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <span style="color:var(--muted);font-size:13px">ถึง</span>
+    <input id="sd_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <button class="btn btn-pri btn-sm" id="sd_go">ดู</button>
+  </div>
+  <div id="sd_body"><div class="empty">เลือกช่วงวันแล้วกด "ดู"</div></div>
 </div>
 
 <!-- เชลฟ์ประจำเดือน (Shelf Care) -->
@@ -8036,7 +8051,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -8060,6 +8075,7 @@ showTab = function(name){
   else if(name==='qa'){ loadQaTab(); }
   else if(name==='shelf'){ loadShelfTab(); }
   else if(name==='lineFeed'){ loadLineFeed(); }
+  else if(name==='salesDash'){ loadSalesDash(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
     if($('lvsub') && !$('lvsub').dataset.wired){
       $('lvsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>leavesTab(b.dataset.lvpan));
@@ -8439,7 +8455,7 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
 const NAV_GROUPS=[
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','board','analytics'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','board','analytics','salesDash'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
@@ -9716,13 +9732,14 @@ async function loadLineFeed(){
     $('lf_refresh').onclick=loadLineFeed;
     $('lf_branch').onchange=loadLineFeed;
     $('lf_hours').onchange=loadLineFeed;
+    $('lf_cat').onchange=loadLineFeed;
     $('lf_urgent').onchange=renderLineFeed;
-    $('lf_ask').onclick=()=>{ const bn=$('lf_branch').selectedOptions[0]?.textContent||'ทุกสาขา'; const h=$('lf_hours').value; if(typeof asstAsk==='function') asstAsk('สรุปความเคลื่อนไหว/ข่าวจากกลุ่มไลน์สาขา '+bn+' ย้อนหลัง '+h+' ชั่วโมง เน้นเรื่องด่วนที่ต้องรีบดู'); };
+    $('lf_ask').onclick=()=>{ const bn=$('lf_branch').selectedOptions[0]?.textContent||'ทุกสาขา'; const h=$('lf_hours').value; if(typeof window.openAsstPop==='function') window.openAsstPop(); if(typeof asstAsk==='function') setTimeout(()=>asstAsk('สรุปความเคลื่อนไหว/ข่าวจากกลุ่มไลน์สาขา '+bn+' ย้อนหลัง '+h+' ชั่วโมง เน้นเรื่องด่วนที่ต้องรีบดู'),120); };
     $('lf_manage').onclick=()=>{ const el=$('lf_groups'); if(el.style.display==='none'){ el.style.display=''; loadLineGroupsManage(); } else el.style.display='none'; };
     $('lf_body').dataset.wired='1';
   }
   $('lf_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_line_feed', password:pwd, branch_id:$('lf_branch').value||'', hours:Number($('lf_hours').value)||48 });
+  const r=await post({ action:'hr_line_feed', password:pwd, branch_id:$('lf_branch').value||'', hours:Number($('lf_hours').value)||48, category:$('lf_cat')?$('lf_cat').value:'' });
   if(!r.ok){ $('lf_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   LF_ROWS=r.rows||[];
   // เตือนถ้ามีกลุ่มยังไม่ผูกสาขา
@@ -9735,16 +9752,24 @@ async function loadLineGroupsManage(){
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   const rows=r.rows||[];
   box.innerHTML='<div class="card"><div class="card-b" style="padding:12px">'
-    +'<div style="font-weight:600;font-size:14px;margin-bottom:4px">จัดการกลุ่มไลน์ที่บอทอยู่</div>'
-    +'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">กลุ่มที่ผูกสาขาแล้วจะขึ้นชื่อสาขาอัตโนมัติ · กลุ่มที่ไม่ใช่สาขาเดียว (เช่น กลุ่ม ผจก.) ตั้ง "ชื่อกลุ่ม" เองเพื่อให้นิดารู้จัก</div>'
-    +(rows.length?rows.map(g=>{
-      const tag = g.mapped ? '<span class="pill ok" style="font-size:11px">ผูกสาขา: '+esc(g.branch_name)+'</span>' : '<span class="pill" style="font-size:11px;background:#fef3c7;color:#a16207">ไม่ผูกสาขา</span>';
-      return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line)">'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px"><div style="font-weight:600;font-size:14px;flex:1">จัดการกลุ่มไลน์ที่บอทอยู่</div>'
+    +'<button class="btn btn-sec btn-sm" id="lf_backfill"><svg class="ei" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> จัดหมวด/แยกยอดขายย้อนหลัง</button></div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:10px">กลุ่มที่ผูกสาขาแล้วจะขึ้นชื่อสาขาอัตโนมัติ · กลุ่มที่ไม่ใช่สาขาเดียว (เช่น กลุ่ม ผจก.) ตั้ง "ชื่อกลุ่ม" เองเพื่อให้นิดารู้จัก · ปุ่มย้อนหลัง = จัดหมวด+แยกยอดขายให้ข้อความที่เข้ามาสด ๆ (ที่ยังไม่ถูกจัด)</div>'
+    +(rows.length?rows.map((g,i)=>{
+      const tag = g.mapped ? '<span class="pill ok" style="font-size:11px">ผูกสาขา: '+esc(g.branch_name)+'</span>' : '<span class="pill" style="font-size:11px;background:#fef3c7;color:#a16207">ไม่ผูกสาขา</span>'+(g.label?' <span class="pill" style="font-size:11px;background:#e0e7ff;color:#3730a3">'+esc(g.label)+'</span>':'');
+      return '<div style="padding:8px 0;border-top:1px solid var(--line)">'
+        +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
         +'<div style="flex:1;min-width:180px"><div style="font-size:12px;color:var(--muted);font-family:monospace;word-break:break-all">'+esc(g.group_id)+'</div>'
         +'<div style="font-size:12px;color:var(--muted)">'+tag+' · ข้อความ '+(g.msg_count||0)+' · ล่าสุด: '+esc((g.last_text||'').slice(0,40))+'</div></div>'
-        +'<input type="text" value="'+esc(g.label||'')+'" placeholder="ชื่อกลุ่ม เช่น กลุ่ม ผจก." data-glid="'+esc(g.group_id)+'" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;min-width:180px"'+(g.mapped?' disabled':'')+'>'
-        +(g.mapped?'':'<button class="btn btn-pri btn-sm" data-glsave="'+esc(g.group_id)+'">บันทึก</button>')
+        +'<button class="btn btn-sec btn-sm" data-gltoggle="'+i+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg> ตั้งค่า</button>'
+        +'</div>'
+        +'<div id="lfg_act_'+i+'" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;padding:8px;background:var(--bg2,#f6f7f9);border-radius:9px">'
+        +(g.mapped
+            ? '<span style="font-size:12px;color:var(--muted);flex:1">กลุ่มนี้ผูกกับ '+esc(g.branch_name)+' แล้ว (ใช้ชื่อสาขาอัตโนมัติ)</span>'
+            : '<input type="text" value="'+esc(g.label||'')+'" placeholder="ชื่อกลุ่ม เช่น กลุ่ม ผจก." data-glid="'+esc(g.group_id)+'" style="flex:1;padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;min-width:160px">'
+              +'<button class="btn btn-pri btn-sm" data-glsave="'+esc(g.group_id)+'">บันทึกชื่อ</button>')
         +'<label class="btn btn-sec btn-sm" style="cursor:pointer" title="นำเข้าประวัติแชทเก่าจากไฟล์ export ของ LINE (.txt)"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg> นำเข้า .txt<input type="file" accept=".txt,text/plain" hidden data-glimp="'+esc(g.group_id)+'"></label>'
+        +'</div>'
         +'</div>';
     }).join(''):'<div class="empty">ยังไม่มีกลุ่ม (บอทยังไม่เคยได้รับข้อความจากกลุ่มไหน)</div>')
     +'</div></div>';
@@ -9754,6 +9779,69 @@ async function loadLineGroupsManage(){
     if(rr.ok){ toast('ok','ตั้งชื่อกลุ่มแล้ว'); loadLineFeed(); } else toast('err',rr.error||'ไม่สำเร็จ');
   });
   box.querySelectorAll('[data-glimp]').forEach(inp=>inp.onchange=()=>lfImportFile(inp));
+  box.querySelectorAll('[data-gltoggle]').forEach(b=>b.onclick=()=>{ const el=$('lfg_act_'+b.dataset.gltoggle); if(el) el.style.display=(el.style.display==='none')?'flex':'none'; });
+  const bf=$('lf_backfill'); if(bf) bf.onclick=async()=>{ bf.disabled=true; const old=bf.textContent; bf.textContent='กำลังจัด…'; const r=await post({ action:'hr_line_backfill', password:pwd }); bf.disabled=false; bf.textContent=old; if(r.ok){ toast('ok','จัดหมวด '+(r.updated||0)+' ข้อความ · แยกยอดขาย '+(r.sales_saved||0)+' รายการ'); loadLineFeed(); } else toast('err',r.error||'ไม่สำเร็จ'); };
+}
+// ========== แดชบอร์ดยอดขาย (จากกลุ่มไลน์) ==========
+const _thb=n=>Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:0});
+async function loadSalesDash(){
+  if($('sd_branch') && $('sd_branch').options.length<=1) $('sd_branch').innerHTML='<option value="">ทุกสาขา (เทียบกัน)</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+  if(!$('sd_end').value){ const t=new Date(Date.now()+7*3600*1000); $('sd_end').value=t.toISOString().slice(0,10); const s=new Date(t.getTime()-29*86400000); $('sd_start').value=s.toISOString().slice(0,10); }
+  if(!$('sd_body').dataset.wired){ $('sd_go').onclick=drawSalesDash; $('sd_branch').onchange=drawSalesDash; $('sd_body').dataset.wired='1'; }
+  drawSalesDash();
+}
+async function drawSalesDash(){
+  $('sd_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_sales_list', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
+  if(!r.ok){ $('sd_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const rows=r.rows||[];
+  if(!rows.length){ $('sd_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีข้อมูลยอดขายในช่วงนี้ — นำเข้าไฟล์แชท หรือกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีดก่อน</div></div></div>'; return; }
+  // aggregate per branch
+  const byBr={};
+  rows.forEach(x=>{ const b=(byBr[x.branch_id]=byBr[x.branch_id]||{name:x.branch_name,days:new Set(),sales:0,target:0,cust:0,ph:0,phn:0}); b.days.add(x.sale_date); b.sales+=(+x.sales_total||0); b.target+=(+x.target_total||0); b.cust+=(+x.customers||0); if(x.per_head){b.ph+=+x.per_head;b.phn++;} });
+  const branches=Object.values(byBr).map(b=>({name:b.name,days:b.days.size,sales:Math.round(b.sales),target:Math.round(b.target),ach:b.target?b.sales/b.target*100:null,cust:b.cust,pph:b.phn?b.ph/b.phn:null})).sort((a,b)=>b.sales-a.sales);
+  const totalSales=branches.reduce((s,b)=>s+b.sales,0), totalTarget=branches.reduce((s,b)=>s+b.target,0);
+  const maxS=Math.max(1,...branches.map(b=>b.sales));
+  let h='';
+  // KPI
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+    +kpiBox('ยอดขายรวม','฿'+_thb(totalSales), totalTarget?('เป้า ฿'+_thb(totalTarget)):'')
+    +kpiBox('เข้าเป้าเฉลี่ย', totalTarget?((totalSales/totalTarget*100).toFixed(1)+'%'):'—', totalTarget&&totalSales>=totalTarget?'ถึงเป้า ✓':'')
+    +kpiBox('สาขายอดสูงสุด', branches[0]?branches[0].name:'—', branches[0]?('฿'+_thb(branches[0].sales)):'')
+    +kpiBox('ลูกค้ารวม', _thb(branches.reduce((s,b)=>s+b.cust,0))+' คน','')
+    +'</div>';
+  // branch comparison bars
+  h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>เทียบยอดขายรายสาขา</h3></div><div class="card-b">'
+    +branches.map(b=>{ const w=Math.round(b.sales/maxS*100); const achCol=b.ach==null?'#94a3b8':(b.ach>=100?'#16a34a':b.ach>=90?'#d97706':'#dc2626');
+      return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><b>'+esc(b.name)+'</b><span>฿'+_thb(b.sales)+(b.ach!=null?(' · <span style="color:'+achCol+';font-weight:700">'+b.ach.toFixed(1)+'%</span>'):'')+'</span></div>'
+        +'<div style="height:16px;background:var(--green-soft,#e9f3ec);border-radius:8px;overflow:hidden"><div style="height:100%;width:'+w+'%;background:var(--green);border-radius:8px"></div></div>'
+        +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+b.days+' วัน · ต่อหัว ฿'+(b.pph?b.pph.toFixed(0):'—')+' · ลูกค้า '+_thb(b.cust)+'</div></div>';
+    }).join('')+'</div></div>';
+  // daily trend (single branch) — SVG line sales vs target
+  if($('sd_branch').value){
+    const dd={}; rows.forEach(x=>{ const d=(dd[x.sale_date]=dd[x.sale_date]||{date:x.sale_date,sales:0,target:0}); d.sales+=(+x.sales_total||0); d.target+=(+x.target_total||0); });
+    const series=Object.values(dd).sort((a,b)=>a.date<b.date?-1:1);
+    h+='<div class="card"><div class="card-h"><h3>เทรนด์รายวัน — ยอดขาย vs เป้า</h3></div><div class="card-b">'+sdLineChart(series)
+      +'<div class="chart-legend"><span><i style="background:var(--green)"></i>ยอดขาย</span><span><i style="background:#94a3b8"></i>เป้า</span></div></div></div>';
+  } else {
+    h+='<div style="font-size:12px;color:var(--muted);margin:0 2px">เลือกสาขาเดียวเพื่อดูเทรนด์รายวัน</div>';
+  }
+  $('sd_body').innerHTML=h;
+}
+function kpiBox(label,val,sub){ return '<div class="card"><div class="card-b" style="padding:14px"><div style="font-size:12px;color:var(--muted)">'+esc(label)+'</div><div style="font-size:22px;font-weight:800;margin-top:2px">'+esc(val)+'</div>'+(sub?'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+esc(sub)+'</div>':'')+'</div></div>'; }
+function sdLineChart(s){
+  if(!s.length) return '<div class="empty">ไม่มีข้อมูล</div>';
+  const W=680,H=200,pl=52,pr=12,pt=12,pb=24, iw=W-pl-pr, ih=H-pt-pb;
+  const max=Math.max(1,...s.map(d=>Math.max(d.sales,d.target)));
+  const xAt=i=>pl+(s.length<=1?iw/2:iw*i/(s.length-1)); const yAt=v=>pt+ih-(v/max*ih);
+  const path=arr=>arr.map((d,i)=>(i?'L':'M')+xAt(i).toFixed(1)+' '+yAt(d).toFixed(1)).join(' ');
+  let grid=''; for(let g=0;g<=3;g++){ const yy=pt+ih*g/3, v=Math.round(max*(3-g)/3); grid+='<line x1="'+pl+'" y1="'+yy+'" x2="'+(W-pr)+'" y2="'+yy+'" stroke="#eef0f3"/><text x="'+(pl-6)+'" y="'+(yy+3)+'" font-size="9" fill="#94a3b8" text-anchor="end">'+_thb(v)+'</text>'; }
+  const dots=s.map((d,i)=>'<circle cx="'+xAt(i).toFixed(1)+'" cy="'+yAt(d.sales).toFixed(1)+'" r="2.4" style="fill:var(--green)"><title>'+esc(d.date.slice(5)+' · ฿'+_thb(d.sales)+' / เป้า ฿'+_thb(d.target))+'</title></circle>').join('');
+  const lblStep=Math.ceil(s.length/8);
+  const xlbl=s.map((d,i)=>(i%lblStep===0)?'<text x="'+xAt(i).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#94a3b8" text-anchor="middle">'+d.date.slice(5)+'</text>':'').join('');
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block;overflow:visible">'+grid
+    +'<path d="'+path(s.map(d=>d.target))+'" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="4 3"/>'
+    +'<path d="'+path(s.map(d=>d.sales))+'" fill="none" style="stroke:var(--green)" stroke-width="2.4" stroke-linejoin="round"/>'+dots+xlbl+'</svg>';
 }
 function lfIsoBkk(y,mo,d,hh,mm){ if(y>2500)y-=543; const pad=n=>String(n).padStart(2,'0'); return y+'-'+pad(mo)+'-'+pad(d)+'T'+pad(hh)+':'+pad(mm)+':00+07:00'; }
 function parseLineExport(txt){
@@ -9802,13 +9890,18 @@ function renderLineFeed(){
   let rows=LF_ROWS.slice();
   if(onlyU) rows=rows.filter(m=>lfFlags(m.text).length);
   if(!rows.length){ $('lf_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">'+(onlyU?'ไม่มีเรื่องด่วนในช่วงนี้':'ยังไม่มีข้อความในช่วงนี้ (เก็บได้เฉพาะตั้งแต่เปิด webhook)')+'</div></div></div>'; return; }
+  const CATLBL={sales:['ยอดขาย','#16a34a','#dcfce7'],task:['ส่งงาน','#2563eb','#dbeafe'],handover:['รับส่งผลัด','#7c3aed','#ede9fe'],issue:['ปัญหา','#dc2626','#fee2e2'],general:['ทั่วไป','#64748b','#f1f5f9']};
+  const CLSLBL={urgent:'⚠ เร่งด่วน',follow_up:'⏳ ต้องติดตาม',policy:'📋 นโยบาย',rule:'📕 ระเบียบ',cooperation:'🤝 ขอความร่วมมือ',procedure:'📖 ขั้นตอนปฏิบัติ',news:'📣 ข่าวสาร'};
   $('lf_body').innerHTML=rows.map(m=>{
     const fl=lfFlags(m.text);
     const t=String(m.sent_at).slice(0,16).replace('T',' ');
     const body = m.text ? esc(m.text) : (m.media_url?('<a href="'+esc(m.media_url)+'" target="_blank"><img src="'+esc(m.media_url)+'" style="max-width:160px;max-height:160px;border-radius:8px;display:block;margin-top:4px"></a>'):('['+esc(m.msg_type)+']'));
+    const cat=CATLBL[m.category]; const catB=cat?'<span style="font-size:11px;padding:1px 7px;border-radius:8px;background:'+cat[2]+';color:'+cat[1]+';font-weight:600">'+cat[0]+'</span>':'';
+    const clB=CLSLBL[m.msg_class]?'<span style="font-size:11px;color:var(--muted)">'+CLSLBL[m.msg_class]+'</span>':'';
     return '<div class="card" style="margin-bottom:8px;'+(fl.length?'border-left:4px solid #dc2626':'border-left:4px solid var(--line)')+'"><div class="card-b" style="padding:10px 12px">'
       +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:13.5px">'+esc(m.display_name)+'</b>'
       +'<span style="font-size:12px;color:var(--muted)">'+esc(m.branch_name)+'</span>'
+      +catB+clB
       +'<span style="font-size:12px;color:var(--muted);margin-left:auto">'+t+'</span></div>'
       +(fl.length?'<div style="margin:3px 0"><span class="pill bad" style="font-size:11px">⚠ '+fl.map(esc).join(' · ')+'</span></div>':'')
       +'<div style="font-size:14px;margin-top:2px;white-space:pre-wrap;word-break:break-word">'+body+'</div>'
@@ -12516,6 +12609,7 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
   let sx,sy,ox,oy,moved=false,dragging=false;
   function openPop(){ pop.classList.add('open'); if(typeof initAssistant==='function') initAssistant(); setTimeout(()=>{ const i=g('asst_in'); if(i) i.focus(); },60); try{ if(typeof asstMaybeMorning==='function') asstMaybeMorning(); }catch(_e){} }
   function closePop(){ pop.classList.remove('open'); }
+  window.openAsstPop=openPop;   // ให้หน้าอื่นสั่งเปิดแชทนิดาได้ (เช่น ปุ่ม "ให้นิดาสรุป" หน้าฟีดไลน์)
   fab.addEventListener('pointerdown',e=>{ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; const r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
   fab.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; fab.classList.add('dragging'); } if(moved){ let nx=ox+dx, ny=oy+dy; nx=Math.max(4,Math.min(window.innerWidth-fab.offsetWidth-4,nx)); ny=Math.max(4,Math.min(window.innerHeight-fab.offsetHeight-4,ny)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; } });
   fab.addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false; fab.classList.remove('dragging'); try{fab.releasePointerCapture(e.pointerId);}catch(_){} if(!moved){ pop.classList.contains('open')?closePop():openPop(); } });

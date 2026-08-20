@@ -202,6 +202,8 @@
         case 'hr_line_groups':       return await hrLineGroups();
         case 'hr_line_group_label':  return await hrLineGroupLabel(p);
         case 'hr_line_import':       return await hrLineImport(p);
+        case 'hr_sales_list':        return await hrSalesList(p);
+        case 'hr_line_backfill':     return await hrLineBackfill(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
         case 'hr_term_rules_save':   return await hrTermRulesSave(p.data, p);
         case 'hr_term_rule_delete':  return await hrTermRuleDelete(p.key, p);
@@ -2622,9 +2624,10 @@
     const limit = Math.min(Math.max(Number(p.limit) || 120, 1), 400);
     const sinceIso = new Date(Date.now() - hours * 3600 * 1000).toISOString();
     let q = sb().from('line_messages')
-      .select('sent_at,branch_id,group_id,display_name,msg_type,text,media_url')
+      .select('sent_at,branch_id,group_id,display_name,msg_type,text,media_url,category,msg_class')
       .gte('sent_at', sinceIso).order('sent_at', { ascending: false }).limit(limit);
     if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
+    if (p.category) q = q.eq('category', String(p.category));
     const [{ data: msgs, error }, { data: brs }, { data: gls }] = await Promise.all([
       q, sb().from('branches').select('branch_id,name'), sb().from('line_groups').select('group_id,label'),
     ]);
@@ -2636,6 +2639,7 @@
       branch_name: m.branch_id ? (bn[m.branch_id] || m.branch_id) : (gl[m.group_id] || '(ยังไม่ผูกสาขา)'),
       display_name: m.display_name || 'ไม่ทราบชื่อ', msg_type: m.msg_type,
       text: m.text || '', media_url: m.media_url || '',
+      category: m.category || '', msg_class: m.msg_class || '',
     }));
     return { ok: true, rows, hours };
   }
@@ -2667,6 +2671,74 @@
     });
     return { ok: true, rows };
   }
+  // ========== ตัวแยกยอดขาย + ตัวจัดหมวดข้อความไลน์ ==========
+  const _snum = s => { const t = String(s).replace(/[, ]/g, '').replace(/%/g, ''); const v = parseFloat(t); return isNaN(v) ? null : v; };
+  function _stripLabel(l) { return String(l).replace(/^[\s\d]+[.．)]\s*/, '').replace(/[\u{1F000}-\u{1FAFF}]/gu, '').replace(/[《》「」\[\]☀-➿️🌅🌆🌇🥇🥈🥉]/gu, '').trim(); }
+  function _isShift(l) { const s = _stripLabel(l).replace(/\s/g, ''); if (/ผลัดเช้า/.test(s)) return 'เช้า'; if (/ผลัดบ่าย/.test(s)) return 'บ่าย'; if (/ผลัด(ดึก|กลางคืน)/.test(s)) return 'ดึก'; return null; }
+  function _salesAssign(o, label, valPart) {
+    const L = label.toLowerCase(); const n = valPart.split('/').map(v => _snum(v.trim()));
+    const has = (...k) => k.every(x => label.includes(x)); const hasL = s => L.includes(s);
+    if (label.includes('เป้า')) { if (n.length >= 3) { o.target_product = n[0]; o.target_card = n[1]; o.target_total = n[2]; } else o.target_total = n[0]; }
+    else if (label.includes('ยอดขาย') || label.includes('ยอดรวม')) {
+      if (has('สินค้า', 'ลูกค้า', 'ต่อหัว')) { o.sales_product = n[0]; o.customers = n[1]; o.per_head = n[2]; }
+      else if (has('สินค้า', 'บัตร', 'รวม')) { o.sales_product = n[0]; o.sales_card = n[1]; o.sales_total = n[2]; }
+      else if (label.includes('บัตร')) o.sales_card = n[0];
+      else if (label.includes('รวม')) o.sales_total = n[0];
+      else if (label.includes('สินค้า')) o.sales_product = n[0];
+    }
+    else if (/^ลูกค้า/.test(label)) o.customers = n[0];
+    else if (label.includes('ต่อหัว')) o.per_head = n[0];
+    else if (hasL('cafe') || label.includes('คาเฟ่')) { o.allcafe_cups = n[0]; o.allcafe_baht = n[1]; }
+    else if (hasL('delivery')) { o.delivery_bills = n[0]; o.delivery_baht = n[1]; }
+    else if (hasL('tmw') || label.includes('ทรู') || hasL('truewallet')) { o.truewallet_baht = n[0]; o.truewallet_pct = n[1]; }
+    else if (hasL('online')) o.extra.online = n;
+    else if (label.includes('พาย')) o.extra.pai = n;
+    else if (label.includes('ขนมจีบ')) o.extra.khanomjeeb = n;
+    else if (label.includes('ซาลาเปา')) o.extra.salapao = n;
+    else if (label) o.extra[label.slice(0, 16)] = n;
+  }
+  function _extractSales(text) {
+    const lines = String(text).split('\n'); const shifts = {}; let cur = null, prevLabel = '';
+    const ensure = sh => (shifts[sh] = shifts[sh] || { shift: sh, extra: {} });
+    for (const raw of lines) {
+      const line = raw.trim(); if (!line) continue;
+      const sh = _isShift(line); if (sh) { cur = ensure(sh); prevLabel = ''; continue; }
+      if (!cur) { if (/=|เป้า|ยอดขาย/.test(line)) cur = ensure('เช้า'); else continue; }
+      const eq = line.indexOf('='); let label, valPart;
+      if (eq >= 0) { label = line.slice(0, eq).trim(); valPart = line.slice(eq + 1).trim(); if (label === '') label = prevLabel; prevLabel = ''; }
+      else { prevLabel = line; continue; }
+      if (valPart === '') continue;
+      _salesAssign(cur, _stripLabel(label), valPart);
+    }
+    // เก็บเฉพาะผลัดที่มีตัวเลขยอดขาย/เป้าจริง
+    return Object.values(shifts).filter(s => s.sales_total != null || s.sales_product != null || s.target_total != null);
+  }
+  // หา "วันที่ของรายงาน" จากในข้อความ (เช่น วันที่ 01/06/69) — ถ้าไม่มีใช้วันที่ส่ง
+  function _salesDate(text, fallbackIso) {
+    const m = String(text).match(/วันที่\s*(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})/);
+    if (m) { let y = +m[3]; if (y < 100) y += 2500; if (y > 2500) y -= 543; const p = n => String(n).padStart(2, '0'); return y + '-' + p(+m[2]) + '-' + p(+m[1]); }
+    return (fallbackIso || '').slice(0, 10) || null;
+  }
+  // จัดหมวด (category) + ระดับความสำคัญ (msg_class)
+  const _URGENT = ['ปิดร้าน','ปิดสาขา','ของขาด','สินค้าขาด','ของหมด','สต๊อกหมด','ไฟดับ','ไฟไหม้','น้ำท่วม','ตู้เสีย','เครื่องเสีย','ระบบล่ม','ด่วน','ฉุกเฉิน','ทะเลาะ','วิวาท','ขโมย','ของหาย','เงินหาย','เงินขาด','อุบัติเหตุ','บาดเจ็บ','ร้องเรียน','ตำรวจ'];
+  function _classify(text, isSales) {
+    const t = String(text || '');
+    let category = 'general';
+    if (isSales || /แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า/.test(t)) category = 'sales';
+    else if (/ส่งงาน|ล้างห้องน้ำ|เช็ค.?temp|temp\s?card|ตรวจเชลฟ์|ตรวจสอบ.*จุด|จัดเชลฟ์|เติม/i.test(t)) category = 'task';
+    else if (/รับผลัด|ส่งผลัด|รับ-?ส่งผลัด|ส่งกะ|รับกะ/.test(t)) category = 'handover';
+    else if (_URGENT.some(k => t.includes(k))) category = 'issue';
+    let cls = 'general';
+    if (/ด่วนที่สุด|ด่วนมาก|ฉุกเฉิน|ปิดร้าน|ไฟไหม้|ทะเลาะ|ของขาด|ของหมด|ระบบล่ม/.test(t)) cls = 'urgent';
+    else if (/นโยบาย|policy|ประกาศบริษัท/i.test(t)) cls = 'policy';
+    else if (/ระเบียบ|ข้อบังคับ|กฎ|บทลงโทษ|ห้าม/.test(t)) cls = 'rule';
+    else if (/ขั้นตอน|วิธีการ|วิธีปฏิบัติ|แนวปฏิบัติ|คู่มือ|how ?to/i.test(t)) cls = 'procedure';
+    else if (/ขอความร่วมมือ|ขอความอนุเคราะห์|รบกวนทุก|ช่วยกัน|ขอให้ทุกสาขา/.test(t)) cls = 'cooperation';
+    else if (/ติดตาม|ยังไม่|ค้าง|กำหนดส่ง|ภายในวันนี้|ภายในพรุ่งนี้|เตือน/.test(t)) cls = 'follow_up';
+    else if (/แจ้งให้ทราบ|ประชาสัมพันธ์|ข่าว|อัปเดต|โปรโมชั่น|แจ้งเปลี่ยน/.test(t)) cls = 'news';
+    return { category, msg_class: cls };
+  }
+
   // นำเข้าประวัติแชทจากไฟล์ export ของ LINE (.txt) — rows=[{sent_at,display_name,text}]
   async function hrLineImport(p) {
     const gid = String(p.group_id || ''); if (!gid) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
@@ -2674,12 +2746,30 @@
     const { data: br } = await sb().from('branches').select('branch_id').eq('line_group_id', gid).maybeSingle();
     const bid = br ? br.branch_id : null;
     const hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
-    const recs = rows.filter(r => r && r.sent_at && (r.text || '').trim()).map(r => ({
-      line_msg_id: 'imp_' + gid.slice(-8) + '_' + hash(gid + '|' + r.sent_at + '|' + (r.display_name || '') + '|' + (r.text || '')),
-      group_id: gid, branch_id: bid, source_type: 'import',
-      display_name: String(r.display_name || '').slice(0, 120), msg_type: 'text',
-      text: String(r.text || ''), sent_at: r.sent_at,
-    }));
+    const salesMap = {};   // key branch|date|shift -> row (กันซ้ำในไฟล์เดียว)
+    const recs = rows.filter(r => r && r.sent_at && (r.text || '').trim()).map(r => {
+      const text = String(r.text || '');
+      let sales = [];
+      if (bid) { try { sales = _extractSales(text); } catch (_e) { sales = []; } }   // แยกยอดขายเฉพาะกลุ่มที่ผูกสาขา
+      const cl = _classify(text, sales.length > 0);
+      if (sales.length && bid) {
+        const sdate = _salesDate(text, r.sent_at);
+        if (sdate) sales.forEach(s => {
+          const extra = s.extra && Object.keys(s.extra).length ? s.extra : null;
+          salesMap[bid + '|' + sdate + '|' + s.shift] = Object.assign({}, s, {
+            branch_id: bid, group_id: gid, sale_date: sdate,
+            reporter: String(r.display_name || '').slice(0, 120), source: 'import',
+            raw_text: text.slice(0, 2000), extra,
+          });
+        });
+      }
+      return {
+        line_msg_id: 'imp_' + gid.slice(-8) + '_' + hash(gid + '|' + r.sent_at + '|' + (r.display_name || '') + '|' + text),
+        group_id: gid, branch_id: bid, source_type: 'import',
+        display_name: String(r.display_name || '').slice(0, 120), msg_type: 'text',
+        text, sent_at: r.sent_at, category: cl.category, msg_class: cl.msg_class,
+      };
+    });
     let done = 0;
     for (let i = 0; i < recs.length; i += 500) {
       const chunk = recs.slice(i, i + 500);
@@ -2687,7 +2777,51 @@
       if (error) return { ok: false, error: error.message, done };
       done += chunk.length;
     }
-    return { ok: true, imported: recs.length };
+    // บันทึกยอดขายที่แยกได้ (อัปเดตทับตาม branch/date/shift)
+    const salesRows = Object.values(salesMap);
+    let salesSaved = 0;
+    for (let i = 0; i < salesRows.length; i += 300) {
+      const chunk = salesRows.slice(i, i + 300);
+      const { error } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' });
+      if (!error) salesSaved += chunk.length;
+    }
+    return { ok: true, imported: recs.length, sales_saved: salesSaved };
+  }
+  // ดึงยอดขายมาตรฐาน (แดชบอร์ด/นิดา) — filter branch/start/end/shift
+  async function hrSalesList(p) {
+    let q = sb().from('sales_daily').select('*').order('sale_date', { ascending: false }).order('shift');
+    if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
+    if (p.start) q = q.gte('sale_date', p.start);
+    if (p.end) q = q.lte('sale_date', p.end);
+    if (p.shift) q = q.eq('shift', String(p.shift));
+    q = q.limit(Math.min(Number(p.limit) || 2000, 5000));
+    const [{ data, error }, { data: brs }] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
+    if (error) return { ok: false, error: error.message };
+    const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
+    const rows = (data || []).map(r => Object.assign({}, r, { branch_name: bn[r.branch_id] || r.branch_id }));
+    return { ok: true, rows };
+  }
+  // Backfill: ติดป้ายหมวด/ความสำคัญ + แยกยอดขาย ให้ข้อความเก่าที่ยังไม่มีป้าย (เช่น ที่เข้ามาสด ๆ)
+  async function hrLineBackfill(p) {
+    const { data: brs } = await sb().from('branches').select('branch_id,line_group_id');
+    const grpBranch = {}; (brs || []).forEach(b => { if (b.line_group_id) grpBranch[b.line_group_id] = b.branch_id; });
+    const { data: msgs, error } = await sb().from('line_messages').select('id,group_id,branch_id,display_name,text,sent_at').is('category', null).limit(3000);
+    if (error) return { ok: false, error: error.message };
+    if (!msgs || !msgs.length) return { ok: true, updated: 0, sales_saved: 0, note: 'ไม่มีข้อความค้างจัดหมวด' };
+    const updates = []; const salesMap = {};
+    for (const m of msgs) {
+      const bid = grpBranch[m.group_id] || m.branch_id || null;
+      let sales = [];
+      if (bid) { try { sales = _extractSales(m.text || ''); } catch (_e) {} }
+      const cl = _classify(m.text || '', sales.length > 0);
+      updates.push({ id: m.id, category: cl.category, msg_class: cl.msg_class });
+      if (sales.length && bid) { const sdate = _salesDate(m.text || '', m.sent_at); if (sdate) sales.forEach(s => { const extra = s.extra && Object.keys(s.extra).length ? s.extra : null; salesMap[bid + '|' + sdate + '|' + s.shift] = Object.assign({}, s, { branch_id: bid, group_id: m.group_id, sale_date: sdate, reporter: (m.display_name || '').slice(0, 120), source: 'live', raw_text: (m.text || '').slice(0, 2000), extra }); }); }
+    }
+    let updated = 0;
+    for (let i = 0; i < updates.length; i += 500) { const chunk = updates.slice(i, i + 500); const { error: e2 } = await sb().from('line_messages').upsert(chunk, { onConflict: 'id' }); if (!e2) updated += chunk.length; }
+    const salesRows = Object.values(salesMap); let salesSaved = 0;
+    for (let i = 0; i < salesRows.length; i += 300) { const chunk = salesRows.slice(i, i + 300); const { error: e3 } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' }); if (!e3) salesSaved += chunk.length; }
+    return { ok: true, updated, sales_saved: salesSaved };
   }
   async function hrLineGroupLabel(p) {
     if (!p.group_id) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
