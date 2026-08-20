@@ -9799,9 +9799,13 @@ async function drawSalesDash(){
   if(!rows.length){ $('sd_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีข้อมูลยอดขายในช่วงนี้ — นำเข้าไฟล์แชท หรือกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีดก่อน</div></div></div>'; return; }
   const single=$('sd_branch').value;
   const exBaht=(ex,k)=>{ try{ const a=ex&&ex[k]; return Array.isArray(a)?(+a[a.length-1]||0):0; }catch(e){ return 0; } };
-  // aggregate per branch (ครบทุกมิติ)
+  // ★ ยอด "รวม" ในแต่ละผลัดเป็นยอดสะสมทั้งวัน → เอาแค่แถวที่ยอดรวมสูงสุดต่อ (สาขา,วัน) = ยอดสิ้นวัน (กันนับซ้ำข้ามผลัด)
+  const dayBest={};
+  rows.forEach(x=>{ const k=x.branch_id+'|'+x.sale_date; const st=+x.sales_total||0; const cur=dayBest[k]; if(!cur || st>(+cur.sales_total||0)) dayBest[k]=x; });
+  const drows=Object.values(dayBest);
+  // aggregate per branch (ครบทุกมิติ) — จากยอดรวมสิ้นวันต่อวัน
   const byBr={}; const allDates={};
-  rows.forEach(x=>{
+  drows.forEach(x=>{
     const b=(byBr[x.branch_id]=byBr[x.branch_id]||{id:x.branch_id,name:x.branch_name,days:new Set(),sales:0,target:0,cust:0,ph:0,phn:0,card:0,cafe:0,deliv:0,tmw:0,pai:0,jeeb:0,salapao:0,daily:{}});
     b.days.add(x.sale_date); allDates[x.sale_date]=1;
     b.sales+=(+x.sales_total||0); b.target+=(+x.target_total||0); b.cust+=(+x.customers||0);
@@ -9827,7 +9831,7 @@ async function drawSalesDash(){
   // ---- กราฟเส้นโค้งเทียบสาขา (รายวัน) ----
   const lines = single
     ? [ {name:'ยอดขาย',color:'#1b7a42',vals:branches[0].daily},
-        {name:'เป้า',color:'#94a3b8',dash:true,vals:(()=>{const m={};rows.forEach(x=>{m[x.sale_date]=(m[x.sale_date]||0)+(+x.target_total||0);});return m;})()} ]
+        {name:'เป้า',color:'#94a3b8',dash:true,vals:(()=>{const m={};drows.forEach(x=>{m[x.sale_date]=(+x.target_total||0);});return m;})()} ]
     : branches.map(b=>({name:b.name,color:b.color,vals:b.daily}));
   h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>เทรนด์ยอดขายรายวัน'+(single?' — ยอดขาย vs เป้า':' (เทียบสาขา)')+'</h3></div><div class="card-b">'
     +sdMultiLineChart(dates,lines)

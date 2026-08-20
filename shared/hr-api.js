@@ -2674,7 +2674,7 @@
   // ========== ตัวแยกยอดขาย + ตัวจัดหมวดข้อความไลน์ ==========
   const _snum = s => { const t = String(s).replace(/[, ]/g, '').replace(/%/g, ''); const v = parseFloat(t); return isNaN(v) ? null : v; };
   function _stripLabel(l) { return String(l).replace(/^[\s\d]+[.．)]\s*/, '').replace(/[\u{1F000}-\u{1FAFF}]/gu, '').replace(/[《》「」\[\]☀-➿️🌅🌆🌇🥇🥈🥉]/gu, '').trim(); }
-  function _isShift(l) { const s = _stripLabel(l).replace(/\s/g, ''); if (/ผลัดเช้า/.test(s)) return 'เช้า'; if (/ผลัดบ่าย/.test(s)) return 'บ่าย'; if (/ผลัด(ดึก|กลางคืน)/.test(s)) return 'ดึก'; return null; }
+  function _isShift(l) { const s = _stripLabel(l).replace(/\s/g, ''); if (/สิ้นวัน|สิ้นสุดวัน|ปิดยอด/.test(s)) return 'สิ้นวัน'; if (/ผลัดเช้า/.test(s)) return 'เช้า'; if (/ผลัดบ่าย/.test(s)) return 'บ่าย'; if (/ผลัด(ดึก|กลางคืน)/.test(s)) return 'ดึก'; return null; }
   function _salesAssign(o, label, valPart) {
     const L = label.toLowerCase(); const n = valPart.split('/').map(v => _snum(v.trim()));
     const has = (...k) => k.every(x => label.includes(x)); const hasL = s => L.includes(s);
