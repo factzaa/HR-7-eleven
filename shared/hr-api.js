@@ -330,6 +330,7 @@
         case 'rider_stats':          return await hrRiderStats(p);
         case 'rider_daily_distance': return await hrRiderDailyDistance(p);
         case 'hr_mtask_create':      return await hrMtaskCreate(p.data);
+        case 'hr_mtask_by_batch':    return await hrMtaskByBatch(p);
         case 'hr_mtask_list':        return await hrMtaskList(p.branch);
         case 'hr_nav_badges':        return await hrNavBadges(p);
         case 'hr_mtask_get':         return await hrMtaskGet(p.id);
@@ -5802,8 +5803,22 @@
       ids.push(ins.data.id);
       await sb().from('mgr_task_feed').insert({ task_id: ins.data.id, role: 'hr', sender_name: 'HR', kind: 'assign', message: 'มอบหมายงาน: ' + title, photos: photos.length ? photos : null });
     }
+    // batch_id = รวมงานทุกสาขาเป็นชุดเดียว (ไว้ทำการ์ดสรุปใบเดียว) — เขียนแยกกันฟ้องถ้าคอลัมน์ยังไม่มี
+    let batch_id = null;
+    if (ids.length > 1) {
+      batch_id = 'B' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      try { const { error } = await sb().from('mgr_tasks').update({ batch_id }).in('id', ids); if (error) batch_id = null; } catch (_e) { batch_id = null; }
+    }
     await logAct('มอบหมายงาน ผจก.', null, title + ' · ' + (allBranches ? ('ทุกสาขา (' + branches.length + ')') : ('สาขา ' + branches[0])));
-    return { ok: true, id: ids[0], ids, count: ids.length, all: allBranches, degraded };
+    return { ok: true, id: ids[0], ids, count: ids.length, all: allBranches, degraded, batch_id };
+  }
+  // หา id งานของ "สาขาตัวเอง" ในชุด batch (ใช้ตอน ผจก. กดปุ่มการ์ดสรุปทุกสาขาจากไลน์)
+  async function hrMtaskByBatch(p) {
+    p = p || {};
+    if (!p.batch_id || !p.branch) return { ok: false, error: 'ต้องระบุ batch_id และ branch' };
+    const { data, error } = await sb().from('mgr_tasks').select('id').eq('batch_id', String(p.batch_id)).eq('branch_id', String(p.branch)).limit(1).maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: data ? data.id : null };
   }
   // นับคิวงาน/รออนุมัติ สำหรับ badge บนแท็บเมนู (HR = ทุกสาขา · ผจก. = สาขาตัวเอง เฉพาะงานที่เกี่ยว)
   async function hrNavBadges(p) {

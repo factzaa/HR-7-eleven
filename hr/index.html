@@ -2519,6 +2519,22 @@ async function mgrTryLogin(){
   showTab('mgrtasks');
   chatInit();
   toast('ok','สวัสดี ผจก. '+(r.nickname||r.name||emp));
+  mtaskDeepLink();            // ★ มาจากลิงก์การ์ดงานในกลุ่มไลน์ → เปิดงานนั้นให้ (เฉพาะสาขาตัวเอง)
+}
+// เปิดงานจากลิงก์ในกลุ่มไลน์ ผจก. — ?task=<id> หรือ ?mtask_batch=<batch> · เปิดเฉพาะงานของสาขาตัวเอง
+async function mtaskDeepLink(){
+  try{
+    const p=new URLSearchParams(location.search);
+    const tid=p.get('task'); const batch=p.get('mtask_batch');
+    if(!tid && !batch) return;
+    let id=tid;
+    if(!id && batch){ const rb=await post({ action:'hr_mtask_by_batch', password:pwd, batch_id:batch, branch:MGR_BRANCH }); if(rb&&rb.ok&&rb.id) id=rb.id; }
+    if(!id){ toast('err','ไม่พบงานของสาขาคุณในรายการนี้'); return; }
+    const rg=await post({ action:'hr_mtask_get', password:pwd, id });
+    if(!rg||!rg.ok||!rg.task){ toast('err','ไม่พบงานนี้'); return; }
+    if(MGR_MODE && MGR_BRANCH && String(rg.task.branch_id)!==String(MGR_BRANCH)){ toast('err','งานนี้เป็นของสาขาอื่น'); return; }
+    openMtask(id);
+  }catch(e){}
 }
 $('mgrLoginBtn') && ($('mgrLoginBtn').onclick = mgrTryLogin);
 
@@ -7453,6 +7469,16 @@ try{ hrwipCleanup(3*86400000); }catch(e){}
 function mtDraftSave(){ if(!MT_CUR) return; hrwipSave('mt:'+MT_CUR.id, { photos:MT_PHOTOS||[], note:($('mt_msg')||{}).value||'' }); }
 async function mtRestoreDraft(){ if(!MT_CUR) return; const d=await hrwipGet('mt:'+MT_CUR.id); if(!d) return; if(Array.isArray(d.photos)&&d.photos.length){ MT_PHOTOS=d.photos.slice(); renderMtPhotoBar(); } const el=$('mt_msg'); if(el && d.note && !el.value) el.value=d.note; }
 
+// แจ้งงาน ผจก. เข้ากลุ่มไลน์ ผจก. (การ์ด + ปุ่มเปิดหน้างาน) — ยิงหลังสร้างงานสำเร็จ
+function mtaskLineNotify(r){
+  try{
+    if(!r||!r.ok) return;
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
+    const payload=(r.count>1 && r.batch_id) ? { batch_id:r.batch_id } : (r.id ? { task_id:r.id } : null);
+    if(!payload) return;
+    fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  }catch(e){}
+}
 async function openMtask(id){
   const r=await post({ action:'hr_mtask_get', password:pwd, id });
   if(!r.ok){ toast('err', r.error||'ไม่พบงาน'); return; }
@@ -7664,7 +7690,7 @@ $('mtaSave') && ($('mtaSave').onclick=async()=>{
   else { data.hr_photos=MTA_PHOTOS.slice(); r=await post({ action:'hr_mtask_create', password:pwd, data }); }
   btn.disabled=false; btn.textContent=old;
   if(r.ok){
-    if(!MT_EDIT){ try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} }
+    if(!MT_EDIT){ try{ fetch(String(window.SUPABASE_CONFIG.url).replace(/\/$/,'')+'/functions/v1/hr-notify',{method:'POST',headers:{'Content-Type':'application/json'}}); }catch(e){} mtaskLineNotify(r); }
     toast('ok', MT_EDIT?'แก้ไขแล้ว':(r.count>1?('มอบหมายแล้ว '+r.count+' สาขา'):'มอบหมายแล้ว'));
     const wasEdit=!!MT_EDIT; MT_EDIT=null; closeMtAssign();
     if(wasEdit && MT_CUR){ openMtask(MT_CUR.id); }   // รีเฟรชรายละเอียดที่เปิดอยู่
@@ -9027,7 +9053,7 @@ async function asstCreateMgrTask(idx){
   try{
     const r=await post({ action:'hr_mtask_create', password:pwd, data });
     ASST_MSGS.pop();
-    if(r&&r.ok){ let msg='สร้างงาน ผจก. "'+title+'" แล้วค่ะ ✓ ('+(r.all?('ทุกสาขา '+r.count+' ใบ'):(r.count+' สาขา'))+')'+(data.require_photo?' · บังคับแนบรูปตอนเสร็จ':'')+(data.priority==='urgent'?' · ⚡ด่วน':'')+' — ดูได้ที่เมนู "งาน & ตรวจ → งาน ผจก." (กดรีเฟรช)'; if(r.degraded) msg+='\n\n⚠ หมายเหตุ: ยังไม่ได้รัน SQL "mgr_task_ext.sql" — งานถูกสร้างแล้วแต่ตัวเลือก "บังคับแนบรูป/บทลงโทษ" ยังไม่ถูกบันทึก โปรดรัน SQL ก่อน แล้วสร้างงานใหม่เพื่อให้ครบ'; ASST_MSGS.push({role:'assistant',text:msg}); try{ if(typeof loadMtasks==='function'){ const v=document.getElementById('view_mgrtasks'); if(v&&v.style.display!=='none') loadMtasks(); } }catch(_e){} }
+    if(r&&r.ok){ mtaskLineNotify(r); let msg='สร้างงาน ผจก. "'+title+'" แล้วค่ะ ✓ ('+(r.all?('ทุกสาขา '+r.count+' ใบ'):(r.count+' สาขา'))+')'+(data.require_photo?' · บังคับแนบรูปตอนเสร็จ':'')+(data.priority==='urgent'?' · ⚡ด่วน':'')+' — ดูได้ที่เมนู "งาน & ตรวจ → งาน ผจก." (กดรีเฟรช)'; if(r.degraded) msg+='\n\n⚠ หมายเหตุ: ยังไม่ได้รัน SQL "mgr_task_ext.sql" — งานถูกสร้างแล้วแต่ตัวเลือก "บังคับแนบรูป/บทลงโทษ" ยังไม่ถูกบันทึก โปรดรัน SQL ก่อน แล้วสร้างงานใหม่เพื่อให้ครบ'; ASST_MSGS.push({role:'assistant',text:msg}); try{ if(typeof loadMtasks==='function'){ const v=document.getElementById('view_mgrtasks'); if(v&&v.style.display!=='none') loadMtasks(); } }catch(_e){} }
     else ASST_MSGS.push({role:'assistant',text:'สร้างงานไม่สำเร็จค่ะ: '+((r&&r.error)||'ไม่ทราบสาเหตุ')});
   }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'สร้างงานไม่สำเร็จค่ะ: '+(e.message||e)}); }
   asstRender();

@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v71';       // ★ ขึ้นเวอร์ชัน = ล้าง cache เก่า (v6: นิดา get_document/เอกสาร/ใบเซ็นรับทราบ/ตักเตือน + ค้นชื่อ + สัญญาณพร้อม)
+const CACHE = 'hr7-eleven-v72';       // ★ ขึ้นเวอร์ชัน = ล้าง cache เก่า (v6: นิดา get_document/เอกสาร/ใบเซ็นรับทราบ/ตักเตือน + ค้นชื่อ + สัญญาณพร้อม)
 const ASSETS = [
   './',
   './index.html',
