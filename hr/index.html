@@ -6270,12 +6270,12 @@ function anLineChart(s){
   let grid=''; for(let g=0;g<=3;g++){ const yy=pt+ih*g/3; grid+='<line x1="'+pl+'" y1="'+yy+'" x2="'+(W-pr)+'" y2="'+yy+'" stroke="#eef0f3" stroke-width="1"/>'; }
   let xl=''; const step=Math.max(1,Math.ceil(n/6));
   for(let i=0;i<n;i+=step){ const dd=s[i].date.slice(8)+'/'+s[i].date.slice(5,7); xl+='<text x="'+xAt(i).toFixed(1)+'" y="'+(H-6)+'" font-size="10" fill="#8a90a0" text-anchor="middle">'+dd+'</text>'; }
-  const dots=s.map((d,i)=>'<circle cx="'+xAt(i).toFixed(1)+'" cy="'+yAt(d.present).toFixed(1)+'" r="2.6" fill="#2b3242" stroke="#fff" stroke-width="1"><title>'+esc(s[i].date.slice(8)+'/'+s[i].date.slice(5,7)+' · มา '+d.present+' · สาย '+d.late+' · ขาด '+d.absent+(d.ot?' · OT '+d.ot:''))+'</title></circle>').join('');
+  const dots=s.map((d,i)=>'<circle cx="'+xAt(i).toFixed(1)+'" cy="'+yAt(d.present).toFixed(1)+'" r="2.6" style="fill:var(--green)" stroke="#fff" stroke-width="1"><title>'+esc(s[i].date.slice(8)+'/'+s[i].date.slice(5,7)+' · มา '+d.present+' · สาย '+d.late+' · ขาด '+d.absent+(d.ot?' · OT '+d.ot:''))+'</title></circle>').join('');
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block;overflow:visible">'
-    +'<defs><linearGradient id="anFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#333a4d" stop-opacity=".26"/><stop offset="1" stop-color="#333a4d" stop-opacity="0"/></linearGradient></defs>'
+    +'<defs><linearGradient id="anFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--green)" stop-opacity=".22"/><stop offset="1" style="stop-color:var(--green)" stop-opacity="0"/></linearGradient></defs>'
     +grid+'<path d="'+areaP+'" fill="url(#anFill)"/>'
     +'<path d="'+pathL+'" fill="none" stroke="#e5484d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>'
-    +'<path d="'+pathP+'" fill="none" stroke="#2b3242" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+    +'<path d="'+pathP+'" fill="none" style="stroke:var(--green)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
     +dots+xl+'</svg>';
 }
 function renderAnalytics(){
@@ -6297,7 +6297,7 @@ function renderAnalytics(){
   html+='<div class="card an-chartcard" style="margin-bottom:12px"><div class="card-h"><h3>แนวโน้มรายวัน — มาทำงาน / มาสาย</h3></div><div class="card-b">';
   if(s.length){
     html+=anLineChart(s)
-    +'<div class="chart-legend"><span><i style="background:#2b3242"></i>มาตรงเวลา</span><span><i style="background:var(--red)"></i>มาสาย</span></div>';
+    +'<div class="chart-legend"><span><i style="background:var(--green)"></i>มาตรงเวลา</span><span><i style="background:var(--red)"></i>มาสาย</span></div>';
   } else html+='<div class="empty">— ไม่มีข้อมูลในช่วงนี้ —</div>';
   html+='</div></div>';
 
@@ -6305,10 +6305,11 @@ function renderAnalytics(){
   const br=a.branches||[];
   if(br.length>1){
     const maxL=Math.max(1,...br.map(b=>b.late_total));
-    html+='<div class="card" style="margin-bottom:12px"><div class="card-h"><h3>เทียบสาขา (เรียงตามสายรวม)</h3></div><div class="card-b">'
+    html+='<div class="card" style="margin-bottom:12px"><div class="card-h"><h3>เทียบสาขา (เรียงตามนาทีสายรวม)</h3></div><div class="card-b">'
+      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">แถบยิ่งยาว = สายรวมมากกว่า · <b>งานผ่านตรวจ%</b> = สัดส่วนงานที่ตรวจแล้วผ่าน</div>'
       +br.map(b=>'<div class="an-brrow"><div class="nm">'+esc(b.branch_name)+'</div>'
         +'<div class="bar"><i style="width:'+Math.round(b.late_total/maxL*100)+'%"></i></div>'
-        +'<div class="stat">สาย '+b.late_total+'น · ขาด '+b.absent+' · OT '+b.ot+' · ผ่าน '+(b.pass_rate==null?'—':b.pass_rate+'%')+'</div></div>').join('')
+        +'<div class="stat">มาสาย '+b.late_total+' นาที · ขาดงาน '+b.absent+' วัน · OT '+b.ot+' ชม. · งานผ่านตรวจ '+(b.pass_rate==null?'—':b.pass_rate+'%')+'</div></div>').join('')
       +'</div></div>';
   }
 
