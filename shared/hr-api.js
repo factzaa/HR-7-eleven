@@ -2902,6 +2902,7 @@
     for (let i = 0; i < salesRows.length; i += 300) { const chunk = salesRows.slice(i, i + 300); const { error: e3 } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' }); if (!e3) salesSaved += chunk.length; else if (!saveErr) saveErr = e3.message; }
 
     // ---- Pass 3: แยกรายงานตรวจร้าน QSSI จากทุกกลุ่ม (ค้นข้อความที่มีฟอร์มตรวจร้าน) ----
+    const hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
     const auditMap = {}; const codeMap = await _branchCodeMap();
     { let from = 0, page = 1000;
       for (;;) {
