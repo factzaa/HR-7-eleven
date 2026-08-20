@@ -10087,11 +10087,16 @@ function renderLineFeed(){
       +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:13.5px">'+esc(m.display_name)+'</b>'
       +'<span style="font-size:12px;color:var(--muted)">'+esc(m.branch_name)+'</span>'
       +catB+clB
+      +(m.id?'<select data-lfcat="'+m.id+'" title="แก้หมวด" style="font-size:11px;padding:1px 4px;border:1px solid var(--line2);border-radius:6px;background:var(--card);color:var(--muted)">'+['','sales','task','audit','announce','issue','handover','general','photo','system'].map(k=>'<option value="'+k+'"'+(k===m.category?' selected':'')+'>'+(k===''?'✎ แก้หมวด':(CATLBL[k]?CATLBL[k][0]:k))+'</option>').join('')+'</select>':'')
       +'<span style="font-size:12px;color:var(--muted);margin-left:auto">'+t+'</span></div>'
       +(fl.length?'<div style="margin:3px 0"><span class="pill bad" style="font-size:11px">⚠ '+fl.map(esc).join(' · ')+'</span></div>':'')
       +'<div style="font-size:14px;margin-top:2px;white-space:pre-wrap;word-break:break-word">'+body+'</div>'
       +'</div></div>';
   }).join('');
+  $('lf_body').querySelectorAll('[data-lfcat]').forEach(sel=>sel.onchange=async()=>{
+    if(!sel.value) return; const r=await post({ action:'hr_line_setcat', password:pwd, id:sel.dataset.lfcat, category:sel.value });
+    if(r.ok){ toast('ok','เปลี่ยนหมวดแล้ว'); loadLineFeed(); } else toast('err',r.error||'ไม่สำเร็จ');
+  });
 }
 let QAALL=[];
 async function loadQaAll(){

@@ -202,6 +202,7 @@
         case 'hr_line_groups':       return await hrLineGroups();
         case 'hr_line_group_label':  return await hrLineGroupLabel(p);
         case 'hr_line_import':       return await hrLineImport(p);
+        case 'hr_line_setcat':       return await hrLineSetCat(p);
         case 'hr_sales_list':        return await hrSalesList(p);
         case 'hr_audit_list':        return await hrAuditList(p);
         case 'hr_line_backfill':     return await hrLineBackfill(p);
@@ -2632,7 +2633,7 @@
     const limit = Math.min(Math.max(Number(p.limit) || 120, 1), 400);
     const sinceIso = new Date(Date.now() - hours * 3600 * 1000).toISOString();
     let q = sb().from('line_messages')
-      .select('sent_at,branch_id,group_id,display_name,msg_type,text,media_url,category,msg_class')
+      .select('id,sent_at,branch_id,group_id,display_name,msg_type,text,media_url,category,msg_class')
       .gte('sent_at', sinceIso).order('sent_at', { ascending: false }).limit(limit);
     if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
     if (p.category) q = q.eq('category', String(p.category));
@@ -2643,7 +2644,7 @@
     const bn = {}; (brs || []).forEach(b => bn[b.branch_id] = b.name);
     const gl = {}; (gls || []).forEach(g => { if (g.label) gl[g.group_id] = g.label; });
     const rows = (msgs || []).map(m => ({
-      sent_at: m.sent_at, branch_id: m.branch_id || '',
+      id: m.id, sent_at: m.sent_at, branch_id: m.branch_id || '',
       branch_name: m.branch_id ? (bn[m.branch_id] || m.branch_id) : (gl[m.group_id] || '(ยังไม่ผูกสาขา)'),
       display_name: m.display_name || 'ไม่ทราบชื่อ', msg_type: m.msg_type,
       text: m.text || '', media_url: m.media_url || '',
@@ -2840,6 +2841,15 @@
     const auditRows = Object.values(auditMap); let auditSaved = 0;
     for (let i = 0; i < auditRows.length; i += 200) { const chunk = auditRows.slice(i, i + 200); const { error } = await sb().from('audit_reports').upsert(chunk, { onConflict: 'report_key', ignoreDuplicates: true }); if (!error) auditSaved += chunk.length; }
     return { ok: true, imported: recs.length, sales_saved: salesSaved, audit_saved: auditSaved };
+  }
+  // HR แก้หมวดข้อความไลน์เอง (เช่น รูปข่าวสารที่ระบบจับเป็น "ทั่วไป")
+  async function hrLineSetCat(p) {
+    if (!p.id || !p.category) return { ok: false, error: 'ไม่ครบ' };
+    const ok = ['sales', 'task', 'audit', 'announce', 'issue', 'handover', 'general', 'photo', 'system'];
+    if (!ok.includes(String(p.category))) return { ok: false, error: 'หมวดไม่ถูกต้อง' };
+    const { error } = await sb().from('line_messages').update({ category: String(p.category) }).eq('id', Number(p.id));
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   }
   // ดึงยอดขายมาตรฐาน (แดชบอร์ด/นิดา) — filter branch/start/end/shift
   async function hrSalesList(p) {
