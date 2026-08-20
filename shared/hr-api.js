@@ -2801,27 +2801,44 @@
     const rows = (data || []).map(r => Object.assign({}, r, { branch_name: bn[r.branch_id] || r.branch_id }));
     return { ok: true, rows };
   }
-  // Backfill: ติดป้ายหมวด/ความสำคัญ + แยกยอดขาย ให้ข้อความเก่าที่ยังไม่มีป้าย (เช่น ที่เข้ามาสด ๆ)
+  // Backfill: ติดป้ายหมวด/ความสำคัญ (ข้อความที่ยังไม่จัด) + แยกยอดขายใหม่ทั้งหมด (จากข้อความหมวดยอดขายในกลุ่มที่ผูกสาขา)
   async function hrLineBackfill(p) {
     const { data: brs } = await sb().from('branches').select('branch_id,line_group_id');
     const grpBranch = {}; (brs || []).forEach(b => { if (b.line_group_id) grpBranch[b.line_group_id] = b.branch_id; });
-    const { data: msgs, error } = await sb().from('line_messages').select('id,group_id,branch_id,display_name,text,sent_at').is('category', null).limit(3000);
-    if (error) return { ok: false, error: error.message };
-    if (!msgs || !msgs.length) return { ok: true, updated: 0, sales_saved: 0, note: 'ไม่มีข้อความค้างจัดหมวด' };
-    const updates = []; const salesMap = {};
-    for (const m of msgs) {
-      const bid = grpBranch[m.group_id] || m.branch_id || null;
-      let sales = [];
-      if (bid) { try { sales = _extractSales(m.text || ''); } catch (_e) {} }
-      const cl = _classify(m.text || '', sales.length > 0);
-      updates.push({ id: m.id, category: cl.category, msg_class: cl.msg_class });
-      if (sales.length && bid) { const sdate = _salesDate(m.text || '', m.sent_at); if (sdate) sales.forEach(s => { const extra = s.extra && Object.keys(s.extra).length ? s.extra : null; salesMap[bid + '|' + sdate + '|' + s.shift] = Object.assign({}, s, { branch_id: bid, group_id: m.group_id, sale_date: sdate, reporter: (m.display_name || '').slice(0, 120), source: 'live', raw_text: (m.text || '').slice(0, 2000), extra }); }); }
-    }
+
+    // ---- Pass 1: จัดหมวดข้อความที่ยังไม่มีป้าย ----
     let updated = 0;
-    for (let i = 0; i < updates.length; i += 500) { const chunk = updates.slice(i, i + 500); const { error: e2 } = await sb().from('line_messages').upsert(chunk, { onConflict: 'id' }); if (!e2) updated += chunk.length; }
+    const { data: nulls } = await sb().from('line_messages').select('id,text').is('category', null).limit(5000);
+    if (nulls && nulls.length) {
+      const updates = nulls.map(m => { const cl = _classify(m.text || '', /แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า/.test(m.text || '')); return { id: m.id, category: cl.category, msg_class: cl.msg_class }; });
+      for (let i = 0; i < updates.length; i += 500) { const chunk = updates.slice(i, i + 500); const { error: e2 } = await sb().from('line_messages').upsert(chunk, { onConflict: 'id' }); if (!e2) updated += chunk.length; }
+    }
+
+    // ---- Pass 2: แยกยอดขายจากข้อความ "ยอดขาย" ทั้งหมด (ในกลุ่มที่ผูกสาขา) — ครอบคลุมที่นำเข้าก่อนหน้า ----
+    const salesMap = {};
+    let from = 0, page = 1000, scanned = 0;
+    for (;;) {
+      const { data: sms, error } = await sb().from('line_messages')
+        .select('group_id,branch_id,display_name,text,sent_at')
+        .or('text.ilike.%ยอดขายสินค้า%,text.ilike.%แจ้งยอดขาย%,text.ilike.%ยอดรวม=%,text.ilike.%เป้าสินค้า%')
+        .order('sent_at', { ascending: true }).range(from, from + page - 1);
+      if (error) break;
+      if (!sms || !sms.length) break;
+      scanned += sms.length;
+      for (const m of sms) {
+        const bid = grpBranch[m.group_id] || m.branch_id || null;
+        if (!bid) continue;
+        let sales = []; try { sales = _extractSales(m.text || ''); } catch (_e) {}
+        if (!sales.length) continue;
+        const sdate = _salesDate(m.text || '', m.sent_at); if (!sdate) continue;
+        sales.forEach(s => { const extra = s.extra && Object.keys(s.extra).length ? s.extra : null; salesMap[bid + '|' + sdate + '|' + s.shift] = Object.assign({}, s, { branch_id: bid, group_id: m.group_id, sale_date: sdate, reporter: (m.display_name || '').slice(0, 120), source: 'live', raw_text: (m.text || '').slice(0, 2000), extra }); });
+      }
+      if (sms.length < page) break;
+      from += page;
+    }
     const salesRows = Object.values(salesMap); let salesSaved = 0;
     for (let i = 0; i < salesRows.length; i += 300) { const chunk = salesRows.slice(i, i + 300); const { error: e3 } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' }); if (!e3) salesSaved += chunk.length; }
-    return { ok: true, updated, sales_saved: salesSaved };
+    return { ok: true, updated, sales_scanned: scanned, sales_saved: salesSaved };
   }
   async function hrLineGroupLabel(p) {
     if (!p.group_id) return { ok: false, error: 'ไม่ระบุกลุ่ม' };
