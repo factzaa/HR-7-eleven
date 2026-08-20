@@ -2722,12 +2722,21 @@
   // จัดหมวด (category) + ระดับความสำคัญ (msg_class)
   const _URGENT = ['ปิดร้าน','ปิดสาขา','ของขาด','สินค้าขาด','ของหมด','สต๊อกหมด','ไฟดับ','ไฟไหม้','น้ำท่วม','ตู้เสีย','เครื่องเสีย','ระบบล่ม','ด่วน','ฉุกเฉิน','ทะเลาะ','วิวาท','ขโมย','ของหาย','เงินหาย','เงินขาด','อุบัติเหตุ','บาดเจ็บ','ร้องเรียน','ตำรวจ'];
   function _classify(text, isSales) {
-    const t = String(text || '');
+    const t = String(text || ''); const tt = t.trim();
     let category = 'general';
+    if (/(เข้าร่วมกลุ่ม|ออกจากกลุ่ม|ยกเลิกการเชิญ|เชิญ.*เข้ากลุ่ม|เปลี่ยน(ชื่อ|รูป)กลุ่ม|ตั้งชื่อกลุ่ม|ลบอัลบั้ม|ยกเลิกข้อความ|unsent)/.test(t)) return { category: 'system', msg_class: 'general' };
+    const isAudit = /ครั้งที่\s*[:：]\s*\d|รายละเอียดข้อบกพร่อง|ผลการตรวจ|ตรวจร้าน|qssi|ประเมินร้าน/i.test(t);
+    const isAnn = /@all|นัดประชุม|แจ้งพนักงานทุกระดับ|เรียน\s*ผู้บริหาร|ประกาศ|แจ้งให้ทราบทุก|ขอให้ทุกสาขา/i.test(t);
+    const isTask = (/สร้างอัลบั้ม/.test(t) && /ส่งงาน|ผลัด/.test(t)) || /ส่งงาน|ล้างห้องน้ำ|เช็ค.?temp|temp\s?card|ตรวจเชลฟ์|จัดเชลฟ์/i.test(t);
+    const isHand = /รับผลัด|ส่งผลัด|รับ-?ส่งผลัด|ส่งเวร|รับเวร|ล้าง.*ส่งผลัด/.test(t);
+    const isPhoto = /^(\S+\s+)?(รูป|สติกเกอร์)$/.test(tt);
     if (isSales || /แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า/.test(t)) category = 'sales';
-    else if (/ส่งงาน|ล้างห้องน้ำ|เช็ค.?temp|temp\s?card|ตรวจเชลฟ์|ตรวจสอบ.*จุด|จัดเชลฟ์|เติม/i.test(t)) category = 'task';
-    else if (/รับผลัด|ส่งผลัด|รับ-?ส่งผลัด|ส่งกะ|รับกะ/.test(t)) category = 'handover';
+    else if (isAudit) category = 'audit';
+    else if (isAnn) category = 'announce';
+    else if (isTask) category = 'task';
+    else if (isHand) category = 'handover';
     else if (_URGENT.some(k => t.includes(k))) category = 'issue';
+    else if (isPhoto) category = 'photo';
     let cls = 'general';
     if (/ด่วนที่สุด|ด่วนมาก|ฉุกเฉิน|ปิดร้าน|ไฟไหม้|ทะเลาะ|ของขาด|ของหมด|ระบบล่ม/.test(t)) cls = 'urgent';
     else if (/นโยบาย|policy|ประกาศบริษัท/i.test(t)) cls = 'policy';
@@ -2747,11 +2756,15 @@
     const bid = br ? br.branch_id : null;
     const hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
     const salesMap = {};   // key branch|date|shift -> row (กันซ้ำในไฟล์เดียว)
+    let lastTaskAt = 0;    // เชื่อมภาพส่งงานเข้ากับหมวด "ส่งงาน" (ภาพที่ตามหลังอัลบั้มส่งงานภายใน 3 ชม.)
     const recs = rows.filter(r => r && r.sent_at && (r.text || '').trim()).map(r => {
       const text = String(r.text || '');
       let sales = [];
       if (bid) { try { sales = _extractSales(text); } catch (_e) { sales = []; } }   // แยกยอดขายเฉพาะกลุ่มที่ผูกสาขา
       const cl = _classify(text, sales.length > 0);
+      const ts = +new Date(r.sent_at);
+      if (cl.category === 'task') lastTaskAt = ts;
+      else if (cl.category === 'photo' && lastTaskAt && (ts - lastTaskAt) < 3 * 3600 * 1000) cl.category = 'task';
       if (sales.length && bid) {
         const sdate = _salesDate(text, r.sent_at);
         if (sdate) sales.forEach(s => {

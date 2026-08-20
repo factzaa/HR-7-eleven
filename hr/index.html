@@ -1474,7 +1474,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <select id="lf_hours" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
       <option value="24">24 ชม.</option><option value="48" selected>2 วัน</option><option value="72">3 วัน</option><option value="168">7 วัน</option>
     </select>
-    <select id="lf_cat" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกหมวด</option><option value="sales">ยอดขาย</option><option value="task">ส่งงาน</option><option value="handover">รับส่งผลัด</option><option value="issue">ปัญหา/ด่วน</option><option value="general">ทั่วไป</option></select>
+    <select id="lf_cat" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกหมวด (ซ่อนระบบ/ภาพ)</option><option value="sales">ยอดขาย</option><option value="task">ส่งงาน</option><option value="audit">ตรวจร้าน/ออดิต</option><option value="announce">ประกาศ</option><option value="issue">ปัญหา/ด่วน</option><option value="handover">รับส่งผลัด</option><option value="general">ทั่วไป (คุย)</option><option value="photo">ภาพ</option><option value="system">ระบบ LINE</option></select>
     <label class="check" style="font-size:13px"><input type="checkbox" id="lf_urgent"> เฉพาะเรื่องด่วน</label>
     <button class="btn btn-sec btn-sm" id="lf_manage"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> จัดการกลุ่ม</button>
     <button class="btn btn-sec btn-sm" id="lf_refresh">รีเฟรช</button>
@@ -9887,10 +9887,12 @@ async function lfImportFile(inp){
 }
 function renderLineFeed(){
   const onlyU=$('lf_urgent')&&$('lf_urgent').checked;
+  const catSel=$('lf_cat')?$('lf_cat').value:'';
   let rows=LF_ROWS.slice();
+  if(!catSel) rows=rows.filter(m=>m.category!=='system'&&m.category!=='photo');   // ทุกหมวด = ซ่อนภาพ/ข้อความระบบ ให้ดูสะอาด
   if(onlyU) rows=rows.filter(m=>lfFlags(m.text).length);
   if(!rows.length){ $('lf_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">'+(onlyU?'ไม่มีเรื่องด่วนในช่วงนี้':'ยังไม่มีข้อความในช่วงนี้ (เก็บได้เฉพาะตั้งแต่เปิด webhook)')+'</div></div></div>'; return; }
-  const CATLBL={sales:['ยอดขาย','#16a34a','#dcfce7'],task:['ส่งงาน','#2563eb','#dbeafe'],handover:['รับส่งผลัด','#7c3aed','#ede9fe'],issue:['ปัญหา','#dc2626','#fee2e2'],general:['ทั่วไป','#64748b','#f1f5f9']};
+  const CATLBL={sales:['ยอดขาย','#16a34a','#dcfce7'],task:['ส่งงาน','#2563eb','#dbeafe'],audit:['ตรวจร้าน','#b45309','#fef3c7'],announce:['ประกาศ','#0891b2','#cffafe'],handover:['รับส่งผลัด','#7c3aed','#ede9fe'],issue:['ปัญหา','#dc2626','#fee2e2'],general:['ทั่วไป','#64748b','#f1f5f9'],photo:['ภาพ','#64748b','#f1f5f9'],system:['ระบบ','#94a3b8','#f1f5f9']};
   const CLSLBL={urgent:'⚠ เร่งด่วน',follow_up:'⏳ ต้องติดตาม',policy:'📋 นโยบาย',rule:'📕 ระเบียบ',cooperation:'🤝 ขอความร่วมมือ',procedure:'📖 ขั้นตอนปฏิบัติ',news:'📣 ข่าวสาร'};
   $('lf_body').innerHTML=rows.map(m=>{
     const fl=lfFlags(m.text);
