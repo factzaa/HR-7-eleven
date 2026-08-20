@@ -188,7 +188,10 @@
   .dash-grid{display:grid; grid-template-columns:2fr 1fr; gap:12px;}
   @media (max-width:900px){ .dash-grid{grid-template-columns:1fr;} }
   .dash-grid-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .dash-grid-2>*{min-width:0;}   /* กัน grid child ดันตารางล้นขอบ — ให้ตารางหดแล้วสกอลล์แนวนอนแทน */
   @media (max-width:780px){ .dash-grid-2{grid-template-columns:1fr;} }
+  .leave-grid{grid-template-columns:1.7fr 1fr;}   /* ใบลาต้องการพื้นที่มากกว่าวันหยุดบริษัท */
+  @media (max-width:900px){ .leave-grid{grid-template-columns:1fr;} }
 
   .chart{display:flex; align-items:flex-end; gap:3px; height:160px; padding:8px 0;}
   .chart .bar{flex:1; display:flex; flex-direction:column-reverse; align-items:center; gap:2px; min-width:4px; position:relative;}
@@ -1563,7 +1566,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:8px">ระบบจะบันทึกให้ทุกวันในช่วงที่เลือกเป็น "อบรม" (นับเป็นวันทำงาน ไม่นับขาด · OT=0) — เว้นวันหยุด/วันที่ไม่ได้จัดเวรได้ตามจริง</div>
   </div>
-  <div class="dash-grid-2">
+  <div class="dash-grid-2 leave-grid">
     <div>
       <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600; min-width:70px">ใบลา</h3><input id="lv_q" type="text" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;flex:1;min-width:110px"><select id="lv_cycle" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกรอบ</option><option value="current">รอบปัจจุบัน</option><option value="previous">รอบก่อนหน้า</option><option value="prev2">2 รอบก่อน</option></select><select id="lv_type" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกประเภท</option></select><select id="lv_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกสถานะ</option><option value="pending">รออนุมัติ</option><option value="approved">อนุมัติ</option><option value="rejected">ปฏิเสธ</option></select><button class="btn btn-pri btn-sm" id="lv_new">+ เพิ่มใบลา</button></div>
       <div id="lv_body"></div>
