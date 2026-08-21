@@ -694,14 +694,20 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
 <!-- Manager tasks (งาน ผจก.) -->
 <div id="view_mgrtasks" class="container" style="display:none">
-  <div id="mt_intask" style="margin-bottom:14px"></div>
-  <div id="mt_fixing" style="margin-bottom:14px"></div>
-  <div id="mt_switch" style="display:none;gap:8px;margin-bottom:12px">
-    <button class="btn btn-sec btn-sm" id="mtsw_daily" style="flex:1"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> งานประจำวัน</button>
-    <button class="btn btn-sec btn-sm" id="mtsw_assigned" style="flex:1"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> งานที่มอบหมาย</button>
+  <div class="shsub" id="mtsub">
+    <button class="shsub-b on" type="button" data-mtpan="assigned"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> งานที่มอบหมาย</button>
+    <button class="shsub-b" type="button" data-mtpan="review"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> งานรอตรวจ <span id="mtsub_rev" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-mtpan="daily"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> งานประจำวัน</button>
   </div>
-  <div id="mt_daily" style="display:none"></div>
-  <div id="mt_assigned">
+
+  <div class="shpan" id="mtpan_review" style="display:none">
+    <div id="mt_intask" style="margin-bottom:14px"></div>
+    <div id="mt_fixing" style="margin-bottom:14px"></div>
+  </div>
+
+  <div class="shpan" id="mt_daily" style="display:none"></div>
+
+  <div class="shpan" id="mt_assigned">
     <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> งาน ผจก. <span id="mt_sub" style="font-size:12px;color:var(--muted);font-weight:400"></span></h3>
       <select id="mt_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
@@ -8008,7 +8014,7 @@ $('mtaSave') && ($('mtaSave').onclick=async()=>{
 });
 
 // ========== งานประจำวัน ผจก. (Daily Checklist) ==========
-let MT_VIEW='daily', MD_ITEMS=[], MD_DATE='', MD_CUR=null, MD_PHOTOS=[];
+let MT_VIEW='assigned', MD_ITEMS=[], MD_DATE='', MD_CUR=null, MD_PHOTOS=[];
 function mdStPill(st){
   const m={ todo:['ยังไม่ทำ','#6b7280'], submitted:['รอตรวจ','#d97706'], approved:['ผ่าน','#16a34a'], rejected:['ไม่ผ่าน','#dc2626'] };
   const v=m[st]||['—','#6b7280'];
@@ -8016,17 +8022,24 @@ function mdStPill(st){
 }
 // เข้าแท็บงาน ผจก. → ผจก.เห็นสวิตช์ (ประจำวัน/มอบหมาย) · HR เห็นเฉพาะบอร์ดมอบหมาย
 function enterMtasks(){
-  loadMtaskIntask();
+  loadMtaskIntask();          // โหลดคิวรอตรวจ (อัปเดต badge แท็บย่อย)
   loadMtaskFixing();          // งานที่สั่งแก้แล้วรอส่งกลับ
   if(!enterMtasks._remind){ enterMtasks._remind=1; mtaskRemindScan(); }   // เตือนงานใกล้ครบ/เลยกำหนดเข้ากลุ่ม ผจก. (edge กันซ้ำวันละครั้ง)
-  if(MGR_MODE){
-    $('mt_switch').style.display='flex';
-    if(!$('mt_switch').dataset.wired){ $('mt_switch').dataset.wired='1'; $('mtsw_daily').onclick=()=>showMtView('daily'); $('mtsw_assigned').onclick=()=>showMtView('assigned'); }
-    showMtView(MT_VIEW||'daily');
-  } else {
-    $('mt_switch').style.display='none'; $('mt_daily').style.display='none'; $('mt_assigned').style.display='block';
-    loadMtasks();
-  }
+  const bar=$('mtsub');
+  if(bar && !bar.dataset.wired){ bar.dataset.wired='1'; bar.querySelectorAll('[data-mtpan]').forEach(b=>b.onclick=()=>showMtView(b.dataset.mtpan)); }
+  showMtView(MT_VIEW||'assigned');   // เริ่มที่แท็บ "งานที่มอบหมาย" (บอร์ด)
+}
+function showMtView(which){
+  if(['assigned','review','daily'].indexOf(which)<0) which='assigned';
+  MT_VIEW=which;
+  const R=$('mtpan_review'), D=$('mt_daily'), A=$('mt_assigned');
+  if(R) R.style.display = which==='review'?'block':'none';
+  if(D) D.style.display = which==='daily'?'block':'none';
+  if(A) A.style.display = which==='assigned'?'block':'none';
+  const bar=$('mtsub'); if(bar) bar.querySelectorAll('[data-mtpan]').forEach(b=>b.classList.toggle('on', b.dataset.mtpan===which));
+  if(which==='assigned') loadMtasks();
+  else if(which==='review'){ loadMtaskIntask(); loadMtaskFixing(); }
+  else if(which==='daily') loadMdaily();
 }
 function intaskReviewer(){ try{ return MGR_MODE ? (typeof mtName==='function'?mtName():'') : ''; }catch(e){ return ''; } }
 // ---------- งานที่ ผจก.สั่งแก้ (รอคนแก้ส่งกลับ) ----------
@@ -8071,6 +8084,7 @@ async function loadMtaskIntask(boxId){
   const day = INTASK_DATE || bkkTodayStr();
   let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null, date: day }); }catch(e){ box.innerHTML=''; return; }
   const rows=(r&&r.rows)||[]; const meta=(r&&r.meta)||{};
+  if(boxId==='mt_intask'){ const bd=$('mtsub_rev'); if(bd){ if(rows.length){ bd.style.display=''; bd.textContent=rows.length; } else bd.style.display='none'; } }
   if(!rows.length){
     // ไม่มีงานเข้าคิวของวันนี้ → ยังโชว์ตัวเลือกวันที่ไว้ให้ย้อนดูได้
     box.style.display='block';
@@ -8157,29 +8171,27 @@ async function intaskReject(t, boxId){
   await openMarkupEditor(t);
   if(MK) MK.reviewFn=async(note,out)=>{ await doReject(note,out); };
 }
-function showMtView(which){
-  MT_VIEW=which;
-  const dOn=which==='daily';
-  $('mt_daily').style.display=dOn?'block':'none';
-  $('mt_assigned').style.display=dOn?'none':'block';
-  $('mtsw_daily').classList.toggle('btn-pri',dOn); $('mtsw_daily').classList.toggle('btn-sec',!dOn);
-  $('mtsw_assigned').classList.toggle('btn-pri',!dOn); $('mtsw_assigned').classList.toggle('btn-sec',dOn);
-  if(dOn) loadMdaily(); else loadMtasks();
-}
+let MD_BRANCH='';   // สาขาที่เลือกดูงานประจำวัน (โหมด HR)
 async function loadMdaily(){
   const box=$('mt_daily'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   MD_DATE = MD_DATE || bkkTodayStr();
-  const r=await post({ action:'hr_mdaily_today', password:pwd, branch:MGR_BRANCH, date:MD_DATE });
+  const branch = MGR_MODE ? MGR_BRANCH : (MD_BRANCH || ((DATA.branches&&DATA.branches[0]&&DATA.branches[0].branch_id)||''));
+  if(!MGR_MODE) MD_BRANCH = branch;
+  if(!branch){ box.innerHTML='<div class="empty">ยังไม่มีสาขา</div>'; return; }
+  const r=await post({ action:'hr_mdaily_today', password:pwd, branch, date:MD_DATE });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   MD_ITEMS=r.items||[];
   const isToday = MD_DATE===bkkTodayStr();
   const pct = r.total? Math.round(r.done/r.total*100):0;
-  let h='<div class="toolbar" style="margin-bottom:8px;gap:8px;flex-wrap:wrap"><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="md_date" type="date" value="'+esc(MD_DATE)+'" max="'+esc(bkkTodayStr())+'" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'
+  let h='<div class="toolbar" style="margin-bottom:8px;gap:8px;flex-wrap:wrap">'
+    +(!MGR_MODE?('<label style="font-size:12px;color:var(--muted)">สาขา:</label><select id="md_branch" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'+(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(String(b.branch_id)===String(branch)?' selected':'')+'>'+esc(b.name||b.branch_id)+'</option>').join('')+'</select>'):'')
+    +'<label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="md_date" type="date" value="'+esc(MD_DATE)+'" max="'+esc(bkkTodayStr())+'" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'
     +(isToday?'':'<button class="btn btn-sec btn-sm" id="md_today">วันนี้</button>')
     +'<span style="flex:1"></span><b style="font-size:13px">ทำแล้ว '+r.done+'/'+r.total+' ('+pct+'%)</b></div>';
   if(!isToday) h+='<div style="background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> ดูย้อนหลัง '+beDate(MD_DATE)+' (อ่านอย่างเดียว)</div>';
   if(!MD_ITEMS.length){ h+='<div class="empty" style="padding:20px">ยังไม่มีรายการงานประจำวัน (HR ตั้งค่าในแท็บ "ตั้งค่ากะ")</div>'; box.innerHTML=h; }
   else { h+=MD_ITEMS.map((it,i)=>mdItemCard(it,i,isToday)).join(''); box.innerHTML=h; }
+  if($('md_branch')) $('md_branch').onchange=()=>{ MD_BRANCH=$('md_branch').value||''; loadMdaily(); };
   if($('md_date')) $('md_date').onchange=()=>{ MD_DATE=$('md_date').value||bkkTodayStr(); loadMdaily(); };
   if($('md_today')) $('md_today').onclick=()=>{ MD_DATE=bkkTodayStr(); loadMdaily(); };
   box.querySelectorAll('[data-mddo]').forEach(b=>b.onclick=()=>openMd(Number(b.dataset.mddo)));

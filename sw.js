@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v108';      // v108: การ์ดสรุปงาน ผจก. เปิด role chooser (เจ้าของร้าน+ผจก.) ผ่าน ?mtasks=1
+const CACHE = 'hr7-eleven-v109';      // v109: หน้างาน ผจก. แยก 3 แท็บย่อย (งานที่มอบหมาย/งานรอตรวจ/งานประจำวัน)
 const ASSETS = [
   './',
   './index.html',
