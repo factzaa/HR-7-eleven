@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v104';      // v104: หน้าตรวจ+payroll เลือกดูรอบย้อนหลังได้ (12 รอบ)
+const CACHE = 'hr7-eleven-v105';      // v105: แก้ setupPlWhich ให้เติมรอบย้อนหลัง 12 รอบจริง (หน้า payroll)
 const ASSETS = [
   './',
   './index.html',

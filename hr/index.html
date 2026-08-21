@@ -4531,7 +4531,11 @@ function _plCyc(which){
   const bkkStr=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
   const t=new Date(bkkStr+'T00:00:00'); const day=t.getDate();
   let endRef=(day<=20)?new Date(t.getFullYear(),t.getMonth(),20):new Date(t.getFullYear(),t.getMonth()+1,20);
-  const back=which==='previous'?1:0;
+  // back = จำนวนรอบย้อนหลัง (0=ปัจจุบัน,1=ก่อน,-1=ถัดไป) รองรับตัวเลข/สตริงตัวเลข
+  let back=0;
+  if(which==='previous') back=1; else if(which==='next') back=-1;
+  else if(typeof which==='number') back=which;
+  else if(typeof which==='string'&&/^-?\d+$/.test(which)) back=parseInt(which,10);
   endRef=new Date(endRef.getFullYear(),endRef.getMonth()-back,20);
   const start=new Date(endRef.getFullYear(),endRef.getMonth()-1,21);
   const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -4546,12 +4550,16 @@ function _plPayText(which){
 function setupPlWhich(){
   const sel=$('pl_which'); if(!sel) return;
   const past20=Number(new Date(Date.now()+7*3600*1000).toISOString().slice(8,10))>20;
-  const payW=past20?'previous':'current', othW=past20?'current':'previous';
-  const othLbl=past20?'รอบถัดไป':'รอบก่อน (จ่ายแล้ว)';
-  const cur=sel.value;
-  sel.innerHTML='<option value="'+payW+'">รอบปัจจุบัน · '+_plPayText(payW)+'</option>'
-    +'<option value="'+othW+'">'+othLbl+' · '+_plPayText(othW)+'</option>';
-  sel.value=(cur===payW||cur===othW)?cur:payW;
+  const cur=past20?1:0;                     // back-offset ของรอบที่กำลังจะจ่าย
+  const prev=sel.value;                      // คงค่าที่เลือกไว้ ถ้ายังมี
+  const rng=b=>{ const c=_plCyc(b); return c.start+'–'+c.end; };
+  const opts=[];
+  if(cur-1>=-1){ const b=cur-1; opts.push('<option value="'+b+'">รอบถัดไป · '+_plPayText(b)+' · '+rng(b)+'</option>'); }
+  opts.push('<option value="'+cur+'">รอบปัจจุบัน · '+_plPayText(cur)+' · '+rng(cur)+'</option>');
+  for(let k=1;k<=12;k++){ const b=cur+k; opts.push('<option value="'+b+'">ย้อนหลัง '+k+' รอบ · '+_plPayText(b)+' · '+rng(b)+'</option>'); }
+  sel.innerHTML=opts.join('');
+  sel.value=(prev&&/^-?\d+$/.test(prev))?prev:String(cur);
+  if(!sel.value) sel.value=String(cur);
 }
 function enterPayroll(){
   if(PAY_UNLOCKED){ setupPlWhich(); $('pl_lock').style.display='none'; $('pl_main').style.display='block'; plShowSec('run'); }
@@ -4578,27 +4586,6 @@ function plShowSec(sec){
 document.querySelectorAll('#pl_subnav [data-pl]').forEach(b=>b.onclick=()=>plShowSec(b.dataset.pl));
 
 // ---------- รันรอบ ----------
-// รอบเงินเดือน (21–20) แบบย้อนหลัง — สำหรับเติม dropdown เลือกรอบ
-const _PL_THM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-function _plCycle(back){
-  const base=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
-  const t=new Date(base+'T00:00:00'); const day=t.getDate();
-  let endRef=(day<=20)?new Date(t.getFullYear(),t.getMonth(),20):new Date(t.getFullYear(),t.getMonth()+1,20);
-  if(back) endRef=new Date(endRef.getFullYear(),endRef.getMonth()-back,20);
-  const end=endRef, start=new Date(endRef.getFullYear(),endRef.getMonth()-1,21);
-  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-  const pay=new Date(end.getFullYear(),end.getMonth()+1,1);
-  return { start:iso(start), end:iso(end), pay:'จ่าย 1 '+_PL_THM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2) };
-}
-function plSetupWhich(){
-  const sel=$('pl_which'); if(!sel) return;
-  let past20=false; try{ const b=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10); past20=Number(b.slice(8,10))>20; }catch(e){}
-  const cur=past20?1:0; const opts=[];
-  if(cur-1>=-1){ const b=cur-1,c=_plCycle(b); opts.push('<option value="'+b+'">รอบถัดไป · '+c.pay+' · '+c.start+'–'+c.end+'</option>'); }
-  { const c=_plCycle(cur); opts.push('<option value="'+cur+'">รอบปัจจุบัน · '+c.pay+' · '+c.start+'–'+c.end+'</option>'); }
-  for(let k=1;k<=12;k++){ const b=cur+k,c=_plCycle(b); opts.push('<option value="'+b+'">ย้อนหลัง '+k+' รอบ · '+c.pay+' · '+c.start+'–'+c.end+'</option>'); }
-  sel.innerHTML=opts.join(''); sel.value=String(cur);
-}
 async function loadPayrollRun(){
   const which=($('pl_which')||{}).value||'current';
   $('pl_run_body').innerHTML='<div class="empty">กำลังคำนวณ…</div>';
@@ -4698,7 +4685,7 @@ function renderPayrollItems(){
 }
 $('pl_run_branch') && ($('pl_run_branch').onchange=renderPayrollItems);
 $('pl_calc') && ($('pl_calc').onclick=loadPayrollRun);
-$('pl_which') && (plSetupWhich(), $('pl_which').onchange=loadPayrollRun);
+$('pl_which') && ($('pl_which').onchange=loadPayrollRun);
 
 // ===== หน้าตรวจข้อมูลเข้าเงินเดือน (payroll-review) — ลิงก์อยู่ในเมนู "การเงิน" · ตั้งรหัสอยู่แท็บเบิกเงินล่วงหน้า =====
 $('adv_reviewpass') && ($('adv_reviewpass').onclick=async()=>{
