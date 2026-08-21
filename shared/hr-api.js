@@ -142,6 +142,9 @@
         case 'hr_discipline':     return await hrDiscipline(p.cycle, p.range);
         case 'hr_settings_get':   return await hrSettingsGet();
         case 'hr_settings_save':  return await hrSettingsSave(p.key, p.value);
+        case 'hr_mgrset_get':     return await hrMgrTaskSettingsGet();
+        case 'hr_mgrset_save':    return await hrMgrTaskSettingsSave(p.data);
+        case 'hr_mgrbranch_save': return await hrMgrBranchCfgSave(p.data);
         case 'hr_warnings_list':  return await hrWarningsList();
         case 'hr_warning_issue':  return await hrWarningIssue(p.data);
         case 'hr_warning_get':    return await hrWarningGet(p.warning_id);
@@ -447,6 +450,64 @@
     return false;                                           // ยังไม่ถึงเวลาเลิกกะ
   }
   async function hrSettingsGet() { return { ok: true, settings: await loadAppSettings() }; }
+  // ===== ตั้งค่างาน ผจก. (กลุ่มไลน์ + แจ้งเตือน/ทวง) =====
+  async function hrMgrTaskSettingsGet() {
+    const [s, { data: gs }, { data: brs }, cfgR] = await Promise.all([
+      loadAppSettings(),
+      sb().from('line_groups').select('group_id,label,ignored,last_message_at').order('last_message_at', { ascending: false }),
+      sb().from('branches').select('branch_id,name,line_group_id').order('branch_id'),
+      sb().from('mgr_branch_config').select('*'),
+    ]);
+    const grpBranch = {}; (brs || []).forEach(b => { if (b.line_group_id) grpBranch[b.line_group_id] = b.name; });
+    const groups = (gs || []).filter(g => !g.ignored).map(g => ({ group_id: g.group_id, label: g.label || '', branch_name: grpBranch[g.group_id] || '' }));
+    const cfg = {}; (cfgR && cfgR.data || []).forEach(c => { cfg[c.branch_id] = c; });
+    const branches = (brs || []).map(b => {
+      const c = cfg[b.branch_id] || {};
+      return { branch_id: b.branch_id, name: b.name,
+        review_notify_on: c.review_notify_on !== false,
+        review_before_shift: Number(c.review_before_shift || 0),
+        review_after_shift: (c.review_after_shift != null ? Number(c.review_after_shift) : 30),
+        review_min_count: Number(c.review_min_count || 0),
+        review_min_hours: Number(c.review_min_hours || 0),
+        daily_cutoff: c.daily_cutoff || '' };
+    });
+    return { ok: true, groups, branches, settings: {
+      mgr_group_id: s.mgr_group_id || '',
+      mgr_notify_on: s.mgr_notify_on !== '0',                 // ดีฟอลต์เปิด
+      mgr_remind_times: s.mgr_remind_times || '08:00',
+      mgr_soon_days: Number(s.mgr_soon_days || 1),
+    } };
+  }
+  async function hrMgrBranchCfgSave(d) {
+    d = d || {};
+    if (!d.branch_id) return { ok: false, error: 'ไม่ระบุสาขา' };
+    const row = {
+      branch_id: String(d.branch_id),
+      review_notify_on: d.review_notify_on !== false,
+      review_before_shift: Math.max(0, Number(d.review_before_shift) || 0),
+      review_after_shift: Math.max(0, Number(d.review_after_shift) || 0),
+      review_min_count: Math.max(0, Number(d.review_min_count) || 0),
+      review_min_hours: Math.max(0, Number(d.review_min_hours) || 0),
+      daily_cutoff: (d.daily_cutoff || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('mgr_branch_config').upsert(row, { onConflict: 'branch_id' });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+  async function hrMgrTaskSettingsSave(d) {
+    d = d || {};
+    const rows = [
+      { key: 'mgr_group_id', value: String(d.mgr_group_id || '') },
+      { key: 'mgr_notify_on', value: d.mgr_notify_on === false ? '0' : '1' },
+      { key: 'mgr_remind_times', value: String(d.mgr_remind_times || '08:00') },
+      { key: 'mgr_soon_days', value: String(Math.min(Math.max(Number(d.mgr_soon_days) || 1, 1), 7)) },
+    ];
+    const { error } = await sb().from('app_settings').upsert(rows, { onConflict: 'key' });
+    if (error) return { ok: false, error: error.message };
+    _settings = null;
+    return { ok: true };
+  }
   async function hrSettingsSave(key, value) {
     if (!key) return { ok: false, error: 'ไม่มี key' };
     const { error } = await sb().from('app_settings').upsert({ key: String(key), value: String(value) }, { onConflict: 'key' });

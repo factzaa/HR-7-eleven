@@ -582,11 +582,22 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_submissions"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M4 13V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7"/><path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg></span>ข้อมูลรอตรวจ</button>
   <button class="tab" id="tab_activity"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></span>บันทึกกิจกรรม</button>
   <button class="tab" id="tab_notifylog"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l9 5V5L6 10H4a1 1 0 0 0-1 1z"/><path d="M18 9a3 3 0 0 1 0 6"/></svg></span>ประกาศ &amp; แจ้งเตือน</button>
+  <button class="tab" id="tab_mgrtaskset"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><circle cx="12" cy="14" r="2"/><path d="M12 10.5v1M12 16.5v1M15 14h-1M10 14H9"/></svg></span>ตั้งค่างาน ผจก.</button>
 </div>
 
 <div class="login" id="loginView">
   <div class="loginbox">
-    <h2>เข้าระบบจัดการพนักงาน</h2>
+    <h2 id="loginTitle">เข้าระบบจัดการพนักงาน</h2>
+    <div id="loginChoose" style="display:none">
+      <div style="background:var(--card,#fff);border:0.5px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--muted)">มีงานรอให้คุณเปิดดู</div>
+        <div style="font-size:14.5px;font-weight:600;margin-top:2px">เปิดดูงานที่ได้รับแจ้ง</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:2px">เลือกบทบาทเพื่อเข้าสู่ระบบ</div>
+      </div>
+      <button class="btn btn-pri" id="chooseMgr" style="width:100%;padding:13px 0;font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/></svg> เข้าแบบผู้จัดการ</button>
+      <button class="btn btn-sec" id="chooseHr" style="width:100%;padding:13px 0;font-size:15px;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9-2.3.9-5.5-4-3.9 5.5-.8z"/></svg> เข้าแบบเจ้าของร้าน</button>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:16px;text-align:center;line-height:1.5">🔒 ยังต้องยืนยันตัวตนด้วยรหัสของแต่ละบทบาท<br>ระบบจะเปิดงานนี้ให้ทันทีหลังเข้าสำเร็จ</div>
+    </div>
     <div id="loginHR">
       <p>กรอกรหัสผู้ดูแล (HR)</p>
       <div class="field"><label>รหัสผู้ดูแล</label><input id="pwd" type="password" autocomplete="off" placeholder="••••••••"></div>
@@ -1908,6 +1919,12 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <div id="sub_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
+<!-- ตั้งค่างาน ผจก. (กลุ่มไลน์ + แจ้งเตือน/ทวง) -->
+<div id="view_mgrtaskset" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> ตั้งค่างาน ผจก.</h3></div>
+  <div id="mts_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
 <!-- Settings: ตั้งค่ากะ -->
 <div id="view_settings" class="container" style="display:none">
   <div class="toolbar">
@@ -2454,7 +2471,8 @@ async function tryLogin(p){
     document.body.classList.add('is-logged');
     await loadAll();
     buildGroupedNav();
-    showTab('salesDash');
+    if(pendingMtask()){ showTab('mgrtasks'); mtaskDeepLink(); }   // มาจากลิงก์งานในกลุ่มไลน์ → เปิดงานให้ (เจ้าของร้านเปิดได้ทุกสาขา)
+    else showTab('salesDash');
     chatInit();
   } else toast('err', r.error || 'เข้าระบบไม่สำเร็จ');
 }
@@ -2501,6 +2519,22 @@ function isMgrEntry(){
 // สลับไป HR = ล้างโหมดที่จำไว้
 $('toHR') && ($('toHR').addEventListener('click', ()=>{ try{ sessionStorage.removeItem('login_mode'); }catch(e){} }));
 
+// ===== Deep-link งาน ผจก. จากลิงก์ในกลุ่มไลน์ → หน้าเลือกบทบาท (เจ้าของร้าน/ผจก.) =====
+function pendingMtask(){
+  try{ const p=new URLSearchParams(location.search); const task=p.get('task'), batch=p.get('mtask_batch');
+    if(task) return { task }; if(batch) return { batch }; }catch(e){}
+  return null;
+}
+(function initTaskChooser(){
+  if(!pendingMtask()) return;
+  if(isMgrEntry()) return;                 // ถ้าลิงก์ระบุ ?mgr=1 มาแล้ว ไปหน้า ผจก.เลย (ไม่ต้องเลือก)
+  const box=$('loginChoose'); if(!box) return;
+  $('loginHR').style.display='none'; $('loginMgr').style.display='none'; box.style.display='block';
+  const t=$('loginTitle'); if(t) t.textContent='เปิดดูงานที่ได้รับแจ้ง';
+  $('chooseMgr') && ($('chooseMgr').onclick=()=>{ box.style.display='none'; showMgrLogin(); });
+  $('chooseHr')  && ($('chooseHr').onclick =()=>{ box.style.display='none'; showHrLogin(); });
+})();
+
 async function mgrTryLogin(){
   const emp=$('mgr_emp').value.trim(), pin=$('mgr_pin').value.trim();
   if(!emp||!pin){ toast('err','กรอกรหัสพนักงานและ PIN'); return; }
@@ -2528,7 +2562,10 @@ async function mtaskDeepLink(){
     const tid=p.get('task'); const batch=p.get('mtask_batch');
     if(!tid && !batch) return;
     let id=tid;
-    if(!id && batch){ const rb=await post({ action:'hr_mtask_by_batch', password:pwd, batch_id:batch, branch:MGR_BRANCH }); if(rb&&rb.ok&&rb.id) id=rb.id; }
+    if(!id && batch){
+      if(MGR_MODE){ const rb=await post({ action:'hr_mtask_by_batch', password:pwd, batch_id:batch, branch:MGR_BRANCH }); if(rb&&rb.ok&&rb.id) id=rb.id; }
+      else { toast('ok','งานชุดนี้สั่งทุกสาขา — ดูได้ในบอร์ดงาน ผจก.'); return; }   // เจ้าของร้าน: งานทุกสาขา ไม่เจาะจงใบเดียว
+    }
     if(!id){ toast('err','ไม่พบงานของสาขาคุณในรายการนี้'); return; }
     const rg=await post({ action:'hr_mtask_get', password:pwd, id });
     if(!rg||!rg.ok||!rg.task){ toast('err','ไม่พบงานนี้'); return; }
@@ -7485,6 +7522,85 @@ function mtaskRemindScan(){
   try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
     fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ scan:'remind' })}); }catch(e){}
 }
+// ===== หน้า "ตั้งค่างาน ผจก." (E2 กลุ่มไลน์ + E1 แจ้งเตือน/ทวง) =====
+async function loadMgrTaskSet(){
+  const box=$('mts_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_mgrset_get', password:pwd });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const s=r.settings||{}, groups=r.groups||[];
+  const gopts='<option value="">— ยังไม่เลือก (ระบบจะเดาจากชื่อกลุ่มที่มีคำว่า ผจก.) —</option>'+groups.map(g=>{
+    const nm=g.branch_name?('สาขา '+g.branch_name):(g.label||'(ยังไม่ตั้งชื่อ)');
+    return '<option value="'+esc(g.group_id)+'"'+(s.mgr_group_id===g.group_id?' selected':'')+'>'+esc(nm)+' · '+esc(g.group_id.slice(0,12))+'…</option>';
+  }).join('');
+  box.innerHTML=
+   '<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding:14px">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:4px"><span style="background:#e0e7ff;color:#3730a3;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">กลุ่มไลน์</span> กลุ่ม ผจก. ที่รับการแจ้งเตือน</div>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">การ์ดงานใหม่/เสร็จ/เตือน/งานรอตรวจ จะถูกส่งเข้ากลุ่มนี้</div>'
+    +'<select id="mts_group" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'+gopts+'</select>'
+    +'<div style="margin-top:10px"><button class="btn btn-sec btn-sm" id="mts_test"><svg class="ei" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg> ทดสอบส่งเข้ากลุ่ม</button></div>'
+   +'</div></div>'
+   +'<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding:14px">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:10px"><span style="background:#fef3c7;color:#a16207;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">แจ้งเตือน</span> การแจ้งเตือน &amp; ทวงงาน</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:12px"><input type="checkbox" id="mts_on"'+(s.mgr_notify_on?' checked':'')+' style="width:18px;height:18px"> เปิดแจ้งเตือน/ทวงงานเข้ากลุ่มไลน์</label>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap">'
+     +'<div style="flex:1;min-width:150px"><label style="font-size:12.5px;color:var(--muted)">เวลาทวงประจำวัน</label><input type="text" id="mts_times" value="'+esc(s.mgr_remind_times||'08:00')+'" placeholder="08:00 หรือ 08:00,14:00" style="width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>'
+     +'<div style="width:150px"><label style="font-size:12.5px;color:var(--muted)">นับ "ใกล้ครบ" ล่วงหน้า (วัน)</label><input type="number" id="mts_soon" min="1" max="7" value="'+(s.mgr_soon_days||1)+'" style="width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>'
+    +'</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5">💡 เวลาทวงใช้ตั้ง cron ฝั่งเซิร์ฟเวอร์ (ปัจจุบันทวงตอนเปิดหน้างาน ผจก. ด้วย) · "ใกล้ครบ" = แจ้งงานที่จะถึงกำหนดภายใน N วัน</div>'
+   +'</div></div>'
+   +'<div style="display:flex;gap:10px;margin-bottom:16px"><button class="btn btn-pri" id="mts_save" style="padding:11px 22px">บันทึกการตั้งค่า</button></div>'
+   +'<div class="card"><div class="card-b" style="padding:14px">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:4px"><span style="background:#dbeafe;color:#185FA5;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">งานรอตรวจ</span> เตือน "งานรอ ผจก.ตรวจ" — ต่อสาขา</div>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">งานส่งเป็นรอบกะ จึงเตือนตามกะ + ตามเงื่อนไข · เว้น/ใส่ 0 = ปิดเงื่อนไขนั้น</div>'
+    +'<div id="mts_branches"></div>'
+   +'</div></div>';
+  renderMgrBranchCfg(r.branches||[]);
+  $('mts_save').onclick=async()=>{
+    const b=$('mts_save'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
+    const rr=await post({ action:'hr_mgrset_save', password:pwd, data:{
+      mgr_group_id:$('mts_group').value, mgr_notify_on:$('mts_on').checked,
+      mgr_remind_times:$('mts_times').value.trim(), mgr_soon_days:$('mts_soon').value }});
+    b.disabled=false; b.textContent=old;
+    if(rr&&rr.ok) toast('ok','บันทึกแล้ว'); else toast('err',(rr&&rr.error)||'บันทึกไม่สำเร็จ');
+  };
+  function renderMgrBranchCfg(branches){
+    const box=$('mts_branches'); if(!box) return;
+    if(!branches.length){ box.innerHTML='<div class="empty">ยังไม่มีสาขา</div>'; return; }
+    const fld=(lbl,id,val,ph,w)=>'<div style="width:'+(w||'90px')+'"><label style="font-size:11.5px;color:var(--muted)">'+lbl+'</label><input type="'+(id.indexOf('cut')>=0?'time':'number')+'" data-bc="'+id+'" value="'+esc(val)+'"'+(id.indexOf('cut')>=0?'':' min="0"')+' placeholder="'+(ph||'')+'" style="width:100%;margin-top:3px;padding:6px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px"></div>';
+    box.innerHTML=branches.map(b=>
+      '<div data-bcrow="'+esc(b.branch_id)+'" style="border-top:1px solid var(--line);padding:12px 0">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:13.5px;flex:1">'+esc(b.name)+'</b>'
+        +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" data-bc="review_notify_on"'+(b.review_notify_on?' checked':'')+' style="width:16px;height:16px"> เปิด</label></div>'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+        +fld('ก่อนจบกะ (นาที)','review_before_shift',b.review_before_shift,'0')
+        +fld('หลังจบกะ (นาที)','review_after_shift',b.review_after_shift,'30')
+        +fld('ค้าง ≥ (รายการ)','review_min_count',b.review_min_count,'0')
+        +fld('ค้างเกิน (ชม.)','review_min_hours',b.review_min_hours,'0')
+        +fld('ตัดงานประจำวัน','daily_cutoff',b.daily_cutoff,'','120px')
+        +'<button class="btn btn-sec btn-sm" data-bcsave="'+esc(b.branch_id)+'" style="margin-bottom:1px">บันทึก</button>'
+      +'</div></div>'
+    ).join('');
+    box.querySelectorAll('[data-bcsave]').forEach(btn=>btn.onclick=async()=>{
+      const bid=btn.dataset.bcsave; const row=box.querySelector('[data-bcrow="'+CSS.escape(bid)+'"]'); if(!row) return;
+      const d={ branch_id:bid };
+      row.querySelectorAll('[data-bc]').forEach(el=>{ d[el.dataset.bc]= el.type==='checkbox'?el.checked:el.value; });
+      btn.disabled=true; const rr=await post({ action:'hr_mgrbranch_save', password:pwd, data:d }); btn.disabled=false;
+      if(rr&&rr.ok) toast('ok','บันทึกสาขา '+esc(b_nameOf(bid,branches))); else toast('err',(rr&&rr.error)||'ไม่สำเร็จ');
+    });
+  }
+  function b_nameOf(id,arr){ const x=(arr||[]).find(b=>b.branch_id===id); return x?x.name:id; }
+  $('mts_test').onclick=async()=>{
+    const gid=$('mts_group').value;
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base){ toast('err','ไม่พบ URL ระบบ'); return; }
+    // บันทึกกลุ่มก่อนทดสอบ (ให้ edge หากลุ่มถูก)
+    if(gid) await post({ action:'hr_mgrset_save', password:pwd, data:{ mgr_group_id:gid, mgr_notify_on:$('mts_on').checked, mgr_remind_times:$('mts_times').value.trim(), mgr_soon_days:$('mts_soon').value }});
+    const b=$('mts_test'); b.disabled=true;
+    try{ const res=await fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ test:true })}); const j=await res.json().catch(()=>({}));
+      if(j&&j.sent) toast('ok','ส่งข้อความทดสอบเข้ากลุ่มแล้ว'); else toast('err',(j&&j.note)||(j&&j.error)||'ส่งไม่สำเร็จ — ตรวจว่าตั้งกลุ่มถูกต้อง'); }
+    catch(e){ toast('err','เชื่อมต่อไม่สำเร็จ'); }
+    b.disabled=false;
+  };
+}
 async function openMtask(id){
   const r=await post({ action:'hr_mtask_get', password:pwd, id });
   if(!r.ok){ toast('err', r.error||'ไม่พบงาน'); return; }
@@ -7638,7 +7754,7 @@ async function mtStage(status){
   }
   const r=await post({ action:'hr_mtask_stage', password:pwd, id:MT_CUR.id, status, role:mtRole(), sender_name:mtName() });
   if(r.ok){ MT_CUR.status=status; renderMtDetail(); refreshMtFeed(); loadMtasks(); toast('ok','อัปเดตสถานะแล้ว');
-    if(status==='done') mtaskLineNotify({ ok:true, id:MT_CUR.id, event:'done' });   // ปิดงาน → แจ้งเข้ากลุ่ม ผจก.
+    if(status==='done')   mtaskLineNotify({ ok:true, id:MT_CUR.id, event:'done' });     // ปิดงาน → แจ้งเข้ากลุ่ม ผจก.
   }
   else toast('err', r.error||'ไม่สำเร็จ');
 }
@@ -8099,7 +8215,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -8136,6 +8252,7 @@ showTab = function(name){
   else if(name==='goods') loadGoodsTab();
   else if(name==='poster') loadPosterTab();
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
+  else if(name==='mgrtaskset') loadMgrTaskSet();
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
   else if(name==='notifylog'){ loadNotifyLog(); loadAnnounceStatus(); }
@@ -8511,7 +8628,7 @@ const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg>', label:'ไรเดอร์',     tabs:['rider'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg>', label:'ระบบ',        tabs:['branches','goods','poster','settings','submissions','activity','notifylog'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg>', label:'ระบบ',        tabs:['branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'] },
 ];
 function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(g=>g.classList.remove('open')); }
 // ===== ตัวเลขแจ้งเตือน (badge) บนแท็บ/ปุ่มกลุ่มเมนู — งานใหม่/รอตรวจ/รออนุมัติ =====
