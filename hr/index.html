@@ -5015,15 +5015,17 @@ function plSlipMeta(){
   const cfg=(PAY&&PAY.config)||{}; const co=cfg.company||{}; const range=(PAY&&PAY.range)||{};
   const period=(range.start&&range.end)?(beDate(range.start)+' - '+beDate(range.end)):(range.label||'');
   const year=range.end?(Number(String(range.end).slice(0,4))+543):'';
+  // วันที่จ่าย = วันที่ (payday.day หรือ 1) ของ "เดือนถัดจากสิ้นรอบ" (จ่าย 1 ของเดือนถัดไป)
   let payDate='—';
-  const pm=(PAY&&PAY.run&&PAY.run.pay_month)||''; const pd=(cfg.payday&&Number(cfg.payday.day))||0;
-  if(pm&&pd>0) payDate=beDate(pm+'-'+String(pd).padStart(2,'0'));
+  const pd=(cfg.payday&&Number(cfg.payday.day))||1;
+  if(range.end){ const d=new Date(String(range.end)+'T00:00:00'); const pay=new Date(d.getFullYear(), d.getMonth()+1, pd);
+    const iso=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); payDate=beDate(iso(pay)); }
   return { co, period, payDate, year };
 }
 // markup 1 สลิป
 function plSlipInner(it, meta){
   meta=meta||{}; const co=meta.co||{}; const B=v=>plB(Number(v||0));
-  const wageLabel=(it.wage_type==='daily'?'พนักงานรายวัน':'พนักงานรายเดือน');
+  const wageLabel='พนักงาน';   // สลิปแสดง "พนักงาน" เฉย ๆ (ไม่แยกรายวัน/รายเดือน)
   const addSum=(it.additions||[]).reduce((s,a)=>s+Number(a.amount||0),0);
   const posAllow=Number(it.position_allowance||0)+Number(it.diligence||0);
   // เงินได้เสริมทั้งหมด (OT + เบี้ยเลี้ยง/ตำแหน่ง + เบี้ยขยัน + โบนัส + รายการเพิ่ม เช่น เบี้ยพิเศษ/ค่ากะดึก) → รวมใน "เงินได้อื่นๆ"
