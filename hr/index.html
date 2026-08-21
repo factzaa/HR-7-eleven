@@ -7614,12 +7614,14 @@ function recForm(x){
   $('rc_freq').onchange=syncFreq; syncFreq();
   $('rc_cancel').onclick=()=>{ f.style.display='none'; f.innerHTML=''; };
   $('rc_save').onclick=async()=>{
-    const d={ id:x.id||undefined, title:$('rc_title').value, detail:$('rc_detail').value,
-      freq:$('rc_freq').value, due_offset:$('rc_due_offset').value,
-      all_branches:$('rc_all').checked, priority:$('rc_urgent').checked?'urgent':'normal',
-      require_photo:$('rc_photo').checked, active:$('rc_active').checked };
+    const gv=id=>{ const e=$(id); return e?String(e.value==null?'':e.value):''; };
+    const gc=id=>{ const e=$(id); return e?!!e.checked:false; };
+    const d={ id:x.id||undefined, title:gv('rc_title'), detail:gv('rc_detail'),
+      freq:gv('rc_freq')||'daily', due_offset:gv('rc_due_offset'),
+      all_branches:gc('rc_all'), priority:gc('rc_urgent')?'urgent':'normal',
+      require_photo:gc('rc_photo'), active:gc('rc_active') };
     d.weekdays=[...f.querySelectorAll('[data-rcwd]:checked')].map(e=>+e.dataset.rcwd);
-    d.monthday=$('rc_monthday')?$('rc_monthday').value:1;
+    d.monthday=gv('rc_monthday')||1;
     d.branch_ids=[...f.querySelectorAll('[data-rcbr]:checked')].map(e=>e.dataset.rcbr);
     if(!d.title.trim()){ toast('err','กรอกหัวข้องาน'); return; }
     if(!d.all_branches && !d.branch_ids.length){ toast('err','เลือกสาขา หรือ ทุกสาขา'); return; }
