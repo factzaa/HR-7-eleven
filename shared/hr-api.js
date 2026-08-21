@@ -31,7 +31,9 @@
     if (which === 'previous') return 1;
     if (which === 'prev2') return 2;
     if (which === 'prev3') return 3;
-    return (typeof which === 'number') ? which : 0;
+    if (typeof which === 'number') return which;
+    if (typeof which === 'string' && /^-?\d+$/.test(which)) return parseInt(which, 10);   // "0"=ปัจจุบัน "1"=ก่อน "2"=ย้อน2รอบ ...
+    return 0;
   }
   // เดือน "สิ้นรอบ 21–20" (YYYY-MM) ที่วันที่หนึ่ง ๆ สังกัด — ใช้เป็นรอบจ่าย (จ่าย 1 ของเดือนถัดไป)
   //   วันที่ 1–20 = รอบสิ้นเดือนนี้ · วันที่ 21–31 = รอบสิ้นเดือนถัดไป

@@ -4578,6 +4578,27 @@ function plShowSec(sec){
 document.querySelectorAll('#pl_subnav [data-pl]').forEach(b=>b.onclick=()=>plShowSec(b.dataset.pl));
 
 // ---------- รันรอบ ----------
+// รอบเงินเดือน (21–20) แบบย้อนหลัง — สำหรับเติม dropdown เลือกรอบ
+const _PL_THM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function _plCycle(back){
+  const base=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
+  const t=new Date(base+'T00:00:00'); const day=t.getDate();
+  let endRef=(day<=20)?new Date(t.getFullYear(),t.getMonth(),20):new Date(t.getFullYear(),t.getMonth()+1,20);
+  if(back) endRef=new Date(endRef.getFullYear(),endRef.getMonth()-back,20);
+  const end=endRef, start=new Date(endRef.getFullYear(),endRef.getMonth()-1,21);
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const pay=new Date(end.getFullYear(),end.getMonth()+1,1);
+  return { start:iso(start), end:iso(end), pay:'จ่าย 1 '+_PL_THM[pay.getMonth()]+' '+String(pay.getFullYear()+543).slice(2) };
+}
+function plSetupWhich(){
+  const sel=$('pl_which'); if(!sel) return;
+  let past20=false; try{ const b=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10); past20=Number(b.slice(8,10))>20; }catch(e){}
+  const cur=past20?1:0; const opts=[];
+  if(cur-1>=-1){ const b=cur-1,c=_plCycle(b); opts.push('<option value="'+b+'">รอบถัดไป · '+c.pay+' · '+c.start+'–'+c.end+'</option>'); }
+  { const c=_plCycle(cur); opts.push('<option value="'+cur+'">รอบปัจจุบัน · '+c.pay+' · '+c.start+'–'+c.end+'</option>'); }
+  for(let k=1;k<=12;k++){ const b=cur+k,c=_plCycle(b); opts.push('<option value="'+b+'">ย้อนหลัง '+k+' รอบ · '+c.pay+' · '+c.start+'–'+c.end+'</option>'); }
+  sel.innerHTML=opts.join(''); sel.value=String(cur);
+}
 async function loadPayrollRun(){
   const which=($('pl_which')||{}).value||'current';
   $('pl_run_body').innerHTML='<div class="empty">กำลังคำนวณ…</div>';
@@ -4677,7 +4698,7 @@ function renderPayrollItems(){
 }
 $('pl_run_branch') && ($('pl_run_branch').onchange=renderPayrollItems);
 $('pl_calc') && ($('pl_calc').onclick=loadPayrollRun);
-$('pl_which') && ($('pl_which').onchange=loadPayrollRun);
+$('pl_which') && (plSetupWhich(), $('pl_which').onchange=loadPayrollRun);
 
 // ===== หน้าตรวจข้อมูลเข้าเงินเดือน (payroll-review) — ลิงก์อยู่ในเมนู "การเงิน" · ตั้งรหัสอยู่แท็บเบิกเงินล่วงหน้า =====
 $('adv_reviewpass') && ($('adv_reviewpass').onclick=async()=>{
@@ -7684,8 +7705,14 @@ async function loadMgrTaskSet(){
     +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ระบบสร้างงาน ผจก. ให้เองตามรอบ (ทุกวัน/ทุกสัปดาห์/ทุกเดือน) — สร้างเช้าตรู่ทุกวัน</div>'
     +'<div id="rec_form" style="display:none"></div>'
     +'<div id="rec_list"><div class="empty">กำลังโหลด…</div></div>'
+   +'</div></div>'
+   +'<div class="card"><div class="card-b" style="padding:14px">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:4px"><span style="background:#dcfce7;color:#15803d;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">กลุ่มพนักงาน</span> แจ้งเตือนเข้ากลุ่มพนักงานสาขา (สินค้าใกล้หมดอายุ · เชลฟ์ · QA)</div>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">เปิด/ปิด และปรับเกณฑ์ต่อสาขา · ต้องตั้ง LINE Group ID (กลุ่มพนักงาน) ที่หน้าจัดการสาขาก่อน · ปิด = งดทั้งอัตโนมัติและตอนมอบหมาย (ปุ่ม "ส่งเข้ากลุ่ม" แบบสั่งมือยังส่งได้)</div>'
+    +'<div id="snc_branches"><div class="empty">กำลังโหลด…</div></div>'
    +'</div></div>';
   renderMgrBranchCfg(r.branches||[]);
+  loadStaffNotifyCfg();
   MTS_BRANCHES=r.branches||[];
   loadMgrRecurring();
   $('rec_add').onclick=()=>recForm(null);
@@ -7739,6 +7766,33 @@ async function loadMgrTaskSet(){
     catch(e){ toast('err','เชื่อมต่อไม่สำเร็จ'); }
     b.disabled=false;
   };
+}
+// ===== แผงตั้งค่าแจ้งเตือนกลุ่มพนักงานสาขา (staff-notify cfg) =====
+async function loadStaffNotifyCfg(){
+  const box=$('snc_branches'); if(!box) return;
+  const r=await post({ action:'hr_staffnotify_get', password:pwd });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const rows=r.rows||[];
+  if(!rows.length){ box.innerHTML='<div class="empty">ยังไม่มีสาขา</div>'; return; }
+  const nf=(lbl,id,val,ph,w)=>'<div style="width:'+(w||'92px')+'"><label style="font-size:11.5px;color:var(--muted)">'+lbl+'</label><input type="'+(id==='expiry_days'?'text':'number')+'" data-sn="'+id+'" value="'+esc(val)+'"'+(id==='expiry_days'?'':' min="0"')+' placeholder="'+(ph||'')+'" style="width:100%;margin-top:3px;padding:6px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px"></div>';
+  box.innerHTML=rows.map(b=>
+    '<div data-sncrow="'+esc(b.branch_id)+'" style="border-top:1px solid var(--line);padding:12px 0">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:13.5px;flex:1">'+esc(b.name)+(b.has_group?'':' <span style="color:#dc2626;font-size:11px;font-weight:400">· ยังไม่ตั้งกลุ่ม LINE</span>')+'</b>'
+      +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" data-sn="enabled"'+(b.enabled?' checked':'')+' style="width:16px;height:16px"> เปิด</label></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +nf('เชลฟ์ ≥ (ครั้ง/สัปดาห์)','shelf_min',b.shelf_min,'3','130px')
+      +nf('QA ค้าง ≥ (วัน)','qa_due_days',b.qa_due_days,'2','110px')
+      +nf('เกณฑ์หมดอายุ (วัน)','expiry_days',b.expiry_days,'30,14,7,3','150px')
+      +'<button class="btn btn-sec btn-sm" data-sncsave="'+esc(b.branch_id)+'" style="margin-bottom:1px">บันทึก</button>'
+    +'</div></div>'
+  ).join('');
+  box.querySelectorAll('[data-sncsave]').forEach(btn=>btn.onclick=async()=>{
+    const bid=btn.dataset.sncsave; const row=box.querySelector('[data-sncrow="'+CSS.escape(bid)+'"]'); if(!row) return;
+    const d={ branch_id:bid };
+    row.querySelectorAll('[data-sn]').forEach(el=>{ d[el.dataset.sn]= el.type==='checkbox'?el.checked:el.value; });
+    btn.disabled=true; const rr=await post({ action:'hr_staffnotify_save', password:pwd, data:d }); btn.disabled=false;
+    if(rr&&rr.ok) toast('ok','บันทึกแล้ว'); else toast('err',(rr&&rr.error)||'ไม่สำเร็จ');
+  });
 }
 async function openMtask(id){
   const r=await post({ action:'hr_mtask_get', password:pwd, id });
@@ -10517,7 +10571,7 @@ async function loadQaFolders(){
     const brs=(f.branch_ids||[]).filter(Boolean);
     if(!brs.length){ toast('err','โฟลเดอร์นี้ยังไม่มีสาขาผู้รับผิดชอบ'); return; }
     if(!confirm('ส่งงาน QA "'+f.title+'" เข้าไลน์กลุ่มพนักงาน '+brs.length+' สาขา?'))return;
-    b.disabled=true; brs.forEach(bid=>staffNotify({ kind:'qa_assign', branch_id:bid, folder_id:f.id, folder:f.title, assignees:f.assignees||[], target_month:f.target_month }));
+    b.disabled=true; brs.forEach(bid=>staffNotify({ kind:'qa_assign', manual:true, branch_id:bid, folder_id:f.id, folder:f.title, assignees:f.assignees||[], target_month:f.target_month }));
     setTimeout(()=>{ b.disabled=false; toast('ok','ส่งเข้ากลุ่มแล้ว '+brs.length+' สาขา'); }, 400);
   });
   $('qa_list').querySelectorAll('[data-qaedit]').forEach(b=>b.onclick=()=>qaFolderEdit(Number(b.dataset.qaedit)));

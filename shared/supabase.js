@@ -2118,7 +2118,13 @@
   function reviewCycleRange(which) {
     const t = new Date(bangkokDate() + 'T00:00:00'); const day = t.getDate();
     let endRef = (day <= 20) ? new Date(t.getFullYear(), t.getMonth(), 20) : new Date(t.getFullYear(), t.getMonth() + 1, 20);
-    if (which === 'previous') endRef = new Date(endRef.getFullYear(), endRef.getMonth() - 1, 20);
+    // back = จำนวนรอบย้อนหลัง (0=รอบปัจจุบัน, 1=รอบก่อน, -1=รอบถัดไป) · รองรับตัวเลข/สตริงตัวเลขเพื่อดูย้อนหลังหลายรอบ
+    let back = 0;
+    if (which === 'previous') back = 1;
+    else if (which === 'next') back = -1;
+    else if (typeof which === 'number') back = which;
+    else if (typeof which === 'string' && /^-?\d+$/.test(which)) back = parseInt(which, 10);
+    if (back) endRef = new Date(endRef.getFullYear(), endRef.getMonth() - back, 20);
     const end = new Date(endRef.getFullYear(), endRef.getMonth(), 20);
     const start = new Date(endRef.getFullYear(), endRef.getMonth() - 1, 21);
     const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
