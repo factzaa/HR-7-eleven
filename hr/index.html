@@ -3654,11 +3654,12 @@ function renderReportSummary(){
     $('r_count').textContent = '0 คน'+(hidden? ' (ซ่อน '+hidden+')' : ''); return;
   }
   const tableHtml = `<div class="card only-desktop"><div class="tablewrap"><table>
-    <thead><tr><th>พนักงาน</th><th>วันทำงาน</th><th>สาย (วัน)</th><th>สาย (นาที)</th><th>ขาด (วัน)</th><th>ลา (วัน)</th><th>OT (วัน)</th><th>OT (ชม.)</th><th>ไปแทน (วัน)</th><th>ออกก่อน (วัน/ชม.)</th></tr></thead>
+    <thead><tr><th>พนักงาน</th><th>วันทำงาน</th><th>หยุด (วัน)</th><th>สาย (วัน)</th><th>สาย (นาที)</th><th>ขาด (วัน)</th><th>ลา (วัน)</th><th>OT (วัน)</th><th>OT (ชม.)</th><th>ไปแทน (วัน)</th><th>ออกก่อน (วัน/ชม.)</th></tr></thead>
     <tbody>${sumRows.map(e=>`
       <tr>
         <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}${e.nickname?' ('+esc(e.nickname)+')':''}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
         <td class="mono">${e.days}</td>
+        <td class="mono" style="color:#0369a1">${e.off_days||0}</td>
         <td class="mono">${e.late_count>0?'<span style="color:var(--red)">'+e.late_count+'</span>':'0'}</td>
         <td class="mono">${e.late_total}</td>
         <td class="mono">${e.absent>0?'<span style="color:var(--red);font-weight:700">'+e.absent+'</span>':'0'}</td>
@@ -3674,6 +3675,7 @@ function renderReportSummary(){
       <div class="rcard-top"><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.emp_name)}${e.nickname?' ('+esc(e.nickname)+')':''}</span><span class="nick">${esc(e.emp_id)}</span></div></div><div class="rcard-sum"><b>${e.days}</b> วัน<svg class="rcard-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
       <div class="rcard-stats">
         <div class="rcard-stat"><div class="v">${e.days}</div><div class="l">วันทำงาน</div></div>
+        <div class="rcard-stat"><div class="v" style="color:#0369a1">${e.off_days||0}</div><div class="l">หยุด(วัน)</div></div>
         <div class="rcard-stat"><div class="v" style="${e.late_count>0?'color:var(--red)':''}">${e.late_count||0}</div><div class="l">สาย(วัน)</div></div>
         <div class="rcard-stat"><div class="v">${e.late_total||0}</div><div class="l">สาย(นาที)</div></div>
         <div class="rcard-stat"><div class="v" style="${e.absent>0?'color:var(--red)':''}">${e.absent||0}</div><div class="l">ขาด(วัน)</div></div>

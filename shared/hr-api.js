@@ -956,7 +956,7 @@
       q,
       sb().from('branches').select('branch_id,name'),
       sq, lq,
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,is_manager'),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,is_manager,weekly_off,start_date,end_date'),
       wq,
       sb().from('shifts').select('shift_id,day_value,name'),
       sb().from('holidays').select('date,name').eq('active', true).gte('date', f.start).lte('date', f.end),   // วันหยุดบริษัทในช่วง
@@ -1010,12 +1010,21 @@
     const earlyGrace = await getSettingNum('early_out_grace_min', 10);
     // ติดธง "ออกก่อนเวลา" (เกินเวลาผ่อนผัน) ให้แต่ละแถว — ใช้ทั้งกรองและแสดงผล
     rows.forEach(r => { r.early_out_flag = (r.early_out_min != null && r.early_out_min > earlyGrace); });
+    // ติดธง "ทำงานในวันหยุดประจำสัปดาห์ของตัวเอง" (weekly_off เช่น Sun หรือ Sat,Sun)
+    const _WD = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    rows.forEach(r => {
+      const e = empById[r.emp_id] || {}; const off = String(e.weekly_off || '').toLowerCase().trim();
+      if (!off) { r.is_weekoff = false; return; }
+      const dow = _WD[new Date(r.work_date + 'T00:00:00Z').getUTCDay()];
+      r.is_weekoff = off.split(',').map(s => s.trim().slice(0, 3)).filter(Boolean).includes(dow);
+    });
 
     if (f.only_late) rows = rows.filter(r => r.late_min > 0);
     if (f.only_ot) rows = rows.filter(r => r.ot_hours > 0);
     if (f.only_cover) rows = rows.filter(r => r.is_cover);
     if (f.only_early) rows = rows.filter(r => r.early_out_flag);          // เฉพาะที่ออกก่อนเวลา
     if (f.only_holiday) rows = rows.filter(r => r.is_holiday);            // เฉพาะที่มาทำงานวันหยุดบริษัท
+    if (f.only_weekoff) rows = rows.filter(r => r.is_weekoff);            // เฉพาะที่ทำงานในวันหยุดประจำสัปดาห์
     // แผนที่ day_value ต่อกะ (ใช้ถ่วงน้ำหนักวันจัดเวร/ขาด)
     const shDVmap = {}; (shR2.data || []).forEach(s => { shDVmap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
     const dvOf = sid => (shDVmap[sid] != null ? shDVmap[sid] : 1);
@@ -1092,9 +1101,27 @@
       }
       m.leave_days = ld;
     });
+    // ★ หยุด (วัน) = วันในช่วง − วันทำงาน − ลา − ขาด (นับเป็นวันปฏิทิน · ตัดช่วงก่อนเริ่มงาน/หลังสิ้นสุด)
+    Object.keys(map).forEach(emp => {
+      const e = empById[emp] || {};
+      let d0 = f.start, d1 = f.end;
+      if (e.start_date && e.start_date > d0) d0 = e.start_date;
+      if (e.end_date && e.end_date < d1) d1 = e.end_date;
+      if (d1 < d0) { map[emp].off_days = 0; return; }
+      const worked = workedByEmp[emp] || new Set();
+      const sch = schByEmp[emp] || {};
+      let off = 0;
+      for (let d = d0; d <= d1; d = addDays(d, 1)) {
+        if (worked.has(d)) continue;                 // ทำงาน
+        if (onLeave(emp, d)) continue;               // ลา
+        if (sch[d] && d < today) continue;           // ขาด (จัดเวรแต่ไม่มา)
+        off++;                                       // เหลือ = หยุด/พัก
+      }
+      map[emp].off_days = off;
+    });
     // ถ้าติ๊กตัวกรอง (เฉพาะที่สาย / มี OT / วันไปแทน) → สรุปต่อคนต้องเหลือเฉพาะคนที่เข้าเงื่อนไขจริง
     // (เดิมลูปตารางเวร/ใบลา ดึงทุกคนกลับเข้ามา ทำให้เหมือนตัวกรองไม่ทำงาน)
-    const onlyMode = !!(f.only_late || f.only_ot || f.only_cover || f.only_early || f.only_holiday);
+    const onlyMode = !!(f.only_late || f.only_ot || f.only_cover || f.only_early || f.only_holiday || f.only_weekoff);
     const keepSet = new Set(rows.map(r => r.emp_id));
     let summary = Object.values(map).map(m => ({
       ...m, ot: Math.round(m.ot * 100) / 100,
