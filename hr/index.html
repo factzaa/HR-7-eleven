@@ -583,6 +583,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_activity"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></span>บันทึกกิจกรรม</button>
   <button class="tab" id="tab_notifylog"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l9 5V5L6 10H4a1 1 0 0 0-1 1z"/><path d="M18 9a3 3 0 0 1 0 6"/></svg></span>ประกาศ &amp; แจ้งเตือน</button>
   <button class="tab" id="tab_mgrtaskset"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><circle cx="12" cy="14" r="2"/><path d="M12 10.5v1M12 16.5v1M15 14h-1M10 14H9"/></svg></span>ตั้งค่างาน ผจก.</button>
+  <button class="tab" id="tab_mgrdash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span>แดชบอร์ด ผจก.</button>
 </div>
 
 <div class="login" id="loginView">
@@ -1917,6 +1918,12 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 <div id="view_submissions" class="container" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">ข้อมูล/เอกสารพนักงานที่รอตรวจ</h3><button class="btn btn-sec btn-sm" id="sub_refresh">รีเฟรช</button></div>
   <div id="sub_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- แดชบอร์ดงาน ผจก. รวมทุกสาขา -->
+<div id="view_mgrdash" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> แดชบอร์ดงาน ผจก. — ทุกสาขา</h3><button class="btn btn-sec btn-sm" id="mgrdash_refresh"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg></button></div>
+  <div id="mgrdash_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- ตั้งค่างาน ผจก. (กลุ่มไลน์ + แจ้งเตือน/ทวง) -->
@@ -7513,7 +7520,8 @@ function mtaskLineNotify(r){
     const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
     const payload=(r.count>1 && r.batch_id) ? { batch_id:r.batch_id } : (r.id ? { task_id:r.id } : null);
     if(!payload) return;
-    if(r.event) payload.event=r.event;   // 'done' = การ์ดงานเสร็จ
+    if(r.event) payload.event=r.event;   // 'done'/'reject'
+    if(r.note) payload.note=r.note;
     fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   }catch(e){}
 }
@@ -7521,6 +7529,98 @@ function mtaskLineNotify(r){
 function mtaskRemindScan(){
   try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
     fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ scan:'remind' })}); }catch(e){}
+}
+// ===== แดชบอร์ดงาน ผจก. รวมทุกสาขา =====
+async function loadMgrDash(){
+  const box=$('mgrdash_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r; try{ r=await post({ action:'hr_mgr_dashboard', password:pwd }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const rows=r.rows||[];
+  const sum=rows.reduce((s,b)=>{ s.open+=b.mtask_open; s.overdue+=b.overdue; s.done+=b.done_today; s.review+=b.review_pending; s.dmiss+=Math.max(0,b.daily_total-b.daily_done); return s; },{open:0,overdue:0,done:0,review:0,dmiss:0});
+  const kpi=(lbl,val,col)=>'<div style="flex:1;min-width:96px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px 12px"><div style="font-size:12px;color:var(--muted)">'+lbl+'</div><div style="font-size:22px;font-weight:600;color:'+col+'">'+val+'</div></div>';
+  const chip=(lbl,val,col)=> val>0 ? '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;border:0.5px solid var(--line);border-radius:8px;padding:3px 9px"><b style="color:'+col+'">'+val+'</b> '+lbl+'</span>' : '';
+  box.innerHTML=
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+     +kpi('งานเปิด',sum.open,'#185FA5')+kpi('เลยกำหนด',sum.overdue,'#dc2626')+kpi('รอตรวจ',sum.review,'#185FA5')+kpi('งานประจำวันขาด',sum.dmiss,'#c2410c')+kpi('เสร็จวันนี้',sum.done,'#15803d')
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:10px">'
+    +rows.map(b=>{
+      const dailyCol=(b.daily_total&&b.daily_done>=b.daily_total)?'#15803d':(b.daily_total?'#c2410c':'#8c8c8c');
+      const chips=[chip('งานใหม่',b.todo,'#333'),chip('กำลังทำ',b.doing,'#333'),chip('ใกล้เสร็จ',b.mreview,'#333'),chip('เลยกำหนด',b.overdue,'#dc2626'),chip('รอตรวจ',b.review_pending,'#185FA5'),chip('เสร็จวันนี้',b.done_today,'#15803d')].filter(Boolean).join('');
+      return '<div style="background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:12px 14px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:14px;flex:1">'+esc(b.name)+'</b>'
+          +'<span style="font-size:12.5px;color:'+dailyCol+'">งานประจำวัน '+b.daily_done+'/'+b.daily_total+'</span></div>'
+        +'<div style="display:flex;gap:7px;flex-wrap:wrap">'+(chips||'<span style="font-size:12.5px;color:var(--muted)">— ไม่มีงานค้าง —</span>')+'</div>'
+      +'</div>';
+    }).join('')
+    +'</div>';
+}
+$('mgrdash_refresh') && ($('mgrdash_refresh').onclick=()=>loadMgrDash());
+// ===== งานประจำ (recurring) — CRUD =====
+let MTS_BRANCHES=[];
+const REC_WD=['อา','จ','อ','พ','พฤ','ศ','ส'];
+const _recFreqLbl=r=>{ if(r.freq==='weekly'){ const w=(Array.isArray(r.weekdays)?r.weekdays:[]).map(d=>REC_WD[d]).join(','); return 'ทุกสัปดาห์ ('+(w||'-')+')'; } if(r.freq==='monthly') return 'ทุกวันที่ '+(r.monthday||1); return 'ทุกวัน'; };
+async function loadMgrRecurring(){
+  const box=$('rec_list'); if(!box) return; box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_mgrrec_list', password:pwd });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  const rows=r.rows||[];
+  if(!rows.length){ box.innerHTML='<div class="empty">ยังไม่มีงานประจำ</div>'; return; }
+  box.innerHTML=rows.map(x=>{
+    const scope=x.all_branches?'ทุกสาขา':((Array.isArray(x.branch_ids)?x.branch_ids:[]).map(bid=>{const b=MTS_BRANCHES.find(z=>z.branch_id===bid);return b?b.name:bid;}).join(', ')||'—');
+    return '<div style="border-top:1px solid var(--line);padding:10px 0;display:flex;gap:8px;align-items:flex-start">'
+      +'<div style="flex:1"><div style="font-weight:600;font-size:13.5px">'+esc(x.title)+(x.active?'':' <span style="font-size:11px;color:var(--muted)">(ปิดอยู่)</span>')+(x.priority==='urgent'?' <span style="font-size:11px;color:#dc2626">⚡ด่วน</span>':'')+'</div>'
+        +'<div style="font-size:12px;color:var(--muted)">'+esc(_recFreqLbl(x))+' · '+esc(scope)+(x.require_photo?' · บังคับรูป':'')+'</div></div>'
+      +'<button class="btn btn-sec btn-sm" data-recedit="'+x.id+'">แก้</button>'
+      +'<button class="btn btn-sm" style="background:#fee2e2;color:#b91c1c;border-color:#fecaca" data-recdel="'+x.id+'">ลบ</button>'
+    +'</div>';
+  }).join('');
+  box.querySelectorAll('[data-recedit]').forEach(b=>b.onclick=()=>recForm(rows.find(z=>String(z.id)===b.dataset.recedit)));
+  box.querySelectorAll('[data-recdel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบงานประจำนี้?'))return; const rr=await post({action:'hr_mgrrec_delete',password:pwd,id:+b.dataset.recdel}); if(rr&&rr.ok){toast('ok','ลบแล้ว');loadMgrRecurring();}else toast('err','ลบไม่สำเร็จ'); });
+}
+function recForm(x){
+  x=x||{}; const f=$('rec_form'); if(!f) return;
+  const bopts=MTS_BRANCHES.map(b=>'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin-right:10px"><input type="checkbox" data-rcbr="'+esc(b.branch_id)+'"'+((Array.isArray(x.branch_ids)&&x.branch_ids.indexOf(b.branch_id)>=0)?' checked':'')+'> '+esc(b.name)+'</label>').join('');
+  const wdopts=REC_WD.map((w,i)=>'<label style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;margin-right:8px"><input type="checkbox" data-rcwd="'+i+'"'+((Array.isArray(x.weekdays)&&x.weekdays.indexOf(i)>=0)?' checked':'')+'> '+w+'</label>').join('');
+  const inp=(id,val,ph,type,w)=>'<input type="'+(type||'text')+'" id="rc_'+id+'" value="'+esc(val==null?'':val)+'" placeholder="'+(ph||'')+'"'+(type==='number'?' min="0"':'')+' style="width:'+(w||'100%')+';padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">';
+  f.style.display='block';
+  f.innerHTML='<div style="background:var(--bg2,#f6f7f9);border-radius:10px;padding:12px;margin-bottom:12px">'
+    +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px">'+(x.id?'แก้ไขงานประจำ':'เพิ่มงานประจำ')+'</div>'
+    +'<label style="font-size:12px;color:var(--muted)">หัวข้องาน</label>'+inp('title',x.title,'เช่น เช็กตู้แช่ประจำวัน')
+    +'<div style="margin-top:8px"><label style="font-size:12px;color:var(--muted)">รายละเอียด (ถ้ามี)</label>'+inp('detail',x.detail,'')+'</div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;align-items:flex-end">'
+      +'<div><label style="font-size:12px;color:var(--muted)">รอบ</label><br><select id="rc_freq" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="daily"'+(x.freq==='daily'||!x.freq?' selected':'')+'>ทุกวัน</option><option value="weekly"'+(x.freq==='weekly'?' selected':'')+'>ทุกสัปดาห์</option><option value="monthly"'+(x.freq==='monthly'?' selected':'')+'>ทุกเดือน</option></select></div>'
+      +'<div id="rc_wdbox" style="display:none">'+wdopts+'</div>'
+      +'<div id="rc_mdbox" style="display:none"><label style="font-size:12px;color:var(--muted)">วันที่ของเดือน</label><br>'+inp('monthday',x.monthday||1,'1','number','90px')+'</div>'
+      +'<div><label style="font-size:12px;color:var(--muted)">กำหนดส่ง (+วัน)</label><br>'+inp('due_offset',x.due_offset||0,'0','number','90px')+'</div>'
+    +'</div>'
+    +'<div style="margin-top:10px"><label style="font-size:12px;color:var(--muted)">สาขา</label><br>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin-right:12px"><input type="checkbox" id="rc_all"'+(x.all_branches?' checked':'')+'> ทุกสาขา</label>'
+      +'<span id="rc_brs">'+bopts+'</span></div>'
+    +'<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap">'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="rc_urgent"'+(x.priority==='urgent'?' checked':'')+'> ด่วน</label>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="rc_photo"'+(x.require_photo?' checked':'')+'> บังคับแนบรูป</label>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="rc_active"'+(x.active!==false?' checked':'')+'> เปิดใช้งาน</label>'
+    +'</div>'
+    +'<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-pri btn-sm" id="rc_save">บันทึก</button><button class="btn btn-sec btn-sm" id="rc_cancel">ยกเลิก</button></div>'
+  +'</div>';
+  const syncFreq=()=>{ const fq=$('rc_freq').value; $('rc_wdbox').style.display=fq==='weekly'?'block':'none'; $('rc_mdbox').style.display=fq==='monthly'?'block':'none'; };
+  $('rc_freq').onchange=syncFreq; syncFreq();
+  $('rc_cancel').onclick=()=>{ f.style.display='none'; f.innerHTML=''; };
+  $('rc_save').onclick=async()=>{
+    const d={ id:x.id||undefined, title:$('rc_title').value, detail:$('rc_detail').value,
+      freq:$('rc_freq').value, due_offset:$('rc_due_offset').value,
+      all_branches:$('rc_all').checked, priority:$('rc_urgent').checked?'urgent':'normal',
+      require_photo:$('rc_photo').checked, active:$('rc_active').checked };
+    d.weekdays=[...f.querySelectorAll('[data-rcwd]:checked')].map(e=>+e.dataset.rcwd);
+    d.monthday=$('rc_monthday')?$('rc_monthday').value:1;
+    d.branch_ids=[...f.querySelectorAll('[data-rcbr]:checked')].map(e=>e.dataset.rcbr);
+    if(!d.title.trim()){ toast('err','กรอกหัวข้องาน'); return; }
+    if(!d.all_branches && !d.branch_ids.length){ toast('err','เลือกสาขา หรือ ทุกสาขา'); return; }
+    const b=$('rc_save'); b.disabled=true; const rr=await post({ action:'hr_mgrrec_save', password:pwd, data:d }); b.disabled=false;
+    if(rr&&rr.ok){ toast('ok','บันทึกงานประจำแล้ว'); f.style.display='none'; f.innerHTML=''; loadMgrRecurring(); }
+    else toast('err',(rr&&rr.error)||'บันทึกไม่สำเร็จ');
+  };
 }
 // ===== หน้า "ตั้งค่างาน ผจก." (E2 กลุ่มไลน์ + E1 แจ้งเตือน/ทวง) =====
 async function loadMgrTaskSet(){
@@ -7553,8 +7653,17 @@ async function loadMgrTaskSet(){
     +'<div style="font-weight:600;font-size:14px;margin-bottom:4px"><span style="background:#dbeafe;color:#185FA5;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">งานรอตรวจ</span> เตือน "งานรอ ผจก.ตรวจ" — ต่อสาขา</div>'
     +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">งานส่งเป็นรอบกะ จึงเตือนตามกะ + ตามเงื่อนไข · เว้น/ใส่ 0 = ปิดเงื่อนไขนั้น</div>'
     +'<div id="mts_branches"></div>'
+   +'</div></div>'
+   +'<div class="card"><div class="card-b" style="padding:14px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="font-weight:600;font-size:14px;flex:1"><span style="background:#dcfce7;color:#15803d;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">งานประจำ</span> งานสร้างซ้ำอัตโนมัติ (recurring)</div><button class="btn btn-pri btn-sm" id="rec_add">+ เพิ่มงานประจำ</button></div>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ระบบสร้างงาน ผจก. ให้เองตามรอบ (ทุกวัน/ทุกสัปดาห์/ทุกเดือน) — สร้างเช้าตรู่ทุกวัน</div>'
+    +'<div id="rec_form" style="display:none"></div>'
+    +'<div id="rec_list"><div class="empty">กำลังโหลด…</div></div>'
    +'</div></div>';
   renderMgrBranchCfg(r.branches||[]);
+  MTS_BRANCHES=r.branches||[];
+  loadMgrRecurring();
+  $('rec_add').onclick=()=>recForm(null);
   $('mts_save').onclick=async()=>{
     const b=$('mts_save'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
     const rr=await post({ action:'hr_mgrset_save', password:pwd, data:{
@@ -7769,6 +7878,7 @@ async function mtReject(){
   if(r.ok){
     MT_CUR.status='doing'; MT_PHOTOS=[]; renderMtPhotoBar();
     renderMtDetail(); refreshMtFeed(); loadMtasks();
+    mtaskLineNotify({ ok:true, id:MT_CUR.id, event:'reject', note:note.trim() });   // แจ้งตีกลับเข้ากลุ่ม ผจก.
     toast('ok','ตีกลับให้แก้ไขแล้ว — การ์ดย้ายไป "กำลังทำ"');
   } else toast('err', r.error||'ไม่สำเร็จ');
 }
@@ -8215,7 +8325,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -8253,6 +8363,7 @@ showTab = function(name){
   else if(name==='poster') loadPosterTab();
   else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
   else if(name==='mgrtaskset') loadMgrTaskSet();
+  else if(name==='mgrdash') loadMgrDash();
   else if(name==='submissions') loadSubmissions();
   else if(name==='activity') loadActivity();
   else if(name==='notifylog'){ loadNotifyLog(); loadAnnounceStatus(); }
@@ -8621,7 +8732,7 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
 const NAV_GROUPS=[
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','board','analytics','salesDash','auditDash'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },

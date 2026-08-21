@@ -145,6 +145,10 @@
         case 'hr_mgrset_get':     return await hrMgrTaskSettingsGet();
         case 'hr_mgrset_save':    return await hrMgrTaskSettingsSave(p.data);
         case 'hr_mgrbranch_save': return await hrMgrBranchCfgSave(p.data);
+        case 'hr_mgr_dashboard':  return await hrMgrDashboard();
+        case 'hr_mgrrec_list':    return await hrMgrRecurringList();
+        case 'hr_mgrrec_save':    return await hrMgrRecurringSave(p.data);
+        case 'hr_mgrrec_delete':  return await hrMgrRecurringDelete(p.id);
         case 'hr_warnings_list':  return await hrWarningsList();
         case 'hr_warning_issue':  return await hrWarningIssue(p.data);
         case 'hr_warning_get':    return await hrWarningGet(p.warning_id);
@@ -477,6 +481,87 @@
       mgr_remind_times: s.mgr_remind_times || '08:00',
       mgr_soon_days: Number(s.mgr_soon_days || 1),
     } };
+  }
+  // ===== งานประจำ (recurring) =====
+  async function hrMgrRecurringList() {
+    const { data, error } = await sb().from('mgr_task_recurring').select('*').order('id', { ascending: false });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, rows: data || [] };
+  }
+  async function hrMgrRecurringSave(d) {
+    d = d || {};
+    if (!String(d.title || '').trim()) return { ok: false, error: 'กรอกหัวข้องาน' };
+    const row = {
+      title: String(d.title).trim(), detail: (d.detail || '').trim() || null,
+      all_branches: d.all_branches === true,
+      branch_ids: (d.all_branches === true) ? null : (Array.isArray(d.branch_ids) ? d.branch_ids.map(String) : []),
+      freq: ['daily', 'weekly', 'monthly'].includes(d.freq) ? d.freq : 'daily',
+      weekdays: d.freq === 'weekly' ? (Array.isArray(d.weekdays) ? d.weekdays.map(Number) : []) : null,
+      monthday: d.freq === 'monthly' ? Math.min(Math.max(Number(d.monthday) || 1, 1), 31) : null,
+      due_offset: Math.max(0, Number(d.due_offset) || 0),
+      priority: d.priority === 'urgent' ? 'urgent' : 'normal',
+      require_photo: d.require_photo === true,
+      penalty_mode: (d.penalty_mode || '').trim() || null,
+      penalty_points: (d.penalty_points && Number(d.penalty_points) > 0) ? Math.round(Number(d.penalty_points)) : null,
+      penalty_note: (d.penalty_note || '').trim() || null,
+      task_type: d.task_type || 'general',
+      source_link: (d.source_link || '').trim() || null,
+      active: d.active !== false,
+    };
+    if (d.id) { const { error } = await sb().from('mgr_task_recurring').update(row).eq('id', d.id); if (error) return { ok: false, error: error.message }; }
+    else { const { error } = await sb().from('mgr_task_recurring').insert(row); if (error) return { ok: false, error: error.message }; }
+    return { ok: true };
+  }
+  async function hrMgrRecurringDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุ' };
+    const { error } = await sb().from('mgr_task_recurring').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+  async function hrMgrDashboard() {
+    const today = bkkToday();
+    const prev = addDays(today, -1);
+    const [brR, mtR, taR, dfR, dlR, tdR, shR] = await Promise.all([
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      sb().from('mgr_tasks').select('branch_id,status,due_date,done_at').limit(5000),
+      sb().from('task_assignments').select('branch_id,task_def_id,shift_id,needs_mgr,status,mgr_checked_at,fix_done_at,work_date').eq('status', 'submitted').is('mgr_checked_at', null).in('work_date', [today, prev]).limit(5000),
+      sb().from('mgr_daily_defs').select('id').eq('active', true),
+      sb().from('mgr_daily_logs').select('branch_id,def_id,status').eq('work_date', today),
+      sb().from('task_defs').select('id,mgr_review'),
+      sb().from('shifts').select('shift_id,mgr_review,start_time,end_time'),
+    ]);
+    const defMgr = {}; (tdR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
+    const shOff = {}, overnight = {};
+    (shR.data || []).forEach(s => { shOff[s.shift_id] = (s.mgr_review === false); overnight[s.shift_id] = !!(s.start_time && s.end_time && String(s.end_time) <= String(s.start_time)); });
+    const dailyTotal = (dfR.data || []).length;
+    const dailyDone = {}; (dlR.data || []).forEach(l => { if (l.status === 'submitted' || l.status === 'approved') dailyDone[l.branch_id] = (dailyDone[l.branch_id] || 0) + 1; });
+    // งานรอ ผจก.ตรวจ ต่อสาขา
+    const review = {};
+    (taR.data || []).forEach(t => {
+      const isResubmit = !!t.fix_done_at;
+      if (!isResubmit && String(t.work_date) !== today && !overnight[t.shift_id]) return;
+      const needs = t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]);
+      if (!needs || !t.branch_id) return;
+      review[t.branch_id] = (review[t.branch_id] || 0) + 1;
+    });
+    // งานมอบหมาย ต่อสาขา
+    const agg = {};
+    const A = b => (agg[b] = agg[b] || { todo: 0, doing: 0, review: 0, overdue: 0, done_today: 0 });
+    (mtR.data || []).forEach(t => {
+      if (!t.branch_id) return; const a = A(t.branch_id);
+      if (t.status === 'done') { if (t.done_at && String(t.done_at).slice(0, 10) === today) a.done_today++; return; }
+      if (t.status === 'todo') a.todo++; else if (t.status === 'doing') a.doing++; else if (t.status === 'review') a.review++;
+      if (t.due_date && String(t.due_date) < today) a.overdue++;
+    });
+    const rows = (brR.data || []).map(b => {
+      const a = agg[b.branch_id] || { todo: 0, doing: 0, review: 0, overdue: 0, done_today: 0 };
+      return { branch_id: b.branch_id, name: b.name,
+        mtask_open: a.todo + a.doing + a.review, todo: a.todo, doing: a.doing, mreview: a.review,
+        overdue: a.overdue, done_today: a.done_today,
+        review_pending: review[b.branch_id] || 0,
+        daily_done: dailyDone[b.branch_id] || 0, daily_total: dailyTotal };
+    });
+    return { ok: true, today, rows };
   }
   async function hrMgrBranchCfgSave(d) {
     d = d || {};
