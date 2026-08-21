@@ -7448,12 +7448,11 @@ function mtBoardDebounced(){ clearTimeout(MT_BOARD_T); MT_BOARD_T=setTimeout(()=
 const MT_STAGES=[
   {key:'todo',  label:'งานใหม่/ค้าง', color:'#0ea5e9'},
   {key:'doing', label:'<svg class="ei" viewBox="0 0 24 24"><path d="M14 7a4 4 0 0 1 5 5l-8 8-3-3 8-8a4 4 0 0 1-2-2z"/></svg> กำลังทำ',       color:'#a06515'},
-  {key:'review',label:'<svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> ใกล้เสร็จ',      color:'#2b3242'},
   {key:'done',  label:'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> สำเร็จ',         color:'#16a34a'},
 ];
 function mtRole(){ return MGR_MODE?'mgr':'hr'; }
 function mtName(){ return MGR_MODE?'ผจก.':'HR'; }
-function mtStLabel(k){ const s=MT_STAGES.find(x=>x.key===k); return s?s.label:k; }
+function mtStLabel(k){ if(k==='review') return 'กำลังทำ'; const s=MT_STAGES.find(x=>x.key===k); return s?s.label:k; }
 async function loadMtasks(){
   const box=$('mt_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   $('mt_sub').textContent = MGR_MODE ? '· สาขาของคุณ' : '· ทุกสาขา (คุณดู+คุยได้ · ผจก.เป็นผู้ลงมือ)';
@@ -7484,7 +7483,7 @@ function renderMtBoard(){
   const bf = MGR_MODE?'':($('mt_branch')?$('mt_branch').value:'');
   const rows=MT_ROWS.filter(t=>!bf||String(t.branch_id)===String(bf));
   box.innerHTML='<div class="kanban">'+MT_STAGES.map(st=>{
-    const cards=rows.filter(t=>t.status===st.key).sort((a,b)=>((b.priority==='urgent'?1:0)-(a.priority==='urgent'?1:0)));
+    const cards=rows.filter(t=>t.status===st.key || (st.key==='doing' && t.status==='review')).sort((a,b)=>((b.priority==='urgent'?1:0)-(a.priority==='urgent'?1:0)));
     return '<div class="kanban-col">'
       +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
       +(cards.length?cards.map(mtCard).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
