@@ -2153,6 +2153,7 @@
     const dv = {}; (shR.data || []).forEach(s => dv[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1);
     // ปัด OT เป็นชั่วโมงเต็มไหม (ตั้งค่าเดียวกับที่ระบบเงินเดือนใช้)
     const _st = await _loadSettings(); const otWhole = (_st['ot_whole_day'] === '1' || _st['ot_whole_day'] === 'true');
+    const minWorkDays = Number(_st['min_work_days'] || 0) || 0;   // เกณฑ์วันทำงานขั้นต่ำ (ไม่ถึง = ตัดเบี้ยวินัย) · 0 = ปิด
     // ค่ากะดึก: กะข้ามคืน (เลิก ≤ เข้า) · ผู้คุมผลัด = controller_rate · อื่น = staff_rate
     let saCfg = { enabled: true, controller_rate: 15, staff_rate: 10 };
     try { const srow = (pcfgR.data || []).find(x => x.key === 'shift_allowance'); if (srow && srow.value && typeof srow.value === 'object') saCfg = Object.assign(saCfg, srow.value); } catch (_e) {}
@@ -2209,12 +2210,25 @@
       try { const sc = _computeScore({ cfg: scfgR.data, rules: srR.data, bands: sbR.data, events: evBy[e.emp_id] || [], att, mySched, worked, onLeave }); if (sc && sc.enabled !== false) { score = sc.score; band = sc.band_label; bandColor = sc.band_color; bandBonus = Number(sc.bonus || 0); } } catch (_e) {}
       const rv = rvM[e.emp_id] || {};
       // เบี้ยวินัย = โบนัสตามแบนด์คะแนน (ตัวที่เข้าเงินเดือนจริง) · ถ้ายังไม่ตั้งระบบคะแนน → ใช้เกณฑ์ขาด/สาย (เบี้ยขยัน)
-      const dil_ok = (score != null)
+      let dil_ok = (score != null)
         ? (bandBonus > 0)
         : ((dilCfg.enabled === false) ? null : ((!dilCfg.require_no_absent || absent === 0) && (late_count <= Number(dilCfg.allow_late_count || 0))));
+      // ★ เกณฑ์วันทำงานขั้นต่ำ: ใช้วันที่ HR ปรับ (days_override) ถ้ามี ไม่งั้นตามลงเวลา
+      const daysEff = (rv.days_override != null) ? Number(rv.days_override) : attDays;
+      const below_min = minWorkDays > 0 && daysEff < minWorkDays;
+      if (below_min && dil_ok !== null) dil_ok = false;   // วันไม่ถึงเกณฑ์ = ตัดเบี้ยวินัยด้วย
+      // เหตุผลที่ตัดเบี้ยวินัย (auto) — โชว์ในช่องหมายเหตุหน้าตรวจ
+      let dil_note = '';
+      if (rv.dil_off === true) dil_note = 'ผจก.ปิดเบี้ยวินัยรอบนี้';
+      else if (below_min) dil_note = 'วันทำงาน ' + daysEff + ' < เกณฑ์ขั้นต่ำ ' + minWorkDays + ' วัน — ไม่ได้เบี้ยวินัย';
+      else if (dil_ok === false) {
+        if (dilCfg.require_no_absent && absent > 0) dil_note = 'มีขาดงาน ' + absent + ' วัน — ไม่ได้เบี้ยวินัย';
+        else if (late_count > Number(dilCfg.allow_late_count || 0)) dil_note = 'สายเกินเกณฑ์ (' + late_count + ' ครั้ง / ได้ไม่เกิน ' + Number(dilCfg.allow_late_count || 0) + ') — ไม่ได้เบี้ยวินัย';
+        else if (score != null && bandBonus <= 0) dil_note = 'คะแนนวินัยไม่ถึงระดับที่ได้โบนัส — ไม่ได้เบี้ยวินัย';
+      }
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
-        att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok, dil_off: rv.dil_off === true,
+        att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok, dil_note, below_min, dil_off: rv.dil_off === true,
         score, band, band_color: bandColor, auto_advance: advBy[e.emp_id] || 0,
         auto_shift_allowance: shiftAllowBy[e.emp_id] || 0, shift_allowance_override: rv.shift_allowance_override,
         installments: instByEmp[e.emp_id] || null,

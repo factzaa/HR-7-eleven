@@ -7158,6 +7158,7 @@
     const { data: existing } = await sb().from('payroll_items').select('*').eq('run_id', run.id);
     const exM = {}; (existing || []).forEach(x => { exM[x.emp_id] = x; });
     const items = [];
+    const dilNoteBy = {};   // เหตุผลที่ตัดเบี้ยวินัย (auto) ต่อพนักงาน
     for (const e of (empR.data || [])) {
       const ex = exM[e.emp_id] || {};
       if (finalized && exM[e.emp_id]) { items.push(ex); continue; }   // ปิดรอบแล้ว = คืนยอดที่ตรึงไว้
@@ -7191,6 +7192,17 @@
       if (Number(fuelByEmp[e.emp_id]) > 0) deductions.push({ label: 'ค่าน้ำมัน (เบิก)', amount: _pr2(Number(fuelByEmp[e.emp_id])), src: 'fuel' });
       const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0, dil_off: rv.dil_off === true, below_min: minWorkDays > 0 && Number(days_worked) < minWorkDays };
       const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
+      // ★ เหตุผลที่ "ตัดเบี้ยวินัย" (auto) — โชว์ในหน้าตรวจช่องหมายเหตุ (เฉพาะคนที่ปกติมีสิทธิ์ได้เบี้ย)
+      const _dcfg = cfg.diligence || {};
+      const _elig = Number(prof.diligence_amount || 0) > 0 || Number(s.bonus || 0) > 0;   // ปกติมีเบี้ย/โบนัสให้ตัด
+      let _dilNote = '';
+      if (_elig && Number(comp.diligence) === 0 && Number(comp.bonus) === 0) {
+        if (stats.dil_off) _dilNote = 'ผจก.ปิดเบี้ยวินัยรอบนี้';
+        else if (stats.below_min) _dilNote = 'วันทำงาน ' + days_worked + ' < เกณฑ์ขั้นต่ำ ' + minWorkDays + ' วัน — ไม่ได้เบี้ยวินัย';
+        else if (_dcfg.require_no_absent && Number(stats.absent_count || 0) > 0) _dilNote = 'มีขาดงาน ' + stats.absent_count + ' วัน — ไม่ได้เบี้ยวินัย';
+        else if (Number(stats.late_count || 0) > Number(_dcfg.allow_late_count || 0)) _dilNote = 'สายเกินเกณฑ์ (' + stats.late_count + ' ครั้ง / ได้ไม่เกิน ' + Number(_dcfg.allow_late_count || 0) + ') — ไม่ได้เบี้ยวินัย';
+      }
+      dilNoteBy[e.emp_id] = _dilNote;
       items.push({
         run_id: run.id, emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '',
         wage_type: prof.wage_type || 'monthly',
@@ -7250,6 +7262,7 @@
       ytd_sso: _pr2((ytdSso[it.emp_id] || 0) + addCur * Number(it.sso || 0)),
       ytd_tax: 0,
       delivery: (reviewMap[it.emp_id] && reviewMap[it.emp_id].delivery != null) ? Number(reviewMap[it.emp_id].delivery) : null,   // ค่า Delivery (จาก payroll_review) — โมดัลแก้รายคนใช้
+      dil_note: dilNoteBy[it.emp_id] || '',   // เหตุผลตัดเบี้ยวินัย (auto) — โชว์ในช่องหมายเหตุ
     }); });
     return {
       ok: true,
