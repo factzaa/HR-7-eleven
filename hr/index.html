@@ -7577,10 +7577,20 @@ async function loadMgrRecurring(){
     return '<div style="border-top:1px solid var(--line);padding:10px 0;display:flex;gap:8px;align-items:flex-start">'
       +'<div style="flex:1"><div style="font-weight:600;font-size:13.5px">'+esc(x.title)+(x.active?'':' <span style="font-size:11px;color:var(--muted)">(ปิดอยู่)</span>')+(x.priority==='urgent'?' <span style="font-size:11px;color:#dc2626">⚡ด่วน</span>':'')+'</div>'
         +'<div style="font-size:12px;color:var(--muted)">'+esc(_recFreqLbl(x))+' · '+esc(scope)+(x.require_photo?' · บังคับรูป':'')+'</div></div>'
+      +'<button class="btn btn-sm" style="background:#dbeafe;color:#185FA5;border-color:#bfdbfe" data-rectest="'+x.id+'" title="สร้างงานจริงเดี๋ยวนี้เพื่อทดสอบ">▶ ทดสอบ</button>'
       +'<button class="btn btn-sec btn-sm" data-recedit="'+x.id+'">แก้</button>'
       +'<button class="btn btn-sm" style="background:#fee2e2;color:#b91c1c;border-color:#fecaca" data-recdel="'+x.id+'">ลบ</button>'
     +'</div>';
   }).join('');
+  box.querySelectorAll('[data-rectest]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('สร้างงานจริงจากแม่แบบนี้เดี๋ยวนี้เพื่อทดสอบ? (งานจะไปโผล่ที่เมนู งาน ผจก. + แจ้งเข้ากลุ่มไลน์)'))return;
+    const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base){ toast('err','ไม่พบ URL ระบบ'); return; }
+    b.disabled=true;
+    try{ const res=await fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ scan:'recurring', force:true, id:+b.dataset.rectest })}); const j=await res.json().catch(()=>({}));
+      if(j&&j.created>0) toast('ok','สร้างงานทดสอบแล้ว '+j.created+' ใบ — ดูที่เมนู งาน ผจก.'); else toast('err',(j&&j.note)||'สร้างไม่สำเร็จ (ตรวจว่าเลือกสาขาแล้ว)'); }
+    catch(e){ toast('err','เชื่อมต่อไม่สำเร็จ'); }
+    b.disabled=false;
+  });
   box.querySelectorAll('[data-recedit]').forEach(b=>b.onclick=()=>recForm(rows.find(z=>String(z.id)===b.dataset.recedit)));
   box.querySelectorAll('[data-recdel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบงานประจำนี้?'))return; const rr=await post({action:'hr_mgrrec_delete',password:pwd,id:+b.dataset.recdel}); if(rr&&rr.ok){toast('ok','ลบแล้ว');loadMgrRecurring();}else toast('err','ลบไม่สำเร็จ'); });
 }
@@ -7669,7 +7679,7 @@ async function loadMgrTaskSet(){
     +'<div id="mts_branches"></div>'
    +'</div></div>'
    +'<div class="card"><div class="card-b" style="padding:14px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="font-weight:600;font-size:14px;flex:1"><span style="background:#dcfce7;color:#15803d;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">งานประจำ</span> งานสร้างซ้ำอัตโนมัติ (recurring)</div><button class="btn btn-pri btn-sm" id="rec_add">+ เพิ่มงานประจำ</button></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="font-weight:600;font-size:14px;flex:1"><span style="background:#dcfce7;color:#15803d;font-size:11px;padding:1px 7px;border-radius:6px;margin-right:6px">งานประจำ</span> งานสร้างซ้ำอัตโนมัติ (recurring)</div><button class="btn btn-sm" id="rec_testclear" style="background:#fef3c7;color:#a16207;border-color:#fde68a">ล้างงานทดสอบ</button><button class="btn btn-pri btn-sm" id="rec_add">+ เพิ่มงานประจำ</button></div>'
     +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ระบบสร้างงาน ผจก. ให้เองตามรอบ (ทุกวัน/ทุกสัปดาห์/ทุกเดือน) — สร้างเช้าตรู่ทุกวัน</div>'
     +'<div id="rec_form" style="display:none"></div>'
     +'<div id="rec_list"><div class="empty">กำลังโหลด…</div></div>'
@@ -7678,6 +7688,11 @@ async function loadMgrTaskSet(){
   MTS_BRANCHES=r.branches||[];
   loadMgrRecurring();
   $('rec_add').onclick=()=>recForm(null);
+  $('rec_testclear') && ($('rec_testclear').onclick=async()=>{
+    if(!confirm('ลบงานที่สร้างจากปุ่ม "ทดสอบ" ทั้งหมด? (ไม่กระทบงานประจำจริงและงานอื่น)'))return;
+    const b=$('rec_testclear'); b.disabled=true; const rr=await post({ action:'hr_mgrrec_testclear', password:pwd }); b.disabled=false;
+    if(rr&&rr.ok) toast('ok','ลบงานทดสอบแล้ว '+(rr.deleted||0)+' ใบ'); else toast('err',(rr&&rr.error)||'ลบไม่สำเร็จ');
+  });
   $('mts_save').onclick=async()=>{
     const b=$('mts_save'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
     const rr=await post({ action:'hr_mgrset_save', password:pwd, data:{

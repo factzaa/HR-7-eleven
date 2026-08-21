@@ -149,6 +149,7 @@
         case 'hr_mgrrec_list':    return await hrMgrRecurringList();
         case 'hr_mgrrec_save':    return await hrMgrRecurringSave(p.data);
         case 'hr_mgrrec_delete':  return await hrMgrRecurringDelete(p.id);
+        case 'hr_mgrrec_testclear': return await hrMgrRecTestClear();
         case 'hr_warnings_list':  return await hrWarningsList();
         case 'hr_warning_issue':  return await hrWarningIssue(p.data);
         case 'hr_warning_get':    return await hrWarningGet(p.warning_id);
@@ -517,6 +518,15 @@
     const { error } = await sb().from('mgr_task_recurring').delete().eq('id', id);
     if (error) return { ok: false, error: error.message };
     return { ok: true };
+  }
+  // ลบงานที่สร้างจากปุ่ม "ทดสอบ" ทั้งหมด (source='recurring-test')
+  async function hrMgrRecTestClear() {
+    const { data: rows } = await sb().from('mgr_tasks').select('id').eq('source', 'recurring-test');
+    const ids = (rows || []).map(r => r.id);
+    if (ids.length) { try { await sb().from('mgr_task_feed').delete().in('task_id', ids); } catch (_e) {} }
+    const { error } = await sb().from('mgr_tasks').delete().eq('source', 'recurring-test');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, deleted: ids.length };
   }
   async function hrMgrDashboard() {
     const today = bkkToday();
