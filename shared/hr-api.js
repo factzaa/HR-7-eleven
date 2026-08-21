@@ -5019,7 +5019,7 @@
     if (e2) throw e2;
     await logAct('สร้างโฟลเดอร์ QA', null, ins.title + ' · ' + rows.length + ' คน');
     const byBranch = {}; d.emp_ids.forEach(id => { const b = brOf[id]; if (b) (byBranch[b] = byBranch[b] || []).push(nmOf[id] || id); });
-    return { ok: true, id: folder.id, assigned: rows.length, notify: { folder: ins.title, target_month: ins.target_month, by_branch: byBranch } };
+    return { ok: true, id: folder.id, assigned: rows.length, notify: { folder_id: folder.id, folder: ins.title, target_month: ins.target_month, by_branch: byBranch } };
   }
 
   async function hrQaFolderList() {

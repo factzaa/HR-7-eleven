@@ -10485,7 +10485,7 @@ async function qaCreate(){
   btn.disabled=false; btn.textContent=old;
   if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
   toast('ok','สร้างโฟลเดอร์ + มอบหมาย '+r.assigned+' คนแล้ว');
-  if(r.notify&&r.notify.by_branch){ Object.keys(r.notify.by_branch).forEach(bid=>staffNotify({ kind:'qa_assign', branch_id:bid, folder:r.notify.folder, assignees:r.notify.by_branch[bid], target_month:r.notify.target_month })); }
+  if(r.notify&&r.notify.by_branch){ Object.keys(r.notify.by_branch).forEach(bid=>staffNotify({ kind:'qa_assign', branch_id:bid, folder_id:r.notify.folder_id, folder:r.notify.folder, assignees:r.notify.by_branch[bid], target_month:r.notify.target_month })); }
   $('qa_title').value=''; $('qa_month').value=''; $('qa_note').value=''; QA_SEL.clear(); renderQaEmpList();
   loadQaFolders();
 }
@@ -10517,7 +10517,7 @@ async function loadQaFolders(){
     const brs=(f.branch_ids||[]).filter(Boolean);
     if(!brs.length){ toast('err','โฟลเดอร์นี้ยังไม่มีสาขาผู้รับผิดชอบ'); return; }
     if(!confirm('ส่งงาน QA "'+f.title+'" เข้าไลน์กลุ่มพนักงาน '+brs.length+' สาขา?'))return;
-    b.disabled=true; brs.forEach(bid=>staffNotify({ kind:'qa_assign', branch_id:bid, folder:f.title, assignees:f.assignees||[], target_month:f.target_month }));
+    b.disabled=true; brs.forEach(bid=>staffNotify({ kind:'qa_assign', branch_id:bid, folder_id:f.id, folder:f.title, assignees:f.assignees||[], target_month:f.target_month }));
     setTimeout(()=>{ b.disabled=false; toast('ok','ส่งเข้ากลุ่มแล้ว '+brs.length+' สาขา'); }, 400);
   });
   $('qa_list').querySelectorAll('[data-qaedit]').forEach(b=>b.onclick=()=>qaFolderEdit(Number(b.dataset.qaedit)));
