@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v105';      // v105: แก้ setupPlWhich ให้เติมรอบย้อนหลัง 12 รอบจริง (หน้า payroll)
+const CACHE = 'hr7-eleven-v106';      // v106: การ์ดงานรอ ผจก.ตรวจ กันซ้ำใน scan:remind + ปุ่มเปิดหน้าล็อกอิน ผจก. (ไม่ใช่ HR)
 const ASSETS = [
   './',
   './index.html',

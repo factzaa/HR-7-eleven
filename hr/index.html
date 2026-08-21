@@ -7540,6 +7540,8 @@ function mtaskLineNotify(r){
 // ทวงงานค้าง ผจก. เข้ากลุ่มไลน์ (สแกนเลยกำหนด+ยังไม่เสร็จ · ทวงวันละครั้ง) — ยิงตอนเปิดหน้างาน ผจก.
 function mtaskRemindScan(){
   try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
+    // กันยิงถี่: อย่างมาก 1 ครั้ง/3 ชม. ต่อเครื่อง (edge มี dedup ซ้ำอีกชั้น)
+    try{ const last=Number(localStorage.getItem('mtaskRemindAt')||0); if(Date.now()-last < 3*3600*1000) return; localStorage.setItem('mtaskRemindAt', String(Date.now())); }catch(_e){}
     fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ scan:'remind' })}); }catch(e){}
 }
 // ===== แดชบอร์ดงาน ผจก. รวมทุกสาขา =====
