@@ -7588,44 +7588,44 @@ function recForm(x){
   x=x||{}; const f=$('rec_form'); if(!f) return;
   const bopts=MTS_BRANCHES.map(b=>'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin-right:10px"><input type="checkbox" data-rcbr="'+esc(b.branch_id)+'"'+((Array.isArray(x.branch_ids)&&x.branch_ids.indexOf(b.branch_id)>=0)?' checked':'')+'> '+esc(b.name)+'</label>').join('');
   const wdopts=REC_WD.map((w,i)=>'<label style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;margin-right:8px"><input type="checkbox" data-rcwd="'+i+'"'+((Array.isArray(x.weekdays)&&x.weekdays.indexOf(i)>=0)?' checked':'')+'> '+w+'</label>').join('');
-  const inp=(id,val,ph,type,w)=>'<input type="'+(type||'text')+'" id="rc_'+id+'" value="'+esc(val==null?'':val)+'" placeholder="'+(ph||'')+'"'+(type==='number'?' min="0"':'')+' style="width:'+(w||'100%')+';padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">';
+  const inp=(id,val,ph,type,w)=>'<input type="'+(type||'text')+'" id="mrec_'+id+'" value="'+esc(val==null?'':val)+'" placeholder="'+(ph||'')+'"'+(type==='number'?' min="0"':'')+' style="width:'+(w||'100%')+';padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">';
   f.style.display='block';
   f.innerHTML='<div style="background:var(--bg2,#f6f7f9);border-radius:10px;padding:12px;margin-bottom:12px">'
     +'<div style="font-weight:600;font-size:13.5px;margin-bottom:8px">'+(x.id?'แก้ไขงานประจำ':'เพิ่มงานประจำ')+'</div>'
     +'<label style="font-size:12px;color:var(--muted)">หัวข้องาน</label>'+inp('title',x.title,'เช่น เช็กตู้แช่ประจำวัน')
     +'<div style="margin-top:8px"><label style="font-size:12px;color:var(--muted)">รายละเอียด (ถ้ามี)</label>'+inp('detail',x.detail,'')+'</div>'
     +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;align-items:flex-end">'
-      +'<div><label style="font-size:12px;color:var(--muted)">รอบ</label><br><select id="rc_freq" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="daily"'+(x.freq==='daily'||!x.freq?' selected':'')+'>ทุกวัน</option><option value="weekly"'+(x.freq==='weekly'?' selected':'')+'>ทุกสัปดาห์</option><option value="monthly"'+(x.freq==='monthly'?' selected':'')+'>ทุกเดือน</option></select></div>'
-      +'<div id="rc_wdbox" style="display:none">'+wdopts+'</div>'
-      +'<div id="rc_mdbox" style="display:none"><label style="font-size:12px;color:var(--muted)">วันที่ของเดือน</label><br>'+inp('monthday',x.monthday||1,'1','number','90px')+'</div>'
+      +'<div><label style="font-size:12px;color:var(--muted)">รอบ</label><br><select id="mrec_freq" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="daily"'+(x.freq==='daily'||!x.freq?' selected':'')+'>ทุกวัน</option><option value="weekly"'+(x.freq==='weekly'?' selected':'')+'>ทุกสัปดาห์</option><option value="monthly"'+(x.freq==='monthly'?' selected':'')+'>ทุกเดือน</option></select></div>'
+      +'<div id="mrec_wdbox" style="display:none">'+wdopts+'</div>'
+      +'<div id="mrec_mdbox" style="display:none"><label style="font-size:12px;color:var(--muted)">วันที่ของเดือน</label><br>'+inp('monthday',x.monthday||1,'1','number','90px')+'</div>'
       +'<div><label style="font-size:12px;color:var(--muted)">กำหนดส่ง (+วัน)</label><br>'+inp('due_offset',x.due_offset||0,'0','number','90px')+'</div>'
     +'</div>'
     +'<div style="margin-top:10px"><label style="font-size:12px;color:var(--muted)">สาขา</label><br>'
-      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin-right:12px"><input type="checkbox" id="rc_all"'+(x.all_branches?' checked':'')+'> ทุกสาขา</label>'
-      +'<span id="rc_brs">'+bopts+'</span></div>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin-right:12px"><input type="checkbox" id="mrec_all"'+(x.all_branches?' checked':'')+'> ทุกสาขา</label>'
+      +'<span id="mrec_brs">'+bopts+'</span></div>'
     +'<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap">'
-      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="rc_urgent"'+(x.priority==='urgent'?' checked':'')+'> ด่วน</label>'
-      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="rc_photo"'+(x.require_photo?' checked':'')+'> บังคับแนบรูป</label>'
-      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="rc_active"'+(x.active!==false?' checked':'')+'> เปิดใช้งาน</label>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="mrec_urgent"'+(x.priority==='urgent'?' checked':'')+'> ด่วน</label>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="mrec_photo"'+(x.require_photo?' checked':'')+'> บังคับแนบรูป</label>'
+      +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" id="mrec_active"'+(x.active!==false?' checked':'')+'> เปิดใช้งาน</label>'
     +'</div>'
-    +'<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-pri btn-sm" id="rc_save">บันทึก</button><button class="btn btn-sec btn-sm" id="rc_cancel">ยกเลิก</button></div>'
+    +'<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-pri btn-sm" id="mrec_save">บันทึก</button><button class="btn btn-sec btn-sm" id="mrec_cancel">ยกเลิก</button></div>'
   +'</div>';
-  const syncFreq=()=>{ const fq=$('rc_freq').value; $('rc_wdbox').style.display=fq==='weekly'?'block':'none'; $('rc_mdbox').style.display=fq==='monthly'?'block':'none'; };
-  $('rc_freq').onchange=syncFreq; syncFreq();
-  $('rc_cancel').onclick=()=>{ f.style.display='none'; f.innerHTML=''; };
-  $('rc_save').onclick=async()=>{
+  const syncFreq=()=>{ const fq=$('mrec_freq').value; $('mrec_wdbox').style.display=fq==='weekly'?'block':'none'; $('mrec_mdbox').style.display=fq==='monthly'?'block':'none'; };
+  $('mrec_freq').onchange=syncFreq; syncFreq();
+  $('mrec_cancel').onclick=()=>{ f.style.display='none'; f.innerHTML=''; };
+  $('mrec_save').onclick=async()=>{
     const gv=id=>{ const e=$(id); return e?String(e.value==null?'':e.value):''; };
     const gc=id=>{ const e=$(id); return e?!!e.checked:false; };
-    const d={ id:x.id||undefined, title:gv('rc_title'), detail:gv('rc_detail'),
-      freq:gv('rc_freq')||'daily', due_offset:gv('rc_due_offset'),
-      all_branches:gc('rc_all'), priority:gc('rc_urgent')?'urgent':'normal',
-      require_photo:gc('rc_photo'), active:gc('rc_active') };
+    const d={ id:x.id||undefined, title:gv('mrec_title'), detail:gv('mrec_detail'),
+      freq:gv('mrec_freq')||'daily', due_offset:gv('mrec_due_offset'),
+      all_branches:gc('mrec_all'), priority:gc('mrec_urgent')?'urgent':'normal',
+      require_photo:gc('mrec_photo'), active:gc('mrec_active') };
     d.weekdays=[...f.querySelectorAll('[data-rcwd]:checked')].map(e=>+e.dataset.rcwd);
-    d.monthday=gv('rc_monthday')||1;
+    d.monthday=gv('mrec_monthday')||1;
     d.branch_ids=[...f.querySelectorAll('[data-rcbr]:checked')].map(e=>e.dataset.rcbr);
     if(!d.title.trim()){ toast('err','กรอกหัวข้องาน'); return; }
     if(!d.all_branches && !d.branch_ids.length){ toast('err','เลือกสาขา หรือ ทุกสาขา'); return; }
-    const b=$('rc_save'); b.disabled=true;
+    const b=$('mrec_save'); b.disabled=true;
     let rr; try{ rr=await post({ action:'hr_mgrrec_save', password:pwd, data:d }); }catch(e){ rr={ok:false,error:String(e&&e.message||e)}; }
     b.disabled=false;
     if(rr&&rr.ok){ toast('ok','บันทึกงานประจำแล้ว'); f.style.display='none'; f.innerHTML=''; loadMgrRecurring(); }
