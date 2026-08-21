@@ -515,11 +515,12 @@
           // นับจำนวนครั้งที่ตอบผิด (เก็บเป็นหลักฐานว่าอ่านจริงหรือกดมั่ว)
           const { data: cur } = await sb.from('announcement_acks')
             .select('quiz_tries').eq('ann_id', annId).eq('emp_id', String(empId)).maybeSingle();
+          const tries = ((cur && cur.quiz_tries) || 0) + 1;
           await sb.from('announcement_acks').upsert({
             ann_id: annId, emp_id: String(empId), emp_name: empName || '', branch_id: branchId ? String(branchId) : null,
-            quiz_tries: ((cur && cur.quiz_tries) || 0) + 1, quiz_ok: false
+            quiz_tries: tries, quiz_ok: false
           }, { onConflict: 'ann_id,emp_id' });
-          return { ok: false, error: 'คำตอบยังไม่ถูกต้อง กรุณาอ่านประกาศอีกครั้งแล้วลองใหม่' };
+          return { ok: false, quiz_wrong: true, quiz_tries: tries, error: 'คำตอบยังไม่ถูกต้อง กรุณาอ่านประกาศอีกครั้งแล้วลองใหม่' };
         }
       }
 

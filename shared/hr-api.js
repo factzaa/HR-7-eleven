@@ -145,6 +145,8 @@
         case 'hr_mgrset_get':     return await hrMgrTaskSettingsGet();
         case 'hr_mgrset_save':    return await hrMgrTaskSettingsSave(p.data);
         case 'hr_mgrbranch_save': return await hrMgrBranchCfgSave(p.data);
+        case 'hr_staffnotify_get':  return await hrStaffNotifyGet();
+        case 'hr_staffnotify_save': return await hrStaffNotifySave(p.data);
         case 'hr_mgr_dashboard':  return await hrMgrDashboard();
         case 'hr_mgrrec_list':    return await hrMgrRecurringList();
         case 'hr_mgrrec_save':    return await hrMgrRecurringSave(p.data);
@@ -590,6 +592,45 @@
     const { error } = await sb().from('mgr_branch_config').upsert(row, { onConflict: 'branch_id' });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
+  }
+  // ===== ตั้งค่าแจ้งเตือนกลุ่มพนักงานสาขา (staff-notify) =====
+  async function hrStaffNotifyGet() {
+    const [brR, cfgR] = await Promise.all([
+      sb().from('branches').select('branch_id,name,line_group_id').order('name'),
+      sb().from('staff_notify_cfg').select('*'),
+    ]);
+    const cfgBy = {}; (cfgR.data || []).forEach(c => { cfgBy[c.branch_id] = c; });
+    const rows = (brR.data || []).map(b => {
+      const c = cfgBy[b.branch_id] || {};
+      return {
+        branch_id: b.branch_id, name: b.name || b.branch_id,
+        has_group: !!b.line_group_id,
+        enabled: c.enabled !== false,               // ดีฟอลต์เปิด
+        shelf_min: c.shelf_min != null ? c.shelf_min : 3,
+        qa_due_days: c.qa_due_days != null ? c.qa_due_days : 2,
+        expiry_days: c.expiry_days || '30,14,7,3',
+      };
+    });
+    return { ok: true, rows };
+  }
+  async function hrStaffNotifySave(d) {
+    d = d || {};
+    if (!d.branch_id) return { ok: false, error: 'ไม่ระบุสาขา' };
+    // ทำความสะอาด expiry_days: ตัวเลขบวก คั่น comma เรียงมาก→น้อย ไม่ซ้ำ
+    let exp = String(d.expiry_days || '30,14,7,3').split(/[, ]+/).map(x => parseInt(x, 10)).filter(n => n > 0 && n <= 365);
+    exp = [...new Set(exp)].sort((a, b) => b - a);
+    if (!exp.length) exp = [30, 14, 7, 3];
+    const row = {
+      branch_id: String(d.branch_id),
+      enabled: d.enabled !== false,
+      shelf_min: Math.min(21, Math.max(0, parseInt(d.shelf_min, 10) || 3)),
+      qa_due_days: Math.min(30, Math.max(0, parseInt(d.qa_due_days, 10) || 2)),
+      expiry_days: exp.join(','),
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('staff_notify_cfg').upsert(row, { onConflict: 'branch_id' });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, saved: row };
   }
   async function hrMgrTaskSettingsSave(d) {
     d = d || {};
