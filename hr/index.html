@@ -10500,11 +10500,45 @@ async function loadQaFolders(){
       +(f.note?'<div style="font-size:12.5px;color:var(--muted);margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(f.note)+'</div>':'')
       +'<details style="font-size:12.5px;color:var(--muted);margin-top:3px"><summary style="cursor:pointer;user-select:none">ผู้รับผิดชอบ '+((f.assignees||[]).length)+' คน <span style="color:var(--brand,#0a7a43)">(กดดู)</span></summary><div style="margin-top:3px">'+esc((f.assignees||[]).join(', ')||'—')+'</div></details>'
       +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">สินค้า '+s.total+' รายการ · ยังอยู่ '+s.on_shelf+' · ขายแล้ว '+(s.sold||0)+' · เก็บออก '+(s.removed||0)+'</div>'
-      +'</div><div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-qaview="'+f.id+'">ดูสินค้า</button><button class="btn btn-sec btn-sm" data-qadel="'+f.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ลบ</button></div>'
-      +'</div></div>';
+      +'</div><div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-qaview="'+f.id+'">ดูสินค้า</button>'
+      +(MGR_MODE?'':'<button class="btn btn-sec btn-sm" data-qaedit="'+f.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z"/></svg> แก้ไข</button>')
+      +'<button class="btn btn-sec btn-sm" data-qadel="'+f.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ลบ</button></div>'
+      +'</div><div id="qaedit_'+f.id+'" style="display:none;margin-top:10px"></div></div>';
   }).join('');
+  QA_FOLDERS=r.rows;
+  $('qa_list').querySelectorAll('[data-qaedit]').forEach(b=>b.onclick=()=>qaFolderEdit(Number(b.dataset.qaedit)));
   $('qa_list').querySelectorAll('[data-qaview]').forEach(b=>b.onclick=()=>qaViewItems(Number(b.dataset.qaview)));
   $('qa_list').querySelectorAll('[data-qadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบโฟลเดอร์นี้ทั้งหมด? (รวมสินค้าที่บันทึกไว้)'))return; const rr=await post({action:'hr_qa_folder_delete',password:pwd,id:Number(b.dataset.qadel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
+}
+let QA_FOLDERS=[];
+function qaFolderEdit(id){
+  const f=(QA_FOLDERS||[]).find(x=>Number(x.id)===Number(id)); if(!f) return;
+  const box=$('qaedit_'+id); if(!box) return;
+  if(box.style.display!=='none' && box.innerHTML){ box.style.display='none'; box.innerHTML=''; return; }   // toggle ปิด
+  const emps=(DATA.rows||[]).filter(e=>isActive(e.active));
+  const cur=new Set((f.assignee_ids||[]).map(String));
+  const eopts=emps.map(e=>'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin:0 10px 6px 0"><input type="checkbox" data-qae="'+esc(e.emp_id)+'"'+(cur.has(String(e.emp_id))?' checked':'')+'> '+esc(e.nickname||e.name)+' <span style="color:var(--muted)">('+esc(branchName(e.branch_id))+')</span></label>').join('');
+  box.style.display='block';
+  box.innerHTML='<div style="background:var(--bg2,#f6f7f9);border-radius:10px;padding:12px">'
+    +'<div style="font-weight:600;font-size:13px;margin-bottom:8px">แก้ไขโฟลเดอร์</div>'
+    +'<label style="font-size:12px;color:var(--muted)">ชื่อหัวข้อ</label><input id="qae_title_'+id+'" value="'+esc(f.title||'')+'" style="width:100%;padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">'
+      +'<div><label style="font-size:12px;color:var(--muted)">เดือนเป้าหมาย</label><br><input id="qae_month_'+id+'" type="month" value="'+esc(f.target_month||'')+'" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>'
+      +'<div style="flex:1;min-width:180px"><label style="font-size:12px;color:var(--muted)">หมายเหตุ</label><br><input id="qae_note_'+id+'" value="'+esc(f.note||'')+'" style="width:100%;padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>'
+    +'</div>'
+    +'<div style="margin-top:10px"><label style="font-size:12px;color:var(--muted)">ผู้รับผิดชอบ</label><div style="margin-top:4px;max-height:150px;overflow:auto">'+eopts+'</div></div>'
+    +'<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-pri btn-sm" id="qae_save_'+id+'">บันทึก</button><button class="btn btn-sec btn-sm" id="qae_cancel_'+id+'">ยกเลิก</button></div>'
+  +'</div>';
+  $('qae_cancel_'+id).onclick=()=>{ box.style.display='none'; box.innerHTML=''; };
+  $('qae_save_'+id).onclick=async()=>{
+    const title=$('qae_title_'+id).value.trim(); if(!title){ toast('err','กรอกชื่อหัวข้อ'); return; }
+    const emp_ids=[...box.querySelectorAll('[data-qae]:checked')].map(e=>e.dataset.qae);
+    if(!emp_ids.length){ toast('err','เลือกผู้รับผิดชอบอย่างน้อย 1 คน'); return; }
+    const b=$('qae_save_'+id); b.disabled=true;
+    const rr=await post({ action:'hr_qa_folder_update', password:pwd, data:{ id, title, target_month:$('qae_month_'+id).value, note:$('qae_note_'+id).value, emp_ids }});
+    b.disabled=false;
+    if(rr&&rr.ok){ toast('ok','แก้ไขแล้ว'); loadQaFolders(); } else toast('err',(rr&&rr.error)||'บันทึกไม่สำเร็จ');
+  };
 }
 let QA_CUR = { folderId:null, assignees:[], title:'', items:[] };
 let QA_EDIT = null;
