@@ -154,6 +154,8 @@ let EMP=null, BRANCHES={}, CUR_FOLDER=null, ADD_PHOTOS=[];
 // บริบทเมื่อเปิดมาจากงานดูแลเชลฟ์: mode = removed(เก็บออก) / watch(เฝ้าระวัง)
 const QP=new URLSearchParams(location.search);
 const SHELF_MODE=QP.get('mode')||'', SHELF_NAME=QP.get('shelf')||'', SHELF_BACK=QP.get('back')||'';
+const OPEN_FID=QP.get('folder')||'';   // เปิดโฟลเดอร์นี้อัตโนมัติ (จาก deep-link แจ้งเตือน)
+let _qaAutoOpened=false;
 function curMonthStr(){ try{ return window.HR.bangkokDate().slice(0,7); }catch(e){ return new Date().toISOString().slice(0,7); } }
 async function loadBranches(){ try{ const c=await window.HR.loadConfig(); (c.branches||[]).forEach(b=>BRANCHES[b.branch_id]=b.name); }catch(e){} }
 function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขาประจำ)'; }
@@ -212,6 +214,8 @@ async function loadFolders(){
       +'</div>';
   }).join('');
   document.querySelectorAll('[data-fid]').forEach(el=>el.onclick=()=>openFolder(r.rows.find(x=>String(x.id)===el.dataset.fid)));
+  // เปิดโฟลเดอร์อัตโนมัติจาก deep-link (?folder=) ครั้งเดียว
+  if(OPEN_FID && !_qaAutoOpened){ const t=r.rows.find(x=>String(x.id)===String(OPEN_FID)); if(t){ _qaAutoOpened=true; openFolder(t); } }
 }
 
 // ===== รายการสินค้าในโฟลเดอร์ =====

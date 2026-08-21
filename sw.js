@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v96';       // ★ ขึ้นเวอร์ชัน = ล้าง cache เก่า (v96: QA notify ใส่รูปสินค้าจริงจาก qa_items.photos)
+const CACHE = 'hr7-eleven-v97';       // ★ ขึ้นเวอร์ชัน = ล้าง cache เก่า (v97: ปุ่มเปิดงาน QA/เชลฟ์ ไปหน้าพนักงาน /qa/?folder= /shelf/ ไม่ใช่หน้า ผจก.)
 const ASSETS = [
   './',
   './index.html',
