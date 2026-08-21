@@ -1509,6 +1509,9 @@
     const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null, needs_mgr: wantMgr };
     upd.photos = urls.length?urls:null; upd.photo_url = urls.length?urls[0]:null;
     if(isFix){
+      // เก็บ "รูปก่อนแก้ไข" เป็นประวัติ (ก่อนเขียนทับด้วยชุดใหม่) — โชว์ในรายงานรับส่งผลัด
+      const snap=Array.isArray(row.photos)?row.photos:(row.photo_url?[row.photo_url]:[]);
+      if(snap.length){ const hist=Array.isArray(row.prev_photos)?row.prev_photos.slice():[]; hist.push({ at: row.submitted_at||null, reviewer: row.reviewer||null, review_note: row.review_note||null, photos: snap }); upd.prev_photos=hist.slice(-5); }
       // ส่งงานที่แก้แล้ว → ปิดงานแก้ + ล้างผลตรวจของ ผจก. เพื่อให้ ผจก.ตรวจซ้ำอีกรอบ
       upd.fix_done_at=new Date().toISOString();
       upd.mgr_checked_at=null; upd.mgr_checked_by=null; upd.mgr_result=null;
@@ -1796,9 +1799,16 @@
     if(bc){ try{ await sb.from('qa_products').upsert({ barcode:bc, name:row.name, size:row.size, updated_at:new Date().toISOString() }, { onConflict:'barcode' }); }catch(e){} }
     return { ok:true };
   }
-  async function qaUpdateItemStatus({ item_id, empId, status }){
+  async function qaUpdateItemStatus({ item_id, empId, status, by_name }){
     if(!['on_shelf','sold','removed'].includes(status)) throw new Error('สถานะไม่ถูกต้อง');
-    const { error }=await sb.from('qa_items').update({ status, updated_at:new Date().toISOString() }).eq('id', item_id);
+    const upd={ status, updated_at:new Date().toISOString() };
+    if(status==='on_shelf'){ upd.action_name=null; upd.action_emp=null; upd.action_at=null; }   // คืนขึ้นเชลฟ์ = ล้างผู้ดำเนินการ
+    else {
+      let nm=(by_name||'').trim();
+      if(!nm && empId){ try{ const e=await lookupEmployee(empId); if(e) nm=e.nickname||e.name||empId; }catch(_e){} }
+      upd.action_name=nm||'สนง.ใหญ่'; upd.action_emp=empId||null; upd.action_at=new Date().toISOString();
+    }
+    const { error }=await sb.from('qa_items').update(upd).eq('id', item_id);
     if(error) throw error; return { ok:true };
   }
   // พนักงานที่ได้รับมอบหมายเชลฟ์ สร้างโฟลเดอร์ QA เองได้ (เดือนปัจจุบัน)

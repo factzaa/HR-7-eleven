@@ -10435,7 +10435,7 @@ function qaAllRowHtml(it){
     +'<td><div style="font-weight:600">'+esc(it.name)+'</div>'+(sub?('<div style="font-size:11.5px;color:var(--muted)">'+esc(sub)+'</div>'):'')+'</td>'
     +'<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+esc(it.folder_title||'—')+(it.folder_month?('<br>'+esc(it.folder_month)):'')+'</td>'
     +'<td style="white-space:nowrap"><div style="color:'+col+';font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> '+qaFmtDate(it.expiry_date)+'</div>'+(dlTxt?('<div style="font-size:11.5px;color:'+col+'">'+dlTxt+'</div>'):'')+'</td>'
-    +'<td style="text-align:center"><span class="pill" style="background:'+stCol+'22;color:'+stCol+';font-weight:600;white-space:nowrap">'+stTxt+'</span></td>'
+    +'<td style="text-align:center"><span class="pill" style="background:'+stCol+'22;color:'+stCol+';font-weight:600;white-space:nowrap">'+stTxt+'</span>'+(((it.status==='sold'||it.status==='removed')&&it.action_name)?('<div style="font-size:10.5px;color:var(--muted);margin-top:2px">โดย '+esc(it.action_name)+'</div>'):'')+'</td>'
     +'<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+esc(it.branch_name||'')+'</td>'
     +'<td>'+actions+'</td>'
     +'</tr>';
@@ -10458,7 +10458,7 @@ function renderQaAll(){
     + '</tbody></table></div>';
   body.innerHTML=h;
   body.querySelectorAll('[data-qaadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบสินค้ารายการนี้?'))return; const rr=await post({action:'hr_qa_item_delete',password:pwd,id:Number(b.dataset.qaadel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadQaAll(); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
-  body.querySelectorAll('[data-qaastatus]').forEach(b=>b.onclick=async()=>{ const pp=b.dataset.qaastatus.split('|'); const id=Number(pp[0]),st=pp[1]; const lbl=st==='sold'?'ขายแล้ว':st==='removed'?'เก็บออก':'คืนขึ้นเชลฟ์'; if(!confirm('เปลี่ยนสถานะเป็น "'+lbl+'" ?'))return; try{ await window.HR.qaUpdateItemStatus({ item_id:id, empId:(MGR_MODE?MGR_EMP:''), status:st }); toast('ok','อัปเดตเป็น '+lbl); loadQaAll(); loadQaFolders(); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } });
+  body.querySelectorAll('[data-qaastatus]').forEach(b=>b.onclick=async()=>{ const pp=b.dataset.qaastatus.split('|'); const id=Number(pp[0]),st=pp[1]; const lbl=st==='sold'?'ขายแล้ว':st==='removed'?'เก็บออก':'คืนขึ้นเชลฟ์'; if(!confirm('เปลี่ยนสถานะเป็น "'+lbl+'" ?'))return; try{ await window.HR.qaUpdateItemStatus({ item_id:id, empId:(MGR_MODE?MGR_EMP:''), by_name:(MGR_MODE?'':'สนง.ใหญ่ (HR)'), status:st }); toast('ok','อัปเดตเป็น '+lbl); loadQaAll(); loadQaFolders(); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } });
   body.querySelectorAll('[data-qaaopen]').forEach(b=>b.onclick=()=>{ qaViewItems(Number(b.dataset.qaaopen)); const w=$('qa_items_wrap'); if(w) w.scrollIntoView({behavior:'smooth'}); });
 }
 function qaVisibleEmps(){
@@ -10595,7 +10595,7 @@ async function qaViewItems(folderId){
           +'<td>'+thumb+'</td>'
           +'<td><div style="font-weight:600">'+esc(it.name)+'</div>'+(sub?('<div style="font-size:11.5px;color:var(--muted)">'+esc(sub)+'</div>'):'')+'</td>'
           +'<td style="white-space:nowrap"><div style="color:'+col+';font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> '+qaFmtDate(it.expiry_date)+'</div>'+(dlTxt?('<div style="font-size:11.5px;color:'+col+'">'+dlTxt+'</div>'):'')+'</td>'
-          +'<td style="text-align:center"><span class="pill" style="background:'+stCol+'22;color:'+stCol+';font-weight:600;white-space:nowrap">'+stTxt+'</span></td>'
+          +'<td style="text-align:center"><span class="pill" style="background:'+stCol+'22;color:'+stCol+';font-weight:600;white-space:nowrap">'+stTxt+'</span>'+(((it.status==='sold'||it.status==='removed')&&it.action_name)?('<div style="font-size:10.5px;color:var(--muted);margin-top:2px">โดย '+esc(it.action_name)+'</div>'):'')+'</td>'
           +'<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+esc(it.emp_name||it.emp_id||'—')+'<br>'+esc(it.branch_name||'')+'</td>'
           +'<td>'+actions+'</td>'
           +'</tr>';
@@ -10610,7 +10610,7 @@ async function qaViewItems(folderId){
     const parts=b.dataset.qastatus.split('|'); const id=Number(parts[0]), st=parts[1];
     const lbl=st==='sold'?'ขายแล้ว':st==='removed'?'เก็บออก':'คืนขึ้นเชลฟ์';
     if(!confirm('เปลี่ยนสถานะเป็น "'+lbl+'" ?')) return;
-    try{ await window.HR.qaUpdateItemStatus({ item_id:id, empId:(MGR_MODE?MGR_EMP:''), status:st }); toast('ok','อัปเดตเป็น '+lbl); qaViewItems(folderId); loadQaFolders(); }
+    try{ await window.HR.qaUpdateItemStatus({ item_id:id, empId:(MGR_MODE?MGR_EMP:''), by_name:(MGR_MODE?'':'สนง.ใหญ่ (HR)'), status:st }); toast('ok','อัปเดตเป็น '+lbl); qaViewItems(folderId); loadQaFolders(); }
     catch(e){ toast('err', e.message||'ไม่สำเร็จ'); }
   });
 }
@@ -12143,6 +12143,18 @@ $('tl_go').onclick=loadTaskLog;
 
 // รายงานรับส่งผลัด (รูปภาพ) — แยกจาก Log
 function hThumbs(photos){ if(!photos||!photos.length) return ''; return '<div style="display:flex;gap:6px;overflow-x:auto;margin-top:6px">'+photos.map(u=>'<img src="'+esc(u)+'" onclick="window.open(\''+esc(u)+'\',\'_blank\')" style="height:70px;border-radius:8px;border:1px solid var(--line);cursor:pointer;flex:none">').join('')+'</div>'; }
+// รูป "ก่อนแก้ไข" (ประวัติชุดที่ถูกตีกลับ) — โชว์แยกเป็นเทา ๆ ใต้รูปล่าสุด
+function hPrevThumbs(hist){
+  if(!Array.isArray(hist)||!hist.length) return '';
+  const fmt=t=>{ try{ return t?new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}):''; }catch(e){ return ''; } };
+  return hist.slice().reverse().map((h,i)=>{
+    const ph=Array.isArray(h.photos)?h.photos:[];
+    if(!ph.length) return '';
+    return '<div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:5px">'
+      +'<div style="font-size:11px;color:#94a3b8">รูปก่อนแก้ไข ครั้งที่ '+(hist.length-i)+(h.at?(' · ส่ง '+esc(fmt(h.at))):'')+(h.review_note?(' · ↳ '+esc(h.review_note)):'')+'</div>'
+      +'<div style="display:flex;gap:6px;overflow-x:auto;margin-top:4px;opacity:.75">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="window.open(\''+esc(u)+'\',\'_blank\')" style="height:56px;border-radius:7px;border:1px solid var(--line);cursor:pointer;flex:none;filter:grayscale(.15)">').join('')+'</div></div>';
+  }).join('');
+}
 async function loadImgReport(){
   if($('rr_branch')&&!$('rr_branch').innerHTML){ $('rr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); }
   if($('rr_shift')&&!$('rr_shift').innerHTML){ $('rr_shift').innerHTML='<option value="">ทุกกะ</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}">${esc((s.code?('['+s.code+'] '):'')+(s.name||s.shift_id))}</option>`).join(''); }
@@ -12162,7 +12174,8 @@ async function loadImgReport(){
     +'<div style="font-size:12.5px">ตรวจ: '+esc(t.reviewer||'—')+(t.reviewed_at?(' · '+esc(fmt(t.reviewed_at))):'')+'</div>'
     +((t.sent_back_count>0)?'<div style="font-size:12px;color:#b45309">ส่งแก้ไข '+t.sent_back_count+' ครั้ง</div>':'')
     +(t.review_note?'<div style="font-size:12px;color:#b45309">↳ '+esc(t.review_note)+'</div>':'')
-    +hThumbs(t.photos)+'</div>'
+    +hThumbs(t.photos)
+    +hPrevThumbs(t.prev_photos)+'</div>'
   ).join('')+'</div>';
 }
 $('rr_go').onclick=loadImgReport;
