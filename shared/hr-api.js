@@ -4985,13 +4985,14 @@
     };
     const { data: folder, error } = await sb().from('qa_folders').insert(ins).select('id').single();
     if (error) throw error;
-    const { data: emps } = await sb().from('employees').select('emp_id,branch_id').in('emp_id', d.emp_ids);
-    const brOf = {}; (emps || []).forEach(e => { brOf[e.emp_id] = e.branch_id; });
+    const { data: emps } = await sb().from('employees').select('emp_id,branch_id,name,nickname').in('emp_id', d.emp_ids);
+    const brOf = {}, nmOf = {}; (emps || []).forEach(e => { brOf[e.emp_id] = e.branch_id; nmOf[e.emp_id] = e.nickname || e.name; });
     const rows = d.emp_ids.map(id => ({ folder_id: folder.id, emp_id: id, branch_id: brOf[id] || null }));
     const { error: e2 } = await sb().from('qa_folder_assignees').insert(rows);
     if (e2) throw e2;
     await logAct('สร้างโฟลเดอร์ QA', null, ins.title + ' · ' + rows.length + ' คน');
-    return { ok: true, id: folder.id, assigned: rows.length };
+    const byBranch = {}; d.emp_ids.forEach(id => { const b = brOf[id]; if (b) (byBranch[b] = byBranch[b] || []).push(nmOf[id] || id); });
+    return { ok: true, id: folder.id, assigned: rows.length, notify: { folder: ins.title, target_month: ins.target_month, by_branch: byBranch } };
   }
 
   async function hrQaFolderList() {
@@ -6366,7 +6367,9 @@
     const { error } = await sb().from('shelf_assignments').upsert(rows, { onConflict: 'shelf_id,emp_id,month' });
     if (error) throw error;
     await logAct('มอบหมายเชลฟ์', null, sh.shelf_code + ' · ' + sh.name + ' · เดือน ' + month + ' · ' + rows.length + ' คน');
-    return { ok: true, assigned: rows.length };
+    const { data: emps } = await sb().from('employees').select('emp_id,name,nickname').in('emp_id', d.emp_ids);
+    const nm = {}; (emps || []).forEach(e => { nm[e.emp_id] = e.nickname || e.name; });
+    return { ok: true, assigned: rows.length, notify: { branch_id: sh.branch_id, shelf: ((sh.shelf_code ? sh.shelf_code + ' · ' : '') + sh.name), assignees: d.emp_ids.map(id => nm[id] || id), month } };
   }
 
   async function hrShelfAssignments(month, branch) {

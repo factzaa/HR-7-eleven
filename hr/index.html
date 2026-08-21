@@ -10483,9 +10483,12 @@ async function qaCreate(){
   btn.disabled=false; btn.textContent=old;
   if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
   toast('ok','สร้างโฟลเดอร์ + มอบหมาย '+r.assigned+' คนแล้ว');
+  if(r.notify&&r.notify.by_branch){ Object.keys(r.notify.by_branch).forEach(bid=>staffNotify({ kind:'qa_assign', branch_id:bid, folder:r.notify.folder, assignees:r.notify.by_branch[bid], target_month:r.notify.target_month })); }
   $('qa_title').value=''; $('qa_month').value=''; $('qa_note').value=''; QA_SEL.clear(); renderQaEmpList();
   loadQaFolders();
 }
+// แจ้งเตือนเข้ากลุ่มพนักงานสาขา (staff-notify edge)
+function staffNotify(payload){ try{ if(!payload||!payload.branch_id) return; const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return; fetch(base+'/functions/v1/staff-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }catch(e){} }
 async function loadQaFolders(){
   $('qa_list').innerHTML='<div class="empty">กำลังโหลด…</div>'; $('qa_items_wrap').innerHTML='';
   const r=await post({ action:'hr_qa_folder_list', password:pwd });
@@ -10501,11 +10504,20 @@ async function loadQaFolders(){
       +'<details style="font-size:12.5px;color:var(--muted);margin-top:3px"><summary style="cursor:pointer;user-select:none">ผู้รับผิดชอบ '+((f.assignees||[]).length)+' คน <span style="color:var(--brand,#0a7a43)">(กดดู)</span></summary><div style="margin-top:3px">'+esc((f.assignees||[]).join(', ')||'—')+'</div></details>'
       +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">สินค้า '+s.total+' รายการ · ยังอยู่ '+s.on_shelf+' · ขายแล้ว '+(s.sold||0)+' · เก็บออก '+(s.removed||0)+'</div>'
       +'</div><div style="display:flex;flex-direction:column;gap:5px"><button class="btn btn-pri btn-sm" data-qaview="'+f.id+'">ดูสินค้า</button>'
+      +(MGR_MODE?'':'<button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0" data-qapush="'+f.id+'" title="ส่งงานนี้เข้าไลน์กลุ่มพนักงานที่รับผิดชอบ"><svg class="ei" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg> ส่งเข้ากลุ่ม</button>')
       +(MGR_MODE?'':'<button class="btn btn-sec btn-sm" data-qaedit="'+f.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z"/></svg> แก้ไข</button>')
       +'<button class="btn btn-sec btn-sm" data-qadel="'+f.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ลบ</button></div>'
       +'</div><div id="qaedit_'+f.id+'" style="display:none;margin-top:10px"></div></div>';
   }).join('');
   QA_FOLDERS=r.rows;
+  $('qa_list').querySelectorAll('[data-qapush]').forEach(b=>b.onclick=async()=>{
+    const f=(QA_FOLDERS||[]).find(x=>Number(x.id)===Number(b.dataset.qapush)); if(!f) return;
+    const brs=(f.branch_ids||[]).filter(Boolean);
+    if(!brs.length){ toast('err','โฟลเดอร์นี้ยังไม่มีสาขาผู้รับผิดชอบ'); return; }
+    if(!confirm('ส่งงาน QA "'+f.title+'" เข้าไลน์กลุ่มพนักงาน '+brs.length+' สาขา?'))return;
+    b.disabled=true; brs.forEach(bid=>staffNotify({ kind:'qa_assign', branch_id:bid, folder:f.title, assignees:f.assignees||[], target_month:f.target_month }));
+    setTimeout(()=>{ b.disabled=false; toast('ok','ส่งเข้ากลุ่มแล้ว '+brs.length+' สาขา'); }, 400);
+  });
   $('qa_list').querySelectorAll('[data-qaedit]').forEach(b=>b.onclick=()=>qaFolderEdit(Number(b.dataset.qaedit)));
   $('qa_list').querySelectorAll('[data-qaview]').forEach(b=>b.onclick=()=>qaViewItems(Number(b.dataset.qaview)));
   $('qa_list').querySelectorAll('[data-qadel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบโฟลเดอร์นี้ทั้งหมด? (รวมสินค้าที่บันทึกไว้)'))return; const rr=await post({action:'hr_qa_folder_delete',password:pwd,id:Number(b.dataset.qadel)}); if(rr.ok){ toast('ok','ลบแล้ว'); loadQaFolders(); } else toast('err',rr.error||'ไม่สำเร็จ'); });
@@ -10878,6 +10890,7 @@ async function shAssign(){
   btn.disabled=false; btn.textContent=old;
   if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
   toast('ok','มอบหมาย '+r.assigned+' คนแล้ว');
+  if(r.notify) staffNotify({ kind:'shelf_assign', branch_id:r.notify.branch_id, shelf:r.notify.shelf, assignee:(r.notify.assignees||[]).join(', '), month:r.notify.month });
   SH_SEL.clear(); $('sh_asg_detail').value=''; renderShEmpList();
   $('sh_view_month').value=month; loadShAssignments();
 }
