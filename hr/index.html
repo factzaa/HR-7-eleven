@@ -8915,7 +8915,7 @@ function initAssistant(){
     if($('asst_hsrch')) $('asst_hsrch').addEventListener('input',histRenderList);
     const f=$('asst_file');
     if(f) f.addEventListener('change', async(e)=>{
-      const fs=[...(e.target.files||[])].slice(0,4);
+      const fs=[...(e.target.files||[])].slice(0,8);
       for(const file of fs){ try{
         if(file.type==='application/pdf'){ if(file.size>6*1024*1024){ toast('err','ไฟล์ PDF ใหญ่เกิน 6MB'); continue; } ASST_PHOTOS.push(await asstFileRaw(file)); }
         else ASST_PHOTOS.push(await asstFileToData(file));
@@ -8928,7 +8928,7 @@ function initAssistant(){
       const items=[...((e.clipboardData&&e.clipboardData.items)||[])].filter(i=>i.type&&i.type.startsWith('image/'));
       if(!items.length) return;
       e.preventDefault();
-      for(const it of items.slice(0,4)){ const file=it.getAsFile(); if(file){ try{ ASST_PHOTOS.push(await asstFileToData(file)); }catch(_e){} } }
+      for(const it of items.slice(0,8)){ const file=it.getAsFile(); if(file){ try{ ASST_PHOTOS.push(await asstFileToData(file)); }catch(_e){} } }
       asstRenderThumbs();
     });
   }
