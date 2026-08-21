@@ -7566,7 +7566,10 @@ const _recFreqLbl=r=>{ if(r.freq==='weekly'){ const w=(Array.isArray(r.weekdays)
 async function loadMgrRecurring(){
   const box=$('rec_list'); if(!box) return; box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_mgrrec_list', password:pwd });
-  if(!r||!r.ok){ const e=(r&&r.error)||''; box.innerHTML='<div class="empty">โหลดไม่สำเร็จ'+(/exist|relation|column/i.test(e)?' — ยังไม่ได้รัน SQL <b>mgr_task_recurring.sql</b>':(e?(' — '+esc(e)):''))+'</div>'; return; }
+  if(!r||!r.ok){ const e=(r&&r.error)||''; let hint=e?(' — '+esc(e)):'';
+    if(/exist|relation|column/i.test(e)) hint=' — ยังไม่ได้รัน SQL <b>mgr_task_recurring.sql</b>';
+    else if(/unknown action/i.test(e)) hint=' — โค้ดยังไม่อัปเดต กดรีเฟรชแรง (Ctrl+Shift+R)';
+    box.innerHTML='<div class="empty">โหลดไม่สำเร็จ'+hint+'</div>'; return; }
   const rows=r.rows||[];
   if(!rows.length){ box.innerHTML='<div class="empty">ยังไม่มีงานประจำ</div>'; return; }
   box.innerHTML=rows.map(x=>{
@@ -7620,9 +7623,15 @@ function recForm(x){
     d.branch_ids=[...f.querySelectorAll('[data-rcbr]:checked')].map(e=>e.dataset.rcbr);
     if(!d.title.trim()){ toast('err','กรอกหัวข้องาน'); return; }
     if(!d.all_branches && !d.branch_ids.length){ toast('err','เลือกสาขา หรือ ทุกสาขา'); return; }
-    const b=$('rc_save'); b.disabled=true; const rr=await post({ action:'hr_mgrrec_save', password:pwd, data:d }); b.disabled=false;
+    const b=$('rc_save'); b.disabled=true;
+    let rr; try{ rr=await post({ action:'hr_mgrrec_save', password:pwd, data:d }); }catch(e){ rr={ok:false,error:String(e&&e.message||e)}; }
+    b.disabled=false;
     if(rr&&rr.ok){ toast('ok','บันทึกงานประจำแล้ว'); f.style.display='none'; f.innerHTML=''; loadMgrRecurring(); }
-    else toast('err',(rr&&rr.error)||'บันทึกไม่สำเร็จ');
+    else{ const e=(rr&&rr.error)||'บันทึกไม่สำเร็จ';
+      if(/exist|relation|column/i.test(e)) toast('err','ยังไม่ได้สร้างตาราง — รัน SQL mgr_task_recurring.sql ก่อน');
+      else if(/unknown action/i.test(e)) toast('err','โค้ดยังไม่อัปเดต — กดรีเฟรชแรง (Ctrl+Shift+R) แล้วลองใหม่');
+      else toast('err',e);
+    }
   };
 }
 // ===== หน้า "ตั้งค่างาน ผจก." (E2 กลุ่มไลน์ + E1 แจ้งเตือน/ทวง) =====
