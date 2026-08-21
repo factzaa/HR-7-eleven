@@ -640,10 +640,21 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <button class="btn btn-sec btn-sm" id="mdr_refresh"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg></button>
     <button class="btn btn-sec btn-sm" id="mdr_reportbtn"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg> รายงานเดือน</button>
   </div>
-  <div id="mdr_intask" style="margin-bottom:14px"></div>
-  <div id="mdr_adhoc" style="margin-bottom:14px"></div>
-  <div id="mdr_fixing" style="margin-bottom:14px"></div>
-  <div id="mdr_board"><div class="empty">กำลังโหลด…</div></div>
+  <div class="shsub" id="mdrsub">
+    <button class="shsub-b on" type="button" data-mdrpan="board"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg> งานประจำวัน</button>
+    <button class="shsub-b" type="button" data-mdrpan="review"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> งานรอตรวจ <span id="mdrsub_rev" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-mdrpan="adhoc"><svg class="ei" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 17v4"/></svg> งานเฉพาะกิจ ผจก. <span id="mdrsub_ad" class="shsub-badge" style="display:none">0</span></button>
+  </div>
+  <div class="shpan" id="mdrpan_review" style="display:none">
+    <div id="mdr_intask" style="margin-bottom:14px"></div>
+    <div id="mdr_fixing" style="margin-bottom:14px"></div>
+  </div>
+  <div class="shpan" id="mdrpan_adhoc" style="display:none">
+    <div id="mdr_adhoc"></div>
+  </div>
+  <div class="shpan" id="mdrpan_board">
+    <div id="mdr_board"><div class="empty">กำลังโหลด…</div></div>
+  </div>
   <div id="mdr_report" style="display:none">
     <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg> รายงานงานประจำวัน (รายเดือน)</h3>
@@ -8084,7 +8095,7 @@ async function loadMtaskIntask(boxId){
   const day = INTASK_DATE || bkkTodayStr();
   let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null, date: day }); }catch(e){ box.innerHTML=''; return; }
   const rows=(r&&r.rows)||[]; const meta=(r&&r.meta)||{};
-  if(boxId==='mt_intask'){ const bd=$('mtsub_rev'); if(bd){ if(rows.length){ bd.style.display=''; bd.textContent=rows.length; } else bd.style.display='none'; } }
+  { const bdId = boxId==='mt_intask' ? 'mtsub_rev' : (boxId==='mdr_intask' ? 'mdrsub_rev' : ''); if(bdId){ const bd=$(bdId); if(bd){ if(rows.length){ bd.style.display=''; bd.textContent=rows.length; } else bd.style.display='none'; } } }
   if(!rows.length){
     // ไม่มีงานเข้าคิวของวันนี้ → ยังโชว์ตัวเลือกวันที่ไว้ให้ย้อนดูได้
     box.style.display='block';
@@ -8248,7 +8259,8 @@ async function loadMdailyAdhoc(){
   const br=$('mdr_branch')?$('mdr_branch').value:'';
   let r; try{ r=await post({ action:'hr_mtask_list', password:pwd, branch:br||undefined }); }catch(e){ box.innerHTML=''; return; }
   const rows=((r&&r.rows)||[]).filter(t=>t.status!=='done');
-  if(!rows.length){ box.innerHTML=''; return; }
+  { const bd=$('mdrsub_ad'); if(bd){ if(rows.length){ bd.style.display=''; bd.textContent=rows.length; } else bd.style.display='none'; } }
+  if(!rows.length){ box.innerHTML='<div class="empty" style="padding:16px">ไม่มีงานเฉพาะกิจค้าง</div>'; return; }
   const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
   const stLbl={todo:'ใหม่/ค้าง',doing:'กำลังทำ',review:'รอตรวจ'};
   const bd=d=>esc((typeof beDate==='function')?beDate(d):d);
@@ -8293,6 +8305,9 @@ async function loadMdailyBoard(){
     $('mdr_refresh').onclick=loadMdailyBoard;
     $('mdr_date').onchange=loadMdailyBoard;
   }
+  const mbar=$('mdrsub');
+  if(mbar && !mbar.dataset.wired){ mbar.dataset.wired='1'; mbar.querySelectorAll('[data-mdrpan]').forEach(b=>b.onclick=()=>showMdrView(b.dataset.mdrpan)); }
+  showMdrView(MDR_VIEW||'board');
   if(!$('mdr_date').value) $('mdr_date').value=bkkTodayStr();
   const r=await post({ action:'hr_mdaily_board', password:pwd, date:$('mdr_date').value, branch:$('mdr_branch')?$('mdr_branch').value:'' });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
@@ -8334,7 +8349,22 @@ async function mdReviewSubmit(logId, note, markup){
 }
 // ---- รายงานย้อนหลังรายเดือน + export ----
 let MRP_ROWS=[], MRP_MONTH='';
-function mdrShowReport(on){ $('mdr_report').style.display=on?'block':'none'; $('mdr_board').style.display=on?'none':'block'; }
+let MDR_VIEW='board';
+function showMdrView(which){
+  if(['board','review','adhoc'].indexOf(which)<0) which='board';
+  MDR_VIEW=which;
+  const B=$('mdrpan_board'), R=$('mdrpan_review'), A=$('mdrpan_adhoc');
+  if(B) B.style.display = which==='board'?'block':'none';
+  if(R) R.style.display = which==='review'?'block':'none';
+  if(A) A.style.display = which==='adhoc'?'block':'none';
+  const bar=$('mdrsub'); if(bar) bar.querySelectorAll('[data-mdrpan]').forEach(b=>b.classList.toggle('on', b.dataset.mdrpan===which));
+}
+function mdrShowReport(on){
+  $('mdr_report').style.display=on?'block':'none';
+  const sub=$('mdrsub'); if(sub) sub.style.display=on?'none':'flex';
+  if(on){ ['mdrpan_board','mdrpan_review','mdrpan_adhoc'].forEach(id=>{ const el=$(id); if(el) el.style.display='none'; }); }
+  else { showMdrView(MDR_VIEW||'board'); }
+}
 async function loadMdailyReport(){
   const box=$('mrp_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const month=$('mrp_month').value; if(!month){ box.innerHTML='<div class="empty">เลือกเดือน</div>'; return; }
