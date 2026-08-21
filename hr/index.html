@@ -2532,7 +2532,9 @@ $('toHR') && ($('toHR').addEventListener('click', ()=>{ try{ sessionStorage.remo
 // ===== Deep-link งาน ผจก. จากลิงก์ในกลุ่มไลน์ → หน้าเลือกบทบาท (เจ้าของร้าน/ผจก.) =====
 function pendingMtask(){
   try{ const p=new URLSearchParams(location.search); const task=p.get('task'), batch=p.get('mtask_batch');
-    if(task) return { task }; if(batch) return { batch }; }catch(e){}
+    if(task) return { task }; if(batch) return { batch };
+    if(p.get('mtasks')==='1') return { board:true };   // ลิงก์การ์ดสรุป → เปิดบอร์ดงาน ผจก. (ไม่เจาะจงงานเดียว)
+  }catch(e){}
   return null;
 }
 (function initTaskChooser(){
