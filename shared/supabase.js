@@ -1215,7 +1215,13 @@
     if (photo_url) upd.photo_url = photo_url;
     const { error } = await sb.from('task_assignments').update(upd).eq('id', id);
     if (error) throw error;
+    _staffDoneCheck(row.branch_id);   // เช็ก "งานในกะครบทุกงาน" → แจ้งกลุ่มพนักงาน (กันซ้ำในฝั่ง edge)
     return { ok: true };
+  }
+  // ยิงเช็กงานในกะครบทุกงานของสาขา (fire-and-forget) → edge staff-notify ตัดสินใจส่ง/กันซ้ำเอง
+  function _staffDoneCheck(branch){
+    try{ if(!branch) return; const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
+      fetch(base+'/functions/v1/staff-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ kind:'staff_done_check', branch_id:branch })}); }catch(e){}
   }
   // (ผู้ตรวจหน้างาน) งานที่ส่งแล้วของสาขานี้วันนี้ — ไว้ตรวจ/ตีกลับ
   async function getBranchTasks(branchId) {
@@ -1525,6 +1531,7 @@
         event: isFix?'fix_submit':'submit', actor_emp: empId||null, actor_name: who?(who.nickname||who.name):null,
         actor_role:'emp', shift_id: row.shift_id||null, note: note||null });
     }catch(e){}
+    _staffDoneCheck(row.branch_id);   // เช็ก "งานในกะครบทุกงาน" → แจ้งกลุ่มพนักงาน
     return { ok:true, fix:isFix };
   }
 

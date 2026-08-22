@@ -7558,6 +7558,11 @@ function mtaskLineNotify(r){
     fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   }catch(e){}
 }
+// เช็ก "งาน ผจก. ครบทุกงาน" ต่อสาขา → edge ตัดสินใจส่งการ์ดสรุป/กันซ้ำเอง (fire-and-forget)
+function mgrAllDoneCheck(branch){
+  try{ if(!branch) return; const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
+    fetch(base+'/functions/v1/mgr-task-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ event:'alldone_check', branch_id:branch })}); }catch(e){}
+}
 // ทวงงานค้าง ผจก. เข้ากลุ่มไลน์ (สแกนเลยกำหนด+ยังไม่เสร็จ · ทวงวันละครั้ง) — ยิงตอนเปิดหน้างาน ผจก.
 function mtaskRemindScan(){
   try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
@@ -8163,7 +8168,7 @@ async function loadMtaskIntask(boxId){
   // เลือกวันที่ที่จะตรวจ (ค่าเริ่มต้น = วันนี้ · ย้อนดูวันก่อนได้)
   const dEl=$('itk_date_'+boxId); if(dEl) dEl.onchange=()=>{ INTASK_DATE=dEl.value||''; loadMtaskIntask(boxId); };
   const tEl=$('itk_today_'+boxId); if(tEl) tEl.onclick=()=>{ INTASK_DATE=''; loadMtaskIntask(boxId); };
-  box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); loadMtaskIntask(boxId); loadMtaskFixing(boxId==='mdr_intask'?'mdr_fixing':'mt_fixing'); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
+  box.querySelectorAll('[data-iapprove]').forEach(b=>b.onclick=async()=>{ if(!confirm('อนุมัติผ่านงานนี้? (ปิดงานเลย ไม่ต้องรอ HR)')) return; const r2=await post({ action:'hr_mgr_intask_review', password:pwd, id:b.dataset.iapprove, decision:'approved', reviewer:intaskReviewer() }); if(r2&&r2.ok){ toast('ok','อนุมัติผ่านแล้ว'); const _row=rows.find(x=>String(x.id)===String(b.dataset.iapprove)); mgrAllDoneCheck(MGR_MODE?MGR_BRANCH:(_row&&_row.branch_id)); loadMtaskIntask(boxId); loadMtaskFixing(boxId==='mdr_intask'?'mdr_fixing':'mt_fixing'); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); });
   box.querySelectorAll('[data-ireject]').forEach(b=>b.onclick=()=>{ const t=rows.find(x=>String(x.id)===b.dataset.ireject); if(t) intaskReject(t, boxId); });
   box.querySelectorAll('[data-aihelp]').forEach(b=>b.onclick=async()=>{
     const t=rows.find(x=>String(x.id)===b.dataset.aihelp); if(!t) return;
