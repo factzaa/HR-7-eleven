@@ -1978,6 +1978,16 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
 
   <div class="card" style="margin-top:16px">
+    <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> นำเข้าคู่มือ/เอกสาร → คลังความรู้นิดา (PDF)</h3></div>
+    <div class="card-b">
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">อัปโหลดไฟล์ PDF (คู่มือ/มาตรฐาน/ระเบียบ) — ระบบจะดึงข้อความเก็บเข้าคลังความรู้ให้นิดาค้นเจอตลอด (ไม่ต้องแนบซ้ำ) · เหมาะกับ PDF ที่เป็นข้อความ · ไฟล์สแกน/รูปให้แนบในแชทนิดาแทน</div>
+      <label class="btn btn-pri btn-sm" style="cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg> เลือกไฟล์ PDF (หลายไฟล์ได้)<input type="file" id="kn_files" accept="application/pdf" multiple style="display:none"></label>
+      <div id="kn_prog" style="font-size:12.5px;color:var(--muted);margin-top:8px"></div>
+      <div id="kn_list" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
     <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg> ทดสอบส่ง SMS (deeSMSX)</h3></div>
     <div class="card-b">
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">
@@ -7439,6 +7449,43 @@ function rcDraftMsg(a, at, note){
 }
 function closeApplicant(){ $('rcOverlay').classList.remove('show'); }
 // ---- จัดการตำแหน่งงาน (ในแท็บตั้งค่ากะ) ----
+// ===== นำเข้าคู่มือ PDF → คลังความรู้นิดา =====
+let _pdfjsP=null;
+function ensurePdfjs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfjsP) return _pdfjsP;
+  _pdfjsP=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){} res(window.pdfjsLib); }; s.onerror=rej; document.head.appendChild(s); });
+  return _pdfjsP;
+}
+async function knExtractText(file){
+  const lib=await ensurePdfjs(); const buf=await file.arrayBuffer();
+  const pdf=await lib.getDocument({data:buf}).promise; let txt=''; const n=Math.min(pdf.numPages,60);
+  for(let i=1;i<=n;i++){ const pg=await pdf.getPage(i); const c=await pg.getTextContent(); txt+=c.items.map(it=>it.str).join(' ')+'\n'; }
+  return txt.replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+}
+async function knImport(e){
+  const fs=[...(e.target.files||[])]; e.target.value=''; if(!fs.length) return;
+  const prog=$('kn_prog'); let ok=0,skip=0;
+  for(let i=0;i<fs.length;i++){ const f=fs[i]; if(prog) prog.textContent='กำลังประมวล '+(i+1)+'/'+fs.length+'… ('+f.name+')';
+    try{ const text=await knExtractText(f);
+      if(text.replace(/\s/g,'').length<200){ skip++; continue; }   // สแกน/ข้อความน้อย
+      const first=(text.split('\n').find(l=>l.trim().length>8)||f.name).trim().slice(0,70);
+      const m=text.match(/CG\s*\d+/); const title=(m?m[0]+' · ':'')+first;
+      const r=await post({ action:'hr_knowledge_add', password:pwd, data:{ title, content:text, source:f.name } });
+      if(r&&r.ok) ok++; else skip++;
+    }catch(_e){ skip++; }
+  }
+  if(prog) prog.textContent='นำเข้าคลังความรู้แล้ว '+ok+' ไฟล์'+(skip?(' · ข้าม '+skip+' (สแกน/ข้อความน้อย ให้แนบในแชทนิดาแทน)'):'');
+  if(ok) toast('ok','นำเข้าคู่มือ '+ok+' ไฟล์เข้าคลังความรู้นิดาแล้ว');
+  knLoadList();
+}
+async function knLoadList(){
+  const box=$('kn_list'); if(!box) return;
+  const r=await post({ action:'hr_knowledge_list', password:pwd });
+  if(!r||!r.ok){ box.innerHTML=''; return; }
+  const rows=(r.rows||[]).filter(x=>x.source && x.source!=='สนทนา');
+  box.innerHTML=rows.length ? ('<div style="font-size:12px;color:var(--muted);margin-bottom:4px">ในคลังความรู้จากเอกสาร '+rows.length+' รายการ</div>'+rows.slice(0,25).map(x=>'<div style="font-size:12.5px;padding:3px 0;border-top:1px solid var(--line)">'+esc(x.title)+' <span style="color:var(--muted)">· '+esc(x.source||'')+'</span></div>').join('')) : '';
+}
 async function loadPositions(){
   const box=$('pos_list'); if(!box) return;
   if($('pos_add') && !$('pos_add').dataset.wired){
@@ -7449,6 +7496,7 @@ async function loadPositions(){
       if(r.ok){ toast('ok','เพิ่มแล้ว'); $('pos_new').value=''; loadPositions(); } else toast('err', r.error||'ไม่สำเร็จ');
     };
   }
+  if($('kn_files') && !$('kn_files').dataset.wired){ $('kn_files').dataset.wired='1'; $('kn_files').addEventListener('change', knImport); knLoadList(); }
   const r=await post({ action:'hr_positions_list', password:pwd });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   if(!r.rows.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีตำแหน่ง</div>'; return; }
@@ -9038,7 +9086,9 @@ function initAssistant(){
     if(f) f.addEventListener('change', async(e)=>{
       const fs=[...(e.target.files||[])].slice(0,8);
       for(const file of fs){ try{
-        if(file.type==='application/pdf'){ if(file.size>6*1024*1024){ toast('err','ไฟล์ PDF ใหญ่เกิน 6MB'); continue; } ASST_PHOTOS.push(await asstFileRaw(file)); }
+        const ty=file.type||'';
+        if(ty==='application/pdf'){ if(file.size>6*1024*1024){ toast('err','ไฟล์ PDF ใหญ่เกิน 6MB'); continue; } ASST_PHOTOS.push(await asstFileRaw(file)); }
+        else if(ty.startsWith('audio/')||ty.startsWith('video/')){ if(file.size>18*1024*1024){ toast('err','ไฟล์เสียง/วิดีโอใหญ่เกิน 18MB — ตัดให้สั้นลงหรือแปลงเป็นเสียง mp3 ก่อน'); continue; } ASST_PHOTOS.push(await asstFileRaw(file)); }
         else ASST_PHOTOS.push(await asstFileToData(file));
       }catch(_e){} }
       e.target.value=''; asstRenderThumbs();
@@ -9458,7 +9508,11 @@ function asstFileRaw(file){ return new Promise((res,rej)=>{ const r=new FileRead
 function asstRenderThumbs(){
   const t=$('asst_thumbs'); if(!t) return;
   t.style.display=ASST_PHOTOS.length?'flex':'none';
-  t.innerHTML=ASST_PHOTOS.map((u,i)=>{ const pdf=/^data:application\/pdf/.test(u); const inner=pdf?'<span style="width:46px;height:46px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:800;border:1px solid #fecaca">PDF</span>':'<img src="'+esc(u)+'" style="width:46px;height:46px;object-fit:cover;border-radius:8px;display:block">'; return '<span style="position:relative;display:inline-block">'+inner+'<button type="button" data-asrm="'+i+'" style="position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>'; }).join('');
+  t.innerHTML=ASST_PHOTOS.map((u,i)=>{
+    const pdf=/^data:application\/pdf/.test(u), aud=/^data:audio\//.test(u), vid=/^data:video\//.test(u);
+    const chip=(bg,fg,bd,txt)=>'<span style="width:46px;height:46px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:'+bg+';color:'+fg+';font-size:10.5px;font-weight:800;border:1px solid '+bd+'">'+txt+'</span>';
+    const inner=pdf?chip('#fee2e2','#b91c1c','#fecaca','PDF'):aud?chip('#ede9fe','#5b21b6','#ddd6fe','🎵'):vid?chip('#dbeafe','#1e40af','#bfdbfe','🎬'):'<img src="'+esc(u)+'" style="width:46px;height:46px;object-fit:cover;border-radius:8px;display:block">';
+    return '<span style="position:relative;display:inline-block">'+inner+'<button type="button" data-asrm="'+i+'" style="position:absolute;top:-5px;right:-5px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>'; }).join('');
   t.querySelectorAll('[data-asrm]').forEach(b=>b.onclick=()=>{ ASST_PHOTOS.splice(Number(b.dataset.asrm),1); asstRenderThumbs(); });
 }
 async function asstSend(){
@@ -13245,7 +13299,7 @@ body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหั�
     </div>
     <div id="asst_thumbs" style="display:none;gap:5px;flex-wrap:wrap;margin:0 16px 4px;max-width:540px;margin-left:auto;margin-right:auto;width:100%"></div>
     <div class="prow">
-      <label title="แนบรูป/ไฟล์ให้นิดาอ่าน (รูป · PDF · เอกสาร)"><svg class="ei" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="asst_file" accept="image/*,application/pdf" multiple style="display:none"></label>
+      <label title="แนบรูป/ไฟล์ให้นิดาอ่าน (รูป · PDF · เสียง · วิดีโอ)"><svg class="ei" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="asst_file" accept="image/*,application/pdf,audio/*,video/mp4,video/quicktime" multiple style="display:none"></label>
       <input id="asst_in" placeholder="พิมพ์คำถาม หรือสั่งงานนิดา…"><button class="asst-voice" id="asst_voice" type="button" title="พูดคุยด้วยเสียง"><span class="wv"><i></i><i></i><i></i><i></i><i></i></span></button><button class="btn btn-pri" id="asst_send">ส่ง</button>
     </div>
   </div>

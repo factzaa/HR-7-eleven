@@ -149,6 +149,8 @@
         case 'hr_mgrbranch_save': return await hrMgrBranchCfgSave(p.data);
         case 'hr_staffnotify_get':  return await hrStaffNotifyGet();
         case 'hr_staffnotify_save': return await hrStaffNotifySave(p.data);
+        case 'hr_knowledge_add':    return await hrKnowledgeAdd(p.data);
+        case 'hr_knowledge_list':   return await hrKnowledgeList(p);
         case 'hr_mgr_dashboard':  return await hrMgrDashboard();
         case 'hr_mgrrec_list':    return await hrMgrRecurringList();
         case 'hr_mgrrec_save':    return await hrMgrRecurringSave(p.data);
@@ -633,6 +635,33 @@
     const { error } = await sb().from('staff_notify_cfg').upsert(row, { onConflict: 'branch_id' });
     if (error) return { ok: false, error: error.message };
     return { ok: true, saved: row };
+  }
+  // ===== นำเข้าคู่มือ/เอกสาร → คลังความรู้นิดา (nida_knowledge) =====
+  async function hrKnowledgeAdd(d) {
+    d = d || {};
+    const title = String(d.title || '').trim();
+    const content = String(d.content || '').trim();
+    if (!title || !content) return { ok: false, error: 'ต้องมีชื่อเรื่องและเนื้อหา' };
+    const row = {
+      category: (d.category || 'training'),          // training = นิดาค้นเจอด้วย knowledge_search แต่ไม่แนบทุก prompt
+      title: title.slice(0, 200),
+      content: content.slice(0, 20000),
+      tags: (d.tags || 'คู่มือ,นำเข้าเอกสาร'),
+      source: (d.source || 'นำเข้าเอกสาร'),
+      created_by: 'นำเข้าเอกสาร (HR)',
+    };
+    const { error } = await sb().from('nida_knowledge').insert(row);
+    if (error) return { ok: false, error: error.message };
+    await logAct('นำเข้าความรู้นิดา', null, row.title);
+    return { ok: true };
+  }
+  async function hrKnowledgeList(p) {
+    p = p || {};
+    let q = sb().from('nida_knowledge').select('id,category,title,source,tags,active,created_at').order('created_at', { ascending: false }).limit(300);
+    if (p.source) q = q.ilike('source', '%' + p.source + '%');
+    const { data, error } = await q;
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, rows: data || [] };
   }
   async function hrMgrTaskSettingsSave(d) {
     d = d || {};
