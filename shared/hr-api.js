@@ -157,6 +157,7 @@
         case 'hr_exam_set_status':  return await hrExamSetStatus(p.id, p.status);
         case 'hr_exam_delete':      return await hrExamDelete(p.id);
         case 'hr_exam_results':     return await hrExamResults(p.id);
+        case 'hr_exam_wrong_spots': return await hrExamWrongSpots(p.id);
         case 'hr_mgr_dashboard':  return await hrMgrDashboard();
         case 'hr_mgrrec_list':    return await hrMgrRecurringList();
         case 'hr_mgrrec_save':    return await hrMgrRecurringSave(p.data);
@@ -766,6 +767,27 @@
     const not_done = pool.filter(e => !done.has(e.emp_id)).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name || e.emp_id, branch: brN[e.branch_id] || e.branch_id || '—' }));
     const passCount = takers.filter(t => t.passed).length;
     return { ok: true, exam: ex, takers, not_done, summary: { takers: takers.length, passed: passCount, target: pool.length, pass_rate: takers.length ? Math.round(passCount / takers.length * 100) : 0 } };
+  }
+  // จุดที่พนักงานตอบผิดบ่อย — รวม %ผิดรายข้อ (นับจาก "ครั้งแรก" ของแต่ละคน = สะท้อนความเข้าใจตั้งต้น)
+  async function hrExamWrongSpots(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุ' };
+    const [{ data: ex }, { data: qs }, { data: ats }] = await Promise.all([
+      sb().from('exams').select('id,title').eq('id', id).maybeSingle(),
+      sb().from('exam_questions').select('id,seq,question,answer,choices').eq('exam_id', id).order('seq'),
+      sb().from('exam_attempts').select('emp_id,attempt_no,answers').eq('exam_id', id),
+    ]);
+    if (!ex) return { ok: false, error: 'ไม่พบชุดข้อสอบ' };
+    // ครั้งแรกของแต่ละคน
+    const firstBy = {};
+    (ats || []).forEach(a => { const cur = firstBy[a.emp_id]; if (!cur || a.attempt_no < cur.attempt_no) firstBy[a.emp_id] = a; });
+    const first = Object.values(firstBy);
+    const takers = first.length;
+    const stat = {}; (qs || []).forEach(q => stat[q.id] = { wrong: 0, ans: 0 });
+    first.forEach(a => { (a.answers || []).forEach(d => { const s = stat[d.q_id]; if (!s) return; s.ans++; if (!d.correct) s.wrong++; }); });
+    const qMap = {}; (qs || []).forEach(q => qMap[q.id] = q);
+    const spots = (qs || []).map(q => { const s = stat[q.id] || { wrong: 0, ans: 0 }; const denom = s.ans || takers; const pct = denom ? Math.round(s.wrong / denom * 100) : 0; const ch = Array.isArray(q.choices) ? q.choices : []; return { q_id: q.id, seq: q.seq, question: q.question, wrong: s.wrong, answered: denom, wrong_pct: pct, correct_text: ch[q.answer] || '' }; })
+      .sort((a, b) => b.wrong_pct - a.wrong_pct);
+    return { ok: true, exam: ex, takers, spots };
   }
   async function hrMgrTaskSettingsSave(d) {
     d = d || {};

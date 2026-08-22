@@ -7963,7 +7963,7 @@ async function exResults(id){
   const r=await post({ action:'hr_exam_results', password:pwd, id });
   if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
   const s=r.summary||{}, ex=r.exam||{};
-  let h='<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">ผล: '+esc(ex.title)+'</h3><button class="btn btn-sec btn-sm" id="exr_csv">CSV</button><button class="btn btn-sec btn-sm" id="exr_back">← กลับ</button></div>';
+  let h='<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">ผล: '+esc(ex.title)+'</h3><button class="btn btn-sec btn-sm" id="exr_wrong">จุดตอบผิดบ่อย</button><button class="btn btn-sec btn-sm" id="exr_csv">CSV</button><button class="btn btn-sec btn-sm" id="exr_back">← กลับ</button></div>';
   h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
     +'<div style="flex:1;min-width:90px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px"><div style="font-size:12px;color:var(--muted)">ทำแล้ว</div><div style="font-size:22px;font-weight:600">'+s.takers+'/'+s.target+'</div></div>'
     +'<div style="flex:1;min-width:90px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px"><div style="font-size:12px;color:var(--muted)">ผ่าน</div><div style="font-size:22px;font-weight:600;color:#16a34a">'+s.passed+'</div></div>'
@@ -7975,7 +7975,33 @@ async function exResults(id){
   if((r.not_done||[]).length){ h+='<h3 style="font-size:13px;color:#b45309;font-weight:700;margin:14px 2px 6px">ยังไม่ทำ ('+r.not_done.length+')</h3><div style="font-size:12.5px;color:var(--muted)">'+r.not_done.map(e=>esc(e.name)+' ('+esc(e.branch)+')').join(' · ')+'</div>'; }
   box.innerHTML=h;
   $('exr_back').onclick=loadExams;
+  $('exr_wrong').onclick=()=>exWrongSpots(id);
   $('exr_csv').onclick=()=>{ const rows=[['พนักงาน','สาขา','ครั้ง','คะแนนสูงสุด(%)','ผล']].concat((r.takers||[]).map(t=>[t.name,t.branch,t.attempts,t.best,t.passed?'ผ่าน':'ไม่ผ่าน'])); const csv='﻿'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'); const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='exam_'+id+'_results.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+}
+async function exWrongSpots(id){
+  const box=$('exadm_body'); box.innerHTML='<div class="empty">กำลังวิเคราะห์…</div>';
+  const r=await post({ action:'hr_exam_wrong_spots', password:pwd, id });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const spots=r.spots||[];
+  let h='<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">🎯 จุดตอบผิดบ่อย</h3><button class="btn btn-sec btn-sm" id="exw_back">← กลับ</button></div>';
+  h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">'+esc(r.exam.title)+' · นับจากการทำครั้งแรกของแต่ละคน ('+r.takers+' คน)</div>';
+  if(!r.takers){ box.innerHTML=h+'<div class="empty">ยังไม่มีคนทำข้อสอบชุดนี้</div>'; $('exw_back').onclick=()=>exResults(id); return; }
+  const col=p=>p>=50?'#dc2626':p>=30?'#c2410c':'#16a34a';
+  h+=spots.map(s=>'<div class="card" style="padding:11px;margin-bottom:8px">'
+    +'<div style="display:flex;gap:8px;align-items:baseline"><span style="flex:1;font-size:13px">'+esc(s.question)+'</span><b style="font-size:13px;color:'+col(s.wrong_pct)+'">ผิด '+s.wrong_pct+'%</b></div>'
+    +'<div style="height:6px;background:var(--bg);border-radius:20px;overflow:hidden;margin:7px 0 5px"><div style="width:'+s.wrong_pct+'%;height:100%;background:'+col(s.wrong_pct)+'"></div></div>'
+    +'<div style="font-size:11.5px;color:var(--muted)">ตอบผิด '+s.wrong+'/'+s.answered+' คน'+(s.correct_text?(' · เฉลย: '+esc(s.correct_text)):'')+'</div>'
+    +'</div>').join('');
+  // นิดาแนะนำ (rule-based)
+  const hot=spots.filter(s=>s.wrong_pct>=50);
+  const warm=spots.filter(s=>s.wrong_pct>=30&&s.wrong_pct<50);
+  let rec='';
+  if(hot.length) rec='เรื่องที่ตอบผิดเกินครึ่ง ควรจัดอบรมย้ำและออกข้อสอบซ้ำเฉพาะเรื่อง: '+hot.map(s=>'“'+s.question+'”').join(', ')+' ค่ะ';
+  else if(warm.length) rec='มีบางเรื่องที่ตอบผิดค่อนข้างมาก ควรทบทวนเพิ่มเติม: '+warm.map(s=>'“'+s.question+'”').join(', ')+' ค่ะ';
+  else rec='ภาพรวมพนักงานเข้าใจเนื้อหาดี ไม่มีจุดที่ตอบผิดเกินเกณฑ์ค่ะ';
+  h+='<div class="card" style="padding:12px;background:#F3F0FF;border:0;margin-top:4px"><div style="font-size:12px;font-weight:700;color:#6d28d9">🧠 นิดาแนะนำ</div><div style="font-size:12.5px;color:#4c1d95;margin-top:5px;line-height:1.6">'+esc(rec)+'</div></div>';
+  box.innerHTML=h;
+  $('exw_back').onclick=()=>exResults(id);
 }
 async function openMtask(id){
   const r=await post({ action:'hr_mtask_get', password:pwd, id });
