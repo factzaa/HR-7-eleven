@@ -574,6 +574,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_qa"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3l2.3 1.7 2.8-.2 1 2.7 2.4 1.5-.9 2.7.9 2.7-2.4 1.5-1 2.7-2.8-.2L12 21l-2.3-1.7-2.8.2-1-2.7L3.5 15l.9-2.7-.9-2.7 2.4-1.5 1-2.7 2.8.2z"/><path d="M9 12l2 2 4-4"/></svg></span>QA สินค้า</button>
   <button class="tab" id="tab_shelf"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg></span>เชลฟ์ประจำเดือน</button>
   <button class="tab" id="tab_lineFeed"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.9a8.4 8.4 0 0 1-1-4A8.38 8.38 0 0 1 12 3.6a8.38 8.38 0 0 1 9 7.9z"/></svg></span>ฟีดกลุ่มไลน์สาขา</button>
+  <button class="tab" id="tab_exams"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>แบบทดสอบ</button>
   <button class="tab" id="tab_leaves"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9z"/><path d="M12 12v7a2 2 0 0 0 4 0"/></svg></span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span>ตารางงาน</button>
   <button class="tab" id="tab_branches"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg></span>สาขา</button>
@@ -1948,6 +1949,17 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 <div id="view_mgrtaskset" class="container" style="display:none">
   <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> ตั้งค่างาน ผจก.</h3></div>
   <div id="mts_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- แบบทดสอบพนักงาน (HR) -->
+<div id="view_exams" class="container" style="display:none">
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:150px"><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> แบบทดสอบพนักงาน</h3>
+    <button class="btn btn-sec btn-sm" id="exadm_ai"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> ให้นิดาออกข้อสอบ</button>
+    <button class="btn btn-sec btn-sm" id="exadm_reload">รีเฟรช</button>
+    <button class="btn btn-pri btn-sm" id="exadm_new">+ สร้างเอง</button>
+  </div>
+  <div id="exadm_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
 
 <!-- Settings: ตั้งค่ากะ -->
@@ -7847,6 +7859,122 @@ async function loadStaffNotifyCfg(){
     if(rr&&rr.ok) toast('ok','บันทึกแล้ว'); else toast('err',(rr&&rr.error)||'ไม่สำเร็จ');
   });
 }
+// ===== แบบทดสอบพนักงาน (HR) =====
+let EXADM=[];
+async function loadExams(){
+  const box=$('exadm_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  if($('exadm_new') && !$('exadm_new').dataset.wired){ $('exadm_new').dataset.wired='1';
+    $('exadm_new').onclick=()=>exEdit(null);
+    $('exadm_reload').onclick=loadExams;
+    $('exadm_ai').onclick=()=>{ if(window.openAsstPop) openAsstPop(); setTimeout(()=>{ const i=$('asst_in'); if(i){ i.value='ออกข้อสอบเรื่อง (พิมพ์หัวข้อจากคู่มือ) จำนวน 10 ข้อ'; i.focus(); } },160); toast('ok','พิมพ์หัวข้อที่จะให้นิดาออกข้อสอบ แล้วกดส่ง · ได้ร่างแล้วกลับมาหน้านี้กด "เผยแพร่"'); };
+  }
+  const r=await post({ action:'hr_exam_list', password:pwd });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  EXADM=r.rows||[]; exRenderList();
+}
+function exStatusPill(s){ return s==='published'?'<span class="pill ok">เผยแพร่</span>':s==='closed'?'<span class="pill muted2">ปิด</span>':'<span class="pill warn">ร่าง</span>'; }
+function exScopeText(e){ return ({all:'ทุกสาขา',branch:'เฉพาะสาขา',emp:'เฉพาะบุคคล'})[e.scope]||e.scope; }
+function exRenderList(){
+  const box=$('exadm_body');
+  if(!EXADM.length){ box.innerHTML='<div class="empty" style="padding:18px">ยังไม่มีแบบทดสอบ — กด "ให้นิดาออกข้อสอบ" หรือ "สร้างเอง"</div>'; return; }
+  box.innerHTML=EXADM.map(e=>'<div class="card" style="padding:13px;margin-bottom:10px">'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="flex:1;font-size:15px;min-width:150px">'+esc(e.title)+'</b>'+exStatusPill(e.status)+'</div>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-top:4px">'+e.question_count+' ข้อ · ผ่าน '+e.pass_percent+'% · ทำได้ '+e.max_attempts+' ครั้ง · '+exScopeText(e)+(e.deadline?(' · ถึง '+esc(e.deadline)):'')+'</div>'
+    +'<div style="font-size:12.5px;margin-top:3px">ทำแล้ว <b>'+e.taker_count+'</b> คน · ผ่าน <b style="color:#16a34a">'+e.pass_count+'</b></div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">'
+      +'<button class="btn btn-sec btn-sm" data-exresult="'+e.id+'">ดูผล</button>'
+      +'<button class="btn btn-sec btn-sm" data-exedit="'+e.id+'">แก้ไข</button>'
+      +(e.status!=='published'?'<button class="btn btn-pri btn-sm" data-expub="'+e.id+'">เผยแพร่</button>':'<button class="btn btn-sec btn-sm" data-exclose="'+e.id+'">ปิดรับ</button>')
+      +'<button class="btn btn-danger btn-sm" data-exdel="'+e.id+'">ลบ</button>'
+    +'</div></div>').join('');
+  box.querySelectorAll('[data-exresult]').forEach(b=>b.onclick=()=>exResults(Number(b.dataset.exresult)));
+  box.querySelectorAll('[data-exedit]').forEach(b=>b.onclick=()=>exEdit(Number(b.dataset.exedit)));
+  box.querySelectorAll('[data-expub]').forEach(b=>b.onclick=async()=>{ if(!confirm('เผยแพร่ให้พนักงานทำ?'))return; const r=await post({action:'hr_exam_set_status',password:pwd,id:Number(b.dataset.expub),status:'published'}); if(r&&r.ok){toast('ok','เผยแพร่แล้ว');loadExams();}else toast('err',(r&&r.error)||'ไม่สำเร็จ');});
+  box.querySelectorAll('[data-exclose]').forEach(b=>b.onclick=async()=>{ const r=await post({action:'hr_exam_set_status',password:pwd,id:Number(b.dataset.exclose),status:'closed'}); if(r&&r.ok){toast('ok','ปิดรับแล้ว');loadExams();}else toast('err',(r&&r.error)||'ไม่สำเร็จ');});
+  box.querySelectorAll('[data-exdel]').forEach(b=>b.onclick=async()=>{ if(!confirm('ลบชุดข้อสอบนี้ (รวมผลสอบทั้งหมด) ถาวร?'))return; const r=await post({action:'hr_exam_delete',password:pwd,id:Number(b.dataset.exdel)}); if(r&&r.ok){toast('ok','ลบแล้ว');loadExams();}else toast('err',(r&&r.error)||'ไม่สำเร็จ');});
+}
+let EXED=null;
+async function exEdit(id){
+  let ex={title:'',description:'',pass_percent:80,max_attempts:3,time_limit_min:'',shuffle:true,show_result:'full',scope:'all',branch_ids:[],deadline:''}, qs=[], asg=[];
+  if(id){ const r=await post({action:'hr_exam_get',password:pwd,id}); if(!r||!r.ok){ toast('err',(r&&r.error)||'โหลดไม่สำเร็จ'); return; } ex=r.exam; qs=r.questions||[]; asg=r.assignees||[]; }
+  EXED={ id:id||null, qs:qs.map(q=>({question:q.question,choices:(q.choices||['','','','']).slice(),answer:q.answer||0,explain:q.explain||''})) };
+  if(!EXED.qs.length) EXED.qs=[{question:'',choices:['','','',''],answer:0,explain:''}];
+  const brOpts=(DATA.branches||[]).map(b=>'<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;margin:2px 8px 2px 0"><input type="checkbox" class="exbr" value="'+esc(b.branch_id)+'"'+((ex.branch_ids||[]).map(String).includes(String(b.branch_id))?' checked':'')+'> '+esc(b.name)+'</label>').join('');
+  const box=$('exadm_body');
+  box.innerHTML='<div class="card" style="padding:14px">'
+    +'<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">'+(id?'แก้ไขแบบทดสอบ':'สร้างแบบทดสอบ')+'</h3><button class="btn btn-sec btn-sm" id="ex_back">← กลับ</button></div>'
+    +'<label style="font-size:12.5px;color:var(--muted)">ชื่อชุดข้อสอบ</label><input id="ex_title" type="text" value="'+esc(ex.title||'')+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;margin-bottom:8px">'
+    +'<label style="font-size:12.5px;color:var(--muted)">คำอธิบาย (ไม่บังคับ)</label><input id="ex_desc" type="text" value="'+esc(ex.description||'')+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;margin-bottom:8px">'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+      +'<div style="width:110px"><label style="font-size:12px;color:var(--muted)">เกณฑ์ผ่าน %</label><input id="ex_pass" type="number" min="1" max="100" value="'+(ex.pass_percent||80)+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+      +'<div style="width:110px"><label style="font-size:12px;color:var(--muted)">ทำซ้ำได้ (ครั้ง)</label><input id="ex_max" type="number" min="1" max="20" value="'+(ex.max_attempts||3)+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+      +'<div style="width:120px"><label style="font-size:12px;color:var(--muted)">จำกัดเวลา (นาที)</label><input id="ex_time" type="number" min="0" value="'+(ex.time_limit_min||'')+'" placeholder="ไม่จำกัด" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+      +'<div style="width:150px"><label style="font-size:12px;color:var(--muted)">แสดงผล/เฉลย</label><select id="ex_show" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"><option value="full"'+(ex.show_result==='full'?' selected':'')+'>คะแนน+เฉลยทันที</option><option value="score_until_pass"'+(ex.show_result==='score_until_pass'?' selected':'')+'>เฉลยเมื่อผ่าน/ครบสิทธิ์</option><option value="score_only"'+(ex.show_result==='score_only'?' selected':'')+'>คะแนนอย่างเดียว</option></select></div>'
+      +'<div style="width:150px"><label style="font-size:12px;color:var(--muted)">หมดเขต (ไม่บังคับ)</label><input id="ex_deadline" type="date" value="'+esc(ex.deadline||'')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+    +'</div>'
+    +'<label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="ex_shuffle"'+(ex.shuffle!==false?' checked':'')+'> สุ่มลำดับข้อ+ตัวเลือก (กันลอกกัน)</label>'
+    +'<div style="margin-bottom:8px"><label style="font-size:12.5px;color:var(--muted)">ใครต้องทำ</label><select id="ex_scope" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px"><option value="all"'+(ex.scope==='all'?' selected':'')+'>ทุกสาขา</option><option value="branch"'+(ex.scope==='branch'?' selected':'')+'>เฉพาะสาขา</option><option value="emp"'+(ex.scope==='emp'?' selected':'')+'>เฉพาะบุคคล (ระบุรหัส)</option></select></div>'
+    +'<div id="ex_scope_branch" style="display:'+(ex.scope==='branch'?'block':'none')+';margin-bottom:8px;padding:8px;border:1px dashed var(--line);border-radius:9px">'+brOpts+'</div>'
+    +'<div id="ex_scope_emp" style="display:'+(ex.scope==='emp'?'block':'none')+';margin-bottom:8px"><label style="font-size:12px;color:var(--muted)">รหัสพนักงาน (คั่นด้วย , )</label><input id="ex_empids" type="text" value="'+esc(asg.join(','))+'" placeholder="0657379,0657380" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+    +'<h3 style="font-size:13px;color:var(--green-d);font-weight:700;margin:14px 2px 8px">คำถาม</h3><div id="ex_qwrap"></div>'
+    +'<button class="btn btn-sec btn-sm" id="ex_addq" style="margin-top:4px">+ เพิ่มคำถาม</button>'
+    +'<div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-pri" id="ex_save" style="flex:1">บันทึก</button></div>'
+  +'</div>';
+  $('ex_back').onclick=loadExams;
+  $('ex_scope').onchange=()=>{ const v=$('ex_scope').value; $('ex_scope_branch').style.display=v==='branch'?'block':'none'; $('ex_scope_emp').style.display=v==='emp'?'block':'none'; };
+  $('ex_addq').onclick=()=>{ EXED.qs.push({question:'',choices:['','','',''],answer:0,explain:''}); exRenderQEditor(); };
+  $('ex_save').onclick=exSave;
+  exRenderQEditor();
+}
+function exRenderQEditor(){
+  const w=$('ex_qwrap'); if(!w) return;
+  w.innerHTML=EXED.qs.map((q,i)=>'<div class="card" style="padding:11px;margin-bottom:8px;background:var(--bg)">'
+    +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><b style="flex:1">ข้อ '+(i+1)+'</b>'+(EXED.qs.length>1?'<button class="btn btn-danger btn-sm" data-exqdel="'+i+'">ลบ</button>':'')+'</div>'
+    +'<input type="text" data-exq="'+i+'" value="'+esc(q.question)+'" placeholder="คำถาม" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;margin-bottom:6px">'
+    +[0,1,2,3].map(ci=>'<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><input type="radio" name="exans'+i+'" data-exans="'+i+'|'+ci+'"'+(Number(q.answer)===ci?' checked':'')+' title="เฉลยข้อถูก" style="flex:none">'+'<input type="text" data-exc="'+i+'|'+ci+'" value="'+esc(q.choices[ci]||'')+'" placeholder="ตัวเลือก '+(ci+1)+'" style="flex:1;padding:7px;border:1.5px solid var(--line2);border-radius:7px"></div>').join('')
+    +'<input type="text" data-exex="'+i+'" value="'+esc(q.explain||'')+'" placeholder="อธิบายเฉลย (ไม่บังคับ)" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:7px;margin-top:4px;font-size:13px">'
+  +'</div>').join('');
+  w.querySelectorAll('[data-exqdel]').forEach(b=>b.onclick=()=>{ EXED.qs.splice(Number(b.dataset.exqdel),1); exCollect(); exRenderQEditor(); });
+  w.querySelectorAll('[data-exans]').forEach(r=>r.onchange=()=>{ const p=r.dataset.exans.split('|'); EXED.qs[+p[0]].answer=+p[1]; });
+}
+function exCollect(){
+  const w=$('ex_qwrap'); if(!w) return;
+  w.querySelectorAll('[data-exq]').forEach(el=>{ EXED.qs[+el.dataset.exq].question=el.value; });
+  w.querySelectorAll('[data-exc]').forEach(el=>{ const p=el.dataset.exc.split('|'); EXED.qs[+p[0]].choices[+p[1]]=el.value; });
+  w.querySelectorAll('[data-exex]').forEach(el=>{ EXED.qs[+el.dataset.exex].explain=el.value; });
+}
+async function exSave(){
+  exCollect();
+  const scope=$('ex_scope').value;
+  const data={ id:EXED.id, title:$('ex_title').value, description:$('ex_desc').value, pass_percent:$('ex_pass').value, max_attempts:$('ex_max').value, time_limit_min:$('ex_time').value, shuffle:$('ex_shuffle').checked, show_result:$('ex_show').value, deadline:$('ex_deadline').value, scope,
+    branch_ids: scope==='branch'?[...document.querySelectorAll('.exbr:checked')].map(c=>c.value):[],
+    emp_ids: scope==='emp'?($('ex_empids').value||'').split(/[,\s]+/).map(s=>s.trim()).filter(Boolean):[],
+    questions: EXED.qs.filter(q=>String(q.question).trim()&&q.choices.filter(c=>String(c).trim()).length>=2) };
+  if(!data.title.trim()){ toast('err','กรอกชื่อชุดข้อสอบ'); return; }
+  if(!data.questions.length){ toast('err','ต้องมีคำถามอย่างน้อย 1 ข้อ (ตัวเลือก ≥ 2)'); return; }
+  const b=$('ex_save'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_exam_save', password:pwd, data }); b.disabled=false; b.textContent=old;
+  if(r&&r.ok){ toast('ok','บันทึกแล้ว ('+r.questions+' ข้อ)'); loadExams(); } else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
+}
+async function exResults(id){
+  const box=$('exadm_body'); box.innerHTML='<div class="empty">กำลังโหลดผล…</div>';
+  const r=await post({ action:'hr_exam_results', password:pwd, id });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const s=r.summary||{}, ex=r.exam||{};
+  let h='<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">ผล: '+esc(ex.title)+'</h3><button class="btn btn-sec btn-sm" id="exr_csv">CSV</button><button class="btn btn-sec btn-sm" id="exr_back">← กลับ</button></div>';
+  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div style="flex:1;min-width:90px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px"><div style="font-size:12px;color:var(--muted)">ทำแล้ว</div><div style="font-size:22px;font-weight:600">'+s.takers+'/'+s.target+'</div></div>'
+    +'<div style="flex:1;min-width:90px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px"><div style="font-size:12px;color:var(--muted)">ผ่าน</div><div style="font-size:22px;font-weight:600;color:#16a34a">'+s.passed+'</div></div>'
+    +'<div style="flex:1;min-width:90px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px"><div style="font-size:12px;color:var(--muted)">อัตราผ่าน</div><div style="font-size:22px;font-weight:600">'+s.pass_rate+'%</div></div>'
+  +'</div>';
+  h+='<div class="tablewrap"><table style="font-size:13px"><thead><tr><th>พนักงาน</th><th>สาขา</th><th style="text-align:center">ครั้ง</th><th style="text-align:center">คะแนนสูงสุด</th><th style="text-align:center">ผล</th></tr></thead><tbody>'
+    +(r.takers||[]).map(t=>'<tr><td>'+esc(t.name)+'</td><td style="font-size:11.5px;color:var(--muted)">'+esc(t.branch)+'</td><td style="text-align:center">'+t.attempts+'</td><td style="text-align:center">'+t.best+'%</td><td style="text-align:center">'+(t.passed?'<span class="pill ok">ผ่าน</span>':'<span class="pill bad">ไม่ผ่าน</span>')+'</td></tr>').join('')
+    +'</tbody></table></div>';
+  if((r.not_done||[]).length){ h+='<h3 style="font-size:13px;color:#b45309;font-weight:700;margin:14px 2px 6px">ยังไม่ทำ ('+r.not_done.length+')</h3><div style="font-size:12.5px;color:var(--muted)">'+r.not_done.map(e=>esc(e.name)+' ('+esc(e.branch)+')').join(' · ')+'</div>'; }
+  box.innerHTML=h;
+  $('exr_back').onclick=loadExams;
+  $('exr_csv').onclick=()=>{ const rows=[['พนักงาน','สาขา','ครั้ง','คะแนนสูงสุด(%)','ผล']].concat((r.takers||[]).map(t=>[t.name,t.branch,t.attempts,t.best,t.passed?'ผ่าน':'ไม่ผ่าน'])); const csv='﻿'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'); const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='exam_'+id+'_results.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+}
 async function openMtask(id){
   const r=await post({ action:'hr_mtask_get', password:pwd, id });
   if(!r.ok){ toast('err', r.error||'ไม่พบงาน'); return; }
@@ -8487,7 +8615,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','leaves','schedule','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','exams','leaves','schedule','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -8511,6 +8639,7 @@ showTab = function(name){
   else if(name==='qa'){ loadQaTab(); }
   else if(name==='shelf'){ loadShelfTab(); }
   else if(name==='lineFeed'){ loadLineFeed(); }
+  else if(name==='exams'){ loadExams(); }
   else if(name==='salesDash'){ loadSalesDash(); }
   else if(name==='auditDash'){ loadAuditDash(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
@@ -8896,7 +9025,7 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf','lineFeed'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf','exams','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },

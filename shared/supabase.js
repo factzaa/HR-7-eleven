@@ -1819,6 +1819,64 @@
     const { error }=await sb.from('qa_items').update(upd).eq('id', item_id);
     if(error) throw error; return { ok:true };
   }
+  // ---------- ข้อสอบพนักงาน ----------
+  async function getMyExams(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data: exams }=await sb.from('exams').select('*').eq('status','published').eq('active',true).order('created_at',{ascending:false}).limit(100);
+    let list=(exams||[]).filter(e=>{
+      if(e.scope==='branch') return Array.isArray(e.branch_ids) && e.branch_ids.map(String).includes(String(emp.branch_id));
+      return true; // all · (emp = กรองด้วย assignees ด้านล่าง)
+    });
+    // scope=emp → ต้องอยู่ในรายชื่อ
+    const empScoped=list.filter(e=>e.scope==='emp').map(e=>e.id);
+    let asgSet=new Set();
+    if(empScoped.length){ const { data: asg }=await sb.from('exam_assignees').select('exam_id').eq('emp_id',emp.emp_id).in('exam_id',empScoped); asgSet=new Set((asg||[]).map(a=>a.exam_id)); }
+    list=list.filter(e=>e.scope!=='emp' || asgSet.has(e.id));
+    const ids=list.map(e=>e.id);
+    const attBy={};
+    if(ids.length){ const { data: ats }=await sb.from('exam_attempts').select('exam_id,percent,passed').eq('emp_id',emp.emp_id).in('exam_id',ids);
+      (ats||[]).forEach(a=>{ const m=attBy[a.exam_id]=attBy[a.exam_id]||{used:0,best:0,passed:false}; m.used++; if(a.percent>m.best)m.best=a.percent; if(a.passed)m.passed=true; }); }
+    const today=bangkokDate();
+    const rows=list.map(e=>{ const m=attBy[e.id]||{used:0,best:0,passed:false}; const expired=e.deadline && String(e.deadline)<today;
+      return { id:e.id, title:e.title, description:e.description, pass_percent:e.pass_percent, time_limit_min:e.time_limit_min, max_attempts:e.max_attempts, deadline:e.deadline,
+        attempts_used:m.used, best:m.best, passed:m.passed, expired,
+        can_attempt: !m.passed && m.used < e.max_attempts && !expired }; });
+    return { emp, rows };
+  }
+  async function getExamPaper(examId, empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data: ex }=await sb.from('exams').select('id,title,description,pass_percent,time_limit_min,max_attempts,shuffle,status,deadline').eq('id',examId).maybeSingle();
+    if(!ex||ex.status!=='published') throw new Error('ข้อสอบนี้ยังไม่เปิดให้ทำ');
+    const { count }=await sb.from('exam_attempts').select('id',{count:'exact',head:true}).eq('exam_id',examId).eq('emp_id',emp.emp_id);
+    if((count||0)>=ex.max_attempts) throw new Error('คุณทำครบจำนวนครั้งที่กำหนดแล้ว');
+    const { data: qs }=await sb.from('exam_questions').select('id,seq,question,choices').eq('exam_id',examId).order('seq');
+    return { exam: ex, questions:(qs||[]).map(q=>({ id:q.id, question:q.question, choices:Array.isArray(q.choices)?q.choices:[] })) };
+  }
+  // answers = { [q_id]: chosenIndex(อิง index เดิมของ choices) } · ตรวจคะแนนที่เซิร์ฟเวอร์
+  async function submitExam({ empId, examId, answers, started_at }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { data: ex }=await sb.from('exams').select('*').eq('id',examId).maybeSingle();
+    if(!ex||ex.status!=='published') throw new Error('ข้อสอบนี้ยังไม่เปิดให้ทำ');
+    const { data: existing }=await sb.from('exam_attempts').select('id,passed').eq('exam_id',examId).eq('emp_id',emp.emp_id);
+    const used=(existing||[]).length;
+    if(used>=ex.max_attempts) throw new Error('ทำครบจำนวนครั้งแล้ว');
+    const { data: qs }=await sb.from('exam_questions').select('*').eq('exam_id',examId).order('seq');
+    const ansMap=answers||{};
+    let score=0; const detail=(qs||[]).map(q=>{ const chosen=(ansMap[q.id]!=null)?Number(ansMap[q.id]):-1; const correct=chosen===Number(q.answer); if(correct)score++; return { q_id:q.id, chosen, correct }; });
+    const total=(qs||[]).length; const percent= total? Math.round(score/total*100):0; const passed= percent>=Number(ex.pass_percent||80);
+    const attempt_no=used+1;
+    const dur = started_at ? Math.max(0, Math.round((Date.now()-new Date(started_at).getTime())/1000)) : null;
+    const { error }=await sb.from('exam_attempts').insert({ exam_id:examId, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, branch_id:emp.branch_id||null, attempt_no, started_at:started_at||null, score, total, percent, passed, duration_sec:dur, answers:detail });
+    if(error) throw error;
+    const attemptsLeft = Math.max(0, Number(ex.max_attempts)-attempt_no);
+    // สร้าง review ตามโหมด show_result
+    const revealFull = ex.show_result==='full' || (ex.show_result==='score_until_pass' && (passed || attemptsLeft<=0));
+    let review=null;
+    if(ex.show_result!=='score_only'){
+      review=(qs||[]).map(q=>{ const d=detail.find(x=>x.q_id===q.id)||{}; const base={ question:q.question, chosen:d.chosen, correct:d.correct }; if(revealFull){ base.answer=Number(q.answer); base.choices=q.choices; base.explain=q.explain||''; } return base; });
+    }
+    return { ok:true, score, total, percent, passed, attempt_no, attempts_left:attemptsLeft, pass_percent:Number(ex.pass_percent||80), show_result:ex.show_result, reveal:revealFull, review };
+  }
   // พนักงานที่ได้รับมอบหมายเชลฟ์ สร้างโฟลเดอร์ QA เองได้ (เดือนปัจจุบัน)
   async function qaCreateFolder({ empId, title, target_month, note }){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
@@ -2459,6 +2517,6 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

@@ -151,6 +151,12 @@
         case 'hr_staffnotify_save': return await hrStaffNotifySave(p.data);
         case 'hr_knowledge_add':    return await hrKnowledgeAdd(p.data);
         case 'hr_knowledge_list':   return await hrKnowledgeList(p);
+        case 'hr_exam_list':        return await hrExamList(p);
+        case 'hr_exam_get':         return await hrExamGet(p.id);
+        case 'hr_exam_save':        return await hrExamSave(p.data);
+        case 'hr_exam_set_status':  return await hrExamSetStatus(p.id, p.status);
+        case 'hr_exam_delete':      return await hrExamDelete(p.id);
+        case 'hr_exam_results':     return await hrExamResults(p.id);
         case 'hr_mgr_dashboard':  return await hrMgrDashboard();
         case 'hr_mgrrec_list':    return await hrMgrRecurringList();
         case 'hr_mgrrec_save':    return await hrMgrRecurringSave(p.data);
@@ -662,6 +668,104 @@
     const { data, error } = await q;
     if (error) return { ok: false, error: error.message };
     return { ok: true, rows: data || [] };
+  }
+  // ===== ระบบข้อสอบ (HR) =====
+  async function hrExamList(p) {
+    p = p || {};
+    const { data: exams, error } = await sb().from('exams').select('*').order('created_at', { ascending: false }).limit(300);
+    if (error) return { ok: false, error: error.message };
+    const ids = (exams || []).map(e => e.id);
+    const qcount = {}, acount = {}, passcount = {};
+    if (ids.length) {
+      const [{ data: qs }, { data: ats }] = await Promise.all([
+        sb().from('exam_questions').select('exam_id').in('exam_id', ids),
+        sb().from('exam_attempts').select('exam_id,emp_id,passed').in('exam_id', ids),
+      ]);
+      (qs || []).forEach(q => { qcount[q.exam_id] = (qcount[q.exam_id] || 0) + 1; });
+      const seenEmp = {};
+      (ats || []).forEach(a => { const k = a.exam_id + '|' + a.emp_id; if (!seenEmp[k]) { seenEmp[k] = true; acount[a.exam_id] = (acount[a.exam_id] || 0) + 1; } if (a.passed) passcount[a.exam_id] = (passcount[a.exam_id] || 0) + 1; });
+    }
+    const rows = (exams || []).map(e => ({ ...e, question_count: qcount[e.id] || 0, taker_count: acount[e.id] || 0, pass_count: passcount[e.id] || 0 }));
+    return { ok: true, rows };
+  }
+  async function hrExamGet(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุชุดข้อสอบ' };
+    const [{ data: ex }, { data: qs }, { data: asg }] = await Promise.all([
+      sb().from('exams').select('*').eq('id', id).maybeSingle(),
+      sb().from('exam_questions').select('*').eq('exam_id', id).order('seq'),
+      sb().from('exam_assignees').select('emp_id').eq('exam_id', id),
+    ]);
+    if (!ex) return { ok: false, error: 'ไม่พบชุดข้อสอบ' };
+    return { ok: true, exam: ex, questions: qs || [], assignees: (asg || []).map(a => a.emp_id) };
+  }
+  async function hrExamSave(d) {
+    d = d || {};
+    if (!d.title || !String(d.title).trim()) return { ok: false, error: 'ต้องมีชื่อชุดข้อสอบ' };
+    const qs = Array.isArray(d.questions) ? d.questions.filter(q => q && String(q.question || '').trim() && Array.isArray(q.choices) && q.choices.length >= 2) : [];
+    if (!qs.length) return { ok: false, error: 'ต้องมีคำถามอย่างน้อย 1 ข้อ (ตัวเลือก ≥ 2)' };
+    const row = {
+      title: String(d.title).trim(), description: (d.description || '').trim() || null, tags: (d.tags || '').trim() || null, source: (d.source || '').trim() || null,
+      pass_percent: Math.min(100, Math.max(1, parseInt(d.pass_percent, 10) || 80)),
+      time_limit_min: (d.time_limit_min != null && d.time_limit_min !== '') ? Math.max(0, parseInt(d.time_limit_min, 10)) || null : null,
+      max_attempts: Math.min(20, Math.max(1, parseInt(d.max_attempts, 10) || 3)),
+      shuffle: d.shuffle !== false,
+      show_result: ['full', 'score_until_pass', 'score_only'].includes(d.show_result) ? d.show_result : 'full',
+      scope: ['all', 'branch', 'emp'].includes(d.scope) ? d.scope : 'all',
+      branch_ids: (d.scope === 'branch' && Array.isArray(d.branch_ids)) ? d.branch_ids : null,
+      deadline: (d.deadline || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    let examId = d.id;
+    if (examId) { const { error } = await sb().from('exams').update(row).eq('id', examId); if (error) return { ok: false, error: error.message }; }
+    else { row.status = 'draft'; row.created_by = 'HR'; const { data: ins, error } = await sb().from('exams').insert(row).select('id').single(); if (error) return { ok: false, error: error.message }; examId = ins.id; }
+    // แทนที่คำถามทั้งชุด
+    await sb().from('exam_questions').delete().eq('exam_id', examId);
+    const qrows = qs.map((q, i) => ({ exam_id: examId, seq: i, question: String(q.question).trim(), choices: q.choices.map(c => String(c)), answer: Math.max(0, Math.min(q.choices.length - 1, parseInt(q.answer, 10) || 0)), explain: (q.explain || '').trim() || null, knowledge_ref: (q.knowledge_ref || '').trim() || null }));
+    const { error: qErr } = await sb().from('exam_questions').insert(qrows);
+    if (qErr) return { ok: false, error: qErr.message };
+    // มอบหมายรายคน
+    if (row.scope === 'emp' && Array.isArray(d.emp_ids)) {
+      await sb().from('exam_assignees').delete().eq('exam_id', examId);
+      if (d.emp_ids.length) await sb().from('exam_assignees').insert(d.emp_ids.map(e => ({ exam_id: examId, emp_id: String(e) })));
+    }
+    await logAct('บันทึกชุดข้อสอบ', null, row.title + ' · ' + qrows.length + ' ข้อ');
+    return { ok: true, id: examId, questions: qrows.length };
+  }
+  async function hrExamSetStatus(id, status) {
+    if (!id || !['draft', 'published', 'closed'].includes(status)) return { ok: false, error: 'ค่าไม่ถูกต้อง' };
+    const { error } = await sb().from('exams').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+  async function hrExamDelete(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุ' };
+    const { error } = await sb().from('exams').delete().eq('id', id);   // cascade ลบคำถาม/ผล
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+  async function hrExamResults(id) {
+    if (!id) return { ok: false, error: 'ไม่ระบุ' };
+    const [{ data: ex }, { data: ats }, { data: emps }, { data: brs }] = await Promise.all([
+      sb().from('exams').select('*').eq('id', id).maybeSingle(),
+      sb().from('exam_attempts').select('*').eq('exam_id', id).order('submitted_at', { ascending: false }),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,active'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    if (!ex) return { ok: false, error: 'ไม่พบชุดข้อสอบ' };
+    const brN = {}; (brs || []).forEach(b => brN[b.branch_id] = b.name);
+    const empBy = {}; (emps || []).forEach(e => empBy[e.emp_id] = e);
+    // สรุปรายคน (ครั้งล่าสุด + ดีสุด)
+    const byEmp = {};
+    (ats || []).forEach(a => { const m = byEmp[a.emp_id] = byEmp[a.emp_id] || { emp_id: a.emp_id, attempts: 0, best: 0, passed: false, last_at: null }; m.attempts++; if (a.percent > m.best) m.best = a.percent; if (a.passed) m.passed = true; if (!m.last_at || a.submitted_at > m.last_at) { m.last_at = a.submitted_at; m.last_percent = a.percent; } });
+    const takers = Object.values(byEmp).map(m => { const e = empBy[m.emp_id] || {}; return { ...m, name: e.nickname || e.name || m.emp_id, branch: brN[e.branch_id] || e.branch_id || '—', branch_id: e.branch_id || '' }; }).sort((x, y) => (y.best - x.best));
+    // ใครยังไม่ทำ (ตาม scope)
+    let pool = (emps || []).filter(e => e.active !== false);
+    if (ex.scope === 'branch' && Array.isArray(ex.branch_ids)) pool = pool.filter(e => ex.branch_ids.includes(e.branch_id));
+    if (ex.scope === 'emp') { const { data: asg } = await sb().from('exam_assignees').select('emp_id').eq('exam_id', id); const set = new Set((asg || []).map(a => a.emp_id)); pool = pool.filter(e => set.has(e.emp_id)); }
+    const done = new Set(Object.keys(byEmp));
+    const not_done = pool.filter(e => !done.has(e.emp_id)).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name || e.emp_id, branch: brN[e.branch_id] || e.branch_id || '—' }));
+    const passCount = takers.filter(t => t.passed).length;
+    return { ok: true, exam: ex, takers, not_done, summary: { takers: takers.length, passed: passCount, target: pool.length, pass_rate: takers.length ? Math.round(passCount / takers.length * 100) : 0 } };
   }
   async function hrMgrTaskSettingsSave(d) {
     d = d || {};

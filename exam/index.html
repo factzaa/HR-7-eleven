@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00703c">
+<title>แบบทดสอบพนักงาน · 7-Eleven</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#00703c;--green-d:#00582f;--green-soft:#e7f3ec;--orange:#f5821f;--red:#e11f26;--bg:#eef1ec;--line:#dbe2dc;--muted:#6b756d;--txt:#1b2a20;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:'Kanit','Anuphan',sans-serif;background:var(--bg);color:var(--txt);min-height:100dvh;}
+  .wrap{max-width:480px;margin:0 auto;min-height:100dvh;background:#fff;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.06);}
+  .top{background:linear-gradient(135deg,var(--green),var(--green-d));color:#fff;padding:18px;display:flex;align-items:center;gap:12px;}
+  .top h1{font-size:18px;font-weight:600;flex:1;}
+  .home{color:#fff;text-decoration:none;font-size:13px;background:rgba(255,255,255,.15);padding:6px 11px;border-radius:9px;}
+  .body{padding:18px;flex:1;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px 2px;font-weight:500;}
+  input[type=text]{width:100%;font:inherit;font-size:16px;border:1.5px solid var(--line);border-radius:11px;padding:12px 13px;background:#fff;color:var(--txt);}
+  input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px var(--green-soft);}
+  .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-size:16px;font-weight:600;cursor:pointer;transition:transform .08s;}
+  .btn:active{transform:scale(.98);}
+  .btn-pri{background:var(--green);color:#fff;} .btn-sec{background:#fff;color:var(--txt);border:1.5px solid var(--line);}
+  .who{display:flex;align-items:center;gap:12px;background:var(--green-soft);border-radius:12px;padding:12px 14px;margin-bottom:14px;}
+  .who .nm{font-weight:600;font-size:16px;} .who .sub{font-size:12.5px;color:var(--green-d);}
+  .who .ch{margin-left:auto;font-size:12.5px;color:var(--green-d);background:#fff;border:1px solid var(--green-soft);padding:5px 10px;border-radius:8px;cursor:pointer;}
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;}
+  .ok{background:var(--green-soft);color:var(--green-d);} .bad{background:#fdeaea;color:var(--red);} .warn{background:#fff4e0;color:#a06515;} .muted2{background:#eef0ec;color:var(--muted);}
+  .muted{color:var(--muted);font-size:13.5px;}
+  .exq{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
+  .exq .q{font-weight:600;font-size:15.5px;margin-bottom:10px;line-height:1.5;}
+  .opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:11px;padding:11px 12px;margin-bottom:8px;cursor:pointer;font-size:15px;line-height:1.45;}
+  .opt.sel{border-color:var(--green);background:var(--green-soft);}
+  .opt input{margin-top:3px;flex:none;width:18px;height:18px;accent-color:var(--green);}
+  .opt.correct{border-color:var(--green);background:var(--green-soft);}
+  .opt.wrong{border-color:var(--red);background:#fdeaea;}
+  .exp{font-size:12.5px;color:var(--muted);margin-top:6px;background:#f7f9f7;border-radius:8px;padding:7px 10px;}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);padding:12px 18px;border-radius:11px;color:#fff;font-weight:500;font-size:14.5px;display:none;z-index:90;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.18);text-align:center;}
+  .toast.ok{background:var(--green);} .toast.err{background:var(--red);} .toast.show{display:block;}
+  .hide{display:none;} .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-2px;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .fcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;border-left:3px solid var(--green);}
+  .scorebig{font-size:44px;font-weight:800;line-height:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><h1>แบบทดสอบพนักงาน</h1><a class="home" href="../employee/">‹ กลับ</a></div>
+  <div class="body">
+    <div id="step_id">
+      <div class="card">
+        <label>รหัสพนักงาน</label>
+        <input id="empId" type="text" inputmode="numeric" placeholder="เช่น 0657379" autocomplete="off">
+        <button class="btn btn-pri" id="goBtn" style="margin-top:12px">เริ่ม</button>
+      </div>
+    </div>
+
+    <div id="step_list" class="hide">
+      <div class="who"><div><div class="nm" id="f_nm">—</div><div class="sub" id="f_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
+      <div id="list_body"><div class="card muted">กำลังโหลด…</div></div>
+    </div>
+
+    <div id="step_exam" class="hide">
+      <div class="card" style="border-left:3px solid var(--green)"><div style="font-weight:700;font-size:16px" id="ex_title"></div><div class="muted" id="ex_sub" style="margin-top:2px"></div></div>
+      <div id="ex_qs"></div>
+      <button class="btn btn-pri" id="ex_submit">ส่งคำตอบ</button>
+      <button class="btn btn-sec" id="ex_cancel" style="margin-top:8px">ยกเลิก</button>
+    </div>
+
+    <div id="step_result" class="hide">
+      <div class="card" style="text-align:center" id="res_head"></div>
+      <div id="res_review"></div>
+      <button class="btn btn-pri" id="res_back">กลับรายการแบบทดสอบ</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',3000);}
+function show(step){['step_id','step_list','step_exam','step_result'].forEach(s=>$(s).classList.toggle('hide',s!==step));}
+let EMP=null, CUR=null, PAPER=null, START_AT=null;
+const QP=new URLSearchParams(location.search);
+
+// ===== เข้าสู่ระบบ =====
+$('goBtn').onclick=async()=>{
+  const id=$('empId').value.trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  $('goBtn').innerHTML='<span class="spin"></span>';
+  try{
+    const emp=await window.HR.lookupEmployee(id);
+    if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); $('goBtn').textContent='เริ่ม'; return; }
+    if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); $('goBtn').textContent='เริ่ม'; return; }
+    EMP=emp; try{ HRSession.setEmp(emp.emp_id); }catch(_e){}
+    $('f_nm').textContent=emp.nickname||emp.name; $('f_sub').textContent='รหัส '+emp.emp_id;
+    show('step_list'); loadList();
+  }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
+  $('goBtn').textContent='เริ่ม';
+};
+$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
+
+// ===== รายการแบบทดสอบ =====
+async function loadList(){
+  $('list_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  let r; try{ r=await window.HR.getMyExams(EMP.emp_id); }catch(e){ $('list_body').innerHTML='<div class="card muted">'+esc(e.message||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const rows=r.rows||[];
+  if(!rows.length){ $('list_body').innerHTML='<div class="card muted">ยังไม่มีแบบทดสอบที่ต้องทำ 🎉</div>'; return; }
+  $('list_body').innerHTML=rows.map(e=>{
+    const st = e.passed?'<span class="pill ok">ผ่านแล้ว '+e.best+'%</span>' : e.expired?'<span class="pill muted2">หมดเขต</span>' : (e.attempts_used>0?'<span class="pill warn">ทำแล้ว '+e.attempts_used+'/'+e.max_attempts+' · สูงสุด '+e.best+'%</span>':'<span class="pill muted2">ยังไม่ทำ</span>');
+    const can=e.can_attempt;
+    return '<div class="fcard">'
+      +'<div style="font-weight:700;font-size:15.5px">'+esc(e.title)+'</div>'
+      +(e.description?'<div class="muted" style="margin-top:2px">'+esc(e.description)+'</div>':'')
+      +'<div class="muted" style="margin-top:4px">เกณฑ์ผ่าน '+e.pass_percent+'% · ทำได้ '+e.max_attempts+' ครั้ง'+(e.time_limit_min?(' · จำกัด '+e.time_limit_min+' นาที'):'')+(e.deadline?(' · ถึง '+esc(e.deadline)):'')+'</div>'
+      +'<div style="margin-top:8px;display:flex;align-items:center;gap:8px">'+st+'<span style="flex:1"></span>'
+      +(can?'<button class="btn btn-pri btn-sm" style="width:auto;padding:9px 16px" data-start="'+e.id+'">'+(e.attempts_used>0?'ทำใหม่':'ทำข้อสอบ')+'</button>':'')+'</div>'
+      +'</div>';
+  }).join('');
+  $('list_body').querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>startExam(Number(b.dataset.start)));
+}
+
+// ===== ทำข้อสอบ =====
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+async function startExam(examId){
+  let r; try{ r=await window.HR.getExamPaper(examId, EMP.emp_id); }catch(e){ toast('err',e.message||'เปิดข้อสอบไม่ได้'); return; }
+  CUR=r.exam; START_AT=new Date().toISOString();
+  // สุ่มลำดับข้อ + สุ่มตัวเลือก (เก็บ index เดิมไว้ตรวจ)
+  const qs=(r.questions||[]).map(q=>({ id:q.id, question:q.question, opts:(q.choices||[]).map((c,idx)=>({t:c,idx})) }));
+  if(CUR.shuffle!==false){ shuffle(qs); qs.forEach(q=>shuffle(q.opts)); }
+  PAPER={ examId, qs, answers:{} };
+  $('ex_title').textContent=CUR.title;
+  $('ex_sub').textContent='เกณฑ์ผ่าน '+CUR.pass_percent+'% · '+qs.length+' ข้อ'+(CUR.time_limit_min?(' · จำกัด '+CUR.time_limit_min+' นาที'):'');
+  renderQs();
+  show('step_exam'); window.scrollTo(0,0);
+}
+function renderQs(){
+  $('ex_qs').innerHTML=PAPER.qs.map((q,qi)=>{
+    return '<div class="exq"><div class="q">'+(qi+1)+'. '+esc(q.question)+'</div>'
+      +q.opts.map(o=>'<label class="opt" data-q="'+q.id+'" data-v="'+o.idx+'"><input type="radio" name="q'+q.id+'"><span>'+esc(o.t)+'</span></label>').join('')
+      +'</div>';
+  }).join('');
+  $('ex_qs').querySelectorAll('.opt').forEach(lb=>lb.onclick=()=>{
+    const qid=lb.dataset.q; PAPER.answers[qid]=Number(lb.dataset.v);
+    $('ex_qs').querySelectorAll('.opt[data-q="'+qid+'"]').forEach(x=>x.classList.remove('sel'));
+    lb.classList.add('sel'); const rb=lb.querySelector('input'); if(rb) rb.checked=true;
+  });
+}
+$('ex_cancel').onclick=()=>{ if(confirm('ยกเลิกการทำข้อสอบนี้? คำตอบจะไม่ถูกบันทึก')){ show('step_list'); loadList(); } };
+$('ex_submit').onclick=async()=>{
+  const unanswered=PAPER.qs.filter(q=>PAPER.answers[q.id]==null).length;
+  if(unanswered>0 && !confirm('ยังไม่ได้ตอบ '+unanswered+' ข้อ · ส่งเลยไหม? (ข้อที่ไม่ตอบจะถือว่าผิด)')) return;
+  const b=$('ex_submit'); b.disabled=true; b.innerHTML='<span class="spin"></span> กำลังส่ง…';
+  let r; try{ r=await window.HR.submitExam({ empId:EMP.emp_id, examId:PAPER.examId, answers:PAPER.answers, started_at:START_AT }); }
+  catch(e){ toast('err',e.message||'ส่งไม่สำเร็จ'); b.disabled=false; b.textContent='ส่งคำตอบ'; return; }
+  showResult(r);
+};
+
+// ===== ผลสอบ =====
+function showResult(r){
+  const col=r.passed?'var(--green)':'var(--red)';
+  $('res_head').innerHTML='<div class="scorebig" style="color:'+col+'">'+r.percent+'%</div>'
+    +'<div style="margin-top:6px;font-size:15px">ตอบถูก '+r.score+'/'+r.total+' ข้อ</div>'
+    +'<div style="margin-top:8px">'+(r.passed?'<span class="pill ok">ผ่าน 🎉</span>':'<span class="pill bad">ไม่ผ่าน (เกณฑ์ '+r.pass_percent+'%)</span>')+'</div>'
+    +(!r.passed&&r.attempts_left>0?'<div class="muted" style="margin-top:8px">ทำใหม่ได้อีก '+r.attempts_left+' ครั้ง</div>':'')
+    +(!r.passed&&r.attempts_left<=0?'<div class="muted" style="margin-top:8px">ใช้สิทธิ์ครบแล้ว — ติดต่อ HR หากต้องการทำเพิ่ม</div>':'');
+  const rev=$('res_review');
+  if(Array.isArray(r.review)&&r.review.length){
+    rev.innerHTML='<h3 style="font-size:13px;color:var(--green-d);font-weight:700;margin:16px 2px 8px">เฉลย/ทบทวน</h3>'+r.review.map((q,i)=>{
+      let opts='';
+      if(Array.isArray(q.choices)){ opts=q.choices.map((c,idx)=>{ const cls=idx===q.answer?'opt correct':(idx===q.chosen&&!q.correct?'opt wrong':'opt'); return '<div class="'+cls+'" style="cursor:default"><span>'+esc(c)+'</span></div>'; }).join(''); }
+      return '<div class="exq"><div class="q">'+(i+1)+'. '+esc(q.question)+' '+(q.correct?'<span class="pill ok">ถูก</span>':'<span class="pill bad">ผิด</span>')+'</div>'+opts+(q.explain?'<div class="exp">เฉลย: '+esc(q.explain)+'</div>':'')+'</div>';
+    }).join('');
+  } else { rev.innerHTML='<div class="muted" style="margin:12px 2px">ระบบไม่แสดงเฉลยสำหรับแบบทดสอบนี้</div>'; }
+  show('step_result'); window.scrollTo(0,0);
+}
+$('res_back').onclick=()=>{ show('step_list'); loadList(); };
+
+// auto-login จากรหัสที่จำไว้ (จาก /qa/ หรือหน้าอื่น)
+(function(){ const pre=QP.get('emp')||(function(){ try{return HRSession.getEmp();}catch(_e){return '';} })(); if(pre){ $('empId').value=pre; $('goBtn').click(); } })();
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('../sw.js',{updateViaCache:'none'}).then(r=>{try{r.update();}catch(e){}}).catch(()=>{}); }); }
+</script>
+</body>
+</html>
