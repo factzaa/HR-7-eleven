@@ -13123,7 +13123,14 @@ async function loadSubmissions(){
   };
 })();
 
-if(pwd) tryLogin(pwd);
+// ★ กู้ session อัตโนมัติเมื่อโหลด/รีเฟรช/กด back — กันเด้งหน้า login (ทั้ง HR และ ผจก.)
+(function restoreSession(){
+  if(pwd){ tryLogin(pwd); return; }
+  try{
+    const me=sessionStorage.getItem('mgr_emp'), mp=sessionStorage.getItem('mgr_pin');
+    if(me&&mp && $('mgr_emp') && $('mgr_pin')){ $('mgr_emp').value=me; $('mgr_pin').value=mp; if(typeof mgrTryLogin==='function') mgrTryLogin(); }
+  }catch(e){}
+})();
 
 </script>
 <script>
