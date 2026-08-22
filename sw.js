@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v116';      // v116: กู้ session อัตโนมัติทั้ง HR+ผจก. (กดปุ่ม back/รีเฟรชไม่เด้งหน้า login)
+const CACHE = 'hr7-eleven-v117';      // v117: หน้าลงเวลา ประกาศเป็นป็อปอัพกดปิดทีละใบ (ไม่บังจอสแกน) + ชิปเปิดอ่านซ้ำ
 const ASSETS = [
   './',
   './index.html',
