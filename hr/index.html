@@ -2520,7 +2520,9 @@ async function tryLogin(p){
     document.body.classList.add('is-logged');
     await loadAll();
     buildGroupedNav();
+    let _wantTab=''; try{ _wantTab=new URLSearchParams(location.search).get('tab')||''; }catch(e){}
     if(pendingMtask()){ showTab('mgrtasks'); mtaskDeepLink(); }   // มาจากลิงก์งานในกลุ่มไลน์ → เปิดงานให้ (เจ้าของร้านเปิดได้ทุกสาขา)
+    else if(_wantTab && ALL_TABS.includes(_wantTab)) showTab(_wantTab);   // ลิงก์ตรงเข้าแท็บ เช่น การ์ดสรุปยอดขาย → ?tab=salesDash
     else showTab('salesDash');
     chatInit();
   } else toast('err', r.error || 'เข้าระบบไม่สำเร็จ');
