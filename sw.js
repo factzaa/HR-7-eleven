@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v114';      // v114: นิดาแนบไฟล์เสียง/วิดีโอ + หน้านำเข้าคู่มือ PDF เข้าคลังความรู้
+const CACHE = 'hr7-eleven-v115';      // v115: นำเข้าคู่มือ PDF ผ่าน Gemini (อ่านไทย+สแกนได้) แทน pdf.js ที่อ่านฟอนต์ไทยไม่ออก
 const ASSETS = [
   './',
   './index.html',

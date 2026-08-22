@@ -7449,33 +7449,23 @@ function rcDraftMsg(a, at, note){
 }
 function closeApplicant(){ $('rcOverlay').classList.remove('show'); }
 // ---- จัดการตำแหน่งงาน (ในแท็บตั้งค่ากะ) ----
-// ===== นำเข้าคู่มือ PDF → คลังความรู้นิดา =====
-let _pdfjsP=null;
-function ensurePdfjs(){
-  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
-  if(_pdfjsP) return _pdfjsP;
-  _pdfjsP=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){} res(window.pdfjsLib); }; s.onerror=rej; document.head.appendChild(s); });
-  return _pdfjsP;
-}
-async function knExtractText(file){
-  const lib=await ensurePdfjs(); const buf=await file.arrayBuffer();
-  const pdf=await lib.getDocument({data:buf}).promise; let txt=''; const n=Math.min(pdf.numPages,60);
-  for(let i=1;i<=n;i++){ const pg=await pdf.getPage(i); const c=await pg.getTextContent(); txt+=c.items.map(it=>it.str).join(' ')+'\n'; }
-  return txt.replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
-}
+// ===== นำเข้าคู่มือ PDF → คลังความรู้นิดา (ให้ Gemini ฝั่ง edge อ่าน — รองรับไทย + สแกน) =====
+function _fileToDataUrl(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(file); }); }
 async function knImport(e){
   const fs=[...(e.target.files||[])]; e.target.value=''; if(!fs.length) return;
-  const prog=$('kn_prog'); let ok=0,skip=0;
-  for(let i=0;i<fs.length;i++){ const f=fs[i]; if(prog) prog.textContent='กำลังประมวล '+(i+1)+'/'+fs.length+'… ('+f.name+')';
-    try{ const text=await knExtractText(f);
-      if(text.replace(/\s/g,'').length<200){ skip++; continue; }   // สแกน/ข้อความน้อย
-      const first=(text.split('\n').find(l=>l.trim().length>8)||f.name).trim().slice(0,70);
-      const m=text.match(/CG\s*\d+/); const title=(m?m[0]+' · ':'')+first;
-      const r=await post({ action:'hr_knowledge_add', password:pwd, data:{ title, content:text, source:f.name } });
-      if(r&&r.ok) ok++; else skip++;
+  const prog=$('kn_prog'); let ok=0,skip=0; const {base,key}=asstApiBase();
+  if(!base){ if(prog) prog.textContent='ไม่พบ URL ระบบ'; return; }
+  for(let i=0;i<fs.length;i++){ const f=fs[i];
+    if(prog) prog.textContent='กำลังให้นิดาอ่าน '+(i+1)+'/'+fs.length+'… ('+f.name+')';
+    if(f.size>10*1024*1024){ skip++; continue; }   // ใหญ่เกิน 10MB
+    try{
+      const data=await _fileToDataUrl(f);
+      const r=await fetch(base+'/functions/v1/hr-assistant',{ method:'POST', headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key}, body:JSON.stringify({ password:pwd, mode:'kn_import', file:{ name:f.name, data } }) });
+      const j=await r.json().catch(()=>({}));
+      if(j&&j.ok) ok++; else skip++;
     }catch(_e){ skip++; }
   }
-  if(prog) prog.textContent='นำเข้าคลังความรู้แล้ว '+ok+' ไฟล์'+(skip?(' · ข้าม '+skip+' (สแกน/ข้อความน้อย ให้แนบในแชทนิดาแทน)'):'');
+  if(prog) prog.textContent='นำเข้าคลังความรู้แล้ว '+ok+' ไฟล์'+(skip?(' · ข้าม/พลาด '+skip+' ไฟล์'):'');
   if(ok) toast('ok','นำเข้าคู่มือ '+ok+' ไฟล์เข้าคลังความรู้นิดาแล้ว');
   knLoadList();
 }
