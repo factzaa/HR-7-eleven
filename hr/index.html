@@ -3828,6 +3828,7 @@ function renderDiscipline(){
 
   const SEV={ verbal:['#fef9c3','#a16207'], written:['#ffedd5','#c2410c'], warning:['#fee2e2','#dc2626'] };   // ไล่สีตามความรุนแรง
   const actPill = x=>{
+    if(x.waived) return `<span class="pill" style="background:#ede9fe;color:#6d28d9;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> อนุโลมรอบนี้</span>${x.waive_reason?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(x.waive_reason)}</div>`:''}`;
     const tc = x.term_case;
     const wt = Number(x.warning_total)||0;
     const suffix = (wt>0 && !tc) ? (' · ใบเตือน '+wt+'/3') : '';
@@ -3874,19 +3875,35 @@ function renderDiscipline(){
           <td class="rowact" style="white-space:nowrap">
             <button class="btn btn-sec btn-sm" data-dact="${esc(x.emp_id)}">＋ บันทึกดำเนินการ</button>
             ${!MGR_MODE?`<button class="btn ${x.action_needed==='warning'?'btn-warn':'btn-sec'} btn-sm" data-warn="${esc(x.emp_id)}" title="${x.action_needed==='warning'?'คะแนนเข้าเกณฑ์ออกใบเตือน':'ออกใบเตือนกรณีความผิดร้ายแรง (ไม่ต้องรอคะแนน)'}"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> ออกใบเตือน</button>`:''}
+            ${!MGR_MODE?(x.waived?`<button class="btn btn-sec btn-sm" data-unwaive="${esc(x.emp_id)}">ยกเลิกอนุโลม</button>`:(x.action_status==='pending'?`<button class="btn btn-sec btn-sm" style="color:#6d28d9;border-color:#ddd6fe" data-waive="${esc(x.emp_id)}" title="อนุโลมเคสนี้เฉพาะรอบนี้ (ความผิดเล็กน้อย) — ไม่ออกใบเตือน">อนุโลม</button>`:'')):''}
             <button class="btn btn-sec btn-sm" data-dtl="${esc(x.emp_id)}">ไทม์ไลน์</button>
           </td>
         </tr>`).join('')}</tbody></table></div></div>`;
   const _dcard = x => {
     const thumb = x.photo_url?`<div class="thumb"><img src="${esc(x.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(x.emp_name))}</div>`;
     const warnBtn = !MGR_MODE?`<button class="btn ${x.action_needed==='warning'?'btn-warn':'btn-sec'} btn-sm" data-warn="${esc(x.emp_id)}"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> ออกใบเตือน</button>`:'';
-    return `<div class="rcard acc"><div class="rcard-top"><div class="name-cell">${thumb}<div class="ntext"><span class="nm">${esc(x.emp_name)}</span><span class="nick">${esc(x.emp_id)}${x.actions_count?(' · '+x.actions_count+' ครั้ง'):''}</span></div></div><div class="rcard-sum"><span style="width:10px;height:10px;border-radius:50%;background:${esc(x.band_color||'#64748b')};display:inline-block"></span><b>${x.score!=null?x.score:'—'}</b><svg class="rcard-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="rcard-stats"><div class="rcard-stat"><div class="v">${x.late_count}</div><div class="l">สาย(ครั้ง)</div></div><div class="rcard-stat"><div class="v">${x.late_total}</div><div class="l">นาที</div></div><div class="rcard-stat"><div class="v" style="${x.absent>0?'color:var(--red)':''}">${x.absent}/${x.days_should}</div><div class="l">ขาด</div></div><div class="rcard-stat"><div class="v">${x.days_worked}</div><div class="l">มาทำงาน</div></div><div class="rcard-stat"><div class="v">${x.early_out_count||0}</div><div class="l">ออกก่อน</div></div><div class="rcard-stat"><div class="v">${fmtOT(x.ot_hours)}</div><div class="l">OT</div></div></div><div class="rcard-info"><div style="font-size:11px;color:var(--muted);margin-bottom:5px">ระดับ / ดำเนินการ</div><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="lvl-pill" style="background:${esc(x.band_color||'#64748b')}"><span class="lvl-dot"></span> ${esc(x.band_label||'ปกติ')}</span>${actPill(x)}</div></div><div class="rcard-act"><button class="btn btn-sec btn-sm" data-dact="${esc(x.emp_id)}">＋ บันทึกดำเนินการ</button>${warnBtn}<button class="btn btn-sec btn-sm" data-dtl="${esc(x.emp_id)}">ไทม์ไลน์</button></div></div>`;
+    return `<div class="rcard acc"><div class="rcard-top"><div class="name-cell">${thumb}<div class="ntext"><span class="nm">${esc(x.emp_name)}</span><span class="nick">${esc(x.emp_id)}${x.actions_count?(' · '+x.actions_count+' ครั้ง'):''}</span></div></div><div class="rcard-sum"><span style="width:10px;height:10px;border-radius:50%;background:${esc(x.band_color||'#64748b')};display:inline-block"></span><b>${x.score!=null?x.score:'—'}</b><svg class="rcard-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="rcard-stats"><div class="rcard-stat"><div class="v">${x.late_count}</div><div class="l">สาย(ครั้ง)</div></div><div class="rcard-stat"><div class="v">${x.late_total}</div><div class="l">นาที</div></div><div class="rcard-stat"><div class="v" style="${x.absent>0?'color:var(--red)':''}">${x.absent}/${x.days_should}</div><div class="l">ขาด</div></div><div class="rcard-stat"><div class="v">${x.days_worked}</div><div class="l">มาทำงาน</div></div><div class="rcard-stat"><div class="v">${x.early_out_count||0}</div><div class="l">ออกก่อน</div></div><div class="rcard-stat"><div class="v">${fmtOT(x.ot_hours)}</div><div class="l">OT</div></div></div><div class="rcard-info"><div style="font-size:11px;color:var(--muted);margin-bottom:5px">ระดับ / ดำเนินการ</div><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="lvl-pill" style="background:${esc(x.band_color||'#64748b')}"><span class="lvl-dot"></span> ${esc(x.band_label||'ปกติ')}</span>${actPill(x)}</div></div><div class="rcard-act"><button class="btn btn-sec btn-sm" data-dact="${esc(x.emp_id)}">＋ บันทึกดำเนินการ</button>${warnBtn}${!MGR_MODE?(x.waived?`<button class="btn btn-sec btn-sm" data-unwaive="${esc(x.emp_id)}">ยกเลิกอนุโลม</button>`:(x.action_status==='pending'?`<button class="btn btn-sec btn-sm" style="color:#6d28d9;border-color:#ddd6fe" data-waive="${esc(x.emp_id)}">อนุโลม</button>`:'')):''}<button class="btn btn-sec btn-sm" data-dtl="${esc(x.emp_id)}">ไทม์ไลน์</button></div></div>`;
   };
   $('d_body').insertAdjacentHTML('beforeend', '<div class="only-mobile">'+e.map(_dcard).join('')+'</div>');
   document.querySelectorAll('[data-warn]').forEach(b=>b.onclick=()=>openIssueWarning(b.dataset.warn));
   document.querySelectorAll('[data-dact]').forEach(b=>b.onclick=()=>openDiscAction(b.dataset.dact));
   document.querySelectorAll('[data-dtl]').forEach(b=>b.onclick=()=>openDiscTimeline(b.dataset.dtl));
+  document.querySelectorAll('[data-waive]').forEach(b=>b.onclick=()=>discWaive(b.dataset.waive));
+  document.querySelectorAll('[data-unwaive]').forEach(b=>b.onclick=()=>discUnwaive(b.dataset.unwaive));
 }
+async function discWaive(empId){
+  const emp=(DISC.employees||[]).find(x=>String(x.emp_id)===String(empId));
+  const reason=prompt('เหตุผลการอนุโลม '+(emp?emp.emp_name:empId)+' (ความผิดเล็กน้อย — จะไม่ออกใบเตือน/ไม่ขึ้นค้างดำเนินการ เฉพาะรอบนี้):');
+  if(reason===null) return; if(!reason.trim()){ toast('err','ต้องระบุเหตุผล'); return; }
+  const r=await post({ action:'hr_disc_waive', ...authBody(), emp_id:empId, cycle:_discWhich(), reason:reason.trim(), by:(MGR_MODE?('ผจก. '+MGR_EMP):'สำนักงาน (HR)') });
+  if(r&&r.ok){ toast('ok','อนุโลมแล้ว'); loadDiscipline(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+async function discUnwaive(empId){
+  if(!confirm('ยกเลิกการอนุโลมคนนี้? (เคสจะกลับมาขึ้น "ต้องดำเนินการ" ตามคะแนน)')) return;
+  const r=await post({ action:'hr_disc_waive', ...authBody(), emp_id:empId, cycle:_discWhich(), waived:false });
+  if(r&&r.ok){ toast('ok','ยกเลิกอนุโลมแล้ว'); loadDiscipline(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+function _discWhich(){ const el=document.getElementById('d_cycle'); return el?el.value:'current'; }
 
 // ---------- โมดัลอเนกประสงค์ (ใช้กับเคสวินัย) ----------
 function openModal(title, html){

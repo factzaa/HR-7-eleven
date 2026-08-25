@@ -142,6 +142,7 @@
         case 'hr_change_emp_id':  return await hrChangeEmpId(p.old_id, p.new_id);
         case 'hr_report':         return await hrReport(p.filter);
         case 'hr_discipline':     return await hrDiscipline(p.cycle, p.range);
+        case 'hr_disc_waive':     return await hrDiscWaive(p);
         case 'hr_settings_get':   return await hrSettingsGet();
         case 'hr_settings_save':  return await hrSettingsSave(p.key, p.value);
         case 'hr_mgrset_get':     return await hrMgrTaskSettingsGet();
@@ -1340,6 +1341,9 @@
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
     const discRules = await loadDisciplineRules();
+    // ★ อนุโลมรายคนของรอบนี้ (คีย์ = cycle_start)
+    let waiverBy = {};
+    try { const { data: wv } = await sb().from('discipline_waivers').select('emp_id,reason,waived_by').eq('cycle_start', cyc.start); (wv || []).forEach(w => { waiverBy[w.emp_id] = { reason: w.reason || '', by: w.waived_by || '' }; }); } catch (_e) { /* ยังไม่ได้รัน discipline_waivers.sql */ }
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
@@ -1460,7 +1464,8 @@
         if (!_docAt) { observing = true; obsState = 'await_doc'; }                       // ยังไม่ปิดเอกสาร → รอ HR
         else { obsSince = String(_docAt).slice(0, 10); if (!_infrDates.some(d => d > obsSince)) { observing = true; obsState = 'watching'; } }  // ปิดแล้ว ยังไม่ผิดใหม่ → สังเกต
       }
-      const need = (breach && !nearTermination && !observing) ? cumNext : null;
+      const _waiver = waiverBy[e.emp_id] || null;   // ★ อนุโลมรอบนี้ → ไม่เร่งดำเนินการ
+      const need = (_waiver ? null : ((breach && !nearTermination && !observing) ? cumNext : null));
       const ladder = [
         { type: 'verbal', label: ACT_LABEL.verbal, done: verbalDone },
         { type: 'written', label: ACT_LABEL.written, done: writtenDone },
@@ -1519,10 +1524,30 @@
           need_ack: !!a.need_ack,
           ack_at: a.ack_at || null,
         })),
+        waived: !!_waiver,                                      // ★ อนุโลมรอบนี้
+        waive_reason: _waiver ? _waiver.reason : '',
+        waive_by: _waiver ? _waiver.by : '',
       };
     }).sort((a, b) => (a.score == null ? 999 : a.score) - (b.score == null ? 999 : b.score));
 
     return { ok: true, employees: out, cycle: cyc, start_score: sc.start_score, bands: sc.bands || [] };
+  }
+  // ★ อนุโลม/ยกเลิกอนุโลม วินัยรายคน (เฉพาะรอบ) — waived=true ตั้ง, false ยกเลิก
+  async function hrDiscWaive(p) {
+    p = p || {};
+    if (!p.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const cyc = (p.range && p.range.start && p.range.end) ? { start: p.range.start } : cycleRange(cycleBack(p.cycle));
+    if (p.waived === false) {
+      const { error } = await sb().from('discipline_waivers').delete().eq('emp_id', String(p.emp_id)).eq('cycle_start', cyc.start);
+      if (error) return { ok: false, error: error.message };
+      await logAct('ยกเลิกอนุโลมวินัย', p.emp_id, 'รอบ ' + cyc.start);
+      return { ok: true, waived: false };
+    }
+    if (!p.reason || !String(p.reason).trim()) return { ok: false, error: 'ต้องระบุเหตุผลการอนุโลม' };
+    const { error } = await sb().from('discipline_waivers').upsert({ emp_id: String(p.emp_id), cycle_start: cyc.start, reason: String(p.reason).trim(), waived_by: p.by || 'สำนักงาน (HR)' }, { onConflict: 'emp_id,cycle_start' });
+    if (error) return { ok: false, error: error.message + ' (ถ้าเพิ่งเปิดใช้ ต้องรัน discipline_waivers.sql)' };
+    await logAct('อนุโลมวินัย', p.emp_id, 'รอบ ' + cyc.start + ' · ' + String(p.reason).trim());
+    return { ok: true, waived: true };
   }
 
   // ---------- เคสวินัย: บันทึกการดำเนินการ (ตักเตือนวาจา / ลายลักษณ์อักษร / คุยปรับพฤติกรรม) ----------
