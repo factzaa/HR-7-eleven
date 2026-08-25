@@ -683,7 +683,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> รับสมัครงาน</h3>
     <input id="rc_search" type="text" placeholder="ค้นหาชื่อ/เบอร์/ตำแหน่ง" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <select id="rc_position" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกตำแหน่ง</option></select>
-    <select id="rc_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสถานะ</option><option value="new">สมัครใหม่</option><option value="reviewing"><svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รอพิจารณา</option><option value="interview"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> นัดสัมภาษณ์</option><option value="hired"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน</option><option value="rejected"><svg class="ei" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> ไม่ผ่าน</option></select>
+    <select id="rc_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสถานะ</option><option value="new">สมัครใหม่</option><option value="reviewing">รอพิจารณา</option><option value="interview">นัดสัมภาษณ์</option><option value="hired">รับเริ่มงาน</option><option value="rejected">ไม่ผ่าน</option></select>
     <select id="rc_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <label style="font-size:12px;color:var(--muted)">สมัคร:</label>
     <input id="rc_from" type="date" title="ตั้งแต่วันที่" style="padding:6px 8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
@@ -7254,10 +7254,10 @@ function renderRdConfig(){
 let RC_ROWS = [], RC_CUR = null;
 const RC_STAGES = [
   { key:'new',       label:'สมัครใหม่',  color:'#0ea5e9' },
-  { key:'reviewing', label:'<svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รอพิจารณา',  color:'#a06515' },
-  { key:'interview', label:'<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> นัดสัมภาษณ์', color:'#2b3242' },
-  { key:'hired',     label:'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน', color:'#16a34a' },
-  { key:'rejected',  label:'<svg class="ei" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> ไม่ผ่าน',    color:'#dc2626' },
+  { key:'reviewing', label:'รอพิจารณา',  color:'#a06515' },
+  { key:'interview', label:'นัดสัมภาษณ์', color:'#2b3242' },
+  { key:'hired',     label:'รับเริ่มงาน', color:'#16a34a' },
+  { key:'rejected',  label:'ไม่ผ่าน',    color:'#dc2626' },
 ];
 function rcStageLabel(k){ const s=RC_STAGES.find(x=>x.key===k); return s?s.label:k; }
 async function loadRecruit(){
