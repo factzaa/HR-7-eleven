@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v121';      // v121: การ์ดโฟลเดอร์ QA แสดงสาขา + ผู้สร้าง + วันที่สร้าง
+const CACHE = 'hr7-eleven-v122';      // v122: โฟลเดอร์ QA — ตัวกรอง ค้นหา/สาขา/เดือน/สถานะ + แสดงสาขา+ผู้สร้าง
 const ASSETS = [
   './',
   './index.html',

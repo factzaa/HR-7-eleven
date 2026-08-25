@@ -1493,6 +1493,13 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
   <div class="shpan" id="qapan_folders" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">โฟลเดอร์ทั้งหมด</h3><button class="btn btn-sec btn-sm" id="qa_refresh">รีเฟรช</button></div>
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
+    <input id="qaf_q" type="text" placeholder="ค้นหาชื่อโฟลเดอร์ / ผู้สร้าง / ผู้รับผิดชอบ" style="flex:1;min-width:160px;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="qaf_branch" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
+    <select id="qaf_month" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกเดือน</option></select>
+    <select id="qaf_flag" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทั้งหมด</option><option value="expiring">ใกล้หมดอายุ</option><option value="unassigned">ยังไม่มอบหมาย</option></select>
+    <span id="qaf_count" style="font-size:12.5px;color:var(--muted);align-self:center"></span>
+  </div>
   <div id="qa_list"><div class="empty">กำลังโหลด…</div></div>
   <div id="qa_items_wrap" style="margin-top:16px"></div>
   </div><!-- /qapan_folders -->
@@ -10793,9 +10800,37 @@ async function loadQaFolders(){
   if(!r.ok){ $('qa_list').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   if(!r.rows.length){ $('qa_list').innerHTML='<div class="empty">ยังไม่มีโฟลเดอร์</div>'; return; }
   // QA เห็นได้ทุกสาขา (ใช้ตรวจของหมดอายุร่วมกัน) — แต่ "บันทึกแทน/มอบหมาย" จำกัดเฉพาะพนักงานสาขา ผจก.
+  QA_FOLDERS=r.rows;
+  qaPopulateFilters();
+  if($('qaf_q') && !$('qaf_q').dataset.wired){ $('qaf_q').dataset.wired='1';
+    ['qaf_q','qaf_branch','qaf_month','qaf_flag'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',qaRenderFolders); });
+  }
+  qaRenderFolders();
+}
+// เติมตัวเลือกสาขา/เดือนในตัวกรองจากข้อมูลจริง (คงค่าที่เลือกไว้)
+function qaPopulateFilters(){
+  const BRN={}; (DATA.branches||[]).forEach(b=>BRN[b.branch_id]=b.name||b.branch_id);
+  const brSet=new Set(), moSet=new Set();
+  (QA_FOLDERS||[]).forEach(f=>{ (f.branch_ids||[]).forEach(id=>brSet.add(String(id))); if(f.target_month) moSet.add(f.target_month); });
+  const brSel=$('qaf_branch'); if(brSel){ const cur=brSel.value; brSel.innerHTML='<option value="">ทุกสาขา</option>'+[...brSet].sort().map(id=>'<option value="'+esc(id)+'">'+esc(BRN[id]||id)+'</option>').join(''); brSel.value=cur; }
+  const moSel=$('qaf_month'); if(moSel){ const cur=moSel.value; moSel.innerHTML='<option value="">ทุกเดือน</option>'+[...moSet].sort().reverse().map(m=>'<option value="'+esc(m)+'">'+esc(m)+'</option>').join(''); moSel.value=cur; }
+}
+function qaRenderFolders(){
   const BRN={}; (DATA.branches||[]).forEach(b=>{ BRN[b.branch_id]=b.name||b.branch_id; });
   const fmtDate=s=>{ if(!s) return ''; try{ return new Date(s).toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'2-digit'}); }catch(e){ return String(s).slice(0,10); } };
-  $('qa_list').innerHTML=r.rows.map(f=>{
+  const q=(($('qaf_q')||{}).value||'').trim().toLowerCase();
+  const fb=($('qaf_branch')||{}).value||'', fm=($('qaf_month')||{}).value||'', ff=($('qaf_flag')||{}).value||'';
+  const list=(QA_FOLDERS||[]).filter(f=>{
+    if(fb && !(f.branch_ids||[]).map(String).includes(String(fb))) return false;
+    if(fm && f.target_month!==fm) return false;
+    if(ff==='expiring' && !((f.stats||{}).expiring>0)) return false;
+    if(ff==='unassigned' && (f.branch_ids||[]).length) return false;
+    if(q){ const hay=((f.title||'')+' '+(f.created_by||'')+' '+((f.assignees||[]).join(' '))+' '+((f.branch_ids||[]).map(id=>BRN[id]||id).join(' '))).toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  });
+  if($('qaf_count')) $('qaf_count').textContent='พบ '+list.length+'/'+(QA_FOLDERS||[]).length;
+  if(!list.length){ $('qa_list').innerHTML='<div class="empty">ไม่พบโฟลเดอร์ตามตัวกรอง</div>'; return; }
+  $('qa_list').innerHTML=list.map(f=>{
     const s=f.stats||{total:0,on_shelf:0,sold:0,removed:0,expiring:0};
     const brNames=(f.branch_ids||[]).map(id=>BRN[id]||id);
     return '<div class="card" style="padding:14px;margin-bottom:10px"><div style="display:flex;gap:10px;align-items:flex-start">'
@@ -10812,7 +10847,6 @@ async function loadQaFolders(){
       +'<button class="btn btn-sec btn-sm" data-qadel="'+f.id+'"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ลบ</button></div>'
       +'</div><div id="qaedit_'+f.id+'" style="display:none;margin-top:10px"></div></div>';
   }).join('');
-  QA_FOLDERS=r.rows;
   $('qa_list').querySelectorAll('[data-qapush]').forEach(b=>b.onclick=async()=>{
     const f=(QA_FOLDERS||[]).find(x=>Number(x.id)===Number(b.dataset.qapush)); if(!f) return;
     const brs=(f.branch_ids||[]).filter(Boolean);
