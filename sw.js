@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v123';      // v123: เอาโค้ด SVG ที่โผล่ในสถานะผู้สมัคร/ข้อความร่างออก (label เป็นข้อความล้วน)
+const CACHE = 'hr7-eleven-v124';      // v124: ข้อความนัดสัมภาษณ์ใช้อีโมจิแทน SVG (SMS อ่านได้จริง)
 const ASSETS = [
   './',
   './index.html',
