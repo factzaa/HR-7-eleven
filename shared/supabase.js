@@ -1206,7 +1206,7 @@
   }
   // ส่งงาน (แนบรูปถ้าต้องการ) — ใช้ตอนส่งครั้งแรกหรือแก้หลังถูกตีกลับ
   async function submitTask({ id, empId, photo, note }) {
-    const row = (await sb.from('task_assignments').select('require_photo,branch_id').eq('id', id).maybeSingle()).data;
+    const row = (await sb.from('task_assignments').select('require_photo,branch_id,shift_id').eq('id', id).maybeSingle()).data;
     if (!row) throw new Error('ไม่พบงานนี้');
     let photo_url = null;
     if (photo) photo_url = await uploadPhoto('employee-docs', 'task/' + (row.branch_id || 'x') + '_' + id + '_' + Date.now() + '.jpg', photo);
@@ -1215,13 +1215,14 @@
     if (photo_url) upd.photo_url = photo_url;
     const { error } = await sb.from('task_assignments').update(upd).eq('id', id);
     if (error) throw error;
-    _staffDoneCheck(row.branch_id);   // เช็ก "งานในกะครบทุกงาน" → แจ้งกลุ่มพนักงาน (กันซ้ำในฝั่ง edge)
+    _staffDoneCheck(row.branch_id, row.shift_id);   // เช็ก "งานในกะครบทุกงาน" → แจ้งกลุ่มพนักงาน (กันซ้ำในฝั่ง edge)
     return { ok: true };
   }
   // ยิงเช็กงานในกะครบทุกงานของสาขา (fire-and-forget) → edge staff-notify ตัดสินใจส่ง/กันซ้ำเอง
-  function _staffDoneCheck(branch){
+  function _staffDoneCheck(branch, shift_id){
     try{ if(!branch) return; const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(!base) return;
-      fetch(base+'/functions/v1/staff-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ kind:'staff_done_check', branch_id:branch })}); }catch(e){}
+      const body={ kind:'staff_done_check', branch_id:branch }; if(shift_id) body.shift_id=shift_id;   // ระบุผลัด → แจ้งเสร็จครบ "รายผลัด" (การ์ดจะบอกผลัดด้วย)
+      fetch(base+'/functions/v1/staff-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }catch(e){}
   }
   // (ผู้ตรวจหน้างาน) งานที่ส่งแล้วของสาขานี้วันนี้ — ไว้ตรวจ/ตีกลับ
   async function getBranchTasks(branchId) {
@@ -1531,7 +1532,7 @@
         event: isFix?'fix_submit':'submit', actor_emp: empId||null, actor_name: who?(who.nickname||who.name):null,
         actor_role:'emp', shift_id: row.shift_id||null, note: note||null });
     }catch(e){}
-    _staffDoneCheck(row.branch_id);   // เช็ก "งานในกะครบทุกงาน" → แจ้งกลุ่มพนักงาน
+    _staffDoneCheck(row.branch_id, row.shift_id);   // เช็ก "งานในกะครบทุกงาน" → แจ้งกลุ่มพนักงาน
     return { ok:true, fix:isFix };
   }
 
