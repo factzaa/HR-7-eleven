@@ -7464,8 +7464,8 @@ function rcDraftMsg(a, at, note){
   const dateTh=d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const timeTh=d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
   return 'เรียนคุณ '+a.full_name+'\n\nบริษัทขอเชิญท่านเข้าสัมภาษณ์งานตำแหน่ง "'+(a.position||'-')+'"'
-    +'\n📅 วันที่ '+dateTh+'\n🕐 เวลา '+timeTh+' น.'
-    +(note?('\n📍 '+note):'')
+    +'\nวันที่: '+dateTh+'\nเวลา: '+timeTh+' น.'
+    +(note?('\nสถานที่: '+note):'')
     +'\n\nกรุณานำสำเนาบัตรประชาชน วุฒิการศึกษา และเอกสารที่เกี่ยวข้องมาด้วย\nสอบถามเพิ่มเติมติดต่อกลับตามเบอร์นี้ได้เลย ขอบคุณค่ะ';
 }
 function closeApplicant(){ $('rcOverlay').classList.remove('show'); }
