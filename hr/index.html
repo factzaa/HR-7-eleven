@@ -7464,8 +7464,8 @@ function rcDraftMsg(a, at, note){
   const dateTh=d.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const timeTh=d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
   return 'เรียนคุณ '+a.full_name+'\n\nบริษัทขอเชิญท่านเข้าสัมภาษณ์งานตำแหน่ง "'+(a.position||'-')+'"'
-    +'\n<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> วันที่ '+dateTh+'\n<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> เวลา '+timeTh+' น.'
-    +(note?('\n<svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> '+note):'')
+    +'\n📅 วันที่ '+dateTh+'\n🕐 เวลา '+timeTh+' น.'
+    +(note?('\n📍 '+note):'')
     +'\n\nกรุณานำสำเนาบัตรประชาชน วุฒิการศึกษา และเอกสารที่เกี่ยวข้องมาด้วย\nสอบถามเพิ่มเติมติดต่อกลับตามเบอร์นี้ได้เลย ขอบคุณค่ะ';
 }
 function closeApplicant(){ $('rcOverlay').classList.remove('show'); }
