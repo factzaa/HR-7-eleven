@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v125';      // v125: ข้อความนัดสัมภาษณ์เป็นข้อความล้วน (ไม่มีอีโมจิ) — SMS ผ่าน deeSMSX ได้
+const CACHE = 'hr7-eleven-v126';      // v126: หน้าสรุปรายบุคคล — ตัวกรองสถานะคะแนนวินัย + ใบเตือน
 const ASSETS = [
   './',
   './index.html',

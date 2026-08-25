@@ -1171,6 +1171,10 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <div id="es_range" style="display:none">
       <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">ตั้งแต่ – ถึง</label>
       <span style="display:flex;gap:6px"><input id="es_start" type="date" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"><input id="es_end" type="date" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></span></div>
+    <div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">สถานะคะแนนวินัย</label>
+      <select id="es_fscore" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสถานะ</option></select></div>
+    <div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">ใบเตือน</label>
+      <select id="es_fwarn" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทั้งหมด</option><option value="has">มีใบเตือนที่มีผล</option><option value="none">ไม่มีใบเตือน</option></select></div>
     <button class="btn btn-pri" id="es_gen">สร้างสรุป</button>
     <button class="btn btn-sec" id="es_print" style="display:none"><svg class="ei" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M8 15h8v6H8z"/></svg> พิมพ์เอกสาร</button>
   </div>
@@ -9719,11 +9723,41 @@ function asstMaybeMorning(){
 // ========== สรุปผลการทำงาน + วินัย รายบุคคล (พิมพ์เอกสาร) ==========
 let ES_DATA=null;
 function esDate(s){ if(!s) return '-'; const d=new Date(s+'T00:00:00'); if(isNaN(d)) return s; const M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return d.getDate()+' '+M[d.getMonth()]+' '+(d.getFullYear()+543); }
+let ES_EMP_ALL=[], ES_SCORE_MAP={}, ES_WARN_SET=new Set(), ES_STATUS_LOADED=false;
+function esApplyFilters(){
+  const sel=$('es_emp'); if(!sel) return; const keep=sel.value;
+  const fs=($('es_fscore')||{}).value||'', fw=($('es_fwarn')||{}).value||'';
+  const rows=ES_EMP_ALL.filter(e=>{
+    if(fs && (ES_SCORE_MAP[e.emp_id]||'—')!==fs) return false;
+    if(fw==='has' && !ES_WARN_SET.has(String(e.emp_id))) return false;
+    if(fw==='none' && ES_WARN_SET.has(String(e.emp_id))) return false;
+    return true;
+  });
+  fillSelect(sel, rows.map(e=>[e.emp_id, e.emp_id+' · '+e.name+(ES_SCORE_MAP[e.emp_id]?(' · '+ES_SCORE_MAP[e.emp_id]):'')+(ES_WARN_SET.has(String(e.emp_id))?' ⚠':'')]), '— เลือกพนักงาน ('+rows.length+' คน) —');
+  if(keep && rows.some(e=>String(e.emp_id)===String(keep))) sel.value=keep;
+}
+async function esLoadStatus(){
+  if(ES_STATUS_LOADED) return; ES_STATUS_LOADED=true;
+  try{
+    const [sc,wn]=await Promise.all([ post({action:'hr_score_get',password:pwd,cycle:'current'}), post({action:'hr_warnings_list',password:pwd}) ]);
+    if(sc&&sc.ok){ (sc.employees||[]).forEach(e=>{ if(e.band_label) ES_SCORE_MAP[e.emp_id]=e.band_label; });
+      const bands=(sc.bands||[]).map(b=>b.label).filter(Boolean);
+      const fsel=$('es_fscore'); if(fsel){ fsel.innerHTML='<option value="">ทุกสถานะ</option>'+bands.map(l=>'<option value="'+esc(l)+'">'+esc(l)+'</option>').join(''); }
+    }
+    if(wn&&wn.ok){ (wn.rows||[]).forEach(w=>{ const st=String(w.status||'').toLowerCase(); const voided = w.voided===true || /void|cancel|ยกเลิก/.test(st); if(!voided && w.emp_id) ES_WARN_SET.add(String(w.emp_id)); }); }
+  }catch(e){ /* ถ้าโหลดสถานะไม่ได้ ก็ยังใช้ dropdown เต็มได้ */ }
+  esApplyFilters();
+}
 function initEmpSum(){
   if(DATA && DATA.rows && $('es_emp') && !$('es_emp').dataset.filled){
-    fillSelect($('es_emp'), DATA.rows.filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
+    ES_EMP_ALL=DATA.rows.filter(e=>e.active!==false).map(e=>({emp_id:e.emp_id,name:e.name}));
+    fillSelect($('es_emp'), ES_EMP_ALL.map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
     $('es_emp').dataset.filled='1';
+    esLoadStatus();
   }
+  const fsc=$('es_fscore'), fwn=$('es_fwarn');
+  if(fsc && !fsc.dataset.wired){ fsc.dataset.wired='1'; fsc.onchange=esApplyFilters; }
+  if(fwn && !fwn.dataset.wired){ fwn.dataset.wired='1'; fwn.onchange=esApplyFilters; }
   const mode=$('es_mode');
   if(mode && !mode.dataset.wired){ mode.dataset.wired='1';
     mode.onchange=()=>{ $('es_range').style.display = mode.value==='custom'?'block':'none'; };
