@@ -7007,7 +7007,7 @@
   }
   async function hrMgrEval(p) {
     p = p || {};
-    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const which = (p.which != null && p.which !== '') ? p.which : 'current';   // รองรับ offset ตัวเลข (ย้อนหลังหลายรอบ)
     const cyc = cycleRange(which);
     const start = cyc.start, end = cyc.end;
     const today = bkkToday();
@@ -7166,7 +7166,7 @@
   }
   async function hrMgrEvalSnapshot(p) {
     p = p || {};
-    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const which = (p.which != null && p.which !== '') ? p.which : 'current';   // รองรับ offset ตัวเลข (ย้อนหลังหลายรอบ)
     const r = await hrMgrEval({ which });
     if (!r.ok) return r;
     const rows = (r.managers || []).map(m => ({
@@ -7311,7 +7311,8 @@
   }
   async function hrPayrollRun(p) {
     p = p || {};
-    const which = (p.which === 'previous') ? 'previous' : 'current';
+    // ★ รองรับย้อนหลังหลายรอบ: which อาจเป็น 'current'/'previous' หรือ offset ตัวเลข ("0"=ปัจจุบัน "1"=ก่อน "2"=ย้อน2รอบ …)
+    const which = (p.which != null && p.which !== '') ? p.which : 'current';
     const cyc = cycleRange(cycleBack(which));
     const payMonth = p.pay_month || cyc.end.slice(0, 7);
     const cfg = await _payrollConfig();
@@ -7647,7 +7648,7 @@
 
   async function hrPayrollFinalize(p) {
     p = p || {};
-    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const which = (p.which != null && p.which !== '') ? p.which : 'current';   // รองรับ offset ตัวเลข (ย้อนหลังหลายรอบ)
     const cyc = cycleRange(cycleBack(which));
     const { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
     if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้ — กดคำนวณก่อน' };
@@ -7696,7 +7697,7 @@
   //   ยกเลิกการหักด้วย payroll_ref = run.id (ย้อนได้ตรงเป๊ะ) · defer_rounds ที่ถูกลดตอนปิดรอบ "ไม่คืนอัตโนมัติ" (เตือนที่ UI)
   async function hrPayrollReopen(p) {
     p = p || {};
-    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const which = (p.which != null && p.which !== '') ? p.which : 'current';   // รองรับ offset ตัวเลข (ย้อนหลังหลายรอบ)
     const cyc = cycleRange(cycleBack(which));
     const { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
     if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้' };
@@ -7737,7 +7738,7 @@
   }
   async function hrPayrollSummary(p) {
     p = p || {};
-    const which = (p.which === 'previous') ? 'previous' : 'current';
+    const which = (p.which != null && p.which !== '') ? p.which : 'current';   // รองรับ offset ตัวเลข (ย้อนหลังหลายรอบ)
     const cyc = cycleRange(cycleBack(which));
     const { data: run } = await sb().from('payroll_runs').select('*').eq('period_start', cyc.start).maybeSingle();
     if (!run) return { ok: true, run: null, count: 0, total_gross: 0, total_sso: 0, total_advance: 0, total_net: 0, by_branch: [] };

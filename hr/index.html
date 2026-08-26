@@ -9467,7 +9467,7 @@ async function asstDoc(kind,a1,a2){
 async function asstDlSlip(empId, which){
   toast('ok','กำลังสร้างสลิป…');
   try{
-    const r=await post({ action:'hr_payroll_run', password:pwd, which:(which==='previous'?'previous':'current') });
+    const r=await post({ action:'hr_payroll_run', password:pwd, which:(which!=null&&which!==''?which:'current') });
     if(!r||!r.ok){ toast('err',(r&&r.error)||'โหลดเงินเดือนไม่สำเร็จ'); return; }
     PAY=r;
     const it=(r.items||[]).find(x=>String(x.emp_id)===String(empId));
