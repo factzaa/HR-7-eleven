@@ -5106,12 +5106,13 @@ function plSlipInner(it, meta){
   meta=meta||{}; const co=meta.co||{}; const B=v=>plB(Number(v||0));
   const wageLabel='พนักงาน';   // สลิปแสดง "พนักงาน" เฉย ๆ (ไม่แยกรายวัน/รายเดือน)
   const addSum=(it.additions||[]).reduce((s,a)=>s+Number(a.amount||0),0);
-  const posAllow=Number(it.position_allowance||0)+Number(it.diligence||0);
-  // เงินได้เสริมทั้งหมด (OT + เบี้ยเลี้ยง/ตำแหน่ง + เบี้ยขยัน + โบนัส + รายการเพิ่ม เช่น เบี้ยพิเศษ/ค่ากะดึก) → รวมใน "เงินได้อื่นๆ"
-  const earnOther=Number(it.ot_pay||0)+posAllow+Number(it.bonus||0)+addSum;
+  // ★ เบี้ยวินัย = เบี้ยขยัน (diligence) + โบนัสตามคะแนนวินัย (bonus) — แสดงแยกในช่องของตัวเอง
+  const diligenceBonus=Number(it.diligence||0)+Number(it.bonus||0);
+  // เงินได้เสริมอื่น (OT + เบี้ยเลี้ยง/ตำแหน่ง + รายการเพิ่ม เช่น เบี้ยพิเศษ/ค่ากะดึก) → รวมใน "เงินได้อื่นๆ" (ไม่รวมเบี้ยวินัยแล้ว)
+  const earnOther=Number(it.ot_pay||0)+Number(it.position_allowance||0)+addSum;
   // รายการหัก + เงินเบิกล่วงหน้า → รวมใน "รายการหักอื่นๆ"
   const dedOther=Number(it.advance_deduct||0)+(it.deductions||[]).reduce((s,a)=>s+Number(a.amount||0),0);
-  const earn=[['เงินเดือน/ค่าจ้าง','Salary/Wage',it.base_pay],['ค่าล่วงเวลา','Overtime',0],['ค่านายหน้า','Commission',0],['ค่าเบี้ยเลี้ยง/ค่าครองชีพ','Allowances/Cost of livings',0],['โบนัส','Bonus',0],['เงินได้อื่นๆ','Others',earnOther]];
+  const earn=[['เงินเดือน/ค่าจ้าง','Salary/Wage',it.base_pay],['ค่าล่วงเวลา','Overtime',0],['เบี้ยวินัย','Diligence Allowance',diligenceBonus],['ค่าเบี้ยเลี้ยง/ค่าครองชีพ','Allowances/Cost of livings',0],['โบนัส','Bonus',0],['เงินได้อื่นๆ','Others',earnOther]];
   const ded=[['ประกันสังคม','Social Security Fund',it.sso],['ภาษีหัก ณ ที่จ่าย','Withholding tax',0],['เงินกู้ยืม กยศ./กรอ.','Student Loan Fund',0],['เงินประกัน','Deposit',0],['ขาด/ลา/มาสาย','Absent/Leave/Late',0],['รายการหักอื่นๆ','Others',dedOther]];
   const ytd=[['เงินได้สะสม','YTD earnings',it.ytd_earnings,0],['ภาษีหัก ณ ที่จ่ายสะสม','YTD Withholding tax',it.ytd_tax||0,0],['เงินประกันสังคมสะสม','Accumulated SSF',it.ytd_sso,0],['รวมเงินได้','Total earnings',it.gross,1],['รวมรายการหัก','Total deductions',it.total_deduct,1],['เงินได้สุทธิ','Net pay',it.net,2]];
   const cell=(r)=>'<div class="ps-row"><div class="ps-lbl"><div class="ps-th">'+esc(r[0])+'</div><div class="ps-en">'+esc(r[1])+'</div></div><div class="ps-amt'+(r[3]===1?' ps-strong':(r[3]===2?' ps-net':''))+'">'+B(r[2])+'</div></div>';

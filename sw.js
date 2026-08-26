@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v133';      // v133: แก้ดูรอบเงินเดือนย้อนหลังหลายรอบ (เดิมตีกลับเป็นรอบปัจจุบัน) + finalize/reopen/summary รองรับ offset
+const CACHE = 'hr7-eleven-v134';      // v134: สลิป — เปลี่ยนช่อง "ค่านายหน้า" เป็น "เบี้ยวินัย" (เบี้ยขยัน+โบนัสวินัย) แยกจากเงินได้อื่นๆ
 const ASSETS = [
   './',
   './index.html',
