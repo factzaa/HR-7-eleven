@@ -727,6 +727,12 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <button class="btn btn-sec btn-sm" id="mt_refresh"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg></button>
       <button class="btn btn-pri btn-sm" id="mt_new">+ มอบหมายงาน</button>
     </div>
+    <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <input id="mtf_q" type="text" placeholder="ค้นหาชื่องาน" style="flex:1;min-width:130px;padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <select id="mtf_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสถานะ</option><option value="todo">ใหม่/ค้าง</option><option value="doing">กำลังทำ</option><option value="done">สำเร็จ</option></select>
+      <select id="mtf_prio" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกความสำคัญ</option><option value="urgent">ด่วน</option></select>
+      <span style="display:inline-flex;align-items:center;gap:5px"><label style="font-size:12px;color:var(--muted)">วันที่:</label><input id="mtf_date" type="date" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="mtf_clear" title="ล้างวันที่">✕</button></span>
+    </div>
     <div id="mt_board"><div class="empty">กำลังโหลด…</div></div>
   </div>
 </div>
@@ -7610,12 +7616,29 @@ async function loadMtasks(){
     }catch(e){}
   }
 }
+function mtBkkDate(ts){ if(!ts) return ''; try{ return new Date(new Date(ts).getTime()+7*3600000).toISOString().slice(0,10); }catch(e){ return String(ts).slice(0,10); } }
+function mtDateOf(t){ return t.status==='done' ? mtBkkDate(t.updated_at) : (t.due_date||''); }
 function renderMtBoard(){
   const box=$('mt_board'); if(!box) return;
+  // wire ตัวกรอง (ครั้งเดียว)
+  if($('mtf_q') && !$('mtf_q').dataset.wired){ $('mtf_q').dataset.wired='1';
+    ['mtf_q','mtf_status','mtf_prio','mtf_date'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',renderMtBoard); });
+    if($('mtf_clear')) $('mtf_clear').onclick=()=>{ $('mtf_date').value=''; renderMtBoard(); };
+  }
   const bf = MGR_MODE?'':($('mt_branch')?$('mt_branch').value:'');
-  const rows=MT_ROWS.filter(t=>!bf||String(t.branch_id)===String(bf));
-  box.innerHTML='<div class="kanban">'+MT_STAGES.map(st=>{
-    const cards=rows.filter(t=>t.status===st.key || (st.key==='doing' && t.status==='review')).sort((a,b)=>((b.priority==='urgent'?1:0)-(a.priority==='urgent'?1:0)));
+  const q=(($('mtf_q')||{}).value||'').trim().toLowerCase();
+  const fst=($('mtf_status')||{}).value||'', fpr=($('mtf_prio')||{}).value||'', fdt=($('mtf_date')||{}).value||'';
+  const rows=MT_ROWS.filter(t=>{
+    if(bf && String(t.branch_id)!==String(bf)) return false;
+    if(q && !((t.title||'').toLowerCase().includes(q))) return false;
+    if(fpr==='urgent' && t.priority!=='urgent') return false;
+    if(fdt && mtDateOf(t)!==fdt) return false;
+    return true;
+  });
+  const stages = fst ? MT_STAGES.filter(s=>s.key===fst) : MT_STAGES;
+  box.innerHTML='<div class="kanban">'+stages.map(st=>{
+    const cards=rows.filter(t=>t.status===st.key || (st.key==='doing' && t.status==='review'))
+      .sort((a,b)=>((b.priority==='urgent'?1:0)-(a.priority==='urgent'?1:0)) || String(mtDateOf(b)).localeCompare(String(mtDateOf(a))));
     return '<div class="kanban-col">'
       +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
       +(cards.length?cards.map(mtCard).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
@@ -7633,6 +7656,7 @@ function mtCard(t){
     +(t.assignee_name?'<div style="font-size:11.5px;color:#0369a1;margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> '+esc(t.assignee_name)+'</div>':'')
     +(MGR_MODE?'':'<div style="font-size:11.5px;color:var(--muted);margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg> '+esc(t.branch_name||'—')+'</div>')
     +due
+    +(t.status==='done'?'<div style="font-size:11px;color:#15803d;font-weight:600;margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> เสร็จ '+beDateTime(t.updated_at)+'</div>':'')
     +'<div style="font-size:11px;color:#9aa4b2;margin-top:5px">อัปเดต '+beDateTime(t.updated_at)+(nph?(' · <svg class="ei" viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></svg>'+nph):'')+'</div>'
     +'</div>';
 }
