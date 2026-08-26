@@ -179,6 +179,8 @@
         case 'hr_branch_list':    return await hrBranchList();
         case 'hr_branch_save':    return await hrBranchSave(p.data);
         case 'hr_branch_delete':  return await hrBranchDelete(p.branch_id);
+        case 'hr_att_list':       return await hrAttList(p);
+        case 'hr_att_save':       return await hrAttSave(p.data);
         case 'hr_sched_week':     return await hrSchedWeek(p.start, p.end);
         case 'hr_sched_save':     return await hrSchedSave(p.data);
         case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id);
@@ -1925,6 +1927,86 @@
   }
 
   // ---------- SCHEDULES (ตารางเวรรายสัปดาห์) ----------
+  // ===== สรุปลงเวลา (แก้ไขได้) =====
+  //   โหมดรายวัน: branch + date → ทุกคนที่จัดเวร/ลงเวลาในวันนั้น · โหมดช่วงวัน: emp_id + start + end
+  async function hrAttList(p) {
+    p = p || {};
+    const shR = await sb().from('shifts').select('shift_id,name');
+    const shName = {}; (shR.data || []).forEach(s => shName[s.shift_id] = s.name || s.shift_id);
+    const hm = (ts) => { if (!ts) return ''; const d = new Date(ts); const b = new Date(d.getTime() + 7 * 3600 * 1000); return String(b.getUTCHours()).padStart(2, '0') + ':' + String(b.getUTCMinutes()).padStart(2, '0'); };
+    const mkRow = (a, meta) => ({
+      emp_id: a ? a.emp_id : meta.emp_id, emp_name: meta.name, work_date: a ? a.work_date : meta.work_date,
+      shift_id: (a && a.shift_id) || meta.shift_id || '', shift_name: shName[(a && a.shift_id) || meta.shift_id] || '',
+      check_in: a ? hm(a.check_in) : '', check_out: a ? hm(a.check_out) : '',
+      late_min: a ? (a.late_min || 0) : 0, ot_hours: a ? Number(a.ot_hours || 0) : 0,
+      day_value: a && a.day_value != null ? Number(a.day_value) : null,
+      status: a && a.check_in ? 'present' : 'none',   // มา / ยังไม่ลง
+      has_att: !!a,
+    });
+    if (p.emp_id) {
+      const start = p.start, end = p.end || p.start;
+      const { data: att } = await sb().from('attendance').select('*').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end).order('work_date');
+      const emp = (await sb().from('employees').select('name,nickname').eq('emp_id', p.emp_id).maybeSingle()).data;
+      const nm = emp ? (emp.nickname || emp.name) : p.emp_id;
+      const rows = (att || []).map(a => mkRow(a, { name: nm }));
+      return { ok: true, mode: 'range', rows };
+    }
+    // โหมดรายวัน
+    const date = p.date || bkkToday(); const branch = p.branch || '';
+    const [empsR, schR, attR] = await Promise.all([
+      sb().from('employees').select('emp_id,name,nickname,branch_id,default_shift').eq('active', true),
+      sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', date),
+      sb().from('attendance').select('*').eq('work_date', date),
+    ]);
+    const empBy = {}; (empsR.data || []).forEach(e => empBy[e.emp_id] = e);
+    const attBy = {}; (attR.data || []).forEach(a => attBy[a.emp_id] = a);
+    const seen = new Set(); const rows = [];
+    // จากตารางเวรของวันนั้น (กรองสาขา)
+    (schR.data || []).forEach(s => {
+      if (branch && String(s.branch_id) !== String(branch)) return;
+      const e = empBy[s.emp_id]; if (!e) return; if (seen.has(s.emp_id)) return; seen.add(s.emp_id);
+      rows.push(mkRow(attBy[s.emp_id] || null, { emp_id: s.emp_id, name: e.nickname || e.name, work_date: date, shift_id: s.shift_id }));
+    });
+    // คนที่ลงเวลาแต่ไม่มีในตารางเวร (มาแทน/ลืมจัด)
+    (attR.data || []).forEach(a => {
+      if (seen.has(a.emp_id)) return; const e = empBy[a.emp_id]; if (!e) return;
+      if (branch && String(a.branch_id || e.branch_id) !== String(branch)) return;
+      seen.add(a.emp_id); rows.push(mkRow(a, { emp_id: a.emp_id, name: e.nickname || e.name, work_date: date }));
+    });
+    rows.sort((x, y) => String(x.shift_id).localeCompare(String(y.shift_id)) || String(x.emp_name).localeCompare(String(y.emp_name)));
+    return { ok: true, mode: 'daily', date, rows };
+  }
+  async function hrAttSave(d) {
+    d = d || {};
+    if (!d.emp_id || !d.work_date) return { ok: false, error: 'ไม่ระบุพนักงาน/วันที่' };
+    const toTs = (hhmm) => (hhmm && /^\d{1,2}:\d{2}$/.test(hhmm)) ? (d.work_date + 'T' + hhmm.padStart(5, '0') + ':00+07:00') : null;
+    const upd = {};
+    if ('check_in' in d)  upd.check_in  = toTs(d.check_in);
+    if ('check_out' in d) upd.check_out = toTs(d.check_out);
+    if ('late_min' in d)  upd.late_min  = Math.max(0, parseInt(d.late_min, 10) || 0);
+    if ('ot_hours' in d)  upd.ot_hours  = Math.max(0, Math.round((Number(d.ot_hours) || 0) * 100) / 100);
+    if ('day_value' in d && d.day_value != null && d.day_value !== '') upd.day_value = Number(d.day_value);
+    if (d.status === 'absent') { upd.check_in = null; upd.check_out = null; upd.late_min = 0; upd.ot_hours = 0; }
+    if (upd.late_min == null) upd.late_min = 0;   // NOT NULL
+    if (upd.check_in) upd.status = 'CLOSED';
+    const { data: exist } = await sb().from('attendance').select('emp_id,branch_id,shift_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date).maybeSingle();
+    if (exist) {
+      const { error } = await sb().from('attendance').update(upd).eq('emp_id', d.emp_id).eq('work_date', d.work_date);
+      if (error) return { ok: false, error: error.message };
+    } else {
+      if (d.status === 'absent') { await logAct('บันทึกลงเวลา (ขาด)', d.emp_id, d.work_date); return { ok: true }; }   // ไม่ต้องสร้างแถวถ้าตั้งขาดและยังไม่มีแถว
+      const sc = (await sb().from('schedules').select('shift_id,branch_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date).maybeSingle()).data;
+      const emp = (await sb().from('employees').select('branch_id,default_shift').eq('emp_id', d.emp_id).maybeSingle()).data;
+      const row = Object.assign({ emp_id: d.emp_id, work_date: d.work_date,
+        shift_id: d.shift_id || (sc && sc.shift_id) || (emp && emp.default_shift) || null,
+        branch_id: (sc && sc.branch_id) || (emp && emp.branch_id) || null,
+        late_min: 0, ot_hours: 0 }, upd);
+      const { error } = await sb().from('attendance').insert(row);
+      if (error) return { ok: false, error: error.message };
+    }
+    await logAct('แก้ไขลงเวลา', d.emp_id, d.work_date + (d.check_in ? (' เข้า ' + d.check_in) : '') + (d.check_out ? (' ออก ' + d.check_out) : ''));
+    return { ok: true };
+  }
   async function hrSchedWeek(start, end) {
     const [empsR, schR, brR, shR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,phone,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).or('start_date.is.null,start_date.lte.' + end).order('emp_id'),

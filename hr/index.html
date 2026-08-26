@@ -577,6 +577,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_exams"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>แบบทดสอบ</button>
   <button class="tab" id="tab_leaves"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9z"/><path d="M12 12v7a2 2 0 0 0 4 0"/></svg></span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span>ตารางงาน</button>
+  <button class="tab" id="tab_attnedit"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>สรุปลงเวลา</button>
   <button class="tab" id="tab_branches"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg></span>สาขา</button>
   <button class="tab" id="tab_goods"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8v13"/><path d="M12 8S10.5 4 8.5 4a2 2 0 0 0 0 4zM12 8s1.5-4 3.5-4a2 2 0 0 1 0 4z"/></svg></span>รับสินค้า</button>
   <button class="tab" id="tab_poster"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg></span>สร้างสื่อ</button>
@@ -1960,6 +1961,25 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 <div id="view_mgrtaskset" class="container" style="display:none">
   <div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> ตั้งค่างาน ผจก.</h3></div>
   <div id="mts_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
+<!-- สรุปลงเวลา (แก้ไขได้) -->
+<div id="view_attnedit" class="container" style="display:none">
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:130px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> สรุปลงเวลา (แก้ไขได้)</h3>
+    <select id="ae_mode" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="daily">รายวัน</option><option value="range">ช่วงวัน (รายคน)</option></select>
+    <span id="ae_daily" style="display:flex;gap:8px;flex-wrap:wrap">
+      <select id="ae_branch" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
+      <input id="ae_date" type="date" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    </span>
+    <span id="ae_range" style="display:none;gap:8px;flex-wrap:wrap">
+      <select id="ae_emp" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:180px"></select>
+      <input id="ae_start" type="date" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <input id="ae_end" type="date" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    </span>
+    <button class="btn btn-pri btn-sm" id="ae_go">แสดง</button>
+  </div>
+  <div id="ae_body"><div class="empty">เลือกเงื่อนไขแล้วกด "แสดง"</div></div>
 </div>
 
 <!-- แบบทดสอบพนักงาน (HR) -->
@@ -7889,6 +7909,66 @@ async function loadStaffNotifyCfg(){
     if(rr&&rr.ok) toast('ok','บันทึกแล้ว'); else toast('err',(rr&&rr.error)||'ไม่สำเร็จ');
   });
 }
+// ===== สรุปลงเวลา (แก้ไขได้) =====
+let AE_ROWS=[];
+function loadAttnEdit(){
+  if($('ae_go') && !$('ae_go').dataset.wired){ $('ae_go').dataset.wired='1';
+    const brs=(DATA.branches||[]).map(b=>[b.branch_id,b.name||b.branch_id]);
+    fillSelect($('ae_branch'), brs, 'ทุกสาขา');
+    fillSelect($('ae_emp'), (DATA.rows||[]).filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
+    const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date(Date.now()+7*3600000).toISOString().slice(0,10);
+    $('ae_date').value=today; $('ae_start').value=today; $('ae_end').value=today;
+    $('ae_mode').onchange=()=>{ const r=$('ae_mode').value==='range'; $('ae_daily').style.display=r?'none':'flex'; $('ae_range').style.display=r?'flex':'none'; };
+    $('ae_go').onclick=aeLoad;
+  }
+  aeLoad();
+}
+async function aeLoad(){
+  const box=$('ae_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const mode=$('ae_mode').value;
+  let payload={ action:'hr_att_list', password:pwd };
+  if(mode==='range'){ const emp=$('ae_emp').value; if(!emp){ box.innerHTML='<div class="empty">เลือกพนักงานก่อน</div>'; return; } payload.emp_id=emp; payload.start=$('ae_start').value; payload.end=$('ae_end').value; }
+  else { payload.branch=$('ae_branch').value; payload.date=$('ae_date').value; }
+  const r=await post(payload);
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  AE_ROWS=r.rows||[]; aeRender(mode);
+}
+function aeRender(mode){
+  const box=$('ae_body');
+  if(!AE_ROWS.length){ box.innerHTML='<div class="empty" style="padding:18px">ไม่มีข้อมูลลงเวลาตามเงื่อนไข</div>'; return; }
+  const col1 = mode==='range' ? 'วันที่' : 'พนักงาน';
+  const head='<tr><th>'+col1+'</th><th>กะ</th><th>เข้า</th><th>ออก</th><th>สาย(นาที)</th><th>OT(ชม.)</th><th>สถานะ</th><th></th></tr>';
+  const body=AE_ROWS.map((x,i)=>{
+    const c1 = mode==='range' ? beDate(x.work_date) : (esc(x.emp_name)+' <span style="color:var(--muted);font-size:11px">'+esc(x.emp_id)+'</span>');
+    const inp=(k,val,type,w)=>'<input data-ae="'+i+'|'+k+'" type="'+type+'" value="'+esc(val)+'" style="width:'+w+';padding:6px 7px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13px">';
+    const stSel='<select data-ae="'+i+'|status" style="padding:6px 7px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13px"><option value="present"'+(x.status==='present'?' selected':'')+'>มา</option><option value="absent"'+(x.status!=='present'?' selected':'')+'>ขาด/ยังไม่ลง</option></select>';
+    return '<tr>'
+      +'<td>'+c1+'</td>'
+      +'<td style="font-size:12px">'+esc(x.shift_name||x.shift_id||'-')+'</td>'
+      +'<td>'+inp('check_in',x.check_in||'','time','92px')+'</td>'
+      +'<td>'+inp('check_out',x.check_out||'','time','92px')+'</td>'
+      +'<td>'+inp('late_min',x.late_min||0,'number','66px')+'</td>'
+      +'<td>'+inp('ot_hours',x.ot_hours||0,'number','66px')+'</td>'
+      +'<td>'+stSel+'</td>'
+      +'<td><button class="btn btn-pri btn-sm" data-aesave="'+i+'">บันทึก</button></td>'
+      +'</tr>';
+  }).join('');
+  box.innerHTML='<div class="card"><div class="tablewrap"><table style="font-size:13px"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-top:8px">แก้ค่าในช่องแล้วกด "บันทึก" รายแถว · ตั้ง "ขาด/ยังไม่ลง" จะล้างเวลาเข้า-ออกและสาย · เวลาเป็นรูปแบบ 24 ชม.</div></div>';
+  box.querySelectorAll('[data-aesave]').forEach(b=>b.onclick=()=>aeSave(Number(b.dataset.aesave),b));
+}
+async function aeSave(i,btn){
+  const x=AE_ROWS[i]; if(!x) return;
+  const get=k=>{ const el=document.querySelector('[data-ae="'+i+'|'+k+'"]'); return el?el.value:undefined; };
+  const data={ emp_id:x.emp_id, work_date:x.work_date, shift_id:x.shift_id,
+    status:get('status'), check_in:get('check_in')||'', check_out:get('check_out')||'',
+    late_min:get('late_min'), ot_hours:get('ot_hours') };
+  btn.disabled=true; const old=btn.textContent; btn.textContent='…';
+  const r=await post({ action:'hr_att_save', password:pwd, data });
+  btn.disabled=false; btn.textContent=old;
+  if(r&&r.ok){ toast('ok','บันทึกแล้ว'); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+
 // ===== แบบทดสอบพนักงาน (HR) =====
 let EXADM=[];
 async function loadExams(){
@@ -8671,7 +8751,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','exams','leaves','schedule','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'];
+const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -8696,6 +8776,7 @@ showTab = function(name){
   else if(name==='shelf'){ loadShelfTab(); }
   else if(name==='lineFeed'){ loadLineFeed(); }
   else if(name==='exams'){ loadExams(); }
+  else if(name==='attnedit'){ loadAttnEdit(); }
   else if(name==='salesDash'){ loadSalesDash(); }
   else if(name==='auditDash'){ loadAuditDash(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
@@ -9082,7 +9163,7 @@ const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf','exams','lineFeed'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','schedule','leaves'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','attnedit','schedule','leaves'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg>', label:'ไรเดอร์',     tabs:['rider'] },
