@@ -886,7 +886,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
         <select id="pl_run_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
         <span id="pl_run_status" style="font-size:12.5px;color:var(--muted);align-self:center"></span>
         <span style="flex:1"></span>
-        <button class="btn btn-sec btn-sm" id="pl_print"><svg class="ei" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M8 15h8v6H8z"/></svg> พิมพ์สลิป (A5 2/แผ่น)</button>
+        <button class="btn btn-sec btn-sm" id="pl_print"><svg class="ei" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M8 15h8v6H8z"/></svg> พิมพ์สลิป (A4 2 คน/แผ่น)</button>
         <button class="btn btn-sec btn-sm" id="pl_mail" title="ต้องตั้งค่า Resend ก่อน (เฟส 1.5)"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 7l8 6 8-6"/></svg> ส่งอีเมล</button>
         <button class="btn btn-pri btn-sm" id="pl_finalize"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg> ปิดรอบ</button>
         <button class="btn btn-sec btn-sm" id="pl_reopen" style="display:none" title="เปิดรอบที่ปิดแล้วกลับมาแก้/ทดสอบ + คืนการหักเงินเบิก"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-1.9"/></svg> เปิดรอบใหม่</button>
@@ -2535,6 +2535,9 @@ const isActive = v => v===true || String(v).toUpperCase()==='TRUE';
 async function post(payload){
   // โหมด ผจก.: บังคับสโคปสาขาในทุก API ที่รับพารามิเตอร์ branch
   if(MGR_MODE && payload && typeof payload==='object' && 'branch' in payload) payload.branch = MGR_BRANCH;
+  // ★ ทุก action ของหน้าเงินเดือน แนบรหัสที่ปลดล็อกไว้ไปด้วยเสมอ
+  if(payload && typeof payload==='object' && typeof payload.action==='string'
+     && payload.action.indexOf('hr_payroll_')===0 && !('pay_pass' in payload)) payload.pay_pass = PAY_PASS;
   return window.HRAPI.dispatch(payload);
 }
 function toast(kind, msg){ const t=$('toast'); t.className='toast show '+kind; t.textContent=msg; setTimeout(()=>t.classList.remove('show'), 3500); }
@@ -4622,7 +4625,7 @@ $('mecSave') && ($('mecSave').onclick=meConfigSave);
 /* ============================================================
    เงินเดือน (Payroll) — เห็นเฉพาะ HR + ล็อกรหัสอีกชั้น
    ============================================================ */
-let PAY_UNLOCKED=false, PAY=null, PAY_CFG=null, PAY_PROFILES=null, PAY_PF_DEF={daily_rate:0,monthly_rate:0};
+let PAY_UNLOCKED=false, PAY_PASS='', PAY=null, PAY_CFG=null, PAY_PROFILES=null, PAY_PF_DEF={daily_rate:0,monthly_rate:0};
 const plB = n => Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:0, maximumFractionDigits:2});
 // ป้ายรอบอิงวันจ่าย: "รอบปัจจุบัน" = รอบที่กำลังจะจ่าย (จ่าย 1 ของเดือนถัดจากสิ้นรอบ 21–20)
 function _plCyc(which){
@@ -4669,7 +4672,7 @@ async function plUnlock(){
   $('pl_unlock').innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_payroll_unlock', password:pwd, pass });
   $('pl_unlock').textContent='ปลดล็อก';
-  if(r&&r.ok){ PAY_UNLOCKED=true; $('pl_pass').value=''; $('pl_lock_msg').textContent=''; enterPayroll(); }
+  if(r&&r.ok){ PAY_UNLOCKED=true; PAY_PASS=pass; $('pl_pass').value=''; $('pl_lock_msg').textContent=''; enterPayroll(); }
   else $('pl_lock_msg').textContent=(r&&r.error)||'รหัสไม่ถูกต้อง';
 }
 $('pl_unlock') && ($('pl_unlock').onclick=plUnlock);
@@ -4691,7 +4694,15 @@ async function loadPayrollRun(){
   if(!r||!r.ok){ $('pl_run_body').innerHTML='<div class="empty">'+esc((r&&r.error)||'ไม่สำเร็จ')+'</div>'; return; }
   PAY=r;
   const fin = r.run && r.run.status==='finalized';
-  $('pl_run_status').innerHTML = (r.range?('<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> '+esc(r.range.label)+' · '):'') + (fin?'<b style="color:#166534">ปิดรอบแล้ว</b>':'<span style="color:#c2410c">ร่าง (แก้ได้)</span>');
+  // ★ เตือน 2 อย่าง: รอบยังไม่จบ (ยอดยังไม่ครบ) · มีรอบก่อนหน้ายังไม่ปิด (เสี่ยงหักใบเบิกซ้ำ)
+  const _warnEnd = (r.cycle_ended===false)
+    ? ' · <b style="color:#b45309">รอบยังไม่จบ — ตัวเลขเป็นยอดถึงวันนี้เท่านั้น</b>' : '';
+  const _warnPrev = (r.prev_open && r.prev_open.length)
+    ? '<div style="margin-top:6px;padding:7px 10px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12.5px;line-height:1.55">'
+      + '<b>เตือน: มีรอบก่อนหน้ายังไม่ปิด</b> (' + r.prev_open.map(esc).join(', ') + ')<br>'
+      + 'ใบเบิกล่วงหน้า/ค่าน้ำมันของรอบนั้นจะถูกดึงมาหักในรอบนี้ด้วย — ถ้าย้อนกลับไปปิดรอบเก่าทีหลังจะกลายเป็นหัก 2 รอบ<br>'
+      + 'ควรปิดรอบเก่าก่อน แล้วค่อยกดคำนวณรอบนี้ใหม่</div>' : '';
+  $('pl_run_status').innerHTML = (r.range?('<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> '+esc(r.range.label)+' · '):'') + (fin?'<b style="color:#166534">ปิดรอบแล้ว</b>':'<span style="color:#c2410c">ร่าง (แก้ได้)</span>') + _warnEnd + _warnPrev;
   $('pl_finalize').style.display = fin?'none':'';
   if($('pl_reopen')) $('pl_reopen').style.display = fin?'':'none';
   plFillRunBranches();
@@ -4876,18 +4887,18 @@ $('pl_finalize') && ($('pl_finalize').onclick=async()=>{
   if(!PAY||!PAY.run){ toast('err','คำนวณก่อน'); return; }
   if(!confirm('ปิดรอบนี้? หลังปิดจะแก้ไม่ได้ และจะทำเครื่องหมาย "หักเบิกล่วงหน้าแล้ว" ให้อัตโนมัติ')) return;
   const which=($('pl_which')||{}).value||'current';
-  $('pl_finalize').innerHTML='<span class="spin"></span>';
+  $('pl_finalize').disabled=true; $('pl_finalize').innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_payroll_finalize', password:pwd, which });
-  $('pl_finalize').textContent='ปิดรอบ';
+  $('pl_finalize').disabled=false; $('pl_finalize').textContent='ปิดรอบ';
   if(r&&r.ok){ toast('ok','ปิดรอบแล้ว'); loadPayrollRun(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 });
 $('pl_reopen') && ($('pl_reopen').onclick=async()=>{
   if(!PAY||!PAY.run){ toast('err','คำนวณก่อน'); return; }
   if(!confirm('เปิดรอบนี้กลับเป็น "ร่าง" เพื่อแก้ไข/ทดสอบ?\n\nระบบจะยกเลิกการหักเงินเบิกที่ผูกกับรอบนี้ให้ (คืนใบเบิกกลับเป็น "ยังไม่หัก")\n\n ใบเบิกที่ถูก "เลื่อนหัก" ตัวนับรอบถูกลดไป 1 แล้ว จะไม่คืนอัตโนมัติ — ตรวจสอบเองถ้าจำเป็น')) return;
   const which=($('pl_which')||{}).value||'current';
-  $('pl_reopen').innerHTML='<span class="spin"></span>';
+  $('pl_reopen').disabled=true; $('pl_reopen').innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_payroll_reopen', password:pwd, which });
-  $('pl_reopen').textContent='เปิดรอบใหม่';
+  $('pl_reopen').disabled=false; $('pl_reopen').textContent='เปิดรอบใหม่';
   if(r&&r.ok){ toast('ok','เปิดรอบแล้ว'+(r.reverted?(' · คืนใบเบิก '+r.reverted+' ใบ'):'')); loadPayrollRun(); }
   else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 });
@@ -10606,16 +10617,38 @@ async function drawSalesDash(){
   const exBaht=(ex,k)=>{ try{ const a=ex&&ex[k]; return Array.isArray(a)?(+a[a.length-1]||0):0; }catch(e){ return 0; } };
   // ★ ยอด "รวม" แต่ละผลัด = ยอดสะสมทั้งวัน → 1 แถวต่อ (สาขา,วัน): เลือก "สิ้นวัน" ก่อน ถ้าไม่มีเอายอดรวมสูงสุด
   //    + กรองค่าขยะ (เกิน 2 ล้าน/ผลัด เป็นไปไม่ได้สำหรับ 1 สาขา = พิมพ์เลขเพี้ยน)
+  // ★ แก้ 26 ส.ค. 2569: ยอดแต่ละผลัด = "ยอดของผลัดนั้น" ไม่ใช่ยอดสะสม
+  //   (ตรวจข้อมูลจริง 243 วัน-สาขา: สิ้นวัน = เช้า+บ่าย+ดึก 202 วัน · = MAX 0 วัน)
+  //   ยอด/เป้า/ลูกค้า → แถว "สิ้นวัน" ถ้ามี · ไม่มีก็บวก 3 ผลัด
+  //   ช่องทางย่อย → บวก 3 ผลัดเสมอ (แถวสิ้นวันเว้นว่างถึง 69% ของวัน)
   const SANE=2000000;
-  const dayBest={};
-  rows.forEach(x=>{ const st=+x.sales_total||0; if(st>SANE||(+x.target_total||0)>SANE) return;
-    const k=x.branch_id+'|'+x.sale_date; const cur=dayBest[k]; const isEnd=x.shift==='สิ้นวัน';
-    if(!cur){ dayBest[k]=x; return; }
-    const curEnd=cur.shift==='สิ้นวัน';
-    if(isEnd&&!curEnd) dayBest[k]=x;
-    else if(isEnd===curEnd && st>(+cur.sales_total||0)) dayBest[k]=x;
+  const dayMap={}; const sdOdd=[];
+  rows.forEach(x=>{
+    const st=+x.sales_total||0, tg=+x.target_total||0;
+    if(st>SANE||tg>SANE){ sdOdd.push(x); return; }          // เลขเพี้ยน — เก็บไว้เตือน ไม่ทิ้งเงียบ ๆ
+    const k=x.branch_id+'|'+x.sale_date;
+    const d=dayMap[k]||(dayMap[k]={branch_id:x.branch_id,branch_name:x.branch_name,sale_date:x.sale_date,
+      end:null,sTot:0,sTgt:0,sCust:0,card:0,cafe:0,deliv:0,tmw:0,pai:0,jeeb:0,salapao:0});
+    if(x.shift==='สิ้นวัน'){ d.end=x; return; }
+    d.sTot+=st; d.sTgt+=tg; d.sCust+=(+x.customers||0);
+    d.card+=(+x.sales_card||0); d.cafe+=(+x.allcafe_baht||0);
+    d.deliv+=(+x.delivery_baht||0); d.tmw+=(+x.truewallet_baht||0);
+    d.pai+=exBaht(x.extra,'pai'); d.jeeb+=exBaht(x.extra,'khanomjeeb'); d.salapao+=exBaht(x.extra,'salapao');
   });
-  const drows=Object.values(dayBest);
+  const drows=Object.values(dayMap).map(d=>{
+    const e=d.end||{}, pick=(sum,key)=> sum>0?sum:(+(e[key]||0)||0);
+    const sales_total  = (e.sales_total !=null? +e.sales_total  : d.sTot);
+    const target_total = (e.target_total!=null? +e.target_total : d.sTgt);
+    const customers    = (e.customers   !=null? +e.customers    : d.sCust);
+    return { branch_id:d.branch_id, branch_name:d.branch_name, sale_date:d.sale_date,
+      sales_total, target_total, customers,
+      per_head: customers? sales_total/customers : null,
+      sales_card:pick(d.card,'sales_card'), allcafe_baht:pick(d.cafe,'allcafe_baht'),
+      delivery_baht:pick(d.deliv,'delivery_baht'), truewallet_baht:pick(d.tmw,'truewallet_baht'),
+      _pai:d.pai, _jeeb:d.jeeb, _salapao:d.salapao,
+      _noEnd: !d.end,
+      _mismatch:(d.end && d.sTot>0 && Math.abs(sales_total-d.sTot)>10)?Math.round(sales_total-d.sTot):0 };
+  });
   // aggregate per branch (ครบทุกมิติ) — จากยอดรวมสิ้นวันต่อวัน
   const byBr={}; const allDates={};
   drows.forEach(x=>{
@@ -10624,7 +10657,7 @@ async function drawSalesDash(){
     b.sales+=(+x.sales_total||0); b.target+=(+x.target_total||0); b.cust+=(+x.customers||0);
     if(x.per_head){b.ph+=+x.per_head;b.phn++;}
     b.card+=(+x.sales_card||0); b.cafe+=(+x.allcafe_baht||0); b.deliv+=(+x.delivery_baht||0); b.tmw+=(+x.truewallet_baht||0);
-    b.pai+=exBaht(x.extra,'pai'); b.jeeb+=exBaht(x.extra,'khanomjeeb'); b.salapao+=exBaht(x.extra,'salapao');
+    b.pai+=(+x._pai||0); b.jeeb+=(+x._jeeb||0); b.salapao+=(+x._salapao||0);
     b.daily[x.sale_date]=(b.daily[x.sale_date]||0)+(+x.sales_total||0);
   });
   const branches=Object.values(byBr).map((b,i)=>({...b,color:SD_COLORS[i%SD_COLORS.length],dayN:b.days.size,ach:b.target?b.sales/b.target*100:null,pph:b.phn?b.ph/b.phn:null,avgDay:b.days.size?b.sales/b.days.size:0})).sort((a,b)=>b.sales-a.sales);
@@ -10658,14 +10691,17 @@ async function drawSalesDash(){
         +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+b.dayN+' วัน · เฉลี่ย/วัน ฿'+_thb(b.avgDay)+' · ต่อหัว ฿'+(b.pph?b.pph.toFixed(0):'—')+' · ลูกค้า '+_thb(b.cust)+'</div></div>';
     }).join('')+'</div></div>';
   // ---- โดนัท: ยอดขายแยกรายผลัด + สินค้าโฟกัส/ช่องทางชำระ ----
-  const shiftAgg={}; rows.forEach(x=>{ const st=+x.sales_total||0; if(st>SANE) return; const sh=x.shift||'อื่นๆ'; shiftAgg[sh]=(shiftAgg[sh]||0)+st; });
+  // ★ แถว "สิ้นวัน" = ยอดรวมทั้งวัน ใส่รวมในกราฟนี้จะนับซ้ำ ~2 เท่า
+  const shiftAgg={}; rows.forEach(x=>{ const st=+x.sales_total||0; if(st>SANE) return;
+    if(x.shift==='สิ้นวัน') return;
+    const sh=x.shift||'อื่นๆ'; shiftAgg[sh]=(shiftAgg[sh]||0)+st; });
   const shiftColor={'เช้า':'#f59e0b','บ่าย':'#3b82f6','ดึก':'#7c3aed','สิ้นวัน':'#16a34a','อื่นๆ':'#94a3b8'};
   const shiftOrder=['เช้า','บ่าย','ดึก','สิ้นวัน'];
   const shiftItems=Object.keys(shiftAgg).sort((a,b)=>(shiftOrder.indexOf(a)+9)%99-(shiftOrder.indexOf(b)+9)%99).map(k=>({label:'ผลัด'+k,value:shiftAgg[k],color:shiftColor[k]||'#94a3b8'}));
   const sum=k=>branches.reduce((s,b)=>s+b[k],0);
   const focusItems=[{label:'All Cafe',value:sum('cafe'),color:'#16a34a'},{label:'Delivery',value:sum('deliv'),color:'#2563eb'},{label:'TrueWallet',value:sum('tmw'),color:'#f59e0b'},{label:'ยอดบัตร',value:sum('card'),color:'#7c3aed'},{label:'พายอบ',value:sum('pai'),color:'#dc2626'},{label:'ขนมจีบ',value:sum('jeeb'),color:'#0891b2'},{label:'ซาลาเปา',value:sum('salapao'),color:'#db2777'}];
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;margin-bottom:14px">'
-    +sdDonutCard('ยอดขายแยกรายผลัด (ตามที่แจ้ง)',shiftItems)
+    +sdDonutCard('ยอดขายแยกรายผลัด',shiftItems)
     +sdDonutCard('สินค้าโฟกัส & ช่องทางชำระ',focusItems)
     +'</div>';
   // ---- ตารางรายละเอียดครบทุกตัวเลข ----

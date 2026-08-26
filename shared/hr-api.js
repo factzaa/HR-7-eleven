@@ -127,8 +127,29 @@
     try { await sb().from('activity_log').insert({ action, emp_id: emp_id || null, detail: detail || null, actor: actor || 'HR' }); } catch (e) { console.warn('logAct', e); }
   }
 
+  // ★★ ประตูรหัสหน้าเงินเดือน (เพิ่ม 26 ส.ค. 2569)
+  //  ขอบเขตที่กันได้จริง: กันการเรียก action เงินเดือนโดยไม่ผ่านหน้าปลดล็อก
+  //  ขอบเขตที่กัน "ไม่" ได้: ไฟล์นี้รันในเบราว์เซอร์ ผู้ที่เปิด DevTools ยังเรียกเองได้
+  //  การป้องกันจริงต้องย้ายการอ่าน/เขียนตารางเงินเดือนไปหลัง Edge Function
+  //  แล้วปิดสิทธิ์ anon ที่ตาราง (ดู _patched/SQL-ล็อกตารางเงินเดือน.sql)
+  let _payPassOk = null;
+  async function _payrollGate(pass) {
+    const s = String(pass || '');
+    if (!s) return false;
+    if (_payPassOk !== null && _payPassOk === s) return true;
+    try {
+      const { data } = await sb().rpc('payroll_check_password', { p_password: s });
+      if (data === true) { _payPassOk = s; return true; }
+    } catch (_e) { return false; }
+    return false;
+  }
+  const _PAYROLL_OPEN = { hr_payroll_unlock: 1, hr_payroll_pass_set: 1 };
+
   async function dispatch(p) {
     try {
+      if (p && typeof p.action === 'string' && p.action.indexOf('hr_payroll_') === 0 && !_PAYROLL_OPEN[p.action]) {
+        if (!(await _payrollGate(p.pay_pass))) return { ok: false, error: 'ต้องปลดล็อกหน้าเงินเดือนก่อน' };
+      }
       switch (p.action) {
         case 'hr_login':          return await hrLogin(p.password);
         case 'mgr_login':         return await mgrLogin(p.emp_id, p.pin);
@@ -7530,10 +7551,22 @@
       delivery: (reviewMap[it.emp_id] && reviewMap[it.emp_id].delivery != null) ? Number(reviewMap[it.emp_id].delivery) : null,   // ค่า Delivery (จาก payroll_review) — โมดัลแก้รายคนใช้
       dil_note: dilNoteBy[it.emp_id] || '',   // เหตุผลตัดเบี้ยวินัย (auto) — โชว์ในช่องหมายเหตุ
     }); });
+    // ★ สถานะรอบ สำหรับเตือนบนหน้าจอ
+    //   cycle_ended = รอบนี้จบแล้วหรือยัง (ถ้ายัง ตัวเลขเป็นยอดถึงวันนี้เท่านั้น)
+    //   prev_open   = รอบก่อนหน้าที่ยังไม่ปิด (เสี่ยงใบเบิกถูกหักซ้ำเมื่อย้อนไปปิดทีหลัง)
+    const cycle_ended = String(cyc.end) < today;
+    let prev_open = [];
+    try {
+      const { data: po } = await sb().from('payroll_runs').select('period_start,status')
+        .lt('period_start', cyc.start).neq('status', 'finalized')
+        .order('period_start', { ascending: false }).limit(3);
+      prev_open = (po || []).map(x => String(x.period_start));
+    } catch (_e) { /* ไม่มีรอบเก่า ก็ข้าม */ }
     return {
       ok: true,
       run: { id: run.id, period_start: run.period_start, period_end: run.period_end, pay_month: run.pay_month, status: run.status },
       range: { start: cyc.start, end: cyc.end, label: 'รอบ ' + cyc.start + ' ถึง ' + cyc.end },
+      cycle_ended, prev_open,
       items: outItems, config: cfg,
     };
   }
