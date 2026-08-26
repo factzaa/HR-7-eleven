@@ -577,7 +577,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_exams"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>แบบทดสอบ</button>
   <button class="tab" id="tab_leaves"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9z"/><path d="M12 12v7a2 2 0 0 0 4 0"/></svg></span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span>ตารางงาน</button>
-  <button class="tab" id="tab_attnedit"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>สรุปลงเวลา</button>
+  <button class="tab" id="tab_attnedit"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>ปรับปรุงเวลา</button>
   <button class="tab" id="tab_branches"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg></span>สาขา</button>
   <button class="tab" id="tab_goods"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8v13"/><path d="M12 8S10.5 4 8.5 4a2 2 0 0 0 0 4zM12 8s1.5-4 3.5-4a2 2 0 0 1 0 4z"/></svg></span>รับสินค้า</button>
   <button class="tab" id="tab_poster"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg></span>สร้างสื่อ</button>
@@ -1966,7 +1966,8 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 <!-- สรุปลงเวลา (แก้ไขได้) -->
 <div id="view_attnedit" class="container" style="display:none">
   <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
-    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:130px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> สรุปลงเวลา (แก้ไขได้)</h3>
+    <h3 style="flex:1;font-size:15px;font-weight:600;min-width:130px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> ปรับปรุงเวลา</h3>
+    <input id="ae_q" type="text" placeholder="ค้นหาชื่อ/รหัสพนักงาน" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:150px">
     <select id="ae_mode" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="daily">รายวัน</option><option value="range">ช่วงวัน (รายคน)</option></select>
     <span id="ae_daily" style="display:flex;gap:8px;flex-wrap:wrap">
       <select id="ae_branch" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
@@ -7920,6 +7921,7 @@ function loadAttnEdit(){
     $('ae_date').value=today; $('ae_start').value=today; $('ae_end').value=today;
     $('ae_mode').onchange=()=>{ const r=$('ae_mode').value==='range'; $('ae_daily').style.display=r?'none':'flex'; $('ae_range').style.display=r?'flex':'none'; };
     $('ae_go').onclick=aeLoad;
+    if($('ae_q')) $('ae_q').addEventListener('input',()=>aeRender($('ae_mode').value));
   }
   aeLoad();
 }
@@ -7936,9 +7938,12 @@ async function aeLoad(){
 function aeRender(mode){
   const box=$('ae_body');
   if(!AE_ROWS.length){ box.innerHTML='<div class="empty" style="padding:18px">ไม่มีข้อมูลลงเวลาตามเงื่อนไข</div>'; return; }
+  const q=(($('ae_q')||{}).value||'').trim().toLowerCase();
+  const list = q ? AE_ROWS.filter(x=>((x.emp_name||'')+' '+(x.emp_id||'')).toLowerCase().includes(q)) : AE_ROWS;
+  if(!list.length){ box.innerHTML='<div class="empty" style="padding:18px">ไม่พบพนักงานตามคำค้น</div>'; return; }
   const col1 = mode==='range' ? 'วันที่' : 'พนักงาน';
   const head='<tr><th>'+col1+'</th><th>กะ</th><th>เข้า</th><th>ออก</th><th>สาย(นาที)</th><th>OT(ชม.)</th><th>สถานะ</th><th></th></tr>';
-  const body=AE_ROWS.map((x,i)=>{
+  const body=list.map((x)=>{ const i=AE_ROWS.indexOf(x);
     const c1 = mode==='range' ? beDate(x.work_date) : (esc(x.emp_name)+' <span style="color:var(--muted);font-size:11px">'+esc(x.emp_id)+'</span>');
     const inp=(k,val,type,w)=>'<input data-ae="'+i+'|'+k+'" type="'+type+'" value="'+esc(val)+'" style="width:'+w+';padding:6px 7px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13px">';
     const stSel='<select data-ae="'+i+'|status" style="padding:6px 7px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13px"><option value="present"'+(x.status==='present'?' selected':'')+'>มา</option><option value="absent"'+(x.status!=='present'?' selected':'')+'>ขาด/ยังไม่ลง</option></select>';
