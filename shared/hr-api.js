@@ -7429,7 +7429,8 @@
       const prof = profM[e.emp_id] || { wage_type: 'daily', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, ot_rate: null };
       const s = scMap[e.emp_id] || {};
       const rv = reviewMap[e.emp_id] || {};
-      const attDays = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + y, 0) * 10) / 10;
+      // ★ วันที่มี check-in = อย่างน้อย 1 วัน (กันกะที่ day_value=0 เช่น M8 ทำให้วันหาย · ให้ตรงกับหน้าตรวจ/วินัยที่ใช้ `|| 1`)
+      const attDays = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + (y || 1), 0) * 10) / 10;
       const attOT = Math.round((otByEmp[e.emp_id] || 0) * 10) / 10;
       // ★ ลำดับความสำคัญ: หน้าตรวจ (payroll_review) > แก้รายคนเดิม (item) > ตามลงเวลา
       const daysOv = (rv.days_override != null) ? Number(rv.days_override) : ((ex.days_override != null) ? Number(ex.days_override) : null);

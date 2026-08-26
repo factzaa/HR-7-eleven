@@ -3,7 +3,7 @@
 //          + cache fallback เวลาออฟไลน์
 // คำขอข้ามโดเมน (Supabase / CDN / fonts) ปล่อยให้วิ่งเน็ตตามปกติ
 
-const CACHE = 'hr7-eleven-v131';      // v131: โมดัลงาน ผจก. — ช่องแชท/ความเคลื่อนไหวสูงพอมองเห็น (min-height)
+const CACHE = 'hr7-eleven-v132';      // v132: แก้ payroll นับวันหาย — วันที่มี check-in นับอย่างน้อย 1 (กันกะ day_value=0 เช่น M8)
 const ASSETS = [
   './',
   './index.html',
