@@ -46,15 +46,59 @@
   // ---------- เช็กอิน ----------
   async function checkIn({ empId, shiftId, branchId, lat, lng, accuracy, photoDataUrl, faceMatch, unscheduledOk }) {
     const today = bangkokDate();
+    // ★★ หา "วันที่ของกะ" ให้ถูกก่อนทำอย่างอื่น (แก้ 27 ส.ค. 2569)
+    //   ปัญหาเดิม: ใช้วันปฏิทินตรง ๆ → คนกะดึกที่สายจนข้ามเที่ยงคืน ถูกลงเป็นวันถัดไป
+    //     ผลคือ วันจริงกลายเป็น "ขาดงาน" · สายถูกบันทึกเป็น 0 · และคืนถัดไปกดเข้างานไม่ได้
+    //     (เคสจริง: กะ N 21:30 ของวันที่ 26 · สแกน 00:09 ของวันที่ 27 → ลงเป็นวันที่ 27)
+    //   กติกาใหม่ เรียงตามลำดับ:
+    //     1) วันนี้มีเวร และตอนนี้อยู่ในหน้าต่างกะนั้น (เริ่ม − checkin_early_min ถึง เลิก) → วันนี้
+    //     2) เมื่อวานมีกะข้ามคืนที่ยังไม่เลยเวลาเลิก และเมื่อวานยังไม่มีแถวลงเวลา → เมื่อวาน
+    //     3) นอกนั้น → วันนี้ (เหมือนเดิม)
+    let workDate = today, ovBackfill = null;
+    try {
+      const _yd = _addDays(today, -1);
+      const _now = Date.now();
+      const _stt = await _loadSettings();
+      const _early = Number(_stt.checkin_early_min || 180);
+      const { data: _sc } = await sb.from('schedules').select('work_date,shift_id')
+        .eq('emp_id', empId).in('work_date', [today, _yd]);
+      const _sToday = (_sc || []).find(s => s.work_date === today && s.shift_id);
+      const _sYday  = (_sc || []).find(s => s.work_date === _yd   && s.shift_id);
+      const _ids = [...new Set([_sToday && _sToday.shift_id, _sYday && _sYday.shift_id].filter(Boolean))];
+      if (_ids.length) {
+        const { data: _shs } = await sb.from('shifts').select('shift_id,start_time,end_time').in('shift_id', _ids);
+        const _shm = {}; (_shs || []).forEach(s => { _shm[s.shift_id] = s; });
+        const _win = (d, sid) => {
+          const s = _shm[sid]; if (!s || !s.start_time || !s.end_time) return null;
+          const a = String(s.start_time).slice(0, 5), b = String(s.end_time).slice(0, 5);
+          const ovn = b <= a;                                     // กะข้ามคืน
+          return {
+            from: new Date(d + 'T' + a + ':00+07:00').getTime() - _early * 60000,
+            to:   new Date((ovn ? _addDays(d, 1) : d) + 'T' + b + ':00+07:00').getTime(),
+            ovn,
+          };
+        };
+        const _wT = _sToday ? _win(today, _sToday.shift_id) : null;
+        const _inToday = !!(_wT && _now >= _wT.from && _now <= _wT.to);
+        if (!_inToday && _sYday) {
+          const _wY = _win(_yd, _sYday.shift_id);
+          if (_wY && _wY.ovn && _now < _wY.to) {
+            const { data: _exY } = await sb.from('attendance').select('check_in')
+              .eq('emp_id', empId).eq('work_date', _yd).maybeSingle();
+            if (!_exY) { workDate = _yd; ovBackfill = _sYday.shift_id; }   // ★ ลงเป็นกะของเมื่อวาน
+          }
+        }
+      }
+    } catch (_e) { /* หาไม่ได้ก็ใช้วันปฏิทินตามเดิม */ }
     // กันเช็กอินซ้ำ: ถ้าวันนี้เคยเช็กอินแล้ว ไม่ให้เขียนทับ (ต้องให้ HR แก้)
-    const { data: ex } = await sb.from('attendance').select('check_in,check_out').eq('emp_id', empId).eq('work_date', today).maybeSingle();
+    const { data: ex } = await sb.from('attendance').select('check_in,check_out').eq('emp_id', empId).eq('work_date', workDate).maybeSingle();
     if (ex && ex.check_in) {
       throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + (ex.check_out ? ' (และเช็กเอาต์แล้ว)' : '') + ' — หากต้องแก้ไข ติดต่อ HR');
     }
     // กันกดเข้างานทั้งที่ยังมีกะค้างไม่ได้กดออก (เช่น จบกะดึกเมื่อวาน แล้วเช้านี้กดเข้าแทนออก)
     const { data: openRow } = await sb.from('attendance').select('work_date,check_in')
       .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
-      .gte('work_date', _addDays(today, -2)).neq('work_date', today)
+      .gte('work_date', _addDays(workDate, -2)).neq('work_date', workDate)
       .order('check_in', { ascending: false }).limit(1).maybeSingle();
     if (openRow && openRow.check_in) {
       throw new Error('คุณยังมีกะที่ยังไม่ได้กดออกงาน (วันที่ ' + openRow.work_date + ' เข้างาน ' + _fmtTime(openRow.check_in) + ') — ถ้าจบกะแล้วให้กด "ออกงาน" ก่อน · หากกดผิดโปรดติดต่อ HR');
@@ -62,7 +106,7 @@
     // หา "กะวันนี้" จากตารางเวรก่อน (authoritative) แล้วค่อย fallback กะประจำที่ส่งมา
     // กันบั๊ก: ถ้าใช้ default_shift อย่างเดียว คนที่จัดกะผ่านตารางเวร (default_shift ว่าง) จะคำนวณสายไม่ได้
     let useShift = shiftId || null;
-    const sched = (await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', today).maybeSingle()).data;
+    const sched = (await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', workDate).maybeSingle()).data;
     const hasSchedule = !!(sched && sched.shift_id);
     if (hasSchedule) useShift = sched.shift_id;
 
@@ -77,25 +121,33 @@
     let photo_url = null;
     if (photoDataUrl) {
       // ใส่ timestamp กันชื่อไฟล์ซ้ำ: ถ้าลบข้อมูลแล้วเช็กอินใหม่วันเดิม จะได้ URL ใหม่ (ไม่ติดแคชรูปเก่า)
-      photo_url = await uploadPhoto('attendance-photos', `${empId}/${today}_${Date.now()}.jpg`, photoDataUrl);
+      photo_url = await uploadPhoto('attendance-photos', `${empId}/${workDate}_${Date.now()}.jpg`, photoDataUrl);
     }
     // คำนวณสายผ่าน RPC (อิงกะที่ใช้จริง)
     const nowIso = new Date().toISOString();
     const { data: lateMin } = await sb.rpc('calc_late_min', { p_shift_id: useShift, p_check_in: nowIso });
 
     const { error } = await sb.from('attendance').upsert({
-      emp_id: empId, work_date: today, shift_id: useShift, branch_id: branchId,
+      emp_id: empId, work_date: workDate, shift_id: useShift, branch_id: branchId,
       check_in: nowIso, late_min: lateMin || 0,
       photo_url, gps_lat: lat, gps_lng: lng, gps_accuracy: accuracy,
       face_match: faceMatch, status: 'OPEN',
       unscheduled: isUnscheduled,                 // ★ ธงเข้างานนอกตาราง (ให้ HR ตรวจสอบ)
     }, { onConflict: 'emp_id,work_date' });
     if (error) throw error;
+    // ★ ระบบย้อนวันให้ (กะข้ามคืน สแกนหลังเที่ยงคืน) → บันทึกไว้ให้ HR เห็น
+    if (workDate !== today) {
+      try {
+        await sb.from('activity_log').insert({ action: 'ลงเวลาย้อนวัน (กะข้ามคืน)', emp_id: empId,
+          detail: 'สแกนเข้า ' + _fmtTime(nowIso) + ' ของวันที่ ' + today
+                + ' → ระบบลงเป็นกะ ' + (ovBackfill || useShift || '-') + ' ของวันที่ ' + workDate, actor: empId });
+      } catch (_e) { /* ข้าม */ }
+    }
     // แจ้ง HR เมื่อมีคนเข้างานนอกตาราง (ไม่ให้พังการลงเวลาถ้าตารางแจ้งเตือนไม่มี)
     if (isUnscheduled) {
       try {
         await sb.from('activity_log').insert({ action: 'เข้างานนอกตาราง', emp_id: empId,
-          detail: 'กดเข้างานวันที่ไม่มีตารางเวร (' + today + ') เวลา ' + _fmtTime(nowIso) + ' · สาขา ' + (branchId || '-'), actor: empId });
+          detail: 'กดเข้างานวันที่ไม่มีตารางเวร (' + workDate + ') เวลา ' + _fmtTime(nowIso) + ' · สาขา ' + (branchId || '-'), actor: empId });
       } catch (_e) { /* ข้าม */ }
     }
     return { late_min: lateMin || 0, shift_id: useShift, unscheduled: isUnscheduled };
@@ -204,6 +256,30 @@
       }
       // ออกก่อนเวลา: กดออกก่อนเวลาเลิก "กะสุดท้าย" → เก็บจำนวนนาทีที่ออกก่อน
       if (lastEndMs > -Infinity && nowMs < lastEndMs) earlyOutMin = Math.round((lastEndMs - nowMs) / 60000);
+      // ★ การ์ดกันค่าเพี้ยน: ออกก่อนเวลาเกินความยาวกะ = คำนวณจากกะผิดวัน → ทิ้งค่า แล้วแจ้ง HR
+      //   (เคสจริง: เคยได้ early_out_min = 1,407 นาที = 23 ชม. เพราะ work_date ผิดวัน)
+      if (earlyOutMin != null && lastShift) {
+        const _a = String(lastShift.start_time || '').slice(0, 5), _b = String(lastShift.end_time || '').slice(0, 5);
+        let _len = null;
+        if (_a && _b) {
+          const [h1, m1] = _a.split(':').map(Number), [h2, m2] = _b.split(':').map(Number);
+          _len = (h2 * 60 + m2) - (h1 * 60 + m1); if (_len <= 0) _len += 1440;
+        }
+        if (_len && earlyOutMin > _len) {
+          const _bad = earlyOutMin; earlyOutMin = null;
+          try {
+            await sb.from('activity_log').insert({ action: 'ตรวจพบเวลาผิดปกติ', emp_id: empId,
+              detail: 'ออกก่อนเวลา ' + _bad + ' นาที เกินความยาวกะ ' + _len + ' นาที (' + row.work_date + ') — ระบบตัดค่าทิ้ง โปรดตรวจสอบวันที่ของแถวนี้', actor: empId });
+          } catch (_e) { /* ข้าม */ }
+        }
+      }
+      if (ot > 16) {                                    // OT เกิน 16 ชม. เป็นไปไม่ได้
+        const _badOt = ot; ot = 0;
+        try {
+          await sb.from('activity_log').insert({ action: 'ตรวจพบเวลาผิดปกติ', emp_id: empId,
+            detail: 'OT ' + _badOt + ' ชม. เกินความเป็นไปได้ (' + row.work_date + ') — ระบบตัดเป็น 0 โปรดตรวจสอบ', actor: empId });
+        } catch (_e) { /* ข้าม */ }
+      }
     }
     const upd = { check_out: nowIso, ot_hours: ot, early_out_min: earlyOutMin, status: 'CLOSED', auto_closed: false, extend_until: null };
     // รูปถ่ายตอนออกงาน (เซลฟี) — เก็บแยกจากรูปตอนเข้า
