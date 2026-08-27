@@ -10698,10 +10698,24 @@ async function drawSalesDash(){
   const shiftColor={'เช้า':'#f59e0b','บ่าย':'#3b82f6','ดึก':'#7c3aed','สิ้นวัน':'#16a34a','อื่นๆ':'#94a3b8'};
   const shiftOrder=['เช้า','บ่าย','ดึก','สิ้นวัน'];
   const shiftItems=Object.keys(shiftAgg).sort((a,b)=>(shiftOrder.indexOf(a)+9)%99-(shiftOrder.indexOf(b)+9)%99).map(k=>({label:'ผลัด'+k,value:shiftAgg[k],color:shiftColor[k]||'#94a3b8'}));
+  // ★ ส่วนต่าง = ยอดวัน (จากแถว "สิ้นวัน") − ผลรวมที่แต่ละผลัดแจ้งมา
+  //   เกิดเมื่อสาขาแจ้งยอดผลัดไม่ครบ/พิมพ์ผิด แต่ปิดยอดสิ้นวันถูก
+  //   ใส่เป็นชิ้นหนึ่งในกราฟ เพื่อให้ผลรวมโดนัท = ยอดขายรวมในตาราง (ไม่ให้เงินหายเงียบ ๆ)
+  const _shiftSum=Object.values(shiftAgg).reduce((s,v)=>s+(+v||0),0);
+  const _resid=Math.round(totalSales-_shiftSum);
+  if(_resid>1) shiftItems.push({label:'ไม่ระบุผลัด',value:_resid,color:'#94a3b8'});
+  // วันที่ยอดผลัดไม่ตรงกับยอดปิดวัน — เอาไว้โชว์ใต้กราฟให้ HR ตามแก้ที่ต้นทาง
+  const _oddDays=drows.filter(d=>d._mismatch).sort((a,b)=>Math.abs(b._mismatch)-Math.abs(a._mismatch)).slice(0,5);
+  const _shiftNote = (_resid>1)
+    ? ('<div style="margin-top:8px;padding:7px 9px;border-radius:7px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:11.5px;line-height:1.5">'
+       + '<b>ไม่ระบุผลัด ฿'+_thb(_resid)+'</b> — สาขาปิดยอดสิ้นวันไว้ แต่ยอดที่แจ้งรายผลัดรวมได้ไม่ครบ'
+       + (_oddDays.length ? ('<br>ตรวจวันเหล่านี้: ' + _oddDays.map(d=>esc(d.branch_name||d.branch_id)+' '+beDate(d.sale_date)+' (ต่าง ฿'+_thb(Math.abs(d._mismatch))+')').join(' · ')) : '')
+       + '</div>')
+    : '';
   const sum=k=>branches.reduce((s,b)=>s+b[k],0);
   const focusItems=[{label:'All Cafe',value:sum('cafe'),color:'#16a34a'},{label:'Delivery',value:sum('deliv'),color:'#2563eb'},{label:'TrueWallet',value:sum('tmw'),color:'#f59e0b'},{label:'ยอดบัตร',value:sum('card'),color:'#7c3aed'},{label:'พายอบ',value:sum('pai'),color:'#dc2626'},{label:'ขนมจีบ',value:sum('jeeb'),color:'#0891b2'},{label:'ซาลาเปา',value:sum('salapao'),color:'#db2777'}];
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;margin-bottom:14px">'
-    +sdDonutCard('ยอดขายแยกรายผลัด',shiftItems)
+    +sdDonutCard('ยอดขายแยกรายผลัด',shiftItems,null,_shiftNote)
     +sdDonutCard('สินค้าโฟกัส & ช่องทางชำระ',focusItems)
     +'</div>';
   // ---- ตารางรายละเอียดครบทุกตัวเลข ----
@@ -10746,7 +10760,7 @@ function sdDonut(items,unit){
   const legend='<div style="flex:1;min-width:150px">'+items.sort((a,b)=>b.value-a.value).map(it=>'<div style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin:3px 0"><i style="width:10px;height:10px;border-radius:2px;background:'+it.color+';flex:none"></i><span style="flex:1">'+esc(it.label)+'</span><b>'+(unit||'฿')+_thb(it.value)+'</b><span style="color:var(--muted);width:44px;text-align:right">'+(it.value/tot*100).toFixed(1)+'%</span></div>').join('')+'</div>';
   return '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'+svg+legend+'</div>';
 }
-function sdDonutCard(title,items,unit){ return '<div class="card"><div class="card-h"><h3>'+esc(title)+'</h3></div><div class="card-b">'+sdDonut(items,unit)+'</div></div>'; }
+function sdDonutCard(title,items,unit,note){ return '<div class="card"><div class="card-h"><h3>'+esc(title)+'</h3></div><div class="card-b">'+sdDonut(items,unit)+(note||'')+'</div></div>'; }
 // ========== แดชบอร์ดตรวจร้าน QSSI ==========
 const AU_SUBS=['S','A','V','E','Q','C','QMS'];
 async function loadAuditDash(){
