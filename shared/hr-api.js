@@ -991,7 +991,9 @@
     function statusOf(empId) {
       if (onLeave[empId]) return { status: 'leave', leave_type: onLeave[empId] };
       const a = attBy[empId];
-      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id, face_match: a.face_match, gps_accuracy: a.gps_accuracy, att_photo_in: a.photo_url || '', att_photo_out: a.checkout_photo_url || '' };
+      // ★ auto_closed = พนักงานลืมกดออกงาน ระบบปิดกะให้เองที่เวลาเลิกกะ และตัด OT เป็น 0
+      //   เดิมหน้าเว็บไม่เคยอ่านคอลัมน์นี้เลย แถวเลยหน้าตาเหมือนคนกดออกเองทุกประการ
+      if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', auto_closed: a.status === 'AUTO_CLOSED', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id, face_match: a.face_match, gps_accuracy: a.gps_accuracy, att_photo_in: a.photo_url || '', att_photo_out: a.checkout_photo_url || '' };
       return { status: 'absent' };
     }
 
@@ -6358,9 +6360,38 @@
     const C = async (q) => { try { const { count } = await q; return count || 0; } catch (_e) { return 0; } };
     let mtQ = sb().from('mgr_tasks').select('*', { count: 'exact', head: true }).in('status', ['todo', 'review']);
     if (branch) mtQ = mtQ.eq('branch_id', branch);
-    let taQ = sb().from('task_assignments').select('*', { count: 'exact', head: true }).eq('status', 'submitted').eq('work_date', today);
-    if (branch) taQ = taQ.eq('branch_id', branch);
-    const out = { mgrtasks: await C(mtQ), mgrdailyrev: await C(taQ) };
+    // ★ "งานรอตรวจ" ต้องนับชุดเดียวกับคิวที่เปิดเข้าไปเห็นจริง (hrMgrIntaskList ข้างล่าง)
+    //   เดิมนับทุกแถว submitted ของ "วันนี้" เฉย ๆ → badge / แจ้งเตือนไลน์ / หน้าจริง ได้คนละเลข
+    const mgrdailyrev = await (async () => {
+      try {
+        const yd = addDays(today, -1);
+        const cols = 'id,work_date,shift_id,task_def_id,needs_mgr,mgr_checked_at,fix_done_at';
+        let tq = sb().from('task_assignments').select(cols).in('work_date', [today, yd]).eq('status', 'submitted').limit(500);
+        let tq2 = sb().from('task_assignments').select(cols).eq('status', 'submitted').not('fix_done_at', 'is', null).is('mgr_checked_at', null).limit(100);
+        if (branch) { tq = tq.eq('branch_id', branch); tq2 = tq2.eq('branch_id', branch); }
+        const [tR, t2R, dfR, shR] = await Promise.all([
+          tq, tq2,
+          sb().from('task_defs').select('id,mgr_review'),
+          sb().from('shifts').select('shift_id,mgr_review,start_time,end_time'),
+        ]);
+        const defMgr = {}; (dfR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
+        const shOff = {}, shOvn = {};
+        (shR.data || []).forEach(s => {
+          shOff[s.shift_id] = (s.mgr_review === false);
+          shOvn[s.shift_id] = !!(s.start_time && s.end_time && String(s.end_time) <= String(s.start_time));
+        });
+        const byId = {};
+        (tR.data || []).forEach(t => { byId[t.id] = t; });
+        (t2R.data || []).forEach(t => { byId[t.id] = t; });   // งานแก้แล้วส่งกลับ (ข้ามวันได้)
+        return Object.values(byId).filter(t => {
+          if (t.mgr_checked_at) return false;
+          const isResubmit = !!t.fix_done_at;
+          if (!isResubmit && String(t.work_date) !== today && !shOvn[t.shift_id]) return false;
+          return t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]);
+        }).length;
+      } catch (_e) { return 0; }
+    })();
+    const out = { mgrtasks: await C(mtQ), mgrdailyrev };
     if (!branch) {   // คิวอนุมัติฝั่ง HR
       out.leaves = await C(sb().from('leaves').select('*', { count: 'exact', head: true }).eq('status', 'pending'));
       out.advance = await C(sb().from('advance_requests').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));

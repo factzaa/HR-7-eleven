@@ -1892,7 +1892,9 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
             </select>
           </div>
           <div class="field-mini"><label>สี/ความเด่น</label><select id="an_level"><option value="info">ทั่วไป</option><option value="warn">สำคัญ</option><option value="urgent">ด่วน</option></select></div>
+          <div class="field-mini" style="min-width:150px"><label>ต้องรับทราบภายใน (ชม.)</label><input id="an_ackh" type="number" min="1" max="168" step="1" value="24" title="ครึ่งหนึ่งของเวลานี้ = เตือนซ้ำ · ครบกำหนด = แจ้ง ผจก.สาขา · 2 เท่า = เข้ากลุ่มไลน์สาขา" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
         </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:-2px">ใช้เฉพาะระดับ "สำคัญ" กับ "บังคับ" — ครึ่งหนึ่งของเวลาที่ตั้ง = เตือนซ้ำ · ครบกำหนด = แจ้ง ผจก.สาขา · 2 เท่า = ส่งรายชื่อเข้ากลุ่มไลน์สาขา</div>
         <div id="an_quizbox" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;display:none">
           <div style="font-weight:700;font-size:13.5px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7M12 17h.01"/></svg> คำถามยืนยันความเข้าใจ (กันการกดรับทราบโดยไม่อ่าน)</div>
           <input id="an_qq" placeholder="คำถาม เช่น ของจะมาส่งกี่โมง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;margin-bottom:8px">
@@ -11574,8 +11576,9 @@ function boardList(key){
   $('dl_title').textContent = title+' ('+rows.length+')';
   $('dl_body').innerHTML = rows.length ? rows.map(p=>{
     let right;
-    if(p.status==='late') right='<span class="pill bad">สาย '+(p.late_min||0)+' น. · '+esc(p.check_in||'')+(p.check_out?' · ออก '+esc(p.check_out):' · ยังไม่ออก')+'</span>';
-    else if(p.status==='present') right='<span class="pill '+(p.check_out?'ok':'warn')+'">เข้า '+esc(p.check_in||'')+(p.check_out?' · ออก '+esc(p.check_out):' · ยังไม่ออก')+'</span>';
+    const _ac = p.auto_closed ? ' ' + '<span class="pill" style="background:#fef3c7;color:#92400e">🔒 ระบบปิดให้</span>' : '';
+    if(p.status==='late') right='<span class="pill bad">สาย '+(p.late_min||0)+' น. · '+esc(p.check_in||'')+(p.check_out?(p.auto_closed?' · ระบบปิดให้ ':' · ออก ')+esc(p.check_out):' · ยังไม่ออก')+'</span>'+_ac;
+    else if(p.status==='present') right='<span class="pill '+(p.check_out?'ok':'warn')+'">เข้า '+esc(p.check_in||'')+(p.check_out?(p.auto_closed?' · ระบบปิดให้ ':' · ออก ')+esc(p.check_out):' · ยังไม่ออก')+'</span>'+_ac;
     else if(p.status==='leave') right='<span class="pill" style="background:#dbeafe;color:#1d4ed8">ลา'+(p.leave_type?' ('+esc(p.leave_type)+')':'')+'</span>';
     else right='<span class="pill" style="background:#f1f5f9;color:#64748b">ยังไม่มา</span>';
     return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap">'
@@ -11586,9 +11589,11 @@ function boardList(key){
   $('dashListOverlay').classList.add('show');
 }
 function bdChip(p){
-  const out = p.check_out ? ' <span style="opacity:.85">→ ออก '+esc(p.check_out)+'</span>' : ' <span style="opacity:.6">· ยังไม่ออก</span>';
-  if(p.status==='present') return '<span class="pill ok">✓ '+esc(p.check_in)+out+'</span>';
-  if(p.status==='late')    return '<span class="pill bad">สาย '+p.late_min+' น. · '+esc(p.check_in)+out+'</span>';
+  // ★ ระบบปิดกะให้ = ลืมกดออกงาน ระบบลงเวลาออกให้ที่เวลาเลิกกะ + ตัด OT เป็น 0 — ต้องเห็นชัด ไม่ใช่กลืนไปกับคนกดออกเอง
+  const out = p.check_out ? ' <span style="opacity:.85">→ '+(p.auto_closed?'ระบบปิดให้ ':'ออก ')+esc(p.check_out)+'</span>' : ' <span style="opacity:.6">· ยังไม่ออก</span>';
+  const ac = p.auto_closed ? ' <span class="pill" style="background:#fef3c7;color:#92400e" title="พนักงานลืมกดออกงาน ระบบลงเวลาออกให้ที่เวลาเลิกกะ และตัด OT เป็น 0">🔒 ระบบปิดให้</span>' : '';
+  if(p.status==='present') return '<span class="pill ok">✓ '+esc(p.check_in)+out+'</span>'+ac;
+  if(p.status==='late')    return '<span class="pill bad">สาย '+p.late_min+' น. · '+esc(p.check_in)+out+'</span>'+ac;
   if(p.status==='leave')   return '<span class="pill" style="background:#dbeafe;color:#1d4ed8">ลา'+(p.leave_type?' ('+esc(p.leave_type)+')':'')+'</span>';
   return '<span class="pill" style="background:#f1f5f9;color:#64748b">ยังไม่มา</span>';
 }
@@ -12885,7 +12890,7 @@ function anSendLabel(){
 }
 function anResetForm(){
   AN_EDIT_ID=null;
-  $('an_title').value=''; $('an_msg').value=''; $('an_expire').value=''; $('an_qq').value='';
+  $('an_title').value=''; $('an_msg').value=''; $('an_expire').value=''; $('an_qq').value=''; if($('an_ackh')) $('an_ackh').value='24';
   if($('anc_branch')) $('anc_branch').value='';
   if($('an_prio')) { $('an_prio').value='normal'; $('an_prio').onchange && $('an_prio').onchange(); }
   if($('an_level')) $('an_level').value='info';
@@ -12904,6 +12909,7 @@ async function anEdit(id){
   $('an_title').value = a.title||'';
   $('an_msg').value   = a.message||'';
   $('an_expire').value= a.expire_date||'';
+  if($('an_ackh')) $('an_ackh').value = (Number(a.ack_deadline_h)>0 ? Number(a.ack_deadline_h) : 24);
   if($('anc_branch')) $('anc_branch').value = (a.branch_ids&&a.branch_ids.length===1) ? String(a.branch_ids[0]) : '';
   if($('an_prio')){ $('an_prio').value = a.priority||'normal'; }
   if($('an_level')) $('an_level').value = a.level||'info';
@@ -12953,7 +12959,8 @@ $('an_send') && ($('an_send').onclick = async ()=>{
     level: isImg ? 'info' : $('an_level').value,
     priority: prio,
     branch_ids: br ? [br] : [],
-    expire_date: $('an_expire').value||null
+    expire_date: $('an_expire').value||null,
+    ack_deadline_h: (Number($('an_ackh') && $('an_ackh').value)>0 ? Number($('an_ackh').value) : 24)
   };
   if(prio==='mandatory'){
     const sel=document.querySelector('input[name="an_qans"]:checked');
