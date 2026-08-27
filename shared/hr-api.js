@@ -6916,7 +6916,7 @@
     const note = (d.note || '').trim() || null;
     const rows = d.dates.map(wd => {
       const sc = schBy[wd];
-      const shiftId = (sc && sc.shift_id) || emp.default_shift || null;
+      const shiftId = d.shift_id || (sc && sc.shift_id) || emp.default_shift || null;   // ★ HR เลือกกะเองได้ · ไม่เลือกค่อยไล่หาจากตารางเวร → กะประจำ
       const sh = shiftId ? shBy[shiftId] : null;
       const st = (sh && sh.start_time) ? String(sh.start_time).slice(0, 5) : '09:00';
       const en = (sh && sh.end_time) ? String(sh.end_time).slice(0, 5) : '18:00';
@@ -7346,7 +7346,7 @@
       sb().from('payroll_profiles').select('*'),
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id,status').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance,name'),
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
@@ -7366,7 +7366,7 @@
     const shiftAllowBy = {};
     if (saCfg.enabled !== false) {
       (attR.data || []).forEach(a => {
-        if (a.check_in && nightSet.has(a.shift_id)) {
+        if (a.check_in && a.status !== 'TRAINING' && nightSet.has(a.shift_id)) {   // ★ วันอบรม/ปฏิบัติงานนอกสถานที่ ไม่ได้เฝ้าร้านจริง จึงไม่จ่ายเบี้ยกะดึก
           const grp = grpOf[a.shift_id] || a.shift_id;
           const isCtrl = leadMap[(a.branch_id || '') + '|' + a.work_date + '|' + grp] === a.emp_id;
           shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));

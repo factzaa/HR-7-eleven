@@ -1663,10 +1663,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">พนักงาน</label><select id="duty_emp" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:200px"></select></div>
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ตั้งแต่</label><input id="duty_from" type="date" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
       <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ถึง</label><input id="duty_to" type="date" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">กะ</label><select id="duty_shift" style="padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:170px"></select></div>
       <div style="flex:1;min-width:180px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">หัวข้อ/เหตุผล</label><input id="duty_note" type="text" placeholder="เช่น อบรมความปลอดภัย ที่สำนักงานใหญ่" style="width:100%;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
       <button class="btn btn-pri btn-sm" id="duty_save">บันทึกวันอบรม</button>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">ระบบจะบันทึกให้ทุกวันในช่วงที่เลือกเป็น "อบรม" (นับเป็นวันทำงาน ไม่นับขาด · OT=0) — เว้นวันหยุด/วันที่ไม่ได้จัดเวรได้ตามจริง</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">ระบบจะบันทึกให้ทุกวันในช่วงที่เลือกเป็น "อบรม" (นับเป็นวันทำงาน ไม่นับขาด · OT=0) — เว้นวันหยุด/วันที่ไม่ได้จัดเวรได้ตามจริง<br>ช่อง "กะ" ใช้กำหนดเวลาเข้า-ออกและค่าน้ำหนักวัน (ครึ่งวัน/เต็มวัน) — เว้นว่าง = ใช้กะตามตารางเวรของวันนั้น ถ้าไม่มีตารางจะใช้ 09:00–18:00 · <b>วันอบรมไม่ได้เบี้ยกะดึก</b> แม้จะเลือกกะดึก</div>
   </div>
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600; min-width:70px">ใบลา</h3><input id="lv_q" type="text" placeholder="ค้นหาชื่อ/รหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;flex:1;min-width:110px"><select id="lv_cycle" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกรอบ</option><option value="current">รอบปัจจุบัน</option><option value="previous">รอบก่อนหน้า</option><option value="prev2">2 รอบก่อน</option></select><select id="lv_type" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกประเภท</option></select><select id="lv_status" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"><option value="">ทุกสถานะ</option><option value="pending">รออนุมัติ</option><option value="approved">อนุมัติ</option><option value="rejected">ปฏิเสธ</option></select><button class="btn btn-pri btn-sm" id="lv_new">+ เพิ่มใบลา</button></div>
   <div id="lv_body"></div>
@@ -13295,6 +13296,7 @@ function dutyYmd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padSta
 function initDuty(){
   if($('duty_emp') && !$('duty_emp').dataset.filled){
     fillSelect($('duty_emp'), (DATA.rows||[]).filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
+    if($('duty_shift')) fillSelect($('duty_shift'), (DATA.shifts||[]).map(s=>[s.shift_id, (s.code?('['+s.code+'] '):'')+(s.name||s.shift_id)]), '— ตามตารางเวร —');
     $('duty_emp').dataset.filled='1';
     $('duty_save').onclick=saveDuty;
   }
@@ -13307,7 +13309,7 @@ async function saveDuty(){
   if(end<d){ toast('err','ช่วงวันที่ไม่ถูกต้อง'); return; }
   while(d<=end && dates.length<62){ dates.push(dutyYmd(d)); d.setDate(d.getDate()+1); }
   const btn=$('duty_save'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังบันทึก…';
-  const r=await post({ action:'hr_mark_duty', password:pwd, data:{ emp_id:emp, dates, note:$('duty_note').value } });
+  const r=await post({ action:'hr_mark_duty', password:pwd, data:{ emp_id:emp, dates, note:$('duty_note').value, shift_id:(($('duty_shift')&&$('duty_shift').value)||null) } });
   btn.disabled=false; btn.textContent=old;
   if(r.ok){ toast('ok','บันทึกวันอบรม '+r.count+' วันแล้ว'); $('duty_note').value=''; }
   else toast('err', r.error||'ไม่สำเร็จ');
