@@ -9862,8 +9862,11 @@ async function asstAsk(text){
   }catch(e){ ASST_MSGS.pop(); ASST_MSGS.push({role:'assistant',text:'เชื่อมต่อไม่สำเร็จ: '+(e.message||'')}); }
   asstRender();
 }
-// เด้ง "สรุปเช้า" อัตโนมัติครั้งแรกที่เปิดแชทในแต่ละวัน (เฉพาะแชทเปล่า จะได้ไม่ขัดจังหวะ)
+// ★ 7 ก.ย. 2569 — ปิดการเด้ง "สรุปเช้าวันนี้" อัตโนมัติ (ไม่ได้ใช้งานจริง + กินเครดิตทุกเช้า)
+//   คงฟังก์ชันไว้เป็นตัวเปล่า เพราะ openPop() ยังเรียกอยู่ · อยากเปิดคืนให้เปลี่ยน MORNING_AUTO = true
+const MORNING_AUTO = false;
 function asstMaybeMorning(){
+  if(!MORNING_AUTO) return;
   try{
     const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
     if(localStorage.getItem('nida_digest_date')===today) return;
