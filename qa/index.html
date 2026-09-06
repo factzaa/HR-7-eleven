@@ -247,14 +247,33 @@ async function openFolder(f){
     c+='<div class="row2" style="margin-top:10px">'
       +'<button class="btn btn-sm '+(it.status==='on_shelf'?'btn-warn':'btn-sec')+'" data-st="on_shelf" data-id="'+it.id+'">ยังอยู่</button>'
       +'<button class="btn btn-sm '+(it.status==='sold'?'btn-pri':'btn-sec')+'" data-st="sold" data-id="'+it.id+'">ขายแล้ว</button>'
-      +'<button class="btn btn-sm '+(it.status==='removed'?'btn-danger':'btn-sec')+'" data-st="removed" data-id="'+it.id+'">เก็บออก</button>'
+      +'<button class="btn btn-sm '+(it.status==='removed'?'btn-danger':'btn-sec')+'" data-st="removed" data-id="'+it.id+'" title="ต้องถ่ายรูปหลักฐานก่อนบันทึก">เก็บออก 📷</button>'
       +'</div>';
     return c+'</div>';
   }).join('');
   document.querySelectorAll('[data-st]').forEach(b=>b.onclick=async()=>{
-    try{ await window.HR.qaUpdateItemStatus({ item_id:Number(b.dataset.id), empId:EMP.emp_id, status:b.dataset.st }); toast('ok','อัปเดตสถานะแล้ว'); openFolder(CUR_FOLDER); }
+    const id=Number(b.dataset.id), st=b.dataset.st;
+    if(st==='removed'){ rmPhotoFlow(id); return; }   // ★ เก็บออก = ต้องถ่ายรูปหลักฐานก่อนเสมอ
+    try{ await window.HR.qaUpdateItemStatus({ item_id:id, empId:EMP.emp_id, status:st }); toast('ok','อัปเดตสถานะแล้ว'); openFolder(CUR_FOLDER); }
     catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
   });
+}
+// ★ เก็บออกต้องมีรูปหลักฐาน — เปิดกล้อง/เลือกรูปก่อน แล้วค่อยบันทึก (ยกเลิกได้ ไม่มีอะไรเปลี่ยน)
+function rmPhotoFlow(item_id){
+  let inp=document.getElementById('rm_photo');
+  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment'; inp.multiple=true; inp.id='rm_photo'; inp.style.display='none'; document.body.appendChild(inp); }
+  inp.value='';
+  inp.onchange=async()=>{
+    const files=Array.from(inp.files||[]); if(!files.length) return;
+    toast('ok','กำลังอัปโหลดรูป…');
+    try{
+      const photos=[]; for(const f of files) photos.push(await resizeFile(f));
+      await window.HR.qaUpdateItemStatus({ item_id, empId:EMP.emp_id, status:'removed', photos });
+      toast('ok','บันทึกเก็บออกแล้ว'); openFolder(CUR_FOLDER);
+    }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+  };
+  toast('ok','ถ่ายรูปหลักฐานก่อนเก็บออก');
+  inp.click();
 }
 $('it_back').onclick=()=>{ show('step_folders'); loadFolders(); };
 
