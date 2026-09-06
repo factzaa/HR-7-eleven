@@ -2031,6 +2031,30 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
 
   <div class="card" style="margin-top:16px">
+    <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></svg> ใบโปรโมชั่น → ให้นิดาตอบราคาได้</h3></div>
+    <div class="card-b">
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+        อัปโหลด <b>รูปใบโปรโมชั่น</b> — ระบบจะให้ AI อ่านรายการสินค้า ราคา ดวงแสตมป์ และเงื่อนไข แยกเป็นตารางให้
+        · หลังจากนั้นนิดาจะตอบได้ว่า “สินค้าตัวนี้มีโปรฯ ราคาเท่าไร” พร้อมส่งรูปใบโปรฯ ให้ดู
+        <br><b style="color:var(--danger,#dc2626)">⚠ AI อ่านตัวเลขผิดได้</b> — ต้องกวาดตาแก้ในตารางแล้วกด “ตรวจแก้เสร็จ” ก่อนใช้งานจริง
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
+        <div style="flex:1;min-width:140px"><label style="font-size:12px;color:var(--muted)">เริ่มใช้</label><input type="date" id="pm_start" class="inp" style="width:100%"></div>
+        <div style="flex:1;min-width:140px"><label style="font-size:12px;color:var(--muted)">ถึงวันที่</label><input type="date" id="pm_end" class="inp" style="width:100%"></div>
+        <div style="width:90px"><label style="font-size:12px;color:var(--muted)">หน้าที่</label><input type="number" id="pm_page" class="inp" value="1" min="1" style="width:100%"></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label class="btn btn-pri btn-sm" style="cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg> เลือกรูปใบโปรฯ<input type="file" id="pm_file" accept="image/*" style="display:none"></label>
+        <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="pm_replace"> นำเข้าซ้ำ (ทับใบเดิม)</label>
+      </div>
+      <div id="pm_prog" style="font-size:12.5px;color:var(--muted);margin-top:8px"></div>
+      <div id="pm_dup" style="margin-top:8px"></div>
+      <div id="pm_sheets" style="margin-top:10px"></div>
+      <div id="pm_items" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
     <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> นำเข้าคู่มือ/เอกสาร → คลังความรู้นิดา (PDF)</h3></div>
     <div class="card-b">
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">อัปโหลดไฟล์ PDF (คู่มือ/มาตรฐาน/ระเบียบ) — ระบบจะดึงข้อความเก็บเข้าคลังความรู้ให้นิดาค้นเจอตลอด (ไม่ต้องแนบซ้ำ) · เหมาะกับ PDF ที่เป็นข้อความ · ไฟล์สแกน/รูปให้แนบในแชทนิดาแทน</div>
@@ -7564,6 +7588,96 @@ async function knImport(e){
   if(ok) toast('ok','นำเข้าคู่มือ '+ok+' ไฟล์เข้าคลังความรู้นิดาแล้ว');
   knLoadList();
 }
+// ========== ใบโปรโมชั่น (อ่านรูป → ตาราง → ให้นิดาตอบราคา) ==========
+let PM_SHEET=null;
+function pmApi(){ return asstApiBase(); }
+async function pmPost(payload){
+  const {base,key}=pmApi(); if(!base) throw new Error('ไม่พบ URL ระบบ');
+  const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify(Object.assign({password:pwd},payload))});
+  return await r.json().catch(()=>({ok:false,error:'อ่านคำตอบไม่ได้'}));
+}
+async function pmImport(e){
+  const f=(e.target.files||[])[0]; e.target.value=''; if(!f) return;
+  const prog=$('pm_prog'), dup=$('pm_dup'); dup.innerHTML='';
+  if(f.size>8*1024*1024){ prog.textContent='รูปใหญ่เกิน 8MB — ย่อก่อนนะครับ'; return; }
+  prog.textContent='กำลังให้ AI อ่านใบโปรฯ… (อาจใช้เวลาสักครู่)';
+  try{
+    const data=await _fileToDataUrl(f);
+    const j=await pmPost({ mode:'promo_import', file:{name:f.name,data},
+      period_start:($('pm_start')||{}).value||'', period_end:($('pm_end')||{}).value||'',
+      page_no:Number(($('pm_page')||{}).value||1), replace:!!($('pm_replace')||{}).checked });
+    if(!j.ok){
+      prog.textContent='';
+      dup.innerHTML='<div style="padding:10px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:12.5px;line-height:1.6">'+esc(j.error||'ไม่สำเร็จ')+'</div>';
+      if(j.duplicate) dup.innerHTML+='<div style="font-size:12px;color:var(--muted);margin-top:6px">ติ๊ก “นำเข้าซ้ำ (ทับใบเดิม)” แล้วเลือกรูปอีกครั้ง ถ้าต้องการให้อ่านใหม่ทับของเดิม</div>';
+      pmLoad(); return;
+    }
+    prog.textContent='อ่านได้ '+j.count+' รายการ'+(j.dup_in_sheet>0?(' (ตัดซ้ำในใบออก '+j.dup_in_sheet+')'):'')+(j.replaced?' · ทับใบเดิมแล้ว':'')+' — กรุณาตรวจแก้ก่อนใช้งาน';
+    if(j.cross_sheet_dup && j.cross_sheet_dup.length){
+      dup.innerHTML='<div style="padding:10px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:12.5px;line-height:1.6"><b>สินค้าที่โผล่ในหลายใบพร้อมกัน '+j.cross_sheet_dup.length+' รายการ</b><br>'
+        +j.cross_sheet_dup.slice(0,8).map(d=>esc(d.product)+(d.size?(' '+esc(d.size)):'')+' — '+esc(d.อยู่ในใบ||'')).join('<br>')
+        +'<br><span style="font-size:11.5px">ถ้าเป็นใบเดียวกันที่นำเข้าซ้ำ ให้ลบใบที่เกินออก</span></div>';
+    }
+    await pmLoad(); await pmOpen(j.sheet_id);
+  }catch(err){ prog.textContent='ไม่สำเร็จ: '+(err.message||err); }
+}
+async function pmLoad(){
+  const box=$('pm_sheets'); if(!box) return;
+  const j=await pmPost({ mode:'promo_admin', act:'list' });
+  if(!j.ok){ box.innerHTML='<div class="empty" style="padding:8px">'+esc(j.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const S={'ใช้อยู่':'#16a34a','ยังไม่เริ่ม':'#0ea5e9','หมดอายุ':'#9ca3af','ปิดใช้':'#9ca3af'};
+  box.innerHTML=(j.sheets||[]).length? ((j.sheets||[]).map(s=>'<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line)">'
+    +(s.image_url?('<img src="'+esc(s.image_url)+'" onclick="lightbox(this)" style="width:38px;height:38px;object-fit:cover;border-radius:7px;border:1px solid var(--line);cursor:zoom-in">'):'')
+    +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(s.title)+' <span style="font-weight:400;color:var(--muted)">· หน้า '+s.page_no+'</span></div>'
+    +'<div style="font-size:11.5px;color:var(--muted)">'+esc(s.period_start||'—')+' → '+esc(s.period_end||'—')+' · <b style="color:'+(S[s.สถานะ]||'#666')+'">'+esc(s.สถานะ)+'</b>'+(s.reviewed?' · <span style="color:#16a34a">ตรวจแก้แล้ว</span>':' · <span style="color:#d97706">ยังไม่ตรวจแก้</span>')+'</div></div>'
+    +'<button class="btn btn-sec btn-sm" data-pmopen="'+s.id+'">ตรวจแก้</button>'
+    +'<button class="btn btn-danger btn-sm" data-pmdel="'+s.id+'">ลบ</button></div>').join(''))
+    : '<div class="empty" style="padding:8px">ยังไม่มีใบโปรฯ ในระบบ</div>';
+  if(j.cross_dup && j.cross_dup.length){
+    box.innerHTML+='<div style="margin-top:8px;padding:9px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:12px">⚠ มีสินค้า '+j.cross_dup.length+' รายการที่อยู่ในใบโปรฯ มากกว่าหนึ่งใบพร้อมกัน — ตรวจว่านำเข้าซ้ำหรือเป็นคนละโปรฯ</div>';
+  }
+  box.querySelectorAll('[data-pmopen]').forEach(b=>b.onclick=()=>pmOpen(+b.dataset.pmopen));
+  box.querySelectorAll('[data-pmdel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบใบโปรฯ นี้และรายการทั้งหมดในใบ? (ไฟล์รูปยังเก็บไว้)')) return;
+    const r=await pmPost({ mode:'promo_admin', act:'del_sheet', sheet_id:+b.dataset.pmdel });
+    if(r.ok){ toast('ok','ลบแล้ว'); $('pm_items').innerHTML=''; pmLoad(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+}
+async function pmOpen(id){
+  PM_SHEET=id; const box=$('pm_items'); if(!box) return;
+  const j=await pmPost({ mode:'promo_admin', act:'items', sheet_id:id });
+  if(!j.ok){ box.innerHTML='<div class="empty">'+esc(j.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const F=(v)=>v===null||v===undefined?'':v;
+  box.innerHTML='<div style="font-size:13px;font-weight:700;margin:6px 0">ตรวจแก้รายการในใบ #'+id+' ('+(j.items||[]).length+' รายการ) — เทียบกับรูปใบจริงแล้วแก้ตัวเลขให้ถูก</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px">'
+    +'<tr style="text-align:left;color:var(--muted)"><th style="padding:4px">สินค้า</th><th>ขนาด</th><th>ดวง</th><th>ราคาโปร</th><th>สมาชิก</th><th>ปกติ</th><th>จำนวน</th><th>เงื่อนไข</th><th></th></tr>'
+    +(j.items||[]).map(it=>'<tr data-pmrow="'+it.id+'" style="border-top:1px solid var(--line)">'
+      +'<td style="padding:3px"><input class="inp" data-k="product" value="'+esc(F(it.product))+'" style="width:150px;font-size:12px"></td>'
+      +'<td><input class="inp" data-k="size" value="'+esc(F(it.size))+'" style="width:90px;font-size:12px"></td>'
+      +'<td><input class="inp" data-k="stamps" type="number" value="'+esc(F(it.stamps))+'" style="width:48px;font-size:12px"></td>'
+      +'<td><input class="inp" data-k="price" type="number" step="0.01" value="'+esc(F(it.price))+'" style="width:62px;font-size:12px"></td>'
+      +'<td><input class="inp" data-k="member_price" type="number" step="0.01" value="'+esc(F(it.member_price))+'" style="width:62px;font-size:12px"></td>'
+      +'<td><input class="inp" data-k="normal_price" type="number" step="0.01" value="'+esc(F(it.normal_price))+'" style="width:62px;font-size:12px"></td>'
+      +'<td><input class="inp" data-k="qty" value="'+esc(F(it.qty))+'" style="width:62px;font-size:12px"></td>'
+      +'<td><input class="inp" data-k="condition" value="'+esc(F(it.condition))+'" style="width:150px;font-size:12px"></td>'
+      +'<td style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-pmsave="'+it.id+'">บันทึก</button> <button class="btn btn-danger btn-sm" data-pmdi="'+it.id+'">ลบ</button></td></tr>').join('')
+    +'</table></div>'
+    +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" id="pm_done">✓ ตรวจแก้เสร็จ — ให้นิดาใช้ได้</button><button class="btn btn-sec btn-sm" id="pm_undone">ยังไม่เสร็จ</button></div>';
+  box.querySelectorAll('[data-pmsave]').forEach(b=>b.onclick=async()=>{
+    const tr=b.closest('[data-pmrow]'); const item={id:+b.dataset.pmsave};
+    tr.querySelectorAll('[data-k]').forEach(i=>item[i.dataset.k]=i.value);
+    const r=await pmPost({ mode:'promo_admin', act:'save_item', item });
+    toast(r.ok?'ok':'err', r.ok?'บันทึกแล้ว':(r.error||'ไม่สำเร็จ'));
+  });
+  box.querySelectorAll('[data-pmdi]').forEach(b=>b.onclick=async()=>{
+    const r=await pmPost({ mode:'promo_admin', act:'del_item', item_id:+b.dataset.pmdi });
+    if(r.ok){ pmOpen(id); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+  const setRev=async(v)=>{ const r=await pmPost({ mode:'promo_admin', act:'save_sheet', sheet_id:id, reviewed:v });
+    if(r.ok){ toast('ok', v?'ทำเครื่องหมายว่าตรวจแก้แล้ว':'ตั้งกลับเป็นยังไม่ตรวจ'); pmLoad(); } else toast('err', r.error||'ไม่สำเร็จ'); };
+  $('pm_done') && ($('pm_done').onclick=()=>setRev(true));
+  $('pm_undone') && ($('pm_undone').onclick=()=>setRev(false));
+}
 async function knLoadList(){
   const box=$('kn_list'); if(!box) return;
   const r=await post({ action:'hr_knowledge_list', password:pwd });
@@ -7582,6 +7696,7 @@ async function loadPositions(){
     };
   }
   if($('kn_files') && !$('kn_files').dataset.wired){ $('kn_files').dataset.wired='1'; $('kn_files').addEventListener('change', knImport); knLoadList(); }
+  if($('pm_file') && !$('pm_file').dataset.wired){ $('pm_file').dataset.wired='1'; $('pm_file').addEventListener('change', pmImport); pmLoad(); }
   const r=await post({ action:'hr_positions_list', password:pwd });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   if(!r.rows.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีตำแหน่ง</div>'; return; }
@@ -13864,16 +13979,33 @@ window.NIDALive=(function(){
     }catch(e){ return 'ทำรายการไม่สำเร็จ: '+e; }
   }
 
+  // ★ 7 ก.ย. 2569 — แก้ "เสียงตืด ๆ เป็นช่วง ๆ"
+  //   เดิม: const t=Math.max(outCtx.currentTime, playHead) → ไม่มีบัฟเฟอร์กันเน็ตกระตุกเลย
+  //   พอก้อนเสียงมาช้ากว่าก้อนก่อนเล่นจบ playHead จะตกหลัง currentTime → เกิดช่องว่างเงียบ
+  //   แล้วคลื่นเสียงกระโดดตรงรอยต่อ = ได้ยินเป็นเสียง "ตืด" · เน็ตมือถือกระตุกเป็นระยะ จึงตืดเป็นช่วง ๆ
+  //   แก้ 2 ชั้น: (1) เผื่อเวลานำหน้า 140ms เป็นบัฟเฟอร์ (2) ไล่ระดับเสียงเข้า-ออก 5ms ทุกก้อน
+  const LEAD=0.14, FADE=0.005;
   function playChunk(b64){
     if(!outCtx) return;
     if(outCtx.state==='suspended'){ try{ outCtx.resume(); }catch(_e){} }
     const bin=atob(b64), n=Math.floor(bin.length/2); if(n<1) return;
     const buf=outCtx.createBuffer(1,n,24000), ch=buf.getChannelData(0);
     for(let i=0;i<n;i++){ let v=(bin.charCodeAt(i*2+1)<<8)|bin.charCodeAt(i*2); if(v>=0x8000) v-=0x10000; ch[i]=v/32768; }
-    const snode=outCtx.createBufferSource(); snode.buffer=buf; snode.connect(outCtx.destination);
-    const t=Math.max(outCtx.currentTime,playHead); snode.start(t); playHead=t+buf.duration; speaking=true; lastVoice=Date.now();
+    const now=outCtx.currentTime;
+    // ถ้าคิวหมด (หรือยังไม่เริ่ม) ให้ตั้งต้นล่วงหน้า LEAD วินาที — มีที่ให้ก้อนถัดไปตามทัน
+    if(playHead < now + 0.02) playHead = now + LEAD;
+    const t=playHead;
+    const snode=outCtx.createBufferSource(); snode.buffer=buf;
+    // ไล่ระดับเสียงหัว-ท้ายก้อน ต่อให้ยังมีรอยต่อ หูก็ไม่ได้ยินเป็นเสียงตืด
+    const g=outCtx.createGain(); const d=buf.duration, f=Math.min(FADE, d/3);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.linearRampToValueAtTime(1,t+f);
+    g.gain.setValueAtTime(1,t+d-f);
+    g.gain.linearRampToValueAtTime(0.0001,t+d);
+    snode.connect(g); g.connect(outCtx.destination);
+    snode.start(t); playHead=t+d; speaking=true; lastVoice=Date.now();
     srcNodes.push(snode);
-    snode.onended=()=>{ const i=srcNodes.indexOf(snode); if(i>=0) srcNodes.splice(i,1); if(!srcNodes.length && playHead<=outCtx.currentTime+0.03) speaking=false; };
+    snode.onended=()=>{ const i=srcNodes.indexOf(snode); if(i>=0) srcNodes.splice(i,1); try{ g.disconnect(); }catch(_e){} if(!srcNodes.length && playHead<=outCtx.currentTime+0.03) speaking=false; };
   }
   // หยุดเสียงที่กำลังเล่น/คิวไว้ "จริง ๆ" (กันเสียงเก่าเล่นทับเสียงใหม่ = เสียงซ้อน ตอนผู้ใช้พูดแทรก/ขึ้นเทิร์นใหม่)
   function stopPlayback(){ for(const s of srcNodes.slice()){ try{ s.onended=null; s.stop(); }catch(_e){} } srcNodes.length=0; playHead=0; speaking=false; }
@@ -13947,7 +14079,10 @@ window.NIDALive=(function(){
       for(let i=0;i<d.length;i++){ let v=Math.max(-1,Math.min(1,d[i])); i16[i]=v<0?v*0x8000:v*0x7fff; }
       try{ session.sendRealtimeInput({audio:{data:b64FromBytes(new Uint8Array(i16.buffer)),mimeType:'audio/pcm;rate=16000'}}); }catch(_e){}
     };
-    srcNode.connect(proc); proc.connect(micCtx.destination);
+    // ★ ต่อผ่าน gain 0 แทนการต่อเข้าลำโพงตรง ๆ — ScriptProcessor ต้องมีปลายทางถึงจะทำงาน
+    //   แต่ไม่ควรปล่อยสัญญาณขาไมค์ออกลำโพงจริง
+    const mute=micCtx.createGain(); mute.gain.value=0;
+    srcNode.connect(proc); proc.connect(mute); mute.connect(micCtx.destination);
   }
 
   function onMsg(msg){
