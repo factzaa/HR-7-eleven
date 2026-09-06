@@ -1,0 +1,10 @@
+ทุกโฟลเดอร์ในนี้ = 1 edge function (ข้างในมี index.ts)
+
+วิธี deploy เฉพาะตัวที่แก้:
+    supabase functions deploy <ชื่อโฟลเดอร์> --no-verify-jwt
+
+** --no-verify-jwt ต้องมีเสมอ **
+เพราะ pg_cron ยิงเข้ามาโดยไม่มี token ถ้าลืมใส่ ระบบแจ้งเตือนอัตโนมัติจะเงียบหมด
+
+ส่วนไฟล์ .sql ที่อยู่ชั้นนอก (supabase\*.sql) ไม่ได้ deploy
+เอาไปวางใน Supabase > SQL Editor > Run เท่านั้น

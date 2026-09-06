@@ -67,9 +67,26 @@ function row2(label: string, value: string, color = "#111111") {
     { type: "text", text: value, wrap: true, color, size: "sm", flex: 7, weight: "bold" },
   ] };
 }
-function card(opts: { color: string; heroKind: string; hero?: string; title: string; sub: string; rows: any[]; note?: { text: string; color: string; bg: string }; photos: string[]; btn: string; url: string }) {
+// ★ หัวสีกะทัดรัด + แถบความคืบหน้า — ใช้กล่องซ้อนกล่องแล้วกำหนดความกว้างเป็น % (วิธีมาตรฐานของ Flex)
+//   สูงราว 65px แทนแบนเนอร์เดิม 135px และ "บอกข้อมูลจริง" ไม่ใช่แค่ตกแต่ง
+function capHead(color: string, label: string, pct: number | null, pctText?: string) {
+  const c: any[] = [{ type: "text", text: label, color: "#ffffff", size: "sm", weight: "bold", wrap: true }];
+  if (pct != null && isFinite(pct)) {
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    c.push({ type: "text", text: pctText || (p + "%"), color: "#ffffff", size: "xs", weight: "bold", margin: "sm" });
+    // รางจาง ๆ + แถบขาวทับตามสัดส่วน · p = 0 ไม่ต้องวาดแถบ (Flex ไม่รับ width "0%")
+    c.push({
+      type: "box", layout: "horizontal", height: "7px", backgroundColor: "#ffffff55", cornerRadius: "4px", margin: "sm",
+      contents: p > 0
+        ? [{ type: "box", layout: "vertical", width: p + "%", backgroundColor: "#ffffff", cornerRadius: "4px", contents: [{ type: "filler" }] }, { type: "filler" }]
+        : [{ type: "filler" }],
+    });
+  }
+  return { type: "box", layout: "vertical", backgroundColor: color, paddingAll: "14px", contents: c };
+}
+function card(opts: { color: string; heroKind?: string; hero?: string; title: string; sub: string; rows: any[]; note?: { text: string; color: string; bg: string }; photos: string[]; btn: string; url: string; headLabel?: string; headPct?: number | null; headPctText?: string }) {
   const body: any[] = [
-    { type: "text", text: opts.title, weight: "bold", size: "lg", color: opts.color },
+    { type: "text", text: opts.title, weight: "bold", size: "lg", color: opts.headLabel ? "#18181b" : opts.color, wrap: true },
     { type: "text", text: opts.sub, size: "sm", color: "#8c8c8c", wrap: true },
     { type: "separator", margin: "md" },
     { type: "box", layout: "vertical", margin: "md", spacing: "sm", contents: opts.rows },
@@ -79,11 +96,13 @@ function card(opts: { color: string; heroKind: string; hero?: string; title: str
   //   รูปจริงที่เคยถูกใช้เป็นหัวการ์ด (opts.hero) ย้ายลงมารวมในตารางรูปด้านล่าง ไม่มีรูปไหนหาย
   const pics = opts.hero ? [opts.hero].concat(opts.photos) : opts.photos;
   if (pics.length) { body.push({ type: "text", text: "📷 รูป " + pics.length + " รูป (แตะเพื่อดู/สไลด์)", size: "xs", color: "#8c8c8c", margin: "md" }); body.push(photoGrid(pics, opts.url)); }
-  return {
+  const bubble: any = {
     type: "bubble",
     body: { type: "box", layout: "vertical", contents: body },
     footer: { type: "box", layout: "vertical", contents: [{ type: "button", style: "primary", color: opts.color, action: { type: "uri", label: opts.btn, uri: opts.url } }] },
   };
+  if (opts.headLabel) bubble.header = capHead(opts.color, opts.headLabel, opts.headPct ?? null, opts.headPctText);
+  return bubble;
 }
 
 // ---------- ตัวช่วยวัน/เวลา (Bangkok = UTC+7) ----------
@@ -164,7 +183,8 @@ async function scanExpiry(): Promise<number> {
     const rows = list.slice(0, 10).map((x) => { const col = x.dl <= 3 ? "#dc2626" : x.dl <= 7 ? "#b45309" : "#a06515"; return row2(String(x.it.name || "สินค้า").slice(0, 22), "เหลือ " + x.dl + " วัน · " + x.it.expiry_date, col); });
     const more = list.length > 10 ? ("… และอีก " + (list.length - 10) + " รายการ — เปิดแอปดูทั้งหมด") : "กรุณาตรวจ FIFO / ลดราคา / เก็บออก ตามระเบียบ";
     const flex = { type: "flex", altText: "สินค้าใกล้หมดอายุ " + list.length + " รายการ (" + brLabel(g.name) + ")", contents: card({
-      color: "#dc2626", heroKind: "expiry", hero: photos[0], title: "⏰ สินค้าใกล้หมดอายุ", sub: brLabel(g.name) + " · " + list.length + " รายการต้องจัดการ",
+      color: "#dc2626", hero: photos[0], headLabel: "ใกล้หมดอายุ · " + list.length + " รายการ",
+      title: "⏰ สินค้าใกล้หมดอายุ", sub: brLabel(g.name) + " · ด่วนสุดเหลือ " + list[0].dl + " วัน",
       rows, note: { text: more, color: "#991b1b", bg: "#fef2f2" }, photos: photos.slice(1), btn: "เปิดรายการ QA", url }) };
     const ok = await pushLine(g.gid, [flex]);
     if (ok) { sent++; for (const x of list) await mark(x.rkey, bid); }
@@ -201,7 +221,11 @@ async function scanShelfDue(): Promise<number> {
       const list = perBranch[bid][emp]; if (!list.length) continue;
       const rows = list.map((x) => { const s = shBy[x.a.shelf_id] || {}; const nm = (s.shelf_code ? ("[" + s.shelf_code + "] ") : "") + (s.name || ("#" + x.a.shelf_id)); return row2(nm.slice(0, 22), "ทำ " + x.done + "/" + TH + " ครั้ง", "#b45309"); });
       const flex = { type: "flex", altText: "เชลฟ์ยังไม่ครบเกณฑ์ (" + (nmBy[emp] || emp) + ")", contents: card({
-        color: "#d97706", heroKind: "warn", title: "⚠️ เชลฟ์ยังดูแลไม่ครบสัปดาห์นี้", sub: brLabel(g.name) + " · " + (nmBy[emp] || emp),
+        color: "#d97706",
+        headLabel: "เชลฟ์ยังไม่ครบ · " + list.length + " เชลฟ์",
+        headPct: TH > 0 ? (list.reduce((n: number, x: any) => n + x.done, 0) / (TH * list.length)) * 100 : null,
+        headPctText: "ทำไปแล้ว " + list.reduce((n: number, x: any) => n + x.done, 0) + " / " + (TH * list.length) + " ครั้ง",
+        title: "⚠️ เชลฟ์ยังดูแลไม่ครบสัปดาห์นี้", sub: brLabel(g.name) + " · " + (nmBy[emp] || emp),
         rows, note: { text: "ระเบียบ: ดูแล ≥ " + TH + " ครั้ง/สัปดาห์ · ไม่ครบถูกหัก 5 คะแนน/สัปดาห์ (แจ้งเตือน — HR พิจารณาหักเอง)", color: "#92400e", bg: "#fffbeb" },
         photos: [], btn: "เปิดงานเชลฟ์", url }) };
       const ok = await pushLine(g.gid, [flex]);
@@ -238,7 +262,8 @@ async function scanQaDue(): Promise<number> {
     const g = groups[bid]; const url = APP_URL + "/qa/?folder=" + encodeURIComponent(String(fid));
     const who = [...new Set(whoBy[key] || [])].join(", ");
     const flex = { type: "flex", altText: "งาน QA ยังไม่เริ่ม: " + (f.title || ""), contents: card({
-      color: "#185FA5", heroKind: "qa", title: "📋 งาน QA ยังไม่เริ่มบันทึก", sub: brLabel(g.name),
+      color: "#185FA5", headLabel: "ค้างมาแล้ว " + ageDays + " วัน",
+      title: "📋 งาน QA ยังไม่เริ่มบันทึก", sub: brLabel(g.name),
       rows: [row2("โฟลเดอร์", String(f.title || "-")), ...(who ? [row2("ผู้รับผิดชอบ", who)] : []), row2("ค้างมาแล้ว", ageDays + " วัน", "#b45309")],
       note: { text: "ยังไม่มีการบันทึกสินค้าในโฟลเดอร์นี้ — โปรดเริ่มดำเนินการ ไม่ดำเนินการมีโทษทางวินัย", color: "#1e40af", bg: "#eff6ff" },
       photos: [], btn: "เปิดงาน QA", url }) };
@@ -306,7 +331,7 @@ async function scanQaRemoved(): Promise<number> {
       ? ("… และอีก " + (list.length - 10) + " รายการ — เปิดแอปดูทั้งหมด")
       : (photos.length ? "มีรูปหลักฐานแนบครบทุกรายการ" : "⚠️ ไม่มีรูปหลักฐานแนบมา — ตรวจสอบกับผู้ปฏิบัติ");
     const flex = { type: "flex", altText: "เก็บสินค้าหมดอายุลง " + list.length + " รายการ (" + brLabel(bn[bid] || bid) + ")", contents: card({
-      color: "#b45309", heroKind: "expiry", hero: photos[0],
+      color: "#b45309", hero: photos[0], headLabel: "เก็บออก " + list.length + " รายการ · รวม " + qty + " ชิ้น",
       title: "🧹 เก็บสินค้าหมดอายุลงจากเชลฟ์",
       sub: brLabel(bn[bid] || bid) + " · " + list.length + " รายการ · รวม " + qty + " ชิ้น",
       rows: [row2("ผู้ปฏิบัติ", who.join(", ") || "—", "#b45309"), ...rows],
@@ -382,7 +407,10 @@ async function scanShiftOpen(): Promise<number> {
           ? { text: "เข้าครบแล้ว แต่มีคนสาย " + inLate.length + " คน", color: "#92400e", bg: "#fffbeb" }
           : { text: "เปิดกะเรียบร้อย เข้างานครบตรงเวลาทุกคน 💚", color: "#15803d", bg: "#f0fdf4" });
     const flex = { type: "flex", altText: "เปิดกะ " + (shName[sid] || sid) + " " + brLabel(bn[bid] || bid) + " — เข้าแล้ว " + came + "/" + total, contents: card({
-      color, heroKind: "shelf",
+      color,
+      headLabel: (allIn ? (inLate.length ? "เข้าครบแล้ว แต่มีคนสาย" : "เข้าครบตรงเวลา") : "ยังไม่ครบ") + " · เข้าแล้ว " + came + " / " + total + " คน",
+      headPct: total > 0 ? (came / total) * 100 : null,
+      headPctText: total > 0 ? Math.round((came / total) * 100) + "% ของคนที่จัดเวรไว้" : undefined,
       title: allIn ? "🕐 เปิดกะเรียบร้อย" : "🕐 สรุปเปิดกะ — ยังไม่ครบ",
       sub: brLabel(bn[bid] || bid) + " · ผลัด" + (shName[sid] || sid) + " · " + fmtThaiDate(today),
       rows, note, photos: [], btn: "เปิดหน้าลงเวลา", url: APP_URL + "/hr/" }) };
@@ -435,7 +463,11 @@ async function scanShiftIncomplete(): Promise<number> {
       const rv = await reserve(rkey, bid); if (rv === "dup") continue;
       const url = APP_URL + "/handover/";   // ★ หน้างานจริง (รับ-ส่งผลัด/งานในกะ)
       const flex = { type: "flex", altText: "ยังเหลือ " + remaining + " งาน (ผลัด" + d.name + ") " + fmtThaiDate(d.workDate) + " — " + brLabel(g.name), contents: card({
-        color: "#b45309", heroKind: "shelf", title: "⚠️ สิ้นผลัดแล้วงานยังไม่ครบ", sub: brLabel(g.name) + " · ผลัด" + d.name + " · " + fmtThaiDate(d.workDate),
+        color: "#b45309",
+        headLabel: "งานค้าง · เหลือ " + remaining + " / " + expected.length + " งาน",
+        headPct: expected.length > 0 ? ((expected.length - remaining) / expected.length) * 100 : null,
+        headPctText: expected.length > 0 ? "ส่งแล้ว " + (expected.length - remaining) + " / " + expected.length + " งาน" : undefined,
+        title: "⚠️ สิ้นผลัดแล้วงานยังไม่ครบ", sub: brLabel(g.name) + " · ผลัด" + d.name + " · " + fmtThaiDate(d.workDate),
         rows: [row2("วันที่งาน", fmtThaiDate(d.workDate), "#b45309"), row2("ยังเหลือ", remaining + " / " + expected.length + " งาน", "#dc2626"), row2("ผลัด", d.name, "#b45309")],
         note: { text: "สิ้นผลัดแล้วแต่ยังส่งงานไม่ครบ โปรดเร่งส่งให้ครบ — ไม่ดำเนินการอาจมีผลทางวินัยค่ะ", color: "#b45309", bg: "#fff7ed" },
         photos: [], btn: "เปิดงานของฉัน", url }) };
@@ -521,7 +553,10 @@ Deno.serve(async (req) => {
         const photos = await usablePhotos(firstPerTask);
         const title = isNone ? "🎉 งานประจำวันเสร็จครบแล้ว" : "🎉 งานผลัดนี้เสร็จครบแล้ว";
         const flex = { type: "flex", altText: "งานเสร็จครบ" + (shiftLabel ? " (ผลัด" + shiftLabel + ")" : "") + " " + fmtThaiDate(wd) + " — " + brLabel(name), contents: card({
-          color: "#15803d", heroKind: "shelf", hero: photos[0], title, sub: brLabel(name) + (shiftLabel ? " · ผลัด" + shiftLabel : "") + " · " + fmtThaiDate(wd) + " · ครบ " + expected.length + " งาน",
+          color: "#15803d", hero: photos[0],
+          headLabel: "เสร็จครบ · ส่งงาน " + expected.length + " / " + expected.length,
+          headPct: 100, headPctText: "100% ของงานในผลัดนี้",
+          title, sub: brLabel(name) + (shiftLabel ? " · ผลัด" + shiftLabel : "") + " · " + fmtThaiDate(wd),
           rows: [row2("วันที่งาน", fmtThaiDate(wd), "#15803d"), ...(shiftLabel ? [row2("ผลัด", shiftLabel, "#15803d")] : []), row2("สถานะ", "ส่งครบทุกงาน" + (isNone ? "วันนี้" : "ในผลัดนี้") + " (" + expected.length + "/" + expected.length + ") ✓", "#15803d")],
           note: { text: "ขอบคุณที่ช่วยกันทำงานให้ครบนะคะ 💚", color: "#15803d", bg: "#f0fdf4" },
           photos: photos.slice(1), btn: "เปิดแอป", url }) };
