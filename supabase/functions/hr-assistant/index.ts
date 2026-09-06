@@ -461,22 +461,67 @@ async function get_document(a: any) {
 // ---------- คลังความรู้ของนิดา (จำข้ามบทสนทนา + ดึงมาใช้ทุกครั้ง) ----------
 let _knowCache: string | null = null; let _knowAt = 0;
 const KNOW_LABEL: Record<string, string> = { policy: "นโยบาย", standard: "มาตรฐาน", correction: "แก้ไข/เคยผิด", faq: "FAQ", note: "บันทึก", exam: "ชุดข้อสอบ", training: "สื่อสอน" };
+// ★ 7 ก.ย. 2569 — ช่วงเวลาที่ความรู้ "ใช้ได้"
+//   valid_to  ว่าง = ไม่มีวันหมดอายุ (คู่มือ/นโยบาย) · เลยวันแล้ว = ไม่ฉีดเข้าพรอมต์ แต่ยังค้นเจอ (ติดป้าย)
+//   valid_from อนาคต = ยังไม่เริ่ม (นำเข้าใบโปรฯ รอบหน้าไว้ล่วงหน้าได้ ไม่ปนคำตอบรอบปัจจุบัน)
+//   ★ ไม่ลบ ไม่ตั้ง active=false — ประวัติต้องอยู่ครบ ไว้เทียบรอบ/ตอบย้อนหลัง
+function knowCurrentFilter(q: any) {
+  const t = bkkToday();
+  // เขียนเป็น or() ก้อนเดียวที่มี and() ซ้อน — ไม่พึ่งพฤติกรรม "พารามิเตอร์ or ซ้ำ = AND" ของ PostgREST
+  // ถ้ากรองพลาดแม้แต่นิดเดียว = โปรฯ หมดอายุหลุดเข้าไปตอบ ซึ่งคือบั๊กที่กำลังแก้อยู่พอดี
+  return q.or([
+    `and(valid_from.is.null,valid_to.is.null)`,
+    `and(valid_from.is.null,valid_to.gte.${t})`,
+    `and(valid_from.lte.${t},valid_to.is.null)`,
+    `and(valid_from.lte.${t},valid_to.gte.${t})`,
+  ].join(","));
+}
+function knowStatus(r: any): "ใช้อยู่" | "ยังไม่เริ่ม" | "หมดอายุ" {
+  const t = bkkToday();
+  if (r?.valid_from && String(r.valid_from) > t) return "ยังไม่เริ่ม";
+  if (r?.valid_to && String(r.valid_to) < t) return "หมดอายุ";
+  return "ใช้อยู่";
+}
+// ป้ายช่วงเวลาสั้น ๆ ต่อท้ายหัวข้อ เช่น " [ใช้ถึง 23/09/2569]"
+function knowPeriodTag(r: any): string {
+  const st = knowStatus(r);
+  const d = (x: any) => { const [y, m, dd] = String(x).split("-"); return dd + "/" + m + "/" + (Number(y) + 543); };
+  if (st === "หมดอายุ") return ` [⛔ หมดอายุแล้วเมื่อ ${d(r.valid_to)} — ห้ามนำไปตอบว่ายังใช้ได้]`;
+  if (st === "ยังไม่เริ่ม") return ` [🕓 เริ่มใช้ ${d(r.valid_from)} — ยังไม่ถึงกำหนด]`;
+  if (r?.valid_to) return ` [ใช้ถึง ${d(r.valid_to)}]`;
+  return "";
+}
 async function knowledgeDigest(): Promise<string> {
   if (_knowCache !== null && Date.now() - _knowAt < 60000) return _knowCache;
   let out = "";
   try {
     // ไม่ฉีด exam/training เข้าทุกครั้ง (ใหญ่) — เก็บไว้ให้ค้นด้วย knowledge_search แทน
-    const { data } = await sb.from("nida_knowledge").select("category,title,content,updated_at").eq("active", true).not("category", "in", "(exam,training)").order("updated_at", { ascending: false }).limit(80);
+    const { data } = await knowCurrentFilter(
+      sb.from("nida_knowledge").select("category,title,content,updated_at,valid_from,valid_to").eq("active", true).not("category", "in", "(exam,training)")
+    ).order("updated_at", { ascending: false }).limit(80);
     const rows = data ?? [];
     if (rows.length) {
-      out = "\n\n[คลังความรู้ที่นิดาจำไว้ — สะสมเพิ่มเรื่อย ๆ · ใช้ 'ทุกรายการที่เกี่ยวข้อง' ประกอบการตอบ (ไม่ใช่แค่ล่าสุด) ถ้าไม่พอค้นเพิ่มด้วย knowledge_search · ถ้าขัดกับคู่มือเดิมให้ยึดอันนี้ · ⚠ ถ้าผู้ใช้ 'แนบเอกสาร/รูปในข้อความนี้' ให้อ่านจากของแนบเป็นหลัก อย่าตอบมั่วเป็นของจำเก่า]\n";
+      out = "\n\n[คลังความรู้ที่นิดาจำไว้ — สะสมเพิ่มเรื่อย ๆ · ใช้ 'ทุกรายการที่เกี่ยวข้อง' ประกอบการตอบ (ไม่ใช่แค่ล่าสุด) ถ้าไม่พอค้นเพิ่มด้วย knowledge_search · ถ้าขัดกับคู่มือเดิมให้ยึดอันนี้ · ⚠ ถ้าผู้ใช้ 'แนบเอกสาร/รูปในข้อความนี้' ให้อ่านจากของแนบเป็นหลัก อย่าตอบมั่วเป็นของจำเก่า · ★ ในนี้มีเฉพาะรายการที่ 'ยังใช้ได้ ณ วันนี้' แล้ว (ของหมดอายุถูกกรองออก) — รายการที่มีป้าย [ใช้ถึง ...] ให้บอกช่วงเวลากำกับทุกครั้งที่ตอบเรื่องราคา/โปรโมชั่น]\n";
       let budget = 4200;
       for (const r of rows) {
-        const line = `• (${KNOW_LABEL[r.category] || r.category}) ${r.title}: ${String(r.content || "").replace(/\s+/g, " ").trim()}\n`;
+        const line = `• (${KNOW_LABEL[r.category] || r.category}) ${r.title}${knowPeriodTag(r)}: ${String(r.content || "").replace(/\s+/g, " ").trim()}\n`;
         if (budget - line.length < 0) { out += "• (…ยังมีอีก — ใช้ knowledge_search เพื่อค้นเพิ่ม)\n"; break; }
         out += line; budget -= line.length;
       }
     }
+    // ★ 7 ก.ย. 2569 — รายการที่ "เพิ่งหมดอายุ" (90 วันล่าสุด) · ใส่แค่ชื่อ+วันจบ ไม่ใส่เนื้อหา
+    //   เพื่อให้นิดารู้ว่า "เคยมีจริงแต่จบแล้ว" ตอบได้ทันทีโดยไม่ต้องค้น และไม่มีราคา/เงื่อนไขให้หยิบไปตอบผิด
+    try {
+      const t0 = bkkToday();
+      const t90 = new Date(Date.now() + 7 * 3600 * 1000 - 90 * 86400000).toISOString().slice(0, 10);
+      const { data: ex } = await sb.from("nida_knowledge").select("title,valid_to")
+        .eq("active", true).not("valid_to", "is", null).lt("valid_to", t0).gte("valid_to", t90)
+        .order("valid_to", { ascending: false }).limit(12);
+      if (ex && ex.length) {
+        out += "\n[⛔ รายการที่หมดอายุไปแล้ว (90 วันล่าสุด) — เคยมีจริงแต่จบแล้ว · ถ้าถูกถามถึง ให้ตอบว่า 'จบไปแล้วเมื่อ <วันที่> ตอนนี้ยังไม่มีรอบใหม่' ❌ ห้ามตอบว่าไม่มีข้อมูล และห้ามยกราคา/เงื่อนไขมาตอบว่ายังใช้ได้]\n";
+        out += ex.map((r: any) => { const [y, m, d] = String(r.valid_to).split("-"); return "• " + r.title + " — จบเมื่อ " + d + "/" + m + "/" + (Number(y) + 543); }).join("\n") + "\n";
+      }
+    } catch (_e) { /* ยังไม่ได้รัน nida_knowledge_validity.sql ก็ข้ามไป */ }
     // ★ แนบ "รายชื่อคู่มือ/เอกสารที่นำเข้าไว้" (เฉพาะชื่อ) — ให้นิดารู้ว่ามีคู่มืออะไรบ้าง แล้วค้นเนื้อหาด้วย knowledge_search
     const { data: man } = await sb.from("nida_knowledge").select("title,source").eq("active", true).in("category", ["training", "manual"]).order("updated_at", { ascending: false }).limit(60);
     if (man && man.length) {
@@ -486,22 +531,313 @@ async function knowledgeDigest(): Promise<string> {
   } catch (_e) { /* ถ้ายังไม่ได้รัน nida_knowledge.sql ก็ข้ามไป */ }
   _knowCache = out; _knowAt = Date.now(); return out;
 }
+// ============================================================
+// โปรโมชั่นจากรูปใบโปรฯ — promo_sheets / promo_items
+//   อ่านรูปด้วย Gemini แล้วให้คืน "JSON ตาม schema" (ไม่ใช่ข้อความสรุป) จะได้ไม่ตกหล่น
+//   ทุกคำตอบเรื่องราคาต้องแนบรูปใบต้นฉบับ ให้พนักงานเช็คซ้ำได้เสมอ
+// ============================================================
+const PROMO_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    period_start: { type: "string" },
+    period_end: { type: "string" },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          product: { type: "string" },
+          brand: { type: "string" },
+          size: { type: "string" },
+          promo_type: { type: "string" },
+          stamps: { type: "integer" },
+          price: { type: "number" },
+          member_price: { type: "number" },
+          normal_price: { type: "number" },
+          qty: { type: "string" },
+          condition: { type: "string" },
+          keywords: { type: "string" },
+        },
+        required: ["product"],
+      },
+    },
+  },
+  required: ["items"],
+};
+
+const PROMO_PROMPT = [
+  "คุณกำลังอ่าน 'ใบโปรโมชั่น' ของร้าน 7-Eleven เพื่อเก็บเข้าระบบให้พนักงานค้นราคาได้",
+  "อ่านทุกช่องในรูปให้ครบ ห้ามข้ามรายการ แล้วคืนเป็น JSON ตาม schema",
+  "",
+  "ความหมายของตัวเลขบนใบ (สำคัญมาก อ่านให้ถูกช่อง):",
+  "- กล่องเหลืองใหญ่ที่เขียน 'รับดวงแสตมป์ N ดวง' + ตัวเลขใหญ่ = ใช้แสตมป์ N ดวง จ่ายเงินเท่ากับตัวเลขนั้น → stamps=N, price=ตัวเลขใหญ่, promo_type='stamp'",
+  "- กล่องน้ำเงินที่เขียน 'ALL member รับ M-Stamp' + ตัวเลข = ราคาสำหรับสมาชิก → member_price=ตัวเลขนั้น",
+  "- บรรทัดใต้ชื่อสินค้าที่เขียนแบบ '1 ชิ้น 115.-' หรือ '2 ชิ้น 64.-' = ราคาปกติ → qty='1 ชิ้น', normal_price=115",
+  "- ถ้ามีแต่ราคาปกติ ไม่มีแสตมป์ → promo_type='price', stamps และ price เว้นว่าง",
+  "- ข้อความในวงเล็บ เช่น '(ยกเว้นรสเอ็กซ์ตรีมครีมและหัวหอม)' หรือ '(ทุกสูตร)' → ใส่ใน condition ให้ครบ",
+  "- ขนาด/ปริมาณ เช่น 'ขวด 50 กรัม' '180/200 มล.' 'แพ็ก 6' → ใส่ใน size",
+  "- keywords: ใส่ชื่อยี่ห้อภาษาอังกฤษหรือชื่อที่คนเรียกกันทั่วไป คั่นด้วยจุลภาค (เช่น 'Nescafe, เนสกาแฟ, กาแฟ')",
+  "",
+  "กติกาที่ห้ามฝ่าฝืน:",
+  "- ห้ามแต่งข้อมูลที่ไม่มีในรูป · ตัวเลขไหนอ่านไม่ชัดให้เว้นว่าง อย่าเดา",
+  "- ถ้าเห็นราคาสองค่าคู่กัน เช่น '89.-/99.-' ให้ใส่ค่าต่ำสุดใน normal_price แล้วเขียนทั้งสองค่าไว้ใน condition",
+  "- title: ชื่อแคมเปญที่พาดหัวบนใบ (เช่น 'แสตมป์จัดหนัก')",
+  "- period_start/period_end: ถ้าบนใบมีช่วงวันที่ ให้ใส่แบบ YYYY-MM-DD (แปลง พ.ศ. เป็น ค.ศ. ให้ด้วย) ถ้าไม่มีให้เว้นว่าง",
+].join("\n");
+
+// อ่านรูปใบโปรฯ 1 ใบ → คืน {title, period_start, period_end, items[]}
+async function promoReadImage(mime: string, b64: string): Promise<any> {
+  const body = {
+    contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: PROMO_PROMPT }] }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: "application/json", responseSchema: PROMO_SCHEMA },
+  };
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const jr = await r.json();
+  const txt = (jr?.candidates?.[0]?.content?.parts || []).map((x: any) => x.text || "").join("").trim();
+  if (!txt) throw new Error("อ่านรูปไม่ได้ (โมเดลไม่คืนข้อมูล)");
+  try { return JSON.parse(txt); } catch { throw new Error("ผลลัพธ์ไม่ใช่ JSON ที่อ่านได้"); }
+}
+
+// SHA-256 ของไฟล์รูป — ใช้เป็นลายนิ้วมือกันนำเข้าใบเดิมซ้ำ
+async function promoHash(b64: string): Promise<string> {
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const h = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(h)).map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+// สถานะช่วงเวลาของใบโปรฯ (ชุดเดียวกับคลังความรู้)
+function promoStatus(sh: any): "ใช้อยู่" | "ยังไม่เริ่ม" | "หมดอายุ" {
+  const t = bkkToday();
+  if (sh?.period_start && String(sh.period_start) > t) return "ยังไม่เริ่ม";
+  if (sh?.period_end && String(sh.period_end) < t) return "หมดอายุ";
+  return "ใช้อยู่";
+}
+const _thDate = (x: any) => { if (!x) return "—"; const [y, m, d] = String(x).split("-"); return d + "/" + m + "/" + (Number(y) + 543); };
+
+// ---- เครื่องมือของนิดา: ค้นโปรโมชั่นของสินค้า ----
+async function promo_search(a: any) {
+  const raw = String(a?.product || a?.query || "").replace(/[(),%*]/g, " ").trim();
+  const wantExpired = a?.include_expired === true;
+  const toks = raw.split(/[\s,]+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2).slice(0, 6);
+  let q: any = sb.from("promo_items_v").select("*").eq("sheet_active", true).limit(40);
+  if (toks.length) {
+    const ors: string[] = [];
+    for (const t of toks) ors.push(`product.ilike.%${t}%`, `brand.ilike.%${t}%`, `keywords.ilike.%${t}%`, `size.ilike.%${t}%`);
+    q = q.or(ors.join(","));
+  }
+  const { data, error } = await q;
+  if (error) return { error: String(error.message || error) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/promo_system.sql ก่อน)" };
+  const rows = data || [];
+  const shape = (r: any) => ({
+    สินค้า: r.product, ขนาด: r.size || null, ยี่ห้อ: r.brand || null,
+    ใช้แสตมป์: r.stamps ?? null, ราคาโปร: r.price ?? null, ราคาสมาชิก: r.member_price ?? null,
+    ราคาปกติ: r.normal_price ?? null, จำนวน: r.qty || null, เงื่อนไข: r.condition || null,
+    ใบโปรฯ: r.sheet_title, ช่วงเวลา: _thDate(r.period_start) + " – " + _thDate(r.period_end),
+    สถานะ: r.สถานะ, ตรวจแก้แล้ว: r.reviewed === true, รูปใบโปรฯ: r.image_url || null,
+  });
+  const cur = rows.filter((r: any) => r.สถานะ === "ใช้อยู่").map(shape);
+  const exp = rows.filter((r: any) => r.สถานะ === "หมดอายุ").map(shape);
+  const fut = rows.filter((r: any) => r.สถานะ === "ยังไม่เริ่ม").map(shape);
+  const unreviewed = cur.filter((r: any) => !r.ตรวจแก้แล้ว).length;
+
+  if (cur.length) {
+    return {
+      count: cur.length, promos: cur, upcoming: fut.length ? fut : undefined,
+      note: "★ ตอบด้วยตัวเลขจากตารางนี้เท่านั้น ห้ามคำนวณ/เดาเอง · ต้องบอกช่วงเวลากำกับเสมอ"
+        + " · ★ ต้องวาง URL ใน 'รูปใบโปรฯ' ลงในคำตอบด้วยทุกครั้ง (ระบบจะแสดงเป็นรูปให้เอง) พนักงานจะได้เช็คกับใบจริงได้"
+        + (unreviewed ? " · ⚠ มี " + unreviewed + " รายการที่ 'ยังไม่ได้ตรวจแก้' — ให้เตือนว่าเป็นข้อมูลที่ AI อ่านจากรูป ยังไม่มีคนตรวจ ให้ดูรูปประกอบด้วย" : "")
+        + (exp.length ? " · (มีอีก " + exp.length + " รายการที่หมดอายุแล้ว ไม่แสดง)" : ""),
+    };
+  }
+  if (exp.length) {
+    return {
+      count: 0, promos: [], expired_matches: wantExpired ? exp : exp.slice(0, 5),
+      note: "❗ สินค้านี้ 'ไม่มีโปรฯ ที่ใช้ได้ตอนนี้' แต่เคยมีในรอบที่จบไปแล้ว"
+        + " · ✅ ตอบว่า \"ตอนนี้ยังไม่มีโปรฯ ของสินค้านี้ค่ะ รอบก่อนหน้าจบไปเมื่อ <วันที่> \""
+        + " · ❌ ห้ามยกราคาของรอบที่จบแล้วมาตอบเหมือนยังใช้ได้",
+    };
+  }
+  return { count: 0, promos: [], note: "ไม่พบสินค้านี้ในใบโปรฯ ที่นำเข้าไว้ · ลองค้นด้วยชื่อสั้นลง/ชื่อยี่ห้อ · ถ้ายังไม่เจอ ให้บอกว่ายังไม่มีข้อมูลโปรฯ ของสินค้านี้ในระบบ และชวนผู้จัดการอัปโหลดใบโปรฯ รอบใหม่ที่เมนู 'โปรโมชั่น' ❌ อย่าแนะให้ไปถามผู้จัดการเขต" };
+}
+
+// ---- เครื่องมือของนิดา: ขอดูใบโปรฯ ทั้งใบ (ส่งรูปกลับ) ----
+async function promo_sheet(a: any) {
+  const t = bkkToday();
+  let q: any = sb.from("promo_sheets").select("id,title,period_start,period_end,image_url,page_no,reviewed").eq("active", true).order("period_end", { ascending: false }).limit(20);
+  const { data, error } = await q;
+  if (error) return { error: String(error.message || error) };
+  const all = (data || []).map((s: any) => ({
+    id: s.id, ชื่อใบ: s.title, หน้า: s.page_no,
+    ช่วงเวลา: _thDate(s.period_start) + " – " + _thDate(s.period_end),
+    สถานะ: promoStatus(s), ตรวจแก้แล้ว: s.reviewed === true, รูปใบโปรฯ: s.image_url,
+  }));
+  const cur = all.filter((s: any) => s.สถานะ === "ใช้อยู่");
+  if (!cur.length) return { count: 0, sheets: [], note: "ยังไม่มีใบโปรฯ ที่ใช้ได้ตอนนี้ · ชวนผู้จัดการอัปโหลดใบรอบใหม่ที่เมนู 'โปรโมชั่น'" };
+  return { count: cur.length, sheets: cur, note: "★ ต้องวาง URL ใน 'รูปใบโปรฯ' ลงในคำตอบทุกใบ ระบบจะแสดงเป็นรูปให้เอง · บอกช่วงเวลากำกับด้วย" };
+}
+// ============================================================
+// อ่านเอกสาร (PDF/รูป) เข้าคลังความรู้ — แบ่งอ่านทีละช่วงหน้า
+//   ปัญหาเดิม: อ่านรวดเดียว maxOutputTokens 8192 + slice(0,20000)
+//              → เอกสารยาวถูกตัดเงียบ ๆ ไม่มีใครรู้ว่าหายไปครึ่งเล่ม
+//   วิธีแก้:   ถามจำนวนหน้าก่อน แล้วไล่อ่านทีละ 6 หน้า เก็บเป็นหลายตอน
+//              + ตรวจจับว่าตอนไหน "ยาวชนเพดาน" แล้วเตือน
+// ============================================================
+// ไฟล์ที่ผู้ใช้แนบมาใน "คำขอปัจจุบัน" — เก็บไว้ให้ remember_document หยิบไปอ่านแบบเต็ม
+//   เดิมไฟล์ที่แนบในแชทถูกส่งให้โมเดลอ่านตอบเฉย ๆ แล้วหายไป
+//   พอสั่ง "จำไว้" นิดาจะเรียก remember ด้วย "บทสรุปที่มันเขียนเอง" → เนื้อหาจริงตกหล่น
+let _curAttach: { mime: string; data: string } | null = null;
+const DOC_PAGES_PER_CHUNK = 6;
+const DOC_MAX_OUT = 16384;          // ต่อ 1 ตอน (เดิมทั้งเล่มได้แค่ 8192)
+const DOC_CAP_PER_ROW = 45000;      // ตัวอักษรสูงสุดต่อ 1 แถวในคลัง
+
+function docPrompt(from?: number, to?: number): string {
+  const scope = (from && to)
+    ? `อ่าน "เฉพาะหน้า ${from} ถึงหน้า ${to}" ของเอกสารนี้เท่านั้น (ห้ามสรุปหน้าอื่น) · ถ้าช่วงหน้านี้ไม่มีอยู่จริงให้ตอบว่า __EMPTY__ คำเดียว`
+    : `อ่านเอกสารนี้ทั้งฉบับ`;
+  return [
+    "คุณกำลังอ่านเอกสารคู่มือ/มาตรฐานงานของร้าน 7-Eleven เพื่อเก็บเข้าคลังความรู้ให้ผู้ช่วย HR ใช้ตอบคำถามภายหลัง",
+    scope,
+    "ให้ 'ทำความเข้าใจก่อน' แล้วเรียบเรียงใหม่เป็นภาษาไทยที่ถูกต้อง อ่านรู้เรื่อง — ไม่ใช่ถอดตัวอักษรดิบ ๆ",
+    (from && to) ? "ขึ้นต้นด้วยบรรทัด [หน้า " + from + "-" + to + "] แล้วตามด้วยเนื้อหา" : "1) บรรทัดแรก: [สรุป] เอกสารนี้เกี่ยวกับอะไร ใช้เมื่อไร/กับใคร (2–4 บรรทัด)\n2) จากนั้น: [เนื้อหา]",
+    "คงข้อมูลสำคัญทุกอย่าง: ตัวเลข วันเวลา อุณหภูมิ รหัสสินค้า ชื่อน้ำยา/อุปกรณ์ ขั้นตอนตามลำดับ · ตารางให้เขียนเป็น 'หัวข้อ: ค่า'",
+    "กติกาสำคัญ: ห้ามแต่งเติมข้อมูลที่ไม่มีในเอกสาร · แก้เฉพาะคำที่สะกด/เว้นวรรคเพี้ยนจากการสแกนให้ถูกตามบริบท · ส่วนที่อ่านไม่ออกจริง ๆ ให้เขียน (อ่านไม่ชัด) อย่าเดา · ตอบเฉพาะเนื้อหาเอกสาร ไม่ต้องมีคำนำ/คำทักทาย",
+  ].join("\n");
+}
+
+async function docCall(mime: string, b64: string, prompt: string, maxOut: number): Promise<string> {
+  const body = { contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxOut } };
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const jr = await r.json();
+  return (jr?.candidates?.[0]?.content?.parts || []).map((x: any) => x.text || "").join("").trim();
+}
+
+// นับจำนวนหน้า (ถามโมเดลตรง ๆ — ถูกกว่าลากไลบรารี PDF เข้ามาใน Deno)
+async function docPageCount(mime: string, b64: string): Promise<number> {
+  if (!/pdf/i.test(mime)) return 1;
+  try {
+    const t = await docCall(mime, b64, "เอกสารนี้มีทั้งหมดกี่หน้า ตอบเป็น 'ตัวเลขอย่างเดียว' ห้ามมีคำอื่น", 16);
+    const n = parseInt(String(t).replace(/[^0-9]/g, ""), 10);
+    return (isFinite(n) && n > 0 && n < 2000) ? n : 1;
+  } catch { return 1; }
+}
+
+// อ่านทั้งเอกสาร คืนเป็น "ตอน" ๆ พร้อมธงว่าตอนไหนอาจถูกตัด
+async function docExtract(mime: string, b64: string): Promise<{ parts: string[]; pages: number; truncated: number[] }> {
+  const pages = await docPageCount(mime, b64);
+  const parts: string[] = [];
+  const truncated: number[] = [];
+  if (pages <= DOC_PAGES_PER_CHUNK) {
+    const t = await docCall(mime, b64, docPrompt(), DOC_MAX_OUT);
+    if (t && !/^__EMPTY__$/.test(t)) parts.push(t);
+    // ยาวชนเพดาน = น่าจะโดนตัด (ประมาณ 1 token ≈ 2 ตัวอักษรไทย)
+    if (t.length > DOC_MAX_OUT * 1.8) truncated.push(1);
+  } else {
+    for (let from = 1; from <= pages; from += DOC_PAGES_PER_CHUNK) {
+      const to = Math.min(pages, from + DOC_PAGES_PER_CHUNK - 1);
+      let t = "";
+      try { t = await docCall(mime, b64, docPrompt(from, to), DOC_MAX_OUT); } catch { t = ""; }
+      if (!t || /^__EMPTY__$/.test(t)) continue;
+      parts.push(t);
+      if (t.length > DOC_MAX_OUT * 1.8) truncated.push(parts.length);
+    }
+  }
+  return { parts, pages, truncated };
+}
+
+// เก็บผลลงคลังความรู้ — 1 ตอน = 1 แถว (กันชนเพดานความยาวต่อแถว)
+async function docSave(o: { baseTitle: string; source: string; category?: string; tags?: string; createdBy?: string; parts: string[]; pages: number; valid_from?: string | null; valid_to?: string | null }): Promise<{ ids: number[]; chars: number }> {
+  try { if (o.source) await sb.from("nida_knowledge").delete().eq("source", o.source); } catch { /* กันซ้ำ: ลบของเดิมชื่อเดียวกันก่อน */ }
+  const ids: number[] = []; let chars = 0;
+  const K = o.parts.length;
+  for (let i = 0; i < K; i++) {
+    const body = o.parts[i].slice(0, DOC_CAP_PER_ROW);
+    chars += body.length;
+    const title = (K > 1 ? `${o.baseTitle} · ตอนที่ ${i + 1}/${K}` : o.baseTitle).slice(0, 200);
+    const { data, error } = await sb.from("nida_knowledge").insert({
+      category: o.category || "training", title, content: body,
+      tags: o.tags || "คู่มือ,นำเข้าเอกสาร", source: o.source, created_by: o.createdBy || "นำเข้าเอกสาร (HR)",
+      valid_from: o.valid_from ?? null, valid_to: o.valid_to ?? null,
+    }).select("id").single();
+    if (error) throw new Error(error.message);
+    ids.push(data.id);
+  }
+  return { ids, chars };
+}
+// เก็บ "ไฟล์ที่แนบในแชทนี้" เข้าคลังความรู้แบบเต็ม (ไม่ใช่บทสรุปที่โมเดลเขียนเอง)
+async function remember_document(a: any) {
+  if (!_curAttach) return { ok: false, message: "ไม่พบไฟล์แนบในข้อความนี้ค่ะ — รบกวนแนบไฟล์มาพร้อมคำสั่ง 'เก็บเอกสารนี้เข้าคลัง' อีกครั้ง" };
+  const D = (x: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || "")) ? String(x) : null;
+  try {
+    const { parts, pages, truncated } = await docExtract(_curAttach.mime, _curAttach.data);
+    if (!parts.length || parts.join("").replace(/\s/g, "").length < 60) return { ok: false, message: "อ่านเนื้อหาจากไฟล์ไม่ได้ (ว่าง/สแกนไม่ชัด)" };
+    const all = parts.join("\n");
+    const baseTitle = String(a?.title || (all.split("\n").find((l: string) => l.trim().length > 8 && !/^\[หน้า/.test(l.trim())) || "เอกสารจากแชท")).trim().slice(0, 180);
+    const cat = ["policy", "standard", "correction", "faq", "note", "training"].includes(String(a?.category)) ? String(a.category) : "training";
+    const src = String(a?.source || ("แนบในแชท · " + baseTitle)).slice(0, 200);
+    const { ids, chars } = await docSave({ baseTitle, source: src, category: cat, tags: a?.tags || "แนบในแชท,เอกสาร", createdBy: "นิดา (เก็บเอกสารจากแชท)", parts, pages, valid_from: D(a?.valid_from), valid_to: D(a?.valid_to) });
+    _knowCache = null;
+    await log("เก็บเอกสารจากแชทเข้าคลัง", baseTitle + " · " + pages + " หน้า · " + ids.length + " ตอน");
+    return {
+      ok: true,
+      message: `เก็บเข้าคลังแล้วค่ะ — "${baseTitle}" ${pages} หน้า แบ่งเป็น ${ids.length} ตอน รวม ${chars.toLocaleString()} ตัวอักษร (เก็บ "เนื้อหาเต็ม" ไม่ใช่บทสรุป)`
+        + (truncated.length ? ` · ⚠ ตอนที่ ${truncated.join(", ")} ยาวชนเพดาน อาจไม่ครบ` : ""),
+    };
+  } catch (e) { return { ok: false, message: "เก็บไม่สำเร็จ: " + String((e as any)?.message || e) }; }
+}
 async function knowledge_search(a: any) {
   const raw = String(a.query || "").replace(/[(),%*]/g, " ").trim();   // กัน .or() พังจากอักขระพิเศษ
   const cat = String(a.category || "").trim();
   // ★ แตกเป็นคำค้นย่อย (คั่นช่องว่าง/จุลภาค) แล้ว OR ทีละคำ — ภาษาไทยไม่มีเว้นวรรค ต้องพึ่งคำค้นสั้นจากผู้เรียก
   const toks = raw.split(/[\s,]+/).map(t => t.trim()).filter(t => t.length >= 2).slice(0, 8);
-  let sel: any = sb.from("nida_knowledge").select("id,category,title,content,tags,source,updated_at").eq("active", true).order("updated_at", { ascending: false }).limit(30);
+  // ★ ค้นเจอทั้งของที่ใช้อยู่และหมดอายุ — แต่แยกกลุ่มให้ชัด กันหยิบของหมดอายุไปตอบว่ายังใช้ได้
+  const onlyCurrent = a.include_expired === true ? false : true;
+  let sel: any = sb.from("nida_knowledge").select("id,category,title,content,tags,source,updated_at,valid_from,valid_to").eq("active", true).order("updated_at", { ascending: false }).limit(30);
   if (cat) sel = sel.eq("category", cat);
   if (toks.length) { const ors: string[] = []; for (const t of toks) ors.push(`title.ilike.%${t}%`, `content.ilike.%${t}%`, `tags.ilike.%${t}%`); sel = sel.or(ors.join(",")); }
   const { data, error } = await sel;
-  if (error) return { error: String(error.message || error) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/nida_knowledge.sql ก่อน)" };
+  if (error) return { error: String(error.message || error) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/nida_knowledge.sql + nida_knowledge_validity.sql ก่อน)" };
   // ★ ค้นไม่เจอ → คืน "รายชื่อคู่มือ/เอกสารที่นำเข้าไว้" ให้นิดาเลือกค้นต่อ (กันตอบว่า 'ไม่มีข้อมูล' ทั้งที่อัปโหลดแล้ว)
   if (!data || !data.length) {
     const { data: manuals } = await sb.from("nida_knowledge").select("id,category,title,source").eq("active", true).in("category", ["training", "manual"]).order("updated_at", { ascending: false }).limit(50);
-    return { count: 0, knowledge: [], note: "ไม่พบคำค้นตรงตัว — ลองค้นใหม่ด้วย 'คำนามหลักสั้น ๆ' หรือคำพ้อง (เช่น 'ตู้เตรียม' 'ทำความสะอาด' 'น้ำยา') หรือเปิดคู่มือด้านล่างมาอ่านตอบ", manuals: manuals ?? [] };
+    return { count: 0, knowledge: [], note: "ไม่พบคำค้นตรงตัว — ลองค้นใหม่ด้วย 'คำนามหลักสั้น ๆ' หรือคำพ้อง (เช่น 'ตู้เตรียม' 'ทำความสะอาด' 'น้ำยา') หรือเปิดคู่มือด้านล่างมาอ่านตอบ · ถ้าเป็นเรื่องโปรโมชั่นแล้วไม่เจอ อาจเพราะรอบนั้นหมดอายุไปแล้ว ลองค้นซ้ำด้วย include_expired=true เพื่อดูว่ามีรอบเก่าไหม", manuals: manuals ?? [] };
   }
-  return { count: data.length, knowledge: data };
+  // แยกเป็น 3 กอง แล้วติดป้ายให้ทุกแถว
+  const tagged = data.map((r: any) => ({ ...r, สถานะ: knowStatus(r), ช่วงเวลา: knowPeriodTag(r).replace(/^\s*\[|\]$/g, "") || "ไม่มีวันหมดอายุ" }));
+  const current = tagged.filter((r: any) => r.สถานะ === "ใช้อยู่");
+  const future  = tagged.filter((r: any) => r.สถานะ === "ยังไม่เริ่ม");
+  const expired = tagged.filter((r: any) => r.สถานะ === "หมดอายุ");
+  // ★ 7 ก.ย. 2569 — เคสสำคัญ: ค้นแล้วไม่มีของที่ใช้อยู่ "แต่มีของที่เคยมีและจบไปแล้ว"
+  //   ห้ามปล่อยให้ตอบว่า "ไม่พบข้อมูล" เพราะข้อมูลมีอยู่ แค่หมดอายุ — คนละความหมายกันคนละเรื่อง
+  //   คืนของหมดอายุกลับไปพร้อมคำสั่งชัด ๆ แทนที่จะพึ่งให้นิดานึกค้นซ้ำด้วย include_expired เอง
+  if (onlyCurrent && !current.length && expired.length) {
+    return {
+      count: 0, knowledge: [], expired_matches: expired, upcoming_count: future.length,
+      note: "❗ ไม่มีรายการที่ 'ใช้ได้ตอนนี้' ตรงคำค้น แต่พบ " + expired.length + " รายการที่ 'เคยมีจริงและจบไปแล้ว' (ดู expired_matches)"
+        + " · ✅ ให้ตอบว่า: \"<ชื่อรายการ> จบไปแล้วเมื่อ <วันที่ใน ช่วงเวลา> ค่ะ ตอนนี้ยังไม่มีรอบใหม่ในระบบ\" แล้วบอกด้วยว่ารอบที่ใช้อยู่ตอนนี้คืออะไร (ถ้ามี)"
+        + " · ❌ ห้ามตอบว่า 'ไม่พบข้อมูลในคลังความรู้' (ข้อมูลมีอยู่ แค่หมดอายุ — คนละเรื่องกัน)"
+        + " · ❌ ห้ามแนะให้ไปถามผู้จัดการเขต/ช่องทางประชาสัมพันธ์ 7-Eleven (นี่เป็นข้อมูลภายในที่ระบบมีอยู่แล้ว)"
+        + " · ❌ ห้ามยกราคา/เงื่อนไขของรายการที่หมดอายุมาตอบเหมือนยังใช้ได้",
+    };
+  }
+  if (onlyCurrent && current.length) {
+    return {
+      count: current.length, knowledge: current,
+      expired_count: expired.length, upcoming_count: future.length,
+      note: "★ นี่คือรายการที่ 'ใช้ได้ ณ วันนี้' เท่านั้น"
+        + (expired.length ? ` · มีอีก ${expired.length} รายการที่หมดอายุแล้ว (ไม่แสดง) — ถ้าผู้ใช้ถามย้อนหลังโดยเฉพาะ ให้ค้นซ้ำด้วย include_expired=true` : "")
+        + (future.length ? ` · มี ${future.length} รายการที่ยังไม่ถึงวันเริ่มใช้` : "")
+        + " · ตอบเรื่องราคา/โปรโมชั่น ต้องบอกช่วงเวลากำกับเสมอ",
+    };
+  }
+  return {
+    count: tagged.length, knowledge: tagged,
+    note: expired.length
+      ? "⚠ ผลค้นนี้มีรายการที่หมดอายุแล้วปนอยู่ (ดูช่อง สถานะ) — ห้ามยกราคา/เงื่อนไขของรายการ 'หมดอายุ' มาตอบว่ายังใช้ได้ ให้บอกว่ารอบนั้นจบไปแล้วเมื่อไร และยังไม่มีรอบใหม่ในระบบ"
+      : "ทุกรายการยังใช้ได้ ณ วันนี้",
+  };
 }
 
 // ---------- นำทาง: เปิดเมนู/แท็บในแอปให้ผู้ใช้ (กันหาไม่เจอ) ----------
@@ -1340,7 +1676,7 @@ function actionSummary(name: string, args: any): string {
   if (name === "approve_leave") return `อนุมัติใบลา (leave_id ${args.leave_id})`;
   if (name === "reject_leave") return `ปฏิเสธใบลา (leave_id ${args.leave_id})${args.reason ? " · เหตุผล: " + args.reason : ""}`;
   if (name === "add_announcement") { const pri = String(args.priority || "normal"); const pl = pri === "mandatory" ? "บังคับรับทราบ+ตอบคำถาม" : pri === "important" ? "ต้องกดรับทราบ" : "แจ้งทั่วไป"; return `เพิ่มประกาศ/จดหมายเวียน [${pl}]${args.title ? " · " + args.title : ""}:\n"${String(args.message || "").slice(0, 140)}"${args.quiz_q ? ("\nคำถาม: " + String(args.quiz_q).slice(0, 80)) : ""}${args.expire_date ? "\n(หมดอายุ " + args.expire_date + ")" : ""}`; }
-  if (name === "remember") return `จำเข้าคลังความรู้ [${KNOW_LABEL[String(args.category)] || args.category || "บันทึก"}] "${String(args.title || "").slice(0, 60)}"\n${String(args.content || "").slice(0, 120)}`;
+  if (name === "remember") { const _p = args.valid_to ? `\n📅 ใช้ได้ ${args.valid_from || "ทันที"} → ${args.valid_to} (พ้นวันนี้ระบบหยุดใช้เอง)` : "\n📅 ไม่มีวันหมดอายุ"; return `จำเข้าคลังความรู้ [${KNOW_LABEL[String(args.category)] || args.category || "บันทึก"}] "${String(args.title || "").slice(0, 60)}"${_p}\n${String(args.content || "").slice(0, 120)}`; }
   if (name === "issue_discipline") { const lb = String(args.action_type) === "written" ? "ตักเตือนลายลักษณ์อักษร" : "ตักเตือนด้วยวาจา"; return `บันทึกการ${lb} · พนักงาน ${args.emp_id || "?"}\nเหตุผล: ${String(args.reason || "").slice(0, 140)}\n⚠ ต้องแนบรูปเอกสาร/ใบเซ็นรับทราบเป็นหลักฐาน แล้วกดยืนยันในแชท`; }
   if (name === "chat_send") return `💬 ส่งข้อความถึง ผจก.สาขา ${args.branch_id}:\n"${String(args.message || "").slice(0, 160)}"`;
   if (name === "line_group_send") return `📲 ส่งข้อความเข้า "กลุ่มไลน์" สาขา ${args.branch_id}:\n"${String(args.message || "").slice(0, 180)}"\n⚠ พนักงานทุกคนในกลุ่มจะเห็นข้อความนี้`;
@@ -1441,6 +1777,15 @@ async function resolveShiftId(token: any): Promise<string | null> {
 
 // ซิงค์กะให้ "แถวลงเวลา" ตามตารางเวรที่เพิ่งแก้ (เหมือน hrSchedSave ฝั่งเว็บ)
 // แตะเฉพาะกะที่ค้างในแถวลงเวลา "ไม่ตรงกับตารางเวรปัจจุบัน" (กันแตะเคสควบกะที่กะเดิมยังอยู่)
+// รหัสกะ → ชื่อกะอ่านง่าย (ใช้ตอนเตือนเรื่องควบกะ)
+async function shiftNames(ids: string[]): Promise<string> {
+  try {
+    const { data } = await sb.from("shifts").select("shift_id,name").in("shift_id", ids);
+    const map: Record<string, string> = {};
+    (data || []).forEach((r: any) => map[r.shift_id] = r.name || r.shift_id);
+    return ids.map((i) => map[i] || i).join(" + ");
+  } catch { return ids.join(" + "); }
+}
 async function syncAttShift(empId: string, workDate: string, preferred?: string) {
   try {
     const { data: att } = await sb.from("attendance").select("shift_id,check_in").eq("emp_id", empId).eq("work_date", workDate).maybeSingle();
@@ -1686,11 +2031,15 @@ async function runAction(name: string, args: any): Promise<{ ok: boolean; messag
       const title = String(args.title || "").trim(); const content = String(args.content || "").trim();
       if (!title || !content) return { ok: false, message: "ต้องมีหัวข้อ (title) และเนื้อหา (content)" };
       const cat = ["policy", "standard", "correction", "faq", "note", "exam", "training"].includes(String(args.category)) ? String(args.category) : "note";
-      const { error } = await sb.from("nida_knowledge").insert({ category: cat, title, content, tags: args.tags || null, source: args.source || "สนทนา", created_by: "นิดา (HR สั่งจำ)" });
+      const D = (x: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || "")) ? String(x) : null;
+      const vf = D(args.valid_from), vt = D(args.valid_to);
+      const { error } = await sb.from("nida_knowledge").insert({ category: cat, title, content, tags: args.tags || null, source: args.source || "สนทนา", created_by: "นิดา (HR สั่งจำ)", valid_from: vf, valid_to: vt });
       if (error) throw error;
       _knowCache = null;   // ล้าง cache → ครั้งหน้าดึงความรู้ใหม่มาใช้ทันที
-      await log("นิดาจำความรู้ใหม่", cat + ": " + title);
-      return { ok: true, message: `จำไว้แล้วค่ะ — "${title}" (หมวด ${KNOW_LABEL[cat] || cat}) นิดาจะนำไปใช้ตอบครั้งต่อ ๆ ไป` };
+      await log("นิดาจำความรู้ใหม่", cat + ": " + title + (vt ? (" (ถึง " + vt + ")") : ""));
+      const t0 = bkkToday();
+      const per = vt ? (vf && vf > t0 ? ` — จะเริ่มใช้ ${vf} ถึง ${vt}` : ` — ใช้ได้ถึง ${vt}`) : "";
+      return { ok: true, message: `จำไว้แล้วค่ะ — "${title}" (หมวด ${KNOW_LABEL[cat] || cat})${per} นิดาจะนำไปใช้ตอบครั้งต่อ ๆ ไป${vt ? " และจะหยุดใช้เองเมื่อเลยวันที่กำหนด" : ""}` };
     }
     if (name === "mark_training_day") {
       const start = args.start, end = args.end || args.start;
@@ -1901,6 +2250,19 @@ async function runAction(name: string, args: any): Promise<{ ok: boolean; messag
       if (!args.emp_id || !args.work_date || !args.new_shift_id) return { ok: false, message: "ต้องระบุ emp_id, work_date, new_shift_id" };
       { const nsid = await resolveShiftId(args.new_shift_id); if (!nsid) return { ok: false, message: `ไม่พบกะ "${args.new_shift_id}" ในระบบค่ะ ลองบอกเป็นรหัสกะ (เช่น D) หรือชื่อกะที่มีอยู่จริง` }; args.new_shift_id = nsid; }
       if (args.old_shift_id) { const osid = await resolveShiftId(args.old_shift_id); if (osid) args.old_shift_id = osid; }
+      // ★ 7 ก.ย. 2569 — กัน "ลบกะควบโดยไม่ตั้งใจ"
+      //   ไม่ระบุ old_shift_id = แทนที่ทุกกะของวันนั้น · ถ้าวันนั้นเป็นวันควบกะ (มี ≥2 กะ)
+      //   กะอีกกะจะหายไปเงียบ ๆ → ต้องถามกลับก่อน ห้ามเดา
+      if (!args.old_shift_id) {
+        const { data: cur } = await sb.from("schedules").select("shift_id").eq("emp_id", args.emp_id).eq("work_date", args.work_date);
+        const list = (cur || []).map((r: any) => r.shift_id).filter(Boolean);
+        if (list.length >= 2) {
+          const nm = await shiftNames(list);
+          return { ok: false, message: `วันที่ ${args.work_date} พนักงาน ${args.emp_id} มี ${list.length} กะ (ควบกะ: ${nm}) ค่ะ` +
+            ` — ถ้าเปลี่ยนโดยไม่ระบุว่าเปลี่ยนกะไหน ระบบจะลบทั้ง ${list.length} กะแล้วเหลือกะเดียว` +
+            ` · รบกวนบอกด้วยว่าจะเปลี่ยน "กะไหน" (ใส่ old_shift_id) หรือยืนยันว่าต้องการแทนที่ทั้งวันจริง ๆ` };
+        }
+      }
       let dq: any = sb.from("schedules").delete().eq("emp_id", args.emp_id).eq("work_date", args.work_date);
       if (args.old_shift_id) dq = dq.eq("shift_id", args.old_shift_id);   // ระบุกะเดิม = เปลี่ยนเฉพาะกะนั้น · ไม่ระบุ = แทนที่ทั้งวัน
       { const { error } = await dq; if (error) throw error; }
@@ -1919,6 +2281,8 @@ async function runAction(name: string, args: any): Promise<{ ok: boolean; messag
       let q: any = sb.from("schedules").delete().eq("emp_id", args.emp_id).eq("work_date", args.work_date);
       if (args.shift_id) q = q.eq("shift_id", args.shift_id);
       const { error } = await q; if (error) throw error;
+      // ★ ลบกะแล้วต้องปรับแถวลงเวลาให้ตรงตารางเวรด้วย ไม่งั้น attendance ค้างกะที่ไม่มีแล้ว
+      await syncAttShift(args.emp_id, args.work_date);
       await log("ลบกะ (นิดา)", args.emp_id + " " + args.work_date + (args.shift_id ? (" " + args.shift_id) : ""));
       return { ok: true, message: `ลบกะของ ${args.emp_id} วันที่ ${args.work_date}${args.shift_id ? (" กะ " + args.shift_id) : ""} เรียบร้อยแล้วค่ะ` };
     }
@@ -2621,7 +2985,7 @@ async function _resolveLineTarget(input: any): Promise<{ bid?: string; gids?: st
   return null;
 }
 async function branch_line_feed(a: any) {
-  const hours = Math.min(Math.max(Number(a?.hours) || 120, 1), 24 * 30);   // ดีฟอลต์ 5 วัน (ข่าวสารปัจจุบัน) · ขยายได้ถึง 30 วัน
+  const hours = Math.min(Math.max(Number(a?.hours) || 72, 1), 24 * 30);   // ★ ดีฟอลต์ 3 วัน (เดิม 5) — เอาเฉพาะของสด · ขยายได้ถึง 30 วันถ้าผู้ใช้ขอย้อนหลังเอง
   const limit = Math.min(Math.max(Number(a?.limit) || 80, 1), 300);
   const sinceIso = new Date(Date.now() - hours * 3600 * 1000).toISOString();
   let bid: string | null = null; let gids: string[] | null = null;
@@ -2637,8 +3001,16 @@ async function branch_line_feed(a: any) {
   else q = q.not("category", "in", "(system,photo)");   // ปกติไม่เอาภาพ/ข้อความระบบมารก
   const [{ data: msgs }, bn, gl] = await Promise.all([q, _brMap(), _lineGroupLabels()]);
   const brn: Record<string, string> = bn || {};
+  // ★ ติดป้ายอายุข้อความ — ให้นิดารู้ตัวว่ากำลังอ้างของเก่าแค่ไหน
+  const _ageTxt = (iso: string) => {
+    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (d <= 0) return "วันนี้";
+    if (d === 1) return "เมื่อวาน";
+    return d + " วันที่แล้ว" + (d >= 14 ? " ⚠เก่ามาก อย่าเล่าเหมือนเป็นเรื่องปัจจุบัน" : "");
+  };
   const items = (msgs || []).map((m: any) => ({
     time: String(m.sent_at).slice(0, 16).replace("T", " "),
+    อายุ: _ageTxt(m.sent_at),
     category: m.category || null, msg_class: m.msg_class || null,
     branch: m.branch_id ? (brn[m.branch_id] || m.branch_id) : (gl[m.group_id] || "(ยังไม่ผูกสาขา)"),
     who: m.display_name || "ไม่ทราบชื่อ",
@@ -2650,7 +3022,7 @@ async function branch_line_feed(a: any) {
   return {
     scope: bid ? (brn[bid] || bid) : "ทุกสาขา", hours, count: items.length,
     urgent_count: urgent.length, urgent, messages: items,
-    note: "ข้อความจริงจากกลุ่มไลน์สาขา (เรียงใหม่→เก่า) — สรุปเป็นข่าว/ความเคลื่อนไหวรายสาขาแบบกระชับ · เน้น urgent ก่อน (flags=คำที่บ่งชี้เรื่องด่วน เช่น ของขาด/ปิดร้าน/ทะเลาะ/ลากะทันหัน) · ถ้าไม่มีอะไรสำคัญให้บอกว่ากลุ่มเงียบ/ปกติ · อย่าตีความเกินจริงจากข้อความสั้น ๆ ให้ยกข้อความจริงประกอบ",
+    note: "ข้อความจริงจากกลุ่มไลน์สาขา (เรียงใหม่→เก่า) · ⚠ ดูช่อง 'อายุ' ทุกแถวก่อนอ้าง — ของเก่าเกิน 14 วันห้ามเล่าเหมือนเป็นสถานะปัจจุบัน ต้องบอกวันที่กำกับ · นี่คือ 'เหตุการณ์ที่มีคนเล่าไว้' ไม่ใช่แหล่งความจริงของนโยบาย/ราคา/ขั้นตอน — สรุปเป็นข่าว/ความเคลื่อนไหวรายสาขาแบบกระชับ · เน้น urgent ก่อน (flags=คำที่บ่งชี้เรื่องด่วน เช่น ของขาด/ปิดร้าน/ทะเลาะ/ลากะทันหัน) · ถ้าไม่มีอะไรสำคัญให้บอกว่ากลุ่มเงียบ/ปกติ · อย่าตีความเกินจริงจากข้อความสั้น ๆ ให้ยกข้อความจริงประกอบ",
   };
 }
 // สแกนเรื่องด่วนจากกลุ่มไลน์ทุกสาขาในช่วงล่าสุด — ชี้สาขาที่มีสัญญาณต้องรีบดู
@@ -2807,7 +3179,7 @@ async function task_compliance(a: any) {
   return { period_days: days, branches, note: "ความสม่ำเสมอการส่งงานรายผลัด (นับจากอัลบั้ม 'ส่งงานผลัด...' ในกลุ่มสาขา) · คาดหวัง 3 ผลัด/วัน (เช้า/บ่าย/ดึก) · incomplete=วันที่ส่งไม่ครบ 3 ผลัด · ⚠ เป็นการนับจากที่แจ้งในไลน์ อาจมีวันที่ส่งแต่ไม่ได้ตั้งชื่ออัลบั้มให้ชัด — ใช้เป็นสัญญาณเตือนติดตาม ไม่ใช่ลงโทษทันที" };
 }
 
-const TOOLS: Record<string, (a: any) => Promise<any>> = { find_branch, mgr_eval, branch_line_feed, line_activity_scan, sales_report, audit_report, announcements, task_compliance, classify_group_images, get_group_images, search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, shelf_status, unregistered_faces, hr_handbook, app_guide, analyze_image, goods_receipts, warnings_list, score_status, payroll_summary, holidays_list, list_tables, describe_table, run_sql, applicants_list, app_data, night_allowance_summary, rider_mileage_check, advance_pending, incomplete_profiles, dual_shift_report, get_document, knowledge_search, open_menu, morning_digest, anomaly_scan, retention_risk, staffing_forecast, suggest_cover, mgr_login_activity, mgr_actions, universal_search, create_exam, branch_workload, web_search: (a: any) => webSearch(a?.query) };
+const TOOLS: Record<string, (a: any) => Promise<any>> = { find_branch, mgr_eval, branch_line_feed, line_activity_scan, sales_report, audit_report, announcements, task_compliance, classify_group_images, get_group_images, search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, shelf_status, unregistered_faces, hr_handbook, app_guide, analyze_image, goods_receipts, warnings_list, score_status, payroll_summary, holidays_list, list_tables, describe_table, run_sql, applicants_list, app_data, night_allowance_summary, rider_mileage_check, advance_pending, incomplete_profiles, dual_shift_report, get_document, knowledge_search, remember_document, promo_search, promo_sheet, open_menu, morning_digest, anomaly_scan, retention_risk, staffing_forecast, suggest_cover, mgr_login_activity, mgr_actions, universal_search, create_exam, branch_workload, web_search: (a: any) => webSearch(a?.query) };
 
 const DECLS = [
   { name: "find_branch", description: "ค้นหาสาขาจากรหัสหรือชื่อ (ทนศูนย์นำหน้า เช่น 06573/6573 และชื่อบางส่วน เช่น 'ตลาดหล่มสัก') — ต้องเรียกทุกครั้งที่ผู้ใช้อ้างถึงสาขา ก่อนจะสรุปว่า 'พบ/ไม่พบ' ห้ามตอบว่าไม่พบสาขาโดยไม่เรียกเครื่องมือนี้ก่อน", parameters: { type: "object", properties: { query: { type: "string" } } } },
@@ -2855,8 +3227,11 @@ const DECLS = [
   { name: "applicants_list", description: "ผู้สมัครงาน (ตาราง applicants) — กรอง status (new=ใบสมัครใหม่, reviewing=กำลังพิจารณา, interview=นัดสัมภาษณ์แล้ว, hired=รับเข้าทำงาน, rejected=ไม่ผ่าน) / branch_id / ช่วงวันที่สมัคร (start,end) / query (ชื่อ-เบอร์) · คืนชื่อ เบอร์โทร ตำแหน่ง สาขา สถานะ วันนัดสัมภาษณ์ และสรุปยอดแต่ละสถานะ", parameters: { type: "object", properties: { status: { type: "string" }, branch_id: { type: "string" }, start: { type: "string" }, end: { type: "string" }, query: { type: "string" }, limit: { type: "number" } } } },
   { name: "app_data", description: "ประตูเข้าถึง 'ทุกโมดูลในแอป' (อ่านอย่างเดียว) — ระบุ module แล้วกรองด้วย branch_id / emp_id / status / start / end / limit · โมดูลที่ใช้ได้: applicants · employee_off (วันหยุดประจำสัปดาห์ที่พนักงานขอไว้ + วันลาที่อนุมัติ) · schedules (ตารางเวร · วันที่ไม่มีแถว = OFF) · leaves (ใบลาทุกสถานะ) · leave_types · shifts · task_defs · mgr_tasks · mgr_task_feed · mgr_daily · special_tasks · handovers · shift_leads · goods_receipts · goods_balance (ลังคงค้าง) · warehouses · shift_controllers (ผู้คุมผลัด) · qa_items · qa_folders · qa_assignees · qa_products · shelf_assignments · branch_chat · peer_chat · chat_reads · emp_notifications · announcements · profile_submissions · checkout_corrections · rule_acks · positions · branches · devices · notify_log · settings · activity_log · rider_claims (เบิกซ่อมบำรุงรถ) · rider_fuel (เบิกค่าน้ำมัน) · rider_vehicles (ทะเบียนรถ) · payroll_review (ข้อมูลที่ ผจก.ตรวจก่อนเข้าเงินเดือน) · installments (แผนผ่อนหัก)", parameters: { type: "object", properties: { module: { type: "string" }, branch_id: { type: "string" }, emp_id: { type: "string" }, status: { type: "string" }, start: { type: "string" }, end: { type: "string" }, task_id: { type: "string" }, limit: { type: "number" } }, required: ["module"] } },
   { name: "get_document", description: "ดึงเอกสารให้ผู้ใช้ 'ดาวน์โหลด/เปิด' ในแชท (จะแสดงเป็นการ์ดปุ่ม): สลิปเงินเดือน (kind='payslip' + emp_id + which=current/previous) · ใบเตือน (kind='warning' + warning_id หรือ emp_id) · เอกสารเซ็นแนบ (kind='signed_doc' + emp_id) · รายงานสรุปรายบุคคล (kind='report' + emp_id) · ใบเซ็นรับทราบทุกขั้นวินัย (kind='ack_form' + emp_id + action_type: verbal|written|warning1|warning2|warning3 + reason ที่ร่างไว้) — สร้างเอกสารให้พิมพ์→ให้พนักงานเซ็น→ถ่ายมาแนบเป็นหลักฐาน. ใช้เมื่อผู้ใช้ขอ 'ขอสลิป/ขอใบเตือน/ขอใบเซ็นรับทราบ/ขอเอกสาร/ขอรายงาน/ดาวน์โหลด...' — ถ้าไม่รู้ emp_id ให้ search_employees ก่อน", parameters: { type: "object", properties: { kind: { type: "string" }, emp_id: { type: "string" }, warning_id: { type: "string" }, which: { type: "string" }, action_type: { type: "string" }, reason: { type: "string" } }, required: ["kind"] } },
-  { name: "remember", description: "จำ 'ความรู้ใหม่' เข้าคลังความรู้ถาวรของนิดา (ใช้ตอบครั้งต่อ ๆ ไป) — เรียกเมื่อผู้ใช้บอกนโยบาย/มาตรฐานใหม่ แก้ความเข้าใจที่ผิด หรือสั่งว่า 'จำไว้ว่า/บันทึกไว้ว่า...' · category: policy(นโยบาย)|standard(มาตรฐาน)|correction(แก้ไข/เคยผิด)|faq|note + title(หัวข้อสั้น) + content(เนื้อหาละเอียดครบ) + tags(คั่นด้วย ,) — ต้องสรุปให้ยืนยันก่อนบันทึก", parameters: { type: "object", properties: { category: { type: "string" }, title: { type: "string" }, content: { type: "string" }, tags: { type: "string" }, source: { type: "string" } }, required: ["title", "content"] } },
-  { name: "knowledge_search", description: "ค้นคลังความรู้+คู่มือ/เอกสารที่นำเข้าไว้ (นโยบาย/มาตรฐาน/ขั้นตอน/วิธีทำ/สินค้า/อุปกรณ์/น้ำยา/FAQ) · ครอบคลุมคู่มือ PDF ที่อัปโหลด (หมวด training/manual) ด้วย · ⚠ query ต้องเป็น 'คำนามหลักสั้น ๆ' คั่นช่องว่าง (เช่น 'ตู้เตรียม ทำความสะอาด' หรือ 'น้ำยา') ห้ามใส่ทั้งประโยคคำถาม (ไทยไม่มีเว้นวรรค จะค้นไม่เจอ) · ถ้ารอบแรกไม่เจอให้ลองคำสั้นลง/คำพ้อง · category=กรองหมวด (ไม่ใส่=ทุกหมวด)", parameters: { type: "object", properties: { query: { type: "string" }, category: { type: "string" } } } },
+  { name: "remember", description: "จำ 'ความรู้ใหม่' เข้าคลังความรู้ถาวรของนิดา (ใช้ตอบครั้งต่อ ๆ ไป) — เรียกเมื่อผู้ใช้บอกนโยบาย/มาตรฐานใหม่ แก้ความเข้าใจที่ผิด หรือสั่งว่า 'จำไว้ว่า/บันทึกไว้ว่า...' · category: policy(นโยบาย)|standard(มาตรฐาน)|correction(แก้ไข/เคยผิด)|faq|note + title(หัวข้อสั้น) + content(เนื้อหาละเอียดครบ) + tags(คั่นด้วย ,) · ★ ถ้าเป็นเรื่องที่ 'มีวันหมดอายุ' (โปรโมชั่น แคมเปญ ประกาศชั่วคราว) ต้องใส่ valid_from/valid_to เป็น YYYY-MM-DD ด้วยเสมอ — พ้นวันแล้วระบบจะหยุดเอามาตอบเอง ไม่ต้องมาไล่ปิดทีหลัง · ถ้าไม่รู้วันให้ถามผู้ใช้ก่อน อย่าเดา · คู่มือ/นโยบายถาวรไม่ต้องใส่ — ต้องสรุปให้ยืนยันก่อนบันทึก", parameters: { type: "object", properties: { category: { type: "string" }, title: { type: "string" }, content: { type: "string" }, tags: { type: "string" }, source: { type: "string" }, valid_from: { type: "string" }, valid_to: { type: "string" } }, required: ["title", "content"] } },
+  { name: "remember_document", description: "★ เก็บ 'ไฟล์ที่ผู้ใช้แนบมาในข้อความนี้' (PDF/รูปเอกสาร) เข้าคลังความรู้แบบ 'เนื้อหาเต็ม' — ใช้เมื่อผู้ใช้แนบเอกสารแล้วสั่งว่า 'จำไว้/เก็บเข้าคลัง/บันทึกเอกสารนี้' · ระบบจะอ่านทีละช่วงหน้าเองจนครบทั้งเล่ม แล้วเก็บเป็นหลายตอน · ❌ ห้ามใช้ remember แทนในกรณีนี้ เพราะ remember เก็บได้แค่บทสรุปที่คุณเขียนเอง เนื้อหาจริงจะตกหล่น · title=ชื่อเอกสารสั้น ๆ · category=training(คู่มือ)|policy|standard · ใส่ valid_to ถ้าเป็นเอกสารที่มีวันหมดอายุ — ต้องสรุปให้ยืนยันก่อน", parameters: { type: "object", properties: { title: { type: "string" }, category: { type: "string" }, tags: { type: "string" }, source: { type: "string" }, valid_from: { type: "string" }, valid_to: { type: "string" } } } },
+  { name: "promo_search", description: "★ ค้น 'โปรโมชั่นของสินค้า' จากใบโปรฯ ที่นำเข้าไว้ — ใช้ทุกครั้งที่ถูกถามว่า 'สินค้า X มีโปรฯ ไหม / ราคาเท่าไร / ลดเท่าไร / ใช้แสตมป์กี่ดวง' · product=ชื่อสินค้าหรือยี่ห้อ 'สั้น ๆ' (เช่น 'เลย์' 'เนสกาแฟ' 'ยาสีฟัน') ห้ามใส่ทั้งประโยค · คืนราคาโปร/ราคาสมาชิก/ราคาปกติ/ดวงแสตมป์/เงื่อนไข + URL รูปใบโปรฯ · ⚠ ต้องวาง URL รูปลงในคำตอบเสมอ ระบบจะแสดงเป็นรูปให้เอง", parameters: { type: "object", properties: { product: { type: "string" }, include_expired: { type: "boolean" } }, required: ["product"] } },
+  { name: "promo_sheet", description: "★ ขอดู 'ใบโปรโมชั่นทั้งใบ' เป็นรูป — ใช้เมื่อผู้ใช้ขอว่า 'ขอดูใบโปรฯ / ส่งใบโปรโมชั่นมาให้หน่อย / โปรฯ รอบนี้มีอะไรบ้าง' · คืนรายการใบที่ใช้ได้ตอนนี้พร้อม URL รูป — ต้องวาง URL ลงในคำตอบทุกใบ", parameters: { type: "object", properties: {} } },
+  { name: "knowledge_search", description: "ค้นคลังความรู้+คู่มือ/เอกสารที่นำเข้าไว้ (นโยบาย/มาตรฐาน/ขั้นตอน/วิธีทำ/สินค้า/อุปกรณ์/น้ำยา/FAQ) · ครอบคลุมคู่มือ PDF ที่อัปโหลด (หมวด training/manual) ด้วย · ⚠ query ต้องเป็น 'คำนามหลักสั้น ๆ' คั่นช่องว่าง (เช่น 'ตู้เตรียม ทำความสะอาด' หรือ 'น้ำยา') ห้ามใส่ทั้งประโยคคำถาม (ไทยไม่มีเว้นวรรค จะค้นไม่เจอ) · ถ้ารอบแรกไม่เจอให้ลองคำสั้นลง/คำพ้อง · category=กรองหมวด (ไม่ใส่=ทุกหมวด) · ★ ปกติคืนเฉพาะรายการที่ 'ใช้ได้ ณ วันนี้' (ของหมดอายุถูกกรองออกให้แล้ว) — ใส่ include_expired=true เฉพาะตอนผู้ใช้ถามย้อนหลัง เช่น 'โปรฯ เดือนที่แล้ว/รอบก่อนคืออะไร'", parameters: { type: "object", properties: { query: { type: "string" }, category: { type: "string" }, include_expired: { type: "boolean" } } } },
   { name: "open_menu", description: "เปิดเมนู/แท็บในแอปให้ผู้ใช้ (นำทาง) — ใช้เมื่อผู้ใช้บอก 'เปิดเมนู X / ไปหน้า X / หา X ไม่เจอ / X อยู่ตรงไหน' · menu = ชื่อเมนู เช่น เงินเดือน, วินัย, รายงาน, ตารางงาน, ลา, สาขา, พนักงาน, สรุปรายบุคคล, รับสินค้า, ตั้งค่ากะ, ประกาศ ฯลฯ · ระบบจะแสดงปุ่มให้ผู้ใช้กดเปิดเมนูนั้น", parameters: { type: "object", properties: { menu: { type: "string" } }, required: ["menu"] } },
   { name: "list_tables", description: "ดูรายชื่อ 'ทุกตาราง' ที่มีในฐานข้อมูล — ใช้เมื่อถูกถามข้อมูลที่ยังไม่มีเครื่องมือเฉพาะ เพื่อหาว่าข้อมูลอยู่ตารางไหน", parameters: { type: "object", properties: {} } },
   { name: "describe_table", description: "ดูคอลัมน์ทั้งหมด + ชนิดข้อมูลของตารางหนึ่ง (ใช้ก่อนเขียน SQL เพื่อไม่ให้ชื่อคอลัมน์ผิด)", parameters: { type: "object", properties: { table: { type: "string" } }, required: ["table"] } },
@@ -2882,7 +3257,7 @@ const DECLS = [
   { name: "db_update", description: "แก้ไขข้อมูลในตาราง (ทั่วไป) — table + set(ค่าที่แก้) + where[{col,op,val}] (ต้องมีอย่างน้อย 1 เงื่อนไข) · ตารางที่แก้ได้: attendance, schedules, leaves, score_events, shelves, shelf_assignments, shelf_checks, qa_items, qa_folders, special_task_assignees, task_assignments, announcements, handovers, checkout_corrections, shift_leads, shift_controllers, holidays, payroll_review, payroll_installments, payroll_installment_charges, rider_claims, rider_fuel_claims, rider_vehicles, rider_items, rider_odometer, rider_fuel_config, applicants (ใบสมัคร · แก้สถานะ/hired_emp_id เพื่อกู้เคสรับเข้าค้าง), advance_requests (เบิกเงิน · แก้ยอด/รอบ/ยกเลิก) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { table: { type: "string" }, set: { type: "object" }, where: { type: "array", items: { type: "object", properties: { col: { type: "string" }, op: { type: "string" }, val: { type: "string" } } } } }, required: ["table", "set", "where"] } },
   { name: "db_delete", description: "ลบแถวจากตาราง (ทั่วไป) — table + where[{col,op,val}] (ต้องมีอย่างน้อย 1 เงื่อนไข กันลบทั้งตาราง) · ตารางเดียวกับ db_update (รวม applicants=ลบใบสมัครซ้ำ/ไม่ผ่าน, advance_requests) — ลบถาวร ต้องยืนยันก่อน", parameters: { type: "object", properties: { table: { type: "string" }, where: { type: "array", items: { type: "object", properties: { col: { type: "string" }, op: { type: "string" }, val: { type: "string" } } } } }, required: ["table", "where"] } },
   { name: "add_shift", description: "เพิ่มกะให้พนักงานในวันหนึ่ง (ฉุกเฉิน/ควบกะ/ไปทำแทนสาขา) — emp_id + shift_id (รหัสกะ/โค้ด/ชื่อกะ เช่น D หรือ Delivery — ระบบหารหัสจริงให้เอง) + work_date (ดีฟอลต์วันนี้) + branch_id (ถ้าต่างจากสาขาประจำ = ไปทำแทนอัตโนมัติ) · เพิ่มกะที่ 2 ในวันเดียวกัน = ควบกะ — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, shift_id: { type: "string" }, work_date: { type: "string" }, branch_id: { type: "string" }, note: { type: "string" } }, required: ["emp_id", "shift_id"] } },
-  { name: "change_shift", description: "เปลี่ยนกะของพนักงานในวันหนึ่ง — emp_id + work_date + new_shift_id (รหัส/โค้ด/ชื่อกะ เช่น D หรือ Delivery — ระบบหารหัสจริงให้เอง) (+ old_shift_id ถ้ามีหลายกะและต้องการเปลี่ยนเฉพาะกะนั้น · ไม่ใส่ = แทนที่ทุกกะของวันนั้น) + branch_id (ถ้าไปแทนสาขา) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, work_date: { type: "string" }, new_shift_id: { type: "string" }, old_shift_id: { type: "string" }, branch_id: { type: "string" }, note: { type: "string" } }, required: ["emp_id", "work_date", "new_shift_id"] } },
+  { name: "change_shift", description: "เปลี่ยนกะของพนักงานในวันหนึ่ง — emp_id + work_date + new_shift_id (รหัส/โค้ด/ชื่อกะ เช่น D หรือ Delivery — ระบบหารหัสจริงให้เอง) (+ old_shift_id ★ ถ้าวันนั้นเป็น "วันควบกะ" (มีมากกว่า 1 กะ) ต้องใส่เสมอ ไม่งั้นระบบจะปฏิเสธและถามกลับ เพราะการไม่ใส่ = ลบทุกกะของวันนั้นทิ้งแล้วเหลือกะเดียว) + branch_id (ถ้าไปแทนสาขา) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, work_date: { type: "string" }, new_shift_id: { type: "string" }, old_shift_id: { type: "string" }, branch_id: { type: "string" }, note: { type: "string" } }, required: ["emp_id", "work_date", "new_shift_id"] } },
   { name: "remove_shift", description: "ลบกะของพนักงานในวันหนึ่ง — emp_id + work_date (+ shift_id เฉพาะกะนั้น · ไม่ใส่ = ลบทุกกะของวันนั้น) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, work_date: { type: "string" }, shift_id: { type: "string" } }, required: ["emp_id", "work_date"] } },
   { name: "warning_void", description: "ยกเลิกหรือลบใบเตือน — ต้องมี warning_id (จาก warnings_list) และ reason เสมอ · ค่าเริ่มต้น hard=false = 'ยกเลิก' (เก็บใบไว้เป็นหลักฐาน ไม่มีผลบังคับ) · hard=true = ลบถาวร ใช้เฉพาะเมื่อผู้ใช้สั่งชัดว่า 'ลบถาวร/ลบทิ้ง' — ต้องยืนยันก่อน", parameters: { type: "object", properties: { warning_id: { type: "string" }, reason: { type: "string" }, hard: { type: "boolean" } }, required: ["warning_id", "reason"] } },
   // ---- อ่าน: สรุป/วิเคราะห์ (ไม่ต้องยืนยัน) ----
@@ -2912,7 +3287,7 @@ const SYS = `คุณคือ "น้องนิดา" ผู้ช่วย
 2) จับเจตนา (Intent): แยกให้ออกว่าผู้ถามต้องการอะไรจริง — ดูข้อมูล/สรุป/เทียบ/ค้นหา/สั่งทำ/ร่างข้อความ · จับทั้งเจตนาตรง (Explicit) และที่แฝง (Implicit) เช่น "สาขานี้เป็นไงบ้าง" = ขอภาพรวม (งานค้าง+คน+ยอด) ไม่ใช่คำเดียว · เดาเป้าหมายหลักก่อน แล้วเลือกเครื่องมือที่ตรงที่สุด
 3) จัดการความกำกวม (Ambiguity): ถ้าคำถามกว้าง/ขาดข้อมูล (ไม่ระบุสาขา/ช่วงเวลา/ชื่อคน) → เดาค่าเริ่มต้นที่สมเหตุผล (เช่น "วันนี้", "ทุกสาขา", "รอบปัจจุบัน") แล้วตอบเลย พร้อมบอกสมมติฐานสั้น ๆ · ถามกลับเฉพาะเมื่อจำเป็นจริง ๆ (เช่น มีพนักงานชื่อซ้ำหลายคน) และถามทีละ 1 ข้อ
 4) เลือกเครื่องมือให้ตรงเจตนา แล้ว "ลงมือเรียกจริง" — ห้ามเดาคำตอบจากความจำเมื่อมีเครื่องมือดึงข้อมูลได้
-5) ★ห้ามโยน error ดิบให้ผู้ใช้: ถ้าเครื่องมือหนึ่งคืน error/ว่าง → ลองเครื่องมือสำรองที่เกี่ยวข้องก่อน (เช่น mgr_actions ไม่ได้ → ลอง branch_line_feed / query_table) · ถ้าจริง ๆ ไม่มีข้อมูล ให้บอกอย่างสุภาพว่ายังไม่พบข้อมูลในระบบ + แนะช่องทางถัดไป — ❌ อย่าตอบว่า "พบข้อผิดพลาดในการดึงข้อมูลจากตาราง..." ลอย ๆ
+5) ★ห้ามโยน error ดิบให้ผู้ใช้: ถ้าเครื่องมือหนึ่งคืน error/ว่าง → ลองเครื่องมือสำรองที่ "เป็นแหล่งความจริงของเรื่องนั้น" ก่อน — เรื่องนโยบาย/ขั้นตอน/ราคา/โปรฯ ให้ลอง knowledge_search แล้ว hr_handbook · เรื่องข้อมูลพนักงาน/งานในระบบ ให้ลอง query_table/universal_search · ❌ อย่าถอยไป branch_line_feed เป็นค่าเริ่มต้น (กลุ่มไลน์ส่วนใหญ่เป็นข้อความเก่า จะได้คำตอบที่ไม่ตรงคำถาม) ให้ใช้ไลน์ต่อเมื่อคำถามเป็นเรื่องเหตุการณ์หน้าร้านจริง ๆ · ถ้าจริง ๆ ไม่มีข้อมูล ให้บอกอย่างสุภาพว่ายังไม่พบข้อมูลในระบบ + แนะช่องทางถัดไป — ❌ อย่าตอบว่า "พบข้อผิดพลาดในการดึงข้อมูลจากตาราง..." ลอย ๆ
 6) เมื่อคำถามพิมพ์ผิดจนกำกวมมาก ให้ทวนความเข้าใจสั้น ๆ ("เข้าใจว่าคุณถามถึง...ใช่ไหมคะ") แล้วตอบตามที่ตีความ ไม่ปล่อยว่าง
 7) ★ ไม่รู้ว่าข้อมูลอยู่ตารางไหน / คำถามกว้าง / อยากกวาดทุกที่ก่อนสรุปว่า "ไม่มี" → ใช้ universal_search (ค้นข้ามทุกตารางหลักในครั้งเดียว) แล้วค่อยเจาะลึกด้วยเครื่องมือเฉพาะทางตามหมวดที่พบ · ❌ อย่ารีบตอบว่า "ไม่มีข้อมูล" ถ้ายังไม่ได้ลอง universal_search + branch_line_feed
 
@@ -2926,8 +3301,26 @@ const SYS = `คุณคือ "น้องนิดา" ผู้ช่วย
 - ร่างข้อความสื่อสารพนักงานได้ทุกแบบ: ข้อความแจ้ง/ตักเตือน/ชี้แจงเหตุผล · ประกาศ · ข้อความตอบในแชทสาขา · หนังสือแจ้งอย่างเป็นทางการ — เขียนสุภาพ ชัดเจน อ้างระเบียบ/ข้อเท็จจริงถูกต้อง เหมาะกับสถานการณ์ · เมื่อผู้ใช้พอใจแล้ว สั่งส่งได้ผ่าน chat_send (ถึง ผจก.สาขา) / chat_broadcast (ทุกสาขา) / add_announcement (ประกาศ) — สรุปให้ยืนยันก่อนส่งทุกครั้ง
 - ★★ [กฎอ่านของแนบ] เมื่อผู้ใช้แนบรูปภาพ/เอกสาร/ไฟล์เสียง/วิดีโอในข้อความปัจจุบันแล้วให้ "อ่าน/ฟัง/ดู/ถอด/สรุป/ทำความเข้าใจ/บันทึก" → ต้องประมวลจากไฟล์ที่แนบมาจริง ๆ (รูป/PDF=อ่านด้วย vision · เสียง/วิดีโอ=ฟัง/ถอดเสียงเป็นข้อความแล้วสรุป) จากของที่แนบเท่านั้น · ถ้าเป็นวิดีโอเทรนนิง/คลิปสอนงาน ให้ถอดเป็นหัวข้อ+ขั้นตอนที่ปฏิบัติได้ และถ้าผู้ใช้สั่ง "จำ" ให้ remember เข้าคลังความรู้ · ❌ ห้ามตอบมั่วเป็นของเก่าใน [คลังความรู้ที่นิดาจำไว้] แทนการอ่านของแนบ · ถ้ารูปเบลอ/อ่านบางส่วนไม่ออก บอกตรง ๆ ว่าส่วนไหนอ่านไม่ได้ อย่าเดา
 - ★★★ [ต่อเนื่องกับบทสนทนาก่อนหน้า] ผู้ใช้คุยแบบต่อเนื่อง — เมื่อเขาอ้างถึงสิ่งที่พูดไปก่อนหน้า (เช่น "ขอดูรูปที่คุณ X โพสต์เรื่อง Y", "อันเมื่อกี้", "เรื่องนั้น") ให้ดึง "ชื่อคน/วันที่/หัวข้อ/สาขา" จากข้อความก่อนหน้าในบทสนทนา (รวมถึงสรุปที่คุณตอบไปเอง) มาใส่เป็นตัวกรองของเครื่องมือ เช่น get_group_images(sender='X', on_date='YYYY-MM-DD') · ❌ อย่าดึงข้อมูลกว้าง ๆ มาตอบทั้งที่ผู้ใช้ระบุเจาะจงแล้ว
+- ★★★ [ผู้ใช้แนบเอกสารแล้วสั่งให้จำ → ใช้ remember_document ไม่ใช่ remember] เพราะ remember เก็บได้แค่ "ข้อความที่คุณพิมพ์เอง" = บทสรุป เนื้อหาจริงในเอกสารจะหายไปเกือบหมด · remember_document จะอ่านไฟล์ทีละช่วงหน้าจนครบทั้งเล่มแล้วเก็บเนื้อหาเต็มให้ · ใช้ remember ต่อไปได้เฉพาะกรณี "ผู้ใช้พิมพ์บอกนโยบาย/ข้อมูลมาเป็นข้อความ" (ไม่มีไฟล์แนบ)
+- ★★★★ [ราคา/โปรโมชั่นสินค้า = ใช้ promo_search เท่านั้น] ถูกถามว่า "สินค้า X มีโปรฯ ไหม / ราคาเท่าไร / ลดเท่าไร / ใช้แสตมป์กี่ดวง / โปรฯ รอบนี้มีอะไรบ้าง" → เรียก promo_search (หรือ promo_sheet ถ้าขอดูทั้งใบ) ❌ ห้ามตอบจากความจำ ห้ามคำนวณเอง ห้ามหยิบจากกลุ่มไลน์
+  · ★ ต้องวาง URL ในช่อง "รูปใบโปรฯ" ลงในคำตอบทุกครั้ง (ระบบจะแสดงเป็นรูปให้เอง) พนักงานจะได้เทียบกับใบจริงได้
+  · ★ ต้องบอกช่วงเวลาของใบกำกับเสมอ · ถ้ารายการนั้น ตรวจแก้แล้ว=false ให้เตือนว่า "เป็นข้อมูลที่ AI อ่านจากรูป ยังไม่มีคนตรวจ รบกวนดูรูปประกอบด้วยนะคะ"
+  · ค้นด้วยชื่อสั้น ๆ (เช่น "เลย์" "เนสกาแฟ" "ยาสีฟัน") ไม่ใช่ทั้งประโยค · ไม่เจอให้ลองชื่อยี่ห้อ/คำสั้นลงก่อนสรุปว่าไม่มี
+- ★★★★ [ลำดับแหล่งข้อมูล — ใช้ตัดสินทุกครั้งก่อนเลือกเครื่องมือ]
+  ชั้น 1 · [คลังความรู้] ที่แนบมาให้ + knowledge_search + hr_handbook → นโยบาย ระเบียบ ขั้นตอน มาตรฐาน ราคา โปรโมชั่น วิธีทำงาน
+  ชั้น 2 · ตารางในแอป HR (เครื่องมือ HR ทั้งหมด) → พนักงาน ลงเวลา ลา วินัย กะ เงินเดือน งานในระบบ ยอดขายที่บันทึกไว้
+  ชั้น 3 · กลุ่มไลน์ (branch_line_feed / line_activity_scan) → เฉพาะ "เหตุการณ์หน้าร้านที่มีคนเล่าไว้" เท่านั้น
+  · ตอบจากชั้นที่ตื้นที่สุดที่ตอบได้ · ลงชั้น 3 ต่อเมื่อชั้น 1–2 ไม่มีจริง ๆ และคำถามเป็นเรื่องเหตุการณ์
+  · ❗ เหตุผล: กลุ่มไลน์มีข้อความสะสมหลายพันข้อความ ส่วนใหญ่เก่าเกิน 1 เดือน — หยิบมาตอบคำถามที่ควรตอบจากชั้น 1–2 จะได้คำตอบที่ไม่ตรงประเด็นและล้าสมัย
 - ★★★ [ต้องค้นก่อนตอบว่าไม่มี] คำถามเชิง "ขั้นตอน/วิธีทำ/มาตรฐาน/ระเบียบ/สินค้า/อุปกรณ์/น้ำยา/การทำความสะอาด/คู่มือ" → ต้องเรียก knowledge_search ก่อน "ทุกครั้ง" (คลังมีคู่มือ PDF ที่นำเข้าไว้ หมวด training/manual ซึ่งไม่ได้ฉีดเข้าอัตโนมัติ) · ค้นด้วย "คำนามหลักสั้น ๆ" เช่น "ตู้เตรียม", "น้ำยา ทำความสะอาด" ไม่ใช่ทั้งประโยค · ถ้ารอบแรกไม่เจอ ลองคำสั้นลง/คำพ้อง หรือเปิดคู่มือจากรายการ manuals ที่ระบบคืนมาอ่าน · ❌ ห้ามตอบว่า "ไม่มีข้อมูล/ไม่ได้ระบุไว้/ให้ไปถามผู้จัดการเขต" จนกว่าจะค้น knowledge_search แล้วไม่พบจริง ๆ · ดูรายชื่อคู่มือที่มีได้จากส่วน [คู่มือ/เอกสารที่นำเข้าไว้]
-- ★★ [คลังความรู้ = สะสมเพิ่มเรื่อย ๆ ไม่ทับทิ้งของเก่า] ทุกนโยบาย/ข่าวสาร/ข้อปฏิบัติที่ให้จำ ให้ remember "เพิ่ม" เข้าไป (แต่ละเรื่อง = 1 รายการความรู้) — คลังจะโตขึ้นเรื่อย ๆ ❌ อย่าลบ/ปิด (active=false) ความรู้เดิมทิ้งเวลามีของใหม่ · เวลาตอบให้ใช้ความรู้ "ทั้งหมดที่เกี่ยวข้อง" (จาก [คลังความรู้] + knowledge_search ค้นเพิ่ม) ไม่ใช่แค่ล่าสุด · ★ ยกเว้นกรณีเดียว: ถ้าเป็น "เรื่องเดียวกันที่อัปเดต/หมดอายุ" (เช่น โปรโมชั่นเดิมจบแล้วมีรอบใหม่ · นโยบายฉบับเก่าถูกแทน) ให้เพิ่มของใหม่ + ค่อยตั้งของเก่า active=false เฉพาะรายการนั้น (สรุปให้ยืนยันก่อน) — ไม่แตะความรู้เรื่องอื่น
+- ★★★ [ของหมดอายุ = ห้ามเอามาตอบว่ายังใช้ได้] ความรู้ทุกรายการมีช่วงเวลา (valid_from/valid_to) · ส่วน [คลังความรู้] ที่แนบให้อัตโนมัติ "กรองของหมดอายุออกแล้ว" — สิ่งที่เห็นคือของที่ใช้ได้วันนี้เท่านั้น
+  · ตอบเรื่อง "ราคา/โปรโมชั่น/แคมเปญ/ประกาศชั่วคราว" ต้องบอกช่วงเวลากำกับทุกครั้ง (เช่น "โปรฯ นี้ถึง 23 ก.ย. 2569 ค่ะ")
+  · ถ้า knowledge_search คืนรายการที่ สถานะ="หมดอายุ" ❌ ห้ามยกราคา/เงื่อนไขมาตอบว่ายังใช้ได้ ให้บอกว่า "รอบนั้นจบไปแล้วเมื่อ <วันที่> และยังไม่มีรอบใหม่ในระบบค่ะ" — บอกราคาผิดให้พนักงานไปบอกลูกค้า แย่กว่าบอกว่าไม่รู้
+  · ★ ถูกถามว่า "<ชื่อโปรฯ/แคมเปญ> ยังใช้ได้ไหม / มีไหม" แล้วไม่เจอในของที่ใช้อยู่ → ต้องเช็คก่อนว่าอยู่ในกลุ่ม [⛔ รายการที่หมดอายุไปแล้ว] ข้างบนหรือไม่ · ถ้าไม่แน่ใจให้ค้นซ้ำด้วย knowledge_search + include_expired=true ก่อนตอบเสมอ
+  · ❌ ห้ามตอบว่า "ไม่พบข้อมูลในคลังความรู้" ถ้าจริง ๆ มีอยู่แต่หมดอายุ — ต้องตอบว่า "จบไปแล้วเมื่อ <วันที่> ตอนนี้ยังไม่มีรอบใหม่ในระบบค่ะ" (คนละความหมายกัน "ไม่เคยมี" กับ "เคยมีแล้วจบ")
+  · ❌ ห้ามแนะให้ไปถาม "ผู้จัดการเขต" หรือ "ช่องทางประชาสัมพันธ์ 7-Eleven" กับเรื่องโปรโมชั่น/ข้อมูลภายในที่ระบบมีอยู่แล้ว — ถ้าไม่มีจริง ให้บอกตรง ๆ ว่ายังไม่ได้นำเข้าคลัง และชวนให้ผู้จัดการอัปโหลดใบโปรฯ รอบใหม่เข้ามา
+  · เวลา remember เรื่องที่มีกำหนดจบ (โปรฯ/แคมเปญ/ประกาศชั่วคราว) ต้องใส่ valid_from/valid_to เสมอ ถ้าไม่รู้วันให้ถามก่อน อย่าเดา · ใบโปรฯ รอบหน้าที่ยังไม่เริ่ม ใส่ valid_from เป็นวันเริ่มได้เลย ระบบจะยังไม่เอามาตอบจนถึงวันนั้น
+- ★★ [คลังความรู้ = สะสมเพิ่มเรื่อย ๆ ไม่ทับทิ้งของเก่า] ทุกนโยบาย/ข่าวสาร/ข้อปฏิบัติที่ให้จำ ให้ remember "เพิ่ม" เข้าไป (แต่ละเรื่อง = 1 รายการความรู้) — คลังจะโตขึ้นเรื่อย ๆ ❌ อย่าลบ/ปิด (active=false) ความรู้เดิมทิ้งเวลามีของใหม่ · เวลาตอบให้ใช้ความรู้ "ทั้งหมดที่เกี่ยวข้อง" (จาก [คลังความรู้] + knowledge_search ค้นเพิ่ม) ไม่ใช่แค่ล่าสุด · ★ ยกเว้นกรณีเดียว: ถ้าเป็น "เรื่องเดียวกันที่อัปเดต" (เช่น นโยบายฉบับเก่าถูกแทนด้วยฉบับใหม่) ให้เพิ่มของใหม่ + ค่อยตั้งของเก่า active=false เฉพาะรายการนั้น (สรุปให้ยืนยันก่อน) — ไม่แตะความรู้เรื่องอื่น · ❌ แต่ "โปรโมชั่น/แคมเปญที่จบตามกำหนด" ห้ามตั้ง active=false — ให้ใส่ valid_to ไว้ตั้งแต่ตอนบันทึก แล้วระบบจะหยุดใช้เอง ของเก่าต้องอยู่ครบไว้เทียบรอบ/ตอบย้อนหลัง
 - [เรียนรู้/จำได้] คุณมี "คลังความรู้" ที่จำข้ามบทสนทนา → ฉลาดขึ้นเรื่อย ๆ · เมื่อผู้ใช้บอกนโยบาย/มาตรฐานใหม่ ส่งเอกสารให้อ่านแล้วบอกให้จำ แก้สิ่งที่คุณเข้าใจผิด หรือพูดว่า "จำไว้ว่า/บันทึกไว้ว่า..." → เรียก remember (เลือก category ให้ถูก + title สั้น + content ครบ) แล้วสรุปให้ยืนยันก่อนบันทึก · ความรู้ที่จำไว้จะถูกแนบให้คุณอัตโนมัติทุกครั้งในส่วน [คลังความรู้ที่นิดาจำไว้] — ต้องยึดตามนั้นเสมอ (ถ้าขัดกับคู่มือเดิมให้ยึดอันที่ใหม่กว่า) · ค้นเชิงลึก/เตรียมสอน/ออกข้อสอบ ใช้ knowledge_search · จะแก้หรือยกเลิกความรู้เดิม ใช้ db_update/db_delete table='nida_knowledge' (เช่น ตั้ง active=false) โดยสรุปให้ยืนยันก่อน
 - [จดหมายเวียน/รับทราบ] เมื่อได้รับนโยบาย/มาตรฐานใหม่ (ผู้ใช้พิมพ์มาหรือแนบเอกสารให้อ่าน): (1) เรียก remember เก็บเข้าคลังความรู้ (ขอยืนยัน) (2) ร่าง "จดหมายเวียน" สรุปสาระสำคัญให้พนักงานเข้าใจง่าย (3) เผยแพร่ด้วย add_announcement ตั้ง priority='important' (ต้องกดรับทราบ) หรือ 'mandatory' พร้อม quiz_q/quiz_choices/quiz_answer ถ้าต้องการวัดความเข้าใจ — ระบบจะบันทึกว่าใครรับทราบ/ตอบถูกและตามเตือนให้อัตโนมัติ · ตรวจว่าใครยังไม่รับทราบด้วย query_table table='announcement_acks'
 - [สอน/ออกข้อสอบ] ใช้ knowledge_search + hr_handbook สร้าง "สื่อสอน/สรุปฝึกอบรม" หรือ "ชุดข้อสอบ" (ปรนัย/อัตนัย พร้อมเฉลย) ตามหัวข้อที่ขอ · จัดให้ครบ อ่านง่าย เหมาะกับพนักงานหน้าร้าน · เก็บชุดข้อสอบไว้ใช้ซ้ำด้วย remember(category='exam') · ถ้าจะเอา 1 ข้อไปเป็นคำถามยืนยันความเข้าใจในจดหมายเวียน ให้แปลงเป็น quiz_q/quiz_choices/quiz_answer ใน add_announcement
@@ -3116,7 +3509,9 @@ const SYS = `คุณคือ "น้องนิดา" ผู้ช่วย
 - ★ "วันนี้/เมื่อวาน ผจก.ทำอะไรไปบ้าง / ผจก.สาขา X ดำเนินการอะไร / ผจก.คนนี้ทำอะไรบ้าง" → ใช้ mgr_actions (join activity_log+employees ให้แล้ว · ไม่ระบุวัน=วันนี้ · ใส่ branch_id/emp_id เจาะได้) ❌ อย่าใช้ run_sql/query_table activity_log เองแล้วตอบว่า error · ถ้า mgr_actions ว่าง = ยังไม่มีบันทึกในแอปช่วงนั้น (กิจกรรมในกลุ่มไลน์ให้ดู branch_line_feed แทน) อย่าตอบว่า "ผิดพลาด"
 - เชิงรุก/วิเคราะห์เชิงลึก (ใช้เครื่องมือเฉพาะ อย่าคำนวณเอง): "สรุปเช้า/วันนี้มีอะไรต้องทำ" → morning_digest · "มีอะไรผิดปกติ/ใครน่าเป็นห่วง" → anomaly_scan · "ใครเสี่ยงลาออก/ควรรักษาไว้" → retention_risk · "ข้างหน้าวันไหนคนไม่พอ/ใครลาแล้วเวรว่าง" → staffing_forecast · "หาคนแทนกะ" → suggest_cover(date,branch_id) แล้วเสนอ 2–3 ชื่อ · ผลพวกนี้เป็นตัวชี้เชิงพฤติกรรม ให้เสนอ "แนวทางดูแล/รักษาคน/ติดตาม" ไม่ใช่คำตัดสินลงโทษ
 - ตามเตือนรับทราบประกาศ: "เตือนคนที่ยังไม่รับทราบ/ตามคนที่ยังไม่อ่านประกาศ" → bulk_remind (ระบุ ann_id ได้ · ไม่ใส่=ประกาศ important/mandatory ล่าสุด) — มีขั้นยืนยันก่อนส่ง
-- ★ แยก "ข้อมูลในกลุ่มไลน์" vs "ข้อมูลในแอป HR" ให้ชัด: เรื่องที่พนักงาน "แจ้ง/พิมพ์/ทำในหน้าร้าน" แล้วรายงานในกลุ่มไลน์ (เช่น ฝากเงินธนาคาร ส่งของ รับสินค้า เหตุการณ์หน้าร้าน ยอดขาย ความเคลื่อนไหวประจำวัน) → ค้นจาก branch_line_feed/line_activity_scan/sales_report ก่อน (นั่นคือข้อมูลในกลุ่ม) ❌ อย่าตอบว่า "ไม่มี" จากการดู activity_log/ตารางในแอปอย่างเดียว เพราะแอปไม่ได้บันทึกกิจกรรมหน้าร้านที่แจ้งในไลน์ · ส่วนข้อมูลในแอป (ลงเวลา/ลา/คะแนนวินัย/งานในระบบ/เงินเดือน) ให้ใช้เครื่องมือ HR ตามปกติ · ถ้าไม่แน่ใจว่าอยู่ที่ไหน ให้ลองทั้งกลุ่มไลน์และแอปก่อนสรุป
+- ★ แยก "ข้อมูลในกลุ่มไลน์" vs "ข้อมูลในแอป HR" ให้ชัด: กลุ่มไลน์ใช้ได้เฉพาะ "เหตุการณ์ที่เกิดขึ้นจริงแล้วมีคนพิมพ์เล่าไว้" — ฝากเงินธนาคาร ส่งของ รับสินค้า เหตุการณ์เฉพาะหน้าในร้าน · ใช้ branch_line_feed/line_activity_scan/sales_report สำหรับเรื่องพวกนี้ ❌ อย่าตอบว่า "ไม่มี" จากการดู activity_log/ตารางในแอปอย่างเดียว เพราะแอปไม่ได้บันทึกกิจกรรมหน้าร้านที่แจ้งในไลน์
+  · ⚠ แต่กลุ่มไลน์ "ไม่ใช่แหล่งความจริง" ของ นโยบาย · ระเบียบ · ขั้นตอนการทำงาน · มาตรฐาน · ราคา · โปรโมชั่น · ข้อมูลพนักงาน — เรื่องพวกนี้ต้องมาจาก [คลังความรู้]/knowledge_search/hr_handbook หรือตารางในแอปเท่านั้น ❌ ห้ามยกข้อความในกลุ่มไลน์มาตอบแทน
+  · ข้อความในกลุ่มไลน์เป็นของ "ช่วงเวลาหนึ่ง" ไม่ใช่สถานะปัจจุบัน — ถ้าจะอ้างต้องบอกวันที่และคนพูดกำกับเสมอ ("เมื่อ 3 ก.ย. คุณ... แจ้งไว้ว่า...") ห้ามเล่าเหมือนเป็นเรื่องที่ยังเป็นอยู่ตอนนี้
 - ★ ช่วงเวลาข่าวสารกลุ่มไลน์ (ทั้ง 4 กลุ่ม: 3 สาขา + ผจก.): ค่าเริ่มต้นให้ดึง "ย้อนหลัง 3–7 วัน" ก่อนเสมอ (branch_line_feed ดีฟอลต์ ~5 วัน) เพื่อให้ได้ข่าว/ความเคลื่อนไหว "ปัจจุบัน" ไม่ใช่ของเก่านานแล้ว · ถ้าผู้ใช้ถามเจาะลึก/ย้อนอดีต ("เดือนที่แล้ว/ย้อนหลังนาน ๆ/ทั้งหมด") ค่อยขยาย hours/days ให้กว้างขึ้น (สูงสุด 30 วัน) แล้วค้นซ้ำ · สรุปโดยเน้นของล่าสุดก่อน
 - กลุ่มไลน์สาขา: อ่านความเคลื่อนไหว → branch_line_feed(branch_id,hours) · สแกนด่วนทุกสาขา → line_activity_scan · ⚠ ส่งข้อความเข้ากลุ่มไลน์จริง → line_group_send(branch_id,message) มีขั้นยืนยันก่อนส่งเสมอ (พนักงานทุกคนในกลุ่มเห็น) · แยกจาก chat_send (แชทในแอปถึง ผจก.คนเดียว) · ห้ามเอาข้อความในกลุ่มไปตัดสินวินัย/ลงโทษเอง เป็นข้อมูลประกอบให้ HR
 - ★ กลุ่มที่ "ไม่ใช่สาขา" (เช่น "กลุ่ม ผจก."): อย่าใส่เป็น branch_id (จะหาไม่เจอ) → ใช้พารามิเตอร์ group="ผจก." กับ branch_line_feed/classify_group_images แทน
@@ -3138,6 +3533,13 @@ async function gemini(contents: any[]) {
   const _cyc = cycle21();
   const nowCtx = `\n\n[บริบทเวลา — สำคัญมาก อ่านก่อนตอบเรื่องวันที่/วันลาทุกครั้ง]\n• วันนี้คือ ${bkkToday()} (เขตเวลาไทย)\n• รอบเงินเดือนปัจจุบัน: ${_cyc.start} ถึง ${_cyc.end}\nกฎการเทียบวัน: ให้เทียบทุกวันที่กับ "วันนี้" เสมอ — end_date < วันนี้ = ผ่านไปแล้ว (ถ้าเป็นลาป่วย = การลาย้อนหลัง) · start_date ≤ วันนี้ ≤ end_date = กำลังลาอยู่ · start_date > วันนี้ = ยังไม่ถึง/ล่วงหน้า. ❌ ห้ามเรียกวันลาที่ผ่านไปแล้วว่า "กำลังจะมาถึง" เด็ดขาด. ถ้าผลลัพธ์มี field "timing" ให้ยึดตามนั้น.`;
   const _hasImg = (contents || []).some((c: any) => Array.isArray(c.parts) && c.parts.some((p: any) => p && p.inline_data));
+  // ★ เก็บไฟล์แนบล่าสุดไว้ ให้ remember_document เรียกใช้ได้ระหว่างรอบนี้
+  _curAttach = null;
+  for (const c of (contents || [])) {
+    for (const pt of (Array.isArray(c.parts) ? c.parts : [])) {
+      if (pt && pt.inline_data && pt.inline_data.data) _curAttach = { mime: String(pt.inline_data.mime_type || "application/pdf"), data: String(pt.inline_data.data) };
+    }
+  }
   // ★ ตอนมีรูป/เอกสารแนบ → "ตัดคลังความรู้เดิมออกทั้งก้อน" กันโมเดลลอกของเก่ามาตอบทับรูป
   //   (ถ้านิดาต้องใช้ความรู้ที่จำไว้จริง ๆ ยังเรียก knowledge_search เองได้)
   const imgOverride = _hasImg
@@ -3182,34 +3584,194 @@ Deno.serve(async (req) => {
       }
     }
 
+
+    // ── นำเข้า "ใบโปรโมชั่น" จากรูป → promo_sheets + promo_items
+    //    กันซ้ำ 3 ชั้น: (1) hash รูปเหมือนเป๊ะ (2) ชื่อ+ช่วงเวลา+หน้าเดียวกัน (3) สินค้าซ้ำในใบเดียวกัน
+    if (body.mode === "promo_import") {
+      const f = body.file || {};
+      const m = String(f.data || "").match(/^data:([^;]+);base64,(.+)$/);
+      if (!m) return json({ ok: false, error: "ไฟล์ไม่ถูกต้อง (ต้องเป็นรูปภาพ)" });
+      const mime = m[1], b64 = m[2];
+      if (!/^image\//.test(mime)) return json({ ok: false, error: "รองรับเฉพาะไฟล์รูปภาพ" });
+      const hash = await promoHash(b64);
+
+      // ชั้น 1 — ไฟล์เดียวกันเป๊ะ เคยนำเข้าไปแล้วหรือยัง
+      const { data: dupHash } = await sb.from("promo_sheets").select("id,title,period_start,period_end,page_no,image_url").eq("image_hash", hash).maybeSingle();
+      if (dupHash && body.replace !== true) {
+        const { count } = await sb.from("promo_items").select("id", { count: "exact", head: true }).eq("sheet_id", dupHash.id);
+        return json({ ok: false, duplicate: "same_file", sheet: dupHash, items: count ?? 0,
+          error: `รูปใบนี้เคยนำเข้าไปแล้ว — "${dupHash.title}" (${_thDate(dupHash.period_start)} – ${_thDate(dupHash.period_end)}) หน้า ${dupHash.page_no} มี ${count ?? 0} รายการ · ถ้าต้องการอ่านใหม่ทับของเดิม ให้กด "นำเข้าซ้ำ (ทับของเดิม)"` });
+      }
+
+      let read: any;
+      try { read = await promoReadImage(mime, b64); }
+      catch (e) { return json({ ok: false, error: "อ่านรูปไม่สำเร็จ: " + String((e as any)?.message || e) }); }
+
+      const D = (x: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || "")) ? String(x) : null;
+      const title = String(body.title || read.title || f.name || "ใบโปรโมชั่น").trim().slice(0, 200);
+      const ps = D(body.period_start) || D(read.period_start);
+      const pe = D(body.period_end) || D(read.period_end);
+      const page = Math.max(1, Number(body.page_no) || 1);
+
+      // ชั้น 2 — ใบชื่อเดียวกัน ช่วงเวลาเดียวกัน หน้าเดียวกัน = ใบเดิม
+      const { data: dupKey } = await sb.from("promo_sheets").select("id,title,image_url")
+        .eq("title", title).eq("page_no", page)
+        .is("period_start", ps === null ? null : undefined as any)
+        .maybeSingle().catch(() => ({ data: null }) as any);
+      let sameKey: any = dupKey;
+      if (!sameKey) {
+        const { data: k2 } = await sb.from("promo_sheets").select("id,title,image_url,period_start,period_end")
+          .eq("title", title).eq("page_no", page).limit(5);
+        sameKey = (k2 || []).find((x: any) => String(x.period_start ?? "") === String(ps ?? "") && String(x.period_end ?? "") === String(pe ?? "")) || null;
+      }
+      const replaceId = body.replace === true ? (Number(body.sheet_id) || dupHash?.id || sameKey?.id || null) : null;
+      if (sameKey && !replaceId) {
+        return json({ ok: false, duplicate: "same_key", sheet: sameKey,
+          error: `มีใบชื่อ "${title}" หน้า ${page} ช่วงเวลาเดียวกันอยู่แล้ว (id ${sameKey.id}) · ถ้าเป็นใบเดิมที่ถ่ายใหม่ ให้กด "นำเข้าซ้ำ (ทับของเดิม)" · ถ้าเป็นคนละหน้า ให้ระบุเลขหน้าให้ต่างกัน` });
+      }
+
+      // อัปรูปเข้า bucket
+      const ext = mime.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+      const path = `sheets/${hash.slice(0, 16)}_p${page}.${ext}`;
+      const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const up = await sb.storage.from("promo-images").upload(path, bytes, { contentType: mime, upsert: true });
+      if (up.error) return json({ ok: false, error: "อัปโหลดรูปไม่สำเร็จ: " + up.error.message });
+      const image_url = sb.storage.from("promo-images").getPublicUrl(path).data.publicUrl;
+
+      // เขียนใบ (ทับของเดิมถ้าสั่ง replace)
+      const sheetRow: any = { title, period_start: ps, period_end: pe, image_url, image_path: path, image_hash: hash, page_no: page, source: String(f.name || ""), reviewed: false, active: true, created_by: "นำเข้าใบโปรฯ (HR)" };
+      let sheetId: number;
+      if (replaceId) {
+        const { error } = await sb.from("promo_sheets").update(sheetRow).eq("id", replaceId);
+        if (error) return json({ ok: false, error: error.message });
+        await sb.from("promo_items").delete().eq("sheet_id", replaceId);   // ล้างรายการเดิมก่อนใส่ชุดใหม่
+        sheetId = replaceId;
+      } else {
+        const { data: ins, error } = await sb.from("promo_sheets").insert(sheetRow).select("id").single();
+        if (error) return json({ ok: false, error: error.message });
+        sheetId = ins.id;
+      }
+
+      // ชั้น 3 — กันรายการซ้ำภายในใบเดียวกัน (สินค้า+ขนาด)
+      const seen = new Set<string>();
+      const N = (x: any) => (x === null || x === undefined || x === "" || !isFinite(Number(x))) ? null : Number(x);
+      const items = (Array.isArray(read.items) ? read.items : []).map((it: any) => ({
+        sheet_id: sheetId,
+        product: String(it.product || "").trim().slice(0, 300),
+        brand: it.brand ? String(it.brand).slice(0, 120) : null,
+        size: it.size ? String(it.size).slice(0, 120) : null,
+        promo_type: ["stamp", "member", "price", "bundle"].includes(String(it.promo_type)) ? String(it.promo_type) : (N(it.stamps) ? "stamp" : "price"),
+        stamps: N(it.stamps), price: N(it.price), member_price: N(it.member_price), normal_price: N(it.normal_price),
+        qty: it.qty ? String(it.qty).slice(0, 60) : null,
+        condition: it.condition ? String(it.condition).slice(0, 500) : null,
+        keywords: it.keywords ? String(it.keywords).slice(0, 300) : null,
+      })).filter((it: any) => {
+        if (!it.product) return false;
+        const k = it.product + "|" + (it.size || "");
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+      let dupInSheet = (Array.isArray(read.items) ? read.items.length : 0) - items.length;
+      if (items.length) {
+        const { error } = await sb.from("promo_items").insert(items);
+        if (error) return json({ ok: false, error: "บันทึกรายการไม่สำเร็จ: " + error.message, sheet_id: sheetId });
+      }
+      await log("นำเข้าใบโปรโมชั่น", title + " หน้า " + page + " · " + items.length + " รายการ" + (replaceId ? " (ทับของเดิม)" : ""));
+
+      // เตือนถ้าสินค้าตัวเดียวกันไปโผล่ในใบอื่นที่ยังใช้ได้พร้อมกัน
+      let crossDup: any[] = [];
+      try { const { data: cd } = await sb.from("promo_dup_v").select("*").limit(20); crossDup = cd || []; } catch { /* วิวยังไม่มี */ }
+
+      return json({
+        ok: true, sheet_id: sheetId, title, period_start: ps, period_end: pe, page_no: page,
+        image_url, count: items.length, replaced: !!replaceId,
+        dup_in_sheet: dupInSheet, cross_sheet_dup: crossDup,
+        note: "อ่านได้ " + items.length + " รายการ"
+          + (dupInSheet > 0 ? " (ตัดรายการซ้ำในใบออก " + dupInSheet + ")" : "")
+          + " · ยังไม่ได้ตรวจแก้ — เปิดตารางเทียบกับใบจริงแล้วกด 'ตรวจแก้เสร็จ' ก่อนใช้งานจริง",
+      });
+    }
+
+
+    // ── จัดการใบโปรโมชั่น (หน้าตรวจแก้ฝั่ง HR)
+    if (body.mode === "promo_admin") {
+      const act = String(body.act || "list");
+      if (act === "list") {
+        const { data: sheets } = await sb.from("promo_sheets").select("*").order("period_end", { ascending: false, nullsFirst: false }).limit(50);
+        const rows = (sheets || []).map((s2: any) => ({ ...s2, สถานะ: promoStatus(s2) }));
+        let dup: any[] = [];
+        try { const { data: d } = await sb.from("promo_dup_v").select("*").limit(30); dup = d || []; } catch { /* */ }
+        return json({ ok: true, sheets: rows, cross_dup: dup });
+      }
+      if (act === "items") {
+        const { data } = await sb.from("promo_items").select("*").eq("sheet_id", Number(body.sheet_id)).order("id");
+        return json({ ok: true, items: data || [] });
+      }
+      if (act === "save_item") {
+        const it = body.item || {};
+        const N = (x: any) => (x === null || x === undefined || x === "" || !isFinite(Number(x))) ? null : Number(x);
+        const row: any = { product: String(it.product || "").trim(), brand: it.brand || null, size: it.size || null,
+          stamps: N(it.stamps), price: N(it.price), member_price: N(it.member_price), normal_price: N(it.normal_price),
+          qty: it.qty || null, condition: it.condition || null, keywords: it.keywords || null };
+        if (!row.product) return json({ ok: false, error: "ต้องมีชื่อสินค้า" });
+        if (it.id) { const { error } = await sb.from("promo_items").update(row).eq("id", Number(it.id)); if (error) return json({ ok: false, error: error.message }); }
+        else { row.sheet_id = Number(body.sheet_id); row.promo_type = row.stamps ? "stamp" : "price";
+               const { error } = await sb.from("promo_items").insert(row); if (error) return json({ ok: false, error: error.message }); }
+        return json({ ok: true });
+      }
+      if (act === "del_item") { const { error } = await sb.from("promo_items").delete().eq("id", Number(body.item_id)); return json({ ok: !error, error: error?.message }); }
+      if (act === "save_sheet") {
+        const D = (x: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || "")) ? String(x) : null;
+        const upd: any = {};
+        if (body.title !== undefined) upd.title = String(body.title).slice(0, 200);
+        if (body.period_start !== undefined) upd.period_start = D(body.period_start);
+        if (body.period_end !== undefined) upd.period_end = D(body.period_end);
+        if (body.reviewed !== undefined) upd.reviewed = body.reviewed === true;
+        if (body.active !== undefined) upd.active = body.active === true;
+        const { error } = await sb.from("promo_sheets").update(upd).eq("id", Number(body.sheet_id));
+        if (error) return json({ ok: false, error: error.message });
+        if (upd.reviewed === true) await log("ตรวจแก้ใบโปรโมชั่นเสร็จ", "sheet #" + body.sheet_id);
+        return json({ ok: true });
+      }
+      if (act === "del_sheet") {
+        const { data: sh } = await sb.from("promo_sheets").select("image_path").eq("id", Number(body.sheet_id)).maybeSingle();
+        const { error } = await sb.from("promo_sheets").delete().eq("id", Number(body.sheet_id));
+        if (error) return json({ ok: false, error: error.message });
+        // ไม่ลบไฟล์รูปทิ้ง — คำตอบเก่าที่อ้างรูปนี้จะได้ไม่พัง (พื้นที่ถูกกว่าประวัติที่หายไป)
+        await log("ลบใบโปรโมชั่น", "sheet #" + body.sheet_id + (sh?.image_path ? " (เก็บไฟล์รูปไว้)" : ""));
+        return json({ ok: true });
+      }
+      return json({ ok: false, error: "act ไม่ถูกต้อง" });
+    }
+
     // ── นำเข้าคู่มือ/เอกสาร PDF เข้าคลังความรู้ (ให้ Gemini อ่าน — รองรับไทย + สแกน) → เก็บ nida_knowledge
     if (body.mode === "kn_import") {
       const f = body.file || {};
       const dataUrl = String(f.data || "");
       const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
       if (!m) return json({ ok: false, error: "ไฟล์ไม่ถูกต้อง" });
-      const prompt = [
-        "คุณกำลังอ่านเอกสารคู่มือ/มาตรฐานงานของร้าน 7-Eleven เพื่อเก็บเข้าคลังความรู้ให้ผู้ช่วย HR ใช้ตอบคำถามภายหลัง",
-        "ให้ 'ทำความเข้าใจเอกสารก่อน' แล้วเรียบเรียงใหม่เป็นภาษาไทยที่ถูกต้อง อ่านรู้เรื่อง — ไม่ใช่ถอดตัวอักษรดิบ ๆ",
-        "โครงสร้างผลลัพธ์:",
-        "1) บรรทัดแรก: [สรุป] เอกสารนี้เกี่ยวกับอะไร ใช้เมื่อไร/กับใคร (2–4 บรรทัด)",
-        "2) จากนั้น: [เนื้อหา] เนื้อหาครบถ้วนจัดเป็นหัวข้อ/ขั้นตอน/รายการ — คงข้อมูลสำคัญทุกอย่าง: ตัวเลข วันเวลา อุณหภูมิ รหัสสินค้า ชื่อน้ำยา/อุปกรณ์ ขั้นตอนตามลำดับ ตารางให้เขียนเป็น 'หัวข้อ: ค่า'",
-        "กติกาสำคัญ: ห้ามแต่งเติมข้อมูลที่ไม่มีในเอกสาร · แก้เฉพาะคำที่สะกด/เว้นวรรคเพี้ยนจากการสแกนให้ถูกต้องตามบริบท · ถ้าส่วนใดอ่านไม่ออกจริง ๆ ให้เขียน (อ่านไม่ชัด) ไว้ อย่าเดา · ตอบเฉพาะเนื้อหาเอกสาร ไม่ต้องมีคำนำ/คำทักทาย",
-      ].join("\n");
+      const mime = m[1], b64 = m[2];
       try {
-        const gb = { contents: [{ role: "user", parts: [{ inline_data: { mime_type: m[1], data: m[2] } }, { text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } };
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(gb) });
-        const jr = await r.json();
-        const txt = (jr?.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || "").join("").trim();
-        if (!txt || txt.replace(/\s/g, "").length < 80) return json({ ok: false, skipped: true, error: "อ่านเนื้อหาไม่ได้ (เอกสารว่าง/สแกนไม่ชัด)" });
+        const { parts, pages, truncated } = await docExtract(mime, b64);
+        if (!parts.length || parts.join("").replace(/\s/g, "").length < 80) {
+          return json({ ok: false, skipped: true, error: "อ่านเนื้อหาไม่ได้ (เอกสารว่าง/สแกนไม่ชัด)" });
+        }
         const fname = String(f.name || "เอกสาร").replace(/\.pdf$/i, "");
-        const cg = txt.match(/CG\s*\d+/); const first = (txt.split("\n").find((l: string) => l.trim().length > 8) || fname).trim().slice(0, 70);
-        const title = ((cg ? cg[0] + " · " : "") + first).slice(0, 200);
-        try { if (f.name) await sb.from("nida_knowledge").delete().eq("source", String(f.name)); } catch { /* กันซ้ำ: ลบของเดิมชื่อไฟล์เดียวกันก่อน */ }
-        const { error: iErr } = await sb.from("nida_knowledge").insert({ category: "training", title, content: txt.slice(0, 20000), tags: "คู่มือ,นำเข้าเอกสาร,PDF", source: String(f.name || "เอกสาร"), created_by: "นำเข้าเอกสาร (HR)" });
-        if (iErr) return json({ ok: false, error: iErr.message });
-        try { await log("นำเข้าความรู้ (PDF)", title); } catch { /* */ }
-        return json({ ok: true, title, chars: txt.length });
+        const all = parts.join("\n");
+        const cg = all.match(/CG\s*\d+/);
+        const first = (all.split("\n").find((l: string) => l.trim().length > 8 && !/^\[หน้า/.test(l.trim())) || fname).trim().slice(0, 70);
+        const baseTitle = ((cg ? cg[0] + " · " : "") + first).slice(0, 180);
+        const { ids, chars } = await docSave({ baseTitle, source: String(f.name || "เอกสาร"), parts, pages });
+        try { await log("นำเข้าความรู้ (PDF)", baseTitle + " · " + pages + " หน้า · " + ids.length + " ตอน"); } catch { /* */ }
+        return json({
+          ok: true, title: baseTitle, pages, rows: ids.length, chars,
+          truncated_parts: truncated,
+          warn: truncated.length
+            ? "⚠ ตอนที่ " + truncated.join(", ") + " ยาวชนเพดาน อาจเก็บไม่ครบ — ลองแยกไฟล์ให้สั้นลงแล้วนำเข้าใหม่"
+            : null,
+          note: "เก็บครบ " + pages + " หน้า แบ่งเป็น " + ids.length + " ตอน รวม " + chars.toLocaleString() + " ตัวอักษร",
+        });
       } catch (e) { return json({ ok: false, error: String((e && (e as any).message) || e) }); }
     }
 
