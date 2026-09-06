@@ -2050,9 +2050,14 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
         <div style="font-size:12.5px;color:var(--muted);margin-bottom:7px;line-height:1.6">หรือให้ระบบ <b>ไปดึงใบโปรฯ จากเว็บ 7-Eleven มาเอง</b> — ได้โปสเตอร์ต้นฉบับความละเอียดสูง อ่านแม่นกว่าถ่ายจากใบกระดาษ และได้ช่วงวันที่จากเว็บตรง ๆ</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <select id="pm_cat" class="inp" style="width:160px;font-size:12.5px">
-            <option value="stamp">แสตมป์</option><option value="sale">ราคาพิเศษ</option><option value="allmember">ALL member</option>
-            <option value="redeem">แลกรับ</option><option value="matching">จับคู่</option><option value="trade">แลกซื้อ</option>
+          <select id="pm_cat" class="inp" style="width:190px;font-size:12.5px">
+            <option value="ALL">ทุกหมวด (6 หมวด)</option>
+            <option value="stamp">แสตมป์มอนชิชิ</option>
+            <option value="trade">สินค้าราคาพิเศษ</option>
+            <option value="sale">ลดอย่างแรง</option>
+            <option value="matching">จับคู่อิ่ม</option>
+            <option value="allmember">ALL member</option>
+            <option value="redeem">แลกคะแนนอิ่มฟรี</option>
           </select>
           <button class="btn btn-sec btn-sm" id="pm_dry">สำรวจก่อน (ไม่บันทึก)</button>
           <button class="btn btn-pri btn-sm" id="pm_sync">ดึงเข้าระบบ</button>
@@ -7635,9 +7640,10 @@ async function pmImport(e){
 async function pmSync(dry){
   const prog=$('pm_prog'), dup=$('pm_dup'); dup.innerHTML='';
   const cat=($('pm_cat')||{}).value||'stamp';
+  const cats = cat==='ALL' ? ['stamp','trade','sale','matching','allmember','redeem'] : [cat];
   prog.textContent=dry?'กำลังสำรวจเว็บ 7-Eleven…':'กำลังดึงใบโปรฯ จากเว็บ 7-Eleven… (อ่านรูปด้วย AI อาจใช้เวลาหลายนาที)';
   try{
-    const j=await pmPost({ mode:'promo_sync', cats:[cat], dry:!!dry, limit:6 });
+    const j=await pmPost({ mode:'promo_sync', cats, dry:!!dry, limit: dry?20:8 });
     if(!j.ok){ prog.textContent='ไม่สำเร็จ: '+(j.error||''); return; }
     prog.textContent='สำรวจ '+j.scanned+' หน้า · '+(dry?('จะนำเข้า '+j.imported+' ใบ'):('นำเข้าใหม่ '+j.imported+' ใบ'))+' · มีอยู่แล้ว '+j.skipped+(j.failed?(' · พลาด '+j.failed):'');
     const rows=(j.results||[]).map(r=>{
