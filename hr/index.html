@@ -2158,7 +2158,18 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <label style="font-size:13px">เดือน</label>
       <button class="btn btn-pri btn-sm" id="discWindowSave">บันทึก</button>
     </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed #ddd6fe">
+      <label style="font-size:13px;display:flex;align-items:center;gap:6px"><input id="discCapOn" type="checkbox" style="width:16px;height:16px"> จำกัดขั้นตามความรุนแรงของรอบนี้</label>
+      <label style="font-size:13px">ทำขั้นเดิมซ้ำ</label>
+      <input id="discCapN" type="number" min="1" max="10" style="width:80px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;text-align:center;font:inherit">
+      <label style="font-size:13px">ครั้ง จึงยกขึ้นอีกขั้น</label>
+    </div>
     <div style="font-size:12px;color:var(--muted);margin-top:6px">ทำผิดซ้ำภายในช่วงนี้ = เลื่อนขั้นสูงขึ้น (วาจา→ลายลักษณ์→ใบเตือน 1→2→3) · ทำดีต่อเนื่องเกินช่วงนี้ = เคลียร์เริ่มใหม่ · ครบ 3 ใบสะสม = เปิดเคสพิจารณาเลิกจ้างให้ HR ตัดสิน · ดีฟอลต์ 6 เดือน</div>
+    <div style="font-size:12px;color:#6d28d9;margin-top:8px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 10px;line-height:1.7">
+      <b>ช่องล่างทำอะไร</b> — ปกติบันไดวินัยเลื่อนขั้นตาม "ประวัติสะสม" อย่างเดียว คนที่เคยโดนตักเตือนวาจาแล้ว พอรอบต่อมาสายเล็ก ๆ จนตกแบนด์ที่เขียนว่า "ตักเตือนวาจา" ระบบจะดันไป "ลายลักษณ์อักษร" ทันที — ความผิดเบากว่าแต่ขั้นหนักกว่า<br>
+      ติ๊กช่องนี้ = <b>ขั้นที่เสนอจะไม่เกินขั้นที่แบนด์คะแนนรอบนั้นกำหนดไว้</b> · แต่ถ้ายังทำผิดซ้ำจนทำขั้นเดิมครบตามจำนวนที่ตั้ง เพดานจะยกขึ้นเองอีกขั้น จึงยังไปถึงใบเตือนและพิจารณาเลิกจ้างได้ ไม่ใช่ตักเตือนวาจาวนไปตลอด<br>
+      <b>ระวัง</b> — ถ้าตั้งจำนวนครั้งสูงเทียบกับช่วงสะสมข้างบน ของเก่าจะหลุดหน้าต่างก่อนสะสมครบ แล้วจะไม่มีวันเลื่อนถึงใบเตือน · <b>2 ครั้ง คู่กับ 6 เดือน</b> เป็นค่าที่ทำงานได้จริง ถ้าจะใช้ 3 ครั้งควรขยายช่วงสะสมเป็น 9–12 เดือนด้วย
+    </div>
   </div>
 
   <div class="card" style="margin-top:12px;padding:12px 14px;border:1.5px solid #bae6fd;background:#f0f9ff">
@@ -3040,7 +3051,7 @@ function discActionPill(e){
     return pill('<svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> ครบใบเตือน '+(wt||3)+'/3 · พิจารณาเลิกจ้าง', '#dc2626', '#ffffff', 'รุนแรงสุด — ระบบเปิดเคสให้ HR ตัดสิน (ไม่เลิกจ้างอัตโนมัติ)', 'box-shadow:0 0 0 1px #b91c1c inset');
   if(e.action_status==='pending'){
     const sv=SEV[e.action_needed]||['#fee2e2','#b91c1c','<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg>'];
-    return pill(sv[2]+' ต้อง'+esc(e.action_needed_label||'ดำเนินการ')+suffix, sv[0], sv[1], 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม (สีไล่ตามความรุนแรง)');
+    return pill(sv[2]+' ต้อง'+esc(e.action_needed_label||'ดำเนินการ')+suffix, sv[0], sv[1], 'ทำผิดซ้ำรอบนี้ · ขั้นต่อไปตามบันไดสะสม (สีไล่ตามความรุนแรง)'+(e.cap_note?(' · '+e.cap_note):''));
   }
   if(e.action_status==='done'){
     if(e.pending_ack>0) return pill('<svg class="pemo" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2"/></svg> ออกแล้ว รอรับทราบ'+suffix, '#fef3c7', '#a16207', 'บังคับกดรับทราบในหน้ารับส่งผลัด');
@@ -3968,7 +3979,7 @@ function openDiscAction(empId){
   const html=`
     <div style="font-weight:800;font-size:16px;margin-bottom:2px">${esc(x.emp_name)} <span class="muted" style="font-size:13px;font-weight:500">· รหัส ${esc(x.emp_id)}</span></div>
     <div class="muted" style="font-size:12.5px;margin-bottom:12px">คะแนน ${x.score!=null?x.score:'—'} · ${esc(x.band_label||'')} · สาย ${x.late_count} ครั้ง (${x.late_total} นาที) · ขาด ${x.absent} วัน</div>
-    ${x.action_needed?`<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:9px 11px;font-size:13px;color:#9a3412;margin-bottom:12px">ตามคะแนน ควรดำเนินการ: <b>${esc(x.action_needed_label)}</b></div>`:''}
+    ${x.action_needed?`<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:9px 11px;font-size:13px;color:#9a3412;margin-bottom:12px">ตามคะแนน ควรดำเนินการ: <b>${esc(x.action_needed_label)}</b>${x.cap_note?`<div style="font-size:12px;margin-top:5px;opacity:.9">↳ ${esc(x.cap_note)}</div>`:''}</div>`:''}
     <div class="field-mini" style="margin-bottom:10px"><label>ประเภทการดำเนินการ</label>
       <select id="da_type" style="width:100%">
         <option value="verbal"${suggest==='verbal'?' selected':''}><svg class="ei" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4z"/></svg> ตักเตือนด้วยวาจา</option>
@@ -12257,9 +12268,11 @@ async function loadScoreSettings(silent){
   // โหลดค่าตั้งค่าวินัย (ช่วงสะสม + เกณฑ์วันทำงานขั้นต่ำ)
   if($('discWindowMonths')||$('minWorkDays')){ try{ const sg=await post({ action:'hr_settings_get', password:pwd }); const S=(sg&&sg.settings)||{};
     if($('discWindowMonths')){ const v=S.disc_window_months; $('discWindowMonths').value=(v!=null&&v!=='')?v:6; }
+    if($('discCapOn')){ const v=S.disc_cap_enabled; $('discCapOn').checked = (v==null||v===''||String(v)!=='0'); }
+    if($('discCapN')){ const v=S.disc_cap_repeat_n; $('discCapN').value=(v!=null&&v!=='')?v:2; }
     if($('minWorkDays')){ const v=S.min_work_days; $('minWorkDays').value=(v!=null&&v!=='')?v:0; }
     if($('minWorkPenalty')){ const v=S.min_work_days_penalty; $('minWorkPenalty').value=(v!=null&&v!=='')?v:0; }
-  }catch(_e){ if($('discWindowMonths'))$('discWindowMonths').value=6; if($('minWorkDays'))$('minWorkDays').value=0; if($('minWorkPenalty'))$('minWorkPenalty').value=0; } }
+  }catch(_e){ if($('discWindowMonths'))$('discWindowMonths').value=6; if($('discCapOn'))$('discCapOn').checked=true; if($('discCapN'))$('discCapN').value=2; if($('minWorkDays'))$('minWorkDays').value=0; if($('minWorkPenalty'))$('minWorkPenalty').value=0; } }
   // บอกจำนวนวันในรอบปัจจุบัน (21 เดือนก่อน–20 เดือนนี้)
   if($('minWorkCycleHint')){ try{ const t=new Date(); const d=t.getDate();
     const end = d<=20 ? new Date(t.getFullYear(),t.getMonth(),20) : new Date(t.getFullYear(),t.getMonth()+1,20);
@@ -12271,8 +12284,18 @@ async function loadScoreSettings(silent){
 }
 $('discWindowSave') && ($('discWindowSave').onclick=async()=>{
   const v=Math.max(1,Math.min(60,parseInt($('discWindowMonths').value)||6));
-  const r=await post({ action:'hr_settings_save', password:pwd, key:'disc_window_months', value:String(v) });
-  if(r&&r.ok){ toast('ok','บันทึกช่วงวินัยสะสม '+v+' เดือนแล้ว'); $('discWindowMonths').value=v; } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+  const capOn=$('discCapOn')?($('discCapOn').checked?1:0):1;
+  const capN=Math.max(1,Math.min(10,parseInt($('discCapN')&&$('discCapN').value)||2));
+  const rs=await Promise.all([
+    post({ action:'hr_settings_save', password:pwd, key:'disc_window_months', value:String(v) }),
+    post({ action:'hr_settings_save', password:pwd, key:'disc_cap_enabled',   value:String(capOn) }),
+    post({ action:'hr_settings_save', password:pwd, key:'disc_cap_repeat_n',  value:String(capN) }),
+  ]);
+  if(rs.every(r=>r&&r.ok)){
+    $('discWindowMonths').value=v; if($('discCapN'))$('discCapN').value=capN;
+    toast('ok','บันทึกแล้ว: สะสม '+v+' เดือน · '+(capOn?('จำกัดขั้นตามความรุนแรง · ทำซ้ำ '+capN+' ครั้งยกเพดาน'):'ไม่จำกัดขั้น'));
+    if(capOn && capN>=Math.max(1,Math.round(v/2))) toast('err','เตือน: ทำซ้ำ '+capN+' ครั้ง อาจสะสมไม่ทันภายใน '+v+' เดือน — พิจารณาลดจำนวนครั้ง หรือขยายช่วงสะสม');
+  } else toast('err','บันทึกไม่สำเร็จ');
 });
 $('minWorkSave') && ($('minWorkSave').onclick=async()=>{
   const d=Math.max(0,Math.min(31,parseFloat($('minWorkDays').value)||0));

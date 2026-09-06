@@ -1435,6 +1435,12 @@
     // การดำเนินการที่ทำไปแล้ว "ในรอบนี้" (ไว้เช็กว่ารอบนี้ทำขั้นถัดไปหรือยัง) + "ช่วงสะสม (window)" (ไว้คิดบันไดสะสม)
     // ★ วินัยสะสมแบบ rolling window: นับใบเตือน/ขั้นวินัยย้อนหลัง N เดือน (ทำดีต่อเนื่องเกิน window = เคลียร์)
     const winMonths = await getSettingNum('disc_window_months', 6);
+    // ★ เพดานขั้นวินัย — ความรุนแรงของรอบนี้จำกัดขั้นสูงสุดที่ระบบจะเสนอ
+    //   เดิม breach เป็นแค่ธง ใช่/ไม่ใช่ ไม่ได้ดูว่าตกแบนด์ไหน คนที่เคยโดนวาจาแล้วพอสายเล็ก ๆ จนตกแบนด์ "วาจา"
+    //   ระบบจะดันไป "ลายลักษณ์อักษร" ทันที — ความผิดเบากว่าแต่ขั้นหนักกว่า
+    //   ทางแก้: เพดาน = ขั้นของแบนด์รอบนี้ · แต่ "ทำผิดซ้ำ" ยกเพดานได้ (ทำขั้นเดิมครบ N ครั้งใน window → เลื่อนขึ้น 1 ขั้น)
+    const capOn = (await getSettingNum('disc_cap_enabled', 1)) !== 0;
+    const capN  = Math.max(1, await getSettingNum('disc_cap_repeat_n', 2));
     const _wStart = new Date(bkkToday() + 'T00:00:00'); _wStart.setMonth(_wStart.getMonth() - (winMonths > 0 ? winMonths : 6));
     const winStart = _wStart.toISOString().slice(0, 10);
     const [{ data: actsRaw }, { data: wAll }, { data: winActsRaw }] = await Promise.all([
@@ -1478,6 +1484,24 @@
       const nearTermination = warningCount >= 3;                // ครบ 3 ใบสะสม → พิจารณาเลิกจ้าง
       // ขั้นถัดไปในบันไดสะสม
       let cumNext = !verbalDone ? 'verbal' : (!writtenDone ? 'written' : 'warning');
+      // ★ เพดานตามความรุนแรงของรอบนี้ + ยกเพดานเมื่อทำผิดซ้ำ
+      const _STEPS = ['verbal', 'written', 'warning'];
+      const _rawNext = cumNext;
+      let capIdx = -1, capRaised = 0;
+      if (capOn && s.action_type) {
+        capIdx = _STEPS.indexOf(s.action_type);
+        if (capIdx >= 0) {
+          const _cnt = t => winMine.filter(a => a.action_type === t).length;
+          while (capIdx < _STEPS.length - 1 && _cnt(_STEPS[capIdx]) >= capN) { capIdx++; capRaised++; }
+        }
+      }
+      if (capIdx >= 0) { const _ni = _STEPS.indexOf(cumNext); if (_ni > capIdx) cumNext = _STEPS[capIdx]; }
+      const capNote = (capIdx < 0) ? ''
+        : (capRaised > 0
+            ? ('ยกเพดานขึ้น ' + capRaised + ' ขั้น — ทำขั้นเดิมครบ ' + capN + ' ครั้งใน ' + winMonths + ' เดือน')
+            : (_STEPS.indexOf(_rawNext) > capIdx
+                ? ('จำกัดไว้ที่ ' + ACT_LABEL[_STEPS[capIdx]] + ' ตามความรุนแรงของรอบนี้ (บันไดสะสมชี้ไปที่ ' + ACT_LABEL[_rawNext] + ')')
+                : ''));
       // ★ Rule A: เลื่อนขั้นได้เมื่อ "เอกสารตักเตือนก่อนหน้าสมบูรณ์ (HR ปิด+แนบเอกสารเซ็น) และมีสาย/ขาดวันใหม่หลังวันปิดเอกสาร"
       const ladderActs = winMine.filter(a => a.action_type === 'verbal' || a.action_type === 'written' || a.action_type === 'warning')
         .sort((a, b) => String(b.performed_at).localeCompare(String(a.performed_at)));
@@ -1517,6 +1541,10 @@
         near_termination: nearTermination,                      // ครบ 3 ใบ → พิจารณาเลิกจ้าง
         verbal_done: verbalDone, written_done: writtenDone,
         window_months: winMonths,
+        cap_enabled: capOn, cap_repeat_n: capN,                  // เพดานขั้นวินัย (เปิดอยู่ไหม · ทำซ้ำกี่ครั้งถึงยกเพดาน)
+        band_cap: capIdx >= 0 ? _STEPS[capIdx] : null,           // เพดานหลังยกแล้ว
+        cap_raised: capRaised,                                   // ยกไปกี่ขั้น
+        cap_note: capNote,                                       // คำอธิบายให้ HR อ่าน
         ladder,                                                 // บันไดสะสม (วาจา/ลายลักษณ์/ใบเตือน x/3)
         ladder_done: ladder.filter(x => x.done).length,
         ladder_total: ladder.length,
