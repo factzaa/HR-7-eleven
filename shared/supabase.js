@@ -1884,7 +1884,7 @@
     if(bc){ try{ await sb.from('qa_products').upsert({ barcode:bc, name:row.name, size:row.size, updated_at:new Date().toISOString() }, { onConflict:'barcode' }); }catch(e){} }
     return { ok:true };
   }
-  async function qaUpdateItemStatus({ item_id, empId, status, by_name }){
+  async function qaUpdateItemStatus({ item_id, empId, status, by_name, photos }){
     if(!['on_shelf','sold','removed'].includes(status)) throw new Error('สถานะไม่ถูกต้อง');
     const upd={ status, updated_at:new Date().toISOString() };
     if(status==='on_shelf'){ upd.action_name=null; upd.action_emp=null; upd.action_at=null; }   // คืนขึ้นเชลฟ์ = ล้างผู้ดำเนินการ
@@ -1892,6 +1892,17 @@
       let nm=(by_name||'').trim();
       if(!nm && empId){ try{ const e=await lookupEmployee(empId); if(e) nm=e.nickname||e.name||empId; }catch(_e){} }
       upd.action_name=nm||'สนง.ใหญ่'; upd.action_emp=empId||null; upd.action_at=new Date().toISOString();
+      // ★ เก็บออก = ต้องมีรูปหลักฐานเสมอ (เดิมบังคับเฉพาะตอน "เพิ่มรายการใหม่แบบเก็บออก" ตอนเปลี่ยนสถานะหลุดไป)
+      //   รูปที่แนบตอนนี้จะต่อท้ายรูปเดิมของรายการ ไม่ทับของเก่า
+      if(status==='removed'){
+        const list=(photos||[]).filter(Boolean);
+        if(!list.length) throw new Error('การเก็บออกต้องแนบรูปหลักฐานอย่างน้อย 1 รูป');
+        let cur=null; try{ const r=await sb.from('qa_items').select('photos,branch_id,folder_id').eq('id', item_id).maybeSingle(); cur=r.data||null; }catch(_e){}
+        const urls=[];
+        for(const p of list){ if(p) urls.push(await uploadPhoto('employee-docs','qa/'+((cur&&cur.branch_id)||'x')+'_'+((cur&&cur.folder_id)||0)+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+        const old=(cur&&Array.isArray(cur.photos))?cur.photos:[];
+        upd.photos=old.concat(urls);
+      }
     }
     const { error }=await sb.from('qa_items').update(upd).eq('id', item_id);
     if(error) throw error; return { ok:true };
