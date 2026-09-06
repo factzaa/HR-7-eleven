@@ -2047,6 +2047,17 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
         <label class="btn btn-pri btn-sm" style="cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg> เลือกรูปใบโปรฯ<input type="file" id="pm_file" accept="image/*" style="display:none"></label>
         <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="pm_replace"> นำเข้าซ้ำ (ทับใบเดิม)</label>
       </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:7px;line-height:1.6">หรือให้ระบบ <b>ไปดึงใบโปรฯ จากเว็บ 7-Eleven มาเอง</b> — ได้โปสเตอร์ต้นฉบับความละเอียดสูง อ่านแม่นกว่าถ่ายจากใบกระดาษ และได้ช่วงวันที่จากเว็บตรง ๆ</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="pm_cat" class="inp" style="width:160px;font-size:12.5px">
+            <option value="stamp">แสตมป์</option><option value="sale">ราคาพิเศษ</option><option value="allmember">ALL member</option>
+            <option value="redeem">แลกรับ</option><option value="matching">จับคู่</option><option value="trade">แลกซื้อ</option>
+          </select>
+          <button class="btn btn-sec btn-sm" id="pm_dry">สำรวจก่อน (ไม่บันทึก)</button>
+          <button class="btn btn-pri btn-sm" id="pm_sync">ดึงเข้าระบบ</button>
+        </div>
+      </div>
       <div id="pm_prog" style="font-size:12.5px;color:var(--muted);margin-top:8px"></div>
       <div id="pm_dup" style="margin-top:8px"></div>
       <div id="pm_sheets" style="margin-top:10px"></div>
@@ -7621,6 +7632,25 @@ async function pmImport(e){
     await pmLoad(); await pmOpen(j.sheet_id);
   }catch(err){ prog.textContent='ไม่สำเร็จ: '+(err.message||err); }
 }
+async function pmSync(dry){
+  const prog=$('pm_prog'), dup=$('pm_dup'); dup.innerHTML='';
+  const cat=($('pm_cat')||{}).value||'stamp';
+  prog.textContent=dry?'กำลังสำรวจเว็บ 7-Eleven…':'กำลังดึงใบโปรฯ จากเว็บ 7-Eleven… (อ่านรูปด้วย AI อาจใช้เวลาหลายนาที)';
+  try{
+    const j=await pmPost({ mode:'promo_sync', cats:[cat], dry:!!dry, limit:6 });
+    if(!j.ok){ prog.textContent='ไม่สำเร็จ: '+(j.error||''); return; }
+    prog.textContent='สำรวจ '+j.scanned+' หน้า · '+(dry?('จะนำเข้า '+j.imported+' ใบ'):('นำเข้าใหม่ '+j.imported+' ใบ'))+' · มีอยู่แล้ว '+j.skipped+(j.failed?(' · พลาด '+j.failed):'');
+    const rows=(j.results||[]).map(r=>{
+      const st=r.error?('<span style="color:#dc2626">'+esc(r.error)+'</span>'):esc(r.status||r.note||'');
+      const per=r.period?(' · '+esc(String(r.period.start||'—'))+' → '+esc(String(r.period.end||'—'))):'';
+      return '<div style="font-size:12px;padding:4px 0;border-top:1px solid var(--line)"><b>'+esc(r.title||r.path||'')+'</b>'+(r.page_no?(' หน้า '+r.page_no):'')+per+(r.items!=null?(' · '+r.items+' รายการ'):'')+'<br>'+st+'</div>';
+    }).join('');
+    dup.innerHTML='<div style="max-height:280px;overflow:auto">'+rows+'</div>'
+      +(dry?'<div style="margin-top:8px;padding:9px;border-radius:9px;background:#e0f2fe;color:#075985;font-size:12px">โหมดสำรวจ ยังไม่ได้บันทึกอะไร — ถ้าผลดูโอเคแล้ว กด “ดึงเข้าระบบ”</div>'
+           :'<div style="margin-top:8px;padding:9px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:12px">⚠ ทุกใบที่นำเข้ายังไม่ได้ตรวจแก้ — เปิดตารางเทียบกับรูปแล้วกด “ตรวจแก้เสร็จ” ก่อนให้นิดาใช้ตอบราคา</div>');
+    if(!dry) pmLoad();
+  }catch(e){ prog.textContent='ไม่สำเร็จ: '+(e.message||e); }
+}
 async function pmLoad(){
   const box=$('pm_sheets'); if(!box) return;
   const j=await pmPost({ mode:'promo_admin', act:'list' });
@@ -7697,6 +7727,7 @@ async function loadPositions(){
   }
   if($('kn_files') && !$('kn_files').dataset.wired){ $('kn_files').dataset.wired='1'; $('kn_files').addEventListener('change', knImport); knLoadList(); }
   if($('pm_file') && !$('pm_file').dataset.wired){ $('pm_file').dataset.wired='1'; $('pm_file').addEventListener('change', pmImport); pmLoad(); }
+  if($('pm_sync') && !$('pm_sync').dataset.wired){ $('pm_sync').dataset.wired='1'; $('pm_sync').onclick=()=>pmSync(false); $('pm_dry').onclick=()=>pmSync(true); }
   const r=await post({ action:'hr_positions_list', password:pwd });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   if(!r.rows.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีตำแหน่ง</div>'; return; }
