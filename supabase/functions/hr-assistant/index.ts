@@ -10,6 +10,11 @@ const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GKEY   = Deno.env.get("GEMINI_API_KEY")!;
 const MODEL  = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+// ★ 7 ก.ย. 2569 — กุญแจสำหรับ "เครื่องเรียกเครื่อง" (pg_cron) เท่านั้น
+//   เหตุผล: cron.job.command อ่านได้จากฐานข้อมูล และไฟล์ SQL ก็ขึ้น GitHub (รีโปเป็น public)
+//   ถ้าเอารหัส HR ไปแปะใน cron = รหัสที่ปลดล็อกทุกเครื่องมือ (รวม db_delete) หลุดสู่สาธารณะ
+//   กุญแจนี้ทำได้อย่างเดียวคือสั่ง promo_sync · เปลี่ยนใหม่ได้ทุกเมื่อโดยไม่กระทบใคร
+const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 // โมเดลเสียงเรียลไทม์ (Gemini Live) — ปรับได้ผ่าน secret ถ้าชื่อโมเดลเปลี่ยน
 const LIVE_MODEL = Deno.env.get("GEMINI_LIVE_MODEL") ?? "gemini-3.1-flash-live-preview";
 const sb = createClient(SB_URL, SB_KEY, { auth: { persistSession: false } });
@@ -536,12 +541,84 @@ async function knowledgeDigest(): Promise<string> {
 //   อ่านรูปด้วย Gemini แล้วให้คืน "JSON ตาม schema" (ไม่ใช่ข้อความสรุป) จะได้ไม่ตกหล่น
 //   ทุกคำตอบเรื่องราคาต้องแนบรูปใบต้นฉบับ ให้พนักงานเช็คซ้ำได้เสมอ
 // ============================================================
+// ── ชนิดของใบโปรฯ · แต่ละชนิดใช้คอลัมน์ต่างกัน ────────────────────────
+//    ปัญหาเดิม: ยัดทุกใบเข้าโครงเดียว → ใบลดราคา (198→99) กลายเป็น "ราคา 198 แสตมป์ 99"
+const PROMO_TYPES: Record<string, { label: string; cols: string[]; hint: string }> = {
+  stamp:    { label: "ซื้อแล้วรับแสตมป์", cols: ["price_after", "stamp_pieces", "stamp_baht", "mstamp"], hint: "จ่ายเงินตามราคา แล้วได้แสตมป์/M-Stamp กลับมา" },
+  discount: { label: "ลดราคา",           cols: ["price_before", "price_after"],                        hint: "ราคาปกติเท่าไร ลดเหลือเท่าไร" },
+  bundle:   { label: "ซื้อคู่/เซ็ต",       cols: ["qty", "price_after", "price_before"],                  hint: "ซื้อกี่ชิ้นในราคาเท่าไร" },
+  freebie:  { label: "ซื้อครบแถมฟรี",     cols: ["price_after", "free_item"],                           hint: "ซื้ออะไรแล้วได้อะไรฟรี" },
+  redeem:   { label: "แลกด้วยแสตมป์/คะแนน", cols: ["stamp_pieces", "stamp_baht", "price_after"],          hint: "ใช้แสตมป์กี่ดวง (บวกเงินเท่าไร) แลกอะไรได้" },
+  custom:   { label: "กำหนดเอง",          cols: [],                                                     hint: "นอกกรอบ เก็บลงช่อง extra" },
+};
+
+// ── จังหวะ 1: ดูรูปคร่าว ๆ ว่าเป็นใบชนิดไหน (เรียกสั้น ถูก ยังไม่อ่านทั้งใบ) ──
+const DETECT_SCHEMA = {
+  type: "object",
+  properties: {
+    promo_type: { type: "string" },
+    title: { type: "string" },
+    period_start: { type: "string" },
+    period_end: { type: "string" },
+    mechanic_note: { type: "string" },
+    confidence: { type: "string" },
+    samples: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { product: { type: "string" }, note: { type: "string" } },
+        required: ["product"],
+      },
+    },
+  },
+  required: ["promo_type"],
+};
+
+const DETECT_PROMPT = [
+  "ดูรูป 'ใบโปรโมชั่น 7-Eleven' นี้แล้วบอกว่าเป็นโปรฯ ชนิดไหน (ยังไม่ต้องอ่านทั้งใบ ดูคร่าว ๆ พอ)",
+  "",
+  "เลือก promo_type 1 อย่าง:",
+  "  stamp    = ซื้อสินค้าตามราคา แล้ว 'ได้รับ' แสตมป์/M-Stamp กลับมา",
+  "             (สังเกต: มีกล่องเขียนว่า 'รับดวงแสตมป์ N ดวง' หรือ 'ALL member รับ M-Stamp')",
+  "  discount = ลดราคาตรง ๆ (สังเกต: มีราคาสองตัวคู่กัน ราคาเดิมขีดฆ่า → ราคาใหม่ · หรือเขียน 'ลดเหลือ')",
+  "  bundle   = ซื้อหลายชิ้นในราคาพิเศษ (สังเกต: '2 ชิ้น 50.-')",
+  "  freebie  = ซื้อครบแล้วแถมของฟรี (สังเกต: 'ซื้อ...แถม...' 'รับฟรี')",
+  "  redeem   = ใช้แสตมป์/คะแนนที่สะสมไว้มาแลกของ (สังเกต: 'ใช้ N ดวงแลก')",
+  "  custom   = ไม่เข้าพวกไหนเลย",
+  "",
+  "★ แยกให้ออกระหว่าง stamp กับ redeem:",
+  "   stamp  = แสตมป์คือ 'ของที่ได้รับ' หลังซื้อ",
+  "   redeem = แสตมป์คือ 'สิ่งที่ต้องจ่าย' เพื่อแลกของ",
+  "",
+  "samples: ยกตัวอย่างสินค้าจากใบมา 3 รายการ พร้อม note สั้น ๆ ว่าตัวเลขบนใบเขียนว่าอะไร",
+  "         เช่น {product:'เปา วินวอช 620 มล.', note:'198.- ลดเหลือ 99.-'}",
+  "         หรือ {product:'เนสกาแฟโกลด์ 50 กรัม', note:'1 ชิ้น 115.- รับแสตมป์ 5 ดวง = 15.- / M-Stamp 16'}",
+  "confidence: 'สูง' | 'กลาง' | 'ต่ำ'",
+  "title/period_start/period_end/mechanic_note: ถ้าอ่านได้ใส่มาด้วย (วันที่แบบ YYYY-MM-DD แปลง พ.ศ. เป็น ค.ศ.)",
+].join("\n");
+
+async function promoDetect(mime: string, b64: string): Promise<any> {
+  const body = {
+    contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: DETECT_PROMPT }] }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: "application/json", responseSchema: DETECT_SCHEMA },
+  };
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const jr = await r.json();
+  const txt = (jr?.candidates?.[0]?.content?.parts || []).map((x: any) => x.text || "").join("").trim();
+  if (!txt) throw new Error("ดูรูปไม่ได้ (โมเดลไม่คืนข้อมูล)");
+  const o = JSON.parse(txt);
+  if (!PROMO_TYPES[String(o.promo_type)]) o.promo_type = "custom";
+  return o;
+}
+
+// ── จังหวะ 2: อ่านทั้งใบ ด้วยกติกาของ "ชนิดที่ยืนยันแล้ว" ────────────────
 const PROMO_SCHEMA = {
   type: "object",
   properties: {
     title: { type: "string" },
     period_start: { type: "string" },
     period_end: { type: "string" },
+    mechanic_note: { type: "string" },
     items: {
       type: "array",
       items: {
@@ -550,12 +627,15 @@ const PROMO_SCHEMA = {
           product: { type: "string" },
           brand: { type: "string" },
           size: { type: "string" },
-          promo_type: { type: "string" },
-          stamps: { type: "integer" },
-          price: { type: "number" },
-          member_price: { type: "number" },
-          normal_price: { type: "number" },
           qty: { type: "string" },
+          price_before: { type: "number" },
+          price_after: { type: "number" },
+          stamp_pieces: { type: "integer" },
+          stamp_baht: { type: "number" },
+          stamp_unit: { type: "number" },
+          mstamp: { type: "number" },
+          better: { type: "string" },
+          free_item: { type: "string" },
           condition: { type: "string" },
           keywords: { type: "string" },
         },
@@ -566,37 +646,96 @@ const PROMO_SCHEMA = {
   required: ["items"],
 };
 
-const PROMO_PROMPT = [
-  "คุณกำลังอ่าน 'ใบโปรโมชั่น' ของร้าน 7-Eleven เพื่อเก็บเข้าระบบให้พนักงานค้นราคาได้",
+const RULE_COMMON = [
   "อ่านทุกช่องในรูปให้ครบ ห้ามข้ามรายการ แล้วคืนเป็น JSON ตาม schema",
-  "",
-  "ความหมายของตัวเลขบนใบ (สำคัญมาก อ่านให้ถูกช่อง):",
-  "- กล่องเหลืองใหญ่ที่เขียน 'รับดวงแสตมป์ N ดวง' + ตัวเลขใหญ่ = ใช้แสตมป์ N ดวง จ่ายเงินเท่ากับตัวเลขนั้น → stamps=N, price=ตัวเลขใหญ่, promo_type='stamp'",
-  "- กล่องน้ำเงินที่เขียน 'ALL member รับ M-Stamp' + ตัวเลข = ราคาสำหรับสมาชิก → member_price=ตัวเลขนั้น",
-  "- บรรทัดใต้ชื่อสินค้าที่เขียนแบบ '1 ชิ้น 115.-' หรือ '2 ชิ้น 64.-' = ราคาปกติ → qty='1 ชิ้น', normal_price=115",
-  "- ถ้ามีแต่ราคาปกติ ไม่มีแสตมป์ → promo_type='price', stamps และ price เว้นว่าง",
-  "- ข้อความในวงเล็บ เช่น '(ยกเว้นรสเอ็กซ์ตรีมครีมและหัวหอม)' หรือ '(ทุกสูตร)' → ใส่ใน condition ให้ครบ",
-  "- ขนาด/ปริมาณ เช่น 'ขวด 50 กรัม' '180/200 มล.' 'แพ็ก 6' → ใส่ใน size",
-  "- keywords: ใส่ชื่อยี่ห้อภาษาอังกฤษหรือชื่อที่คนเรียกกันทั่วไป คั่นด้วยจุลภาค (เช่น 'Nescafe, เนสกาแฟ, กาแฟ')",
-  "",
-  "กติกาที่ห้ามฝ่าฝืน:",
+  "- size: ขนาด/ปริมาณ เช่น 'ขวด 50 กรัม' '180/200 มล.' 'แพ็ก 6'",
+  "- qty: หน่วยที่ราคาครอบคลุม เช่น '1 ชิ้น' '2 ชิ้น' '1 แพ็ก'",
+  "- condition: ข้อความในวงเล็บให้ครบ เช่น '(ยกเว้นรสเอ็กซ์ตรีมครีมและหัวหอม)' '(ทุกสูตร)'",
+  "- keywords: ชื่อยี่ห้ออังกฤษ/ชื่อที่คนเรียกกัน คั่นจุลภาค เช่น 'Nescafe, เนสกาแฟ, กาแฟ'",
   "- ห้ามแต่งข้อมูลที่ไม่มีในรูป · ตัวเลขไหนอ่านไม่ชัดให้เว้นว่าง อย่าเดา",
-  "- ถ้าเห็นราคาสองค่าคู่กัน เช่น '89.-/99.-' ให้ใส่ค่าต่ำสุดใน normal_price แล้วเขียนทั้งสองค่าไว้ใน condition",
-  "- title: ชื่อแคมเปญที่พาดหัวบนใบ (เช่น 'แสตมป์จัดหนัก')",
-  "- period_start/period_end: ถ้าบนใบมีช่วงวันที่ ให้ใส่แบบ YYYY-MM-DD (แปลง พ.ศ. เป็น ค.ศ. ให้ด้วย) ถ้าไม่มีให้เว้นว่าง",
+  "- title/period_start/period_end: ถ้าบนใบมี ใส่มาด้วย (วันที่ YYYY-MM-DD แปลง พ.ศ. เป็น ค.ศ.)",
+  "- mechanic_note: สรุปกติกาของทั้งใบ 1-2 ประโยค",
 ].join("\n");
 
+const RULE_BY_TYPE: Record<string, string> = {
+  stamp: [
+    "★★ ใบนี้เป็นแบบ 'ซื้อแล้วรับแสตมป์' — แยก 'เงินที่จ่าย' ออกจาก 'ของที่ได้รับ' ให้ขาด",
+    "",
+    "    ┌─────────────────────────┐",
+    "    │ รับดวงแสตมป์ 5 ดวง       │ ← ได้รับ → stamp_pieces = 5",
+    "    │        15.-             │ ← ได้รับ → stamp_baht   = 15",
+    "    │ ALL member รับ M-Stamp  │",
+    "    │        16               │ ← ได้รับ → mstamp       = 16",
+    "    └─────────────────────────┘",
+    "      เนสกาแฟโกลด์ ขวด 50 กรัม",
+    "          1 ชิ้น 115.-          ← ★ จ่าย → price_after = 115",
+    "",
+    "❌ ห้ามเอาเลขในกล่อง (15/16) ไปใส่ price_after — นั่นคือของที่ได้รับ",
+    "❌ ห้ามเอาราคา (115) ไปใส่ stamp_baht",
+    "· price_before เว้นว่าง (ใบแบบนี้ไม่มีราคาก่อนลด)",
+    "· แสตมป์มีดวงละ 1 บาท กับ 3 บาท — ถ้าใบระบุชนิดใส่ stamp_unit ด้วย",
+    "· better: ใส่ 'mstamp' หรือ 'stamp' เฉพาะเมื่อใบเขียนบอกเองว่าทางไหนคุ้มกว่า ถ้าไม่บอกให้เว้นว่าง ห้ามเดา",
+  ].join("\n"),
+  discount: [
+    "★★ ใบนี้เป็นแบบ 'ลดราคา' — มีสองราคา ห้ามสลับ",
+    "· price_before = ราคาปกติ / ราคาก่อนลด (มักขีดฆ่า หรือเขียนตัวเล็กกว่า)",
+    "· price_after  = ราคาที่ลูกค้าจ่ายจริงหลังลด (ตัวใหญ่/เด่นกว่า)",
+    "  เช่น 'เปา วินวอช 620 มล. 198.- ลดเหลือ 99.-' → price_before=198, price_after=99",
+    "· ถ้าใบบอกราคาเดียว (ไม่มีราคาก่อนลด) ใส่แค่ price_after เว้น price_before ว่าง",
+    "❌ ห้ามใส่ช่องแสตมป์ใด ๆ (stamp_pieces/stamp_baht/mstamp) — ใบนี้ไม่มีแสตมป์",
+  ].join("\n"),
+  bundle: [
+    "★★ ใบนี้เป็นแบบ 'ซื้อคู่/เซ็ต'",
+    "· qty = จำนวนที่ต้องซื้อ เช่น '2 ชิ้น' · price_after = ราคารวมของชุดนั้น",
+    "· price_before = ราคารวมถ้าซื้อแยก (ถ้าใบบอก)",
+    "❌ ห้ามใส่ช่องแสตมป์",
+  ].join("\n"),
+  freebie: [
+    "★★ ใบนี้เป็นแบบ 'ซื้อครบแถมฟรี'",
+    "· price_after = ราคาที่ต้องซื้อ · free_item = ของที่ได้ฟรี (เขียนเป็นข้อความ)",
+    "❌ ห้ามใส่ช่องแสตมป์",
+  ].join("\n"),
+  redeem: [
+    "★★ ใบนี้เป็นแบบ 'ใช้แสตมป์/คะแนนแลกของ' — แสตมป์คือสิ่งที่ 'ต้องจ่าย' ไม่ใช่ของที่ได้",
+    "· stamp_pieces = จำนวนดวงที่ต้องใช้แลก · stamp_baht = มูลค่าแสตมป์ที่ต้องใช้ (ถ้าใบบอก)",
+    "· price_after = เงินที่ต้องจ่ายเพิ่ม (ถ้ามี) · ถ้าแลกฟรีไม่ต้องจ่ายเพิ่ม ให้ใส่ 0",
+  ].join("\n"),
+  custom: [
+    "★★ ใบนี้ไม่เข้าแบบมาตรฐาน — เก็บเท่าที่อ่านได้",
+    "· ใส่ price_after ถ้ามีราคา · เขียนกติกาที่เหลือลงใน condition ให้ครบถ้วน",
+  ].join("\n"),
+};
+
+function promoPromptFor(t: string): string {
+  return "คุณกำลังอ่าน 'ใบโปรโมชั่น' ของร้าน 7-Eleven เพื่อเก็บเข้าระบบให้พนักงานค้นได้\n\n"
+    + (RULE_BY_TYPE[t] || RULE_BY_TYPE.custom) + "\n\n" + RULE_COMMON;
+}
+
 // อ่านรูปใบโปรฯ 1 ใบ → คืน {title, period_start, period_end, items[]}
-async function promoReadImage(mime: string, b64: string): Promise<any> {
+async function promoReadImage(mime: string, b64: string, ptype = "stamp"): Promise<any> {
   const body = {
-    contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: PROMO_PROMPT }] }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: "application/json", responseSchema: PROMO_SCHEMA },
+    contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: promoPromptFor(ptype) }] }],
+    // ★ 8192 ไม่พอสำหรับใบที่มีสินค้าเยอะ (เจอจริงตอนดึงหมวด "ลดอย่างแรง")
+    //   JSON ถูกตัดกลางคัน → JSON.parse พัง → ขึ้น "ผลลัพธ์ไม่ใช่ JSON ที่อ่านได้"
+    generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json", responseSchema: PROMO_SCHEMA },
   };
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const jr = await r.json();
+  const fin = jr?.candidates?.[0]?.finishReason || "";
   const txt = (jr?.candidates?.[0]?.content?.parts || []).map((x: any) => x.text || "").join("").trim();
-  if (!txt) throw new Error("อ่านรูปไม่ได้ (โมเดลไม่คืนข้อมูล)");
-  try { return JSON.parse(txt); } catch { throw new Error("ผลลัพธ์ไม่ใช่ JSON ที่อ่านได้"); }
+  if (!txt) throw new Error("อ่านรูปไม่ได้ (โมเดลไม่คืนข้อมูล" + (fin ? " · finishReason=" + fin : "") + ")");
+  try { return JSON.parse(txt); } catch { /* ลองกู้ด้านล่าง */ }
+  // ★ กู้ JSON ที่ถูกตัดกลางคัน — ตัดท้ายที่ไม่สมบูรณ์ทิ้ง แล้วปิดวงเล็บให้ครบ
+  //   ดีกว่าโยนทิ้งทั้งใบ อย่างน้อยได้รายการที่อ่านครบแล้วมาก่อน (ยังไงก็ต้องตรวจแก้อยู่แล้ว)
+  try {
+    let t = txt.replace(/,\s*$/, "");
+    const lastObj = t.lastIndexOf("},");
+    if (lastObj > 0) t = t.slice(0, lastObj + 1);
+    if (!/\]\s*\}?\s*$/.test(t)) t += "]}";
+    const fixed = JSON.parse(t);
+    if (fixed && Array.isArray(fixed.items)) { fixed._truncated = true; return fixed; }
+  } catch { /* กู้ไม่ได้จริง ๆ */ }
+  throw new Error("ผลลัพธ์ไม่ใช่ JSON ที่อ่านได้" + (fin ? " (finishReason=" + fin + ")" : "") + " — ใบนี้อาจมีรายการเยอะเกิน ลองอัปรูปเองแล้วตัดครึ่งใบ");
 }
 
 // SHA-256 ของไฟล์รูป — ใช้เป็นลายนิ้วมือกันนำเข้าใบเดิมซ้ำ
@@ -617,28 +756,379 @@ function promoStatus(sh: any): "ใช้อยู่" | "ยังไม่เ�
 }
 const _thDate = (x: any) => { if (!x) return "—"; const [y, m, d] = String(x).split("-"); return d + "/" + m + "/" + (Number(y) + 543); };
 
-// ---- เครื่องมือของนิดา: ค้นโปรโมชั่นของสินค้า ----
-async function promo_search(a: any) {
-  const raw = String(a?.product || a?.query || "").replace(/[(),%*]/g, " ").trim();
-  const wantExpired = a?.include_expired === true;
+// แปลงรายการที่ AI อ่านได้ → แถวในตาราง (ใช้ร่วมกันทุกเส้นทางนำเข้า กันเขียนไม่ตรงกัน)
+function promoRow(r: any, sheetId: number, ptype = "stamp") {
+  const N = (x: any) => (x === null || x === undefined || x === "" || !isFinite(Number(x))) ? null : Number(x);
+  const I = (x: any) => { const v = N(x); return v === null ? null : Math.round(v); };
+  const row: any = {
+    sheet_id: sheetId,
+    product: String(r.product || "").trim().slice(0, 300),
+    brand: r.brand ? String(r.brand).slice(0, 120) : null,
+    size: r.size ? String(r.size).slice(0, 120) : null,
+    qty: r.qty ? String(r.qty).slice(0, 60) : null,
+    price_before: N(r.price_before),
+    price_after: N(r.price_after) ?? N(r.price),         // ★ ราคาที่จ่ายจริง — ความหมายเดียวกันทุกชนิด
+    reward_kind: ptype,
+    condition: r.condition ? String(r.condition).slice(0, 500) : null,
+    keywords: r.keywords ? String(r.keywords).slice(0, 300) : null,
+    stamp_pieces: null, stamp_baht: null, stamp_unit: null, mstamp: null, better: null,
+  };
+  // ★ ช่องแสตมป์ใส่เฉพาะใบที่เกี่ยวกับแสตมป์จริง ๆ
+  //   เดิมยัดทุกใบ → ใบลดราคา (198→99) กลายเป็น "ราคา 198 แสตมป์ 99"
+  if (ptype === "stamp" || ptype === "redeem") {
+    const sb = N(r.stamp_baht), sp = I(r.stamp_pieces);
+    let unit = N(r.stamp_unit);
+    if (unit === null && sb !== null && sp) unit = Math.round((sb / sp) * 100) / 100;
+    row.stamp_baht = sb; row.stamp_pieces = sp; row.stamp_unit = unit;
+    if (ptype === "stamp") {
+      row.mstamp = N(r.mstamp);
+      row.better = ["stamp", "mstamp"].includes(String(r.better)) ? String(r.better) : null;
+    }
+  }
+  // ของที่ได้ฟรี / กติกานอกกรอบ → เก็บลง extra ไม่ต้องเพิ่มคอลัมน์
+  const ex: any = {};
+  if (r.free_item) ex.ของแถม = String(r.free_item).slice(0, 200);
+  if (Object.keys(ex).length) row.extra = ex;
+  return row;
+}
+
+// นำเข้า "เฉพาะใบที่ผู้ใช้เลือกจากแกลเลอรี" — รับ posters[] = [{url,title,period_start,period_end,page_no}]
+async function promoImportPosters(body: any): Promise<Response> {
+  const list = (body.posters as any[]).slice(0, 12);
+  const out: any[] = [];
+  let imported = 0, skipped = 0, failed = 0;
+  const D = (x: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || "")) ? String(x) : null;
+
+  for (const it of list) {
+    const purl = String(it.url || "");
+    if (!/^https:\/\/7elevenweb\.s3/.test(purl)) { out.push({ url: purl, error: "URL ไม่ใช่รูปจากเว็บ 7-Eleven" }); failed++; continue; }
+    let bytes: Uint8Array, mime = "image/jpeg";
+    try {
+      const ir = await fetch(purl);
+      if (!ir.ok) throw new Error("HTTP " + ir.status);
+      mime = ir.headers.get("content-type") || mime;
+      bytes = new Uint8Array(await ir.arrayBuffer());
+    } catch (e) { out.push({ url: purl, error: "โหลดรูปไม่ได้: " + String((e as any)?.message || e) }); failed++; continue; }
+
+    let bin = ""; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const b64 = btoa(bin);
+    const hash = await promoHash(b64);
+    const { data: dup } = await sb.from("promo_sheets").select("id,title").eq("image_hash", hash).maybeSingle();
+    if (dup && body.replace !== true) { skipped++; out.push({ url: purl, title: dup.title, status: "มีอยู่แล้ว", sheet_id: dup.id }); continue; }
+
+    const ptype = PROMO_TYPES[String(it.promo_type)] ? String(it.promo_type) : "stamp";
+    let read: any;
+    try { read = await promoReadImage(mime, b64, ptype); }
+    catch (e) { out.push({ url: purl, title: it.title, error: "AI อ่านรูปไม่สำเร็จ: " + String((e as any)?.message || e) }); failed++; continue; }
+
+    const page = Math.max(1, Number(it.page_no) || 1);
+    const title = String(it.title || read.title || "ใบโปรโมชั่น").slice(0, 200);
+    const ps = D(it.period_start) || D(read.period_start);
+    const pe = D(it.period_end) || D(read.period_end);
+    const ext = /png/i.test(mime) ? "png" : "jpg";
+    const spath = `web/${hash.slice(0, 16)}.${ext}`;
+    const up = await sb.storage.from("promo-images").upload(spath, bytes, { contentType: mime, upsert: true });
+    if (up.error) { out.push({ url: purl, error: "อัปรูปเข้าคลังไม่ได้: " + up.error.message }); failed++; continue; }
+    const image_url = sb.storage.from("promo-images").getPublicUrl(spath).data.publicUrl;
+
+    const row: any = { title, period_start: ps, period_end: pe, image_url, image_path: spath, image_hash: hash, page_no: page, source: String(it.path || "เว็บ 7-Eleven"), reviewed: false, active: true, created_by: "เลือกจากแกลเลอรี", promo_type: ptype, mechanic_note: read.mechanic_note ? String(read.mechanic_note).slice(0, 600) : null };
+    let sheetId: number;
+    if (dup) {
+      const { error } = await sb.from("promo_sheets").update(row).eq("id", dup.id);
+      if (error) { out.push({ url: purl, error: error.message }); failed++; continue; }
+      await sb.from("promo_items").delete().eq("sheet_id", dup.id);
+      sheetId = dup.id;
+    } else {
+      const { data: ins, error } = await sb.from("promo_sheets").insert(row).select("id").single();
+      if (error) { out.push({ url: purl, error: error.message }); failed++; continue; }
+      sheetId = ins.id;
+    }
+
+    const seen = new Set<string>();
+    const items = (Array.isArray(read.items) ? read.items : []).map((r: any) => promoRow(r, sheetId, ptype)).filter((r: any) => {
+      if (!r.product) return false;
+      const k = r.product + "|" + (r.size || "");
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+    if (items.length) { const { error } = await sb.from("promo_items").insert(items); if (error) { out.push({ url: purl, sheet_id: sheetId, error: "บันทึกรายการไม่ได้: " + error.message }); failed++; continue; } }
+    imported++;
+    out.push({ url: purl, title, page_no: page, status: dup ? "นำเข้าใหม่ (ทับของเดิม)" : "นำเข้าใหม่", ชนิด: PROMO_TYPES[ptype]?.label || ptype, sheet_id: sheetId, items: items.length, period: { start: ps, end: pe }, image_url, truncated: read._truncated === true });
+  }
+  try { if (imported) await log("นำเข้าใบโปรฯ (เลือกเอง)", imported + " ใบ"); } catch { /* */ }
+  return json({
+    ok: true, imported, skipped, failed, results: out,
+    note: imported
+      ? "นำเข้าแล้ว " + imported + " ใบ — ⚠ ยังไม่ได้ตรวจแก้ ต้องเทียบกับรูปแล้วกด 'ตรวจแก้เสร็จ' ก่อนให้นิดาใช้ตอบราคา"
+      : "ไม่มีใบใหม่",
+  });
+}
+
+// ============================================================
+// คู่มือจากบทเรียน (SOP) — อ่านแผ่นภาพขั้นตอน → เรียบเรียงเป็นขั้นตอนที่ใช้งานได้
+//
+// ที่มาของภาพ: สคริปต์ capture-lesson.js จับเฟรมตอนที่วิดีโออบรมขึ้นขั้นตอนใหม่
+//   วิดีโอเป็นการอัดหน้าจอ POS + ตัวหนังสือไทยพิมพ์บนภาพ (รวมคำพูดผู้บรรยาย)
+//   จึงอ่านจากภาพได้ครบโดยไม่ต้องถอดเสียง
+//
+// ⚠ เนื้อหาเป็นลิขสิทธิ์ CP ALL/ปัญญธารา — ใช้สอนงานภายในร้านเท่านั้น
+// ⚠ ทุกบทต้องมีคนกด "ตรวจแก้เสร็จ" ก่อน นิดาถึงจะเอาไปตอบได้
+// ============================================================
+const SOP_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    when_to_use: { type: "string" },
+    cautions: { type: "string" },
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          step_no: { type: "integer" },
+          heading: { type: "string" },
+          instruction: { type: "string" },
+          screen: { type: "string" },
+          note: { type: "string" },
+          at_sec: { type: "integer" },
+        },
+        required: ["step_no", "instruction"],
+      },
+    },
+  },
+  required: ["summary", "steps"],
+};
+
+const SOP_PROMPT = [
+  "รูปที่ส่งมาคือ 'แผ่นภาพขั้นตอน' ที่จับมาจากวิดีโออบรมพนักงาน 7-Eleven",
+  "แต่ละแผ่นมี 6 ช่อง เรียงซ้าย→ขวา บน→ล่าง ใต้ทุกช่องเขียนว่า 'ขั้นตอนที่ N (นาทีที่ mm:ss)'",
+  "ถ้าส่งมาหลายแผ่น ให้อ่านเรียงตามลำดับแผ่น และใช้เลขขั้นตอนที่เขียนไว้ใต้ภาพเป็น step_no",
+  "",
+  "หน้าที่ของคุณ: เปลี่ยนภาพพวกนี้เป็น 'คู่มือขั้นตอนการทำงาน' ที่พนักงานหน้าร้านเปิดอ่านแล้วทำตามได้ทันที",
+  "",
+  "ในภาพจะมีข้อความ 2 แบบ ให้แยกให้ออก:",
+  "  1. ตัวหนังสือใหญ่บนพื้นสีเขียว = หัวข้อ/กติกา/เงื่อนไข",
+  "  2. ตัวหนังสือในแถบล่างของจอ POS = คำอธิบายว่าตอนนี้ต้องกดอะไร (เป็นคำพูดของผู้บรรยาย)",
+  "",
+  "แต่ละขั้นตอนให้เขียน:",
+  "  step_no      = เลขขั้นตอนตามที่เขียนใต้ภาพ",
+  "  heading      = หัวข้อสั้น ๆ ไม่เกิน 8 คำ (เช่น 'ใส่รหัสผู้ตรวจสอบ')",
+  "  instruction  = ต้องทำอะไร เขียนเป็นประโยคสั่งงานที่ทำตามได้ (เช่น 'คีย์เลขที่ใบเสร็จ แล้วกดปุ่มยืนยัน')",
+  "  screen       = อยู่ที่หน้าจอไหน/เมนูไหน (เช่น 'หน้าจอยกเลิกใบเสร็จ')",
+  "  note         = ตัวเลือกที่มีให้เลือก หรือข้อสังเกต ถ้าไม่มีให้เว้นว่าง",
+  "  at_sec       = แปลง (นาทีที่ mm:ss) ใต้ภาพเป็นวินาที",
+  "",
+  "แล้วสรุปภาพรวมของบทนี้:",
+  "  summary     = บทนี้สอนอะไร 1-2 ประโยค",
+  "  when_to_use = ใช้ตอนไหน สถานการณ์ไหน",
+  "  cautions    = ข้อควรระวัง/เงื่อนไขที่ต้องทำ (เช่น ต้องเขียน P.V. หลังใบเสร็จ) ถ้าไม่มีให้เว้นว่าง",
+  "",
+  "กติกาเหล็ก:",
+  "  ❌ ห้ามแต่งขั้นตอนที่ไม่มีในภาพ ❌ ห้ามเดาตัวเลข/ชื่อปุ่มที่อ่านไม่ออก",
+  "  ❌ ห้ามรวบหลายขั้นตอนเป็นข้อเดียว — ภาพมีกี่ขั้นตอนให้ออกมาเท่านั้น",
+  "  ✅ ภาพที่เป็นหน้าปก/ตัวหนังสืออย่างเดียว ให้ใส่เป็นขั้นตอนได้ โดย instruction เขียนว่าเป็นหัวข้อหรือกติกาอะไร",
+  "  ✅ อ่านไม่ออกตรงไหน ให้เขียนว่า (อ่านจากภาพไม่ชัด) ตรงนั้น อย่าเดา",
+  "  ✅ เขียนภาษาไทยที่พนักงานหน้าร้านอ่านเข้าใจ ไม่ต้องเป็นทางการมาก",
+].join("\n");
+
+async function sopRead(images: { mime: string; b64: string }[]): Promise<any> {
+  const parts: any[] = images.map((im) => ({ inline_data: { mime_type: im.mime, data: im.b64 } }));
+  parts.push({ text: SOP_PROMPT });
+  const body = {
+    contents: [{ role: "user", parts }],
+    generationConfig: { temperature: 0.15, maxOutputTokens: 32768, responseMimeType: "application/json", responseSchema: SOP_SCHEMA },
+  };
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const jr = await r.json();
+  if (!r.ok) throw new Error("Gemini: " + JSON.stringify(jr).slice(0, 250));
+  let txt = ((jr?.candidates?.[0]?.content?.parts) || []).map((x: any) => x.text || "").join("").trim();
+  if (!txt) throw new Error("โมเดลไม่คืนข้อมูล (อาจเพราะภาพใหญ่เกินไป ลองส่งทีละน้อยแผ่นลง)");
+  try { return JSON.parse(txt); }
+  catch {
+    // ใบยาวมากจน JSON ถูกตัดกลางทาง — ตัดหางที่ไม่สมบูรณ์ทิ้งแล้วปิดวงเล็บให้
+    const cut = txt.lastIndexOf("},");
+    if (cut > 0) {
+      const fixed = txt.slice(0, cut + 1) + "]}";
+      try { const o = JSON.parse(fixed); o._truncated = true; return o; } catch { /* */ }
+    }
+    throw new Error("AI อ่านภาพไม่สำเร็จ: ผลลัพธ์ไม่ใช่ JSON ที่อ่านได้");
+  }
+}
+
+function sopStepRow(x: any, lessonId: number, sheetUrls: string[], perSheet = 6) {
+  const n = Math.max(1, Math.round(Number(x.step_no) || 0));
+  const sheetIdx = Math.min(sheetUrls.length - 1, Math.floor((n - 1) / perSheet));
+  const S = (v: any, cap: number) => { const t = String(v ?? "").trim(); return t ? t.slice(0, cap) : null; };
+  return {
+    lesson_id: lessonId,
+    step_no: n,
+    heading: S(x.heading, 160),
+    instruction: S(x.instruction, 1200) || "(ไม่มีคำอธิบาย)",
+    screen: S(x.screen, 200),
+    note: S(x.note, 800),
+    at_sec: (x.at_sec === null || x.at_sec === undefined || !isFinite(Number(x.at_sec))) ? null : Math.round(Number(x.at_sec)),
+    image_url: sheetUrls[sheetIdx >= 0 ? sheetIdx : 0] || null,
+  };
+}
+
+// ---- เครื่องมือของนิดา: ค้นคู่มือขั้นตอนการทำงาน ----
+async function sop_search(a: any) {
+  const raw = String(a?.query || a?.topic || "").replace(/[(),%*]/g, " ").trim();
   const toks = raw.split(/[\s,]+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2).slice(0, 6);
-  let q: any = sb.from("promo_items_v").select("*").eq("sheet_active", true).limit(40);
+
+  let lq: any = sb.from("course_lessons").select("*").eq("active", true).limit(60);
+  if (a?.lesson_no) lq = lq.eq("lesson_no", String(a.lesson_no));
+  else if (toks.length) {
+    const ors: string[] = [];
+    for (const t of toks) ors.push(`title.ilike.%${t}%`, `summary.ilike.%${t}%`, `when_to_use.ilike.%${t}%`, `section.ilike.%${t}%`);
+    lq = lq.or(ors.join(","));
+  }
+  const { data: lessons, error } = await lq;
+  if (error) return { error: String(error.message || error) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/course_manual.sql ก่อน)" };
+
+  let hits = lessons || [];
+  // ค้นจากชื่อบทไม่เจอ → ค้นในตัวขั้นตอน (คนมักถามด้วยคำที่อยู่ในขั้นตอน ไม่ใช่ชื่อบท)
+  if (!hits.length && toks.length) {
+    const ors: string[] = [];
+    for (const t of toks) ors.push(`instruction.ilike.%${t}%`, `heading.ilike.%${t}%`, `screen.ilike.%${t}%`);
+    const { data: st } = await sb.from("course_steps").select("lesson_id").or(ors.join(",")).limit(80);
+    const ids = [...new Set((st || []).map((x: any) => x.lesson_id))].slice(0, 6);
+    if (ids.length) { const { data: L2 } = await sb.from("course_lessons").select("*").in("id", ids).eq("active", true); hits = L2 || []; }
+  }
+
+  if (!hits.length) {
+    const { data: all } = await sb.from("course_lessons").select("lesson_no,title").eq("active", true).order("lesson_no").limit(50);
+    return {
+      count: 0, บทที่มีในระบบ: (all || []).map((x: any) => x.lesson_no + " " + x.title),
+      note: "ไม่เจอด้วยคำนี้ · ★ อย่าเพิ่งตอบว่าไม่มี — ดูรายชื่อบทในช่อง 'บทที่มีในระบบ' ว่ามีเรื่องใกล้เคียงไหม แล้วเรียกซ้ำด้วยคำที่ตรงกว่า หรือใส่ lesson_no ตรง ๆ",
+    };
+  }
+
+  hits = hits.slice(0, 3);
+  const { data: steps } = await sb.from("course_steps").select("*").in("lesson_id", hits.map((x: any) => x.id)).order("step_no");
+  const byL: Record<number, any[]> = {};
+  (steps || []).forEach((x: any) => (byL[x.lesson_id] = byL[x.lesson_id] || []).push(x));
+
+  const out = hits.map((l: any) => ({
+    บท: l.lesson_no + " " + l.title,
+    ส่วน: l.section || null,
+    บทนี้สอนอะไร: l.summary || null,
+    ใช้เมื่อไหร่: l.when_to_use || null,
+    ข้อควรระวัง: l.cautions || null,
+    ตรวจแก้แล้ว: l.reviewed === true,
+    ขั้นตอน: (byL[l.id] || []).map((s2: any) => ({
+      ที่: s2.step_no, หัวข้อ: s2.heading || null, ทำอะไร: s2.instruction,
+      หน้าจอ: s2.screen || null, หมายเหตุ: s2.note || null,
+      นาทีในวิดีโอ: s2.at_sec != null ? (String(Math.floor(s2.at_sec / 60)).padStart(2, "0") + ":" + String(s2.at_sec % 60).padStart(2, "0")) : null,
+    })),
+    ภาพประกอบ: (l.sheet_urls || []).slice(0, 4),
+    ลิงก์บทเรียน: l.source_url || null,
+  }));
+
+  const unrev = out.filter((x: any) => !x.ตรวจแก้แล้ว).length;
+  return {
+    count: out.length, คู่มือ: out,
+    note: "★ ตอบเป็นขั้นตอน 1-2-3 ตามลำดับที่ให้มา ห้ามสลับ ห้ามข้ามขั้น ห้ามเพิ่มขั้นตอนที่ไม่มีในนี้"
+      + " · ★ ถ้ามี 'ข้อควรระวัง' ต้องบอกด้วยทุกครั้ง"
+      + " · ★ วาง URL ใน 'ภาพประกอบ' ลงในคำตอบ 1-2 รูป พนักงานจะได้เห็นหน้าจอจริง"
+      + " · ถ้าผู้ถามอยากดูวิดีโอต้นทาง ให้ส่ง 'ลิงก์บทเรียน' พร้อมนาทีของขั้นตอนนั้น"
+      + (unrev ? (" · ⚠ มี " + unrev + " บทที่ยังไม่ได้ตรวจแก้ ต้องบอกว่าเป็นข้อมูลที่ AI อ่านจากวิดีโอ ยังไม่มีคนตรวจ ให้เช็กกับของจริงก่อนทำตาม") : ""),
+  };
+}
+
+// ---- เครื่องมือของนิดา: ค้นโปรโมชั่นของสินค้า ----
+// แปลคำถามแบบ "ที่สุด" เป็นวิธีเรียงลำดับ — คนถามด้วยคำหลายแบบ จับด้วยคำสำคัญเอา
+function promoSortKey(sort: string): { key: (r: any) => number | null; desc: boolean; label: string } | null {
+  const s2 = String(sort || "").replace(/\s+/g, "");
+  if (!s2) return null;
+  const hi = /มาก|เยอะ|สูง|สุด/.test(s2), lo = /น้อย|ต่ำ|ถูก/.test(s2);
+  if (/ประหยัด|ลดมาก|ส่วนลด|ลดเยอะ/.test(s2)) {
+    return { key: (r) => (r.price_before != null && r.price_after != null) ? (Number(r.price_before) - Number(r.price_after)) : null, desc: true, label: "ประหยัดมากที่สุด" };
+  }
+  if (/ดวง/.test(s2)) return { key: (r) => r.stamp_pieces ?? null, desc: !lo, label: lo ? "ได้ดวงน้อยที่สุด" : "ได้ดวงมากที่สุด" };
+  if (/แสตมป์|สแตมป์|stamp/i.test(s2)) return { key: (r) => r.stamp_baht ?? null, desc: !lo, label: lo ? "มูลค่าแสตมป์น้อยที่สุด" : "มูลค่าแสตมป์มากที่สุด" };
+  if (lo) return { key: (r) => r.price_after ?? null, desc: false, label: "ราคาถูกที่สุด" };
+  if (hi) return { key: (r) => r.price_after ?? null, desc: true, label: "ราคาแพงที่สุด" };
+  return null;
+}
+
+async function promo_search(a: any) {
+  const clean = (x: any) => String(x || "").replace(/[(),%*]/g, " ").trim();
+  const raw = clean(a?.product || a?.query);
+  const sheetQ = clean(a?.sheet);
+  const wantExpired = a?.include_expired === true;
+  const sort = String(a?.sort || "").trim();
+  const top = Math.min(30, Math.max(1, Number(a?.top) || 10));
+  const cut = (x: string, n: number) => x.split(/[\s,]+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2).slice(0, n);
+  const toks = cut(raw, 6);
+  const stok = cut(sheetQ, 4);
+
+  // ★ ถามลอย ๆ ไม่มีทั้งชื่อสินค้า ชื่อใบ และไม่ได้ขอจัดอันดับ
+  //   → บอกว่ามีใบอะไรบ้าง ดีกว่าตอบ "ไม่พบข้อมูล" แล้วจบ (เคยเจอนิดาตอบแบบนั้น)
+  if (!toks.length && !stok.length && !sort) return await promo_sheet({});
+
+  let q: any = sb.from("promo_items_v").select("*").eq("sheet_active", true).limit(sort ? 400 : 120);
   if (toks.length) {
     const ors: string[] = [];
-    for (const t of toks) ors.push(`product.ilike.%${t}%`, `brand.ilike.%${t}%`, `keywords.ilike.%${t}%`, `size.ilike.%${t}%`);
+    // ★ ค้น sheet_title ด้วย — คนถามชื่อ "ใบ" (เช่น "แสตมป์จัดหนัก") พอ ๆ กับถามชื่อสินค้า
+    for (const t of toks) ors.push(`product.ilike.%${t}%`, `brand.ilike.%${t}%`, `keywords.ilike.%${t}%`, `size.ilike.%${t}%`, `sheet_title.ilike.%${t}%`);
     q = q.or(ors.join(","));
   }
+  for (const t of stok) q = q.ilike("sheet_title", "%" + t + "%");
+  if (a?.promo_type && PROMO_TYPES[String(a.promo_type)]) q = q.eq("promo_type", String(a.promo_type));
   const { data, error } = await q;
   if (error) return { error: String(error.message || error) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/promo_system.sql ก่อน)" };
   const rows = data || [];
-  const shape = (r: any) => ({
-    สินค้า: r.product, ขนาด: r.size || null, ยี่ห้อ: r.brand || null,
-    ใช้แสตมป์: r.stamps ?? null, ราคาโปร: r.price ?? null, ราคาสมาชิก: r.member_price ?? null,
-    ราคาปกติ: r.normal_price ?? null, จำนวน: r.qty || null, เงื่อนไข: r.condition || null,
-    ใบโปรฯ: r.sheet_title, ช่วงเวลา: _thDate(r.period_start) + " – " + _thDate(r.period_end),
-    สถานะ: r.สถานะ, ตรวจแก้แล้ว: r.reviewed === true, รูปใบโปรฯ: r.image_url || null,
-  });
-  const cur = rows.filter((r: any) => r.สถานะ === "ใช้อยู่").map(shape);
+  // ★ แสดงเฉพาะช่องที่ "ชนิดใบนั้นใช้จริง" — ไม่โชว์ช่องแสตมป์ให้ใบลดราคา
+  const shape = (r: any) => {
+    const t = String(r.promo_type || r.reward_kind || "stamp");
+    const o: any = {
+      สินค้า: r.product, ขนาด: r.size || null, ยี่ห้อ: r.brand || null,
+      จำนวนที่ราคานี้ครอบคลุม: r.qty || null,
+      ชนิดโปรฯ: PROMO_TYPES[t]?.label || t,
+    };
+    if (t === "discount" || t === "bundle") {
+      o.ราคาปกติ = r.price_before ?? null;
+      o.ราคาหลังลด = r.price_after ?? null;
+      if (r.price_before && r.price_after) o.ประหยัด = Math.round((r.price_before - r.price_after) * 100) / 100;
+    } else {
+      o.ราคาที่ต้องจ่าย = r.price_after ?? null;
+      if (r.price_before != null) o.ราคาปกติ = r.price_before;
+    }
+    if (t === "stamp") {
+      o.ได้รับแสตมป์ = {
+        จำนวนดวง: r.stamp_pieces ?? null,
+        มูลค่าบาท: r.stamp_baht ?? null,
+        ชนิดแสตมป์: r.stamp_unit != null ? (r.stamp_unit + " บาท/ดวง") : null,
+        ถ้าเป็นสมาชิกรับเป็น_M_Stamp: r.mstamp ?? null,
+        ใบระบุว่าคุ้มกว่า: r.better === "mstamp" ? "รับเป็น M-Stamp" : (r.better === "stamp" ? "รับเป็นดวง" : null),
+      };
+    } else if (t === "redeem") {
+      o.ต้องใช้แสตมป์ = { จำนวนดวง: r.stamp_pieces ?? null, มูลค่าบาท: r.stamp_baht ?? null };
+    }
+    if (r.extra) o.เพิ่มเติม = r.extra;
+    o.เงื่อนไข = r.condition || null;
+    o.ใบโปรฯ = r.sheet_title;
+    o.กติกาของใบ = r.mechanic_note || null;
+    o.ช่วงเวลา = _thDate(r.period_start) + " – " + _thDate(r.period_end);
+    o.สถานะ = r.สถานะ; o.ตรวจแก้แล้ว = r.reviewed === true; o.รูปใบโปรฯ = r.image_url || null;
+    return o;
+  };
+  const curRaw = rows.filter((r: any) => r.สถานะ === "ใช้อยู่");
+  const sk = promoSortKey(sort);
+  let picked = curRaw, rankNote = "";
+  if (sk) {
+    picked = curRaw.filter((r: any) => sk.key(r) != null)
+      .sort((x: any, y: any) => (sk.desc ? 1 : -1) * ((sk.key(y) as number) - (sk.key(x) as number)))
+      .slice(0, top);
+    rankNote = " · ★ เรียงให้แล้วตาม " + sk.label + " (" + picked.length + " อันดับแรกจาก " + curRaw.length + " รายการ) — ตอบตามลำดับนี้ได้เลย ห้ามเรียงใหม่เอง";
+  } else if (picked.length > 25) {
+    rankNote = " · (เจอทั้งหมด " + picked.length + " รายการ ส่งมาให้ 25 รายการแรก — ถ้าอยากได้อันดับ ให้เรียกซ้ำโดยใส่ sort)";
+    picked = picked.slice(0, 25);
+  }
+  const cur = picked.map(shape);
   const exp = rows.filter((r: any) => r.สถานะ === "หมดอายุ").map(shape);
   const fut = rows.filter((r: any) => r.สถานะ === "ยังไม่เริ่ม").map(shape);
   const unreviewed = cur.filter((r: any) => !r.ตรวจแก้แล้ว).length;
@@ -647,8 +1137,11 @@ async function promo_search(a: any) {
     return {
       count: cur.length, promos: cur, upcoming: fut.length ? fut : undefined,
       note: "★ ตอบด้วยตัวเลขจากตารางนี้เท่านั้น ห้ามคำนวณ/เดาเอง · ต้องบอกช่วงเวลากำกับเสมอ"
+        + " · ★★ แยกให้ชัดว่า 'ราคาที่ต้องจ่าย' คือเงินที่ลูกค้าจ่าย ส่วน 'ได้รับแสตมป์' คือของที่ได้กลับมา — ห้ามเรียกแสตมป์ว่าราคา และห้ามเรียกราคาว่าแสตมป์"
+        + " · ★ ถ้ามีทั้งดวงและ M-Stamp ให้บอกทั้งสองทางเลือก ❌ ห้ามฟันธงว่าทางไหนคุ้มกว่า ยกเว้นช่อง 'ใบระบุว่าคุ้มกว่า' มีค่ามา (บางรายการรับเป็นดวงคุ้มกว่า)"
         + " · ★ ต้องวาง URL ใน 'รูปใบโปรฯ' ลงในคำตอบด้วยทุกครั้ง (ระบบจะแสดงเป็นรูปให้เอง) พนักงานจะได้เช็คกับใบจริงได้"
         + (unreviewed ? " · ⚠ มี " + unreviewed + " รายการที่ 'ยังไม่ได้ตรวจแก้' — ให้เตือนว่าเป็นข้อมูลที่ AI อ่านจากรูป ยังไม่มีคนตรวจ ให้ดูรูปประกอบด้วย" : "")
+        + rankNote
         + (exp.length ? " · (มีอีก " + exp.length + " รายการที่หมดอายุแล้ว ไม่แสดง)" : ""),
     };
   }
@@ -660,7 +1153,16 @@ async function promo_search(a: any) {
         + " · ❌ ห้ามยกราคาของรอบที่จบแล้วมาตอบเหมือนยังใช้ได้",
     };
   }
-  return { count: 0, promos: [], note: "ไม่พบสินค้านี้ในใบโปรฯ ที่นำเข้าไว้ · ลองค้นด้วยชื่อสั้นลง/ชื่อยี่ห้อ · ถ้ายังไม่เจอ ให้บอกว่ายังไม่มีข้อมูลโปรฯ ของสินค้านี้ในระบบ และชวนผู้จัดการอัปโหลดใบโปรฯ รอบใหม่ที่เมนู 'โปรโมชั่น' ❌ อย่าแนะให้ไปถามผู้จัดการเขต" };
+  const { data: sheetList } = await sb.from("promo_sheets").select("title").eq("active", true).limit(20);
+  const titles = [...new Set((sheetList || []).map((x: any) => String(x.title)))].slice(0, 12);
+  return {
+    count: 0, promos: [], ใบโปรฯที่มีในระบบ: titles,
+    note: "ไม่เจอด้วยคำนี้ · ★ อย่าเพิ่งตอบว่าไม่มีข้อมูล — ลองใหม่ก่อน 1 ครั้ง:"
+      + " ถ้าคำที่ค้นเป็นชื่อใบ ให้เรียกซ้ำโดยใส่ sheet=ชื่อใบ · ถ้าถามหาที่สุด (เยอะสุด/ถูกสุด/ประหยัดสุด) ให้เรียกซ้ำโดยใส่ sort"
+      + " · ถ้าเป็นชื่อสินค้า ให้ตัดให้สั้นลงเหลือชื่อยี่ห้อคำเดียว"
+      + " · รายชื่อใบที่มีอยู่จริงอยู่ในช่อง 'ใบโปรฯที่มีในระบบ' ใช้เทียบได้"
+      + " · ถ้าลองแล้วยังไม่เจอจริง ๆ ค่อยบอกว่ายังไม่มีข้อมูลโปรฯ ของสิ่งนี้ และชวนผู้จัดการอัปโหลดใบโปรฯ ที่เมนู 'โปรโมชั่น' ❌ อย่าแนะให้ไปถามผู้จัดการเขต",
+  };
 }
 
 // ---- เครื่องมือของนิดา: ขอดูใบโปรฯ ทั้งใบ (ส่งรูปกลับ) ----
@@ -678,6 +1180,175 @@ async function promo_sheet(a: any) {
   if (!cur.length) return { count: 0, sheets: [], note: "ยังไม่มีใบโปรฯ ที่ใช้ได้ตอนนี้ · ชวนผู้จัดการอัปโหลดใบรอบใหม่ที่เมนู 'โปรโมชั่น'" };
   return { count: cur.length, sheets: cur, note: "★ ต้องวาง URL ใน 'รูปใบโปรฯ' ลงในคำตอบทุกใบ ระบบจะแสดงเป็นรูปให้เอง · บอกช่วงเวลากำกับด้วย" };
 }
+// ============================================================
+// บทวิเคราะห์ยอดขาย + ข้อเสนอ "ควรเชียร์อะไร" — อิงโปรโมชั่นที่ใช้ได้จริง ณ วันนี้
+//
+// ข้อจำกัดที่ต้องยอมรับ: ยอดขายในระบบละเอียดแค่ระดับ สาขา/วัน/ผลัด — ไม่มียอดรายสินค้า
+//   จึงพิสูจน์ไม่ได้ว่า "สินค้า A ขายดีขึ้นเพราะโปรฯ"
+// สิ่งที่ทำได้จริงคือวินิจฉัยจากตัวเลขที่มี แล้วแมปว่าควรเชียร์โปรฯ ชนิดไหน:
+//   ยอดต่อหัวตก (ตะกร้าเล็ก) → ของที่ทำให้ซื้อเพิ่ม: ซื้อคู่/เซ็ต · แถมฟรี · แสตมป์
+//   ลูกค้าลด (คนเข้าน้อย)    → ของที่ดึงคนเข้า: ลดแรง ๆ + โปรฯ ใกล้หมด (ความเร่งด่วน)
+//   ช่องทางย่อยตก           → เชียร์ช่องทางนั้นตรง ๆ (ALL Cafe / เดลิเวอรี)
+// ทุกตัวเลขในผลลัพธ์มาจากตาราง ไม่มีการเดา — นิดามีหน้าที่เรียบเรียง ไม่ใช่คิดเลขเอง
+// ============================================================
+function _dDiff(a: string, b: string): number {
+  return Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / 86400000);
+}
+function _pctChg(now: number, before: number): number | null {
+  if (!before) return null;
+  return +(((now - before) / before) * 100).toFixed(1);
+}
+// ประโยคเชียร์ที่ประกอบจากตัวเลขในตารางล้วน ๆ — พนักงานหยิบไปพูดหน้าเคาน์เตอร์ได้เลย
+function _boostLine(r: any): string {
+  const t = String(r.promo_type || "stamp");
+  const nm = String(r.product || "") + (r.size ? (" " + r.size) : "");
+  if (t === "discount" || t === "bundle") {
+    if (r.price_before != null && r.price_after != null) {
+      return nm + " ปกติ " + r.price_before + " เหลือ " + r.price_after + " บาท (ประหยัด " + (Math.round((Number(r.price_before) - Number(r.price_after)) * 100) / 100) + " บาท)";
+    }
+    return nm + (r.price_after != null ? (" ราคาโปรฯ " + r.price_after + " บาท") : "");
+  }
+  if (t === "stamp") {
+    const got: string[] = [];
+    if (r.stamp_pieces != null) got.push(r.stamp_pieces + " ดวง");
+    if (r.stamp_baht != null) got.push("มูลค่า " + r.stamp_baht + " บาท");
+    if (r.mstamp != null) got.push("สมาชิกรับ M-Stamp " + r.mstamp);
+    return nm + (r.price_after != null ? (" จ่าย " + r.price_after + " บาท") : "") + (got.length ? (" ได้แสตมป์ " + got.join(" / ")) : "");
+  }
+  if (t === "freebie") {
+    const fr = (r.extra && r.extra["ของแถม"]) ? String(r.extra["ของแถม"]) : "";
+    return nm + (r.price_after != null ? (" ซื้อครบ " + r.price_after + " บาท") : "") + (fr ? (" แถม " + fr) : "");
+  }
+  if (t === "redeem") {
+    return nm + " ใช้แสตมป์ " + (r.stamp_baht != null ? (r.stamp_baht + " บาท") : (r.stamp_pieces + " ดวง")) + (r.price_after ? (" + จ่ายเพิ่ม " + r.price_after + " บาท") : "");
+  }
+  return nm;
+}
+
+async function salesBoostData(a: any) {
+  const today = bkkToday();
+  const days = Math.min(31, Math.max(1, Number(a?.days) || 7));
+  const end = /^\d{4}-\d{2}-\d{2}$/.test(String(a?.end || "")) ? String(a.end) : today;
+  const start = addDays(end, -(days - 1));
+  const prevEnd = addDays(start, -1), prevStart = addDays(prevEnd, -(days - 1));
+
+  const [cur, prev, sheetsR, itemsR] = await Promise.all([
+    sales_report({ start, end }),
+    sales_report({ start: prevStart, end: prevEnd }),
+    sb.from("promo_sheets").select("id,title,promo_type,period_start,period_end,image_url,reviewed,active").eq("active", true).limit(60),
+    sb.from("promo_items_v").select("*").eq("sheet_active", true).limit(600),
+  ]);
+
+  // ── ฝั่งโปรโมชั่น ────────────────────────────────────────────
+  const sheetsAll = ((sheetsR as any).data || []);
+  const sheets = sheetsAll.filter((x: any) => promoStatus(x) === "ใช้อยู่");
+  const byType: Record<string, number> = {};
+  sheets.forEach((x: any) => { const k = PROMO_TYPES[String(x.promo_type)]?.label || String(x.promo_type); byType[k] = (byType[k] || 0) + 1; });
+  const unreviewed = sheets.filter((x: any) => x.reviewed !== true).map((x: any) => String(x.title));
+
+  const ending = sheets
+    .filter((x: any) => x.period_end)
+    .map((x: any) => ({ "ใบโปรฯ": String(x.title), "วันสุดท้าย": _thDate(x.period_end), "เหลืออีกกี่วัน": _dDiff(String(x.period_end), today), "รูปใบโปรฯ": x.image_url || null }))
+    .filter((x: any) => x["เหลืออีกกี่วัน"] >= 0 && x["เหลืออีกกี่วัน"] <= 10)
+    .sort((x: any, y: any) => x["เหลืออีกกี่วัน"] - y["เหลืออีกกี่วัน"]);
+
+  const items = (((itemsR as any).data) || []).filter((r: any) => r["สถานะ"] === "ใช้อยู่");
+  const saveOf = (r: any) => (r.price_before != null && r.price_after != null) ? (Number(r.price_before) - Number(r.price_after)) : null;
+  const pack = (list: any[], n = 5) => list.slice(0, n).map((r: any) => ({
+    "รายการ": _boostLine(r), "ใบโปรฯ": r.sheet_title,
+    "ชนิด": PROMO_TYPES[String(r.promo_type)]?.label || String(r.promo_type),
+    "รูปใบโปรฯ": r.image_url || null,
+  }));
+  const bigCut = pack(items.filter((r: any) => saveOf(r) != null).sort((x: any, y: any) => (saveOf(y) as number) - (saveOf(x) as number)));
+  const bigStamp = pack(items.filter((r: any) => String(r.promo_type) === "stamp" && r.stamp_baht != null).sort((x: any, y: any) => Number(y.stamp_baht) - Number(x.stamp_baht)));
+  const bestRatio = pack(items.filter((r: any) => String(r.promo_type) === "stamp" && r.stamp_baht != null && Number(r.price_after) > 0)
+    .sort((x: any, y: any) => (Number(y.stamp_baht) / Number(y.price_after)) - (Number(x.stamp_baht) / Number(x.price_after))));
+  const freebies = pack(items.filter((r: any) => String(r.promo_type) === "freebie" || (r.extra && r.extra["ของแถม"])));
+  const bundles = pack(items.filter((r: any) => String(r.promo_type) === "bundle"));
+
+  // คลังข้อเสนอ แยกตาม "อาการ" ที่ตรวจพบ
+  const bank: Record<string, any[]> = {
+    basket: [...bundles, ...freebies, ...bigStamp].slice(0, 5),   // ตะกร้าเล็ก → ทำให้ซื้อเพิ่ม
+    traffic: [...bigCut].slice(0, 5),                              // คนเข้าน้อย → ดึงคนเข้า
+  };
+
+  // ── ฝั่งยอดขาย ──────────────────────────────────────────────
+  const prevBy: Record<string, any> = {};
+  (((prev as any).by_branch) || []).forEach((b: any) => prevBy[b.branch] = b);
+  const curBr = (((cur as any).by_branch) || []);
+  const phList = curBr.map((b: any) => Number(b.avg_per_head)).filter((x: number) => x > 0);
+  const phAvg = phList.length ? (phList.reduce((t: number, x: number) => t + x, 0) / phList.length) : 0;
+  const cafeList = curBr.map((b: any) => Number(b.allcafe_baht) || 0);
+  const cafeAvg = cafeList.length ? (cafeList.reduce((t: number, x: number) => t + x, 0) / cafeList.length) : 0;
+
+  const branches = curBr.map((b: any) => {
+    const pv = prevBy[b.branch] || {};
+    const dSales = _pctChg(Number(b.total_sales) || 0, Number(pv.total_sales) || 0);
+    const dCust = _pctChg(Number(b.customers) || 0, Number(pv.customers) || 0);
+    const dPh = _pctChg(Number(b.avg_per_head) || 0, Number(pv.avg_per_head) || 0);
+    const gap = (b.total_target && b.total_sales < b.total_target) ? Math.round(b.total_target - b.total_sales) : 0;
+
+    const sym: string[] = [];
+    const need: string[] = [];
+    if (gap > 0) sym.push("ต่ำกว่าเป้า " + gap.toLocaleString() + " บาท (บรรลุ " + b.achieve_pct + "%) — ต้องเพิ่มเฉลี่ยวันละ " + Math.round(gap / days).toLocaleString() + " บาท");
+    else if (b.achieve_pct != null) sym.push("ทำได้ตามเป้าแล้ว (บรรลุ " + b.achieve_pct + "%)");
+    if (dPh != null && dPh <= -3) { sym.push("ยอดต่อหัวลดลง " + Math.abs(dPh) + "% จากช่วงก่อน — ตะกร้าเล็กลง"); need.push("basket"); }
+    if (phAvg && Number(b.avg_per_head) > 0 && Number(b.avg_per_head) < phAvg * 0.95) { sym.push("ยอดต่อหัว " + b.avg_per_head + " บาท ต่ำกว่าค่าเฉลี่ยทุกสาขา (" + phAvg.toFixed(2) + " บาท)"); need.push("basket"); }
+    if (dCust != null && dCust <= -3) { sym.push("จำนวนลูกค้าลดลง " + Math.abs(dCust) + "% จากช่วงก่อน — คนเข้าร้านน้อยลง"); need.push("traffic"); }
+    if (cafeAvg && (Number(b.allcafe_baht) || 0) < cafeAvg * 0.8) sym.push("ยอด ALL Cafe " + Math.round(Number(b.allcafe_baht) || 0).toLocaleString() + " บาท ต่ำกว่าค่าเฉลี่ยสาขาอื่น (" + Math.round(cafeAvg).toLocaleString() + " บาท) — เชียร์เครื่องดื่มเพิ่มตอนคิดเงิน");
+    if (!need.length && gap > 0) need.push("basket");
+
+    const uniq = [...new Set(need)];
+    return {
+      "สาขา": b.branch, "วันที่มีข้อมูล": b.days,
+      "ยอดขาย": Number(b.total_sales) || 0, "เป้า": Number(b.total_target) || 0,
+      "บรรลุ": b.achieve_pct != null ? (b.achieve_pct + "%") : null,
+      "ลูกค้า": Number(b.customers) || 0, "ยอดต่อหัว": b.avg_per_head,
+      "ALL_Cafe": Math.round(Number(b.allcafe_baht) || 0), "เดลิเวอรี": Math.round(Number(b.delivery_baht) || 0),
+      "เทียบช่วงก่อน": {
+        "ยอดขาย": dSales != null ? (dSales + "%") : null,
+        "ลูกค้า": dCust != null ? (dCust + "%") : null,
+        "ยอดต่อหัว": dPh != null ? (dPh + "%") : null,
+      },
+      "อาการที่ตัวเลขบอก": sym,
+      "สิ่งที่ควรเชียร์": uniq.flatMap((k: string) => (bank[k] || []).slice(0, 3)),
+    };
+  });
+
+  const sumB = (k: string) => branches.reduce((t: number, b: any) => t + (Number(b[k]) || 0), 0);
+  const sumP = (k: string) => (((prev as any).by_branch) || []).reduce((t: number, b: any) => t + (Number(b[k]) || 0), 0);
+  const totSales = sumB("ยอดขาย"), totCust = sumB("ลูกค้า");
+
+  return {
+    "ช่วงที่วิเคราะห์": _thDate(start) + " – " + _thDate(end) + " (" + days + " วัน)",
+    "เทียบกับช่วง": _thDate(prevStart) + " – " + _thDate(prevEnd),
+    "ภาพรวมทุกสาขา": {
+      "ยอดขาย": totSales, "เป้า": sumB("เป้า"), "ลูกค้า": totCust,
+      "เทียบช่วงก่อน": { "ยอดขาย": _pctChg(totSales, sumP("total_sales")), "ลูกค้า": _pctChg(totCust, sumP("customers")) },
+    },
+    "รายสาขา": branches,
+    "โปรฯที่ใช้ได้ตอนนี้": { "จำนวนใบ": sheets.length, "แยกตามชนิด": byType, "จำนวนรายการ": items.length },
+    "โปรฯใกล้หมดอายุ": ending,
+    "ของคุ้มที่สุดในรอบ": { "ลดแรงสุด": bigCut, "แสตมป์มูลค่าสูงสุด": bigStamp, "คุ้มต่อบาทสุด": bestRatio, "ของแถม": freebies, "ซื้อคู่เซ็ต": bundles },
+    "ใบที่ยังไม่ได้ตรวจแก้": unreviewed,
+  };
+}
+
+async function sales_boost(a: any) {
+  const d: any = await salesBoostData(a);
+  if (!(d["รายสาขา"] || []).length) {
+    return { ...d, note: "ยังไม่มียอดขายในช่วงนี้ — บอกตรง ๆ ว่าไม่มีข้อมูล อย่าสรุปว่ายอดตก" };
+  }
+  const un = (d["ใบที่ยังไม่ได้ตรวจแก้"] || []).length;
+  d.note = "★ บทวิเคราะห์ยอดขาย + สิ่งที่ควรเชียร์ — ทุกตัวเลขคำนวณมาให้แล้ว ห้ามคิดเลขเพิ่มเอง"
+    + " · โครงคำตอบ: (1) ภาพรวมสั้น ๆ (2) ไล่ทีละสาขา เอา 'อาการที่ตัวเลขบอก' มาเล่า แล้วต่อด้วย 'สิ่งที่ควรเชียร์' เป็นรายการสินค้าจริงพร้อมตัวเลข (3) ปิดท้ายด้วยโปรฯ ใกล้หมดอายุ ถ้ามี"
+    + " · ★★ ยอดขายละเอียดแค่ระดับสาขา/วัน ไม่มียอดรายสินค้า → ❌ ห้ามพูดว่าสินค้าตัวไหนขายดี/ขายไม่ดี · พูดได้แค่ว่าควรเชียร์อะไร เพราะตะกร้าเล็กลงหรือคนเข้าน้อยลง"
+    + " · ★ ต้องวาง URL ใน 'รูปใบโปรฯ' ลงในคำตอบด้วย พนักงานจะได้เห็นใบจริง"
+    + " · ถ้า 'วันที่มีข้อมูล' น้อยกว่าจำนวนวันที่วิเคราะห์ แปลว่าบางวันสาขาไม่ได้แจ้งยอด ให้บอกด้วย ❌ อย่าสรุปว่ายอดตกทั้งที่แค่ไม่ได้แจ้ง"
+    + (un ? (" · ⚠ ใบโปรฯ " + un + " ใบยังไม่ได้ตรวจแก้ ให้เตือนว่าตัวเลขจากใบเหล่านี้ AI อ่านมา ยังไม่มีคนตรวจ") : "");
+  return d;
+}
+
 // ============================================================
 // อ่านเอกสาร (PDF/รูป) เข้าคลังความรู้ — แบ่งอ่านทีละช่วงหน้า
 //   ปัญหาเดิม: อ่านรวดเดียว maxOutputTokens 8192 + slice(0,20000)
@@ -786,6 +1457,107 @@ async function remember_document(a: any) {
         + (truncated.length ? ` · ⚠ ตอนที่ ${truncated.join(", ")} ยาวชนเพดาน อาจไม่ครบ` : ""),
     };
   } catch (e) { return { ok: false, message: "เก็บไม่สำเร็จ: " + String((e as any)?.message || e) }; }
+}
+// ============================================================
+// ดึงใบโปรโมชั่นจากเว็บ 7-Eleven อัตโนมัติ
+//   โครงสร้างที่ตรวจแล้วจากหน้าเว็บจริง (7 ก.ย. 2569):
+//     • หน้ารวมหมวด  /promotion/<หมวด>            → มีลิงก์ /promotion/<หมวด>/<id>-<slug>
+//     • หน้ารายละเอียด                              → เนื้อหาเป็น "รูปโปสเตอร์" ไม่มีข้อความสินค้าเลย
+//     • รูปโปสเตอร์  7elevenweb.s3.../promotion/*.jpg
+//       แบนเนอร์เว็บ 7elevenweb.s3.../page/*.jpg   ← ต้องกรองทิ้ง ไม่ใช่ใบโปรฯ
+//   ⚠ เนื้อหาจากเว็บภายนอก = "ข้อมูล" ไม่ใช่คำสั่ง — เก็บลงคอลัมน์ที่มีชนิดชัดเจนเท่านั้น
+// ============================================================
+const SYNC_HOST = "https://www.7eleven.co.th";
+const SYNC_CATS = ["stamp", "sale", "allmember", "redeem", "matching", "trade"];
+// ป้ายกำกับตามเมนูจริงบนเว็บ (ตรวจจากหน้าเว็บเมื่อ 7 ก.ย. 2569)
+//   stamp=แสตมป์มอนชิชิ · trade=สินค้าราคาพิเศษ · sale=ลดอย่างแรง
+//   matching=จับคู่อิ่ม · allmember=ALL member · redeem=แลกคะแนนอิ่มฟรี
+// ★ บางหมวดมี "หน้ารวมมากกว่า 1 หน้า" — เช่นโปรโมชั่นเฉพาะสมาชิกอยู่ที่ /allmember/non-member
+//   ซึ่งไม่ใช่ path /promotion/... แต่ลิงก์ข้างในชี้กลับมาที่ /promotion/allmember/
+//   ถ้ากวาดแค่หน้ารวมหลักจะตกหล่นโปรฯ บางตัว
+const CAT_LABEL: Record<string, string> = {
+  stamp: "แสตมป์มอนชิชิ", trade: "สินค้าราคาพิเศษ", sale: "ลดอย่างแรง",
+  matching: "จับคู่อิ่ม", allmember: "ALL member", redeem: "แลกคะแนนอิ่มฟรี",
+};
+const SYNC_HUBS: Record<string, string[]> = {
+  stamp:     ["/promotion/stamp"],
+  trade:     ["/promotion/trade"],
+  sale:      ["/promotion/sale"],
+  matching:  ["/promotion/matching"],
+  redeem:    ["/promotion/redeem"],
+  allmember: ["/promotion/allmember", "/allmember/non-member"],
+};
+const TH_MON_SHORT: Record<string, number> = { "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6, "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12 };
+
+async function syncFetch(url: string): Promise<string> {
+  // path อาจมีอักษรไทย (เช่น /promotion/sale/219-ลดอย่างแรง) ต้องเข้ารหัสก่อน ไม่งั้น fetch พัง
+  const r = await fetch(encodeURI(url), { headers: { "User-Agent": "Mozilla/5.0 (compatible; 7ElevenHR/1.0)", "Accept-Language": "th,en" } });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return await r.text();
+}
+
+// "24 ส.ค. - 23 ก.ย. 69"  →  { start: 2026-08-24, end: 2026-09-23 }
+function syncParseRange(txt: string): { start: string | null; end: string | null } {
+  const re = /(\d{1,2})\s*(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)\s*(\d{2,4})?\s*[-–]\s*(\d{1,2})\s*(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)\s*(\d{2,4})/;
+  const m = txt.match(re);
+  if (!m) return { start: null, end: null };
+  const yr = (v: string | undefined, fb: string) => {
+    let y = parseInt(String(v || fb), 10);
+    if (y < 100) y += 2500;
+    if (y > 2400) y -= 543;
+    return y;
+  };
+  const y2 = yr(m[6], "0"), y1 = yr(m[3], String(m[6]));
+  const d = (y: number, mo: number, dd: string) => y + "-" + String(mo).padStart(2, "0") + "-" + dd.padStart(2, "0");
+  const s1 = d(y1, TH_MON_SHORT[m[2]], m[1]), s2 = d(y2, TH_MON_SHORT[m[5]], m[4]);
+  return { start: s1 <= s2 ? s1 : s2, end: s1 <= s2 ? s2 : s1 };
+}
+
+// S3 ของ 7-Eleven มี 4 ประเภท path — ตรวจจากหน้าเว็บจริง
+//   /promotion/ = ใบโปรฯ ตัวจริง (เอา)      · /banner/ = ภาพประจำโปรฯ (ใช้เป็นตัวสำรอง)
+//   /page/      = แบนเนอร์ของเว็บ (ทิ้ง)      · /item/   = รูปสินค้าเดี่ยว ๆ (ทิ้ง)
+function syncPosterUrls(html: string): string[] {
+  const pick = (seg: string) => {
+    const re = new RegExp("https://7elevenweb\\.s3[^\"'\\\\\\s>]*/" + seg + "/[^\"'\\\\\\s>]+?\\.(?:jpg|jpeg|png|webp)", "gi");
+    return [...new Set((html.match(re) || []).map((u) => u.replace(/&amp;/g, "&")))];
+  };
+  const main = pick("promotion");
+  if (main.length) return main;
+  return pick("banner");   // ไม่มีใบโปรฯ ก็ลองภาพประจำโปรฯ แทน (บางหมวดใช้แบบนี้)
+}
+
+function syncMeta(html: string): { title: string; range: { start: string | null; end: string | null } } {
+  const og = html.match(/og:title"\s+content="([^"]{2,160})"/i) || html.match(/<title>([^<]{2,160})<\/title>/i);
+  const title = (og ? og[1] : "").replace(/\s*[|｜-]\s*7-Eleven.*$/i, "").trim();
+  // ถอดแท็กก่อนหาช่วงวันที่ กันเจอวันที่ในโค้ด
+  const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ");
+  return { title, range: syncParseRange(text) };
+}
+
+// ★ ทดสอบจริงแล้วพบว่า "หน้ารายละเอียดไม่มีช่วงวันที่" — มีเฉพาะในหน้ารวมหมวด
+//   จึงเก็บวันที่จากหน้ารวมตั้งแต่ตอนแกะลิงก์ โดยดูข้อความรอบ ๆ ลิงก์นั้น (ไม่ผูกกับโครง HTML)
+async function syncLinks(cat: string): Promise<{ path: string; range: { start: string | null; end: string | null } }[]> {
+  const hubs = SYNC_HUBS[cat] || ["/promotion/" + cat];
+  const seen = new Set<string>();
+  const out: { path: string; range: { start: string | null; end: string | null } }[] = [];
+  for (const hub of hubs) {
+    let html = "";
+    try { html = await syncFetch(SYNC_HOST + hub); } catch { continue; }   // หน้ารวมหน้าใดพัง ก็ยังกวาดหน้าอื่นต่อ
+    // ★ ทดสอบจริงพบว่าบางหมวดใช้ "สลักภาษาไทย" เช่น /promotion/sale/219-ลดอย่างแรง
+    //   regex เดิมรับแค่ A-Za-z0-9 จึงหาไม่เจอเลยทั้งหมวด · ต้องรับอักษรไทย (U+0E00–U+0E7F)
+    //   และรูปแบบ %XX เผื่อ HTML เข้ารหัส URL มา
+    const re = new RegExp("/promotion/" + cat + "/\\d+-[A-Za-z0-9\\u0E00-\\u0E7F_%.-]+", "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) {
+      const path = m[0];
+      if (seen.has(path)) continue;
+      seen.add(path);
+      // ตัดหน้าต่างรอบลิงก์มาถอดแท็ก แล้วหาช่วงวันที่ในนั้น (ไม่ผูกกับโครง HTML)
+      const win = html.slice(Math.max(0, m.index - 1200), m.index + 1200).replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ");
+      out.push({ path, range: syncParseRange(win) });
+    }
+  }
+  return out;
 }
 async function knowledge_search(a: any) {
   const raw = String(a.query || "").replace(/[(),%*]/g, " ").trim();   // กัน .or() พังจากอักขระพิเศษ
@@ -2666,15 +3438,31 @@ async function morning_digest(a: any) {
   let disc: any = null; try { disc = await discipline_status({ branch_id: a?.branch_id }); } catch (_e) { disc = { error: "ดึงข้อมูลวินัยไม่ได้" }; }
   let line: any = null; try { line = await line_activity_scan({ hours: 16 }); } catch (_e) { line = null; }
   let ann: any = null; try { ann = await announcements({ days: 14 }); } catch (_e) { ann = null; }
+  // ★ บรีฟเช้าควรบอกด้วยว่า "วันนี้ควรเชียร์อะไร" ไม่ใช่แค่เรื่องคน — ดึงจากยอด 7 วันล่าสุด + โปรฯ ที่ใช้ได้จริง
+  let boost: any = null;
+  try {
+    const b = await salesBoostData({ days: 7 });
+    boost = {
+      "ช่วงที่วิเคราะห์": b["ช่วงที่วิเคราะห์"],
+      "ภาพรวมทุกสาขา": b["ภาพรวมทุกสาขา"],
+      "รายสาขา": (b["รายสาขา"] || []).map((x: any) => ({
+        "สาขา": x["สาขา"], "บรรลุ": x["บรรลุ"], "ยอดต่อหัว": x["ยอดต่อหัว"],
+        "อาการที่ตัวเลขบอก": x["อาการที่ตัวเลขบอก"],
+        "สิ่งที่ควรเชียร์": (x["สิ่งที่ควรเชียร์"] || []).slice(0, 3),
+      })),
+      "โปรฯใกล้หมดอายุ": b["โปรฯใกล้หมดอายุ"],
+    };
+  } catch (_e) { boost = null; }
   return {
     today: bkkToday(), cycle: c,
+    "ยอดขาย7วันและสิ่งที่ควรเชียร์": boost,
     pending_leaves: { count: pl?.count ?? 0, items: (pl?.leaves || []).slice(0, 10) },
     qa_expiring_7d: qa,
     tasks_overdue: tasks,
     discipline: disc,
     line_updates: line ? { total_urgent: line.total_urgent, branches_with_urgent: line.branches_with_urgent } : null,
     announce_deadlines: ann ? { overdue: ann.overdue, upcoming: (ann.with_deadline || []).filter((x: any) => !x.overdue).slice(0, 5) } : null,
-    note: "บรีฟเช้า (ข้อมูลจริง ณ วันนี้) — เรียบเรียงสั้น กระชับ เป็นหัวข้อ ไล่ตามความเร่งด่วน แล้วปิดท้ายด้วย 1–3 อย่างที่ควรลงมือวันนี้ · ถ้าหมวดไหนว่าง/count=0 ให้ข้ามไป · line_updates=เรื่องด่วนจากกลุ่มไลน์ · announce_deadlines=ประกาศที่มีกำหนดส่ง (overdue=เลยกำหนดให้เตือนก่อน)",
+    note: "บรีฟเช้า (ข้อมูลจริง ณ วันนี้) — เรียบเรียงสั้น กระชับ เป็นหัวข้อ ไล่ตามความเร่งด่วน แล้วปิดท้ายด้วย 1–3 อย่างที่ควรลงมือวันนี้ · ★ ต้องมีหัวข้อ 'วันนี้ควรเชียร์อะไร' ด้วย โดยหยิบจาก ยอดขาย7วันและสิ่งที่ควรเชียร์ → เอา 'สิ่งที่ควรเชียร์' มาบอกเป็นชื่อสินค้าพร้อมตัวเลขจริง และถ้ามี 'โปรฯใกล้หมดอายุ' ให้ยกขึ้นก่อน ❌ ห้ามแต่งราคา/โปรฯ เอง ❌ ห้ามพูดว่าสินค้าตัวไหนขายดี (ระบบไม่มียอดรายสินค้า) · ถ้าหมวดไหนว่าง/count=0 ให้ข้ามไป · line_updates=เรื่องด่วนจากกลุ่มไลน์ · announce_deadlines=ประกาศที่มีกำหนดส่ง (overdue=เลยกำหนดให้เตือนก่อน)",
   };
 }
 // จับความผิดปกติที่ควรจับตาวันนี้ (ลาถี่ผิดปกติในรอบ + ใบเตือนที่ออกเร็ว ๆ นี้)
@@ -3179,7 +3967,7 @@ async function task_compliance(a: any) {
   return { period_days: days, branches, note: "ความสม่ำเสมอการส่งงานรายผลัด (นับจากอัลบั้ม 'ส่งงานผลัด...' ในกลุ่มสาขา) · คาดหวัง 3 ผลัด/วัน (เช้า/บ่าย/ดึก) · incomplete=วันที่ส่งไม่ครบ 3 ผลัด · ⚠ เป็นการนับจากที่แจ้งในไลน์ อาจมีวันที่ส่งแต่ไม่ได้ตั้งชื่ออัลบั้มให้ชัด — ใช้เป็นสัญญาณเตือนติดตาม ไม่ใช่ลงโทษทันที" };
 }
 
-const TOOLS: Record<string, (a: any) => Promise<any>> = { find_branch, mgr_eval, branch_line_feed, line_activity_scan, sales_report, audit_report, announcements, task_compliance, classify_group_images, get_group_images, search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, shelf_status, unregistered_faces, hr_handbook, app_guide, analyze_image, goods_receipts, warnings_list, score_status, payroll_summary, holidays_list, list_tables, describe_table, run_sql, applicants_list, app_data, night_allowance_summary, rider_mileage_check, advance_pending, incomplete_profiles, dual_shift_report, get_document, knowledge_search, remember_document, promo_search, promo_sheet, open_menu, morning_digest, anomaly_scan, retention_risk, staffing_forecast, suggest_cover, mgr_login_activity, mgr_actions, universal_search, create_exam, branch_workload, web_search: (a: any) => webSearch(a?.query) };
+const TOOLS: Record<string, (a: any) => Promise<any>> = { find_branch, mgr_eval, branch_line_feed, line_activity_scan, sales_report, audit_report, announcements, task_compliance, classify_group_images, get_group_images, search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, shelf_status, unregistered_faces, hr_handbook, app_guide, analyze_image, goods_receipts, warnings_list, score_status, payroll_summary, holidays_list, list_tables, describe_table, run_sql, applicants_list, app_data, night_allowance_summary, rider_mileage_check, advance_pending, incomplete_profiles, dual_shift_report, get_document, knowledge_search, remember_document, promo_search, promo_sheet, sop_search, sales_boost, open_menu, morning_digest, anomaly_scan, retention_risk, staffing_forecast, suggest_cover, mgr_login_activity, mgr_actions, universal_search, create_exam, branch_workload, web_search: (a: any) => webSearch(a?.query) };
 
 const DECLS = [
   { name: "find_branch", description: "ค้นหาสาขาจากรหัสหรือชื่อ (ทนศูนย์นำหน้า เช่น 06573/6573 และชื่อบางส่วน เช่น 'ตลาดหล่มสัก') — ต้องเรียกทุกครั้งที่ผู้ใช้อ้างถึงสาขา ก่อนจะสรุปว่า 'พบ/ไม่พบ' ห้ามตอบว่าไม่พบสาขาโดยไม่เรียกเครื่องมือนี้ก่อน", parameters: { type: "object", properties: { query: { type: "string" } } } },
@@ -3229,7 +4017,9 @@ const DECLS = [
   { name: "get_document", description: "ดึงเอกสารให้ผู้ใช้ 'ดาวน์โหลด/เปิด' ในแชท (จะแสดงเป็นการ์ดปุ่ม): สลิปเงินเดือน (kind='payslip' + emp_id + which=current/previous) · ใบเตือน (kind='warning' + warning_id หรือ emp_id) · เอกสารเซ็นแนบ (kind='signed_doc' + emp_id) · รายงานสรุปรายบุคคล (kind='report' + emp_id) · ใบเซ็นรับทราบทุกขั้นวินัย (kind='ack_form' + emp_id + action_type: verbal|written|warning1|warning2|warning3 + reason ที่ร่างไว้) — สร้างเอกสารให้พิมพ์→ให้พนักงานเซ็น→ถ่ายมาแนบเป็นหลักฐาน. ใช้เมื่อผู้ใช้ขอ 'ขอสลิป/ขอใบเตือน/ขอใบเซ็นรับทราบ/ขอเอกสาร/ขอรายงาน/ดาวน์โหลด...' — ถ้าไม่รู้ emp_id ให้ search_employees ก่อน", parameters: { type: "object", properties: { kind: { type: "string" }, emp_id: { type: "string" }, warning_id: { type: "string" }, which: { type: "string" }, action_type: { type: "string" }, reason: { type: "string" } }, required: ["kind"] } },
   { name: "remember", description: "จำ 'ความรู้ใหม่' เข้าคลังความรู้ถาวรของนิดา (ใช้ตอบครั้งต่อ ๆ ไป) — เรียกเมื่อผู้ใช้บอกนโยบาย/มาตรฐานใหม่ แก้ความเข้าใจที่ผิด หรือสั่งว่า 'จำไว้ว่า/บันทึกไว้ว่า...' · category: policy(นโยบาย)|standard(มาตรฐาน)|correction(แก้ไข/เคยผิด)|faq|note + title(หัวข้อสั้น) + content(เนื้อหาละเอียดครบ) + tags(คั่นด้วย ,) · ★ ถ้าเป็นเรื่องที่ 'มีวันหมดอายุ' (โปรโมชั่น แคมเปญ ประกาศชั่วคราว) ต้องใส่ valid_from/valid_to เป็น YYYY-MM-DD ด้วยเสมอ — พ้นวันแล้วระบบจะหยุดเอามาตอบเอง ไม่ต้องมาไล่ปิดทีหลัง · ถ้าไม่รู้วันให้ถามผู้ใช้ก่อน อย่าเดา · คู่มือ/นโยบายถาวรไม่ต้องใส่ — ต้องสรุปให้ยืนยันก่อนบันทึก", parameters: { type: "object", properties: { category: { type: "string" }, title: { type: "string" }, content: { type: "string" }, tags: { type: "string" }, source: { type: "string" }, valid_from: { type: "string" }, valid_to: { type: "string" } }, required: ["title", "content"] } },
   { name: "remember_document", description: "★ เก็บ 'ไฟล์ที่ผู้ใช้แนบมาในข้อความนี้' (PDF/รูปเอกสาร) เข้าคลังความรู้แบบ 'เนื้อหาเต็ม' — ใช้เมื่อผู้ใช้แนบเอกสารแล้วสั่งว่า 'จำไว้/เก็บเข้าคลัง/บันทึกเอกสารนี้' · ระบบจะอ่านทีละช่วงหน้าเองจนครบทั้งเล่ม แล้วเก็บเป็นหลายตอน · ❌ ห้ามใช้ remember แทนในกรณีนี้ เพราะ remember เก็บได้แค่บทสรุปที่คุณเขียนเอง เนื้อหาจริงจะตกหล่น · title=ชื่อเอกสารสั้น ๆ · category=training(คู่มือ)|policy|standard · ใส่ valid_to ถ้าเป็นเอกสารที่มีวันหมดอายุ — ต้องสรุปให้ยืนยันก่อน", parameters: { type: "object", properties: { title: { type: "string" }, category: { type: "string" }, tags: { type: "string" }, source: { type: "string" }, valid_from: { type: "string" }, valid_to: { type: "string" } } } },
-  { name: "promo_search", description: "★ ค้น 'โปรโมชั่นของสินค้า' จากใบโปรฯ ที่นำเข้าไว้ — ใช้ทุกครั้งที่ถูกถามว่า 'สินค้า X มีโปรฯ ไหม / ราคาเท่าไร / ลดเท่าไร / ใช้แสตมป์กี่ดวง' · product=ชื่อสินค้าหรือยี่ห้อ 'สั้น ๆ' (เช่น 'เลย์' 'เนสกาแฟ' 'ยาสีฟัน') ห้ามใส่ทั้งประโยค · คืนราคาโปร/ราคาสมาชิก/ราคาปกติ/ดวงแสตมป์/เงื่อนไข + URL รูปใบโปรฯ · ⚠ ต้องวาง URL รูปลงในคำตอบเสมอ ระบบจะแสดงเป็นรูปให้เอง", parameters: { type: "object", properties: { product: { type: "string" }, include_expired: { type: "boolean" } }, required: ["product"] } },
+  { name: "promo_search", description: "★ ค้นโปรโมชั่นจากใบโปรฯ ที่นำเข้าไว้ — ใช้ทุกครั้งที่ถูกถามเรื่องราคา/ส่วนลด/แสตมป์ ทั้งแบบถามรายสินค้า ถามทั้งใบ และถามหา 'ที่สุด' · ใส่ช่องไหนก็ได้ ไม่ใส่เลยก็ได้ (จะคืนรายชื่อใบโปรฯ ที่มีในระบบ) · product=ชื่อสินค้าหรือยี่ห้อสั้น ๆ (เช่น เลย์ · เนสกาแฟ · ยาสีฟัน) ห้ามใส่ทั้งประโยค · sheet=ชื่อใบโปรฯ ใช้เมื่อถามถึงทั้งใบ (เช่น แสตมป์จัดหนัก · ลดอย่างแรง · มอนชิชิ) · sort=คำจัดอันดับ ใช้เมื่อถามหาที่สุด (เช่น แสตมป์เยอะสุด · ดวงเยอะสุด · ถูกสุด · แพงสุด · ประหยัดมากสุด) · top=จำนวนอันดับที่ต้องการ ค่าเริ่มต้น 10 · คืนราคา/แสตมป์/เงื่อนไข + URL รูปใบโปรฯ · ⚠ ต้องวาง URL รูปลงในคำตอบเสมอ ระบบจะแสดงเป็นรูปให้เอง", parameters: { type: "object", properties: { product: { type: "string" }, sheet: { type: "string" }, sort: { type: "string" }, top: { type: "integer" }, include_expired: { type: "boolean" } }, required: [] } },
+  { name: "sop_search", description: "★★ ค้น 'คู่มือขั้นตอนการทำงานหน้าร้าน' จากหลักสูตรอบรมที่นำเข้าไว้ — ใช้ทุกครั้งที่ถูกถามว่า 'ทำ X ยังไง / ขั้นตอนของ Y คืออะไร / ยกเลิก post void ทำยังไง / สั่งสินค้ายังไง / ปิดผลัดยังไง / คีย์รับสินค้ายังไง' · query=เรื่องที่อยากรู้ สั้น ๆ (เช่น 'post void บัตร Visa' 'ปิดผลัด' 'Mark on Stock') · lesson_no=เลขบทถ้ารู้ (เช่น 2.1) · คืนขั้นตอน 1-2-3 พร้อมภาพหน้าจอจริงและนาทีในวิดีโอต้นทาง · ⚠ ต้องตอบตามลำดับขั้นตอนเป๊ะ ห้ามข้ามห้ามสลับ", parameters: { type: "object", properties: { query: { type: "string" }, lesson_no: { type: "string" } } } },
+  { name: "sales_boost", description: "★★ บทวิเคราะห์ยอดขาย + ข้อเสนอ 'ควรเชียร์อะไร' — ใช้ทุกครั้งที่ถูกถามว่า 'วิเคราะห์ยอดขายให้หน่อย / ทำไมยอดตก / จะดันยอดยังไง / สัปดาห์นี้เป็นยังไง / ควรเชียร์อะไร / สาขาไหนน่าห่วง' · รวมยอด-เป้า-ลูกค้า-ยอดต่อหัว-ช่องทาง เทียบกับช่วงก่อนหน้า แล้วจับคู่กับโปรฯ ที่ใช้ได้จริงตอนนี้ให้เสร็จ · days=จำนวนวันย้อนหลัง (ค่าเริ่มต้น 7 · รายเดือนใส่ 30) · end=วันสุดท้ายที่จะวิเคราะห์ (ไม่ใส่=วันนี้)", parameters: { type: "object", properties: { days: { type: "integer" }, end: { type: "string" } } } },
   { name: "promo_sheet", description: "★ ขอดู 'ใบโปรโมชั่นทั้งใบ' เป็นรูป — ใช้เมื่อผู้ใช้ขอว่า 'ขอดูใบโปรฯ / ส่งใบโปรโมชั่นมาให้หน่อย / โปรฯ รอบนี้มีอะไรบ้าง' · คืนรายการใบที่ใช้ได้ตอนนี้พร้อม URL รูป — ต้องวาง URL ลงในคำตอบทุกใบ", parameters: { type: "object", properties: {} } },
   { name: "knowledge_search", description: "ค้นคลังความรู้+คู่มือ/เอกสารที่นำเข้าไว้ (นโยบาย/มาตรฐาน/ขั้นตอน/วิธีทำ/สินค้า/อุปกรณ์/น้ำยา/FAQ) · ครอบคลุมคู่มือ PDF ที่อัปโหลด (หมวด training/manual) ด้วย · ⚠ query ต้องเป็น 'คำนามหลักสั้น ๆ' คั่นช่องว่าง (เช่น 'ตู้เตรียม ทำความสะอาด' หรือ 'น้ำยา') ห้ามใส่ทั้งประโยคคำถาม (ไทยไม่มีเว้นวรรค จะค้นไม่เจอ) · ถ้ารอบแรกไม่เจอให้ลองคำสั้นลง/คำพ้อง · category=กรองหมวด (ไม่ใส่=ทุกหมวด) · ★ ปกติคืนเฉพาะรายการที่ 'ใช้ได้ ณ วันนี้' (ของหมดอายุถูกกรองออกให้แล้ว) — ใส่ include_expired=true เฉพาะตอนผู้ใช้ถามย้อนหลัง เช่น 'โปรฯ เดือนที่แล้ว/รอบก่อนคืออะไร'", parameters: { type: "object", properties: { query: { type: "string" }, category: { type: "string" }, include_expired: { type: "boolean" } } } },
   { name: "open_menu", description: "เปิดเมนู/แท็บในแอปให้ผู้ใช้ (นำทาง) — ใช้เมื่อผู้ใช้บอก 'เปิดเมนู X / ไปหน้า X / หา X ไม่เจอ / X อยู่ตรงไหน' · menu = ชื่อเมนู เช่น เงินเดือน, วินัย, รายงาน, ตารางงาน, ลา, สาขา, พนักงาน, สรุปรายบุคคล, รับสินค้า, ตั้งค่ากะ, ประกาศ ฯลฯ · ระบบจะแสดงปุ่มให้ผู้ใช้กดเปิดเมนูนั้น", parameters: { type: "object", properties: { menu: { type: "string" } }, required: ["menu"] } },
@@ -3257,7 +4047,7 @@ const DECLS = [
   { name: "db_update", description: "แก้ไขข้อมูลในตาราง (ทั่วไป) — table + set(ค่าที่แก้) + where[{col,op,val}] (ต้องมีอย่างน้อย 1 เงื่อนไข) · ตารางที่แก้ได้: attendance, schedules, leaves, score_events, shelves, shelf_assignments, shelf_checks, qa_items, qa_folders, special_task_assignees, task_assignments, announcements, handovers, checkout_corrections, shift_leads, shift_controllers, holidays, payroll_review, payroll_installments, payroll_installment_charges, rider_claims, rider_fuel_claims, rider_vehicles, rider_items, rider_odometer, rider_fuel_config, applicants (ใบสมัคร · แก้สถานะ/hired_emp_id เพื่อกู้เคสรับเข้าค้าง), advance_requests (เบิกเงิน · แก้ยอด/รอบ/ยกเลิก) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { table: { type: "string" }, set: { type: "object" }, where: { type: "array", items: { type: "object", properties: { col: { type: "string" }, op: { type: "string" }, val: { type: "string" } } } } }, required: ["table", "set", "where"] } },
   { name: "db_delete", description: "ลบแถวจากตาราง (ทั่วไป) — table + where[{col,op,val}] (ต้องมีอย่างน้อย 1 เงื่อนไข กันลบทั้งตาราง) · ตารางเดียวกับ db_update (รวม applicants=ลบใบสมัครซ้ำ/ไม่ผ่าน, advance_requests) — ลบถาวร ต้องยืนยันก่อน", parameters: { type: "object", properties: { table: { type: "string" }, where: { type: "array", items: { type: "object", properties: { col: { type: "string" }, op: { type: "string" }, val: { type: "string" } } } } }, required: ["table", "where"] } },
   { name: "add_shift", description: "เพิ่มกะให้พนักงานในวันหนึ่ง (ฉุกเฉิน/ควบกะ/ไปทำแทนสาขา) — emp_id + shift_id (รหัสกะ/โค้ด/ชื่อกะ เช่น D หรือ Delivery — ระบบหารหัสจริงให้เอง) + work_date (ดีฟอลต์วันนี้) + branch_id (ถ้าต่างจากสาขาประจำ = ไปทำแทนอัตโนมัติ) · เพิ่มกะที่ 2 ในวันเดียวกัน = ควบกะ — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, shift_id: { type: "string" }, work_date: { type: "string" }, branch_id: { type: "string" }, note: { type: "string" } }, required: ["emp_id", "shift_id"] } },
-  { name: "change_shift", description: "เปลี่ยนกะของพนักงานในวันหนึ่ง — emp_id + work_date + new_shift_id (รหัส/โค้ด/ชื่อกะ เช่น D หรือ Delivery — ระบบหารหัสจริงให้เอง) (+ old_shift_id ★ ถ้าวันนั้นเป็น "วันควบกะ" (มีมากกว่า 1 กะ) ต้องใส่เสมอ ไม่งั้นระบบจะปฏิเสธและถามกลับ เพราะการไม่ใส่ = ลบทุกกะของวันนั้นทิ้งแล้วเหลือกะเดียว) + branch_id (ถ้าไปแทนสาขา) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, work_date: { type: "string" }, new_shift_id: { type: "string" }, old_shift_id: { type: "string" }, branch_id: { type: "string" }, note: { type: "string" } }, required: ["emp_id", "work_date", "new_shift_id"] } },
+  { name: "change_shift", description: "เปลี่ยนกะของพนักงานในวันหนึ่ง — emp_id + work_date + new_shift_id (รหัส/โค้ด/ชื่อกะ เช่น D หรือ Delivery — ระบบหารหัสจริงให้เอง) (+ old_shift_id ★ ถ้าวันนั้นเป็นวันควบกะ (มีมากกว่า 1 กะ) ต้องใส่เสมอ ไม่งั้นระบบจะปฏิเสธและถามกลับ เพราะการไม่ใส่ = ลบทุกกะของวันนั้นทิ้งแล้วเหลือกะเดียว) + branch_id (ถ้าไปแทนสาขา) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, work_date: { type: "string" }, new_shift_id: { type: "string" }, old_shift_id: { type: "string" }, branch_id: { type: "string" }, note: { type: "string" } }, required: ["emp_id", "work_date", "new_shift_id"] } },
   { name: "remove_shift", description: "ลบกะของพนักงานในวันหนึ่ง — emp_id + work_date (+ shift_id เฉพาะกะนั้น · ไม่ใส่ = ลบทุกกะของวันนั้น) — ต้องยืนยันก่อน", parameters: { type: "object", properties: { emp_id: { type: "string" }, work_date: { type: "string" }, shift_id: { type: "string" } }, required: ["emp_id", "work_date"] } },
   { name: "warning_void", description: "ยกเลิกหรือลบใบเตือน — ต้องมี warning_id (จาก warnings_list) และ reason เสมอ · ค่าเริ่มต้น hard=false = 'ยกเลิก' (เก็บใบไว้เป็นหลักฐาน ไม่มีผลบังคับ) · hard=true = ลบถาวร ใช้เฉพาะเมื่อผู้ใช้สั่งชัดว่า 'ลบถาวร/ลบทิ้ง' — ต้องยืนยันก่อน", parameters: { type: "object", properties: { warning_id: { type: "string" }, reason: { type: "string" }, hard: { type: "boolean" } }, required: ["warning_id", "reason"] } },
   // ---- อ่าน: สรุป/วิเคราะห์ (ไม่ต้องยืนยัน) ----
@@ -3302,7 +4092,24 @@ const SYS = `คุณคือ "น้องนิดา" ผู้ช่วย
 - ★★ [กฎอ่านของแนบ] เมื่อผู้ใช้แนบรูปภาพ/เอกสาร/ไฟล์เสียง/วิดีโอในข้อความปัจจุบันแล้วให้ "อ่าน/ฟัง/ดู/ถอด/สรุป/ทำความเข้าใจ/บันทึก" → ต้องประมวลจากไฟล์ที่แนบมาจริง ๆ (รูป/PDF=อ่านด้วย vision · เสียง/วิดีโอ=ฟัง/ถอดเสียงเป็นข้อความแล้วสรุป) จากของที่แนบเท่านั้น · ถ้าเป็นวิดีโอเทรนนิง/คลิปสอนงาน ให้ถอดเป็นหัวข้อ+ขั้นตอนที่ปฏิบัติได้ และถ้าผู้ใช้สั่ง "จำ" ให้ remember เข้าคลังความรู้ · ❌ ห้ามตอบมั่วเป็นของเก่าใน [คลังความรู้ที่นิดาจำไว้] แทนการอ่านของแนบ · ถ้ารูปเบลอ/อ่านบางส่วนไม่ออก บอกตรง ๆ ว่าส่วนไหนอ่านไม่ได้ อย่าเดา
 - ★★★ [ต่อเนื่องกับบทสนทนาก่อนหน้า] ผู้ใช้คุยแบบต่อเนื่อง — เมื่อเขาอ้างถึงสิ่งที่พูดไปก่อนหน้า (เช่น "ขอดูรูปที่คุณ X โพสต์เรื่อง Y", "อันเมื่อกี้", "เรื่องนั้น") ให้ดึง "ชื่อคน/วันที่/หัวข้อ/สาขา" จากข้อความก่อนหน้าในบทสนทนา (รวมถึงสรุปที่คุณตอบไปเอง) มาใส่เป็นตัวกรองของเครื่องมือ เช่น get_group_images(sender='X', on_date='YYYY-MM-DD') · ❌ อย่าดึงข้อมูลกว้าง ๆ มาตอบทั้งที่ผู้ใช้ระบุเจาะจงแล้ว
 - ★★★ [ผู้ใช้แนบเอกสารแล้วสั่งให้จำ → ใช้ remember_document ไม่ใช่ remember] เพราะ remember เก็บได้แค่ "ข้อความที่คุณพิมพ์เอง" = บทสรุป เนื้อหาจริงในเอกสารจะหายไปเกือบหมด · remember_document จะอ่านไฟล์ทีละช่วงหน้าจนครบทั้งเล่มแล้วเก็บเนื้อหาเต็มให้ · ใช้ remember ต่อไปได้เฉพาะกรณี "ผู้ใช้พิมพ์บอกนโยบาย/ข้อมูลมาเป็นข้อความ" (ไม่มีไฟล์แนบ)
+- ★★★★ [โปรฯ มีหลายชนิด — ดูช่อง "ชนิดโปรฯ" ก่อนตอบทุกครั้ง]
+  · **ลดราคา** → มี ราคาปกติ / ราคาหลังลด · ตอบว่า "ปกติ 198 ลดเหลือ 99 บาท (ประหยัด 99)" ❌ ห้ามพูดถึงแสตมป์ ใบแบบนี้ไม่มีแสตมป์
+  · **ซื้อแล้วรับแสตมป์** → มี ราคาที่ต้องจ่าย + ได้รับแสตมป์ (ดูกติกาข้างล่าง)
+  · **แลกด้วยคะแนน** → แสตมป์คือสิ่งที่ "ต้องใช้แลก" ไม่ใช่ของที่ได้ · ตอบว่า "ใช้ N ดวงแลกได้"
+  · **ซื้อคู่/เซ็ต** → บอกจำนวนที่ต้องซื้อกับราคารวม · **ซื้อครบแถมฟรี** → บอกว่าซื้ออะไรได้อะไรฟรี (ดูช่อง เพิ่มเติม)
+  · ❌ ห้ามหยิบช่องที่ไม่มีในชนิดนั้นมาตอบ ถ้าช่องไหนไม่มีแปลว่าใบนั้นไม่มีข้อมูลนั้นจริง ๆ
+- ★★★★ [กลไกแสตมป์ 7-Eleven — อ่านให้ถูกก่อนตอบ] "ราคาที่ต้องจ่าย" กับ "ได้รับแสตมป์" เป็นคนละเรื่องกัน
+  · ลูกค้า "จ่าย" เงินตามช่อง ราคาที่ต้องจ่าย → แล้ว "ได้รับ" แสตมป์กลับมาตามช่อง ได้รับแสตมป์
+  · แสตมป์มี 2 ชนิด ดวงละ 1 บาท กับ ดวงละ 3 บาท (ดูช่อง ชนิดแสตมป์) · รับได้ 2 ทาง คือ "รับเป็นดวง" หรือ "รับเป็น M-Stamp" (สมาชิก ALL member)
+  · ✅ ตอบแบบนี้: "สินค้า X ราคา 115 บาท ซื้อแล้วรับแสตมป์ 5 ดวง (มูลค่า 15 บาท) หรือถ้าเป็นสมาชิกรับเป็น M-Stamp 16 ค่ะ"
+  · ❌ ห้ามพูดว่า "ราคาโปร 15 บาท" หรือ "ใช้แสตมป์ 5 ดวงแลก" — นั่นคืออ่านสลับด้าน
+  · ❌ ห้ามฟันธงว่ารับเป็น M-Stamp คุ้มกว่าเสมอ — **ไม่เสมอไป** ให้บอกทั้งสองทางแล้วให้เขาเลือกเอง ยกเว้นช่อง "ใบระบุว่าคุ้มกว่า" มีค่ามา จึงอ้างตามนั้นได้
 - ★★★★ [ราคา/โปรโมชั่นสินค้า = ใช้ promo_search เท่านั้น] ถูกถามว่า "สินค้า X มีโปรฯ ไหม / ราคาเท่าไร / ลดเท่าไร / ใช้แสตมป์กี่ดวง / โปรฯ รอบนี้มีอะไรบ้าง" → เรียก promo_search (หรือ promo_sheet ถ้าขอดูทั้งใบ) ❌ ห้ามตอบจากความจำ ห้ามคำนวณเอง ห้ามหยิบจากกลุ่มไลน์
+- ★★★★ [ถามวิธีทำงานหน้าร้าน = ใช้ sop_search] ถูกถามว่า "ทำ X ยังไง · ขั้นตอนของ Y · ยกเลิก post void ยังไง · สั่งสินค้ายังไง · ปิดผลัดยังไง · คีย์รับสินค้ายังไง · ตรวจนับ Audit ยังไง" → เรียก sop_search (คู่มือจากหลักสูตรอบรมจริงของบริษัท) ❌ ห้ามตอบจากความรู้ทั่วไปเรื่อง 7-Eleven ❌ ห้ามแต่งขั้นตอนเอง · ตอบเป็นข้อ 1-2-3 ตามลำดับที่เครื่องมือให้มาเป๊ะ ห้ามข้ามห้ามสลับ และต้องบอก "ข้อควรระวัง" ถ้ามี
+- ★★★★ [วิเคราะห์ยอด/ดันยอด = ใช้ sales_boost] ถูกถามว่า "วิเคราะห์ยอดขาย · ทำไมยอดตก · จะดันยอดยังไง · สัปดาห์นี้เป็นยังไง · ควรเชียร์อะไร · สาขาไหนน่าห่วง" → เรียก sales_boost (ไม่ใช่ sales_report เปล่า ๆ) เพราะมันรวมยอด+เป้า+ยอดต่อหัว+โปรฯ ปัจจุบันมาให้ครบแล้ว · ถามรายสัปดาห์ใช้ days=7 · รายเดือนใช้ days=30
+- ★★★ [ห้ามอ้างยอดรายสินค้า] ระบบมียอดขายแค่ระดับสาขา/วัน/ผลัด ❌ ห้ามพูดว่า "สินค้า X ขายดี/ขายไม่ดี/ยอดสินค้า Y ตก" ไม่ว่ากรณีใด · พูดได้แค่ "ยอดต่อหัวลดลง → ตะกร้าเล็กลง → ควรเชียร์ของที่ทำให้ซื้อเพิ่ม" ตามที่ sales_boost คำนวณมา
+- ★★★★ [เลือกช่องให้ถูกก่อนเรียก promo_search] ถามถึง "ชื่อใบ/ชื่อโปรฯ" (เช่น ขอดูโปรแสตมป์จัดหนัก · ใบลดอย่างแรงมีอะไรบ้าง) → ใส่ sheet= ไม่ใช่ product= · ถามหา "ที่สุด" (อะไรได้แสตมป์เยอะสุด · อะไรถูกสุด · อะไรประหยัดสุด) → ใส่ sort= แล้วปล่อย product ว่าง ❌ ห้ามยัดทั้งประโยคลง product แล้วสรุปว่าไม่มีข้อมูล
+- ★★★ [เจอ 0 รายการ = ยังไม่ใช่คำตอบ] promo_search คืน 0 → ต้องลองใหม่อีก 1 ครั้งตามที่ช่อง note บอก (เปลี่ยนไปใส่ sheet หรือ sort หรือตัดชื่อให้สั้นลง) แล้วค่อยสรุป ❌ ห้ามตอบ "ไม่พบข้อมูลในระบบ" ตั้งแต่ครั้งแรก
   · ★ ต้องวาง URL ในช่อง "รูปใบโปรฯ" ลงในคำตอบทุกครั้ง (ระบบจะแสดงเป็นรูปให้เอง) พนักงานจะได้เทียบกับใบจริงได้
   · ★ ต้องบอกช่วงเวลาของใบกำกับเสมอ · ถ้ารายการนั้น ตรวจแก้แล้ว=false ให้เตือนว่า "เป็นข้อมูลที่ AI อ่านจากรูป ยังไม่มีคนตรวจ รบกวนดูรูปประกอบด้วยนะคะ"
   · ค้นด้วยชื่อสั้น ๆ (เช่น "เลย์" "เนสกาแฟ" "ยาสีฟัน") ไม่ใช่ทั้งประโยค · ไม่เจอให้ลองชื่อยี่ห้อ/คำสั้นลงก่อนสรุปว่าไม่มี
@@ -3556,8 +4363,14 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   try {
     const body = await req.json();
-    const { data: ok, error: aerr } = await sb.rpc("hr_check_password", { p_password: String(body.password || "") });
-    if (aerr || !ok) return json({ error: "รหัส HR ไม่ถูกต้อง" }, 401);
+    // ★ ทางเข้าเฉพาะ pg_cron: ใช้ CRON_SECRET แทนรหัส HR และทำได้แค่ promo_sync อย่างเดียว
+    const _cronOk = CRON_SECRET.length >= 16
+      && String(body.cron_secret || "") === CRON_SECRET
+      && String(body.mode || "") === "promo_sync";
+    if (!_cronOk) {
+      const { data: ok, error: aerr } = await sb.rpc("hr_check_password", { p_password: String(body.password || "") });
+      if (aerr || !ok) return json({ error: "รหัส HR ไม่ถูกต้อง" }, 401);
+    }
 
     // ── นิดาเสียงเรียลไทม์ (Gemini Live): มินต์ ephemeral token ให้เบราว์เซอร์ต่อ WebSocket
     //    (API key ไม่หลุดบนเว็บ public) · แยก try/catch — ถ้าพลาดก็ไม่กระทบแชทข้อความ
@@ -3603,8 +4416,9 @@ Deno.serve(async (req) => {
           error: `รูปใบนี้เคยนำเข้าไปแล้ว — "${dupHash.title}" (${_thDate(dupHash.period_start)} – ${_thDate(dupHash.period_end)}) หน้า ${dupHash.page_no} มี ${count ?? 0} รายการ · ถ้าต้องการอ่านใหม่ทับของเดิม ให้กด "นำเข้าซ้ำ (ทับของเดิม)"` });
       }
 
+      const ptype = PROMO_TYPES[String(body.promo_type)] ? String(body.promo_type) : "stamp";
       let read: any;
-      try { read = await promoReadImage(mime, b64); }
+      try { read = await promoReadImage(mime, b64, ptype); }
       catch (e) { return json({ ok: false, error: "อ่านรูปไม่สำเร็จ: " + String((e as any)?.message || e) }); }
 
       const D = (x: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || "")) ? String(x) : null;
@@ -3640,7 +4454,7 @@ Deno.serve(async (req) => {
       const image_url = sb.storage.from("promo-images").getPublicUrl(path).data.publicUrl;
 
       // เขียนใบ (ทับของเดิมถ้าสั่ง replace)
-      const sheetRow: any = { title, period_start: ps, period_end: pe, image_url, image_path: path, image_hash: hash, page_no: page, source: String(f.name || ""), reviewed: false, active: true, created_by: "นำเข้าใบโปรฯ (HR)" };
+      const sheetRow: any = { title, period_start: ps, period_end: pe, image_url, image_path: path, image_hash: hash, page_no: page, source: String(f.name || ""), reviewed: false, active: true, created_by: "นำเข้าใบโปรฯ (HR)", promo_type: ptype, mechanic_note: read.mechanic_note ? String(read.mechanic_note).slice(0, 600) : null };
       let sheetId: number;
       if (replaceId) {
         const { error } = await sb.from("promo_sheets").update(sheetRow).eq("id", replaceId);
@@ -3655,18 +4469,7 @@ Deno.serve(async (req) => {
 
       // ชั้น 3 — กันรายการซ้ำภายในใบเดียวกัน (สินค้า+ขนาด)
       const seen = new Set<string>();
-      const N = (x: any) => (x === null || x === undefined || x === "" || !isFinite(Number(x))) ? null : Number(x);
-      const items = (Array.isArray(read.items) ? read.items : []).map((it: any) => ({
-        sheet_id: sheetId,
-        product: String(it.product || "").trim().slice(0, 300),
-        brand: it.brand ? String(it.brand).slice(0, 120) : null,
-        size: it.size ? String(it.size).slice(0, 120) : null,
-        promo_type: ["stamp", "member", "price", "bundle"].includes(String(it.promo_type)) ? String(it.promo_type) : (N(it.stamps) ? "stamp" : "price"),
-        stamps: N(it.stamps), price: N(it.price), member_price: N(it.member_price), normal_price: N(it.normal_price),
-        qty: it.qty ? String(it.qty).slice(0, 60) : null,
-        condition: it.condition ? String(it.condition).slice(0, 500) : null,
-        keywords: it.keywords ? String(it.keywords).slice(0, 300) : null,
-      })).filter((it: any) => {
+      const items = (Array.isArray(read.items) ? read.items : []).map((it: any) => promoRow(it, sheetId, ptype)).filter((it: any) => {
         if (!it.product) return false;
         const k = it.product + "|" + (it.size || "");
         if (seen.has(k)) return false;
@@ -3694,6 +4497,201 @@ Deno.serve(async (req) => {
     }
 
 
+
+
+
+    // ── จังหวะ 1 ของการนำเข้า: ดูรูปคร่าว ๆ ว่าเป็นใบชนิดไหน แล้วให้คนยืนยัน
+    //    เรียก AI สั้น ๆ ครั้งเดียว ยังไม่อ่านทั้งใบ → ถูกและเร็ว
+    //    ถ้าเดาชนิดผิดแล้วอ่านทั้งใบไปเลย ข้อมูลจะเข้าผิดช่องทั้งใบ (เคยเกิดมาแล้ว)
+    if (body.mode === "promo_detect") {
+      let mime = "", b64 = "";
+      if (body.file?.data) {
+        const m = String(body.file.data).match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) return json({ ok: false, error: "ไฟล์ไม่ถูกต้อง" });
+        mime = m[1]; b64 = m[2];
+      } else if (body.url) {
+        if (!/^https:\/\/7elevenweb\.s3/.test(String(body.url))) return json({ ok: false, error: "URL ไม่ใช่รูปจากเว็บ 7-Eleven" });
+        try {
+          const ir = await fetch(String(body.url));
+          if (!ir.ok) throw new Error("HTTP " + ir.status);
+          mime = ir.headers.get("content-type") || "image/jpeg";
+          const by = new Uint8Array(await ir.arrayBuffer());
+          let bin = ""; for (let i = 0; i < by.length; i++) bin += String.fromCharCode(by[i]);
+          b64 = btoa(bin);
+        } catch (e) { return json({ ok: false, error: "โหลดรูปไม่ได้: " + String((e as any)?.message || e) }); }
+      } else return json({ ok: false, error: "ต้องส่ง file หรือ url มา" });
+
+      try {
+        const d = await promoDetect(mime, b64);
+        const t = String(d.promo_type);
+        return json({
+          ok: true, promo_type: t,
+          label: PROMO_TYPES[t]?.label || t,
+          hint: PROMO_TYPES[t]?.hint || "",
+          cols: PROMO_TYPES[t]?.cols || [],
+          title: d.title || null, period_start: d.period_start || null, period_end: d.period_end || null,
+          mechanic_note: d.mechanic_note || null, confidence: d.confidence || null,
+          samples: Array.isArray(d.samples) ? d.samples.slice(0, 5) : [],
+          types: Object.keys(PROMO_TYPES).map((k) => ({ key: k, label: PROMO_TYPES[k].label, hint: PROMO_TYPES[k].hint })),
+          note: "ยังไม่ได้บันทึกอะไร — ตรวจว่าชนิดถูกไหมแล้วค่อยยืนยันให้อ่านทั้งใบ",
+        });
+      } catch (e) { return json({ ok: false, error: "ดูรูปไม่สำเร็จ: " + String((e as any)?.message || e) }); }
+    }
+
+    // ── เรียกดูโปรฯ ทั้งหมดบนเว็บ 7-Eleven (ไม่นำเข้า ไม่เรียก AI ไม่เขียนอะไร)
+    //    ใช้ทำหน้า "แกลเลอรี" ให้เห็นรูปจริงก่อนตัดสินใจนำเข้า
+    if (body.mode === "promo_browse") {
+      const cats: string[] = Array.isArray(body.cats) && body.cats.length
+        ? body.cats.map(String).filter((c: string) => SYNC_CATS.includes(c))
+        : SYNC_CATS.slice();
+      const perCat = Math.min(Math.max(Number(body.limit) || 12, 1), 30);
+      const groups: any[] = [];
+      // hash ของใบที่มีในระบบแล้ว — ไว้ติดป้าย "นำเข้าแล้ว" บนการ์ด
+      const { data: have } = await sb.from("promo_sheets").select("id,image_hash,reviewed,title");
+      const byHash: Record<string, any> = {};
+      (have || []).forEach((h: any) => { if (h.image_hash) byHash[h.image_hash] = h; });
+
+      for (const cat of cats) {
+        const items: any[] = [];
+        let links: { path: string; range: { start: string | null; end: string | null } }[] = [];
+        try { links = await syncLinks(cat); }
+        catch (e) { groups.push({ cat, label: CAT_LABEL[cat] || cat, error: String((e as any)?.message || e), items: [] }); continue; }
+
+        for (const lk of links.slice(0, perCat)) {
+          let html = "";
+          try { html = await syncFetch(SYNC_HOST + lk.path); } catch { continue; }
+          const meta = syncMeta(html);
+          if (lk.range.start) meta.range = lk.range;
+          const posters = syncPosterUrls(html);
+          items.push({
+            path: lk.path, url: SYNC_HOST + lk.path,
+            title: meta.title || lk.path,
+            period_start: meta.range.start, period_end: meta.range.end,
+            posters, poster_count: posters.length,
+            in_system: false,   // เติมด้านล่างหลังรู้ hash (ยังไม่โหลดรูป จึงเทียบจาก URL ที่เคยเก็บแทน)
+          });
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        groups.push({ cat, label: CAT_LABEL[cat] || cat, count: items.length, items });
+      }
+      // เทียบว่ามีในระบบแล้วหรือยัง ด้วย "ชื่อใบ + ช่วงวันที่" (ไม่ต้องโหลดรูปมา hash = เร็วและไม่กินเน็ต)
+      const { data: sheets } = await sb.from("promo_sheets").select("title,period_start,period_end,page_no,reviewed");
+      const key = (t: string, a: any, b: any) => String(t).trim() + "|" + String(a ?? "") + "|" + String(b ?? "");
+      const known = new Set((sheets || []).map((x: any) => key(x.title, x.period_start, x.period_end)));
+      const doneReview = new Set((sheets || []).filter((x: any) => x.reviewed).map((x: any) => key(x.title, x.period_start, x.period_end)));
+      groups.forEach((g) => (g.items || []).forEach((it: any) => {
+        const k = key(it.title, it.period_start, it.period_end);
+        it.in_system = known.has(k);
+        it.reviewed = doneReview.has(k);
+      }));
+      return json({ ok: true, groups, cats, note: "เรียกดูอย่างเดียว ยังไม่ได้นำเข้าอะไร" });
+    }
+
+    // ── ดึงใบโปรโมชั่นจากเว็บ 7-Eleven → promo_sheets/promo_items
+    //    dry=true = สำรวจอย่างเดียว ไม่เขียนอะไร ไม่เสียค่า vision
+    if (body.mode === "promo_sync") {
+      // ★ นำเข้า "เฉพาะใบที่เลือก" จากหน้าแกลเลอรี — ส่ง posters[] มาตรง ๆ ไม่ต้องไล่ทั้งหมวด
+      if (Array.isArray(body.posters) && body.posters.length) {
+        return await promoImportPosters(body);
+      }
+      const cats: string[] = Array.isArray(body.cats) && body.cats.length ? body.cats.map(String).filter((c: string) => SYNC_CATS.includes(c)) : ["stamp"];
+      const dry = body.dry === true;
+      const maxSheets = Math.min(Math.max(Number(body.limit) || 6, 1), 20);
+      const out: any[] = [];
+      let imported = 0, skipped = 0, failed = 0, scanned = 0;
+
+      for (const cat of cats) {
+        // ★ นับโควตา "แยกต่อหมวด" — เดิมนับรวมทุกหมวด หมวดแรกที่มีหลายหน้าจะกินโควตาหมด
+        //   ทำให้หมวดหลัง ๆ ไม่ได้ถูกสำรวจเลย (เจอตอนกด "ทุกหมวด" แล้วได้แต่แสตมป์)
+        let catDone = 0;
+        let links: { path: string; range: { start: string | null; end: string | null } }[] = [];
+        try { links = await syncLinks(cat); }
+        catch (e) { out.push({ cat, error: "เปิดหน้ารวมหมวดไม่ได้: " + String((e as any)?.message || e) }); failed++; continue; }
+
+        for (const lk of links) {
+          if (catDone >= maxSheets) break;
+          const path = lk.path;
+          if (imported + skipped >= maxSheets) break;
+          scanned++;
+          let html = "";
+          try { html = await syncFetch(SYNC_HOST + path); }
+          catch (e) { out.push({ path, error: "เปิดหน้าไม่ได้: " + String((e as any)?.message || e) }); failed++; continue; }
+
+          const meta = syncMeta(html);
+          // วันที่: เอาจากหน้ารวมก่อน (แม่นสุด) → ไม่มีค่อยดูหน้ารายละเอียด → ไม่มีอีกค่อยใช้ที่ AI อ่านจากรูป
+          if (lk.range.start) meta.range = lk.range;
+          const posters = syncPosterUrls(html);
+          if (!posters.length) { out.push({ path, title: meta.title, note: "ไม่พบรูปใบโปรฯ ในหน้านี้ (อาจเป็นหน้าเงื่อนไข/แคมเปญที่ไม่มีโปสเตอร์)" }); continue; }
+
+          for (let pi = 0; pi < posters.length; pi++) {
+            if (catDone >= maxSheets) break;
+            const purl = posters[pi];
+            let bytes: Uint8Array, mime = "image/jpeg";
+            try {
+              const ir = await fetch(purl);
+              if (!ir.ok) throw new Error("HTTP " + ir.status);
+              mime = ir.headers.get("content-type") || mime;
+              bytes = new Uint8Array(await ir.arrayBuffer());
+            } catch (e) { out.push({ path, poster: purl, error: "โหลดรูปไม่ได้: " + String((e as any)?.message || e) }); failed++; continue; }
+
+            let bin = ""; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            const b64 = btoa(bin);
+            const hash = await promoHash(b64);
+
+            const { data: dup } = await sb.from("promo_sheets").select("id,title").eq("image_hash", hash).maybeSingle();
+            if (dup) { skipped++; catDone++; out.push({ path, title: meta.title, page_no: pi + 1, status: "มีอยู่แล้ว", sheet_id: dup.id }); continue; }
+
+            if (dry) { imported++; catDone++; out.push({ path, title: meta.title, page_no: pi + 1, status: "จะนำเข้า (dry)", poster: purl, period: meta.range, date_from: lk.range.start ? "หน้ารวมหมวด" : (meta.range.start ? "หน้ารายละเอียด" : "ยังไม่พบ — จะใช้วันที่ที่ AI อ่านจากรูป") }); continue; }
+
+            // ดึงทั้งหมวด = ไม่มีคนยืนยัน จึงให้ AI ตรวจชนิดเองก่อนอ่าน (ดีกว่าเดาว่าเป็นแสตมป์ทุกใบ)
+            let ptype = "stamp";
+            try { const d = await promoDetect(mime, b64); if (PROMO_TYPES[String(d.promo_type)]) ptype = String(d.promo_type); } catch { /* เดาไม่ได้ก็ใช้ stamp */ }
+            let read: any;
+            try { read = await promoReadImage(mime, b64, ptype); }
+            catch (e) { out.push({ path, poster: purl, error: "AI อ่านรูปไม่สำเร็จ: " + String((e as any)?.message || e) }); failed++; continue; }
+
+            const D = (x: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(x || "")) ? String(x) : null;
+            const ps = meta.range.start || D(read.period_start);
+            const pe = meta.range.end || D(read.period_end);
+            const title = String(meta.title || read.title || path).slice(0, 200);
+
+            const ext = /png/i.test(mime) ? "png" : "jpg";
+            const spath = `web/${hash.slice(0, 16)}.${ext}`;
+            const up = await sb.storage.from("promo-images").upload(spath, bytes, { contentType: mime, upsert: true });
+            if (up.error) { out.push({ path, error: "อัปรูปเข้าคลังไม่ได้: " + up.error.message }); failed++; continue; }
+            const image_url = sb.storage.from("promo-images").getPublicUrl(spath).data.publicUrl;
+
+            const { data: ins, error: sErr } = await sb.from("promo_sheets").insert({
+              title, period_start: ps, period_end: pe, image_url, image_path: spath, image_hash: hash,
+              page_no: pi + 1, source: "เว็บ 7-Eleven " + path, reviewed: false, active: true, created_by: "ดึงจากเว็บอัตโนมัติ", promo_type: ptype,
+              mechanic_note: read.mechanic_note ? String(read.mechanic_note).slice(0, 600) : null,
+            }).select("id").single();
+            if (sErr) { out.push({ path, error: "บันทึกใบไม่ได้: " + sErr.message }); failed++; continue; }
+
+            const seen = new Set<string>();
+            const items = (Array.isArray(read.items) ? read.items : []).map((it: any) => promoRow(it, ins.id, ptype)).filter((it: any) => {
+              if (!it.product) return false;
+              const k = it.product + "|" + (it.size || "");
+              if (seen.has(k)) return false;
+              seen.add(k); return true;
+            });
+            if (items.length) { const { error } = await sb.from("promo_items").insert(items); if (error) { out.push({ path, sheet_id: ins.id, error: "บันทึกรายการไม่ได้: " + error.message }); failed++; continue; } }
+            imported++; catDone++;
+            out.push({ path, title, page_no: pi + 1, status: "นำเข้าใหม่", ชนิด: PROMO_TYPES[ptype]?.label || ptype, sheet_id: ins.id, items: items.length, period: { start: ps, end: pe }, image_url });
+          }
+          await new Promise((r) => setTimeout(r, 400));   // เว้นจังหวะ ไม่ยิงถี่ใส่เว็บเขา
+        }
+      }
+
+      if (!dry && imported > 0) { try { await log("ดึงใบโปรฯ จากเว็บ", "นำเข้าใหม่ " + imported + " ใบ · ข้าม " + skipped); } catch { /* */ } }
+      return json({
+        ok: true, dry, cats, scanned, imported, skipped, failed, results: out,
+        note: dry
+          ? "โหมดสำรวจ — ยังไม่ได้เขียนอะไรลงระบบ · เอาผลนี้ไปดูก่อนว่าจะนำเข้าใบไหนบ้าง"
+          : (imported ? "นำเข้าใหม่ " + imported + " ใบ — ⚠ ทุกใบยังไม่ได้ตรวจแก้ ต้องเปิดตารางเทียบกับรูปแล้วกด 'ตรวจแก้เสร็จ' ก่อนใช้งานจริง" : "ไม่มีใบใหม่ — ที่เจอทั้งหมดมีอยู่ในระบบแล้ว"),
+      });
+    }
+
     // ── จัดการใบโปรโมชั่น (หน้าตรวจแก้ฝั่ง HR)
     if (body.mode === "promo_admin") {
       const act = String(body.act || "list");
@@ -3705,18 +4703,37 @@ Deno.serve(async (req) => {
         return json({ ok: true, sheets: rows, cross_dup: dup });
       }
       if (act === "items") {
-        const { data } = await sb.from("promo_items").select("*").eq("sheet_id", Number(body.sheet_id)).order("id");
-        return json({ ok: true, items: data || [] });
+        const [{ data }, { data: sh }] = await Promise.all([
+          sb.from("promo_items").select("*").eq("sheet_id", Number(body.sheet_id)).order("id"),
+          sb.from("promo_sheets").select("title,image_url,mechanic_note,period_start,period_end,promo_type").eq("id", Number(body.sheet_id)).maybeSingle(),
+        ]);
+        return json({ ok: true, items: data || [], sheet: sh || null });
       }
       if (act === "save_item") {
         const it = body.item || {};
         const N = (x: any) => (x === null || x === undefined || x === "" || !isFinite(Number(x))) ? null : Number(x);
-        const row: any = { product: String(it.product || "").trim(), brand: it.brand || null, size: it.size || null,
-          stamps: N(it.stamps), price: N(it.price), member_price: N(it.member_price), normal_price: N(it.normal_price),
-          qty: it.qty || null, condition: it.condition || null, keywords: it.keywords || null };
+        const I = (x: any) => { const v = N(x); return v === null ? null : Math.round(v); };
+        const KINDS = ["stamp", "discount", "freebie", "bundle", "redeem"];
+        const sb2 = N(it.stamp_baht), sp = I(it.stamp_pieces);
+        let unit = N(it.stamp_unit);
+        if (unit === null && sb2 !== null && sp) unit = Math.round((sb2 / sp) * 100) / 100;
+        const row: any = {
+          product: String(it.product || "").trim(), brand: it.brand || null, size: it.size || null,
+          qty: it.qty || null,
+          price_before: N(it.price_before), price_after: N(it.price_after),
+          reward_kind: KINDS.includes(String(it.reward_kind)) ? String(it.reward_kind) : null,
+          stamp_baht: sb2, stamp_pieces: sp, stamp_unit: unit, mstamp: N(it.mstamp),
+          better: ["stamp", "mstamp"].includes(String(it.better)) ? String(it.better) : null,
+          condition: it.condition || null, keywords: it.keywords || null,
+        };
+        // ของแถม อยู่ใน extra ไม่ใช่คอลัมน์ — แก้จากตารางตรวจแก้ได้
+        if (it.free_item !== undefined) {
+          const fv = String(it.free_item || "").trim();
+          row.extra = fv ? { ของแถม: fv.slice(0, 200) } : null;
+        }
         if (!row.product) return json({ ok: false, error: "ต้องมีชื่อสินค้า" });
         if (it.id) { const { error } = await sb.from("promo_items").update(row).eq("id", Number(it.id)); if (error) return json({ ok: false, error: error.message }); }
-        else { row.sheet_id = Number(body.sheet_id); row.promo_type = row.stamps ? "stamp" : "price";
+        else { row.sheet_id = Number(body.sheet_id); if (!row.reward_kind) row.reward_kind = sb2 !== null ? "stamp" : "discount";
                const { error } = await sb.from("promo_items").insert(row); if (error) return json({ ok: false, error: error.message }); }
         return json({ ok: true });
       }
@@ -3746,6 +4763,158 @@ Deno.serve(async (req) => {
     }
 
     // ── นำเข้าคู่มือ/เอกสาร PDF เข้าคลังความรู้ (ให้ Gemini อ่าน — รองรับไทย + สแกน) → เก็บ nida_knowledge
+// ── นำเข้าคู่มือจากแผ่นภาพบทเรียน ───────────────────────────────
+    if (body.mode === "course_import") {
+      const files = Array.isArray(body.files) ? body.files.slice(0, 8) : [];
+      if (!files.length) return json({ ok: false, error: "ต้องส่งแผ่นภาพมาอย่างน้อย 1 แผ่น" });
+      const lessonNo = String(body.lesson_no || "").trim();
+      const title = String(body.title || "").trim();
+      if (!lessonNo || !title) return json({ ok: false, error: "ต้องระบุเลขบทและชื่อบท" });
+
+      // แกะรูปทั้งชุด
+      const imgs: { mime: string; b64: string }[] = [];
+      for (const f of files) {
+        const m = String(f?.data || "").match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) return json({ ok: false, error: "ไฟล์ " + (f?.name || "") + " ไม่ถูกต้อง" });
+        imgs.push({ mime: m[1], b64: m[2] });
+      }
+
+      // นำเข้าซ้ำ = ทับของเดิม (ล้างขั้นตอนเก่าทิ้งก่อน ไม่งั้นเลขขั้นตอนชนกัน)
+      const { data: exist } = await sb.from("course_lessons")
+        .select("id,reviewed").eq("course_code", String(body.course_code || "011043")).eq("lesson_no", lessonNo).maybeSingle();
+      if (exist && body.replace !== true) {
+        return json({ ok: false, duplicate: true, lesson_id: exist.id,
+          error: `บท ${lessonNo} มีอยู่แล้วในระบบ (id ${exist.id}${exist.reviewed ? " · ตรวจแก้แล้ว" : ""}) · ถ้าจะอ่านใหม่ทับของเดิม ให้ติ๊ก "นำเข้าซ้ำ (ทับของเดิม)"` });
+      }
+
+      // อัปแผ่นภาพเข้า bucket
+      const sheetUrls: string[] = [];
+      for (let i = 0; i < imgs.length; i++) {
+        const ext = imgs[i].mime.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+        const hash = await promoHash(imgs[i].b64);
+        const path = `${String(body.course_code || "011043")}/${lessonNo}_p${i + 1}_${hash.slice(0, 10)}.${ext}`;
+        const bin = atob(imgs[i].b64); const bytes = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+        const up = await sb.storage.from("course-sheets").upload(path, bytes, { contentType: imgs[i].mime, upsert: true });
+        if (up.error) return json({ ok: false, error: "อัปโหลดแผ่นภาพไม่สำเร็จ: " + up.error.message });
+        sheetUrls.push(sb.storage.from("course-sheets").getPublicUrl(path).data.publicUrl);
+      }
+
+      // ให้ AI อ่านทั้งชุดพร้อมกัน (บทเดียวกัน ต้องอ่านต่อเนื่องถึงจะเรียงขั้นตอนถูก)
+      let read: any;
+      try { read = await sopRead(imgs); }
+      catch (e) { return json({ ok: false, error: String((e as any)?.message || e), sheets: sheetUrls }); }
+
+      const steps = (Array.isArray(read.steps) ? read.steps : []);
+      const row: any = {
+        course_code: String(body.course_code || "011043"),
+        section: body.section ? String(body.section).slice(0, 200) : null,
+        lesson_no: lessonNo,
+        title: title.slice(0, 300),
+        summary: read.summary ? String(read.summary).slice(0, 2000) : null,
+        when_to_use: read.when_to_use ? String(read.when_to_use).slice(0, 1000) : null,
+        cautions: read.cautions ? String(read.cautions).slice(0, 2000) : null,
+        source_url: body.source_url ? String(body.source_url).slice(0, 400) : null,
+        duration_sec: Number(body.duration_sec) || null,
+        sheet_urls: sheetUrls,
+        step_count: steps.length,
+        reviewed: false,                       // ★ เข้ามาใหม่ = ยังไม่ตรวจเสมอ
+        active: true,
+        created_by: "นำเข้าจากบทเรียน (HR)",
+        updated_at: new Date().toISOString(),
+      };
+
+      let lessonId: number;
+      if (exist) {
+        const { error } = await sb.from("course_lessons").update(row).eq("id", exist.id);
+        if (error) return json({ ok: false, error: error.message });
+        await sb.from("course_steps").delete().eq("lesson_id", exist.id);
+        lessonId = exist.id;
+      } else {
+        const { data: ins, error } = await sb.from("course_lessons").insert(row).select("id").single();
+        if (error) return json({ ok: false, error: error.message });
+        lessonId = ins.id;
+      }
+
+      // กันเลขขั้นตอนซ้ำ (AI อาจให้เลขชนกันถ้าอ่านหลายแผ่น)
+      const seen = new Set<number>();
+      const rows = steps.map((x: any) => sopStepRow(x, lessonId, sheetUrls)).filter((r: any) => {
+        if (seen.has(r.step_no)) return false;
+        seen.add(r.step_no); return true;
+      }).sort((a: any, b: any) => a.step_no - b.step_no);
+      if (rows.length) {
+        const { error } = await sb.from("course_steps").insert(rows);
+        if (error) return json({ ok: false, error: "บันทึกขั้นตอนไม่ได้: " + error.message, lesson_id: lessonId });
+      }
+      await sb.from("course_lessons").update({ step_count: rows.length }).eq("id", lessonId);
+      try { await log("นำเข้าคู่มือจากบทเรียน", lessonNo + " " + title + " · " + rows.length + " ขั้นตอน"); } catch { /* */ }
+
+      return json({
+        ok: true, lesson_id: lessonId, lesson_no: lessonNo, title,
+        steps: rows.length, sheets: sheetUrls.length, replaced: !!exist,
+        truncated: read._truncated === true,
+        note: "⚠ ยังไม่ได้ตรวจแก้ — ต้องเปิดเทียบกับภาพแล้วกด 'ตรวจแก้เสร็จ' ก่อนให้นิดาใช้ตอบ",
+      });
+    }
+
+    // ── จัดการคู่มือ (หน้าตรวจแก้ฝั่ง HR) ───────────────────────────
+    if (body.mode === "course_admin") {
+      const act = String(body.act || "list");
+      if (act === "list") {
+        const { data } = await sb.from("course_lessons").select("*").eq("active", true).order("lesson_no").limit(200);
+        let prog: any[] = [];
+        try { const { data: pg } = await sb.from("course_progress_v").select("*"); prog = pg || []; } catch { /* */ }
+        return json({ ok: true, lessons: data || [], progress: prog });
+      }
+      if (act === "steps") {
+        const [{ data: st }, { data: ls }] = await Promise.all([
+          sb.from("course_steps").select("*").eq("lesson_id", Number(body.lesson_id)).order("step_no"),
+          sb.from("course_lessons").select("*").eq("id", Number(body.lesson_id)).maybeSingle(),
+        ]);
+        return json({ ok: true, steps: st || [], lesson: ls || null });
+      }
+      if (act === "save_step") {
+        const it = body.step || {};
+        const S = (v: any, cap: number) => { const t = String(v ?? "").trim(); return t ? t.slice(0, cap) : null; };
+        const upd: any = {
+          heading: S(it.heading, 160), instruction: S(it.instruction, 1200) || "(ไม่มีคำอธิบาย)",
+          screen: S(it.screen, 200), note: S(it.note, 800),
+        };
+        if (it.step_no !== undefined) upd.step_no = Math.max(1, Math.round(Number(it.step_no) || 1));
+        if (!it.id) return json({ ok: false, error: "ต้องระบุ id ของขั้นตอน" });
+        const { error } = await sb.from("course_steps").update(upd).eq("id", Number(it.id));
+        return json({ ok: !error, error: error?.message });
+      }
+      if (act === "del_step") {
+        const { error } = await sb.from("course_steps").delete().eq("id", Number(body.step_id));
+        return json({ ok: !error, error: error?.message });
+      }
+      if (act === "save_lesson") {
+        const upd: any = { updated_at: new Date().toISOString() };
+        const S = (v: any, cap: number) => { const t = String(v ?? "").trim(); return t ? t.slice(0, cap) : null; };
+        if (body.title !== undefined) upd.title = S(body.title, 300) || "(ไม่มีชื่อ)";
+        if (body.section !== undefined) upd.section = S(body.section, 200);
+        if (body.summary !== undefined) upd.summary = S(body.summary, 2000);
+        if (body.when_to_use !== undefined) upd.when_to_use = S(body.when_to_use, 1000);
+        if (body.cautions !== undefined) upd.cautions = S(body.cautions, 2000);
+        if (body.active !== undefined) upd.active = body.active === true;
+        if (body.reviewed !== undefined) {
+          upd.reviewed = body.reviewed === true;
+          upd.reviewed_at = body.reviewed === true ? new Date().toISOString() : null;
+          upd.reviewed_by = body.reviewed === true ? "HR" : null;
+        }
+        const { error } = await sb.from("course_lessons").update(upd).eq("id", Number(body.lesson_id));
+        if (error) return json({ ok: false, error: error.message });
+        if (upd.reviewed === true) await log("ตรวจแก้คู่มือเสร็จ", "บท #" + body.lesson_id);
+        return json({ ok: true });
+      }
+      if (act === "del_lesson") {
+        const { error } = await sb.from("course_lessons").delete().eq("id", Number(body.lesson_id));
+        return json({ ok: !error, error: error?.message });
+      }
+      return json({ ok: false, error: "act ไม่ถูกต้อง" });
+    }
+
     if (body.mode === "kn_import") {
       const f = body.file || {};
       const dataUrl = String(f.data || "");
@@ -3813,6 +4982,18 @@ Deno.serve(async (req) => {
         applied++;
       }
       return json({ ok: true, scanned: list.length, applied, scored, warned });
+    }
+
+    // ★ กันเคส "หน้าเว็บใหม่กว่า edge function"
+    //   เดิม mode ที่ไม่มีใครรับจะไหลลงไปทางแชท แล้วพังที่ Gemini ว่า "contents is not specified"
+    //   ซึ่งอ่านไม่ออกเลยว่าต้องไป deploy
+    if (body.mode && !Array.isArray(body.contents)) {
+      return json({
+        ok: false,
+        error: "ระบบหลังบ้านยังไม่รู้จักคำสั่ง '" + String(body.mode).slice(0, 40) + "' — แปลว่าหน้าเว็บอัปเดตแล้วแต่ยังไม่ได้ deploy edge function"
+          + " · รัน: supabase functions deploy hr-assistant --no-verify-jwt",
+        need_deploy: true,
+      }, 400);
     }
 
     if (body.confirm && body.confirm.action) {
