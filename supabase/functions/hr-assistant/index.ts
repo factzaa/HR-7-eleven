@@ -5021,6 +5021,112 @@ Deno.serve(async (req) => {
       return json({ ok: true, scanned: list.length, applied, scored, warned });
     }
 
+    // ================= ข้อสอบซ้อมจากคู่มือหลักสูตร =================
+    //   ดึงข้อสอบจาก course_quiz (สร้างจากคู่มือ ไม่ได้แต่งเนื้อหาใหม่)
+    //   เฉลยไม่ส่งไปหน้าเว็บตอนแจกข้อสอบ — ส่งคำตอบกลับมาให้หลังบ้านตรวจ กันเปิดดูเฉลยจาก DevTools
+    if (body.mode === "exam") {
+      const act = String(body.act || "start");
+
+      if (act === "scopes") {
+        const { data } = await sb.from("course_quiz").select("section,lesson_no").eq("active", true);
+        const bySec: Record<string, number> = {}, byLes: Record<string, any> = {};
+        for (const r of (data || [])) {
+          const sec = String(r.section || "(ไม่ระบุส่วน)");
+          bySec[sec] = (bySec[sec] || 0) + 1;
+          const k = String(r.lesson_no);
+          byLes[k] = byLes[k] || { lesson_no: k, section: sec, n: 0 };
+          byLes[k].n++;
+        }
+        const { data: ls } = await sb.from("course_lessons").select("lesson_no,title").eq("active", true);
+        const tmap: Record<string, string> = {};
+        for (const l of (ls || [])) tmap[String(l.lesson_no)] = String(l.title || "");
+        const lessons = Object.values(byLes).map((x: any) => ({ ...x, title: tmap[x.lesson_no] || "" }))
+          .sort((a: any, b: any) => String(a.lesson_no).localeCompare(String(b.lesson_no), "en", { numeric: true }));
+        const sections = Object.keys(bySec).sort().map((k) => ({ section: k, n: bySec[k] }));
+        const { data: emps } = await sb.from("employees").select("emp_id,name,nickname").eq("active", true).order("name");
+        return json({ ok: true, sections, lessons, total: (data || []).length, employees: emps || [] });
+      }
+
+      if (act === "start") {
+        const n = Math.min(50, Math.max(5, Math.round(Number(body.n) || 20)));
+        let q = sb.from("course_quiz").select("id,kind,question,options,explain,image_url,at_sec,lesson_no,section").eq("active", true);
+        const scope = String(body.scope || "all");
+        if (scope === "section" && body.value) q = q.eq("section", String(body.value));
+        else if (scope === "lesson" && body.value) q = q.eq("lesson_no", String(body.value));
+        if (body.kind) q = q.eq("kind", String(body.kind));
+        const { data, error } = await q.limit(1500);
+        if (error) return json({ ok: false, error: error.message });
+        const pool = (data || []).slice();
+        if (!pool.length) return json({ ok: false, error: "ยังไม่มีข้อสอบในขอบเขตที่เลือก" });
+        // สุ่มแบบ Fisher-Yates แล้วคละชนิดข้อ ไม่ให้ออกชนิดเดียวรวดเดียว
+        for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+        const byKind: Record<string, any[]> = {};
+        for (const x of pool) (byKind[x.kind] = byKind[x.kind] || []).push(x);
+        const kinds = Object.keys(byKind);
+        const picked: any[] = [];
+        let k = 0;
+        while (picked.length < n && kinds.some((kk) => byKind[kk].length)) {
+          const kk = kinds[k % kinds.length]; k++;
+          const it = byKind[kk].pop(); if (it) picked.push(it);
+        }
+        for (let i = picked.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [picked[i], picked[j]] = [picked[j], picked[i]]; }
+        return json({ ok: true, total_pool: pool.length, items: picked.map((x) => ({
+          id: x.id, kind: x.kind, question: x.question, options: x.options || [],
+          image_url: x.image_url, lesson_no: x.lesson_no, section: x.section,
+        })) });
+      }
+
+      if (act === "submit") {
+        const ans = Array.isArray(body.answers) ? body.answers : [];
+        if (!ans.length) return json({ ok: false, error: "ยังไม่ได้ตอบข้อไหนเลย" });
+        const ids = ans.map((a: any) => Number(a.id)).filter((x: number) => x > 0).slice(0, 60);
+        const { data, error } = await sb.from("course_quiz")
+          .select("id,kind,question,options,answer,explain,image_url,at_sec,lesson_no").in("id", ids);
+        if (error) return json({ ok: false, error: error.message });
+        const map: Record<string, any> = {};
+        for (const r of (data || [])) map[String(r.id)] = r;
+        const detail: any[] = [], review: any[] = [];
+        let correct = 0;
+        for (const a of ans) {
+          const q0 = map[String(a.id)]; if (!q0) continue;
+          const given = String(a.answer ?? "");
+          const ok = given !== "" && given === String(q0.answer);
+          if (ok) correct++;
+          detail.push({ quiz_id: q0.id, answer: given, ok });
+          review.push({
+            id: q0.id, kind: q0.kind, question: q0.question, options: q0.options || [],
+            given, answer: q0.answer, ok, explain: q0.explain, image_url: q0.image_url,
+            at_sec: q0.at_sec, lesson_no: q0.lesson_no,
+          });
+        }
+        const total = detail.length;
+        const pct = total ? Math.round((correct / total) * 10000) / 100 : 0;
+        let saved = false;
+        try {
+          const { error: e2 } = await sb.from("course_exam_attempt").insert({
+            emp_id: body.emp_id ? String(body.emp_id) : null,
+            emp_name: body.emp_name ? String(body.emp_name).slice(0, 120) : null,
+            scope: String(body.scope || "all"), scope_label: String(body.scope_label || "").slice(0, 200),
+            total, correct, score_pct: pct, detail,
+            started_at: body.started_at || null,
+          });
+          saved = !e2;
+        } catch { /* เก็บผลไม่ได้ก็ยังต้องเฉลยให้ดู */ }
+        return json({ ok: true, total, correct, score_pct: pct, saved, review });
+      }
+
+      if (act === "history") {
+        let h = sb.from("course_exam_attempt").select("*").order("finished_at", { ascending: false }).limit(60);
+        if (body.emp_id) h = h.eq("emp_id", String(body.emp_id));
+        const { data } = await h;
+        let weak: any[] = [];
+        try { const { data: w } = await sb.from("course_exam_weak_v").select("*").limit(15); weak = w || []; } catch { /* */ }
+        return json({ ok: true, attempts: data || [], weak });
+      }
+
+      return json({ ok: false, error: "ไม่รู้จักคำสั่ง exam." + act });
+    }
+
     // ★ กันเคส "หน้าเว็บใหม่กว่า edge function"
     //   เดิม mode ที่ไม่มีใครรับจะไหลลงไปทางแชท แล้วพังที่ Gemini ว่า "contents is not specified"
     //   ซึ่งอ่านไม่ออกเลยว่าต้องไป deploy
