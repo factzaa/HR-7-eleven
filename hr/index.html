@@ -580,6 +580,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_attnedit"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>ปรับปรุงเวลา</button>
   <button class="tab" id="tab_branches"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg></span>สาขา</button>
   <button class="tab" id="tab_goods"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8v13"/><path d="M12 8S10.5 4 8.5 4a2 2 0 0 0 0 4zM12 8s1.5-4 3.5-4a2 2 0 0 1 0 4z"/></svg></span>รับสินค้า</button>
+  <button class="tab" id="tab_manual"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg></span>คู่มือ</button>
   <button class="tab" id="tab_promo"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></svg></span>โปรโมชั่น</button>
   <button class="tab" id="tab_poster"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg></span>สร้างสื่อ</button>
   <button class="tab" id="tab_settings"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg></span>ตั้งค่ากะ</button>
@@ -1719,6 +1720,36 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 </div>
 
 <!-- Goods receiving: คลัง + รับสินค้า -->
+<div id="view_manual" class="container" style="display:none">
+
+  <div class="card">
+    <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg> นำเข้าคู่มือจากบทเรียน</h3></div>
+    <div class="card-b">
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.65">
+        เอา <b>แผ่นภาพขั้นตอน</b> ที่ได้จากสคริปต์ <code>capture-lesson.js</code> มาให้ AI เรียบเรียงเป็นคู่มือขั้นตอนการทำงาน
+        · เลือกได้ทีละหลายไฟล์ ระบบจะ<b>จัดกลุ่มตามบทให้เอง</b>จากชื่อไฟล์
+        <br><b style="color:var(--danger,#dc2626)">⚠ AI อ่านจากภาพ อาจตกหล่นส่วนที่ผู้บรรยายพูดโดยไม่ขึ้นจอ</b> — ต้องเปิดเทียบกับภาพแล้วกด “ตรวจแก้เสร็จ” ก่อนให้นิดาใช้ตอบ
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label class="btn btn-pri btn-sm" style="cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg> เลือกแผ่นภาพ (เลือกได้หลายไฟล์)<input type="file" id="cm_files" accept="image/*" multiple style="display:none"></label>
+        <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="cm_replace" checked> นำเข้าซ้ำ (ทับบทเดิม)</label>
+        <span id="cm_prog" style="font-size:12.5px;color:var(--muted)"></span>
+      </div>
+      <div id="cm_plan" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3 7-7"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg> บทเรียนในระบบ</h3></div>
+    <div class="card-b">
+      <div id="cm_summary" style="margin-bottom:10px"></div>
+      <div id="cm_list"></div>
+      <div id="cm_steps" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+</div>
+
 <div id="view_promo" class="container" style="display:none">
 
   <div class="card">
@@ -7626,6 +7657,168 @@ async function knImport(e){
   if(ok) toast('ok','นำเข้าคู่มือ '+ok+' ไฟล์เข้าคลังความรู้นิดาแล้ว');
   knLoadList();
 }
+// ========== คู่มือจากบทเรียน (SOP) ==========
+//  ภาพมาจากสคริปต์ capture-lesson.js — ชื่อไฟล์รูปแบบ "2.1ชื่อบท - p1.jpg"
+//  จึงแกะเลขบท/ชื่อบท/ลำดับแผ่น จากชื่อไฟล์ได้เลย ไม่ต้องให้คนพิมพ์
+const CM_SECTIONS = {
+  '1':'ส่วน 1 - โปรแกรมการพัฒนาผู้ช่วยฯ',
+  '2':'ส่วน 2 - การบริหารงานขายประจำผลัด',
+  '3':'ส่วน 3 - การบริหารจัดการ',
+  '4':'ส่วน 4 - การบริหารทีมงานประจำผลัด',
+  '5':'ส่วน 5 - การรักษามาตรฐานร้าน (QSSI)',
+  '8':'ส่วน 8 - คุณค่าและความสำคัญของตนเอง ทีมงาน และลูกค้า',
+};
+let CM_WIRED=false;
+function cmInit(){
+  if(CM_WIRED) return; CM_WIRED=true;
+  const f=$('cm_files'); if(f) f.addEventListener('change', cmPick);
+}
+async function cmPost(payload){
+  const {base,key}=asstApiBase(); if(!base) throw new Error('ไม่พบ URL ระบบ');
+  const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify(Object.assign({password:pwd},payload))});
+  return await r.json().catch(()=>({ok:false,error:'อ่านคำตอบไม่ได้'}));
+}
+// "2.1การยกเลิก post void ... - p3.jpg" → {no:'2.1', title:'การยกเลิก post void ...', page:3}
+function cmParse(name){
+  const base=String(name||'').replace(/\.(jpe?g|png|webp)$/i,'');
+  const m=base.match(/^(.*?)\s*-\s*p(\d+)$/i);
+  const stem=m?m[1]:base, page=m?Number(m[2]):1;
+  const n=stem.match(/^(\d+\.\d+)\s*/);
+  return { no:n?n[1]:'', title:(n?stem.slice(n[0].length):stem).trim()||stem.trim(), page };
+}
+function cmPick(e){
+  const fs=[...(e.target.files||[])]; e.target.value='';
+  if(!fs.length) return;
+  // จัดกลุ่มตามบท
+  const groups={};
+  fs.forEach(f=>{ const p=cmParse(f.name); const k=p.no||p.title;
+    (groups[k]=groups[k]||{no:p.no,title:p.title,files:[]}).files.push({f,page:p.page}); });
+  const list=Object.values(groups).map(g=>({...g, files:g.files.sort((a,b)=>a.page-b.page)}))
+    .sort((a,b)=>String(a.no).localeCompare(String(b.no),'en',{numeric:true}));
+  CM_PLAN=list;
+  $('cm_plan').innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--glass)">'
+    +'<div style="font-size:13px;font-weight:800;margin-bottom:6px">จะนำเข้า '+list.length+' บท (จาก '+fs.length+' แผ่นภาพ)</div>'
+    +'<div style="max-height:240px;overflow:auto;font-size:12.5px">'
+    +list.map((g,i)=>'<div id="cmrow'+i+'" style="padding:4px 0;border-top:1px solid var(--line)"><b>'+esc(g.no||'—')+'</b> '+esc(g.title)+' <span style="color:var(--muted)">· '+g.files.length+' แผ่น</span> <span class="cmst" style="color:var(--muted)">รอคิว</span></div>').join('')
+    +'</div>'
+    +'<div style="margin-top:9px;display:flex;gap:8px"><button class="btn btn-pri btn-sm" id="cm_go">✓ เริ่มนำเข้า</button><button class="btn btn-sec btn-sm" id="cm_cancel">ยกเลิก</button></div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:7px">ใช้เวลาประมาณบทละ 20–40 วินาที · อย่าปิดหน้านี้ระหว่างทำงาน</div>'
+    +'</div>';
+  $('cm_cancel').onclick=()=>{ $('cm_plan').innerHTML=''; CM_PLAN=null; };
+  $('cm_go').onclick=cmRun;
+}
+let CM_PLAN=null;
+const _cmDataUrl=(file)=>new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(file);});
+async function cmRun(){
+  if(!CM_PLAN) return;
+  const go=$('cm_go'); if(go){ go.disabled=true; go.textContent='กำลังนำเข้า…'; }
+  const replace=!!($('cm_replace')||{}).checked;
+  let ok=0, fail=0;
+  for(let i=0;i<CM_PLAN.length;i++){
+    const g=CM_PLAN[i];
+    const row=$('cmrow'+i), st=row?row.querySelector('.cmst'):null;
+    if(st){ st.textContent='กำลังอ่าน…'; st.style.color='#0ea5e9'; }
+    $('cm_prog').textContent='บทที่ '+(i+1)+'/'+CM_PLAN.length+' — '+g.no+' '+g.title;
+    try{
+      const files=[];
+      for(const x of g.files) files.push({ name:x.f.name, data:await _cmDataUrl(x.f) });
+      const sec=CM_SECTIONS[String(g.no||'').split('.')[0]]||null;
+      const j=await cmPost({ mode:'course_import', lesson_no:g.no, title:g.title, section:sec, files, replace });
+      if(j.ok){ ok++; if(st){ st.textContent='✓ '+j.steps+' ขั้นตอน'+(j.truncated?' (ใบยาว อาจไม่ครบ)':''); st.style.color='#16a34a'; } }
+      else { fail++; if(st){ st.textContent='✗ '+(j.error||'ไม่สำเร็จ'); st.style.color='#dc2626'; } }
+    }catch(err){ fail++; if(st){ st.textContent='✗ '+(err.message||err); st.style.color='#dc2626'; } }
+  }
+  $('cm_prog').textContent='เสร็จ — สำเร็จ '+ok+' บท'+(fail?(' · พลาด '+fail+' บท'):'')+' · ทุกบทยังไม่ได้ตรวจแก้';
+  if(go){ go.disabled=false; go.textContent='✓ เริ่มนำเข้า'; }
+  cmLoad();
+}
+async function cmLoad(){
+  const box=$('cm_list'); if(!box) return;
+  const j=await cmPost({ mode:'course_admin', act:'list' });
+  if(!j.ok){ box.innerHTML='<div class="empty" style="padding:8px">'+esc(j.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const L=j.lessons||[];
+  const done=L.filter(x=>x.reviewed).length;
+  $('cm_summary').innerHTML = L.length
+    ? '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12.5px">'
+      +'<span style="background:#f0fdfa;color:#0f766e;padding:3px 10px;border-radius:99px">บททั้งหมด '+L.length+'</span>'
+      +'<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:99px">ตรวจแก้แล้ว '+done+'</span>'
+      +(L.length-done?'<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:99px">ยังไม่ตรวจ '+(L.length-done)+'</span>':'')
+      +'<span style="background:#eef2ff;color:#3730a3;padding:3px 10px;border-radius:99px">ขั้นตอนรวม '+L.reduce((s2,x)=>s2+(x.step_count||0),0)+'</span></div>'
+    : '';
+  if(!L.length){ box.innerHTML='<div class="empty" style="padding:10px">ยังไม่มีคู่มือในระบบ — เลือกแผ่นภาพด้านบนเพื่อนำเข้า</div>'; return; }
+  let html='', lastSec='';
+  L.forEach(x=>{
+    if((x.section||'')!==lastSec){ lastSec=x.section||''; html+='<div style="font-size:12.5px;font-weight:800;color:var(--muted);margin:12px 0 4px">'+esc(lastSec||'(ไม่ระบุส่วน)')+'</div>'; }
+    html+='<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line)">'
+      +(x.sheet_urls&&x.sheet_urls[0]?('<img src="'+esc(x.sheet_urls[0])+'" onclick="lightbox(this)" style="width:46px;height:34px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in">'):'')
+      +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.lesson_no)+' '+esc(x.title)+'</div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">'+(x.step_count||0)+' ขั้นตอน · '+(x.reviewed?'<span style="color:#16a34a">ตรวจแก้แล้ว</span>':'<span style="color:#d97706">ยังไม่ตรวจแก้</span>')+'</div></div>'
+      +'<button class="btn btn-sec btn-sm" data-cmopen="'+x.id+'">ตรวจแก้</button>'
+      +'<button class="btn btn-danger btn-sm" data-cmdel="'+x.id+'">ลบ</button></div>';
+  });
+  box.innerHTML=html;
+  box.querySelectorAll('[data-cmopen]').forEach(b=>b.onclick=()=>cmOpen(+b.dataset.cmopen));
+  box.querySelectorAll('[data-cmdel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบบทนี้และขั้นตอนทั้งหมด?')) return;
+    const r=await cmPost({ mode:'course_admin', act:'del_lesson', lesson_id:+b.dataset.cmdel });
+    if(r.ok){ toast('ok','ลบแล้ว'); $('cm_steps').innerHTML=''; cmLoad(); } else toast('err', r.error||'ไม่สำเร็จ');
+  });
+}
+async function cmOpen(id){
+  const box=$('cm_steps'); if(!box) return;
+  const j=await cmPost({ mode:'course_admin', act:'steps', lesson_id:id });
+  if(!j.ok){ box.innerHTML='<div class="empty">'+esc(j.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const L=j.lesson||{}, S=j.steps||[];
+  const ta=(k,v,rows)=>'<textarea class="inp" data-k="'+k+'" rows="'+rows+'" style="width:100%;font-size:12.5px;line-height:1.5">'+esc(v||'')+'</textarea>';
+  const mmss=(s2)=>s2==null?'':(String(Math.floor(s2/60)).padStart(2,'0')+':'+String(s2%60).padStart(2,'0'));
+  box.innerHTML='<div style="border-top:2px solid var(--line2);padding-top:12px">'
+    +'<div style="font-size:14px;font-weight:800">ตรวจแก้ '+esc(L.lesson_no||'')+' '+esc(L.title||'')+' ('+S.length+' ขั้นตอน)</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin:4px 0 10px;line-height:1.6">💡 กดที่ภาพเพื่อขยาย แล้วไล่เทียบทีละขั้นตอน · ช่อง <b>นาที</b> คือเวลาในวิดีโอต้นทาง ย้อนไปดูของจริงได้'
+    +(L.source_url?(' · <a href="'+esc(L.source_url)+'" target="_blank" rel="noopener" style="color:#0ea5e9">เปิดบทเรียนต้นทาง</a>'):'')+'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+(L.sheet_urls||[]).map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:130px;border-radius:8px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'
+    +'<div style="display:grid;gap:8px;margin-bottom:12px">'
+    +'<div><label style="font-size:12px;color:var(--muted)">บทนี้สอนอะไร</label>'+ta('summary',L.summary,2)+'</div>'
+    +'<div><label style="font-size:12px;color:var(--muted)">ใช้เมื่อไหร่</label>'+ta('when_to_use',L.when_to_use,2)+'</div>'
+    +'<div><label style="font-size:12px;color:var(--muted)">ข้อควรระวัง</label>'+ta('cautions',L.cautions,2)+'</div>'
+    +'<div><button class="btn btn-sec btn-sm" id="cm_savehead">บันทึกหัวบท</button></div>'
+    +'</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px">'
+    +'<tr style="text-align:left;color:var(--muted)"><th style="padding:4px;width:48px">ที่</th><th style="width:150px">หัวข้อ</th><th>ทำอะไร</th><th style="width:130px">หน้าจอ</th><th style="width:150px">หมายเหตุ</th><th style="width:58px">นาที</th><th></th></tr>'
+    +S.map(x=>'<tr data-cmrow="'+x.id+'" style="border-top:1px solid var(--line);vertical-align:top">'
+      +'<td style="padding:4px"><input class="inp" data-k="step_no" type="number" value="'+(x.step_no||'')+'" style="width:44px;font-size:12.5px"></td>'
+      +'<td>'+ta('heading',x.heading,2)+'</td>'
+      +'<td>'+ta('instruction',x.instruction,3)+'</td>'
+      +'<td>'+ta('screen',x.screen,2)+'</td>'
+      +'<td>'+ta('note',x.note,2)+'</td>'
+      +'<td style="color:var(--muted);white-space:nowrap;padding-top:8px">'+mmss(x.at_sec)+'</td>'
+      +'<td style="white-space:nowrap;padding-top:6px"><button class="btn btn-sec btn-sm" data-cmsave="'+x.id+'">บันทึก</button><br><button class="btn btn-danger btn-sm" style="margin-top:4px" data-cmdst="'+x.id+'">ลบ</button></td>'
+      +'</tr>').join('')
+    +'</table></div>'
+    +'<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" id="cm_done">✓ ตรวจแก้เสร็จ — ให้นิดาใช้ได้</button><button class="btn btn-sec btn-sm" id="cm_undone">ยังไม่เสร็จ</button></div>'
+    +'</div>';
+  box.scrollIntoView({behavior:'smooth',block:'start'});
+
+  $('cm_savehead').onclick=async()=>{
+    const g=(k)=>{ const el=box.querySelector('[data-k="'+k+'"]'); return el?el.value:undefined; };
+    const r=await cmPost({ mode:'course_admin', act:'save_lesson', lesson_id:id, summary:g('summary'), when_to_use:g('when_to_use'), cautions:g('cautions') });
+    toast(r.ok?'ok':'err', r.ok?'บันทึกแล้ว':(r.error||'ไม่สำเร็จ'));
+  };
+  box.querySelectorAll('[data-cmsave]').forEach(b=>b.onclick=async()=>{
+    const tr=b.closest('[data-cmrow]'); const step={id:+b.dataset.cmsave};
+    tr.querySelectorAll('[data-k]').forEach(i2=>step[i2.dataset.k]=i2.value);
+    const r=await cmPost({ mode:'course_admin', act:'save_step', step });
+    toast(r.ok?'ok':'err', r.ok?'บันทึกแล้ว':(r.error||'ไม่สำเร็จ'));
+  });
+  box.querySelectorAll('[data-cmdst]').forEach(b=>b.onclick=async()=>{
+    const r=await cmPost({ mode:'course_admin', act:'del_step', step_id:+b.dataset.cmdst });
+    if(r.ok) cmOpen(id); else toast('err', r.error||'ไม่สำเร็จ');
+  });
+  const setRev=async(v)=>{ const r=await cmPost({ mode:'course_admin', act:'save_lesson', lesson_id:id, reviewed:v });
+    if(r.ok){ toast('ok', v?'ทำเครื่องหมายว่าตรวจแก้แล้ว':'ตั้งกลับเป็นยังไม่ตรวจ'); cmLoad(); } else toast('err', r.error||'ไม่สำเร็จ'); };
+  $('cm_done') && ($('cm_done').onclick=()=>setRev(true));
+  $('cm_undone') && ($('cm_undone').onclick=()=>setRev(false));
+}
+
 // ========== ใบโปรโมชั่น (อ่านรูป → ตาราง → ให้นิดาตอบราคา) ==========
 let PM_SHEET=null;
 function pmApi(){ return asstApiBase(); }
@@ -9155,11 +9348,12 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo'];
+const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
   else if(name==='promo'){ pmLoad(); pmBrowseInit(); }
+  else if(name==='manual'){ cmInit(); cmLoad(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
@@ -9572,6 +9766,7 @@ const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg>', label:'ไรเดอร์',     tabs:['rider'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg>', label:'คู่มือ',      tabs:['manual'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></svg>', label:'โปรโมชั่น',  tabs:['promo'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg>', label:'ระบบ',        tabs:['branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog'] },
 ];
