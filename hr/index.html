@@ -1758,8 +1758,10 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <div id="ex_setup" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div><label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">ผู้เข้าสอบ</label>
           <select id="ex_emp" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;min-width:170px"><option value="">— ไม่ระบุ (ซ้อมเฉย ๆ) —</option></select></div>
+        <div><label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">หลักสูตร</label>
+          <select id="qz_course" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;min-width:190px"></select></div>
         <div><label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">ขอบเขต</label>
-          <select id="ex_scope" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;min-width:230px"><option value="all|">ทั้งหลักสูตร</option></select></div>
+          <select id="qz_scope" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;min-width:230px"><option value="all|">ทั้งหลักสูตร</option></select></div>
         <div><label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">จำนวนข้อ</label>
           <select id="ex_n" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px">
             <option>10</option><option selected>20</option><option>30</option><option>50</option></select></div>
@@ -7692,7 +7694,7 @@ const CM_SECTIONS = {
   '8':'ส่วน 8 - คุณค่าและความสำคัญของตนเอง ทีมงาน และลูกค้า',
 };
 // ================= ข้อสอบซ้อมจากคู่มือ =================
-let EX = { items: [], ans: {}, started: null, scopeLabel: '', wired: false };
+let EX = { items: [], ans: {}, started: null, scopeLabel: '', course: '', wired: false };
 const EX_KIND = { what:'ดูภาพแล้วตอบ', next:'ขั้นตอนถัดไป', order:'เรียงลำดับ', caution:'เงื่อนไข/ข้อควรระวัง' };
 function exMsg(t, err){ const e=$('ex_msg'); if(e){ e.textContent=t||''; e.style.color = err?'var(--danger,#dc2626)':'var(--muted)'; } }
 
@@ -7700,23 +7702,36 @@ async function exInit(){
   if(EX.wired) return; EX.wired = true;
   $('ex_go').onclick = exStart;
   $('ex_hist').onclick = exHistory;
-  const r = await cmPost({ mode:'exam', act:'scopes' });
+  $('qz_course').onchange = ()=>exScopes($('qz_course').value);
+  await exScopes('');
+}
+
+// โหลดขอบเขต (ส่วน/บท) ของหลักสูตรที่เลือก — เรียกซ้ำได้เมื่อเปลี่ยนหลักสูตร
+async function exScopes(course){
+  exMsg('กำลังโหลดคลังข้อสอบ…');
+  const r = await cmPost({ mode:'exam', act:'scopes', course: course||undefined });
   if(!r || !r.ok){ exMsg((r&&r.error)||'โหลดรายการไม่สำเร็จ', true); return; }
-  const sc = $('ex_scope');
+  const cs = $('qz_course');
+  if(!cs.options.length || cs.options.length !== (r.courses||[]).length){
+    cs.innerHTML = (r.courses||[]).map(c=>'<option value="'+esc(c.course_code)+'">'+esc(c.course_name||c.course_code)+' ('+c.n+' ข้อ)</option>').join('');
+  }
+  if(r.course) cs.value = r.course;
+  EX.course = r.course || '';
+  const sc = $('qz_scope');
   sc.innerHTML = '<option value="all|">ทั้งหลักสูตร ('+(r.total||0)+' ข้อ)</option>'
     + (r.sections||[]).map(x=>'<option value="section|'+esc(x.section)+'">'+esc(x.section)+' ('+x.n+' ข้อ)</option>').join('')
     + (r.lessons||[]).map(x=>'<option value="lesson|'+esc(x.lesson_no)+'">บท '+esc(x.lesson_no)+' '+esc(x.title)+' ('+x.n+' ข้อ)</option>').join('');
   const em = $('ex_emp');
   em.innerHTML = '<option value="">— ไม่ระบุ (ซ้อมเฉย ๆ) —</option>'
     + (r.employees||[]).map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</option>').join('');
-  exMsg('คลังข้อสอบ '+(r.total||0)+' ข้อ');
+  exMsg('คลังข้อสอบหลักสูตรนี้ '+(r.total||0)+' ข้อ');
 }
 
 async function exStart(){
-  const [scope, value] = String($('ex_scope').value||'all|').split('|');
-  EX.scopeLabel = $('ex_scope').selectedOptions[0].textContent;
+  const [scope, value] = String($('qz_scope').value||'all|').split('|');
+  EX.scopeLabel = $('qz_scope').selectedOptions[0].textContent;
   exMsg('กำลังสุ่มข้อสอบ…');
-  const r = await cmPost({ mode:'exam', act:'start', scope, value, n:Number($('ex_n').value)||20 });
+  const r = await cmPost({ mode:'exam', act:'start', scope, value, course: EX.course||undefined, n:Number($('ex_n').value)||20 });
   if(!r || !r.ok){ exMsg((r&&r.error)||'เริ่มไม่สำเร็จ', true); return; }
   EX.items = r.items||[]; EX.ans = {}; EX.started = new Date().toISOString();
   exMsg('');
@@ -7788,7 +7803,7 @@ async function exSubmit(){
   const emp = $('ex_emp');
   const r = await cmPost({ mode:'exam', act:'submit', answers, started_at:EX.started,
     emp_id: emp.value||null, emp_name: emp.value ? emp.selectedOptions[0].textContent : null,
-    scope: String($('ex_scope').value||'all|').split('|')[0], scope_label: EX.scopeLabel });
+    scope: String($('qz_scope').value||'all|').split('|')[0], course: EX.course||undefined, scope_label: EX.scopeLabel });
   if(!r || !r.ok){ exMsg((r&&r.error)||'ตรวจไม่สำเร็จ', true); if(btn) btn.disabled=false; return; }
   exMsg(r.saved ? 'บันทึกผลแล้ว' : 'ตรวจแล้ว (ไม่ได้บันทึกผล)');
   const good = r.score_pct >= 80;
