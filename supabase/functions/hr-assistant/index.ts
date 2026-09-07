@@ -5028,28 +5028,47 @@ Deno.serve(async (req) => {
       const act = String(body.act || "start");
 
       if (act === "scopes") {
-        const { data } = await sb.from("course_quiz").select("section,lesson_no").eq("active", true);
+        // มีหลายหลักสูตรในคลังแล้ว (ผู้ช่วยผู้จัดการ 011043 · พนักงานร้าน STAFF)
+        // ถ้าไม่ระบุหลักสูตร จะใช้หลักสูตรแรกตามลำดับตัวอักษร กันไม่ให้ข้อสอบสองหลักสูตรปนกัน
+        const { data: all } = await sb.from("course_quiz").select("course_code,section,lesson_no").eq("active", true);
+        const byCourse: Record<string, number> = {};
+        for (const r of (all || [])) {
+          const cc = String(r.course_code || "");
+          byCourse[cc] = (byCourse[cc] || 0) + 1;
+        }
+        const { data: cl } = await sb.from("course_lessons").select("course_code,course_name").eq("active", true);
+        const cname: Record<string, string> = {};
+        for (const l of (cl || [])) {
+          const cc = String(l.course_code || "");
+          if (!cname[cc] && l.course_name) cname[cc] = String(l.course_name);
+        }
+        const courses = Object.keys(byCourse).sort()
+          .map((cc) => ({ course_code: cc, course_name: cname[cc] || cc, n: byCourse[cc] }));
+        const course = String(body.course || (courses[0] ? courses[0].course_code : ""));
+
+        const data = (all || []).filter((r: any) => String(r.course_code || "") === course);
         const bySec: Record<string, number> = {}, byLes: Record<string, any> = {};
-        for (const r of (data || [])) {
+        for (const r of data) {
           const sec = String(r.section || "(ไม่ระบุส่วน)");
           bySec[sec] = (bySec[sec] || 0) + 1;
           const k = String(r.lesson_no);
           byLes[k] = byLes[k] || { lesson_no: k, section: sec, n: 0 };
           byLes[k].n++;
         }
-        const { data: ls } = await sb.from("course_lessons").select("lesson_no,title").eq("active", true);
+        const { data: ls } = await sb.from("course_lessons").select("lesson_no,title").eq("active", true).eq("course_code", course);
         const tmap: Record<string, string> = {};
         for (const l of (ls || [])) tmap[String(l.lesson_no)] = String(l.title || "");
         const lessons = Object.values(byLes).map((x: any) => ({ ...x, title: tmap[x.lesson_no] || "" }))
           .sort((a: any, b: any) => String(a.lesson_no).localeCompare(String(b.lesson_no), "en", { numeric: true }));
         const sections = Object.keys(bySec).sort().map((k) => ({ section: k, n: bySec[k] }));
         const { data: emps } = await sb.from("employees").select("emp_id,name,nickname").eq("active", true).order("name");
-        return json({ ok: true, sections, lessons, total: (data || []).length, employees: emps || [] });
+        return json({ ok: true, courses, course, sections, lessons, total: data.length, employees: emps || [] });
       }
 
       if (act === "start") {
         const n = Math.min(50, Math.max(5, Math.round(Number(body.n) || 20)));
         let q = sb.from("course_quiz").select("id,kind,question,options,explain,image_url,at_sec,lesson_no,section").eq("active", true);
+        if (body.course) q = q.eq("course_code", String(body.course));
         const scope = String(body.scope || "all");
         if (scope === "section" && body.value) q = q.eq("section", String(body.value));
         else if (scope === "lesson" && body.value) q = q.eq("lesson_no", String(body.value));
@@ -5106,7 +5125,8 @@ Deno.serve(async (req) => {
           const { error: e2 } = await sb.from("course_exam_attempt").insert({
             emp_id: body.emp_id ? String(body.emp_id) : null,
             emp_name: body.emp_name ? String(body.emp_name).slice(0, 120) : null,
-            scope: String(body.scope || "all"), scope_label: String(body.scope_label || "").slice(0, 200),
+            scope: String(body.scope || "all"),
+            scope_label: (body.course ? String(body.course) + " · " : "") + String(body.scope_label || "").slice(0, 180),
             total, correct, score_pct: pct, detail,
             started_at: body.started_at || null,
           });
