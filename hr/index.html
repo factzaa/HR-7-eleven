@@ -1748,6 +1748,29 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3 7-7"/><path d="M12 3a9 9 0 1 0 9 9"/></svg> ข้อสอบซ้อม</h3></div>
+    <div class="card-b">
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.65">
+        ข้อสอบสร้างจาก<b>คู่มือในระบบ</b>ทั้งหมด — เห็นภาพหน้าจอจริงแล้วตอบว่าต้องทำอะไร · เรียงลำดับขั้นตอน · ถามเงื่อนไขและข้อควรระวัง
+        <br>ทำเสร็จเฉลยทันทีพร้อมบอกว่าอยู่บทไหน นาทีไหน กดย้อนไปดูวิดีโอต้นทางได้
+      </div>
+      <div id="ex_setup" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div><label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">ผู้เข้าสอบ</label>
+          <select id="ex_emp" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;min-width:170px"><option value="">— ไม่ระบุ (ซ้อมเฉย ๆ) —</option></select></div>
+        <div><label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">ขอบเขต</label>
+          <select id="ex_scope" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px;min-width:230px"><option value="all|">ทั้งหลักสูตร</option></select></div>
+        <div><label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">จำนวนข้อ</label>
+          <select id="ex_n" style="padding:7px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px">
+            <option>10</option><option selected>20</option><option>30</option><option>50</option></select></div>
+        <button class="btn btn-pri btn-sm" id="ex_go">เริ่มทำข้อสอบ</button>
+        <button class="btn btn-sm" id="ex_hist">ผลย้อนหลัง</button>
+        <span id="ex_msg" style="font-size:12.5px;color:var(--muted)"></span>
+      </div>
+      <div id="ex_body" style="margin-top:12px"></div>
+    </div>
+  </div>
+
 </div>
 
 <div id="view_promo" class="container" style="display:none">
@@ -7668,6 +7691,169 @@ const CM_SECTIONS = {
   '5':'ส่วน 5 - การรักษามาตรฐานร้าน (QSSI)',
   '8':'ส่วน 8 - คุณค่าและความสำคัญของตนเอง ทีมงาน และลูกค้า',
 };
+// ================= ข้อสอบซ้อมจากคู่มือ =================
+let EX = { items: [], ans: {}, started: null, scopeLabel: '', wired: false };
+const EX_KIND = { what:'ดูภาพแล้วตอบ', next:'ขั้นตอนถัดไป', order:'เรียงลำดับ', caution:'เงื่อนไข/ข้อควรระวัง' };
+function exMsg(t, err){ const e=$('ex_msg'); if(e){ e.textContent=t||''; e.style.color = err?'var(--danger,#dc2626)':'var(--muted)'; } }
+
+async function exInit(){
+  if(EX.wired) return; EX.wired = true;
+  $('ex_go').onclick = exStart;
+  $('ex_hist').onclick = exHistory;
+  const r = await cmPost({ mode:'exam', act:'scopes' });
+  if(!r || !r.ok){ exMsg((r&&r.error)||'โหลดรายการไม่สำเร็จ', true); return; }
+  const sc = $('ex_scope');
+  sc.innerHTML = '<option value="all|">ทั้งหลักสูตร ('+(r.total||0)+' ข้อ)</option>'
+    + (r.sections||[]).map(x=>'<option value="section|'+esc(x.section)+'">'+esc(x.section)+' ('+x.n+' ข้อ)</option>').join('')
+    + (r.lessons||[]).map(x=>'<option value="lesson|'+esc(x.lesson_no)+'">บท '+esc(x.lesson_no)+' '+esc(x.title)+' ('+x.n+' ข้อ)</option>').join('');
+  const em = $('ex_emp');
+  em.innerHTML = '<option value="">— ไม่ระบุ (ซ้อมเฉย ๆ) —</option>'
+    + (r.employees||[]).map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.name)+(e.nickname?(' ('+esc(e.nickname)+')'):'')+'</option>').join('');
+  exMsg('คลังข้อสอบ '+(r.total||0)+' ข้อ');
+}
+
+async function exStart(){
+  const [scope, value] = String($('ex_scope').value||'all|').split('|');
+  EX.scopeLabel = $('ex_scope').selectedOptions[0].textContent;
+  exMsg('กำลังสุ่มข้อสอบ…');
+  const r = await cmPost({ mode:'exam', act:'start', scope, value, n:Number($('ex_n').value)||20 });
+  if(!r || !r.ok){ exMsg((r&&r.error)||'เริ่มไม่สำเร็จ', true); return; }
+  EX.items = r.items||[]; EX.ans = {}; EX.started = new Date().toISOString();
+  exMsg('');
+  exRender();
+}
+
+function exRender(){
+  const box = $('ex_body');
+  if(!EX.items.length){ box.innerHTML=''; return; }
+  const done = Object.keys(EX.ans).length;
+  box.innerHTML =
+    '<div style="position:sticky;top:0;background:var(--bg,#fff);padding:6px 0;z-index:2;border-bottom:1px solid var(--line);margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+    + '<b style="font-size:13.5px">ตอบแล้ว '+done+' / '+EX.items.length+' ข้อ</b>'
+    + '<div style="flex:1;height:7px;background:var(--line);border-radius:99px;overflow:hidden;min-width:120px"><div style="height:100%;width:'+Math.round(done/EX.items.length*100)+'%;background:var(--pri,#008061)"></div></div>'
+    + '<button class="btn btn-pri btn-sm" id="ex_submit"'+(done<EX.items.length?' disabled':'')+'>ส่งคำตอบ</button></div>'
+    + EX.items.map((q,i)=>exCard(q,i)).join('');
+  $('ex_submit').onclick = exSubmit;
+  EX.items.forEach((q,i)=>{
+    if(q.kind==='order'){
+      (q.options||[]).forEach((o,j)=>{ const el=$('exo_'+i+'_'+j); if(el) el.onclick=()=>exOrder(i,j); });
+      const c=$('exclr_'+i); if(c) c.onclick=()=>{ EX.ans['o'+i]=[]; delete EX.ans[q.id]; exRender(); };
+    } else {
+      (q.options||[]).forEach((o,j)=>{ const el=$('exo_'+i+'_'+j); if(el) el.onclick=()=>{ EX.ans[q.id]=String(j); exRender(); }; });
+    }
+  });
+}
+
+function exCard(q, i){
+  const chosen = EX.ans[q.id];
+  const head = '<div style="display:flex;gap:8px;align-items:baseline;margin-bottom:6px;flex-wrap:wrap">'
+    + '<b style="font-size:14px">ข้อ '+(i+1)+'</b>'
+    + '<span style="font-size:11px;background:var(--glass);border:1px solid var(--line);border-radius:99px;padding:1px 8px">'+esc(EX_KIND[q.kind]||q.kind)+'</span>'
+    + '<span style="font-size:11.5px;color:var(--muted)">บท '+esc(q.lesson_no||'')+'</span></div>'
+    + '<div style="font-size:13.5px;font-weight:600;margin-bottom:8px;line-height:1.6">'+esc(q.question)+'</div>'
+    + (q.image_url ? '<img src="'+esc(q.image_url)+'" onclick="lightbox(this)" style="max-width:100%;width:420px;border:1px solid var(--line);border-radius:9px;cursor:zoom-in;margin-bottom:9px">' : '');
+  let opts;
+  if(q.kind==='order'){
+    const seq = EX.ans['o'+i] || [];
+    opts = (q.options||[]).map((o,j)=>{
+      const at = seq.indexOf(j);
+      return '<div id="exo_'+i+'_'+j+'" style="display:flex;gap:9px;align-items:flex-start;border:1.5px solid '+(at>=0?'var(--pri,#008061)':'var(--line2)')+';border-radius:9px;padding:8px 10px;margin-bottom:6px;cursor:pointer;background:'+(at>=0?'var(--glass)':'transparent')+'">'
+        + '<span style="flex:none;width:22px;height:22px;border-radius:99px;background:'+(at>=0?'var(--pri,#008061)':'var(--line)')+';color:'+(at>=0?'#fff':'var(--muted)')+';font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">'+(at>=0?(at+1):'')+'</span>'
+        + '<span style="font-size:13px;line-height:1.55">'+esc(o)+'</span></div>';
+    }).join('')
+    + '<div style="font-size:11.5px;color:var(--muted)">กดเลือกไล่จากขั้นตอนแรกไปขั้นตอนสุดท้าย · <a href="javascript:void(0)" id="exclr_'+i+'">ล้าง</a></div>';
+  } else {
+    opts = (q.options||[]).map((o,j)=>
+      '<div id="exo_'+i+'_'+j+'" style="display:flex;gap:9px;align-items:flex-start;border:1.5px solid '+(chosen===String(j)?'var(--pri,#008061)':'var(--line2)')+';border-radius:9px;padding:8px 10px;margin-bottom:6px;cursor:pointer;background:'+(chosen===String(j)?'var(--glass)':'transparent')+'">'
+      + '<span style="flex:none;width:22px;height:22px;border-radius:99px;background:'+(chosen===String(j)?'var(--pri,#008061)':'var(--line)')+';color:'+(chosen===String(j)?'#fff':'var(--muted)')+';font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">'+(j+1)+'</span>'
+      + '<span style="font-size:13px;line-height:1.55">'+esc(o)+'</span></div>').join('');
+  }
+  return '<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px">'+head+opts+'</div>';
+}
+
+function exOrder(i, j){
+  const q = EX.items[i];
+  const seq = EX.ans['o'+i] || [];
+  const at = seq.indexOf(j);
+  if(at >= 0) seq.splice(at, 1); else if(seq.length < (q.options||[]).length) seq.push(j);
+  EX.ans['o'+i] = seq;
+  if(seq.length === (q.options||[]).length) EX.ans[q.id] = seq.join(','); else delete EX.ans[q.id];
+  exRender();
+}
+
+async function exSubmit(){
+  const btn = $('ex_submit'); if(btn) btn.disabled = true;
+  exMsg('กำลังตรวจ…');
+  const answers = EX.items.map(q=>({ id:q.id, answer: EX.ans[q.id] ?? '' }));
+  const emp = $('ex_emp');
+  const r = await cmPost({ mode:'exam', act:'submit', answers, started_at:EX.started,
+    emp_id: emp.value||null, emp_name: emp.value ? emp.selectedOptions[0].textContent : null,
+    scope: String($('ex_scope').value||'all|').split('|')[0], scope_label: EX.scopeLabel });
+  if(!r || !r.ok){ exMsg((r&&r.error)||'ตรวจไม่สำเร็จ', true); if(btn) btn.disabled=false; return; }
+  exMsg(r.saved ? 'บันทึกผลแล้ว' : 'ตรวจแล้ว (ไม่ได้บันทึกผล)');
+  const good = r.score_pct >= 80;
+  $('ex_body').innerHTML =
+    '<div style="border:2px solid '+(good?'var(--pri,#008061)':'#f59e0b')+';border-radius:12px;padding:16px;text-align:center;margin-bottom:14px">'
+    + '<div style="font-size:30px;font-weight:900;color:'+(good?'var(--pri,#008061)':'#b45309')+'">'+r.correct+' / '+r.total+'</div>'
+    + '<div style="font-size:15px;font-weight:700;margin-top:2px">'+r.score_pct+'%</div>'
+    + '<div style="font-size:12.5px;color:var(--muted);margin-top:5px">'+esc(EX.scopeLabel)+'</div>'
+    + '<button class="btn btn-pri btn-sm" style="margin-top:11px" onclick="exStart()">ทำชุดใหม่</button></div>'
+    + '<div style="font-size:13.5px;font-weight:800;margin-bottom:9px">เฉลย</div>'
+    + (r.review||[]).map((q,i)=>exReview(q,i)).join('');
+  window.scrollTo({ top: $('ex_body').offsetTop - 70, behavior:'smooth' });
+}
+
+function exReview(q, i){
+  const ok = q.ok;
+  const show = (j)=>{
+    let mark = '', col = 'var(--line2)';
+    if(q.kind==='order'){
+      const cor = String(q.answer).split(','), gv = String(q.given||'').split(',');
+      const cp = cor.indexOf(String(j)), gp = gv.indexOf(String(j));
+      mark = 'ที่ถูก: '+(cp>=0?(cp+1):'-')+(gp>=0&&gp!==cp?(' · คุณตอบ: '+(gp+1)):'');
+      col = (cp>=0&&cp===gp) ? 'var(--pri,#008061)' : '#dc2626';
+    } else {
+      const isCor = String(q.answer)===String(j), isGiven = String(q.given)===String(j);
+      if(isCor){ mark='✔ คำตอบที่ถูก'; col='var(--pri,#008061)'; }
+      else if(isGiven){ mark='✘ คุณตอบข้อนี้'; col='#dc2626'; }
+    }
+    return '<div style="border:1.5px solid '+col+';border-radius:9px;padding:7px 10px;margin-bottom:5px;font-size:13px;line-height:1.55">'
+      + esc(q.options[j]) + (mark?('<div style="font-size:11.5px;font-weight:700;color:'+col+';margin-top:3px">'+mark+'</div>'):'') + '</div>';
+  };
+  const mm = (s)=>{ s=Number(s); return isFinite(s) ? (String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.round(s%60)).padStart(2,'0')) : ''; };
+  return '<div style="border:1px solid var(--line);border-left:4px solid '+(ok?'var(--pri,#008061)':'#dc2626')+';border-radius:10px;padding:11px 13px;margin-bottom:10px">'
+    + '<div style="font-size:12.5px;font-weight:800;color:'+(ok?'var(--pri,#008061)':'#dc2626')+';margin-bottom:4px">ข้อ '+(i+1)+' · '+(ok?'ถูก':'ผิด')+'</div>'
+    + '<div style="font-size:13px;font-weight:600;margin-bottom:7px;line-height:1.6">'+esc(q.question)+'</div>'
+    + (q.image_url ? '<img src="'+esc(q.image_url)+'" onclick="lightbox(this)" style="max-width:100%;width:330px;border:1px solid var(--line);border-radius:8px;cursor:zoom-in;margin-bottom:8px">' : '')
+    + (q.options||[]).map((o,j)=>show(j)).join('')
+    + '<div style="font-size:12px;color:var(--muted);margin-top:6px">'+esc(q.explain||'')
+    + (q.lesson_no?(' · บท '+esc(q.lesson_no)):'') + (q.at_sec!=null?(' · นาทีที่ '+mm(q.at_sec)):'') + '</div></div>';
+}
+
+async function exHistory(){
+  exMsg('กำลังโหลด…');
+  const emp = $('ex_emp').value || null;
+  const r = await cmPost({ mode:'exam', act:'history', emp_id: emp });
+  if(!r || !r.ok){ exMsg((r&&r.error)||'โหลดไม่สำเร็จ', true); return; }
+  exMsg('');
+  const rows = (r.attempts||[]).map(a=>
+    '<tr><td>'+esc((a.finished_at||'').replace('T',' ').slice(0,16))+'</td><td>'+esc(a.emp_name||'-')+'</td>'
+    + '<td>'+esc(a.scope_label||a.scope||'')+'</td><td style="text-align:right">'+a.correct+'/'+a.total+'</td>'
+    + '<td style="text-align:right;font-weight:800;color:'+((a.score_pct>=80)?'var(--pri,#008061)':'#b45309')+'">'+(a.score_pct??0)+'%</td></tr>').join('');
+  const weak = (r.weak||[]).map(w=>'<tr><td>'+esc(w.lesson_no)+'</td><td>'+esc(w['ชื่อบท']||'')+'</td>'
+    + '<td style="text-align:right">'+(w['ผิดกี่ครั้ง']||0)+'/'+(w['ตอบไปกี่ครั้ง']||0)+'</td>'
+    + '<td style="text-align:right;font-weight:800;color:#dc2626">'+(w['pct_ผิด']??0)+'%</td></tr>').join('');
+  $('ex_body').innerHTML =
+    '<div style="font-size:13.5px;font-weight:800;margin-bottom:8px">ผลย้อนหลัง'+(emp?' (เฉพาะคนที่เลือก)':'')+'</div>'
+    + (rows ? '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px" class="tbl">'
+        + '<thead><tr><th>เมื่อไหร่</th><th>ใคร</th><th>ขอบเขต</th><th style="text-align:right">ถูก</th><th style="text-align:right">คะแนน</th></tr></thead><tbody>'
+        + rows + '</tbody></table></div>' : '<div style="font-size:12.5px;color:var(--muted)">ยังไม่มีใครทำข้อสอบ</div>')
+    + (weak ? '<div style="font-size:13.5px;font-weight:800;margin:16px 0 8px">บทที่ตอบผิดบ่อย — ควรสอนซ้ำ</div>'
+        + '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px" class="tbl">'
+        + '<thead><tr><th>บท</th><th>ชื่อบท</th><th style="text-align:right">ผิด/ทั้งหมด</th><th style="text-align:right">% ผิด</th></tr></thead><tbody>'
+        + weak + '</tbody></table></div>' : '');
+}
+
 let CM_WIRED=false;
 function cmInit(){
   if(CM_WIRED) return; CM_WIRED=true;
@@ -9353,7 +9539,7 @@ showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
   else if(name==='promo'){ pmLoad(); pmBrowseInit(); }
-  else if(name==='manual'){ cmInit(); cmLoad(); }
+  else if(name==='manual'){ cmInit(); cmLoad(); exInit(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
