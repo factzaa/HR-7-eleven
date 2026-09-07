@@ -7638,12 +7638,26 @@ async function pmImport(e){
   const f=(e.target.files||[])[0]; e.target.value=''; if(!f) return;
   const prog=$('pm_prog'), dup=$('pm_dup'); dup.innerHTML='';
   if(f.size>8*1024*1024){ prog.textContent='รูปใหญ่เกิน 8MB — ย่อก่อนนะครับ'; return; }
-  prog.textContent='กำลังให้ AI อ่านใบโปรฯ… (อาจใช้เวลาสักครู่)';
+  prog.textContent='กำลังให้ AI ดูรูปคร่าว ๆ เพื่อดูว่าเป็นใบชนิดไหน…';
   try{
     const data=await _fileToDataUrl(f);
-    const j=await pmPost({ mode:'promo_import', file:{name:f.name,data},
-      period_start:($('pm_start')||{}).value||'', period_end:($('pm_end')||{}).value||'',
-      page_no:Number(($('pm_page')||{}).value||1), replace:!!($('pm_replace')||{}).checked });
+    // จังหวะ 1 — ให้ AI ดูคร่าว ๆ แล้วถามชนิดใบก่อน (ยังไม่อ่านเต็ม)
+    const dt=await pmPost({ mode:'promo_detect', file:{name:f.name,data} });
+    if(!dt.ok){ prog.textContent='ดูรูปไม่สำเร็จ: '+(dt.error||''); return; }
+    prog.textContent='';
+    pmConfirmType(dt, async(ptype)=>{
+      const lb=((dt.types||[]).find(t=>t.key===ptype)||{}).label||ptype;
+      prog.textContent='กำลังอ่านทั้งใบ ('+lb+')…';
+      const j=await pmPost({ mode:'promo_import', file:{name:f.name,data}, promo_type:ptype,
+        period_start:($('pm_start')||{}).value||dt.period_start||'', period_end:($('pm_end')||{}).value||dt.period_end||'',
+        page_no:Number(($('pm_page')||{}).value||1), replace:!!($('pm_replace')||{}).checked });
+      await pmAfterImport(j, prog, dup);
+    });
+    return;
+  }catch(err){ prog.textContent='ไม่สำเร็จ: '+(err.message||err); }
+}
+async function pmAfterImport(j, prog, dup){
+  try{
     if(!j.ok){
       prog.textContent='';
       dup.innerHTML='<div style="padding:10px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:12.5px;line-height:1.6">'+esc(j.error||'ไม่สำเร็จ')+'</div>';
@@ -7659,6 +7673,32 @@ async function pmImport(e){
     await pmLoad(); await pmOpen(j.sheet_id);
   }catch(err){ prog.textContent='ไม่สำเร็จ: '+(err.message||err); }
 }
+// ===== จังหวะยืนยันชนิดใบก่อนอ่านทั้งใบ =====
+//  เดาชนิดผิดแล้วอ่านทั้งใบ = ข้อมูลเข้าผิดช่องทั้งใบ (เคยเกิดกับใบ "ลดอย่างแรง")
+//  จึงให้ AI ดูคร่าว ๆ ก่อน แล้วให้คนยืนยัน/แก้ชนิด ค่อยอ่านเต็ม
+function pmConfirmType(d, onOk){
+  const box=$('pm_dup'); if(!box) return;
+  const opts=(d.types||[]).map(t=>'<label style="display:flex;gap:7px;align-items:flex-start;padding:6px 8px;border:1px solid '+(t.key===d.promo_type?'#0f766e':'var(--line)')+';border-radius:9px;cursor:pointer;background:'+(t.key===d.promo_type?'#f0fdfa':'transparent')+'">'
+    +'<input type="radio" name="pmtype" value="'+t.key+'"'+(t.key===d.promo_type?' checked':'')+' style="margin-top:3px">'
+    +'<span><b style="font-size:12.5px">'+esc(t.label)+'</b><br><span style="font-size:11px;color:var(--muted)">'+esc(t.hint)+'</span></span></label>').join('');
+  const samp=(d.samples||[]).map(x=>'<li style="margin-bottom:2px"><b>'+esc(x.product||'')+'</b>'+(x.note?(' — '+esc(x.note)):'')+'</li>').join('');
+  const conf=d.confidence?('<span style="font-size:11px;color:'+(d.confidence==='สูง'?'#16a34a':(d.confidence==='ต่ำ'?'#dc2626':'#d97706'))+'">ความมั่นใจ: '+esc(d.confidence)+'</span>'):'';
+  box.innerHTML='<div style="border:2px solid var(--line2);border-radius:12px;padding:12px;background:var(--glass)">'
+    +'<div style="font-size:13.5px;font-weight:800;margin-bottom:2px">ยืนยันชนิดของใบนี้ก่อน '+conf+'</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:9px">ถ้าชนิดผิด ตัวเลขจะเข้าผิดช่องทั้งใบ — ตรวจตัวอย่างข้างล่างว่าตรงกับใบจริงไหม</div>'
+    +(d.title?('<div style="font-size:12.5px;margin-bottom:6px"><b>'+esc(d.title)+'</b>'+((d.period_start||d.period_end)?(' <span style="color:var(--muted)">· '+esc(String(d.period_start||'—'))+' → '+esc(String(d.period_end||'—'))+'</span>'):'')+'</div>'):'')
+    +(samp?('<div style="font-size:12px;background:#f8fafc;border-radius:9px;padding:8px 10px;margin-bottom:9px"><div style="color:var(--muted);font-size:11.5px;margin-bottom:3px">ตัวอย่างที่ AI อ่านได้จากใบ:</div><ul style="margin:0;padding-left:18px">'+samp+'</ul></div>'):'')
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin-bottom:10px">'+opts+'</div>'
+    +(d.mechanic_note?('<div style="font-size:11.5px;color:#075985;background:#f0f9ff;border-radius:8px;padding:7px 9px;margin-bottom:9px">กติกาที่อ่านได้: '+esc(d.mechanic_note)+'</div>'):'')
+    +'<div style="display:flex;gap:8px"><button class="btn btn-pri btn-sm" id="pm_ok">✓ ยืนยัน — อ่านทั้งใบ</button><button class="btn btn-sec btn-sm" id="pm_cancel">ยกเลิก</button></div>'
+    +'</div>';
+  $('pm_cancel').onclick=()=>{ box.innerHTML=''; const pg=$('pm_prog'); if(pg) pg.textContent='ยกเลิกแล้ว'; };
+  $('pm_ok').onclick=()=>{
+    const sel=box.querySelector('input[name=pmtype]:checked');
+    box.innerHTML=''; onOk(sel?sel.value:d.promo_type);
+  };
+}
+
 // ========== แกลเลอรีโปรฯ จากเว็บ 7-Eleven ==========
 let PB_DATA=null, PB_WIRED=false;
 function pbBusy(t){ const e=$('pb_prog'); if(e) e.textContent=t||''; }
@@ -7715,11 +7755,24 @@ function pbRender(){
   box.querySelectorAll('[data-pbimp]').forEach(b=>b.onclick=()=>pbImport(b));
 }
 async function pbImport(btn){
-  const old=btn.textContent; btn.disabled=true; btn.textContent='กำลังอ่าน…';
+  const old=btn.textContent; btn.disabled=true; btn.textContent='กำลังดูรูป…';
+  try{
+    // จังหวะ 1 — ถามชนิดใบก่อน (ยังไม่อ่านทั้งใบ)
+    const dt=await pmPost({ mode:'promo_detect', url:btn.dataset.pbimp });
+    btn.disabled=false; btn.textContent=old;
+    if(!dt.ok){ toast('err', dt.error||'ดูรูปไม่สำเร็จ'); return; }
+    dt.title=dt.title||btn.dataset.t;
+    dt.period_start=btn.dataset.s||dt.period_start; dt.period_end=btn.dataset.e||dt.period_end;
+    const dupBox=$('pm_dup'); if(dupBox) dupBox.scrollIntoView({behavior:'smooth',block:'center'});
+    pmConfirmType(dt, (ptype)=>pbImport2(btn, ptype));
+  }catch(e){ btn.disabled=false; btn.textContent=old; toast('err', e.message||e); }
+}
+async function pbImport2(btn, ptype){
+  const old=btn.textContent; btn.disabled=true; btn.textContent='กำลังอ่านทั้งใบ…';
   try{
     const j=await pmPost({ mode:'promo_sync', replace:true, posters:[{
       url:btn.dataset.pbimp, title:btn.dataset.t, period_start:btn.dataset.s, period_end:btn.dataset.e,
-      page_no:Number(btn.dataset.p)||1, path:btn.dataset.path }] });
+      page_no:Number(btn.dataset.p)||1, path:btn.dataset.path, promo_type:ptype }] });
     const r=(j.results||[])[0]||{};
     if(!j.ok || r.error){ btn.textContent='ไม่สำเร็จ'; toast('err', r.error||j.error||'ไม่สำเร็จ'); setTimeout(()=>{btn.disabled=false;btn.textContent=old;},2500); return; }
     btn.textContent='✓ '+(r.items||0)+' รายการ';
@@ -7773,25 +7826,81 @@ async function pmOpen(id){
   PM_SHEET=id; const box=$('pm_items'); if(!box) return;
   const j=await pmPost({ mode:'promo_admin', act:'items', sheet_id:id });
   if(!j.ok){ box.innerHTML='<div class="empty">'+esc(j.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const sh=j.sheet||{}, rows=j.items||[];
   const F=(v)=>v===null||v===undefined?'':v;
-  box.innerHTML='<div style="font-size:13px;font-weight:700;margin:6px 0">ตรวจแก้รายการในใบ #'+id+' ('+(j.items||[]).length+' รายการ) — เทียบกับรูปใบจริงแล้วแก้ตัวเลขให้ถูก</div>'
-    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px">'
-    +'<tr style="text-align:left;color:var(--muted)"><th style="padding:4px">สินค้า</th><th>ขนาด</th><th>ดวง</th><th>ราคาโปร</th><th>สมาชิก</th><th>ปกติ</th><th>จำนวน</th><th>เงื่อนไข</th><th></th></tr>'
-    +(j.items||[]).map(it=>'<tr data-pmrow="'+it.id+'" style="border-top:1px solid var(--line)">'
-      +'<td style="padding:3px"><input class="inp" data-k="product" value="'+esc(F(it.product))+'" style="width:150px;font-size:12px"></td>'
-      +'<td><input class="inp" data-k="size" value="'+esc(F(it.size))+'" style="width:90px;font-size:12px"></td>'
-      +'<td><input class="inp" data-k="stamps" type="number" value="'+esc(F(it.stamps))+'" style="width:48px;font-size:12px"></td>'
-      +'<td><input class="inp" data-k="price" type="number" step="0.01" value="'+esc(F(it.price))+'" style="width:62px;font-size:12px"></td>'
-      +'<td><input class="inp" data-k="member_price" type="number" step="0.01" value="'+esc(F(it.member_price))+'" style="width:62px;font-size:12px"></td>'
-      +'<td><input class="inp" data-k="normal_price" type="number" step="0.01" value="'+esc(F(it.normal_price))+'" style="width:62px;font-size:12px"></td>'
-      +'<td><input class="inp" data-k="qty" value="'+esc(F(it.qty))+'" style="width:62px;font-size:12px"></td>'
-      +'<td><input class="inp" data-k="condition" value="'+esc(F(it.condition))+'" style="width:150px;font-size:12px"></td>'
-      +'<td style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-pmsave="'+it.id+'">บันทึก</button> <button class="btn btn-danger btn-sm" data-pmdi="'+it.id+'">ลบ</button></td></tr>').join('')
+  // ★ ตารางเปลี่ยนคอลัมน์ตาม "ชนิดของใบ" — ใบลดราคาต้องไม่มีช่องแสตมป์ให้กรอกเลย
+  //   (เดิมใช้ตารางแสตมป์ตารางเดียวกับทุกใบ → 198/99 ของใบลดราคากลายเป็น "แสตมป์ 99 บาท")
+  const PT = sh.promo_type || 'stamp';
+  const PTLABEL = { stamp:'ซื้อแล้วรับแสตมป์', discount:'ลดราคา', bundle:'ซื้อคู่/เซ็ต', freebie:'ซื้อครบแถมฟรี', redeem:'แลกด้วยแสตมป์/คะแนน', custom:'กำหนดเอง' };
+  const COLS = {
+    stamp:    ['price_after','stamp_pieces','stamp_baht','mstamp','better'],
+    redeem:   ['stamp_pieces','stamp_baht','price_after'],
+    discount: ['price_before','price_after','save'],
+    bundle:   ['price_before','price_after','save'],
+    freebie:  ['price_after','free_item'],
+    custom:   ['price_before','price_after','stamp_pieces','stamp_baht','mstamp','free_item'],
+  };
+  const CD = {
+    price_before:{ h:'ราคาปกติ',  w:70,  bg:'#f8fafc', c:'#64748b', t:'number' },
+    price_after: { h:(PT==='stamp'?'ราคาที่จ่าย':(PT==='redeem'?'จ่ายเพิ่ม':'ราคาโปรฯ')), w:72, bg:'#f0fdfa', c:'#0f766e', t:'number' },
+    stamp_pieces:{ h:(PT==='redeem'?'ใช้ดวง':'ได้ดวง'), w:56, bg:'#fffbeb', c:'#b45309', t:'number' },
+    stamp_baht:  { h:'มูลค่า฿',   w:64,  bg:'#fffbeb', c:'#b45309', t:'number' },
+    mstamp:      { h:'M-Stamp',  w:66,  bg:'#fffbeb', c:'#b45309', t:'number' },
+    free_item:   { h:'ของแถม',    w:130, bg:'',        c:'',        t:'' },
+    better:      { h:'คุ้มกว่า',   w:88,  bg:'',        c:'',        t:'' },
+    save:        { h:'ประหยัด',   w:0,   bg:'',        c:'#dc2626', t:'' },
+  };
+  const cols = COLS[PT] || COLS.custom;
+  const HINT = {
+    stamp:'<span style="color:#0f766e">ราคาที่จ่าย</span> = เลขใต้ชื่อสินค้าบนใบ · <span style="color:#b45309">ได้ดวง / มูลค่า฿ / M-Stamp</span> = เลขในกล่องสี (ของที่ได้รับ)',
+    discount:'<span style="color:#64748b">ราคาปกติ</span> = เลขที่ขีดฆ่า · <span style="color:#0f766e">ราคาโปรฯ</span> = เลขตัวใหญ่ที่ต้องจ่าย · ใบนี้ไม่เกี่ยวกับแสตมป์',
+    bundle:'<span style="color:#0f766e">ราคาโปรฯ</span> = ราคาของทั้งชุด · ใส่จำนวน/เงื่อนไขให้ชัด เช่น "2 ชิ้น"',
+    freebie:'<span style="color:#0f766e">ราคาโปรฯ</span> = ยอดที่ต้องซื้อครบ · <b>ของแถม</b> = สิ่งที่ได้ฟรี',
+    redeem:'<span style="color:#b45309">ใช้ดวง / มูลค่า฿</span> = แสตมป์ที่ต้องใช้แลก · <span style="color:#0f766e">จ่ายเพิ่ม</span> = เงินที่ต้องจ่ายสมทบ (ถ้ามี)',
+    custom:'ใบนี้กติกาเฉพาะ — กรอกเท่าที่ใบบอก ช่องไหนใบไม่บอกให้เว้นว่าง',
+  };
+  const inp=(k,v,w,t)=>'<input class="inp" data-k="'+k+'"'+(t?(' type="'+t+'"'):'')+' value="'+esc(F(v))+'" style="width:'+w+'px;font-size:12px">';
+  const cellFor=(c,it)=>{
+    if(c==='better') return '<td><select class="inp" data-k="better" style="width:88px;font-size:12px"><option value="">— ใบไม่บอก —</option>'
+      +'<option value="stamp"'+(it.better==='stamp'?' selected':'')+'>รับเป็นดวง</option>'
+      +'<option value="mstamp"'+(it.better==='mstamp'?' selected':'')+'>M-Stamp</option></select></td>';
+    if(c==='save'){ const a=Number(it.price_before), b=Number(it.price_after);
+      const d=(isFinite(a)&&isFinite(b)&&a>b)?(Math.round((a-b)*100)/100):null;
+      return '<td style="color:#dc2626;white-space:nowrap">'+(d!==null?('-'+d+'฿'):'—')+'</td>'; }
+    if(c==='free_item') return '<td>'+inp('free_item',(it.extra||{})['ของแถม'],130,'')+'</td>';
+    const d=CD[c]||{w:70,t:''};
+    return '<td'+(d.bg?(' style="background:'+d.bg+'"'):'')+'>'+inp(c,it[c],d.w,d.t)+'</td>';
+  };
+
+  const head='<tr style="text-align:left;color:var(--muted)"><th style="padding:4px">สินค้า</th><th>ขนาด</th><th>จำนวน</th>'
+    +cols.map(c=>'<th style="color:'+((CD[c]||{}).c||'var(--muted)')+'">'+((CD[c]||{}).h||c)+'</th>').join('')
+    +'<th>เงื่อนไข</th><th></th></tr>';
+
+  box.innerHTML='<div style="display:flex;gap:10px;align-items:flex-start;margin:8px 0 10px">'
+    +(sh.image_url?('<img src="'+esc(sh.image_url)+'" onclick="lightbox(this)" style="width:120px;border-radius:9px;border:1px solid var(--line);cursor:zoom-in">'):'')
+    +'<div style="flex:1"><div style="font-size:13.5px;font-weight:800">ตรวจแก้ใบ #'+id+' · '+esc(sh.title||'')+' ('+rows.length+' รายการ)</div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-top:2px">'+esc(String(sh.period_start||'—'))+' → '+esc(String(sh.period_end||'—'))
+    +' · <span style="background:#eef2ff;color:#3730a3;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:700">ชนิด: '+esc(PTLABEL[PT]||PT)+'</span></div>'
+    +(sh.mechanic_note?('<div style="font-size:12px;margin-top:6px;padding:7px 9px;background:#f0f9ff;color:#075985;border-radius:8px;line-height:1.5">กติกาของใบนี้: '+esc(sh.mechanic_note)+'</div>'):'')
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">💡 <b>กดที่รูปเพื่อขยาย</b> แล้วไล่เทียบทีละแถว · '+(HINT[PT]||HINT.custom)+'</div>'
+    +'</div></div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:'+(520+cols.length*82)+'px">'+head
+    +rows.map(it=>{
+      const tds='<td style="padding:3px">'+inp('product',it.product,150,'')+'</td>'
+        +'<td>'+inp('size',it.size,90,'')+'</td>'
+        +'<td>'+inp('qty',it.qty,60,'')+'</td>'
+        +cols.map(c=>cellFor(c,it)).join('')
+        +'<td>'+inp('condition',it.condition,150,'')+'</td>'
+        +'<td style="white-space:nowrap"><button class="btn btn-sec btn-sm" data-pmsave="'+it.id+'">บันทึก</button> <button class="btn btn-danger btn-sm" data-pmdi="'+it.id+'">ลบ</button></td>';
+      return '<tr data-pmrow="'+it.id+'" style="border-top:1px solid var(--line)">'+tds+'</tr>';
+    }).join('')
     +'</table></div>'
     +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" id="pm_done">✓ ตรวจแก้เสร็จ — ให้นิดาใช้ได้</button><button class="btn btn-sec btn-sm" id="pm_undone">ยังไม่เสร็จ</button></div>';
+
   box.querySelectorAll('[data-pmsave]').forEach(b=>b.onclick=async()=>{
     const tr=b.closest('[data-pmrow]'); const item={id:+b.dataset.pmsave};
-    tr.querySelectorAll('[data-k]').forEach(i=>item[i.dataset.k]=i.value);
+    tr.querySelectorAll('[data-k]').forEach(i2=>item[i2.dataset.k]=i2.value);
+    if(!item.reward_kind) item.reward_kind = PT;
     const r=await pmPost({ mode:'promo_admin', act:'save_item', item });
     toast(r.ok?'ok':'err', r.ok?'บันทึกแล้ว':(r.error||'ไม่สำเร็จ'));
   });
