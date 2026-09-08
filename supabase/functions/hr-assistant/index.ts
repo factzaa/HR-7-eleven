@@ -604,11 +604,51 @@ async function promoDetect(mime: string, b64: string): Promise<any> {
   };
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const jr = await r.json();
-  const txt = (jr?.candidates?.[0]?.content?.parts || []).map((x: any) => x.text || "").join("").trim();
-  if (!txt) throw new Error("ดูรูปไม่ได้ (โมเดลไม่คืนข้อมูล)");
-  const o = JSON.parse(txt);
+  const parts = (jr?.candidates?.[0]?.content?.parts || []).filter((x: any) => !x?.thought);   // กันส่วน "ความคิด" ของโมเดลปนมาในข้อความ
+  const txt = parts.map((x: any) => x.text || "").join("").trim();
+  const fin = jr?.candidates?.[0]?.finishReason || "";
+  if (!txt) throw new Error("ดูรูปไม่ได้ (โมเดลไม่คืนข้อมูล" + (fin ? " · finishReason=" + fin : "") + ")");
+  // ★ 8 ก.ย. 2569 — เจอจริง: โมเดลคืน JSON ที่ string ไม่ปิด (Unterminated string) แล้วทั้งใบพังตั้งแต่ขั้น "เดาชนิด"
+  //   จังหวะนี้แค่ "เดาชนิดใบ" เท่านั้น ไม่คุ้มที่จะล้มทั้งใบ — กู้เท่าที่กู้ได้ กู้ไม่ได้ก็คืน custom ให้คนเลือกเอง
+  const o = promoParseLoose(txt) || { promo_type: "custom", _parse_failed: true, confidence: "ต่ำ" };
   if (!PROMO_TYPES[String(o.promo_type)]) o.promo_type = "custom";
   return o;
+}
+
+// อ่าน JSON แบบ "ทนพัง" — ใช้กับผลลัพธ์ที่โมเดลอาจคืนมาไม่สมบูรณ์
+//   1) ตรง ๆ  2) ตัดรั้ว ``` หรือข้อความนำหน้าออก  3) ปิด string/วงเล็บที่ค้างให้ครบ
+//   4) สุดท้ายจริง ๆ ค่อยดึงเฉพาะฟิลด์ที่ต้องใช้ด้วย regex
+function promoParseLoose(raw: string): any | null {
+  const tryParse = (t: string) => { try { return JSON.parse(t); } catch { return null; } };
+  let t = String(raw || "").trim();
+  let o = tryParse(t);
+  if (o) return o;
+  t = t.replace(/^```[a-z]*\s*/i, "").replace(/```\s*$/i, "").trim();
+  const a = t.indexOf("{");
+  if (a > 0) t = t.slice(a);
+  o = tryParse(t);
+  if (o) return o;
+  // ปิดของที่ค้าง: นับเครื่องหมายคำพูดที่ยังไม่ปิด แล้วเติมวงเล็บปิดตามที่เปิดไว้
+  let inStr = false, esc = false; const stack: string[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (esc) { esc = false; continue; }
+    if (c === "\\") { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === "{" || c === "[") stack.push(c);
+    else if (c === "}" || c === "]") stack.pop();
+  }
+  let fix = t.replace(/,\s*$/, "");
+  if (inStr) fix += '"';
+  for (let i = stack.length - 1; i >= 0; i--) fix += (stack[i] === "{" ? "}" : "]");
+  o = tryParse(fix);
+  if (o) { o._repaired = true; return o; }
+  // ทางสุดท้าย — เอาเท่าที่จำเป็นพอให้คนเลือกชนิดเองต่อได้
+  const pick = (k: string) => { const m = t.match(new RegExp('"' + k + '"\\s*:\\s*"([^"\\n]{0,160})')); return m ? m[1] : null; };
+  const ptype = pick("promo_type");
+  if (ptype || pick("title")) return { promo_type: ptype || "custom", title: pick("title"), confidence: "ต่ำ", _repaired: true, _partial: true };
+  return null;
 }
 
 // ── จังหวะ 2: อ่านทั้งใบ ด้วยกติกาของ "ชนิดที่ยืนยันแล้ว" ────────────────
@@ -4569,7 +4609,15 @@ Deno.serve(async (req) => {
           types: Object.keys(PROMO_TYPES).map((k) => ({ key: k, label: PROMO_TYPES[k].label, hint: PROMO_TYPES[k].hint })),
           note: "ยังไม่ได้บันทึกอะไร — ตรวจว่าชนิดถูกไหมแล้วค่อยยืนยันให้อ่านทั้งใบ",
         });
-      } catch (e) { return json({ ok: false, error: "ดูรูปไม่สำเร็จ: " + String((e as any)?.message || e) }); }
+      } catch (e) {
+        // ★ ถึงเดาชนิดไม่ได้ ก็ต้องส่ง "รายชื่อชนิดใบ" กลับไปด้วย ให้คนเลือกเองแล้วนำเข้าต่อได้
+        //   ไม่งั้นใบนั้นจะตันอยู่แค่นี้ (เจอจริง 8 ก.ย. 2569 กับใบ "ลดอย่างแรง 7 วันเท่านั้น")
+        return json({
+          ok: false, error: "ดูรูปไม่สำเร็จ: " + String((e as any)?.message || e),
+          fallback_type: "custom",
+          types: Object.keys(PROMO_TYPES).map((k) => ({ key: k, label: PROMO_TYPES[k].label, hint: PROMO_TYPES[k].hint })),
+        });
+      }
     }
 
     // ── ★ เรียกดูโปรฯ แบบเร็ว: อ่าน __NEXT_DATA__ ของ "หน้ารวมหมวด" หน้าเดียวจบ
