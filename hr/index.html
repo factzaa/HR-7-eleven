@@ -1722,6 +1722,53 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 <!-- Goods receiving: คลัง + รับสินค้า -->
 <div id="view_manual" class="container" style="display:none">
 
+  <style>
+    .mrp{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px}
+    .mrp button{padding:7px 14px;border:1.5px solid var(--line2);border-radius:99px;background:var(--card);
+      font:inherit;font-size:13px;font-weight:600;color:var(--txt);cursor:pointer;white-space:nowrap}
+    .mrp button.on{background:var(--pri,#008061);border-color:var(--pri,#008061);color:#fff}
+    .mrsec{font-size:12.5px;font-weight:800;color:var(--pri,#008061);margin:14px 0 6px;
+      padding-bottom:4px;border-bottom:2px solid var(--line)}
+    .mrsec:first-child{margin-top:2px}
+    .mrl{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);
+      border-radius:10px;margin-bottom:6px;cursor:pointer;background:var(--card)}
+    .mrl:hover{border-color:var(--pri,#008061)}
+    .mrl .no{flex:none;min-width:38px;font-size:12.5px;font-weight:800;color:var(--pri,#008061)}
+    .mrl .tt{flex:1;font-size:13.5px;font-weight:600;line-height:1.45}
+    .mrl .mt{flex:none;font-size:11.5px;color:var(--muted);white-space:nowrap}
+    .mrl .rv{flex:none;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+    .mrl .rv.y{background:#dcfce7;color:#15803d}
+    .mrl .rv.n{background:var(--glass);color:var(--muted);border:1px solid var(--line)}
+    .mrhit{border:1px solid var(--line);border-left:3px solid var(--pri,#008061);border-radius:9px;
+      padding:8px 11px;margin-bottom:6px;cursor:pointer;background:var(--card)}
+    .mrhit b{color:var(--pri,#008061)}
+    .mrstep{display:grid;grid-template-columns:250px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+    .mrstep img{width:100%;border:1px solid var(--line);border-radius:8px;cursor:zoom-in;display:block}
+    .mrstep .hd{font-size:14px;font-weight:700;color:var(--pri,#008061);margin-bottom:4px}
+    .mrstep .ins{font-size:13.5px;line-height:1.65}
+    .mrstep .sub{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.55}
+    .mrstep .nm{display:inline-block;min-width:21px;height:21px;line-height:21px;text-align:center;
+      background:var(--pri,#008061);color:#fff;border-radius:50%;font-size:11.5px;font-weight:800;margin-right:6px}
+    .mrgap{border-left:3px solid #f59e0b;background:#fffbeb;color:#78350f;padding:8px 11px;
+      border-radius:0 8px 8px 0;font-size:12.5px;line-height:1.6;margin-top:12px}
+    @media(max-width:620px){ .mrstep{grid-template-columns:1fr;gap:8px} }
+  </style>
+
+  <div class="card">
+    <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg> อ่านคู่มือหลักสูตร</h3></div>
+    <div class="card-b">
+      <div id="mr_courses" class="mrp"></div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:4px">
+        <input id="mr_q" type="search" placeholder="ค้นทั้งคู่มือ — เช่น ซาลาเปา · FIFO · 15 เซนติเมตร"
+          style="flex:1;min-width:210px;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
+        <span id="mr_prog" style="font-size:12.5px;color:var(--muted)"></span>
+      </div>
+      <div id="mr_res"></div>
+      <div id="mr_list"></div>
+    </div>
+  </div>
+
+
   <div class="card">
     <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg> นำเข้าคู่มือจากบทเรียน</h3></div>
     <div class="card-b">
@@ -1774,6 +1821,201 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
 
 </div>
+
+<!-- หน้าอ่านคู่มือรายบท -->
+<div class="overlay" id="mrOverlay">
+  <div class="modal wide">
+    <div class="modal-h">
+      <h2 id="mr_title" style="font-size:16px;line-height:1.4">บทเรียน</h2>
+      <button class="close" id="mr_close">&times;</button>
+    </div>
+    <div class="modal-b" id="mr_body"></div>
+    <div class="modal-f" style="justify-content:space-between">
+      <div style="display:flex;gap:7px">
+        <button class="btn btn-sec btn-sm" id="mr_prev">&lsaquo; บทก่อน</button>
+        <button class="btn btn-sec btn-sm" id="mr_next">บทถัดไป &rsaquo;</button>
+      </div>
+      <div style="display:flex;gap:7px">
+        <button class="btn btn-sec btn-sm" id="mr_quiz">ทำข้อสอบบทนี้</button>
+        <button class="btn btn-pri btn-sm" id="mr_rev">ตรวจแล้ว</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= อ่านคู่มือหลักสูตร ================= -->
+<script>
+let MR = { idx:[], course:'', cur:null, order:[], cache:{}, wired:false };
+
+function mrInit(){
+  if(MR.wired) return; MR.wired = true;
+  $('mr_close').onclick = ()=>{ $('mrOverlay').style.display='none'; };
+  $('mrOverlay').onclick = (e)=>{ if(e.target.id==='mrOverlay') $('mrOverlay').style.display='none'; };
+  $('mr_prev').onclick  = ()=> mrNav(-1);
+  $('mr_next').onclick  = ()=> mrNav(1);
+  $('mr_rev').onclick   = mrToggleRev;
+  $('mr_quiz').onclick  = mrQuiz;
+  let t=null;
+  $('mr_q').oninput = ()=>{ clearTimeout(t); t=setTimeout(mrSearch, 380); };
+  mrLoadIndex();
+}
+
+async function mrLoadIndex(){
+  const r = await cmPost({ mode:'course_read', act:'index' });
+  if(!r || !r.ok){ $('mr_list').innerHTML='<div style="color:var(--muted);font-size:13px">โหลดสารบัญไม่สำเร็จ</div>'; return; }
+  MR.idx = r.lessons || [];
+  const cs = [];
+  MR.idx.forEach(l=>{ if(!cs.some(c=>c.code===l.course_code)) cs.push({ code:l.course_code, name:l.course_name||l.course_code }); });
+  if(!MR.course && cs.length) MR.course = cs[0].code;
+  $('mr_courses').innerHTML = cs.map(c=>{
+    const n = MR.idx.filter(x=>x.course_code===c.code).length;
+    return '<button data-c="'+esc(c.code)+'"'+(c.code===MR.course?' class="on"':'')+'>'+esc(c.name)+' ('+n+' บท)</button>';
+  }).join('');
+  $('mr_courses').querySelectorAll('button').forEach(b=>{
+    b.onclick = ()=>{ MR.course = b.dataset.c; $('mr_q').value=''; $('mr_res').innerHTML=''; mrLoadIndex(); };
+  });
+  mrRenderList();
+}
+
+function mrRenderList(){
+  const ls = MR.idx.filter(l=>l.course_code===MR.course);
+  MR.order = ls.map(l=>l.id);
+  const done = ls.filter(l=>l.reviewed).length;
+  const pct = ls.length ? Math.round(done/ls.length*100) : 0;
+  $('mr_prog').innerHTML = 'ตรวจแล้ว <b style="color:var(--pri,#008061)">'+done+'</b> / '+ls.length+' บท ('+pct+'%)';
+  const bysec = {};
+  ls.forEach(l=>{ (bysec[l.section||'(ไม่ระบุส่วน)'] = bysec[l.section||'(ไม่ระบุส่วน)'] || []).push(l); });
+  $('mr_list').innerHTML = Object.keys(bysec).sort().map(sec=>
+    '<div class="mrsec">'+esc(sec)+'</div>'
+    + bysec[sec].map(l=>
+        '<div class="mrl" data-id="'+l.id+'">'
+        + '<span class="no">'+esc(l.lesson_no)+'</span>'
+        + '<span class="tt">'+esc(l.title)+'</span>'
+        + '<span class="mt">'+(l.step_count||0)+' ขั้นตอน</span>'
+        + '<span class="rv '+(l.reviewed?'y':'n')+'">'+(l.reviewed?'ตรวจแล้ว':'ยังไม่ตรวจ')+'</span>'
+        + '</div>').join('')
+  ).join('');
+  $('mr_list').querySelectorAll('.mrl').forEach(d=>{ d.onclick = ()=> mrOpen(+d.dataset.id); });
+}
+
+async function mrSearch(){
+  const q = $('mr_q').value.trim();
+  const box = $('mr_res');
+  if(q.length < 2){ box.innerHTML=''; $('mr_list').style.display=''; return; }
+  box.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:6px 0">กำลังค้น…</div>';
+  const r = await cmPost({ mode:'course_read', act:'search', q, course: MR.course });
+  if(!r || !r.ok){ box.innerHTML='<div style="font-size:12.5px;color:#dc2626">ค้นไม่สำเร็จ</div>'; return; }
+  $('mr_list').style.display = 'none';
+  const hl = (t)=>{ t = esc(String(t||'')); const k = esc(q);
+    try { return t.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), m=>'<b>'+m+'</b>'); } catch(e){ return t; } };
+  const A = (r.lessons||[]).map(l=>
+    '<div class="mrhit" data-id="'+l.id+'"><div style="font-size:13px;font-weight:700">บท '+esc(l.lesson_no)+' '+hl(l.title)+'</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.55">'+hl(String(l.summary||'').slice(0,150))+'</div></div>').join('');
+  const B = (r.steps||[]).map(x=>
+    '<div class="mrhit" data-id="'+x.lesson_id+'"><div style="font-size:12px;color:var(--muted)">บท '
+    + esc(x.lesson.lesson_no)+' '+esc(x.lesson.title)+' · ขั้นตอนที่ '+x.step_no+'</div>'
+    + '<div style="font-size:13px;margin-top:3px;line-height:1.6">'+hl(String(x.instruction||'').slice(0,190))+'</div></div>').join('');
+  const n = (r.lessons||[]).length + (r.steps||[]).length;
+  box.innerHTML = '<div style="font-size:12.5px;color:var(--muted);margin:8px 0 7px">เจอ '+n+' รายการ '
+    + '<button class="btn btn-sec btn-sm" style="margin-left:6px" onclick="$(\'mr_q\').value=\'\';$(\'mr_res\').innerHTML=\'\';$(\'mr_list\').style.display=\'\'">ล้างคำค้น</button></div>'
+    + (A?'<div style="font-size:12px;font-weight:800;margin:6px 0 5px">พบในหัวบท / สรุป / ข้อควรระวัง</div>'+A:'')
+    + (B?'<div style="font-size:12px;font-weight:800;margin:10px 0 5px">พบในขั้นตอนการทำงาน</div>'+B:'')
+    + (n?'':'<div style="font-size:13px;color:var(--muted)">ไม่พบคำนี้ในคู่มือ</div>');
+  box.querySelectorAll('.mrhit').forEach(d=>{ d.onclick = ()=> mrOpen(+d.dataset.id); });
+}
+
+async function mrOpen(id){
+  $('mrOverlay').style.display = 'flex';
+  $('mr_body').innerHTML = '<div style="padding:26px;text-align:center;color:var(--muted);font-size:13px">กำลังโหลด…</div>';
+  let r = MR.cache[id];
+  if(!r){ r = await cmPost({ mode:'course_read', act:'lesson', lesson_id:id }); if(r&&r.ok) MR.cache[id]=r; }
+  if(!r || !r.ok){ $('mr_body').innerHTML='<div style="padding:22px;color:#dc2626">เปิดบทนี้ไม่สำเร็จ</div>'; return; }
+  MR.cur = r;
+  const L = r.lesson, S = r.steps || [];
+  $('mr_title').innerHTML = 'บท '+esc(L.lesson_no)+' &nbsp;'+esc(L.title);
+  const mm = (v)=>{ v=Number(v); return isFinite(v) ? (String(Math.floor(v/60)).padStart(2,'0')+':'+String(Math.round(v%60)).padStart(2,'0')) : ''; };
+  let H = '';
+  H += '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">'+esc(L.section||'')
+     + (L.source_url ? ' · <a href="'+esc(L.source_url)+'" target="_blank" rel="noopener" style="color:var(--pri,#008061)">เปิดวิดีโอต้นทาง</a>' : '')+'</div>';
+  if(L.summary) H += '<div style="background:var(--glass);border-radius:10px;padding:11px 13px;margin-bottom:9px;font-size:13.5px;line-height:1.7"><b style="color:var(--pri,#008061)">บทนี้สอนอะไร</b><br>'+esc(L.summary)+'</div>';
+  if(L.when_to_use) H += '<div style="background:var(--glass);border-radius:10px;padding:11px 13px;margin-bottom:12px;font-size:13.5px;line-height:1.7"><b style="color:var(--pri,#008061)">ใช้เมื่อไหร่</b><br>'+esc(L.when_to_use)+'</div>';
+
+  H += '<div style="font-size:14px;font-weight:800;margin:14px 0 2px">ขั้นตอนการทำงาน</div>';
+  if(S.length){
+    H += S.map(x=>{
+      const bits = [];
+      if(x.screen) bits.push('หน้าจอ: '+esc(x.screen));
+      if(x.note)   bits.push('หมายเหตุ: '+esc(x.note));
+      const t = mm(x.at_sec); if(t) bits.push('นาทีที่ '+t);
+      return '<div class="mrstep">'
+        + '<div>'+(x.image_url ? '<img loading="lazy" src="'+esc(x.image_url)+'" onclick="lightbox(this)" alt="ขั้นตอนที่ '+x.step_no+'">' : '')+'</div>'
+        + '<div><div class="hd"><span class="nm">'+x.step_no+'</span>'+esc(x.heading||('ขั้นตอนที่ '+x.step_no))+'</div>'
+        + '<div class="ins">'+esc(x.instruction)+'</div>'
+        + (bits.length?'<div class="sub">'+bits.join(' · ')+'</div>':'')
+        + '</div></div>';
+    }).join('');
+  } else {
+    H += '<div style="font-size:13px;color:var(--muted);font-style:italic;padding:6px 0">บทนี้เป็นเนื้อหาแนวคิด/บรรยาย ไม่มีขั้นตอนกดเครื่อง</div>';
+  }
+
+  const ca = String(L.cautions||'').split('\n').map(x=>x.replace(/^[•\-\s]+/,'').trim()).filter(Boolean);
+  if(ca.length){
+    H += '<div style="font-size:14px;font-weight:800;margin:18px 0 6px">เงื่อนไขและข้อควรระวัง</div>'
+       + '<ul style="margin:0;padding-left:19px;font-size:13.5px;line-height:1.75">'
+       + ca.map(c=>'<li style="margin-bottom:4px">'+esc(c)+'</li>').join('') + '</ul>';
+  }
+  H += '<div id="mr_quizbox" style="margin-top:18px"></div>';
+  $('mr_body').innerHTML = H;
+  $('mr_body').scrollTop = 0;
+  mrRevBtn();
+  const i = MR.order.indexOf(L.id);
+  $('mr_prev').disabled = (i <= 0);
+  $('mr_next').disabled = (i < 0 || i >= MR.order.length-1);
+}
+
+function mrRevBtn(){
+  const L = MR.cur && MR.cur.lesson; if(!L) return;
+  const b = $('mr_rev');
+  b.textContent = L.reviewed ? '✓ ตรวจแล้ว' : 'ทำเครื่องหมายว่าตรวจแล้ว';
+  b.className = 'btn btn-sm ' + (L.reviewed ? 'btn-sec' : 'btn-pri');
+}
+
+async function mrToggleRev(){
+  const L = MR.cur && MR.cur.lesson; if(!L) return;
+  const v = !L.reviewed;
+  const r = await cmPost({ mode:'course_admin', act:'save_lesson', lesson_id:L.id, reviewed:v });
+  if(!r || !r.ok){ toast('err', (r&&r.error)||'บันทึกไม่สำเร็จ'); return; }
+  L.reviewed = v; mrRevBtn();
+  const row = MR.idx.find(x=>x.id===L.id); if(row) row.reviewed = v;
+  mrRenderList();
+  toast('ok', v ? 'บันทึกว่าตรวจบทนี้แล้ว' : 'ตั้งกลับเป็นยังไม่ตรวจ');
+}
+
+function mrNav(d){
+  const L = MR.cur && MR.cur.lesson; if(!L) return;
+  const i = MR.order.indexOf(L.id) + d;
+  if(i >= 0 && i < MR.order.length) mrOpen(MR.order[i]);
+}
+
+// ข้อสอบท้ายบท — ใช้เครื่องข้อสอบตัวเดิม แต่วาดลงในหน้าอ่านแทน
+async function mrQuiz(){
+  const L = MR.cur && MR.cur.lesson; if(!L) return;
+  const box = $('mr_quizbox');
+  box.innerHTML = '<div style="font-size:13px;color:var(--muted)">กำลังสุ่มข้อสอบของบทนี้…</div>';
+  const r = await cmPost({ mode:'exam', act:'start', scope:'lesson', value:L.lesson_no, course:L.course_code, n:10 });
+  if(!r || !r.ok){ box.innerHTML = '<div style="font-size:13px;color:#dc2626">'+esc((r&&r.error)||'เริ่มไม่สำเร็จ')+'</div>'; return; }
+  EX.items = r.items || []; EX.ans = {}; EX.started = new Date().toISOString();
+  EX.box = 'mr_quizbox'; EX.course = L.course_code;
+  EX.scopeKind = 'lesson';
+  EX.scopeLabel = 'บท ' + L.lesson_no + ' ' + (L.title||'');
+  EX.againFn = 'mrQuiz';
+  box.innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:8px">ข้อสอบท้ายบท ('+EX.items.length+' ข้อ)</div><div id="mr_qin"></div>';
+  EX.box = 'mr_qin';
+  exRender();
+  box.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+</script>
+
 
 <div id="view_promo" class="container" style="display:none">
 
@@ -7694,7 +7936,7 @@ const CM_SECTIONS = {
   '8':'ส่วน 8 - คุณค่าและความสำคัญของตนเอง ทีมงาน และลูกค้า',
 };
 // ================= ข้อสอบซ้อมจากคู่มือ =================
-let EX = { items: [], ans: {}, started: null, scopeLabel: '', course: '', wired: false };
+let EX = { items: [], ans: {}, started: null, scopeLabel: '', course: '', box: 'ex_body', scopeKind: '', againFn: 'exStart', wired: false };
 const EX_KIND = { what:'ดูภาพแล้วตอบ', next:'ขั้นตอนถัดไป', order:'เรียงลำดับ', caution:'เงื่อนไข/ข้อควรระวัง' };
 function exMsg(t, err){ const e=$('ex_msg'); if(e){ e.textContent=t||''; e.style.color = err?'var(--danger,#dc2626)':'var(--muted)'; } }
 
@@ -7731,6 +7973,7 @@ async function exStart(){
   const [scope, value] = String($('qz_scope').value||'all|').split('|');
   EX.scopeLabel = $('qz_scope').selectedOptions[0].textContent;
   exMsg('กำลังสุ่มข้อสอบ…');
+  EX.box = 'ex_body'; EX.scopeKind = ''; EX.againFn = 'exStart';
   const r = await cmPost({ mode:'exam', act:'start', scope, value, course: EX.course||undefined, n:Number($('ex_n').value)||20 });
   if(!r || !r.ok){ exMsg((r&&r.error)||'เริ่มไม่สำเร็จ', true); return; }
   EX.items = r.items||[]; EX.ans = {}; EX.started = new Date().toISOString();
@@ -7739,7 +7982,7 @@ async function exStart(){
 }
 
 function exRender(){
-  const box = $('ex_body');
+  const box = $(EX.box || 'ex_body');
   if(!EX.items.length){ box.innerHTML=''; return; }
   const done = Object.keys(EX.ans).length;
   box.innerHTML =
@@ -7803,19 +8046,22 @@ async function exSubmit(){
   const emp = $('ex_emp');
   const r = await cmPost({ mode:'exam', act:'submit', answers, started_at:EX.started,
     emp_id: emp.value||null, emp_name: emp.value ? emp.selectedOptions[0].textContent : null,
-    scope: String($('qz_scope').value||'all|').split('|')[0], course: EX.course||undefined, scope_label: EX.scopeLabel });
+    scope: EX.scopeKind || String($('qz_scope').value||'all|').split('|')[0],
+    course: EX.course||undefined, scope_label: EX.scopeLabel });
   if(!r || !r.ok){ exMsg((r&&r.error)||'ตรวจไม่สำเร็จ', true); if(btn) btn.disabled=false; return; }
   exMsg(r.saved ? 'บันทึกผลแล้ว' : 'ตรวจแล้ว (ไม่ได้บันทึกผล)');
   const good = r.score_pct >= 80;
-  $('ex_body').innerHTML =
+  $(EX.box || 'ex_body').innerHTML =
     '<div style="border:2px solid '+(good?'var(--pri,#008061)':'#f59e0b')+';border-radius:12px;padding:16px;text-align:center;margin-bottom:14px">'
     + '<div style="font-size:30px;font-weight:900;color:'+(good?'var(--pri,#008061)':'#b45309')+'">'+r.correct+' / '+r.total+'</div>'
     + '<div style="font-size:15px;font-weight:700;margin-top:2px">'+r.score_pct+'%</div>'
     + '<div style="font-size:12.5px;color:var(--muted);margin-top:5px">'+esc(EX.scopeLabel)+'</div>'
-    + '<button class="btn btn-pri btn-sm" style="margin-top:11px" onclick="exStart()">ทำชุดใหม่</button></div>'
+    + '<button class="btn btn-pri btn-sm" style="margin-top:11px" onclick="'+(EX.againFn||'exStart')+'()">ทำชุดใหม่</button></div>'
     + '<div style="font-size:13.5px;font-weight:800;margin-bottom:9px">เฉลย</div>'
     + (r.review||[]).map((q,i)=>exReview(q,i)).join('');
-  window.scrollTo({ top: $('ex_body').offsetTop - 70, behavior:'smooth' });
+  const _rb = $(EX.box || 'ex_body');
+  if(EX.box && EX.box !== 'ex_body') _rb.scrollIntoView({ behavior:'smooth', block:'start' });
+  else window.scrollTo({ top: _rb.offsetTop - 70, behavior:'smooth' });
 }
 
 function exReview(q, i){
@@ -9554,7 +9800,7 @@ showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
   else if(name==='promo'){ pmLoad(); pmBrowseInit(); }
-  else if(name==='manual'){ cmInit(); cmLoad(); exInit(); }
+  else if(name==='manual'){ mrInit(); cmInit(); cmLoad(); exInit(); }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
