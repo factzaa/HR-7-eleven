@@ -8791,7 +8791,7 @@ async function pmLoad(){
 // ── ขนาดใบโปรฯ ในหน้าตรวจแก้ (กว้างพาเนล × ขนาดรูปในพาเนล)
 //    เจอจริง 8 ก.ย. 2569 — รูปเดิมกว้าง 120px อ่านรายการบนใบไม่ออกเลย ตรวจแก้ไม่ได้
 const PM_ZSTEPS=[{w:320,s:100},{w:440,s:100},{w:560,s:100},{w:560,s:150},{w:560,s:220},{w:560,s:320},{w:560,s:460}];
-let PM_ZSTEP=2;
+let PM_ZSTEP=2, PM_ZUSER=false;
 function pmZoomApply(){
   const z=PM_ZSTEPS[PM_ZSTEP], wrap=document.querySelector('.pmwrap'); if(!wrap) return;
   wrap.style.setProperty('--pmw', z.w+'px');
@@ -8882,9 +8882,14 @@ async function pmOpen(id){
     +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri btn-sm" id="pm_done">✓ ตรวจแก้เสร็จ — ให้นิดาใช้ได้</button><button class="btn btn-sec btn-sm" id="pm_undone">ยังไม่เสร็จ</button></div>'
     +'</div></div>';
 
-  // ── ขนาดใบโปรฯ: จำค่าที่เลือกไว้ทั้งรอบการใช้งาน (เปิดใบอื่นก็ยังขนาดเดิม)
+  // ★ .card ตั้ง overflow:hidden ไว้ → กลายเป็น "กรอบเลื่อน" ที่เลื่อนไม่ได้ ทำให้ position:sticky ตาย
+  //   ต้องเปิด overflow ของการ์ดใบนี้ ใบโปรฯ ถึงจะค้างอยู่ตอนเลื่อนหน้า (เจอจริง 8 ก.ย. 2569)
+  const _cd=box.closest('.card'); if(_cd) _cd.style.overflow='visible';
+  // ── ขนาดใบโปรฯ: ครั้งแรกเลือกให้ตามความกว้างจอ หลังจากนั้นจำค่าที่ผู้ใช้ปรับเอง
+  if(!PM_ZUSER) PM_ZSTEP = (innerWidth>=1750?2:(innerWidth>=1360?1:0));
   pmZoomApply();
   box.querySelectorAll('[data-pmz]').forEach(b=>b.onclick=()=>{
+    PM_ZUSER=true;
     PM_ZSTEP = Math.max(0, Math.min(PM_ZSTEPS.length-1, PM_ZSTEP + (b.dataset.pmz==='+'?1:-1)));
     pmZoomApply();
   });
