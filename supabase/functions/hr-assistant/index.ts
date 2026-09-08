@@ -5021,6 +5021,73 @@ Deno.serve(async (req) => {
       return json({ ok: true, scanned: list.length, applied, scored, warned });
     }
 
+    // ================= อ่านคู่มือหลักสูตร (read-only) =================
+    //   แยกจาก course_admin เพราะอันนั้นเป็นหน้าจัดการ (แก้/ลบ) ส่วนอันนี้ไว้อ่านอย่างเดียว
+    if (body.mode === "course_read") {
+      const act = String(body.act || "index");
+
+      // สารบัญทุกหลักสูตร — ไม่ดึง steps มาด้วย จะได้โหลดเร็วบนมือถือ
+      if (act === "index") {
+        const { data, error } = await sb.from("course_lessons")
+          .select("id,course_code,course_name,section,lesson_no,title,summary,when_to_use,step_count,reviewed,source_url")
+          .eq("active", true).limit(400);
+        if (error) return json({ ok: false, error: error.message });
+        const rows = (data || []).sort((a: any, b: any) =>
+          String(a.course_code).localeCompare(String(b.course_code)) ||
+          String(a.lesson_no).localeCompare(String(b.lesson_no), "en", { numeric: true }));
+        return json({ ok: true, lessons: rows });
+      }
+
+      // เนื้อหาบทเดียว พร้อมขั้นตอนและภาพ
+      if (act === "lesson") {
+        const id = Number(body.lesson_id);
+        if (!(id > 0)) return json({ ok: false, error: "ไม่ได้ระบุบท" });
+        const [{ data: ls }, { data: st }] = await Promise.all([
+          sb.from("course_lessons").select("*").eq("id", id).maybeSingle(),
+          sb.from("course_steps").select("id,step_no,heading,instruction,screen,note,at_sec,image_url")
+            .eq("lesson_id", id).order("step_no"),
+        ]);
+        if (!ls) return json({ ok: false, error: "ไม่พบบทนี้" });
+        return json({ ok: true, lesson: ls, steps: st || [] });
+      }
+
+      // ค้นทั้งคู่มือ — ชื่อบท/สรุป/ข้อควรระวัง และข้อความในขั้นตอน
+      if (act === "search") {
+        // ตัดอักขระที่ทำให้ตัวกรอง or() ของ PostgREST พัง (ลูกน้ำ วงเล็บ % \ ")
+        const q = String(body.q || "").replace(/[,()%\\"*]/g, " ").trim().slice(0, 60);
+        if (q.length < 2) return json({ ok: true, lessons: [], steps: [], q });
+        const course = body.course ? String(body.course) : "";
+
+        let lq = sb.from("course_lessons")
+          .select("id,course_code,section,lesson_no,title,summary,cautions")
+          .eq("active", true)
+          .or(`title.ilike.%${q}%,summary.ilike.%${q}%,when_to_use.ilike.%${q}%,cautions.ilike.%${q}%`)
+          .limit(40);
+        if (course) lq = lq.eq("course_code", course);
+
+        let sq = sb.from("course_steps")
+          .select("id,lesson_id,step_no,heading,instruction,at_sec,image_url")
+          .or(`heading.ilike.%${q}%,instruction.ilike.%${q}%,note.ilike.%${q}%`)
+          .limit(80);
+
+        const [{ data: L }, { data: S }] = await Promise.all([lq, sq]);
+        // ขั้นตอนที่เจอ ต้องรู้ว่าอยู่บทไหน (และกรองหลักสูตรที่เลือก)
+        const ids = [...new Set((S || []).map((x: any) => Number(x.lesson_id)))];
+        let lmap: Record<string, any> = {};
+        if (ids.length) {
+          const { data: LL } = await sb.from("course_lessons")
+            .select("id,course_code,lesson_no,title").in("id", ids);
+          for (const l of (LL || [])) lmap[String(l.id)] = l;
+        }
+        const steps = (S || []).map((x: any) => ({ ...x, lesson: lmap[String(x.lesson_id)] || null }))
+          .filter((x: any) => x.lesson && (!course || x.lesson.course_code === course))
+          .slice(0, 50);
+        return json({ ok: true, q, lessons: L || [], steps });
+      }
+
+      return json({ ok: false, error: "ไม่รู้จักคำสั่ง course_read." + act });
+    }
+
     // ================= ข้อสอบซ้อมจากคู่มือหลักสูตร =================
     //   ดึงข้อสอบจาก course_quiz (สร้างจากคู่มือ ไม่ได้แต่งเนื้อหาใหม่)
     //   เฉลยไม่ส่งไปหน้าเว็บตอนแจกข้อสอบ — ส่งคำตอบกลับมาให้หลังบ้านตรวจ กันเปิดดูเฉลยจาก DevTools
