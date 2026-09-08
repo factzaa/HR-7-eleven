@@ -1039,9 +1039,47 @@ function sopStepRow(x: any, lessonId: number, sheetUrls: string[], perSheet = 6)
 }
 
 // ---- เครื่องมือของนิดา: ค้นคู่มือขั้นตอนการทำงาน ----
+// ★ 9 ก.ย. 2569 — ภาษาไทยไม่มีเว้นวรรค การตัดคำด้วยช่องว่างจึงใช้กับคำถามจริงไม่ได้
+//   เคสจริง: ถาม "9 ขั้นตอนปฏิบัติงานของพนักงานมีอะไรบ้าง" → ได้ก้อนเดียวยาวเหยียด
+//   ยิง ilike ด้วยก้อนนั้นไม่แมตช์ชื่อบท "9 ขั้นตอนการปฏิบัติงาน" (ต่างกันแค่คำว่า "การ") → คืน 0 บท
+//   แก้ 2 ทาง: (1) ซอยก้อนยาวเป็น "หน้าต่างเลื่อน" ไปยิง ilike  (2) ให้คะแนนความใกล้เคียงด้วย n-gram ตัวอักษร
+
+// ซอยคำถามเป็นคำค้นย่อย — ก้อนยาว ๆ ตัดเป็นหน้าต่าง 6 และ 8 ตัวอักษร เลื่อนทีละ 2
+function thTokens(raw: string): string[] {
+  const out = new Set<string>();
+  for (const t0 of String(raw || "").split(/[\s,]+/)) {
+    const w = t0.trim();
+    if (w.length < 2) continue;
+    if (w.length <= 8) { out.add(w); continue; }
+    for (const n of [8, 6]) for (let i = 0; i + n <= w.length; i += 2) out.add(w.slice(i, i + n));
+  }
+  return [...out].filter((x) => !/^[%_,()]+$/.test(x)).slice(0, 36);
+}
+// ตัดสระ/วรรณยุกต์/อักขระคั่นออก เหลือโครงพยัญชนะ — กันสะกดต่างกันนิดหน่อยแล้วหาไม่เจอ
+function thKey(s: string): string {
+  return String(s || "").toLowerCase()
+    .replace(/[\u0E30-\u0E3A\u0E47-\u0E4E]/g, "")
+    .replace(/[^\u0E00-\u0E7Fa-z0-9]/g, "");
+}
+function thGrams(s: string, n = 3): Set<string> {
+  const t = thKey(s);
+  const out = new Set<string>();
+  if (t.length < n) { if (t) out.add(t); return out; }
+  for (let i = 0; i + n <= t.length; i++) out.add(t.slice(i, i + n));
+  return out;
+}
+// สัดส่วนของข้อความในฟิลด์ที่โผล่อยู่ในคำถาม = "คำถามนี้พูดถึงเรื่องนี้อยู่ไหม"
+function thScore(field: string, qg: Set<string>): number {
+  const fg = thGrams(field);
+  if (!fg.size || !qg.size) return 0;
+  let hit = 0;
+  for (const g of fg) if (qg.has(g)) hit++;
+  return hit / fg.size;
+}
+
 async function sop_search(a: any) {
   const raw = String(a?.query || a?.topic || "").replace(/[(),%*]/g, " ").trim();
-  const toks = raw.split(/[\s,]+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2).slice(0, 6);
+  const toks = thTokens(raw);
 
   let lq: any = sb.from("course_lessons").select("*").eq("active", true).limit(60);
   if (a?.lesson_no) lq = lq.eq("lesson_no", String(a.lesson_no));
@@ -1054,20 +1092,55 @@ async function sop_search(a: any) {
   if (error) return { error: String(error.message || error) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/course_manual.sql ก่อน)" };
 
   let hits = lessons || [];
-  // ค้นจากชื่อบทไม่เจอ → ค้นในตัวขั้นตอน (คนมักถามด้วยคำที่อยู่ในขั้นตอน ไม่ใช่ชื่อบท)
+  let how = "";
+  // ★ เรียงผลตามความใกล้เคียงจริง ๆ ไม่ใช่ตามลำดับที่ฐานข้อมูลคืนมา
+  //   (ilike ด้วยหน้าต่างสั้น ๆ อาจไปโดนบทที่ไม่เกี่ยวด้วย ต้องคัดอีกชั้น)
+  if (!a?.lesson_no && raw && hits.length > 1) {
+    const qg = thGrams(raw);
+    hits = hits.map((l: any) => {
+      const ex = thKey(l.title) && thKey(raw).includes(thKey(l.title)) ? 1.5 : 0;
+      return { l, sc: thScore(l.title, qg) + Math.max(thScore(l.summary, qg) * 0.5, thScore(l.when_to_use, qg) * 0.45) + ex };
+    }).sort((x: any, y: any) => y.sc - x.sc).map((x: any) => x.l);
+  }
+
+  // ค้นจากชื่อบทไม่เจอ → กวาดทุกบทแล้วให้คะแนนความใกล้เคียง (บทมีไม่ถึงร้อย ทำได้สบาย)
+  if (!hits.length && raw) {
+    const { data: all } = await sb.from("course_lessons").select("*").eq("active", true).limit(300);
+    const qg = thGrams(raw);
+    const scored = (all || []).map((l: any) => {
+      const ex = thKey(l.title) && thKey(raw).includes(thKey(l.title)) ? 1.5 : 0;
+      const sc = thScore(l.title, qg) + Math.max(thScore(l.summary, qg) * 0.5, thScore(l.when_to_use, qg) * 0.45, thScore(l.section, qg) * 0.3) + ex;
+      return { l, sc };
+    }).filter((x: any) => x.sc >= 0.5).sort((x: any, y: any) => y.sc - x.sc);
+    if (scored.length) {
+      hits = scored.slice(0, 3).map((x: any) => x.l);
+      how = " · ★ คำถามไม่ตรงตัวอักษรกับชื่อบท แต่จับคู่ได้จากความใกล้เคียง";
+    }
+  }
+
+  // ยังไม่เจอ → ค้นในตัวขั้นตอน (คนมักถามด้วยคำที่อยู่ในขั้นตอน ไม่ใช่ชื่อบท)
   if (!hits.length && toks.length) {
     const ors: string[] = [];
-    for (const t of toks) ors.push(`instruction.ilike.%${t}%`, `heading.ilike.%${t}%`, `screen.ilike.%${t}%`);
-    const { data: st } = await sb.from("course_steps").select("lesson_id").or(ors.join(",")).limit(80);
-    const ids = [...new Set((st || []).map((x: any) => x.lesson_id))].slice(0, 6);
-    if (ids.length) { const { data: L2 } = await sb.from("course_lessons").select("*").in("id", ids).eq("active", true); hits = L2 || []; }
+    for (const t of toks) ors.push(`instruction.ilike.%${t}%`, `heading.ilike.%${t}%`, `screen.ilike.%${t}%`, `note.ilike.%${t}%`);
+    const { data: st } = await sb.from("course_steps").select("lesson_id").or(ors.join(",")).limit(120);
+    const cnt: Record<string, number> = {};
+    (st || []).forEach((x: any) => { cnt[x.lesson_id] = (cnt[x.lesson_id] || 0) + 1; });
+    const ids = Object.keys(cnt).sort((x, y) => cnt[y] - cnt[x]).slice(0, 6).map(Number);
+    if (ids.length) {
+      const { data: L2 } = await sb.from("course_lessons").select("*").in("id", ids).eq("active", true);
+      hits = (L2 || []).sort((x: any, y: any) => (cnt[y.id] || 0) - (cnt[x.id] || 0));
+      how = " · ★ ไม่เจอที่ชื่อบท แต่ไปเจอคำนี้ใน 'ขั้นตอน' ของบทนี้";
+    }
   }
 
   if (!hits.length) {
     const { data: all } = await sb.from("course_lessons").select("lesson_no,title,course_name").eq("active", true).order("lesson_no").limit(120);
     return {
       count: 0, บทที่มีในระบบ: (all || []).map((x: any) => "[" + (x.course_name || "") + "] " + x.lesson_no + " " + x.title),
-      note: "ไม่เจอด้วยคำนี้ · ★ อย่าเพิ่งตอบว่าไม่มี — ดูรายชื่อบทในช่อง 'บทที่มีในระบบ' ว่ามีเรื่องใกล้เคียงไหม แล้วเรียกซ้ำด้วยคำที่ตรงกว่า หรือใส่ lesson_no ตรง ๆ",
+      note: "ไม่เจอด้วยคำนี้ · ★★ ห้ามหยุดแค่นี้ และ ❌ ห้ามถามกลับว่า 'ต้องการให้ค้นจากหัวข้อนี้ไหม' — ผู้ถามถามมาแล้ว ให้ทำต่อเองทันที"
+        + " · ✅ ดูช่อง 'บทที่มีในระบบ' หาบทที่ใกล้เคียงที่สุด แล้ว **เรียก sop_search ซ้ำทันทีโดยใส่ lesson_no ของบทนั้น** จากนั้นค่อยตอบเนื้อหา"
+        + " · ตัวอย่าง: ถูกถาม '9 ขั้นตอนปฏิบัติงานมีอะไรบ้าง' แล้วในรายชื่อมี '2.3 9 ขั้นตอนการปฏิบัติงาน' → เรียกซ้ำด้วย lesson_no='2.3' แล้วตอบครบทั้ง 9 ขั้นตอนไปเลย"
+        + " · ถ้าเรียกซ้ำแล้วยังไม่มีจริง ๆ ค่อยบอกว่ายังไม่มีเรื่องนี้ในคู่มือ",
     };
   }
 
@@ -1111,6 +1184,8 @@ async function sop_search(a: any) {
       + " · ★ วาง URL ใน 'ภาพประกอบ' ลงในคำตอบ 1-2 รูป พนักงานจะได้เห็นหน้าจอจริง"
       + " · ถ้าผู้ถามอยากดูวิดีโอต้นทาง ให้ส่ง 'ลิงก์บทเรียน' พร้อมนาทีของขั้นตอนนั้น"
       + " · ★★ ต้องบอกทุกครั้งว่าคำตอบมาจาก 'หลักสูตร' ไหน (ดูช่องหลักสูตร)"
+      + how
+      + " · ❌ ห้ามถามกลับว่า 'ต้องการให้ค้นข้อมูลจากหัวข้อนี้ไหม' — เนื้อหาอยู่ในมือแล้ว ให้ตอบไปเลย"
       + (manyCourses
           ? " · ⚠ คำถามนี้ไปโดนมากกว่า 1 หลักสูตร — ให้ยึด 'ฉบับปรับปรุง 2569' (ช่อง เป็นฉบับล่าสุด = true) เป็นคำตอบหลัก"
             + " แล้วบอกเพิ่มว่าฉบับเดิมเขียนไว้ต่างออกไปอย่างไร ❌ ห้ามเอาสองฉบับมาปนกันเป็นคำตอบเดียว"
