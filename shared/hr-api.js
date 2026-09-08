@@ -180,6 +180,9 @@
         case 'hr_exam_delete':      return await hrExamDelete(p.id);
         case 'hr_exam_results':     return await hrExamResults(p.id);
         case 'hr_exam_wrong_spots': return await hrExamWrongSpots(p.id);
+        case 'hr_exam_bank_meta':   return await hrExamBankMeta();
+        case 'hr_exam_bank_pick':   return await hrExamBankPick(p);
+        case 'hr_exam_retest':      return await hrExamRetest(p);
         case 'hr_mgr_dashboard':  return await hrMgrDashboard();
         case 'hr_mgrrec_list':    return await hrMgrRecurringList();
         case 'hr_mgrrec_save':    return await hrMgrRecurringSave(p.data);
@@ -797,7 +800,7 @@
     if (!id) return { ok: false, error: 'ไม่ระบุ' };
     const [{ data: ex }, { data: qs }, { data: ats }] = await Promise.all([
       sb().from('exams').select('id,title').eq('id', id).maybeSingle(),
-      sb().from('exam_questions').select('id,seq,question,answer,choices').eq('exam_id', id).order('seq'),
+      sb().from('exam_questions').select('id,seq,question,answer,choices,knowledge_ref').eq('exam_id', id).order('seq'),
       sb().from('exam_attempts').select('emp_id,attempt_no,answers').eq('exam_id', id),
     ]);
     if (!ex) return { ok: false, error: 'ไม่พบชุดข้อสอบ' };
@@ -809,10 +812,143 @@
     const stat = {}; (qs || []).forEach(q => stat[q.id] = { wrong: 0, ans: 0 });
     first.forEach(a => { (a.answers || []).forEach(d => { const s = stat[d.q_id]; if (!s) return; s.ans++; if (!d.correct) s.wrong++; }); });
     const qMap = {}; (qs || []).forEach(q => qMap[q.id] = q);
-    const spots = (qs || []).map(q => { const s = stat[q.id] || { wrong: 0, ans: 0 }; const denom = s.ans || takers; const pct = denom ? Math.round(s.wrong / denom * 100) : 0; const ch = Array.isArray(q.choices) ? q.choices : []; return { q_id: q.id, seq: q.seq, question: q.question, wrong: s.wrong, answered: denom, wrong_pct: pct, correct_text: ch[q.answer] || '' }; })
+    const spots = (qs || []).map(q => { const s = stat[q.id] || { wrong: 0, ans: 0 }; const denom = s.ans || takers; const pct = denom ? Math.round(s.wrong / denom * 100) : 0; const ch = Array.isArray(q.choices) ? q.choices : []; return { q_id: q.id, seq: q.seq, question: q.question, wrong: s.wrong, answered: denom, wrong_pct: pct, correct_text: ch[q.answer] || '', knowledge_ref: q.knowledge_ref || '' }; })
       .sort((a, b) => b.wrong_pct - a.wrong_pct);
     return { ok: true, exam: ex, takers, spots };
   }
+  // ============================================================
+  // คลังข้อสอบคู่มือ (course_quiz) → ชุดแบบทดสอบ (exams)
+  // ★ 9 ก.ย. 2569 — เดิมสร้างชุดสอบต้องพิมพ์คำถามเองทีละข้อ ทั้งที่มีคลังข้อสอบ
+  //   ที่ตรวจย้อนกับคู่มือแล้ว 753 ข้อนอนอยู่ · เชื่อมสองระบบเข้าหากันซะ
+  //   ⚠ ชนิด 'order' (เรียงลำดับ) ใช้ไม่ได้ เพราะเฉลยเป็น "2,0,3,1" แต่ exam_questions
+  //     เก็บเฉลยเป็นเลขช้อยส์ตัวเดียว จึงกรองออกทุกที่
+  // ============================================================
+  const BANK_KIND_TH = { rule: 'กฎ/เกณฑ์ที่ต้องรู้', situation: 'เจอสถานการณ์นี้ทำยังไง', term: 'ศัพท์/นิยาม', why: 'ทำไมต้องทำแบบนั้น', safety: 'ข้อห้าม/ความปลอดภัย' };
+
+  function bankShuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function bankRef(r) { return String(r.course_code || '') + '|' + String(r.lesson_no || ''); }
+  // แปลงข้อจากคลัง → รูปแบบคำถามของชุดแบบทดสอบ
+  function bankToQ(r) {
+    const ch = Array.isArray(r.options) ? r.options.map(x => String(x)) : [];
+    const an = parseInt(r.answer, 10);
+    if (ch.length < 2 || !(an >= 0 && an < ch.length)) return null;
+    return { question: String(r.question || '').trim(), choices: ch, answer: an, explain: (r.explain || '').trim() || null, knowledge_ref: bankRef(r) };
+  }
+
+  // รายการหลักสูตร/ส่วน/บท พร้อมจำนวนข้อที่ใช้ได้ — เอาไปทำตัวเลือกในหน้าจอ
+  async function hrExamBankMeta() {
+    // ⚠ course_lessons เปิด RLS ไว้และยังไม่มี policy ฝั่ง anon → อ่านจากเบราว์เซอร์ตรง ๆ ไม่ได้
+    //   ชื่อบท/ชื่อหลักสูตรจึงให้หน้าจอไปขอผ่าน edge (mode:'course_admin') แล้วเติมเองทีหลัง
+    const { data: qz, error } = await sb().from('course_quiz').select('course_code,section,lesson_no,kind').eq('active', true).neq('kind', 'order').limit(5000);
+    if (error) return { ok: false, error: error.message };
+    const cname = {}, ltitle = {};
+    const byC = {}, kinds = {};
+    (qz || []).forEach(r => {
+      kinds[r.kind] = (kinds[r.kind] || 0) + 1;
+      const c = byC[r.course_code] = byC[r.course_code] || { code: r.course_code, name: cname[r.course_code] || r.course_code, total: 0, secs: {} };
+      c.total++;
+      const sk = r.section || '(ไม่ระบุส่วน)';
+      const sec = c.secs[sk] = c.secs[sk] || { name: sk, total: 0, les: {} };
+      sec.total++;
+      const le = sec.les[r.lesson_no] = sec.les[r.lesson_no] || { no: r.lesson_no, title: ltitle[r.course_code + '|' + r.lesson_no] || '', total: 0 };
+      le.total++;
+    });
+    const courses = Object.values(byC).map(c => ({
+      code: c.code, name: c.name, total: c.total, latest: c.code === 'STAFF26',
+      sections: Object.values(c.secs).sort((a, b) => String(a.name).localeCompare(String(b.name), 'th'))
+        .map(x => ({ name: x.name, total: x.total, lessons: Object.values(x.les).sort((a, b) => String(a.no).localeCompare(String(b.no), 'th', { numeric: true })) })),
+    })).sort((a, b) => (b.latest ? 1 : 0) - (a.latest ? 1 : 0));
+    return { ok: true, courses, kinds, kind_labels: BANK_KIND_TH, total: (qz || []).length };
+  }
+
+  // สุ่มดึงข้อสอบตามตัวกรอง
+  async function hrExamBankPick(p) {
+    p = p || {};
+    const want = Math.min(80, Math.max(1, parseInt(p.count, 10) || 10));
+    let q = sb().from('course_quiz').select('course_code,section,lesson_no,kind,question,options,answer,explain').eq('active', true).neq('kind', 'order').limit(3000);
+    if (p.course_code) q = q.eq('course_code', String(p.course_code));
+    if (Array.isArray(p.sections) && p.sections.length) q = q.in('section', p.sections);
+    if (Array.isArray(p.lesson_nos) && p.lesson_nos.length) q = q.in('lesson_no', p.lesson_nos);
+    if (Array.isArray(p.kinds) && p.kinds.length) q = q.in('kind', p.kinds);
+    const { data, error } = await q;
+    if (error) return { ok: false, error: error.message };
+    const skip = new Set((Array.isArray(p.exclude) ? p.exclude : []).map(x => String(x).trim()));
+    let rows = (data || []).filter(r => !skip.has(String(r.question || '').trim()));
+    const pool = rows.length;
+    // เกลี่ยให้ครบทุกบทก่อน แล้วค่อยเติมที่เหลือ — กันดึงมากระจุกอยู่บทเดียว
+    const byL = {};
+    bankShuffle(rows).forEach(r => { (byL[r.lesson_no] = byL[r.lesson_no] || []).push(r); });
+    const lanes = Object.values(byL), out = [];
+    for (let i = 0; out.length < want; i++) {
+      let added = false;
+      for (const lane of lanes) { if (lane[i]) { out.push(lane[i]); added = true; if (out.length >= want) break; } }
+      if (!added) break;
+    }
+    const qs = out.map(bankToQ).filter(Boolean);
+    return { ok: true, questions: qs, pool, taken: qs.length, lessons: Object.keys(byL).length };
+  }
+
+  // ออก "ชุดสอบซ่อม" จากจุดที่พนักงานตอบผิดบ่อย
+  async function hrExamRetest(p) {
+    p = p || {};
+    const id = p.id;
+    if (!id) return { ok: false, error: 'ไม่ระบุชุดข้อสอบ' };
+    const thr = Math.min(90, Math.max(10, parseInt(p.threshold, 10) || 30));
+    const [{ data: ex }, { data: qs }, { data: ats }] = await Promise.all([
+      sb().from('exams').select('*').eq('id', id).maybeSingle(),
+      sb().from('exam_questions').select('id,question,answer,knowledge_ref').eq('exam_id', id),
+      sb().from('exam_attempts').select('emp_id,attempt_no,answers,passed,percent').eq('exam_id', id),
+    ]);
+    if (!ex) return { ok: false, error: 'ไม่พบชุดข้อสอบ' };
+    if (!(ats || []).length) return { ok: false, error: 'ยังไม่มีคนทำชุดนี้ ยังออกชุดสอบซ่อมไม่ได้' };
+    // ครั้งแรกของแต่ละคน = ความเข้าใจตั้งต้น
+    const firstBy = {}, bestBy = {};
+    (ats || []).forEach(a => {
+      const c = firstBy[a.emp_id]; if (!c || a.attempt_no < c.attempt_no) firstBy[a.emp_id] = a;
+      const b = bestBy[a.emp_id]; if (!b || (a.percent || 0) > (b.percent || 0)) bestBy[a.emp_id] = a;
+    });
+    const stat = {}; (qs || []).forEach(q => stat[q.id] = { wrong: 0, ans: 0, ref: q.knowledge_ref || '', question: q.question });
+    Object.values(firstBy).forEach(a => { (a.answers || []).forEach(d => { const st = stat[d.q_id]; if (!st) return; st.ans++; if (!d.correct) st.wrong++; }); });
+    // บทที่ตอบผิดเกินเกณฑ์
+    const weak = {}, weakQ = [];
+    Object.values(stat).forEach(st => {
+      const pct = st.ans ? Math.round(st.wrong / st.ans * 100) : 0;
+      if (pct < thr) return;
+      weakQ.push(st.question);
+      const ref = String(st.ref || '');
+      if (ref.indexOf('|') < 0) return;
+      const [code, no] = ref.split('|');
+      (weak[code] = weak[code] || new Set()).add(no);
+    });
+    if (!weakQ.length) return { ok: false, error: 'ไม่มีข้อไหนตอบผิดถึง ' + thr + '% — ยังไม่ต้องออกชุดสอบซ่อม' };
+    if (!Object.keys(weak).length) return { ok: false, error: 'ข้อที่ตอบผิดบ่อยไม่ได้มาจากคลังข้อสอบคู่มือ จึงหาข้อใหม่ให้อัตโนมัติไม่ได้ · ให้ใช้ปุ่ม "ดึงจากคลังข้อสอบคู่มือ" เลือกบทเองแทน' };
+    // ห้ามซ้ำข้อเดิมทั้งชุด
+    const exclude = (qs || []).map(q => String(q.question || '').trim());
+    let picked = [];
+    for (const code of Object.keys(weak)) {
+      const r = await hrExamBankPick({ course_code: code, lesson_nos: [...weak[code]], count: Math.max(4, Math.ceil(20 / Object.keys(weak).length)), exclude });
+      if (r && r.ok) picked = picked.concat(r.questions);
+    }
+    if (!picked.length) return { ok: false, error: 'คลังข้อสอบของบทเหล่านี้ถูกใช้ไปหมดแล้ว ไม่มีข้อใหม่ให้ดึง' };
+    picked = bankShuffle(picked).slice(0, 25);
+    // ใครต้องสอบซ่อม = ทำแล้วยังไม่ผ่าน
+    const failed = Object.values(bestBy).filter(a => !a.passed).map(a => a.emp_id);
+    const lessonText = Object.keys(weak).map(c => c + ' บท ' + [...weak[c]].join(', ')).join(' · ');
+    const save = await hrExamSave({
+      title: 'สอบซ่อม: ' + ex.title,
+      description: 'ออกจากจุดที่ตอบผิดตั้งแต่ ' + thr + '% ขึ้นไป (' + lessonText + ') · ข้อใหม่ทั้งหมด ไม่ซ้ำชุดเดิม',
+      pass_percent: ex.pass_percent, max_attempts: ex.max_attempts, time_limit_min: ex.time_limit_min,
+      shuffle: true, show_result: 'full',
+      scope: failed.length ? 'emp' : 'all', emp_ids: failed,
+      questions: picked,
+    });
+    if (!save.ok) return save;
+    return { ok: true, id: save.id, questions: save.questions, emp_count: failed.length, lessons: lessonText, threshold: thr };
+  }
+
   async function hrMgrTaskSettingsSave(d) {
     d = d || {};
     const rows = [
