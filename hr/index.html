@@ -8504,6 +8504,7 @@ function pmConfirmType(d, onOk){
 //  ตอนนี้ edge อ่าน __NEXT_DATA__ ของหน้ารวมหมวด (6 ครั้งจบ) และคืน "ใบโปรฯ ขนาดเต็ม" มาเลย
 //  ไหลตามหน้าเว็บจริง: แบนเนอร์แยกหมวด → คลิก → เห็นใบโปรฯ เต็ม ๆ → ติ๊กเลือก → ปุ่มนำเข้าด้านล่าง → รายการให้ตรวจก่อนยืนยัน
 let PB_DATA=null, PB_WIRED=false, PB_MAP={}, PB_SEL=[], PB_CAT='ALL', PB_TYPES=null, PB_CUR=null;
+const PB_TYPES_FALLBACK=[{key:'stamp',label:'ซื้อแล้วรับแสตมป์'},{key:'discount',label:'ลดราคา'},{key:'bundle',label:'ซื้อคู่/เซ็ต'},{key:'freebie',label:'ซื้อครบแถมฟรี'},{key:'redeem',label:'แลกด้วยแสตมป์/คะแนน'},{key:'custom',label:'กำหนดเอง'}];
 function pbBusy(t){ const e=$('pb_prog'); if(e) e.textContent=t||''; }
 function pbKey(it){ return it.cat+':'+it.id; }
 function pmBrowseInit(){
@@ -8670,6 +8671,7 @@ async function pbConfirmStart(){
     if(!url){ if(cell) cell.innerHTML='<span style="color:#dc2626">ไม่มีรูปใบโปรฯ — นำเข้าไม่ได้</span>'; continue; }
     try{
       const dt=await pmPost({ mode:'promo_detect', url });
+      if(dt.types && dt.types.length) PB_TYPES=dt.types;
       if(!dt.ok) throw new Error(dt.error||'ดูรูปไม่สำเร็จ');
       if(dt.types && dt.types.length) PB_TYPES=dt.types;
       it._url=url; it._type=dt.promo_type;
@@ -8685,7 +8687,16 @@ async function pbConfirmStart(){
       const sel=box.querySelector('[data-pbsel-type="'+i+'"]'); if(sel) sel.onchange=()=>{ it._type=sel.value; };
       done++;
     }catch(e){
-      if(cell) cell.innerHTML='<span style="color:#dc2626">เดาชนิดไม่สำเร็จ: '+esc(e.message||e)+'</span>';
+      // ★ เดาชนิดไม่ได้ ไม่ใช่เหตุให้นำเข้าใบนี้ไม่ได้ — ให้เลือกชนิดเองแล้วไปต่อ
+      it._url=url; it._type='custom';
+      const list=PB_TYPES||PB_TYPES_FALLBACK;
+      const opts=list.map(t=>'<option value="'+esc(t.key)+'"'+(t.key==='custom'?' selected':'')+'>'+esc(t.label)+'</option>').join('');
+      if(cell) cell.innerHTML='<div style="color:#b45309;font-size:11.5px;margin-bottom:4px">AI เดาชนิดใบนี้ไม่ได้ ('+esc(e.message||e)+') — เลือกเองได้เลย</div>'
+        +'<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
+        +'<span style="font-size:11.5px;color:var(--muted)">ชนิดใบ</span>'
+        +'<select data-pbsel-type="'+i+'" class="inp" style="font-size:12px;padding:4px 8px;max-width:230px">'+opts+'</select></div>';
+      const sel2=box.querySelector('[data-pbsel-type="'+i+'"]'); if(sel2) sel2.onchange=()=>{ it._type=sel2.value; };
+      done++;
     }
     const inf=$('pb_okinfo'); if(inf) inf.textContent='ตรวจแล้ว '+(i+1)+'/'+rows.length+' ใบ';
   }
