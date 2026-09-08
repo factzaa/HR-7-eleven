@@ -1736,9 +1736,6 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     .mrl .no{flex:none;min-width:38px;font-size:12.5px;font-weight:800;color:var(--pri,#008061)}
     .mrl .tt{flex:1;font-size:13.5px;font-weight:600;line-height:1.45}
     .mrl .mt{flex:none;font-size:11.5px;color:var(--muted);white-space:nowrap}
-    .mrl .rv{flex:none;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
-    .mrl .rv.y{background:#dcfce7;color:#15803d}
-    .mrl .rv.n{background:var(--glass);color:var(--muted);border:1px solid var(--line)}
     .mrhit{border:1px solid var(--line);border-left:3px solid var(--pri,#008061);border-radius:9px;
       padding:8px 11px;margin-bottom:6px;cursor:pointer;background:var(--card)}
     .mrhit b{color:var(--pri,#008061)}
@@ -1831,14 +1828,9 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     </div>
     <div class="modal-b" id="mr_body"></div>
     <div class="modal-f" style="justify-content:space-between">
-      <div style="display:flex;gap:7px">
-        <button class="btn btn-sec btn-sm" id="mr_prev">&lsaquo; บทก่อน</button>
-        <button class="btn btn-sec btn-sm" id="mr_next">บทถัดไป &rsaquo;</button>
-      </div>
-      <div style="display:flex;gap:7px">
-        <button class="btn btn-sec btn-sm" id="mr_quiz">ทำข้อสอบบทนี้</button>
-        <button class="btn btn-pri btn-sm" id="mr_rev">ตรวจแล้ว</button>
-      </div>
+      <button class="btn btn-sec btn-sm" id="mr_prev">&lsaquo; บทก่อน</button>
+      <span id="mr_pos" style="font-size:12px;color:var(--muted);align-self:center"></span>
+      <button class="btn btn-sec btn-sm" id="mr_next">บทถัดไป &rsaquo;</button>
     </div>
   </div>
 </div>
@@ -1853,8 +1845,6 @@ function mrInit(){
   $('mrOverlay').onclick = (e)=>{ if(e.target.id==='mrOverlay') $('mrOverlay').style.display='none'; };
   $('mr_prev').onclick  = ()=> mrNav(-1);
   $('mr_next').onclick  = ()=> mrNav(1);
-  $('mr_rev').onclick   = mrToggleRev;
-  $('mr_quiz').onclick  = mrQuiz;
   let t=null;
   $('mr_q').oninput = ()=>{ clearTimeout(t); t=setTimeout(mrSearch, 380); };
   mrLoadIndex();
@@ -1880,9 +1870,8 @@ async function mrLoadIndex(){
 function mrRenderList(){
   const ls = MR.idx.filter(l=>l.course_code===MR.course);
   MR.order = ls.map(l=>l.id);
-  const done = ls.filter(l=>l.reviewed).length;
-  const pct = ls.length ? Math.round(done/ls.length*100) : 0;
-  $('mr_prog').innerHTML = 'ตรวจแล้ว <b style="color:var(--pri,#008061)">'+done+'</b> / '+ls.length+' บท ('+pct+'%)';
+  const nst = ls.reduce((a,l)=>a+(l.step_count||0),0);
+  $('mr_prog').innerHTML = '<b style="color:var(--pri,#008061)">'+ls.length+'</b> บท · <b style="color:var(--pri,#008061)">'+nst+'</b> ขั้นตอน';
   const bysec = {};
   ls.forEach(l=>{ (bysec[l.section||'(ไม่ระบุส่วน)'] = bysec[l.section||'(ไม่ระบุส่วน)'] || []).push(l); });
   $('mr_list').innerHTML = Object.keys(bysec).sort().map(sec=>
@@ -1892,7 +1881,6 @@ function mrRenderList(){
         + '<span class="no">'+esc(l.lesson_no)+'</span>'
         + '<span class="tt">'+esc(l.title)+'</span>'
         + '<span class="mt">'+(l.step_count||0)+' ขั้นตอน</span>'
-        + '<span class="rv '+(l.reviewed?'y':'n')+'">'+(l.reviewed?'ตรวจแล้ว':'ยังไม่ตรวจ')+'</span>'
         + '</div>').join('')
   ).join('');
   $('mr_list').querySelectorAll('.mrl').forEach(d=>{ d.onclick = ()=> mrOpen(+d.dataset.id); });
@@ -1964,31 +1952,12 @@ async function mrOpen(id){
        + '<ul style="margin:0;padding-left:19px;font-size:13.5px;line-height:1.75">'
        + ca.map(c=>'<li style="margin-bottom:4px">'+esc(c)+'</li>').join('') + '</ul>';
   }
-  H += '<div id="mr_quizbox" style="margin-top:18px"></div>';
   $('mr_body').innerHTML = H;
   $('mr_body').scrollTop = 0;
-  mrRevBtn();
   const i = MR.order.indexOf(L.id);
   $('mr_prev').disabled = (i <= 0);
   $('mr_next').disabled = (i < 0 || i >= MR.order.length-1);
-}
-
-function mrRevBtn(){
-  const L = MR.cur && MR.cur.lesson; if(!L) return;
-  const b = $('mr_rev');
-  b.textContent = L.reviewed ? '✓ ตรวจแล้ว' : 'ทำเครื่องหมายว่าตรวจแล้ว';
-  b.className = 'btn btn-sm ' + (L.reviewed ? 'btn-sec' : 'btn-pri');
-}
-
-async function mrToggleRev(){
-  const L = MR.cur && MR.cur.lesson; if(!L) return;
-  const v = !L.reviewed;
-  const r = await cmPost({ mode:'course_admin', act:'save_lesson', lesson_id:L.id, reviewed:v });
-  if(!r || !r.ok){ toast('err', (r&&r.error)||'บันทึกไม่สำเร็จ'); return; }
-  L.reviewed = v; mrRevBtn();
-  const row = MR.idx.find(x=>x.id===L.id); if(row) row.reviewed = v;
-  mrRenderList();
-  toast('ok', v ? 'บันทึกว่าตรวจบทนี้แล้ว' : 'ตั้งกลับเป็นยังไม่ตรวจ');
+  $('mr_pos').textContent = (i >= 0) ? ('บทที่ '+(i+1)+' จาก '+MR.order.length) : '';
 }
 
 function mrNav(d){
@@ -1997,23 +1966,6 @@ function mrNav(d){
   if(i >= 0 && i < MR.order.length) mrOpen(MR.order[i]);
 }
 
-// ข้อสอบท้ายบท — ใช้เครื่องข้อสอบตัวเดิม แต่วาดลงในหน้าอ่านแทน
-async function mrQuiz(){
-  const L = MR.cur && MR.cur.lesson; if(!L) return;
-  const box = $('mr_quizbox');
-  box.innerHTML = '<div style="font-size:13px;color:var(--muted)">กำลังสุ่มข้อสอบของบทนี้…</div>';
-  const r = await cmPost({ mode:'exam', act:'start', scope:'lesson', value:L.lesson_no, course:L.course_code, n:10 });
-  if(!r || !r.ok){ box.innerHTML = '<div style="font-size:13px;color:#dc2626">'+esc((r&&r.error)||'เริ่มไม่สำเร็จ')+'</div>'; return; }
-  EX.items = r.items || []; EX.ans = {}; EX.started = new Date().toISOString();
-  EX.box = 'mr_quizbox'; EX.course = L.course_code;
-  EX.scopeKind = 'lesson';
-  EX.scopeLabel = 'บท ' + L.lesson_no + ' ' + (L.title||'');
-  EX.againFn = 'mrQuiz';
-  box.innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:8px">ข้อสอบท้ายบท ('+EX.items.length+' ข้อ)</div><div id="mr_qin"></div>';
-  EX.box = 'mr_qin';
-  exRender();
-  box.scrollIntoView({ behavior:'smooth', block:'start' });
-}
 </script>
 
 
