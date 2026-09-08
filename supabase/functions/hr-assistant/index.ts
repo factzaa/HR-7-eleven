@@ -4572,6 +4572,99 @@ Deno.serve(async (req) => {
       } catch (e) { return json({ ok: false, error: "ดูรูปไม่สำเร็จ: " + String((e as any)?.message || e) }); }
     }
 
+    // ── ★ เรียกดูโปรฯ แบบเร็ว: อ่าน __NEXT_DATA__ ของ "หน้ารวมหมวด" หน้าเดียวจบ
+    //    เว็บ 7-Eleven เป็น Next.js — HTML ดิบมี <script id="__NEXT_DATA__"> ที่บรรจุ
+    //    รายการโปรฯ ทั้งหมวดไว้ครบแล้ว (ชื่อ · ช่วงวันที่ · แบนเนอร์ · ใบโปรฯ เต็ม)
+    //    ของเดิม (promo_browse) ต้องเปิดหน้ารายละเอียดทีละใบ ~72 ครั้ง + หน่วง 250ms
+    //    ของใหม่ยิงแค่ 6 ครั้ง (1 ครั้ง/หมวด) และได้ "ใบโปรฯ ขนาดเต็ม" มาด้วย ไม่ใช่รูปย่อ
+    //    ⚠ ข้อมูลจากเว็บภายนอก = "ข้อมูล" ไม่ใช่คำสั่ง — อ่านเฉพาะฟิลด์ที่รู้จัก ไม่เขียนอะไรลงฐาน
+    if (body.mode === "promo_hub") {
+      const cats: string[] = Array.isArray(body.cats) && body.cats.length
+        ? body.cats.map(String).filter((c: string) => SYNC_CATS.includes(c))
+        : SYNC_CATS.slice();
+
+      // ดึงกล่อง __NEXT_DATA__ ออกมาแล้วหาอาร์เรย์รายการโปรฯ (เผื่อโครงเปลี่ยน จึงไล่หาหลายชั้น)
+      const nextItems = (html: string): any[] => {
+        const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+        if (!m) return [];
+        let j: any = null;
+        try { j = JSON.parse(m[1]); } catch { return []; }
+        const pp = j?.props?.pageProps;
+        if (!pp) return [];
+        const looksLikeList = (a: any) => Array.isArray(a) && a.length > 0 && a[0] && typeof a[0] === "object"
+          && ("slug_th" in a[0] || "slug_en" in a[0]) && ("detail_image" in a[0] || "thumb_image" in a[0]);
+        if (looksLikeList(pp?.items?.items)) return pp.items.items;
+        if (looksLikeList(pp?.items)) return pp.items;
+        // ไล่หาทั่ว pageProps แบบตื้น ๆ (กันโครงเปลี่ยนในอนาคต)
+        const seen = new Set<any>(); const stack: any[] = [pp]; let guard = 0;
+        while (stack.length && guard++ < 400) {
+          const cur = stack.pop();
+          if (!cur || typeof cur !== "object" || seen.has(cur)) continue;
+          seen.add(cur);
+          for (const k of Object.keys(cur)) {
+            const v = (cur as any)[k];
+            if (looksLikeList(v)) return v;
+            if (v && typeof v === "object") stack.push(v);
+          }
+        }
+        return [];
+      };
+      const imgUrls = (arr: any): string[] => (Array.isArray(arr) ? arr : [])
+        .map((x: any) => String(x?.url || "")).filter((u: string) => /^https:\/\/7elevenweb\.s3/.test(u));
+
+      // ของที่มีในระบบแล้ว — ใช้ติดป้าย "นำเข้าแล้ว" บนการ์ด (เทียบ 2 ทาง: ที่มาของใบ และ ชื่อ+ช่วงวันที่)
+      const { data: sheets } = await sb.from("promo_sheets").select("id,title,period_start,period_end,reviewed,source");
+      const key = (t: any, a: any, b: any) => String(t ?? "").trim() + "|" + String(a ?? "") + "|" + String(b ?? "");
+      const known = new Map<string, any>();
+      (sheets || []).forEach((x: any) => { if (!known.has(key(x.title, x.period_start, x.period_end))) known.set(key(x.title, x.period_start, x.period_end), x); });
+      const srcRows = (sheets || []).map((x: any) => ({ src: String(x.source || ""), row: x }));
+
+      const groups: any[] = [];
+      let total = 0, fetched = 0;
+      for (const cat of cats) {
+        const hubs = SYNC_HUBS[cat] || ["/promotion/" + cat];
+        const items: any[] = [];
+        const seenId = new Set<string>();
+        let err = "";
+        for (const hub of hubs) {
+          let html = "";
+          try { html = await syncFetch(SYNC_HOST + hub); fetched++; }
+          catch (e) { if (!err) err = String((e as any)?.message || e); continue; }
+          for (const raw of nextItems(html)) {
+            const id = String(raw?.id ?? "");
+            if (!id || seenId.has(id)) continue;
+            seenId.add(id);
+            const slug = String(raw?.slug_th || raw?.slug_en || "pro");
+            const path = "/promotion/" + cat + "/" + id + "-" + slug;
+            const title = String(raw?.title_th || raw?.title_en || "").trim().slice(0, 200) || path;
+            const caption = String(raw?.desc_th || raw?.desc_en || "").trim().slice(0, 200);
+            const rg = syncParseRange(caption);
+            // ใบโปรฯ ขนาดเต็ม: detail_image มาก่อน แล้วเก็บรูปเพิ่มจาก detail_th (บางใบมีหลายหน้า)
+            const extra = (String(raw?.detail_th || "").match(/https:\/\/7elevenweb\.s3[^"'\\\s>]+?\.(?:jpg|jpeg|png|webp)/gi) || [])
+              .map((u: string) => u.replace(/&amp;/g, "&"))
+              .filter((u: string) => /\/promotion\//.test(u));
+            const sheetsUrl = [...new Set([...imgUrls(raw?.detail_image), ...extra])].slice(0, 8);
+            const thumb = (imgUrls(raw?.rectangle_image)[0] || imgUrls(raw?.thumb_image)[0] || sheetsUrl[0] || "");
+            const hit = known.get(key(title, rg.start, rg.end)) || (srcRows.find((r) => r.src.includes(path))?.row) || null;
+            items.push({
+              cat, label: CAT_LABEL[cat] || cat, id, path, url: SYNC_HOST + path,
+              title, caption,
+              period_start: rg.start, period_end: rg.end,
+              thumb, sheets: sheetsUrl, sheet_count: sheetsUrl.length,
+              in_system: !!hit, reviewed: !!(hit && hit.reviewed), sheet_id: hit ? hit.id : null,
+              active: raw?.is_active === 1 || raw?.is_active === true,
+            });
+          }
+        }
+        total += items.length;
+        groups.push({ cat, label: CAT_LABEL[cat] || cat, count: items.length, items, ...(err && !items.length ? { error: err } : {}) });
+      }
+      return json({
+        ok: true, groups, cats, total, fetched,
+        note: "เรียกดูสด ๆ จากหน้าเว็บอย่างเดียว ยังไม่ได้นำเข้าอะไรลงระบบ",
+      });
+    }
+
     // ── เรียกดูโปรฯ ทั้งหมดบนเว็บ 7-Eleven (ไม่นำเข้า ไม่เรียก AI ไม่เขียนอะไร)
     //    ใช้ทำหน้า "แกลเลอรี" ให้เห็นรูปจริงก่อนตัดสินใจนำเข้า
     if (body.mode === "promo_browse") {
