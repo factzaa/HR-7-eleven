@@ -1119,6 +1119,22 @@ function promoSortKey(sort: string): { key: (r: any) => number | null; desc: boo
   return null;
 }
 
+// ★ 8 ก.ย. 2569 — เจอจริง: ถามว่า "อยากดูโปรโมชั่นซื้อคู่" กับ "กลุ่มข้าวกล่องแช่เย็น" แล้วนิดาตอบว่าไม่มี
+//   ทั้งที่ใบ "7-Eleven MEAL DEAL" มีอยู่ในระบบ · ต้องพิมพ์ชื่อใบตรงตัวเท่านั้นถึงจะเจอ
+//   สาเหตุ 2 อย่าง: (1) ค้นแค่ชื่อสินค้า/ยี่ห้อ/ชื่อใบ ไม่ได้ค้น "กติกาของใบ" ที่เขียนว่าซื้อข้าวกล่องแช่เย็น...
+//                   (2) ไม่มีทางค้นด้วย "ชนิดโปรฯ" เลย (ซื้อคู่ = bundle)
+// คำที่คนใช้เรียก "ชนิดของโปรฯ" → ชนิดจริงในระบบ
+function promoTypeFromWords(txt: string): string | null {
+  const t = String(txt || "").replace(/\s+/g, "").toLowerCase();
+  if (!t) return null;
+  if (/แลกซื้อ|แลกของ|แลกคะแนน|เอาแสตมป์ไปแลก|ใช้แสตมป์แลก|redeem/.test(t)) return "redeem";
+  if (/ซื้อคู่|จับคู่|คู่หู|เซ็ต|เซต|จัดชุด|เป็นชุด|ยกแพ็ก|ยกแพค|มื้อคู่|มีลดีล|mealdeal|meal|combo|คอมโบ|ซื้อพร้อม|ซื้อ2|2ชิ้น/.test(t)) return "bundle";
+  if (/แถม|ซื้อ1แถม1|1แถม1|ของฟรี|รับฟรี|freebie/.test(t)) return "freebie";
+  if (/ลดราคา|ลดอย่างแรง|ส่วนลด|ลดเหลือ|ลดพิเศษ|ราคาพิเศษ|ถูกลง|discount/.test(t)) return "discount";
+  if (/รับแสตมป์|สะสมแสตมป์|ได้แสตมป์|ได้ดวง|แสตมป์|สแตมป์|mstamp|m-stamp|stamp/.test(t)) return "stamp";
+  return null;
+}
+
 async function promo_search(a: any) {
   const clean = (x: any) => String(x || "").replace(/[(),%*]/g, " ").trim();
   const raw = clean(a?.product || a?.query);
@@ -1129,23 +1145,60 @@ async function promo_search(a: any) {
   const cut = (x: string, n: number) => x.split(/[\s,]+/).map((t: string) => t.trim()).filter((t: string) => t.length >= 2).slice(0, n);
   const toks = cut(raw, 6);
   const stok = cut(sheetQ, 4);
+  // ชนิดโปรฯ: เอาจากพารามิเตอร์ก่อน ไม่มีก็เดาจากคำที่ถามมา
+  const ptype = (a?.promo_type && PROMO_TYPES[String(a.promo_type)]) ? String(a.promo_type)
+              : promoTypeFromWords(raw + " " + sheetQ);
 
-  // ★ ถามลอย ๆ ไม่มีทั้งชื่อสินค้า ชื่อใบ และไม่ได้ขอจัดอันดับ
+  // ★ ถามลอย ๆ ไม่มีทั้งชื่อสินค้า ชื่อใบ ชนิดโปรฯ และไม่ได้ขอจัดอันดับ
   //   → บอกว่ามีใบอะไรบ้าง ดีกว่าตอบ "ไม่พบข้อมูล" แล้วจบ (เคยเจอนิดาตอบแบบนั้น)
-  if (!toks.length && !stok.length && !sort) return await promo_sheet({});
+  if (!toks.length && !stok.length && !sort && !ptype) return await promo_sheet({});
 
-  let q: any = sb.from("promo_items_v").select("*").eq("sheet_active", true).limit(sort ? 400 : 120);
-  if (toks.length) {
-    const ors: string[] = [];
-    // ★ ค้น sheet_title ด้วย — คนถามชื่อ "ใบ" (เช่น "แสตมป์จัดหนัก") พอ ๆ กับถามชื่อสินค้า
-    for (const t of toks) ors.push(`product.ilike.%${t}%`, `brand.ilike.%${t}%`, `keywords.ilike.%${t}%`, `size.ilike.%${t}%`, `sheet_title.ilike.%${t}%`);
-    q = q.or(ors.join(","));
+  // ★ ค้นให้ครบทุกช่องที่ "คนอาจใช้คำนั้นถาม" — รวม 'เงื่อนไข' และ 'กติกาของใบ'
+  //   กติกาของใบคือที่ที่เขียนว่า "ซื้อข้าวกล่องแช่เย็น แช่แข็ง กลุ่มราคา 40-89 บาท..." ซึ่งเดิมค้นไม่เจอเลย
+  const orFor = (t: string) => [
+    `product.ilike.%${t}%`, `brand.ilike.%${t}%`, `keywords.ilike.%${t}%`, `size.ilike.%${t}%`,
+    `condition.ilike.%${t}%`, `sheet_title.ilike.%${t}%`, `mechanic_note.ilike.%${t}%`,
+  ];
+  const runItems = async (tokens: string[], useType: boolean, useSheet: boolean) => {
+    let q: any = sb.from("promo_items_v").select("*").eq("sheet_active", true).limit(sort ? 400 : 200);
+    if (tokens.length) { const ors: string[] = []; for (const t of tokens) ors.push(...orFor(t)); q = q.or(ors.join(",")); }
+    if (useSheet) for (const t of stok) q = q.ilike("sheet_title", "%" + t + "%");
+    if (useType && ptype) q = q.eq("promo_type", ptype);
+    const { data, error } = await q;
+    if (error) throw new Error(String(error.message || error));
+    return data || [];
+  };
+  const isCur = (r: any) => r.สถานะ === "ใช้อยู่";
+
+  let rows: any[] = [];
+  let how = "";
+  try { rows = await runItems(toks, true, true); }
+  catch (e) { return { error: String((e as any)?.message || e) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/promo_system.sql ก่อน)" }; }
+
+  // ── ชั้นที่ 2: ไม่เจอ แต่รู้ว่าถามถึง "ชนิดโปรฯ" ไหน → คืนทั้งชนิดนั้นเลย
+  //    เช่น "อยากดูโปรโมชั่นซื้อคู่" → ยกใบแบบ bundle มาให้หมด แทนที่จะตอบว่าไม่มี
+  if (!rows.filter(isCur).length && ptype) {
+    try {
+      const r2 = await runItems([], true, false);
+      if (r2.filter(isCur).length) { rows = r2; how = " · ★ ไม่เจอด้วยคำที่พิมพ์ตรง ๆ จึงค้นจาก 'ชนิดโปรฯ = " + (PROMO_TYPES[ptype]?.label || ptype) + "' ให้แทน"; }
+    } catch { /* ข้าม */ }
   }
-  for (const t of stok) q = q.ilike("sheet_title", "%" + t + "%");
-  if (a?.promo_type && PROMO_TYPES[String(a.promo_type)]) q = q.eq("promo_type", String(a.promo_type));
-  const { data, error } = await q;
-  if (error) return { error: String(error.message || error) + " (ถ้าเพิ่งเปิดใช้ ต้องรัน supabase/promo_system.sql ก่อน)" };
-  const rows = data || [];
+  // ── ชั้นที่ 3: ยังไม่เจอ → ค้นที่ "ตัวใบ" (ชื่อใบ + กติกาของใบ) แล้วยกรายการในใบนั้นมาทั้งใบ
+  let sheetHits: any[] = [];
+  if (!rows.filter(isCur).length && (toks.length || stok.length)) {
+    const all = [...toks, ...stok];
+    const ors = all.flatMap((t) => [`title.ilike.%${t}%`, `mechanic_note.ilike.%${t}%`, `note.ilike.%${t}%`]);
+    const { data: shs } = await sb.from("promo_sheets")
+      .select("id,title,promo_type,mechanic_note,period_start,period_end,image_url,reviewed")
+      .eq("active", true).or(ors.join(",")).limit(12);
+    sheetHits = (shs || []).filter((x: any) => promoStatus(x) === "ใช้อยู่");
+    if (sheetHits.length) {
+      const ids = sheetHits.map((x: any) => x.id);
+      const { data: its } = await sb.from("promo_items_v").select("*").in("sheet_id", ids).limit(200);
+      if ((its || []).length) { rows = its as any[]; how = " · ★ ไม่เจอที่ชื่อสินค้า แต่ไปเจอที่ 'กติกาของใบ' จึงยกรายการในใบนั้นมาให้ทั้งใบ"; }
+    }
+  }
+
   // ★ แสดงเฉพาะช่องที่ "ชนิดใบนั้นใช้จริง" — ไม่โชว์ช่องแสตมป์ให้ใบลดราคา
   const shape = (r: any) => {
     const t = String(r.promo_type || r.reward_kind || "stamp");
@@ -1181,7 +1234,14 @@ async function promo_search(a: any) {
     o.สถานะ = r.สถานะ; o.ตรวจแก้แล้ว = r.reviewed === true; o.รูปใบโปรฯ = r.image_url || null;
     return o;
   };
-  const curRaw = rows.filter((r: any) => r.สถานะ === "ใช้อยู่");
+  const shapeSheet = (x: any) => ({
+    ชื่อใบ: x.title, ชนิดโปรฯ: PROMO_TYPES[String(x.promo_type || "")]?.label || x.promo_type || null,
+    กติกาของใบ: x.mechanic_note || null,
+    ช่วงเวลา: _thDate(x.period_start) + " – " + _thDate(x.period_end),
+    ตรวจแก้แล้ว: x.reviewed === true, รูปใบโปรฯ: x.image_url || null,
+  });
+
+  const curRaw = rows.filter(isCur);
   const sk = promoSortKey(sort);
   let picked = curRaw, rankNote = "";
   if (sk) {
@@ -1201,13 +1261,23 @@ async function promo_search(a: any) {
   if (cur.length) {
     return {
       count: cur.length, promos: cur, upcoming: fut.length ? fut : undefined,
+      ใบที่ตรงกับคำถาม: sheetHits.length ? sheetHits.map(shapeSheet) : undefined,
       note: "★ ตอบด้วยตัวเลขจากตารางนี้เท่านั้น ห้ามคำนวณ/เดาเอง · ต้องบอกช่วงเวลากำกับเสมอ"
         + " · ★★ แยกให้ชัดว่า 'ราคาที่ต้องจ่าย' คือเงินที่ลูกค้าจ่าย ส่วน 'ได้รับแสตมป์' คือของที่ได้กลับมา — ห้ามเรียกแสตมป์ว่าราคา และห้ามเรียกราคาว่าแสตมป์"
         + " · ★ ถ้ามีทั้งดวงและ M-Stamp ให้บอกทั้งสองทางเลือก ❌ ห้ามฟันธงว่าทางไหนคุ้มกว่า ยกเว้นช่อง 'ใบระบุว่าคุ้มกว่า' มีค่ามา (บางรายการรับเป็นดวงคุ้มกว่า)"
         + " · ★ ต้องวาง URL ใน 'รูปใบโปรฯ' ลงในคำตอบด้วยทุกครั้ง (ระบบจะแสดงเป็นรูปให้เอง) พนักงานจะได้เช็คกับใบจริงได้"
         + (unreviewed ? " · ⚠ มี " + unreviewed + " รายการที่ 'ยังไม่ได้ตรวจแก้' — ให้เตือนว่าเป็นข้อมูลที่ AI อ่านจากรูป ยังไม่มีคนตรวจ ให้ดูรูปประกอบด้วย" : "")
-        + rankNote
+        + rankNote + how
         + (exp.length ? " · (มีอีก " + exp.length + " รายการที่หมดอายุแล้ว ไม่แสดง)" : ""),
+    };
+  }
+  // ── เจอ "ใบ" ที่ตรงคำถาม แต่ในใบยังไม่มีรายการสินค้า → ตอบจากกติกาของใบได้เลย ดีกว่าบอกว่าไม่มี
+  if (sheetHits.length) {
+    return {
+      count: 0, promos: [], ใบที่ตรงกับคำถาม: sheetHits.map(shapeSheet),
+      note: "★ ไม่เจอ 'รายการสินค้า' ที่ตรงคำถาม แต่เจอ 'ใบโปรฯ' ที่พูดถึงเรื่องนี้ (ดูช่อง ใบที่ตรงกับคำถาม)"
+        + " · ✅ ให้ตอบจาก 'กติกาของใบ' ว่าโปรฯ นี้คืออะไร ใช้กับอะไร ช่วงไหน แล้ววาง URL รูปใบโปรฯ ให้ดูของจริง"
+        + " · ❌ ห้ามตอบว่า 'ไม่มีโปรโมชั่นนี้' ทั้งที่ระบบมีใบอยู่",
     };
   }
   if (exp.length) {
@@ -1218,26 +1288,33 @@ async function promo_search(a: any) {
         + " · ❌ ห้ามยกราคาของรอบที่จบแล้วมาตอบเหมือนยังใช้ได้",
     };
   }
-  const { data: sheetList } = await sb.from("promo_sheets").select("title").eq("active", true).limit(20);
-  const titles = [...new Set((sheetList || []).map((x: any) => String(x.title)))].slice(0, 12);
+  // ── ไม่เจอจริง ๆ → คืน "ใบที่มีในระบบพร้อมกติกาของแต่ละใบ" ให้นิดาอ่านแล้วตอบเองได้
+  //    (เดิมคืนแค่ชื่อใบ นิดาเลยไม่รู้ว่าใบไหนพูดถึงข้าวกล่อง/ซื้อคู่ จึงตอบว่าไม่มี)
+  const { data: sheetList } = await sb.from("promo_sheets")
+    .select("id,title,promo_type,mechanic_note,period_start,period_end,image_url,reviewed")
+    .eq("active", true).order("period_end", { ascending: false }).limit(25);
+  const live = (sheetList || []).filter((x: any) => promoStatus(x) === "ใช้อยู่").map(shapeSheet);
   return {
-    count: 0, promos: [], ใบโปรฯที่มีในระบบ: titles,
-    note: "ไม่เจอด้วยคำนี้ · ★ อย่าเพิ่งตอบว่าไม่มีข้อมูล — ลองใหม่ก่อน 1 ครั้ง:"
-      + " ถ้าคำที่ค้นเป็นชื่อใบ ให้เรียกซ้ำโดยใส่ sheet=ชื่อใบ · ถ้าถามหาที่สุด (เยอะสุด/ถูกสุด/ประหยัดสุด) ให้เรียกซ้ำโดยใส่ sort"
-      + " · ถ้าเป็นชื่อสินค้า ให้ตัดให้สั้นลงเหลือชื่อยี่ห้อคำเดียว"
-      + " · รายชื่อใบที่มีอยู่จริงอยู่ในช่อง 'ใบโปรฯที่มีในระบบ' ใช้เทียบได้"
-      + " · ถ้าลองแล้วยังไม่เจอจริง ๆ ค่อยบอกว่ายังไม่มีข้อมูลโปรฯ ของสิ่งนี้ และชวนผู้จัดการอัปโหลดใบโปรฯ ที่เมนู 'โปรโมชั่น' ❌ อย่าแนะให้ไปถามผู้จัดการเขต",
+    count: 0, promos: [], ใบโปรฯที่ใช้อยู่ตอนนี้: live,
+    note: "ไม่เจอด้วยคำนี้ · ★ อย่าเพิ่งตอบว่าไม่มีข้อมูล — ในช่อง 'ใบโปรฯที่ใช้อยู่ตอนนี้' มีทั้งชื่อใบ ชนิดโปรฯ และ 'กติกาของใบ' ให้อ่าน"
+      + " · ✅ ถ้าใบไหนกติกาตรงกับสิ่งที่ถาม (เช่น ถามข้าวกล่องแช่เย็น แล้วมีใบที่กติกาเขียนถึงข้าวกล่องแช่เย็น) ให้ตอบจากใบนั้นได้เลย พร้อมวาง URL รูปใบโปรฯ"
+      + " · ✅ หรือเรียกซ้ำอีก 1 ครั้ง: ใส่ sheet=ชื่อใบจากรายการนี้ · หรือใส่ promo_type (stamp/discount/bundle/freebie/redeem) ถ้าถามถึงชนิดโปรฯ · หรือตัดชื่อสินค้าให้สั้นเหลือยี่ห้อคำเดียว"
+      + " · ❌ ตอบว่า 'ไม่มี' ได้ต่อเมื่อไล่ดูกติกาทุกใบในรายการแล้วไม่มีใบไหนเกี่ยวเลยจริง ๆ แล้วค่อยชวนผู้จัดการอัปโหลดใบโปรฯ ที่เมนู 'โปรโมชั่น' ❌ อย่าแนะให้ไปถามผู้จัดการเขต",
   };
 }
 
 // ---- เครื่องมือของนิดา: ขอดูใบโปรฯ ทั้งใบ (ส่งรูปกลับ) ----
 async function promo_sheet(a: any) {
   const t = bkkToday();
-  let q: any = sb.from("promo_sheets").select("id,title,period_start,period_end,image_url,page_no,reviewed").eq("active", true).order("period_end", { ascending: false }).limit(20);
+  // ★ ต้องส่ง "กติกาของใบ" + "ชนิดโปรฯ" ไปด้วย ไม่งั้นนิดาเห็นแต่ชื่อใบ เลยไม่รู้ว่าใบไหนพูดถึงอะไร
+  //   (เจอจริง: ถามโปรฯ ข้าวกล่องแช่เย็น แล้วตอบว่าไม่มี ทั้งที่ใบ MEAL DEAL เขียนไว้ในกติกา)
+  let q: any = sb.from("promo_sheets").select("id,title,period_start,period_end,image_url,page_no,reviewed,promo_type,mechanic_note").eq("active", true).order("period_end", { ascending: false }).limit(20);
   const { data, error } = await q;
   if (error) return { error: String(error.message || error) };
   const all = (data || []).map((s: any) => ({
     id: s.id, ชื่อใบ: s.title, หน้า: s.page_no,
+    ชนิดโปรฯ: PROMO_TYPES[String(s.promo_type || "")]?.label || s.promo_type || null,
+    กติกาของใบ: s.mechanic_note || null,
     ช่วงเวลา: _thDate(s.period_start) + " – " + _thDate(s.period_end),
     สถานะ: promoStatus(s), ตรวจแก้แล้ว: s.reviewed === true, รูปใบโปรฯ: s.image_url,
   }));
@@ -4082,7 +4159,7 @@ const DECLS = [
   { name: "get_document", description: "ดึงเอกสารให้ผู้ใช้ 'ดาวน์โหลด/เปิด' ในแชท (จะแสดงเป็นการ์ดปุ่ม): สลิปเงินเดือน (kind='payslip' + emp_id + which=current/previous) · ใบเตือน (kind='warning' + warning_id หรือ emp_id) · เอกสารเซ็นแนบ (kind='signed_doc' + emp_id) · รายงานสรุปรายบุคคล (kind='report' + emp_id) · ใบเซ็นรับทราบทุกขั้นวินัย (kind='ack_form' + emp_id + action_type: verbal|written|warning1|warning2|warning3 + reason ที่ร่างไว้) — สร้างเอกสารให้พิมพ์→ให้พนักงานเซ็น→ถ่ายมาแนบเป็นหลักฐาน. ใช้เมื่อผู้ใช้ขอ 'ขอสลิป/ขอใบเตือน/ขอใบเซ็นรับทราบ/ขอเอกสาร/ขอรายงาน/ดาวน์โหลด...' — ถ้าไม่รู้ emp_id ให้ search_employees ก่อน", parameters: { type: "object", properties: { kind: { type: "string" }, emp_id: { type: "string" }, warning_id: { type: "string" }, which: { type: "string" }, action_type: { type: "string" }, reason: { type: "string" } }, required: ["kind"] } },
   { name: "remember", description: "จำ 'ความรู้ใหม่' เข้าคลังความรู้ถาวรของนิดา (ใช้ตอบครั้งต่อ ๆ ไป) — เรียกเมื่อผู้ใช้บอกนโยบาย/มาตรฐานใหม่ แก้ความเข้าใจที่ผิด หรือสั่งว่า 'จำไว้ว่า/บันทึกไว้ว่า...' · category: policy(นโยบาย)|standard(มาตรฐาน)|correction(แก้ไข/เคยผิด)|faq|note + title(หัวข้อสั้น) + content(เนื้อหาละเอียดครบ) + tags(คั่นด้วย ,) · ★ ถ้าเป็นเรื่องที่ 'มีวันหมดอายุ' (โปรโมชั่น แคมเปญ ประกาศชั่วคราว) ต้องใส่ valid_from/valid_to เป็น YYYY-MM-DD ด้วยเสมอ — พ้นวันแล้วระบบจะหยุดเอามาตอบเอง ไม่ต้องมาไล่ปิดทีหลัง · ถ้าไม่รู้วันให้ถามผู้ใช้ก่อน อย่าเดา · คู่มือ/นโยบายถาวรไม่ต้องใส่ — ต้องสรุปให้ยืนยันก่อนบันทึก", parameters: { type: "object", properties: { category: { type: "string" }, title: { type: "string" }, content: { type: "string" }, tags: { type: "string" }, source: { type: "string" }, valid_from: { type: "string" }, valid_to: { type: "string" } }, required: ["title", "content"] } },
   { name: "remember_document", description: "★ เก็บ 'ไฟล์ที่ผู้ใช้แนบมาในข้อความนี้' (PDF/รูปเอกสาร) เข้าคลังความรู้แบบ 'เนื้อหาเต็ม' — ใช้เมื่อผู้ใช้แนบเอกสารแล้วสั่งว่า 'จำไว้/เก็บเข้าคลัง/บันทึกเอกสารนี้' · ระบบจะอ่านทีละช่วงหน้าเองจนครบทั้งเล่ม แล้วเก็บเป็นหลายตอน · ❌ ห้ามใช้ remember แทนในกรณีนี้ เพราะ remember เก็บได้แค่บทสรุปที่คุณเขียนเอง เนื้อหาจริงจะตกหล่น · title=ชื่อเอกสารสั้น ๆ · category=training(คู่มือ)|policy|standard · ใส่ valid_to ถ้าเป็นเอกสารที่มีวันหมดอายุ — ต้องสรุปให้ยืนยันก่อน", parameters: { type: "object", properties: { title: { type: "string" }, category: { type: "string" }, tags: { type: "string" }, source: { type: "string" }, valid_from: { type: "string" }, valid_to: { type: "string" } } } },
-  { name: "promo_search", description: "★ ค้นโปรโมชั่นจากใบโปรฯ ที่นำเข้าไว้ — ใช้ทุกครั้งที่ถูกถามเรื่องราคา/ส่วนลด/แสตมป์ ทั้งแบบถามรายสินค้า ถามทั้งใบ และถามหา 'ที่สุด' · ใส่ช่องไหนก็ได้ ไม่ใส่เลยก็ได้ (จะคืนรายชื่อใบโปรฯ ที่มีในระบบ) · product=ชื่อสินค้าหรือยี่ห้อสั้น ๆ (เช่น เลย์ · เนสกาแฟ · ยาสีฟัน) ห้ามใส่ทั้งประโยค · sheet=ชื่อใบโปรฯ ใช้เมื่อถามถึงทั้งใบ (เช่น แสตมป์จัดหนัก · ลดอย่างแรง · มอนชิชิ) · sort=คำจัดอันดับ ใช้เมื่อถามหาที่สุด (เช่น แสตมป์เยอะสุด · ดวงเยอะสุด · ถูกสุด · แพงสุด · ประหยัดมากสุด) · top=จำนวนอันดับที่ต้องการ ค่าเริ่มต้น 10 · คืนราคา/แสตมป์/เงื่อนไข + URL รูปใบโปรฯ · ⚠ ต้องวาง URL รูปลงในคำตอบเสมอ ระบบจะแสดงเป็นรูปให้เอง", parameters: { type: "object", properties: { product: { type: "string" }, sheet: { type: "string" }, sort: { type: "string" }, top: { type: "integer" }, include_expired: { type: "boolean" } }, required: [] } },
+  { name: "promo_search", description: "★ ค้นโปรโมชั่นจากใบโปรฯ ที่นำเข้าไว้ — ใช้ทุกครั้งที่ถูกถามเรื่องราคา/ส่วนลด/แสตมป์ ทั้งแบบถามรายสินค้า ถามทั้งใบ และถามหา 'ที่สุด' · ใส่ช่องไหนก็ได้ ไม่ใส่เลยก็ได้ (จะคืนรายชื่อใบโปรฯ ที่มีในระบบ) · product=ชื่อสินค้าหรือยี่ห้อสั้น ๆ (เช่น เลย์ · เนสกาแฟ · ยาสีฟัน) ห้ามใส่ทั้งประโยค · sheet=ชื่อใบโปรฯ ใช้เมื่อถามถึงทั้งใบ (เช่น แสตมป์จัดหนัก · ลดอย่างแรง · มอนชิชิ) · sort=คำจัดอันดับ ใช้เมื่อถามหาที่สุด (เช่น แสตมป์เยอะสุด · ดวงเยอะสุด · ถูกสุด · แพงสุด · ประหยัดมากสุด) · top=จำนวนอันดับที่ต้องการ ค่าเริ่มต้น 10 · promo_type=ชนิดโปรฯ ใช้เมื่อถามเป็น 'แบบ' ไม่ใช่ชื่อ (stamp=ซื้อแล้วรับแสตมป์ · discount=ลดราคา · bundle=ซื้อคู่/เซ็ต/MEAL DEAL · freebie=ซื้อครบแถมฟรี · redeem=แลกด้วยแสตมป์) · ★ ค้นได้ถึง 'กติกาของใบ' และ 'เงื่อนไข' ด้วย จึงถามเป็นกลุ่มสินค้าได้ เช่น ข้าวกล่องแช่เย็น · เครื่องดื่ม · ของใช้ในบ้าน · คืนราคา/แสตมป์/เงื่อนไข + URL รูปใบโปรฯ · ⚠ ต้องวาง URL รูปลงในคำตอบเสมอ ระบบจะแสดงเป็นรูปให้เอง", parameters: { type: "object", properties: { product: { type: "string" }, sheet: { type: "string" }, sort: { type: "string" }, top: { type: "integer" }, promo_type: { type: "string" }, include_expired: { type: "boolean" } }, required: [] } },
   { name: "sop_search", description: "★★ ค้น 'คู่มือขั้นตอนการทำงานหน้าร้าน' จากหลักสูตรอบรมที่นำเข้าไว้ — ใช้ทุกครั้งที่ถูกถามว่า 'ทำ X ยังไง / ขั้นตอนของ Y คืออะไร / ยกเลิก post void ทำยังไง / สั่งสินค้ายังไง / ปิดผลัดยังไง / คีย์รับสินค้ายังไง' · query=เรื่องที่อยากรู้ สั้น ๆ (เช่น 'post void บัตร Visa' 'ปิดผลัด' 'Mark on Stock') · lesson_no=เลขบทถ้ารู้ (เช่น 2.1) · คืนขั้นตอน 1-2-3 พร้อมภาพหน้าจอจริงและนาทีในวิดีโอต้นทาง · ⚠ ต้องตอบตามลำดับขั้นตอนเป๊ะ ห้ามข้ามห้ามสลับ", parameters: { type: "object", properties: { query: { type: "string" }, lesson_no: { type: "string" } } } },
   { name: "sales_boost", description: "★★ บทวิเคราะห์ยอดขาย + ข้อเสนอ 'ควรเชียร์อะไร' — ใช้ทุกครั้งที่ถูกถามว่า 'วิเคราะห์ยอดขายให้หน่อย / ทำไมยอดตก / จะดันยอดยังไง / สัปดาห์นี้เป็นยังไง / ควรเชียร์อะไร / สาขาไหนน่าห่วง' · รวมยอด-เป้า-ลูกค้า-ยอดต่อหัว-ช่องทาง เทียบกับช่วงก่อนหน้า แล้วจับคู่กับโปรฯ ที่ใช้ได้จริงตอนนี้ให้เสร็จ · days=จำนวนวันย้อนหลัง (ค่าเริ่มต้น 7 · รายเดือนใส่ 30) · end=วันสุดท้ายที่จะวิเคราะห์ (ไม่ใส่=วันนี้)", parameters: { type: "object", properties: { days: { type: "integer" }, end: { type: "string" } } } },
   { name: "promo_sheet", description: "★ ขอดู 'ใบโปรโมชั่นทั้งใบ' เป็นรูป — ใช้เมื่อผู้ใช้ขอว่า 'ขอดูใบโปรฯ / ส่งใบโปรโมชั่นมาให้หน่อย / โปรฯ รอบนี้มีอะไรบ้าง' · คืนรายการใบที่ใช้ได้ตอนนี้พร้อม URL รูป — ต้องวาง URL ลงในคำตอบทุกใบ", parameters: { type: "object", properties: {} } },
@@ -4177,7 +4254,10 @@ const SYS = `คุณคือ "น้องนิดา" ผู้ช่วย
 - ★★★★ [วิเคราะห์ยอด/ดันยอด = ใช้ sales_boost] ถูกถามว่า "วิเคราะห์ยอดขาย · ทำไมยอดตก · จะดันยอดยังไง · สัปดาห์นี้เป็นยังไง · ควรเชียร์อะไร · สาขาไหนน่าห่วง" → เรียก sales_boost (ไม่ใช่ sales_report เปล่า ๆ) เพราะมันรวมยอด+เป้า+ยอดต่อหัว+โปรฯ ปัจจุบันมาให้ครบแล้ว · ถามรายสัปดาห์ใช้ days=7 · รายเดือนใช้ days=30
 - ★★★ [ห้ามอ้างยอดรายสินค้า] ระบบมียอดขายแค่ระดับสาขา/วัน/ผลัด ❌ ห้ามพูดว่า "สินค้า X ขายดี/ขายไม่ดี/ยอดสินค้า Y ตก" ไม่ว่ากรณีใด · พูดได้แค่ "ยอดต่อหัวลดลง → ตะกร้าเล็กลง → ควรเชียร์ของที่ทำให้ซื้อเพิ่ม" ตามที่ sales_boost คำนวณมา
 - ★★★★ [เลือกช่องให้ถูกก่อนเรียก promo_search] ถามถึง "ชื่อใบ/ชื่อโปรฯ" (เช่น ขอดูโปรแสตมป์จัดหนัก · ใบลดอย่างแรงมีอะไรบ้าง) → ใส่ sheet= ไม่ใช่ product= · ถามหา "ที่สุด" (อะไรได้แสตมป์เยอะสุด · อะไรถูกสุด · อะไรประหยัดสุด) → ใส่ sort= แล้วปล่อย product ว่าง ❌ ห้ามยัดทั้งประโยคลง product แล้วสรุปว่าไม่มีข้อมูล
-- ★★★ [เจอ 0 รายการ = ยังไม่ใช่คำตอบ] promo_search คืน 0 → ต้องลองใหม่อีก 1 ครั้งตามที่ช่อง note บอก (เปลี่ยนไปใส่ sheet หรือ sort หรือตัดชื่อให้สั้นลง) แล้วค่อยสรุป ❌ ห้ามตอบ "ไม่พบข้อมูลในระบบ" ตั้งแต่ครั้งแรก
+- ★★★ [เจอ 0 รายการ = ยังไม่ใช่คำตอบ] promo_search คืน 0 → ต้องลองใหม่อีก 1 ครั้งตามที่ช่อง note บอก (เปลี่ยนไปใส่ sheet หรือ sort หรือ promo_type หรือตัดชื่อให้สั้นลง) แล้วค่อยสรุป ❌ ห้ามตอบ "ไม่พบข้อมูลในระบบ" ตั้งแต่ครั้งแรก
+- ★★★★ [ถามเป็น "แบบ" หรือ "กลุ่มสินค้า" ก็ต้องหาให้เจอ] คนถามด้วยคำกว้าง ๆ พอ ๆ กับถามชื่อตรงตัว เช่น "มีโปรฯ ซื้อคู่ไหม" · "โปรฯ ข้าวกล่องแช่เย็น" · "โปรฯ เครื่องดื่ม" · "มีอะไรลดราคาบ้าง"
+  → เรียก promo_search โดยใส่คำนั้นใน product ได้เลย (ระบบค้นถึง 'กติกาของใบ' ให้แล้ว) และถ้าเป็นชนิดโปรฯ ให้ใส่ promo_type ด้วย (ซื้อคู่/เซ็ต/MEAL DEAL→bundle · ลดราคา→discount · แถมฟรี→freebie · แลกแสตมป์→redeem · รับแสตมป์→stamp)
+  ❌ ห้ามตอบว่า "ยังไม่มีโปรฯ กลุ่มนี้" ถ้ายังไม่ได้ไล่อ่าน 'กติกาของใบ' ทุกใบในช่อง 'ใบโปรฯที่ใช้อยู่ตอนนี้' ที่ระบบส่งกลับมา
   · ★ ต้องวาง URL ในช่อง "รูปใบโปรฯ" ลงในคำตอบทุกครั้ง (ระบบจะแสดงเป็นรูปให้เอง) พนักงานจะได้เทียบกับใบจริงได้
   · ★ ต้องบอกช่วงเวลาของใบกำกับเสมอ · ถ้ารายการนั้น ตรวจแก้แล้ว=false ให้เตือนว่า "เป็นข้อมูลที่ AI อ่านจากรูป ยังไม่มีคนตรวจ รบกวนดูรูปประกอบด้วยนะคะ"
   · ค้นด้วยชื่อสั้น ๆ (เช่น "เลย์" "เนสกาแฟ" "ยาสีฟัน") ไม่ใช่ทั้งประโยค · ไม่เจอให้ลองชื่อยี่ห้อ/คำสั้นลงก่อนสรุปว่าไม่มี
