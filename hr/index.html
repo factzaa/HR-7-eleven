@@ -8110,7 +8110,10 @@ const CM_SECTIONS = {
 };
 // ================= ข้อสอบซ้อมจากคู่มือ =================
 let EX = { items: [], ans: {}, started: null, scopeLabel: '', course: '', box: 'ex_body', scopeKind: '', againFn: 'exStart', wired: false };
-const EX_KIND = { what:'ดูภาพแล้วตอบ', next:'ขั้นตอนถัดไป', order:'เรียงลำดับ', caution:'เงื่อนไข/ข้อควรระวัง' };
+// ป้ายชนิดข้อสอบ — คลังรุ่นที่ 2 วัดความเข้าใจกระบวนการทำงาน (ไม่มีชนิด 'ดูภาพแล้วตอบ' แล้ว)
+const EX_KIND = { next:'ลำดับถัดไป', prev:'ลำดับก่อนหน้า', missing:'เติมขั้นตอนที่ขาด', order:'เรียงลำดับ',
+                  first:'ขั้นตอนแรก', last:'ขั้นตอนสุดท้าย', num:'ตัวเลข/เกณฑ์',
+                  what:'ดูภาพแล้วตอบ', caution:'เงื่อนไข/ข้อควรระวัง' };
 function exMsg(t, err){ const e=$('ex_msg'); if(e){ e.textContent=t||''; e.style.color = err?'var(--danger,#dc2626)':'var(--muted)'; } }
 
 async function exInit(){
