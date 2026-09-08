@@ -1064,9 +1064,9 @@ async function sop_search(a: any) {
   }
 
   if (!hits.length) {
-    const { data: all } = await sb.from("course_lessons").select("lesson_no,title").eq("active", true).order("lesson_no").limit(50);
+    const { data: all } = await sb.from("course_lessons").select("lesson_no,title,course_name").eq("active", true).order("lesson_no").limit(120);
     return {
-      count: 0, บทที่มีในระบบ: (all || []).map((x: any) => x.lesson_no + " " + x.title),
+      count: 0, บทที่มีในระบบ: (all || []).map((x: any) => "[" + (x.course_name || "") + "] " + x.lesson_no + " " + x.title),
       note: "ไม่เจอด้วยคำนี้ · ★ อย่าเพิ่งตอบว่าไม่มี — ดูรายชื่อบทในช่อง 'บทที่มีในระบบ' ว่ามีเรื่องใกล้เคียงไหม แล้วเรียกซ้ำด้วยคำที่ตรงกว่า หรือใส่ lesson_no ตรง ๆ",
     };
   }
@@ -1076,7 +1076,12 @@ async function sop_search(a: any) {
   const byL: Record<number, any[]> = {};
   (steps || []).forEach((x: any) => (byL[x.lesson_id] = byL[x.lesson_id] || []).push(x));
 
+  // ★ 8 ก.ย. 2569 — ตอนนี้มี 3 หลักสูตรในระบบ และเลขบทซ้ำกันได้ (เช่น "2.1" มีทั้ง 3 หลักสูตร)
+  //   ต้องบอกให้ชัดว่าแต่ละบทมาจากหลักสูตรไหน ไม่งั้นนิดาจะเอาของเก่ากับของใหม่มาปนกัน
+  //   (เคสจริง: มาตรฐานบริการ ฉบับเดิมใช้ 5DNA · ฉบับปรับปรุงตัดออกเหลือ PSAO อย่างเดียว)
   const out = hits.map((l: any) => ({
+    หลักสูตร: l.course_name || l.course_code || null,
+    เป็นฉบับล่าสุด: String(l.course_code) === "STAFF26",
     บท: l.lesson_no + " " + l.title,
     ส่วน: l.section || null,
     บทนี้สอนอะไร: l.summary || null,
@@ -1086,11 +1091,17 @@ async function sop_search(a: any) {
     ขั้นตอน: (byL[l.id] || []).map((s2: any) => ({
       ที่: s2.step_no, หัวข้อ: s2.heading || null, ทำอะไร: s2.instruction,
       หน้าจอ: s2.screen || null, หมายเหตุ: s2.note || null,
-      นาทีในวิดีโอ: s2.at_sec != null ? (String(Math.floor(s2.at_sec / 60)).padStart(2, "0") + ":" + String(s2.at_sec % 60).padStart(2, "0")) : null,
+      นาทีในวิดีโอ: s2.at_sec != null ? (String(Math.floor(s2.at_sec / 60)).padStart(2, "0") + ":" + String(Math.round(s2.at_sec % 60)).padStart(2, "0")) : null,
+      รูป: s2.image_url || null,
     })),
-    ภาพประกอบ: (l.sheet_urls || []).slice(0, 4),
+    ภาพประกอบ: (l.sheet_urls && l.sheet_urls.length)
+      ? l.sheet_urls.slice(0, 4)
+      : (byL[l.id] || []).map((s2: any) => s2.image_url).filter(Boolean).slice(0, 4),
     ลิงก์บทเรียน: l.source_url || null,
   }));
+  // ถ้าคำถามเดียวไปโดนหลายหลักสูตร ให้ดันฉบับล่าสุดขึ้นก่อน
+  out.sort((a2: any, b2: any) => (b2.เป็นฉบับล่าสุด ? 1 : 0) - (a2.เป็นฉบับล่าสุด ? 1 : 0));
+  const manyCourses = new Set(out.map((x: any) => x.หลักสูตร)).size > 1;
 
   const unrev = out.filter((x: any) => !x.ตรวจแก้แล้ว).length;
   return {
@@ -1099,6 +1110,12 @@ async function sop_search(a: any) {
       + " · ★ ถ้ามี 'ข้อควรระวัง' ต้องบอกด้วยทุกครั้ง"
       + " · ★ วาง URL ใน 'ภาพประกอบ' ลงในคำตอบ 1-2 รูป พนักงานจะได้เห็นหน้าจอจริง"
       + " · ถ้าผู้ถามอยากดูวิดีโอต้นทาง ให้ส่ง 'ลิงก์บทเรียน' พร้อมนาทีของขั้นตอนนั้น"
+      + " · ★★ ต้องบอกทุกครั้งว่าคำตอบมาจาก 'หลักสูตร' ไหน (ดูช่องหลักสูตร)"
+      + (manyCourses
+          ? " · ⚠ คำถามนี้ไปโดนมากกว่า 1 หลักสูตร — ให้ยึด 'ฉบับปรับปรุง 2569' (ช่อง เป็นฉบับล่าสุด = true) เป็นคำตอบหลัก"
+            + " แล้วบอกเพิ่มว่าฉบับเดิมเขียนไว้ต่างออกไปอย่างไร ❌ ห้ามเอาสองฉบับมาปนกันเป็นคำตอบเดียว"
+          : "")
+      + " · ⚠ ถ้าใน 'ข้อควรระวัง' มีหัวข้อ 'ช่องว่างของคู่มือบทนี้' ให้เตือนผู้ถามว่าจุดนั้นคู่มือยังไม่ครบ ต้องเช็กกับของจริงหรือคู่มือฉบับเดิม"
       + (unrev ? (" · ⚠ มี " + unrev + " บทที่ยังไม่ได้ตรวจแก้ ต้องบอกว่าเป็นข้อมูลที่ AI อ่านจากวิดีโอ ยังไม่มีคนตรวจ ให้เช็กกับของจริงก่อนทำตาม") : ""),
   };
 }
