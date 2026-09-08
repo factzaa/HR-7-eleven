@@ -2138,16 +2138,60 @@ function mrNav(d){
   <div class="card">
     <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> โปรโมชั่นบนเว็บ 7-Eleven</h3></div>
     <div class="card-b">
+      <style>
+        .pbcats{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 12px}
+        .pbchip{padding:5px 13px;border:1px solid var(--line);border-radius:99px;font-size:12.5px;cursor:pointer;background:var(--glass);white-space:nowrap;user-select:none}
+        .pbchip:hover{border-color:var(--line2)}
+        .pbchip.on{background:#0f766e;color:#fff;border-color:#0f766e;font-weight:600}
+        .pbsec{margin-top:18px}
+        .pbsec-h{display:flex;align-items:baseline;gap:9px;padding-bottom:7px;border-bottom:2px solid var(--line2);font-size:14.5px;font-weight:800}
+        .pbsec-h span{font-weight:400;color:var(--muted);font-size:12px}
+        .pbgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:13px;margin-top:12px}
+        .pbcard{border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--card);display:flex;flex-direction:column;transition:box-shadow .15s,border-color .15s}
+        .pbcard:hover{border-color:#0f766e;box-shadow:0 4px 14px rgba(15,118,110,.13)}
+        .pbcard.sel{border-color:#0f766e;box-shadow:0 0 0 2px #0f766e}
+        .pbthumb{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:var(--bg2);cursor:pointer}
+        .pbbody{padding:9px 10px 10px;display:flex;flex-direction:column;gap:4px;flex:1}
+        .pbti{font-size:12.8px;font-weight:700;line-height:1.35}
+        .pbcap{font-size:11.5px;color:var(--muted);line-height:1.45}
+        .pbtag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:10.5px;line-height:1.6;white-space:nowrap}
+        .pbact{display:flex;gap:6px;align-items:center;margin-top:auto;padding-top:8px}
+        .pbpick{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none}
+        .pbbar{position:sticky;bottom:0;z-index:6;margin-top:16px;padding:11px 12px;border-radius:13px;border:1px solid var(--line2);
+               background:var(--card);box-shadow:0 -3px 14px rgba(0,0,0,.09);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .pbbar.off{display:none}
+        /* หน้าดูใบโปรฯ ขนาดเต็ม */
+        #pdOverlay{position:fixed;inset:0;z-index:280;background:rgba(15,20,27,.72);display:none;align-items:flex-start;justify-content:center;padding:22px 14px;overflow:auto;-webkit-overflow-scrolling:touch}
+        .pd-box{width:100%;max-width:820px;background:var(--card);border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+        .pd-h{display:flex;gap:10px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid var(--line)}
+        .pd-h h4{margin:0;font-size:16px;line-height:1.35;flex:1}
+        .pd-b{padding:14px 16px}
+        .pd-sheet{width:100%;height:auto;display:block;border-radius:11px;border:1px solid var(--line);background:var(--bg2);cursor:zoom-in;margin-bottom:10px}
+        .pd-f{padding:12px 16px 16px;border-top:1px solid var(--line);display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+        @media(max-width:620px){ #pdOverlay{padding:0} .pd-box{max-width:none;border-radius:0;min-height:100%} }
+        .pbrow{display:grid;grid-template-columns:88px 1fr;gap:11px;padding:11px 0;border-top:1px solid var(--line);align-items:start}
+        .pbrow img{width:88px;aspect-ratio:16/9;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--bg2);cursor:zoom-in}
+        @media(max-width:520px){ .pbrow{grid-template-columns:64px 1fr} .pbrow img{width:64px} }
+      </style>
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">
-        ดูใบโปรฯ ทั้งหมดที่กำลังจัดอยู่บนเว็บ 7-Eleven <b>แยกตามหมวดเหมือนหน้าเว็บ</b> — กดที่รูปเพื่อดูเต็ม ๆ
-        · ใบไหนอยากให้นิดาตอบราคาได้ ค่อยกด <b>"นำเข้า"</b> ทีละใบ
+        ดูโปรฯ <b>สด ๆ จากหน้าเว็บ 7-Eleven</b> แยกหมวดเหมือนหน้าเว็บจริง — ยังไม่ดึงอะไรเข้าระบบ
+        · กดที่แบนเนอร์เพื่อ<b>เปิดใบโปรฯ ขนาดเต็ม</b>อ่านรายละเอียด
+        · ใบไหนอยากให้นิดาตอบราคาได้ ค่อย<b>ติ๊กเลือก</b>แล้วกด <b>“นำเข้าโปรที่เลือก”</b> ด้านล่าง
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-        <button class="btn btn-pri btn-sm" id="pb_load"><svg class="ei" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> โหลดโปรฯ จากเว็บ</button>
+        <button class="btn btn-pri btn-sm" id="pb_load"><svg class="ei" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> โหลดโปรฯ รอบนี้จากเว็บ</button>
         <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="pb_hide_in"> ซ่อนใบที่นำเข้าแล้ว</label>
         <span id="pb_prog" style="font-size:12.5px;color:var(--muted)"></span>
       </div>
+      <div id="pb_cats" class="pbcats"></div>
       <div id="pb_grid"></div>
+      <div id="pb_bar" class="pbbar off">
+        <span id="pb_selinfo" style="font-size:13px;font-weight:700"></span>
+        <span style="flex:1"></span>
+        <button class="btn btn-sec btn-sm" id="pb_clear">ล้างที่เลือก</button>
+        <button class="btn btn-pri btn-sm" id="pb_go">นำเข้าโปรที่เลือก</button>
+      </div>
+      <div id="pb_confirm"></div>
     </div>
   </div>
 
@@ -8455,86 +8499,228 @@ function pmConfirmType(d, onOk){
   };
 }
 
-// ========== แกลเลอรีโปรฯ จากเว็บ 7-Eleven ==========
-let PB_DATA=null, PB_WIRED=false;
+// ========== แกลเลอรีโปรฯ จากเว็บ 7-Eleven (เรียกดูสด ไม่ต้องนำเข้าก่อน) ==========
+//  โครงใหม่ 8 ก.ย. 2569 — เดิมต้องเปิดหน้ารายละเอียดทีละใบ (~72 ครั้ง) จึงช้ามาก
+//  ตอนนี้ edge อ่าน __NEXT_DATA__ ของหน้ารวมหมวด (6 ครั้งจบ) และคืน "ใบโปรฯ ขนาดเต็ม" มาเลย
+//  ไหลตามหน้าเว็บจริง: แบนเนอร์แยกหมวด → คลิก → เห็นใบโปรฯ เต็ม ๆ → ติ๊กเลือก → ปุ่มนำเข้าด้านล่าง → รายการให้ตรวจก่อนยืนยัน
+let PB_DATA=null, PB_WIRED=false, PB_MAP={}, PB_SEL=[], PB_CAT='ALL', PB_TYPES=null, PB_CUR=null;
 function pbBusy(t){ const e=$('pb_prog'); if(e) e.textContent=t||''; }
-function pbBrowseInitAlias(){}
+function pbKey(it){ return it.cat+':'+it.id; }
 function pmBrowseInit(){
   if(PB_WIRED) return; PB_WIRED=true;
   const b=$('pb_load'); if(b) b.onclick=pbLoad;
   const h=$('pb_hide_in'); if(h) h.onchange=pbRender;
+  const c=$('pb_clear'); if(c) c.onclick=()=>{ PB_SEL=[]; pbRender(); };
+  const g=$('pb_go');    if(g) g.onclick=pbConfirmStart;
   // ผูกส่วน "อัปโหลดเอง" + "ดึงจากเว็บทั้งหมวด" ที่ย้ายมาจากหน้าตั้งค่า
   if($('pm_file')) $('pm_file').addEventListener('change', pmImport);
   if($('pm_sync')) $('pm_sync').onclick=()=>pmSync(false);
   if($('pm_dry'))  $('pm_dry').onclick=()=>pmSync(true);
 }
 async function pbLoad(){
-  pbBusy('กำลังอ่านเว็บ 7-Eleven… (ยังไม่นำเข้าอะไร)');
-  $('pb_grid').innerHTML='';
+  pbBusy('กำลังอ่านหน้าเว็บ 7-Eleven… (เรียกดูอย่างเดียว ยังไม่นำเข้าอะไร)');
+  $('pb_grid').innerHTML=''; $('pb_confirm').innerHTML=''; PB_SEL=[];
   try{
-    const j=await pmPost({ mode:'promo_browse', limit:12 });
+    const j=await pmPost({ mode:'promo_hub' });
     if(!j.ok){ pbBusy('ไม่สำเร็จ: '+(j.error||'')); return; }
-    PB_DATA=j.groups||[];
-    const n=PB_DATA.reduce((a,g)=>a+(g.items||[]).reduce((x,i)=>x+(i.posters||[]).length,0),0);
-    pbBusy('พบใบโปรฯ '+n+' รูป จาก '+PB_DATA.length+' หมวด');
-    pbRender();
+    PB_DATA=(j.groups||[]).filter(g=>(g.items||[]).length || g.error);
+    PB_MAP={}; PB_DATA.forEach(g=>(g.items||[]).forEach(it=>{ PB_MAP[pbKey(it)]=it; }));
+    const n=Object.keys(PB_MAP).length;
+    const isNew=Object.values(PB_MAP).filter(it=>!it.in_system).length;
+    pbBusy('พบ '+n+' โปรฯ จาก '+PB_DATA.length+' หมวด · ยังไม่ได้นำเข้า '+isNew+' ใบ');
+    pbCats(); pbRender();
   }catch(e){ pbBusy('ไม่สำเร็จ: '+(e.message||e)); }
 }
+function pbCats(){
+  const box=$('pb_cats'); if(!box||!PB_DATA) return;
+  const all=Object.keys(PB_MAP).length;
+  let h='<div class="pbchip'+(PB_CAT==='ALL'?' on':'')+'" data-pbcat="ALL">ทุกหมวด <b>'+all+'</b></div>';
+  PB_DATA.forEach(g=>{ h+='<div class="pbchip'+(PB_CAT===g.cat?' on':'')+'" data-pbcat="'+esc(g.cat)+'">'+esc(g.label||g.cat)+' <b>'+((g.items||[]).length)+'</b></div>'; });
+  box.innerHTML=h;
+  box.querySelectorAll('[data-pbcat]').forEach(c=>c.onclick=()=>{ PB_CAT=c.dataset.pbcat; pbCats(); pbRender(); window.scrollTo({top:Math.max(0,box.getBoundingClientRect().top+window.scrollY-70),behavior:'smooth'}); });
+}
 function pbRender(){
-  const box=$('pb_grid'); if(!box||!PB_DATA) return;
+  const box=$('pb_grid'); if(!box) return;
+  if(!PB_DATA){ box.innerHTML='<div class="empty" style="padding:10px">กด “โหลดโปรฯ รอบนี้จากเว็บ” เพื่อดูโปรฯ ที่กำลังจัดอยู่</div>'; pbBar(); return; }
   const hideIn=($('pb_hide_in')||{}).checked;
   let html='';
   PB_DATA.forEach(g=>{
-    const items=(g.items||[]).filter(it=>(it.posters||[]).length && (!hideIn || !it.in_system));
+    if(PB_CAT!=='ALL' && g.cat!==PB_CAT) return;
+    const items=(g.items||[]).filter(it=>!hideIn || !it.in_system);
     if(!items.length && !g.error) return;
-    html+='<div style="margin-top:14px"><div style="font-size:14px;font-weight:800;padding-bottom:6px;border-bottom:2px solid var(--line2)">'+esc(g.label||g.cat)+' <span style="font-weight:400;color:var(--muted);font-size:12px">'+(g.error?('· '+esc(g.error)):('· '+items.length+' รายการ'))+'</span></div>';
-    html+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">';
+    html+='<div class="pbsec"><div class="pbsec-h">'+esc(g.label||g.cat)+'<span>'+(g.error?('· เปิดหน้าไม่ได้: '+esc(g.error)):('· '+items.length+' รายการ'))+'</span></div><div class="pbgrid">';
     items.forEach(it=>{
-      (it.posters||[]).forEach((u,pi)=>{
-        const per=(it.period_start||it.period_end)?(esc(String(it.period_start||'—'))+' → '+esc(String(it.period_end||'—'))):'ไม่ระบุช่วงวันที่';
-        const badge = it.in_system
-          ? '<span style="background:'+(it.reviewed?'#dcfce7;color:#166534':'#fef3c7;color:#92400e')+';padding:1px 6px;border-radius:99px;font-size:10.5px">'+(it.reviewed?'ในระบบ · ตรวจแล้ว':'ในระบบ · ยังไม่ตรวจ')+'</span>'
-          : '<span style="background:#e0f2fe;color:#075985;padding:1px 6px;border-radius:99px;font-size:10.5px">ยังไม่นำเข้า</span>';
-        html+='<div style="width:172px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--glass)">'
-          +'<img src="'+esc(u)+'" loading="lazy" onclick="lightbox(this)" style="width:172px;height:172px;object-fit:cover;cursor:zoom-in;display:block;background:#f4f4f5">'
-          +'<div style="padding:7px 8px">'
-          +'<div style="font-size:12px;font-weight:700;line-height:1.35;max-height:32px;overflow:hidden">'+esc(it.title)+((it.posters.length>1)?(' <span style="color:var(--muted);font-weight:400">· หน้า '+(pi+1)+'</span>'):'')+'</div>'
-          +'<div style="font-size:11px;color:var(--muted);margin:3px 0">'+per+'</div>'
-          +'<div style="margin-bottom:6px">'+badge+'</div>'
-          +'<button class="btn '+(it.in_system?'btn-sec':'btn-pri')+' btn-sm" style="width:100%;font-size:12px" data-pbimp="'+esc(u)+'" data-t="'+esc(it.title)+'" data-s="'+esc(String(it.period_start||''))+'" data-e="'+esc(String(it.period_end||''))+'" data-p="'+(pi+1)+'" data-path="'+esc(it.path||'')+'">'+(it.in_system?'นำเข้าซ้ำ':'นำเข้า')+'</button>'
-          +'</div></div>';
-      });
+      const k=pbKey(it), on=PB_SEL.indexOf(k)>=0;
+      const per=(it.period_start||it.period_end)?(esc(String(it.period_start||'—'))+' → '+esc(String(it.period_end||'—'))):'';
+      const badge = it.in_system
+        ? '<span class="pbtag" style="background:'+(it.reviewed?'#dcfce7;color:#166534':'#fef3c7;color:#92400e')+'">'+(it.reviewed?'ในระบบ · ตรวจแล้ว':'ในระบบ · ยังไม่ตรวจ')+'</span>'
+        : '<span class="pbtag" style="background:#e0f2fe;color:#075985">ยังไม่นำเข้า</span>';
+      html+='<div class="pbcard'+(on?' sel':'')+'" data-pbk="'+esc(k)+'">'
+        +(it.thumb?('<img class="pbthumb" src="'+esc(it.thumb)+'" loading="lazy" alt="" data-pbopen="'+esc(k)+'">'):'<div class="pbthumb" data-pbopen="'+esc(k)+'"></div>')
+        +'<div class="pbbody">'
+        +'<div class="pbti">'+esc(it.title)+'</div>'
+        +(it.caption?('<div class="pbcap">'+esc(it.caption)+'</div>'):'')
+        +(per?('<div class="pbcap">'+per+'</div>'):'')
+        +'<div>'+badge+'</div>'
+        +'<div class="pbact">'
+          +'<label class="pbpick"><input type="checkbox" data-pbsel="'+esc(k)+'"'+(on?' checked':'')+'> เลือก</label>'
+          +'<span style="flex:1"></span>'
+          +'<button class="btn btn-sec btn-sm" style="font-size:11.5px;padding:4px 10px" data-pbopen="'+esc(k)+'">ดูใบเต็ม</button>'
+        +'</div></div></div>';
     });
     html+='</div></div>';
   });
-  box.innerHTML=html||'<div class="empty" style="padding:10px">ไม่พบใบโปรฯ · กด "โหลดโปรฯ จากเว็บ" ก่อน</div>';
-  box.querySelectorAll('[data-pbimp]').forEach(b=>b.onclick=()=>pbImport(b));
+  box.innerHTML=html||'<div class="empty" style="padding:10px">ไม่มีรายการในเงื่อนไขที่เลือก</div>';
+  box.querySelectorAll('[data-pbopen]').forEach(e=>e.onclick=()=>pbOpen(e.dataset.pbopen));
+  box.querySelectorAll('[data-pbsel]').forEach(e=>e.onchange=()=>pbToggle(e.dataset.pbsel, e.checked));
+  pbBar();
 }
-async function pbImport(btn){
-  const old=btn.textContent; btn.disabled=true; btn.textContent='กำลังดูรูป…';
-  try{
-    // จังหวะ 1 — ถามชนิดใบก่อน (ยังไม่อ่านทั้งใบ)
-    const dt=await pmPost({ mode:'promo_detect', url:btn.dataset.pbimp });
-    btn.disabled=false; btn.textContent=old;
-    if(!dt.ok){ toast('err', dt.error||'ดูรูปไม่สำเร็จ'); return; }
-    dt.title=dt.title||btn.dataset.t;
-    dt.period_start=btn.dataset.s||dt.period_start; dt.period_end=btn.dataset.e||dt.period_end;
-    const dupBox=$('pm_dup'); if(dupBox) dupBox.scrollIntoView({behavior:'smooth',block:'center'});
-    pmConfirmType(dt, (ptype)=>pbImport2(btn, ptype));
-  }catch(e){ btn.disabled=false; btn.textContent=old; toast('err', e.message||e); }
+function pbToggle(k, on){
+  const i=PB_SEL.indexOf(k);
+  if(on && i<0) PB_SEL.push(k);
+  if(!on && i>=0) PB_SEL.splice(i,1);
+  const card=document.querySelector('[data-pbk="'+k+'"]'); if(card) card.classList.toggle('sel', !!on);
+  const cb=document.querySelector('[data-pbsel="'+k+'"]'); if(cb) cb.checked=!!on;
+  pbBar();
 }
-async function pbImport2(btn, ptype){
-  const old=btn.textContent; btn.disabled=true; btn.textContent='กำลังอ่านทั้งใบ…';
-  try{
-    const j=await pmPost({ mode:'promo_sync', replace:true, posters:[{
-      url:btn.dataset.pbimp, title:btn.dataset.t, period_start:btn.dataset.s, period_end:btn.dataset.e,
-      page_no:Number(btn.dataset.p)||1, path:btn.dataset.path, promo_type:ptype }] });
-    const r=(j.results||[])[0]||{};
-    if(!j.ok || r.error){ btn.textContent='ไม่สำเร็จ'; toast('err', r.error||j.error||'ไม่สำเร็จ'); setTimeout(()=>{btn.disabled=false;btn.textContent=old;},2500); return; }
-    btn.textContent='✓ '+(r.items||0)+' รายการ';
-    toast('ok','นำเข้าแล้ว '+(r.items||0)+' รายการ'+(r.truncated?' (ใบยาว อาจไม่ครบ)':'')+' — อย่าลืมตรวจแก้');
-    pmLoad(); if(r.sheet_id) pmOpen(r.sheet_id);
-  }catch(e){ btn.disabled=false; btn.textContent=old; toast('err', e.message||e); }
+function pbBar(){
+  const bar=$('pb_bar'); if(!bar) return;
+  bar.classList.toggle('off', PB_SEL.length===0);
+  const inf=$('pb_selinfo');
+  if(inf){
+    const again=PB_SEL.filter(k=>(PB_MAP[k]||{}).in_system).length;
+    inf.textContent='เลือกไว้ '+PB_SEL.length+' ใบ'+(again?(' (ในระบบแล้ว '+again+' ใบ — จะอ่านทับของเดิม)'):'');
+  }
+}
+// ── หน้าดูใบโปรฯ ขนาดเต็ม (เหมือนกดเข้าไปดูในเว็บจริง)
+function pbOverlay(){
+  let ov=$('pdOverlay');
+  if(ov) return ov;
+  ov=document.createElement('div'); ov.id='pdOverlay';
+  ov.innerHTML='<div class="pd-box">'
+    +'<div class="pd-h"><h4 id="pd_ti"></h4><button class="btn btn-sec btn-sm" id="pd_x">ปิด</button></div>'
+    +'<div class="pd-b" id="pd_b"></div>'
+    +'<div class="pd-f"><span id="pd_note" style="font-size:11.5px;color:var(--muted);flex:1"></span>'
+      +'<button class="btn btn-sec btn-sm" id="pd_web">เปิดหน้าเว็บจริง</button>'
+      +'<button class="btn btn-pri btn-sm" id="pd_add">＋ เลือกใบนี้ไว้นำเข้า</button></div>'
+    +'</div>';
+  document.body.appendChild(ov);
+  ov.onclick=(e)=>{ if(e.target===ov) pbClose(); };
+  $('pd_x').onclick=pbClose;
+  return ov;
+}
+function pbOpen(k){
+  const it=PB_MAP[k]; if(!it) return;
+  PB_CUR=k;
+  const ov=pbOverlay();
+  $('pd_ti').textContent=it.title;
+  const per=(it.period_start||it.period_end)?(String(it.period_start||'—')+' → '+String(it.period_end||'—')):'';
+  $('pd_b').innerHTML=
+     '<div style="font-size:12.5px;color:var(--muted);margin-bottom:11px;line-height:1.6">'
+    +'<b style="color:var(--txt)">'+esc(it.label||it.cat)+'</b>'
+    +(it.caption?(' · '+esc(it.caption)):'')+(per?(' · '+esc(per)):'')
+    +'</div>'
+    +((it.sheets||[]).length
+        ? (it.sheets||[]).map(u=>'<img class="pd-sheet" src="'+esc(u)+'" onclick="lightbox(this)" alt="ใบโปรโมชั่น">').join('')
+        : '<div class="empty" style="padding:14px">ใบโปรฯ นี้ไม่มีรูปบนเว็บ</div>')
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แตะที่รูปเพื่อขยายเต็มจอ · เนื้อหาทั้งหมดมาจากเว็บ 7-Eleven โดยตรง</div>';
+  $('pd_note').textContent = it.in_system ? (it.reviewed?'ใบนี้อยู่ในระบบแล้วและตรวจแก้แล้ว':'ใบนี้อยู่ในระบบแล้ว แต่ยังไม่ได้ตรวจแก้') : 'ใบนี้ยังไม่ได้นำเข้าระบบ';
+  $('pd_web').onclick=()=>window.open(it.url,'_blank','noopener');
+  const add=$('pd_add');
+  const on=PB_SEL.indexOf(k)>=0;
+  add.textContent = on ? '✓ เลือกไว้แล้ว — เอาออก' : '＋ เลือกใบนี้ไว้นำเข้า';
+  add.className = 'btn btn-sm '+(on?'btn-sec':'btn-pri');
+  add.onclick=()=>{ pbToggle(k, PB_SEL.indexOf(k)<0); pbOpen(k); };
+  ov.style.display='flex'; ov.scrollTop=0; document.body.style.overflow='hidden';
+}
+function pbClose(){ const ov=$('pdOverlay'); if(ov) ov.style.display='none'; document.body.style.overflow=''; PB_CUR=null; }
+// ── จังหวะยืนยัน: กดปุ่มนำเข้าด้านล่าง → ขึ้นรายการให้ตรวจก่อน แล้วค่อยยืนยันจริง
+async function pbConfirmStart(){
+  if(!PB_SEL.length){ toast('err','ยังไม่ได้เลือกใบไหนเลย'); return; }
+  const box=$('pb_confirm'); if(!box) return;
+  const rows=PB_SEL.map(k=>PB_MAP[k]).filter(Boolean);
+  box.innerHTML='<div style="margin-top:16px;border:2px solid var(--line2);border-radius:14px;padding:13px 14px;background:var(--card)">'
+    +'<div style="font-size:14.5px;font-weight:800">ตรวจก่อนนำเข้า '+rows.length+' ใบ</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin:3px 0 4px;line-height:1.6">AI กำลังดูรูปคร่าว ๆ เพื่อเดา “ชนิดใบ” ให้ — <b>ถ้าชนิดผิด ตัวเลขจะเข้าผิดช่องทั้งใบ</b> กรุณาไล่ดูแล้วแก้ก่อนยืนยัน</div>'
+    +'<div id="pb_rows"></div>'
+    +'<div style="display:flex;gap:9px;margin-top:13px;flex-wrap:wrap;align-items:center">'
+      +'<button class="btn btn-pri btn-sm" id="pb_ok" disabled>✓ ยืนยันนำเข้าทั้งหมด</button>'
+      +'<button class="btn btn-sec btn-sm" id="pb_cancel">ยกเลิก</button>'
+      +'<span id="pb_okinfo" style="font-size:12px;color:var(--muted)"></span>'
+    +'</div></div>';
+  const rb=$('pb_rows');
+  rb.innerHTML=rows.map((it,i)=>{
+    const per=(it.period_start||it.period_end)?(esc(String(it.period_start||'—'))+' → '+esc(String(it.period_end||'—'))):'ไม่ระบุช่วงวันที่';
+    return '<div class="pbrow" data-pbr="'+i+'">'
+      +'<img src="'+esc(it.thumb||(it.sheets||[])[0]||'')+'" onclick="lightbox(this)" alt="">'
+      +'<div><div style="font-size:12.8px;font-weight:700;line-height:1.35">'+esc(it.title)+'</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin:2px 0 6px">'+esc(it.label||it.cat)+' · '+per+(it.in_system?' · <b style="color:#92400e">มีในระบบแล้ว จะอ่านทับ</b>':'')+'</div>'
+      +'<div data-pbtype="'+i+'" style="font-size:12px;color:var(--muted)">กำลังให้ AI ดูรูป…</div>'
+      +'<div data-pbst="'+i+'" style="font-size:12px;margin-top:4px"></div>'
+      +'</div></div>';
+  }).join('');
+  $('pb_cancel').onclick=()=>{ box.innerHTML=''; };
+  box.scrollIntoView({behavior:'smooth',block:'start'});
+
+  // เดาชนิดใบทีละใบ (เรียก AI สั้น ๆ ยังไม่อ่านทั้งใบ จึงถูกและเร็ว)
+  let done=0;
+  for(let i=0;i<rows.length;i++){
+    const it=rows[i], cell=box.querySelector('[data-pbtype="'+i+'"]');
+    const url=(it.sheets||[])[0];
+    if(!url){ if(cell) cell.innerHTML='<span style="color:#dc2626">ไม่มีรูปใบโปรฯ — นำเข้าไม่ได้</span>'; continue; }
+    try{
+      const dt=await pmPost({ mode:'promo_detect', url });
+      if(!dt.ok) throw new Error(dt.error||'ดูรูปไม่สำเร็จ');
+      if(dt.types && dt.types.length) PB_TYPES=dt.types;
+      it._url=url; it._type=dt.promo_type;
+      if(!it.period_start && dt.period_start) it.period_start=dt.period_start;
+      if(!it.period_end && dt.period_end) it.period_end=dt.period_end;
+      const opts=(PB_TYPES||[]).map(t=>'<option value="'+esc(t.key)+'"'+(t.key===dt.promo_type?' selected':'')+'>'+esc(t.label)+'</option>').join('');
+      const samp=(dt.samples||[]).slice(0,3).map(x=>esc(x.product||'')).filter(Boolean).join(' · ');
+      if(cell) cell.innerHTML='<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
+        +'<span style="font-size:11.5px;color:var(--muted)">ชนิดใบ</span>'
+        +'<select data-pbsel-type="'+i+'" class="inp" style="font-size:12px;padding:4px 8px;max-width:230px">'+opts+'</select>'
+        +(dt.confidence?('<span style="font-size:11px;color:'+(dt.confidence==='สูง'?'#16a34a':(dt.confidence==='ต่ำ'?'#dc2626':'#d97706'))+'">มั่นใจ '+esc(dt.confidence)+'</span>'):'')
+        +'</div>'+(samp?('<div style="font-size:11px;color:var(--muted);margin-top:3px">ตัวอย่างที่อ่านได้: '+samp+'</div>'):'');
+      const sel=box.querySelector('[data-pbsel-type="'+i+'"]'); if(sel) sel.onchange=()=>{ it._type=sel.value; };
+      done++;
+    }catch(e){
+      if(cell) cell.innerHTML='<span style="color:#dc2626">เดาชนิดไม่สำเร็จ: '+esc(e.message||e)+'</span>';
+    }
+    const inf=$('pb_okinfo'); if(inf) inf.textContent='ตรวจแล้ว '+(i+1)+'/'+rows.length+' ใบ';
+  }
+  const ok=$('pb_ok');
+  if(ok){ ok.disabled = done===0; ok.onclick=()=>pbRunImport(rows, box); }
+  const inf2=$('pb_okinfo');
+  if(inf2) inf2.textContent = done ? ('พร้อมนำเข้า '+done+' ใบ · การอ่านทั้งใบใช้เวลาใบละราวครึ่งนาที') : 'ไม่มีใบที่นำเข้าได้';
+}
+async function pbRunImport(rows, box){
+  const ok=$('pb_ok'), cancel=$('pb_cancel'); if(ok) ok.disabled=true; if(cancel) cancel.disabled=true;
+  let good=0, bad=0, lastSheet=null;
+  for(let i=0;i<rows.length;i++){
+    const it=rows[i], st=box.querySelector('[data-pbst="'+i+'"]');
+    if(!it._url){ if(st) st.innerHTML='<span style="color:#dc2626">ข้าม — ไม่มีรูป</span>'; bad++; continue; }
+    if(st) st.innerHTML='<span style="color:var(--muted)">กำลังให้ AI อ่านทั้งใบ…</span>';
+    try{
+      const j=await pmPost({ mode:'promo_sync', replace:true, posters:[{
+        url:it._url, title:it.title, period_start:it.period_start||'', period_end:it.period_end||'',
+        page_no:1, path:it.path, promo_type:it._type||'stamp' }] });
+      const r=(j.results||[])[0]||{};
+      if(!j.ok || r.error) throw new Error(r.error||j.error||'ไม่สำเร็จ');
+      good++; lastSheet=r.sheet_id||lastSheet;
+      it.in_system=true; it.reviewed=false;
+      if(st) st.innerHTML='<span style="color:#166534">✓ นำเข้าแล้ว '+(r.items||0)+' รายการ'+(r.truncated?' (ใบยาว อาจไม่ครบ)':'')+'</span>';
+    }catch(e){ bad++; if(st) st.innerHTML='<span style="color:#dc2626">✗ '+esc(e.message||e)+'</span>'; }
+    const inf=$('pb_okinfo'); if(inf) inf.textContent='นำเข้าแล้ว '+good+'/'+rows.length+' ใบ'+(bad?(' · พลาด '+bad):'');
+  }
+  if(cancel){ cancel.disabled=false; cancel.textContent='ปิดรายการนี้'; }
+  const tail=document.createElement('div');
+  tail.style.cssText='margin-top:11px;padding:10px;border-radius:10px;background:#fef3c7;color:#92400e;font-size:12px;line-height:1.6';
+  tail.innerHTML='⚠ ทุกใบที่เพิ่งนำเข้า <b>ยังไม่ได้ตรวจแก้</b> — AI อ่านตัวเลขผิดได้ ให้เปิดตารางด้านล่างเทียบกับรูปแล้วกด “ตรวจแก้เสร็จ” ก่อนให้นิดาใช้ตอบราคา';
+  box.querySelector('div').appendChild(tail);
+  PB_SEL=[]; pbRender();
+  toast(bad?'err':'ok','นำเข้าสำเร็จ '+good+' ใบ'+(bad?(' · พลาด '+bad+' ใบ'):''));
+  await pmLoad(); if(lastSheet) pmOpen(lastSheet);
 }
 async function pmSync(dry){
   const prog=$('pm_prog'), dup=$('pm_dup'); dup.innerHTML='';
