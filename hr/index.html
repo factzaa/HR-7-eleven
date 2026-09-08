@@ -1749,6 +1749,42 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     .mrgap{border-left:3px solid #f59e0b;background:#fffbeb;color:#78350f;padding:8px 11px;
       border-radius:0 8px 8px 0;font-size:12.5px;line-height:1.6;margin-top:12px}
     @media(max-width:620px){ .mrstep{grid-template-columns:1fr;gap:8px} }
+
+    /* ---- โหมดสไลด์ (ฉายขึ้นจอสอนงาน) ---- */
+    #msOverlay{position:fixed;inset:0;z-index:300;background:#0b1220;color:#fff;display:none;
+      flex-direction:column;font-family:inherit;user-select:none;-webkit-user-select:none}
+    #msOverlay.on{display:flex}
+    .ms-top{flex:none;display:flex;align-items:center;gap:12px;padding:10px 16px;
+      background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.10);font-size:13px}
+    .ms-top .ttl{flex:1;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ms-top button{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);color:#fff;
+      border-radius:8px;padding:5px 11px;font:inherit;font-size:12.5px;cursor:pointer}
+    .ms-top button:hover{background:rgba(255,255,255,.20)}
+    .ms-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:2.2vh 3vw;position:relative}
+    .ms-slide{width:100%;max-width:1700px;max-height:100%}
+    .ms-h1{font-size:clamp(26px,4.4vw,74px);font-weight:800;line-height:1.2;letter-spacing:-.01em}
+    .ms-no{display:inline-block;background:#00b57e;color:#04231a;border-radius:999px;
+      padding:.12em .62em;font-size:clamp(15px,2vw,31px);font-weight:900;margin-right:.5em;vertical-align:middle}
+    .ms-hd{font-size:clamp(20px,3vw,50px);font-weight:800;line-height:1.28;color:#7bf3c8}
+    .ms-ins{font-size:clamp(16px,2.1vw,36px);line-height:1.55;margin-top:.5em}
+    .ms-sub{font-size:clamp(11px,1.05vw,19px);color:#93a4bd;margin-top:.8em;line-height:1.5}
+    .ms-two{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:3vw;align-items:center}
+    .ms-two img{width:100%;max-height:74vh;object-fit:contain;border-radius:12px;
+      border:1px solid rgba(255,255,255,.16);background:#000;display:block}
+    .ms-li{font-size:clamp(15px,1.85vw,32px);line-height:1.5;margin:0 0 .75em;padding-left:1.5em;position:relative}
+    .ms-li:before{content:"";position:absolute;left:0;top:.55em;width:.55em;height:.55em;
+      background:#f59e0b;border-radius:50%}
+    .ms-bot{flex:none;display:flex;align-items:center;gap:12px;padding:9px 16px;
+      background:rgba(255,255,255,.05);border-top:1px solid rgba(255,255,255,.10);font-size:12.5px;color:#93a4bd}
+    .ms-bar{flex:1;height:6px;background:rgba(255,255,255,.13);border-radius:99px;overflow:hidden}
+    .ms-bar i{display:block;height:100%;background:#00b57e;transition:width .18s}
+    .ms-zone{position:absolute;top:0;bottom:0;width:22%;cursor:pointer}
+    .ms-zone.l{left:0}
+    .ms-zone.r{right:0;width:78%}
+    @media(max-width:900px), (orientation:portrait){
+      .ms-two{grid-template-columns:1fr;gap:2vh}
+      .ms-two img{max-height:42vh}
+    }
   </style>
 
   <div class="card">
@@ -1830,8 +1866,27 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <div class="modal-f" style="justify-content:space-between">
       <button class="btn btn-sec btn-sm" id="mr_prev">&lsaquo; บทก่อน</button>
       <span id="mr_pos" style="font-size:12px;color:var(--muted);align-self:center"></span>
+      <button class="btn btn-pri btn-sm" id="mr_slide">▶ ฉายขึ้นจอ (โหมดสไลด์)</button>
       <button class="btn btn-sec btn-sm" id="mr_next">บทถัดไป &rsaquo;</button>
     </div>
+  </div>
+</div>
+
+<!-- โหมดสไลด์: ฉายคู่มือขึ้นจอเพื่อสอนงาน -->
+<div id="msOverlay">
+  <div class="ms-top">
+    <span class="ttl" id="ms_ttl"></span>
+    <button id="ms_full">เต็มจอ</button>
+    <button id="ms_exit">ออก (Esc)</button>
+  </div>
+  <div class="ms-stage" id="ms_stage">
+    <div class="ms-zone l" id="ms_zl" title="ย้อนกลับ"></div>
+    <div class="ms-zone r" id="ms_zr" title="ถัดไป"></div>
+  </div>
+  <div class="ms-bot">
+    <span id="ms_pos"></span>
+    <div class="ms-bar"><i id="ms_bar" style="width:0%"></i></div>
+    <span style="white-space:nowrap">← → เลื่อนสไลด์ · Esc ออก</span>
   </div>
 </div>
 
@@ -1844,6 +1899,12 @@ function mrInit(){
   $('mr_close').onclick = ()=>{ $('mrOverlay').style.display='none'; };
   $('mrOverlay').onclick = (e)=>{ if(e.target.id==='mrOverlay') $('mrOverlay').style.display='none'; };
   $('mr_prev').onclick  = ()=> mrNav(-1);
+  $('mr_slide').onclick = msOpen;
+  $('ms_exit').onclick  = msClose;
+  $('ms_zl').onclick    = ()=> msGo(-1);
+  $('ms_zr').onclick    = ()=> msGo(1);
+  $('ms_full').onclick  = ()=>{ try{ document.fullscreenElement ? document.exitFullscreen()
+    : document.documentElement.requestFullscreen(); }catch(e){} };
   $('mr_next').onclick  = ()=> mrNav(1);
   let t=null;
   $('mr_q').oninput = ()=>{ clearTimeout(t); t=setTimeout(mrSearch, 380); };
@@ -1912,7 +1973,7 @@ async function mrSearch(){
   box.querySelectorAll('.mrhit').forEach(d=>{ d.onclick = ()=> mrOpen(+d.dataset.id); });
 }
 
-async function mrOpen(id){
+async function mrOpen(id){   // async — msGo() รอ .then() ตอนข้ามไปบทถัดไป
   $('mrOverlay').style.display = 'flex';
   $('mr_body').innerHTML = '<div style="padding:26px;text-align:center;color:var(--muted);font-size:13px">กำลังโหลด…</div>';
   let r = MR.cache[id];
@@ -1959,6 +2020,109 @@ async function mrOpen(id){
   $('mr_next').disabled = (i < 0 || i >= MR.order.length-1);
   $('mr_pos').textContent = (i >= 0) ? ('บทที่ '+(i+1)+' จาก '+MR.order.length) : '';
 }
+
+// ---------- โหมดสไลด์ ----------
+let MS = { list:[], i:0, on:false };
+
+function msCautions(L){
+  return String(L.cautions||'').split('\n').map(x=>x.replace(/^[•\-\s]+/,'').trim()).filter(Boolean);
+}
+
+// สร้างสไลด์จากบทที่เปิดอยู่: ปก → ขั้นตอนละใบ → ข้อควรระวังใบละ 4 ข้อ → ใบปิด
+function msBuild(){
+  const L = MR.cur.lesson, S = MR.cur.steps || [];
+  const out = [{ t:'cover' }];
+  S.forEach(x => out.push({ t:'step', x }));
+  const ca = msCautions(L);
+  for(let i=0;i<ca.length;i+=4) out.push({ t:'ca', items:ca.slice(i,i+4), n:Math.floor(i/4)+1, of:Math.ceil(ca.length/4) });
+  out.push({ t:'end' });
+  return out;
+}
+
+function msOpen(){
+  if(!MR.cur) return;
+  MS.list = msBuild(); MS.i = 0; MS.on = true;
+  $('ms_ttl').textContent = 'บท ' + MR.cur.lesson.lesson_no + ' ' + (MR.cur.lesson.title||'');
+  $('msOverlay').classList.add('on');
+  document.body.style.overflow = 'hidden';
+  msDraw();
+  try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); } catch(e){}
+}
+
+function msClose(){
+  MS.on = false;
+  $('msOverlay').classList.remove('on');
+  document.body.style.overflow = '';
+  try { if(document.fullscreenElement) document.exitFullscreen(); } catch(e){}
+}
+
+function msGo(d){
+  const i = MS.i + d;
+  if(i < 0) return;
+  if(i >= MS.list.length){                       // จบบท → ไปบทถัดไปให้เลย
+    const cur = MR.order.indexOf(MR.cur.lesson.id);
+    if(cur >= 0 && cur < MR.order.length-1){
+      mrOpen(MR.order[cur+1]).then(()=>{ if(MS.on){ MS.list = msBuild(); MS.i = 0;
+        $('ms_ttl').textContent = 'บท ' + MR.cur.lesson.lesson_no + ' ' + (MR.cur.lesson.title||''); msDraw(); } });
+    }
+    return;
+  }
+  MS.i = i; msDraw();
+}
+
+function msDraw(){
+  const s = MS.list[MS.i]; if(!s) return;
+  const L = MR.cur.lesson;
+  const mm = (v)=>{ v=Number(v); return isFinite(v) ? (String(Math.floor(v/60)).padStart(2,'0')+':'+String(Math.round(v%60)).padStart(2,'0')) : ''; };
+  let H = '';
+  if(s.t === 'cover'){
+    H = '<div class="ms-slide" style="text-align:center">'
+      + '<div style="font-size:clamp(13px,1.5vw,26px);color:#7bf3c8;font-weight:700;letter-spacing:.06em">บท '+esc(L.lesson_no)+'</div>'
+      + '<div class="ms-h1" style="margin:.28em 0 .5em">'+esc(L.title)+'</div>'
+      + (L.summary ? '<div class="ms-ins" style="max-width:52em;margin:0 auto;color:#d7e2f0">'+esc(L.summary)+'</div>' : '')
+      + (L.when_to_use ? '<div class="ms-sub" style="max-width:52em;margin:1.1em auto 0"><b style="color:#7bf3c8">ใช้เมื่อไหร่</b> — '+esc(L.when_to_use)+'</div>' : '')
+      + '</div>';
+  } else if(s.t === 'step'){
+    const x = s.x, bits = [];
+    if(x.screen) bits.push('หน้าจอ: '+esc(x.screen));
+    if(x.note)   bits.push(esc(x.note));
+    const t = mm(x.at_sec); if(t) bits.push('นาทีที่ '+t);
+    const txt = '<div><div class="ms-hd"><span class="ms-no">'+x.step_no+'</span>'+esc(x.heading||('ขั้นตอนที่ '+x.step_no))+'</div>'
+      + '<div class="ms-ins">'+esc(x.instruction)+'</div>'
+      + (bits.length ? '<div class="ms-sub">'+bits.join(' · ')+'</div>' : '') + '</div>';
+    H = x.image_url
+      ? '<div class="ms-slide ms-two"><img src="'+esc(x.image_url)+'" alt="">'+txt+'</div>'
+      : '<div class="ms-slide" style="max-width:46em;margin:0 auto">'+txt+'</div>';
+  } else if(s.t === 'ca'){
+    H = '<div class="ms-slide" style="max-width:60em;margin:0 auto">'
+      + '<div class="ms-hd" style="color:#fbbf24;margin-bottom:.7em">⚠ เงื่อนไขและข้อควรระวัง'
+      + (s.of>1 ? ' <span style="font-size:.6em;color:#93a4bd">('+s.n+'/'+s.of+')</span>' : '') + '</div>'
+      + s.items.map(c=>'<div class="ms-li">'+esc(c)+'</div>').join('') + '</div>';
+  } else {
+    const cur = MR.order.indexOf(L.id);
+    const more = (cur >= 0 && cur < MR.order.length-1);
+    H = '<div class="ms-slide" style="text-align:center">'
+      + '<div class="ms-h1">จบบท '+esc(L.lesson_no)+'</div>'
+      + '<div class="ms-ins" style="color:#93a4bd;margin-top:.5em">'+esc(L.title)+'</div>'
+      + '<div class="ms-sub" style="margin-top:1.4em">'+(more ? 'กดลูกศรขวาเพื่อไปบทถัดไป' : 'บทสุดท้ายของหลักสูตรแล้ว')+'</div>'
+      + '</div>';
+  }
+  const st = $('ms_stage');
+  [...st.children].forEach(c=>{ if(!c.classList.contains('ms-zone')) c.remove(); });
+  st.insertAdjacentHTML('afterbegin', H);
+  $('ms_pos').textContent = (MS.i+1) + ' / ' + MS.list.length;
+  $('ms_bar').style.width = Math.round((MS.i+1)/MS.list.length*100) + '%';
+  // โหลดภาพสไลด์ถัดไปรอไว้ กดแล้วจะได้ขึ้นทันที
+  const nx = MS.list[MS.i+1];
+  if(nx && nx.t==='step' && nx.x.image_url){ const im = new Image(); im.src = nx.x.image_url; }
+}
+
+document.addEventListener('keydown', (e)=>{
+  if(!MS.on) return;
+  if(e.key==='ArrowRight' || e.key===' ' || e.key==='PageDown'){ e.preventDefault(); msGo(1); }
+  else if(e.key==='ArrowLeft' || e.key==='PageUp'){ e.preventDefault(); msGo(-1); }
+  else if(e.key==='Escape'){ e.preventDefault(); msClose(); }
+});
 
 function mrNav(d){
   const L = MR.cur && MR.cur.lesson; if(!L) return;
