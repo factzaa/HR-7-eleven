@@ -3927,38 +3927,225 @@ async function universal_search(a: any) {
   return { query: q, total_hits: totalHits, tables_hit: Object.keys(results).length, results, note: totalHits ? "รวมผลจากทุกตารางที่พบ · เลือกเจาะลึกด้วยเครื่องมือเฉพาะทางต่อได้" : "ไม่พบคำนี้ในตารางหลัก ๆ · อาจอยู่ในกลุ่มไลน์ (branch_line_feed) หรือเป็นคำเฉพาะ ลองปรับคำค้น" };
 }
 // ★ ออกข้อสอบพนักงานจากคลังความรู้ (grounded) → บันทึกเป็น "ฉบับร่าง" ให้ HR ตรวจ/แก้/เผยแพร่ที่เมนูแบบทดสอบ
-async function create_exam(a: any) {
-  const topic = String(a?.topic || a?.title || "").trim();
-  const count = Math.min(30, Math.max(3, Number(a?.count) || 10));
-  // ดึงเนื้อหาจากคลังความรู้ที่เกี่ยว (title/content) — เป็นฐานออกข้อสอบ (ห้ามออกนอกคลัง)
-  let kq: any = sb.from("nida_knowledge").select("id,title,content,source").eq("active", true);
-  if (topic) kq = kq.or(`title.ilike.*${topic.replace(/[,()*%]/g, " ")}*,content.ilike.*${topic.replace(/[,()*%]/g, " ")}*,tags.ilike.*${topic.replace(/[,()*%]/g, " ")}*`);
-  const { data: kn } = await kq.limit(8);
-  if (!kn || !kn.length) return { error: "ไม่พบเนื้อหาในคลังความรู้ที่ตรงกับ '" + topic + "' — ลองนำเข้าคู่มือก่อน หรือระบุหัวข้อให้ตรงกับที่มีในคลัง" };
-  const src = kn.map((k: any) => "## " + k.title + "\n" + String(k.content || "").slice(0, 3500)).join("\n\n").slice(0, 20000);
-  const sysP = "ออกข้อสอบปรนัยภาษาไทย " + count + " ข้อจาก 'เนื้อหาคู่มือ' ที่ให้ — ใช้เฉพาะข้อมูลในเนื้อหาเท่านั้น ห้ามแต่งเพิ่ม · แต่ละข้อมี 4 ตัวเลือก มีคำตอบถูก 1 ข้อ + อธิบายเฉลยสั้น ๆ อ้างอิงเนื้อหา · ตอบเป็น JSON ล้วน (ไม่มีข้อความอื่น) รูปแบบ: {\"questions\":[{\"question\":\"...\",\"choices\":[\"...\",\"...\",\"...\",\"...\"],\"answer\":0,\"explain\":\"...\"}]} โดย answer = ดัชนี 0-3 ของตัวเลือกที่ถูก";
+// ============================================================
+// ★ 9 ก.ย. 2569 — คลังวัตถุดิบสำหรับ "ออกข้อสอบ"
+//   เดิม create_exam อ่านได้แค่ nida_knowledge (PDF ที่นำเข้า) อย่างเดียว
+//   ทั้งที่คู่มือหลักสูตร 93 บท 1,090 ขั้นตอน · ใบโปรฯ · ระเบียบบริษัท อยู่คนละที่กันหมด
+//   ฟังก์ชันนี้รวมทั้ง 4 แหล่งให้เลือกได้ แล้วส่งเป็น "ก้อนอ้างอิง" ที่ตรวจย้อนได้
+//   ⚠ ทุกข้อที่ร่างต้องแนบข้อความต้นทางแบบคำต่อคำ เพื่อให้ตรวจได้ว่าไม่ได้แต่งเอง
+// ============================================================
+const EXSRC_LABEL: Record<string, string> = { manual: "คู่มือหลักสูตร", promo: "ใบโปรโมชั่น", knowledge: "คลังความรู้ (PDF)", rules: "ระเบียบบริษัท/วินัย" };
+
+async function examBlocks(a: any): Promise<{ blocks: any[]; warn: string[] }> {
+  const want: string[] = Array.isArray(a?.sources) && a.sources.length ? a.sources.map(String) : ["manual", "knowledge"];
+  const topic = String(a?.instruction || a?.topic || "").trim();
+  const blocks: any[] = [], warn: string[] = [];
+  const toks = thTokens(topic.replace(/[(),%*]/g, " "));
+
+  // ── คู่มือหลักสูตร (course_lessons + course_steps) ──
+  if (want.includes("manual")) {
+    let lq: any = sb.from("course_lessons").select("*").eq("active", true).limit(120);
+    if (a?.course_code) lq = lq.eq("course_code", String(a.course_code));
+    if (Array.isArray(a?.lesson_nos) && a.lesson_nos.length) lq = lq.in("lesson_no", a.lesson_nos.map(String));
+    else if (Array.isArray(a?.sections) && a.sections.length) lq = lq.in("section", a.sections.map(String));
+    const { data: ls0 } = await lq;
+    let ls = ls0 || [];
+    // ไม่ได้เจาะบทมา → คัดบทที่ใกล้เคียงกับสิ่งที่ HR สั่งให้ถาม
+    if (ls.length > 8 && !(Array.isArray(a?.lesson_nos) && a.lesson_nos.length) && topic) {
+      const qg = thGrams(topic);
+      ls = ls.map((l: any) => ({ l, sc: thScore(l.title, qg) + thScore(l.summary, qg) * 0.5 + thScore(l.section, qg) * 0.3 }))
+        .sort((x: any, y: any) => y.sc - x.sc).slice(0, 8).map((x: any) => x.l);
+    } else ls = ls.slice(0, 8);
+    if (!ls.length) warn.push("ไม่พบบทในคู่มือที่ตรงกับที่สั่ง");
+    if (ls.length) {
+      const { data: st } = await sb.from("course_steps").select("lesson_id,step_no,heading,instruction,note,screen").in("lesson_id", ls.map((l: any) => l.id)).order("step_no").limit(900);
+      const byL: Record<string, any[]> = {};
+      (st || []).forEach((x: any) => { (byL[x.lesson_id] = byL[x.lesson_id] || []).push(x); });
+      for (const l of ls) {
+        const parts: string[] = [];
+        if (l.summary) parts.push("สรุปบท: " + l.summary);
+        if (l.when_to_use) parts.push("ใช้เมื่อ: " + l.when_to_use);
+        if (l.cautions) parts.push("ข้อควรระวัง: " + l.cautions);
+        (byL[l.id] || []).forEach((x: any) => {
+          const h = x.heading ? (x.heading + " — ") : "";
+          parts.push(x.step_no + ") " + h + String(x.instruction || "") + (x.note ? (" [หมายเหตุ: " + x.note + "]") : ""));
+        });
+        blocks.push({ src: "manual", ref: String(l.course_code) + "|" + String(l.lesson_no),
+          label: (l.course_name || l.course_code) + " · บท " + l.lesson_no + " " + (l.title || ""),
+          text: parts.join("\n").slice(0, 6000) });
+      }
+    }
+  }
+
+  // ── ใบโปรโมชั่น (promo_sheets + promo_items_v) ──
+  if (want.includes("promo")) {
+    let pq: any = sb.from("promo_sheets").select("id,title,promo_type,mechanic_note,note,period_start,period_end").eq("active", true).order("period_end", { ascending: false, nullsFirst: false }).limit(20);
+    if (Array.isArray(a?.sheet_ids) && a.sheet_ids.length) pq = pq.in("id", a.sheet_ids.map(Number));
+    const { data: shs } = await pq;
+    let use = shs || [];
+    if (!(Array.isArray(a?.sheet_ids) && a.sheet_ids.length)) {
+      const live = use.filter((x: any) => promoStatus(x) === "ใช้อยู่");
+      if (!live.length && use.length) warn.push("ตอนนี้ไม่มีใบโปรฯ ที่ยังใช้อยู่ — ข้อสอบเรื่องโปรฯ จะล้าสมัยเร็ว ควรเลือกใบเอง");
+      use = (live.length ? live : use).slice(0, 5);
+    }
+    if (use.length) {
+      const { data: its } = await sb.from("promo_items_v").select("*").in("sheet_id", use.map((x: any) => x.id)).limit(300);
+      const byS: Record<string, any[]> = {};
+      (its || []).forEach((x: any) => { (byS[x.sheet_id] = byS[x.sheet_id] || []).push(x); });
+      for (const sh of use) {
+        const st = promoStatus(sh);
+        const parts: string[] = ["ชนิดโปรฯ: " + (PROMO_TYPES[String(sh.promo_type)]?.label || sh.promo_type || "—"),
+          "ช่วงโปรฯ: " + _thDate(sh.period_start) + " – " + _thDate(sh.period_end) + " (" + st + ")"];
+        if (sh.mechanic_note) parts.push("กติกาของใบ: " + sh.mechanic_note);
+        if (sh.note) parts.push("หมายเหตุของใบ: " + sh.note);
+        (byS[sh.id] || []).slice(0, 60).forEach((x: any) => {
+          const bits: string[] = [];
+          if (x.qty) bits.push(x.qty + " ชิ้น");
+          if (x.price_before != null && x.price_after != null) bits.push("ปกติ " + x.price_before + " บาท → โปรฯ " + x.price_after + " บาท");
+          else if (x.price_after != null) bits.push("ราคาโปรฯ " + x.price_after + " บาท");
+          else if (x.price_before != null) bits.push("ราคาปกติ " + x.price_before + " บาท");
+          if (x.stamp_baht != null || x.stamp_pieces != null) bits.push("แสตมป์: ซื้อครบ " + (x.stamp_baht ?? "—") + " บาท ได้ " + (x.stamp_pieces ?? "—") + " " + (x.stamp_unit || "ดวง"));
+          if (x.mstamp) bits.push("M-Stamp: " + x.mstamp);
+          if (x.better) bits.push("ซื้อคู่/ดีกว่า: " + x.better);
+          if (x.extra) bits.push("แถม: " + x.extra);
+          if (x.condition) bits.push("เงื่อนไข: " + x.condition);
+          parts.push("- " + [x.product, x.size, x.brand].filter(Boolean).join(" ") + (bits.length ? (" · " + bits.join(" · ")) : ""));
+        });
+        blocks.push({ src: "promo", ref: "promo|" + sh.id, label: "ใบโปรฯ: " + (sh.title || "—") + " (" + st + ")", text: parts.join("\n").slice(0, 5000) });
+      }
+    } else warn.push("ไม่พบใบโปรโมชั่นในระบบ");
+  }
+
+  // ── คลังความรู้ PDF (nida_knowledge) ──
+  if (want.includes("knowledge")) {
+    let kq: any = sb.from("nida_knowledge").select("id,title,content,source").eq("active", true);
+    if (Array.isArray(a?.kn_ids) && a.kn_ids.length) kq = kq.in("id", a.kn_ids.map(Number));
+    else if (toks.length) { const ors: string[] = []; for (const t of toks.slice(0, 12)) ors.push(`title.ilike.%${t}%`, `content.ilike.%${t}%`, `tags.ilike.%${t}%`); kq = kq.or(ors.join(",")); }
+    const { data: kn } = await kq.limit(6);
+    if (!(kn || []).length && want.length === 1) warn.push("ไม่พบเอกสารในคลังความรู้ที่ตรงกับที่สั่ง");
+    (kn || []).forEach((k: any) => blocks.push({ src: "knowledge", ref: "kn|" + k.id, label: "คลังความรู้: " + k.title, text: String(k.content || "").slice(0, 4000) }));
+  }
+
+  // ── ระเบียบบริษัท/วินัย (คู่มือพนักงานในระบบ) ──
+  if (want.includes("rules")) blocks.push({ src: "rules", ref: "rules|handbook", label: "ระเบียบบริษัท/วินัย (คู่มือพนักงานในระบบ)", text: HANDBOOK });
+
+  return { blocks, warn };
+}
+
+// เทียบข้อความอ้างอิงกับเนื้อหาต้นทางแบบ "ตัดช่องว่างแล้วต้องเจอคำต่อคำ"
+function examNorm(x: string): string { return String(x || "").replace(/\s+/g, " ").trim(); }
+const EXAM_BAN = /(ขั้นตอนถัดไป|ขั้นตอนก่อนหน้า|ก่อนหน้านี้ต้องทำ|จากภาพ|ในภาพ|ในวิดีโอ|ในคลิป)/;
+
+async function examDraft(a: any) {
+  const count = Math.min(20, Math.max(1, Number(a?.count) || 5));
+  const { blocks, warn } = await examBlocks(a);
+  if (!blocks.length) return { error: "ไม่พบเนื้อหาสำหรับออกข้อสอบ · " + (warn.join(" · ") || "ลองเลือกแหล่งข้อมูลหรือระบุบท/ใบโปรฯ ให้ชัดขึ้น") };
+  let ctx = "", used: any[] = [];
+  for (const b of blocks) {
+    const piece = "\n\n===== [" + b.label + "] =====\n" + b.text;
+    if (ctx.length + piece.length > 26000) break;
+    ctx += piece; used.push(b);
+  }
+  const hay = examNorm(ctx);
+  const instr = String(a?.instruction || "").trim();
+  const exclude = (Array.isArray(a?.exclude) ? a.exclude : []).map((x: any) => examNorm(x)).filter(Boolean);
+
+  const sys = [
+    "คุณคือผู้ออกข้อสอบให้ร้าน 7-Eleven ออกข้อสอบปรนัยภาษาไทย " + count + " ข้อ จาก [เนื้อหาอ้างอิง] ที่ให้เท่านั้น",
+    instr ? ("สิ่งที่ผู้จัดการสั่งมาโดยเฉพาะ (สำคัญที่สุด ต้องทำตาม): " + instr) : "",
+    "",
+    "เป้าหมาย: วัดว่าพนักงาน 'เข้าใจกระบวนการทำงานและกฎเกณฑ์จริง' ไม่ใช่จำหนังสือแบบเรียงหน้า",
+    "",
+    "ห้ามเด็ดขาด",
+    "- ห้ามถาม 'ขั้นตอนถัดไปคืออะไร' / 'ก่อนหน้านี้ต้องทำอะไร' / 'ขั้นตอนที่ 5 คืออะไร'",
+    "- ห้ามถามอ้างอิงภาพหรือวิดีโอ (จากภาพ/ในคลิป) เพราะข้อสอบไม่มีภาพประกอบ",
+    "- ห้ามแต่งเนื้อหาที่ไม่มีในเนื้อหาอ้างอิง",
+    "- ห้ามให้ตัวเลือกทั้ง 4 เป็นข้อความจริงจากคู่มือแล้วต่างกันแค่ลำดับ",
+    "",
+    "ต้องทำ",
+    "- คำตอบที่ถูกต้องมาจากเนื้อหาอ้างอิงจริง และคัดข้อความต้นทางมาใส่ช่อง source แบบคำต่อคำ (อย่างน้อย 20 ตัวอักษร ห้ามพิมพ์ใหม่ ห้ามแก้คำ)",
+    "- ตัวเลือกที่ผิด 3 ข้อให้แต่งขึ้นใหม่ให้ฟังดูสมเหตุสมผลแต่ผิดจริง (เช่น ของจริง 'ภายใน 20 นาที' → ลวง 'ภายใน 5 นาที' · 'ภายใน 1 ชั่วโมง')",
+    "- ความยาวตัวเลือกใกล้เคียงกัน · เฉลยกระจาย อย่าอยู่ข้อแรกตลอด",
+    "- kind เลือกจาก: rule (กฎ/เกณฑ์/ตัวเลข) · situation (เจอสถานการณ์นี้ทำยังไง) · term (ศัพท์/นิยาม) · why (ทำไมต้องทำแบบนั้น) · safety (ข้อห้าม/ความปลอดภัย)",
+    exclude.length ? ("- ห้ามออกคำถามซ้ำหรือใกล้เคียงกับข้อเหล่านี้:\n" + exclude.slice(0, 60).map((x: string) => "  • " + x.slice(0, 120)).join("\n")) : "",
+    "",
+    'ตอบเป็น JSON ล้วน: {"questions":[{"kind":"rule","q":"...","options":["ก","ข","ค","ง"],"answer":0,"source":"ข้อความจากเนื้อหาอ้างอิงแบบคำต่อคำ","explain":"ทำไมข้ออื่นผิด"}]}',
+  ].filter(Boolean).join("\n");
+
   try {
-    const gb = { contents: [{ role: "user", parts: [{ text: sysP + "\n\n[เนื้อหาคู่มือ]\n" + src }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: "application/json" } };
+    const gb = { contents: [{ role: "user", parts: [{ text: sys + "\n\n[เนื้อหาอ้างอิง]" + ctx }] }], generationConfig: { temperature: 0.35, maxOutputTokens: 8192, responseMimeType: "application/json" } };
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GKEY}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(gb) });
     const jr = await r.json();
     let txt = (jr?.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || "").join("").trim();
     txt = txt.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
     let parsed: any; try { parsed = JSON.parse(txt); } catch { const m = txt.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : null; }
-    const qs = (parsed && Array.isArray(parsed.questions)) ? parsed.questions : [];
-    const clean = qs.filter((q: any) => q && q.question && Array.isArray(q.choices) && q.choices.length >= 2).slice(0, count).map((q: any) => ({ question: String(q.question), choices: q.choices.map((c: any) => String(c)), answer: Math.max(0, Math.min(q.choices.length - 1, Number(q.answer) || 0)), explain: String(q.explain || "") }));
-    if (!clean.length) return { error: "ออกข้อสอบไม่สำเร็จ (โมเดลไม่ส่งคำถามกลับ) ลองใหม่หรือระบุหัวข้อให้ชัดขึ้น" };
-    const title = String(a?.title || ("แบบทดสอบ: " + (topic || kn[0].title))).slice(0, 120);
-    const exRow: any = { title, description: a?.description || null, source: "คลังความรู้: " + kn.map((k: any) => k.title).slice(0, 3).join(", "), tags: topic || null,
-      pass_percent: Math.min(100, Math.max(1, Number(a?.pass_percent) || 80)), max_attempts: Math.min(20, Math.max(1, Number(a?.max_attempts) || 3)),
-      time_limit_min: a?.time_limit_min ? Number(a.time_limit_min) : null, shuffle: a?.shuffle !== false, show_result: "full",
-      scope: ["all", "branch", "emp"].includes(a?.scope) ? a.scope : "all", branch_ids: (a?.scope === "branch" && Array.isArray(a?.branch_ids)) ? a.branch_ids : null,
-      status: "draft", created_by: "นิดา (AI)" };
-    const { data: ins, error } = await sb.from("exams").insert(exRow).select("id").single();
-    if (error) return { error: "บันทึกร่างข้อสอบไม่สำเร็จ: " + error.message + " (ถ้ายังไม่มีตารางให้รัน supabase/exam_system.sql ก่อน)" };
-    await sb.from("exam_questions").insert(clean.map((q: any, i: number) => ({ exam_id: ins.id, seq: i, question: q.question, choices: q.choices, answer: q.answer, explain: q.explain || null, knowledge_ref: exRow.source })));
-    try { await log("นิดาออกข้อสอบ (ร่าง)", title + " · " + clean.length + " ข้อ"); } catch { /* */ }
-    return { ok: true, exam_id: ins.id, title, count: clean.length, status: "draft", preview: clean.slice(0, 3).map((q: any) => q.question), note: "สร้าง 'ฉบับร่าง' " + clean.length + " ข้อแล้ว — แจ้ง HR ให้เปิดเมนู 'แบบทดสอบ' เพื่อ ตรวจ/แก้/เลือกผู้ทำ แล้วกด 'เผยแพร่' (ยังไม่ส่งถึงพนักงานจนกว่าจะเผยแพร่) · ให้สรุปตัวอย่างคำถามที่ออกให้ HR ดูคร่าว ๆ" };
-  } catch (e) { return { error: "ออกข้อสอบไม่สำเร็จ: " + String((e && (e as any).message) || e) }; }
+    const raw = (parsed && Array.isArray(parsed.questions)) ? parsed.questions : [];
+    let dropped = 0;
+    const out = raw.map((q: any) => {
+      const opts = (Array.isArray(q?.options) ? q.options : q?.choices || []).map((x: any) => String(x || "").trim()).filter(Boolean);
+      const qn = String(q?.q || q?.question || "").trim();
+      const an = Number(q?.answer);
+      if (!qn || opts.length < 2 || new Set(opts).size !== opts.length || !(an >= 0 && an < opts.length)) { dropped++; return null; }
+      if (EXAM_BAN.test(qn)) { dropped++; return null; }
+      const srcTxt = examNorm(q?.source || "");
+      // ★ หัวใจ: ข้อความอ้างอิงต้องอยู่ในเนื้อหาที่ส่งให้จริง ๆ แบบคำต่อคำ
+      const verified = srcTxt.length >= 20 && hay.includes(srcTxt);
+      const hit = verified ? used.find((b: any) => examNorm(b.text).includes(srcTxt)) : null;
+      return { kind: ["rule", "situation", "term", "why", "safety"].includes(String(q?.kind)) ? String(q.kind) : "rule",
+        question: qn, choices: opts, answer: an, explain: String(q?.explain || "").trim() || null,
+        source_text: q?.source ? String(q.source).slice(0, 400) : "", verified,
+        ref: hit ? hit.ref : "", ref_label: hit ? hit.label : (used[0] ? used[0].label : "") };
+    }).filter(Boolean);
+    if (!out.length) return { error: "ร่างข้อสอบไม่สำเร็จ (ไม่ได้คำถามที่ใช้ได้กลับมา) ลองบอกให้ชัดขึ้นว่าอยากถามเรื่องอะไร" };
+    return { ok: true, questions: out, verified_count: out.filter((x: any) => x.verified).length, dropped,
+      sources_used: used.map((b: any) => ({ src: b.src, src_label: EXSRC_LABEL[b.src] || b.src, label: b.label, ref: b.ref })),
+      warn, context_chars: ctx.length };
+  } catch (e) { return { error: "ร่างข้อสอบไม่สำเร็จ: " + String((e && (e as any).message) || e) }; }
+}
+
+async function create_exam(a: any) {
+  const count = Math.min(30, Math.max(3, Number(a?.count) || 10));
+  // ★ 9 ก.ย. 2569 — เดิมอ่านได้แค่ nida_knowledge · ตอนนี้เลือกแหล่งได้ 4 ทาง
+  //   และถ้าส่ง exam_id มา = "เพิ่มข้อเข้าชุดเดิม" ไม่สร้างชุดใหม่
+  const draft = await examDraft({ ...a, count, instruction: a?.instruction || a?.topic });
+  if (draft.error) return { error: draft.error };
+  const clean = draft.questions.filter((q: any) => q.verified);
+  const unver = draft.questions.length - clean.length;
+  const use = (clean.length ? clean : draft.questions).slice(0, count);
+  if (!use.length) return { error: "ออกข้อสอบไม่สำเร็จ ลองระบุหัวข้อหรือบทให้ชัดขึ้น" };
+
+  // เพิ่มเข้าชุดที่มีอยู่
+  if (a?.exam_id) {
+    const { data: ex } = await sb.from("exams").select("id,title,status").eq("id", Number(a.exam_id)).maybeSingle();
+    if (!ex) return { error: "ไม่พบชุดข้อสอบรหัส " + a.exam_id };
+    if (ex.status === "published") return { error: "ชุด '" + ex.title + "' เผยแพร่ไปแล้ว — ถ้าจะเพิ่มข้อ ให้ HR กด 'ปิดรับ' ก่อน ไม่งั้นคนที่ทำไปแล้วกับคนที่ยังไม่ทำจะได้ข้อสอบไม่เท่ากัน" };
+    const { data: last } = await sb.from("exam_questions").select("seq").eq("exam_id", ex.id).order("seq", { ascending: false }).limit(1);
+    let seq = ((last && last[0]?.seq) ?? -1) + 1;
+    await sb.from("exam_questions").insert(use.map((q: any) => ({ exam_id: ex.id, seq: seq++, question: q.question, choices: q.choices, answer: q.answer, explain: q.explain, knowledge_ref: q.ref || null })));
+    try { await log("นิดาเพิ่มข้อสอบเข้าชุดเดิม", ex.title + " · +" + use.length + " ข้อ"); } catch { /* */ }
+    return { ok: true, exam_id: ex.id, title: ex.title, added: use.length, unverified_dropped: unver,
+      preview: use.slice(0, 3).map((q: any) => q.question),
+      note: "เพิ่มเข้าชุด '" + ex.title + "' แล้ว " + use.length + " ข้อ — บอก HR ให้เปิดเมนู 'แบบทดสอบ' ตรวจก่อนเผยแพร่" };
+  }
+
+  const topic = String(a?.topic || a?.instruction || "").trim();
+  const title = String(a?.title || ("แบบทดสอบ: " + (topic || (draft.sources_used[0]?.label || "คู่มือ")))).slice(0, 120);
+  const exRow: any = { title, description: a?.description || null,
+    source: draft.sources_used.map((x: any) => x.label).slice(0, 3).join(" · "), tags: topic || null,
+    pass_percent: Math.min(100, Math.max(1, Number(a?.pass_percent) || 80)), max_attempts: Math.min(20, Math.max(1, Number(a?.max_attempts) || 3)),
+    time_limit_min: a?.time_limit_min ? Number(a.time_limit_min) : null, shuffle: a?.shuffle !== false, show_result: "full",
+    scope: ["all", "branch", "emp"].includes(a?.scope) ? a.scope : "all", branch_ids: (a?.scope === "branch" && Array.isArray(a?.branch_ids)) ? a.branch_ids : null,
+    status: "draft", created_by: "นิดา (AI)" };
+  const { data: ins, error } = await sb.from("exams").insert(exRow).select("id").single();
+  if (error) return { error: "บันทึกร่างข้อสอบไม่สำเร็จ: " + error.message + " (ถ้ายังไม่มีตารางให้รัน supabase/exam_system.sql ก่อน)" };
+  await sb.from("exam_questions").insert(use.map((q: any, i: number) => ({ exam_id: ins.id, seq: i, question: q.question, choices: q.choices, answer: q.answer, explain: q.explain, knowledge_ref: q.ref || null })));
+  try { await log("นิดาออกข้อสอบ (ร่าง)", title + " · " + use.length + " ข้อ"); } catch { /* */ }
+  return { ok: true, exam_id: ins.id, title, count: use.length, status: "draft",
+    แหล่งที่ใช้: draft.sources_used.map((x: any) => x.label),
+    ตรวจย้อนผ่าน: clean.length + "/" + draft.questions.length + " ข้อ (ข้อที่หาข้อความยืนยันในต้นทางไม่เจอถูกตัดออก " + unver + " ข้อ)",
+    preview: use.slice(0, 3).map((q: any) => q.question),
+    warn: draft.warn,
+    note: "สร้าง 'ฉบับร่าง' " + use.length + " ข้อแล้ว — แจ้ง HR ให้เปิดเมนู 'แบบทดสอบ' เพื่อ ตรวจ/แก้/เลือกผู้ทำ แล้วกด 'เผยแพร่' (ยังไม่ส่งถึงพนักงานจนกว่าจะเผยแพร่) · ให้สรุปตัวอย่างคำถามที่ออกให้ HR ดูคร่าว ๆ · ⚠ ถ้าออกจากใบโปรฯ ให้เตือนว่าข้อสอบจะหมดอายุพร้อมโปรฯ" };
 }
 // ค้นอินเทอร์เน็ตแบบสดด้วย Google Search grounding — เรียกเป็นคำขอแยก (ไม่ปนกับ function tools) แล้วคืนคำตอบ+แหล่งอ้างอิง
 async function webSearch(query: string) {
@@ -4216,7 +4403,7 @@ const DECLS = [
   { name: "bulk_remind", description: "★ ตามเตือนพนักงานที่ 'ยังไม่กดรับทราบ' ประกาศ/จดหมายเวียน (ส่งแจ้งเตือนเข้ากล่องพนักงานเป็นชุด) — ann_id(ไม่ใส่=ประกาศ important/mandatory ล่าสุด) · ใช้เมื่อ HR สั่ง 'เตือนคนที่ยังไม่รับทราบ/ตามคนที่ยังไม่อ่านประกาศ' — ต้องยืนยันก่อนส่งจริง", parameters: { type: "object", properties: { ann_id: { type: "number" } } } },
   { name: "branch_workload", description: "★ งานค้างของผู้จัดการ/สาขา 'แบบครบ' — รวม mgr_tasks (งานที่ HR มอบหมาย เช่น Product Recall) + งานในกะที่รอตรวจ + งานที่ถูกตีกลับ · ใช้ทุกครั้งที่ถาม 'ผจก./สาขา X มีงานค้างอะไรบ้าง / งานที่มอบหมายให้ ผจก. เสร็จหรือยัง / สาขานี้ค้างงานไหม' · ระบุ branch_id (ไม่ใส่=ทุกสาขา) · ❌ อย่าใช้ open_tasks เดี่ยว ๆ ตอบเรื่องนี้ (มันไม่รวม mgr_tasks จะตอบว่าไม่มีทั้งที่มี)", parameters: { type: "object", properties: { branch_id: { type: "string" } } } },
   { name: "mgr_login_activity", description: "★ ความถี่การเข้าระบบของผู้จัดการรายสาขา (ใครเข้าตรวจงานบ่อย/ไม่ค่อยเข้า/ไม่เคยเข้าเลย) — ใช้เมื่อถาม 'ผจก. เข้าระบบบ่อยแค่ไหน/สาขาไหน ผจก. ไม่ค่อยเข้า/ใครไม่เข้าตรวจงาน' · start,end (YYYY-MM-DD · ไม่ใส่=30 วันล่าสุด) · branch_id (เจาะสาขา) · คืน never_logged_in + rarely_logged_in + managers (เรียงเข้าน้อยสุดก่อน)", parameters: { type: "object", properties: { start: { type: "string" }, end: { type: "string" }, branch_id: { type: "string" } } } },
-  { name: "create_exam", description: "★ ออกข้อสอบพนักงานจากคลังความรู้ (คู่มือ/นโยบายที่นำเข้า) — ใช้เมื่อ HR สั่ง 'ออกข้อสอบเรื่อง.../ทำแบบทดสอบให้พนักงาน N ข้อ/สร้างข้อสอบจากคู่มือ' · topic=หัวข้อ/คำค้นในคลังความรู้ · count=จำนวนข้อ(ดีฟอลต์10) · pass_percent(ดีฟอลต์80) · max_attempts(ดีฟอลต์3) · scope(all/branch/emp)+branch_ids · ระบบออกข้อสอบปรนัยจากเนื้อหาจริง (ไม่แต่งนอกคลัง) แล้วบันทึกเป็น 'ฉบับร่าง' → HR เปิดเมนูแบบทดสอบเพื่อ ตรวจ/เลือกผู้ทำ/เผยแพร่ (อย่าเผยแพร่เอง) · ถ้าไม่พบเนื้อหาในคลังให้บอกให้ HR นำเข้าคู่มือก่อน", parameters: { type: "object", properties: { topic: { type: "string" }, title: { type: "string" }, count: { type: "number" }, pass_percent: { type: "number" }, max_attempts: { type: "number" }, time_limit_min: { type: "number" }, scope: { type: "string" }, branch_ids: { type: "array", items: { type: "string" } } }, required: ["topic"] } },
+  { name: "create_exam", description: "★ ออกข้อสอบพนักงาน — เลือก 'แหล่งข้อมูล' ได้ 4 ทาง: manual=คู่มือหลักสูตร (93 บท 1,090 ขั้นตอน · เจาะรายบทได้ด้วย course_code+lesson_nos) · promo=ใบโปรโมชั่น (sheet_ids · ⚠ ข้อสอบจะหมดอายุพร้อมโปรฯ ต้องเตือน HR) · knowledge=คลังความรู้ PDF ที่นำเข้า · rules=ระเบียบบริษัท/วินัย · ไม่ระบุ = manual+knowledge · instruction=บอกได้ว่าอยากให้ถามแนวไหน (เช่น 'เน้นสถานการณ์หน้างานเรื่องรับสินค้าแช่เย็น') · count=จำนวนข้อ · ★ ทุกข้อถูกตรวจย้อนว่าข้อความอ้างอิงอยู่ในต้นทางจริงแบบคำต่อคำ ข้อที่ตรวจไม่ผ่านถูกตัดทิ้ง · ★ ส่ง exam_id มาด้วย = เพิ่มข้อเข้าชุดเดิม (ต้องยังไม่เผยแพร่) ไม่ระบุ = สร้างชุดใหม่เป็น 'ฉบับร่าง' · ห้ามเผยแพร่เอง ให้ HR เปิดเมนู 'แบบทดสอบ' ตรวจแล้วกดเผยแพร่", parameters: { type: "object", properties: { topic: { type: "string" }, instruction: { type: "string" }, sources: { type: "array", items: { type: "string" } }, course_code: { type: "string" }, lesson_nos: { type: "array", items: { type: "string" } }, sections: { type: "array", items: { type: "string" } }, sheet_ids: { type: "array", items: { type: "number" } }, kn_ids: { type: "array", items: { type: "number" } }, exam_id: { type: "number" }, title: { type: "string" }, count: { type: "number" }, pass_percent: { type: "number" }, max_attempts: { type: "number" }, time_limit_min: { type: "number" }, scope: { type: "string" }, branch_ids: { type: "array", items: { type: "string" } } } } },
   { name: "universal_search", description: "★ ค้นหารวมศูนย์ 'ข้ามทุกตารางหลัก' ในคำสั่งเดียว (พนักงาน·สาขา·ประวัติการกระทำ·งาน ผจก.·งานในกะ·ประกาศ·ใบเตือน·QA·ใบลา·คลังความรู้) — ใช้เมื่อไม่แน่ใจว่าข้อมูลอยู่ตารางไหน หรือคำถามกว้าง/อยากกวาดทุกที่ก่อนสรุปว่า 'มี/ไม่มี' · query=คำค้น (ชื่อคน/คำในงาน/คำสำคัญ) · branch_id เจาะสาขาได้ · limit ต่อตาราง · คืน results แยกตามหมวด — จากนั้นค่อยเจาะลึกด้วยเครื่องมือเฉพาะทาง", parameters: { type: "object", properties: { query: { type: "string" }, branch_id: { type: "string" }, limit: { type: "number" } }, required: ["query"] } },
   { name: "mgr_actions", description: "★ สิ่งที่ 'ผจก. ลงมือทำจริงในแอป' ตามวัน/ช่วง/สาขา (จาก activity_log) — ใช้เมื่อถาม 'วันนี้ ผจก.ทำอะไรไปบ้าง / ผจก.สาขา X ดำเนินการอะไร / เมื่อวาน ผจก.ทำอะไร / ผจก.คนนี้ทำอะไรบ้าง' · start,end (YYYY-MM-DD · ไม่ใส่=วันนี้) · branch_id · emp_id (เจาะคนเดียว) · คืน managers[] (จัดกลุ่มรายคน + รายการการกระทำ+เวลา) และ by_action (นับตามประเภท) · ⚠ ครอบคลุมเฉพาะการกระทำที่ผ่านแอป ไม่รวมกิจกรรมในกลุ่มไลน์ (ใช้ branch_line_feed สำหรับกลุ่มไลน์)", parameters: { type: "object", properties: { start: { type: "string" }, end: { type: "string" }, branch_id: { type: "string" }, emp_id: { type: "string" } } } },
   { name: "get_group_images", description: "★ ดึงรูปในกลุ่มไลน์มา 'แสดงเป็นการ์ดรูปในแชท' (ไม่วิเคราะห์เนื้อหา = ไม่มีค่าใช้จ่าย) — ใช้เมื่อผู้ใช้ขอดูรูปในกลุ่ม · ★ ถ้าผู้ใช้อ้างถึง 'รูปของคนใดคนหนึ่ง' หรือ 'เรื่อง/ช่วงเวลาที่พูดถึงก่อนหน้า' (เช่น 'ขอดูรูปที่คุณ wanwisa โพสต์เรื่องเติมของ') ให้ส่ง sender=ชื่อคนนั้น และ on_date='YYYY-MM-DD' (วันที่ไทยจากบริบทก่อนหน้า) เพื่อกรองให้ตรง · พารามิเตอร์: branch_id หรือ group · sender (ชื่อผู้โพสต์ กรองแบบ contains) · on_date ('YYYY-MM-DD' วันที่ไทย) · hours (ดีฟอลต์ 48 · จะถูกขยายอัตโนมัติเมื่อระบุ sender/on_date) · limit (ดีฟอลต์ 8 สูงสุด 20) · แสดงเฉพาะรูปสดจาก webhook · ถ้าอยากรู้ 'ว่ารูปคืออะไร' ใช้ classify_group_images แทน", parameters: { type: "object", properties: { branch_id: { type: "string" }, group: { type: "string" }, sender: { type: "string" }, on_date: { type: "string" }, hours: { type: "number" }, limit: { type: "number" } } } },
@@ -5404,6 +5591,36 @@ Deno.serve(async (req) => {
     // ================= ข้อสอบซ้อมจากคู่มือหลักสูตร =================
     //   ดึงข้อสอบจาก course_quiz (สร้างจากคู่มือ ไม่ได้แต่งเนื้อหาใหม่)
     //   เฉลยไม่ส่งไปหน้าเว็บตอนแจกข้อสอบ — ส่งคำตอบกลับมาให้หลังบ้านตรวจ กันเปิดดูเฉลยจาก DevTools
+    // ============================================================
+    // ★ 9 ก.ย. 2569 — "ให้นิดาช่วยร่างคำถาม" ในหน้าแบบทดสอบของ HR
+    //   คืน "ข้อร่าง" กลับไปให้ติ๊กเลือกทีละข้อ — ยังไม่บันทึกลงชุดใด ๆ
+    //   ต่างจากเครื่องมือ create_exam ในแชทที่บันทึกเป็นชุดร่างให้เลย
+    // ============================================================
+    if (body.mode === "exam_meta") {
+      const [{ data: ls }, { data: shs }, { data: kn }] = await Promise.all([
+        sb.from("course_lessons").select("course_code,course_name,section,lesson_no,title").eq("active", true).order("lesson_no").limit(200),
+        sb.from("promo_sheets").select("id,title,period_start,period_end").eq("active", true).order("period_end", { ascending: false, nullsFirst: false }).limit(30),
+        sb.from("nida_knowledge").select("id,title,source").eq("active", true).order("id", { ascending: false }).limit(120),
+      ]);
+      const byC: Record<string, any> = {};
+      for (const l of (ls || [])) {
+        const c = byC[l.course_code] = byC[l.course_code] || { code: l.course_code, name: l.course_name || l.course_code, sections: {} };
+        const sk = l.section || "(ไม่ระบุส่วน)";
+        (c.sections[sk] = c.sections[sk] || { name: sk, lessons: [] }).lessons.push({ no: l.lesson_no, title: l.title || "" });
+      }
+      return json({
+        ok: true,
+        courses: Object.values(byC).map((c: any) => ({ code: c.code, name: c.name, latest: c.code === "STAFF26", sections: Object.values(c.sections) }))
+          .sort((a2: any, b2: any) => (b2.latest ? 1 : 0) - (a2.latest ? 1 : 0)),
+        sheets: (shs || []).map((x: any) => ({ id: x.id, title: x.title, status: promoStatus(x), period: _thDate(x.period_start) + " – " + _thDate(x.period_end) })),
+        knowledge: (kn || []).map((x: any) => ({ id: x.id, title: x.title, source: x.source || "" })),
+        sources: Object.keys(EXSRC_LABEL).map((k) => ({ key: k, label: EXSRC_LABEL[k] })),
+      });
+    }
+    if (body.mode === "exam_draft") {
+      const r = await examDraft(body);
+      return json(r.error ? { ok: false, error: r.error } : r);
+    }
     if (body.mode === "exam") {
       const act = String(body.act || "start");
 
