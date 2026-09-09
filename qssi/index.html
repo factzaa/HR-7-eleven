@@ -51,6 +51,10 @@
   .tabs{display:flex;gap:7px;margin-bottom:11px}
   .tabs button{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:11px;padding:9px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;color:var(--muted)}
   .tabs button.on{background:var(--green);color:#fff;border-color:var(--green)}
+  .bdg{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font-size:11px;font-weight:700;text-align:center;margin-left:4px;vertical-align:1px}
+  .bdg.b{background:#2563eb}
+  .fixbar{background:#fef2f2;border:1.5px solid #fecaca;border-radius:12px;padding:11px 13px;margin-bottom:10px;display:flex;gap:9px;align-items:center}
+  .fixbar b{color:#b91c1c;font-size:14px}
 </style>
 </head>
 <body>
@@ -142,8 +146,12 @@ function render(){
   if(!DATA) return;
   $('tb_mine').className=TAB==='mine'?'on':'';
   $('tb_other').className=TAB==='other'?'on':'';
-  $('c_mine').textContent=DATA.mine.total?('('+DATA.mine.done+'/'+DATA.mine.total+')'):'(0)';
-  $('c_other').textContent='('+DATA.others.done+'/'+DATA.others.total+')';
+  // ★ 10 ก.ย. 2569 — ตัวเลขแจ้งเตือนคอมเมนต์/งานที่ ผจก. ขอให้แก้
+  const bdg=(n,cls)=>n?('<span class="bdg'+(cls?' '+cls:'')+'">'+n+'</span>'):'';
+  $('c_mine').innerHTML=(DATA.mine.total?('('+DATA.mine.done+'/'+DATA.mine.total+')'):'(0)')
+    +bdg(DATA.mine.fix)+bdg(DATA.mine.cm-DATA.mine.fix>0?DATA.mine.cm-DATA.mine.fix:0,'b');
+  $('c_other').innerHTML='('+DATA.others.done+'/'+DATA.others.total+')'
+    +bdg(DATA.others.fix)+bdg(DATA.others.cm-DATA.others.fix>0?DATA.others.cm-DATA.others.fix:0,'b');
   const src=TAB==='mine'?DATA.mine:DATA.others;
   const box=$('listBody');
   if(!src.total){
@@ -154,12 +162,23 @@ function render(){
     return;
   }
   const pct=src.total?Math.round(src.done/src.total*100):0;
-  let h='<div class="card"><div style="display:flex;gap:8px;align-items:baseline"><b style="flex:1;font-size:15px">'
+  const totFix=(DATA.mine.fix||0)+(DATA.others.fix||0);
+  const totCm=(DATA.mine.cm||0)+(DATA.others.cm||0);
+  let h='';
+  if(totFix) h+='<div class="fixbar"><div style="font-size:22px">🔧</div><div style="flex:1">'
+      +'<b>ผู้จัดการขอให้แก้งาน '+totFix+' ข้อ</b>'
+      +'<div class="muted" style="color:#b91c1c">แตะดูข้อที่มีกล่องแดง — แก้แล้วกด 📷 เพิ่มรูปจุดอื่น เพื่อส่งรูปใหม่</div>'
+    +'</div></div>';
+  else if(totCm) h+='<div class="fixbar" style="background:#eff6ff;border-color:#bfdbfe"><div style="font-size:22px">💬</div><div style="flex:1">'
+      +'<b style="color:#1e40af">มีคอมเมนต์จากผู้จัดการ '+totCm+' ข้อ</b>'
+      +'<div class="muted" style="color:#1e40af">อ่านก่อนทำข้อถัดไป จะได้ไม่โดนตีกลับซ้ำ</div>'
+    +'</div></div>';
+  h+='<div class="card"><div style="display:flex;gap:8px;align-items:baseline"><b style="flex:1;font-size:15px">'
     +(TAB==='mine'?'งานที่ต้องทำของคุณ':'งานที่เหลือของสาขา')+'</b>'
     +'<b style="font-size:17px;color:'+(pct>=100?'#16a34a':pct>=50?'#c2410c':'#dc2626')+'">'+src.done+'/'+src.total+'</b></div>'
     +'<div class="bar"><div style="width:'+pct+'%"></div></div></div>';
   h+=src.groups.map(g=>'<div class="card" style="padding:0;overflow:hidden">'
-    +'<div class="gh" data-g="'+esc(g.cat)+'"><b>'+esc(g.name)+'</b>'
+    +'<div class="gh" data-g="'+esc(g.cat)+'"><b>'+esc(g.name)+bdg(g.fix)+bdg((g.cm-g.fix)>0?(g.cm-g.fix):0,'b')+'</b>'
       +'<span class="muted">'+g.done+'/'+g.total+'</span><span class="muted" data-ar="'+esc(g.cat)+'">▾</span></div>'
     +'<div id="g_'+esc(g.cat)+'" class="hide" style="padding:0 12px 10px">'
       +(g.lost.length?('<div class="lost"><b style="color:#b91c1c">หมวดนี้เคยโดนหักคะแนน</b><br>'
@@ -167,6 +186,8 @@ function render(){
       +g.items.map(itHtml).join('')
     +'</div></div>').join('');
   box.innerHTML=h;
+  // หมวดที่มีงานต้องแก้ ให้กางไว้เลย ไม่ต้องให้พนักงานไล่กดหา
+  src.groups.forEach(g=>{ if(g.fix){ const el=$('g_'+g.cat); const ar=box.querySelector('[data-ar="'+g.cat+'"]'); if(el){ el.classList.remove('hide'); if(ar) ar.textContent='▴'; } } });
   box.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{
     const c=b.dataset.g, el=$('g_'+c), ar=box.querySelector('[data-ar="'+c+'"]');
     const open=!el.classList.contains('hide');

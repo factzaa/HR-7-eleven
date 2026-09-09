@@ -459,7 +459,9 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
       var checks= shIds.length ? ((await sb.from('shelf_checks').select('shelf_id,emp_id').eq('check_date',today).in('shelf_id',shIds)).data||[]) : [];
       var done={}; checks.forEach(function(c){ done[c.shelf_id+'|'+c.emp_id]=1; });
       var shelfN=asg.filter(function(a){ return !done[a.shelf_id+'|'+a.emp_id]; }).length;
-      var total=(tR.count||0)+(spR.count||0)+shelfN;
+      // ★ 10 ก.ย. 2569 — นับงาน QSSI ที่ ผจก. ขอให้แก้ เข้าไปในตัวเลขแจ้งเตือนหน้าแรกด้วย
+      var qsN=0; try{ var qsR=await sb.from('qssi_check_logs').select('id',{count:'exact',head:true}).eq('branch_id',BRANCH).eq('cycle',month).eq('need_fix',true); qsN=qsR.count||0; }catch(e){}
+      var total=(tR.count||0)+(spR.count||0)+shelfN+qsN;
       var el=$('nbadge'); if(el){ if(total>0){ el.textContent=total>99?'99+':String(total); el.style.display='flex'; } else el.style.display='none'; }
     }catch(e){}
   }

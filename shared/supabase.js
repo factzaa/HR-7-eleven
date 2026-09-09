@@ -1875,15 +1875,25 @@
     });
     const mine=items.filter(x=>x.mine);
     const others=items.filter(x=>!x.mine);
+    // ★ 10 ก.ย. 2569 — นับงานที่ ผจก./HR คอมเมนต์ไว้ ให้พนักงานเห็นเป็นตัวเลขแจ้งเตือน
+    //   needFix = ขอให้แก้ (ด่วน) · hasCm = มีคอมเมนต์ (รวมที่แก้แล้ว)
+    const needFix=x=>!!(x.log&&x.log.need_fix);
+    const hasCm=x=>!!(x.log&&(x.log.mgr_note||(Array.isArray(x.log.mgr_photos)&&x.log.mgr_photos.length)));
     const group=(list)=>{
       const gs={};
       list.forEach(x=>{ (gs[x.cat]=gs[x.cat]||[]).push(x); });
-      return Object.keys(gs).map(c=>({ cat:c, name:QSSI_CAT_NAME_EMP[c]||c, items:gs[c], lost:lostByCat[c]||[],
-        done:gs[c].filter(x=>isDone(x.log)).length, total:gs[c].length }));
+      return Object.keys(gs).map(c=>({ cat:c, name:QSSI_CAT_NAME_EMP[c]||c,
+        // ข้อที่ ผจก. ขอให้แก้ ดันขึ้นบนสุดของหมวด — พนักงานจะได้เจอก่อน
+        items:gs[c].slice().sort((a,b)=>(needFix(b)?1:0)-(needFix(a)?1:0)),
+        lost:lostByCat[c]||[],
+        done:gs[c].filter(x=>isDone(x.log)).length, total:gs[c].length,
+        fix:gs[c].filter(needFix).length, cm:gs[c].filter(hasCm).length }));
     };
     return { emp, cycle, branch_id:branch,
-      mine:{ groups:group(mine), total:mine.length, done:mine.filter(x=>isDone(x.log)).length },
-      others:{ groups:group(others), total:others.length, done:others.filter(x=>isDone(x.log)).length } };
+      mine:{ groups:group(mine), total:mine.length, done:mine.filter(x=>isDone(x.log)).length,
+             fix:mine.filter(needFix).length, cm:mine.filter(hasCm).length },
+      others:{ groups:group(others), total:others.length, done:others.filter(x=>isDone(x.log)).length,
+             fix:others.filter(needFix).length, cm:others.filter(hasCm).length } };
   }
   async function submitQssiCheck(d){
     d=d||{};
