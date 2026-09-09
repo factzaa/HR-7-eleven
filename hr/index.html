@@ -1558,6 +1558,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <select id="au_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
     <select id="au_month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-pri btn-sm" id="au_go">ดู</button>
+    <button class="btn btn-sec btn-sm" id="au_prep"><svg class="ei" viewBox="0 0 24 24"><path d="M12 2v6"/><path d="M8 5l4-3 4 3"/><circle cx="12" cy="15" r="6"/><path d="M12 12v3l2 1"/></svg> เตรียมรับตรวจ</button>
   </div>
   <div id="au_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
@@ -9378,6 +9379,106 @@ async function aeSave(i,btn){
   if(r&&r.ok){ toast('ok','บันทึกแล้ว'); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
 
+// ===== เตรียมร้านรับตรวจ QSSI =====
+// ★ 9 ก.ย. 2569 — เอาข้อบกพร่องรอบก่อน + เกณฑ์รายข้อ + งานค้างจริง มาต่อกัน
+//   แล้วเรียงตาม "คะแนนที่จะเสีย" ไม่ใช่ไล่ทุกข้อ — ทำสามอันดับแรกก่อนคุ้มที่สุด
+async function qsPrep(){
+  const box=$('au_body'); box.innerHTML='<div class="empty">กำลังรวบรวมข้อมูล…</div>';
+  const br=$('au_branch')?$('au_branch').value:'';
+  const j=await cmPost({ mode:'qssi_prep', branch_id:br||undefined });
+  if(!j||!j.ok){ box.innerHTML='<div class="empty">'+esc((j&&j.error)||'ดึงข้อมูลไม่สำเร็จ')+'</div>'; return; }
+  const d=j.data||{};
+  const risks=d['รายการเสี่ยงเรียงตามคะแนนที่จะเสีย']||[];
+  const plan=d['แผนถอยหลังจากวันตรวจ']||[];
+  const work=d['งานค้างจริงตอนนี้']||{};
+  const stock=d['สินค้าที่เคยขาดรอบก่อน']||[];
+  const duty=d['คนที่เข้าเวรช่วงวันตรวจ']||[];
+  const cats=d['คะแนนรายหมวดรอบล่าสุด']||{};
+  const last=d['ผลรอบล่าสุด']||{};
+  const tile=(t,v,c)=>'<div style="flex:1;min-width:104px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px">'
+    +'<div style="font-size:12px;color:var(--muted)">'+esc(t)+'</div><div style="font-size:21px;font-weight:600'+(c?(';color:'+c):'')+'">'+esc(String(v))+'</div></div>';
+  let h='<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">เตรียมรับตรวจ · '+esc(d['สาขา']||'')+'</h3>'
+    +'<button class="btn btn-sec btn-sm" id="qs_back">← คะแนนตรวจ</button></div>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">วันตรวจที่ใช้วางแผน: '+esc(d['วันตรวจที่ใช้วางแผน']||'—')+'</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+      +tile('เหลืออีก', d['เหลืออีก']||'—')
+      +tile('Result รอบล่าสุด', last['Result']!=null?last['Result']+'%':'—')
+      +tile('Process รอบล่าสุด', last['Process']!=null?last['Process']+'%':'—')
+      +tile('กันคะแนนไว้ได้ถ้าแก้ครบ', d['รวมคะแนนที่กันไว้ได้ถ้าแก้ครบ']||0, '#16a34a')
+    +'</div>';
+  const cn=Object.keys(cats);
+  if(cn.length){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+      +cn.map(k=>{const v=Number(cats[k]); const c=v>=90?'#16a34a':v>=70?'#c2410c':'#dc2626';
+        return '<span style="font-size:12px;border:1px solid var(--line);border-radius:99px;padding:3px 10px">'+esc(k.split(' — ')[0])+' <b style="color:'+c+'">'+v+'%</b></span>';}).join('')
+    +'</div>';
+  }
+  h+='<h3 style="font-size:13.5px;font-weight:700;color:var(--green-d);margin:14px 2px 8px">สิ่งที่คุ้มที่สุดถ้าทำก่อน</h3>';
+  if(!risks.length) h+='<div class="empty" style="padding:12px">ยังไม่มีข้อบกพร่องในระบบ — คีย์ใบตรวจรอบล่าสุดเข้ามาก่อน</div>';
+  else h+=risks.slice(0,10).map((r,i)=>'<div class="card" style="padding:11px;margin-bottom:8px">'
+    +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
+      +'<b style="font-size:14px;flex:1;min-width:170px">'+(i+1)+'. '+esc(r['คำถาม']||('ข้อ '+r['ข้อ']))+'</b>'
+      +'<b style="font-size:15px;color:#dc2626">−'+esc(String(r['เคยเสีย']))+'</b></div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">'+esc(r['หมวด']||'')+' · ข้อ '+esc(String(r['ข้อ']||'—'))
+      +(Number(r['โดนซ้ำ'])>1?(' · <b style="color:#b45309">โดนซ้ำ '+r['โดนซ้ำ']+' รอบ</b>'):'')
+      +' · รอบ '+esc(String(r['รอบที่เจอ']||''))+'</div>'
+    +(r['สิ่งที่พบ']?('<div style="font-size:12.5px;margin-top:5px">ที่ผู้ตรวจพบ: '+esc(r['สิ่งที่พบ'])+'</div>'):'')
+    +(r['เตรียมยังไง']?('<div style="font-size:12.5px;margin-top:5px;background:#f0fdf4;border-left:3px solid #16a34a;padding:6px 9px;border-radius:0 8px 8px 0">เตรียม: '+esc(r['เตรียมยังไง'])
+        +(r['งานในระบบที่เกี่ยว']?('<br><span style="color:var(--muted);font-size:11.5px">งานในระบบ: '+esc(r['งานในระบบที่เกี่ยว'])+'</span>'):'')+'</div>'):'')
+  +'</div>').join('');
+
+  if(plan.length){
+    h+='<h3 style="font-size:13.5px;font-weight:700;color:var(--green-d);margin:16px 2px 8px">แผนถอยหลังจากวันตรวจ</h3>';
+    h+=plan.map(p=>'<div class="card" style="padding:10px;margin-bottom:7px'+(p['เลยกำหนดไปแล้ว']?';border:1.5px solid #dc2626':'')+'">'
+      +'<div style="font-weight:700;font-size:13.5px">'+esc(typeof beDate==='function'?beDate(p['วันที่']):p['วันที่'])
+        +' <span style="font-weight:400;color:'+(p['เลยกำหนดไปแล้ว']?'#dc2626':'var(--muted)')+';font-size:12px">'
+        +(p['เลยกำหนดไปแล้ว']?'⚠ ควรเริ่มไปแล้ว — ทำวันนี้':esc(p['เหลืออีก']))+'</span></div>'
+      +'<ul style="margin:6px 0 0 18px;font-size:12.5px;line-height:1.7">'+ (p['รายการ']||[]).map(x=>'<li>'+esc(x['ทำอะไร'])+' <span style="color:#16a34a">(+'+esc(String(x['คะแนนที่กันไว้ได้']))+')</span></li>').join('')+'</ul>'
+    +'</div>').join('');
+  }
+
+  h+='<h3 style="font-size:13.5px;font-weight:700;color:var(--green-d);margin:16px 2px 8px">งานค้างจริงตอนนี้</h3>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+      +tile('งานประจำวัน ผจก. ค้าง', (work['งานประจำวันผจก_ยังไม่ทำวันนี้']||[]).length, (work['งานประจำวันผจก_ยังไม่ทำวันนี้']||[]).length?'#c2410c':'#16a34a')
+      +tile('เชลฟ์ยังไม่ตรวจ (7 วัน)', work['เชลฟ์ยังไม่ตรวจในรอบ7วัน']||0)
+      +tile('QA ใกล้หมดอายุ 30 วัน', work['QA_ใกล้หมดอายุ30วัน']||0)
+      +tile('QA เลยหมดอายุ', work['QA_เลยวันหมดอายุแล้ว']||0, (work['QA_เลยวันหมดอายุแล้ว']||0)?'#dc2626':'')
+      +tile('งานในกะค้าง', work['งานในกะค้าง']||0)
+      +tile('งานพิเศษค้าง', work['งานพิเศษค้าง']||0)
+    +'</div>';
+  if((work['งานประจำวันผจก_ยังไม่ทำวันนี้']||[]).length)
+    h+='<div style="font-size:12.5px;color:#9a6a00;background:#fff4e0;border:1px solid #f0c674;border-radius:9px;padding:8px 11px;margin-bottom:8px">ยังไม่ทำวันนี้: '+esc(work['งานประจำวันผจก_ยังไม่ทำวันนี้'].join(' · '))+'</div>';
+  if((work['QA_รายการที่ใกล้ที่สุด']||[]).length)
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">QA ที่ใกล้ที่สุด: '+esc(work['QA_รายการที่ใกล้ที่สุด'].join(' · '))+'</div>';
+
+  if(stock.length){
+    const own=stock.filter(x=>String(x['สาเหตุ']||'').indexOf('ร้านสั่งเอง')>=0);
+    h+='<h3 style="font-size:13.5px;font-weight:700;color:var(--green-d);margin:16px 2px 8px">สินค้าที่เคยขาดรอบก่อน ('+stock.length+' รายการ)</h3>'
+      +(own.length?('<div style="font-size:12.5px;background:#fff4e0;border:1px solid #f0c674;border-radius:9px;padding:8px 11px;margin-bottom:8px">'
+        +'<b>'+own.length+' รายการสาเหตุ "ร้านสั่งเอง"</b> = สั่งน้อยกว่าที่ขายได้จริง — เป็นเรื่องการสั่งของ ไม่ใช่การจัดเรียง ควรดูยอดขายย้อนหลังก่อนสั่งรอบหน้า</div>'):'')
+      +'<div class="tablewrap"><table style="font-size:12.5px"><thead><tr><th>รหัส</th><th>สินค้า</th><th style="text-align:center">Top Rank</th><th>สาเหตุ</th></tr></thead><tbody>'
+      +stock.map(x=>'<tr><td>'+esc(String(x['รหัส']||''))+'</td><td>'+esc(x['สินค้า']||'')+'</td><td style="text-align:center">'+esc(String(x['TopRank']||0))+'</td><td>'+esc(x['สาเหตุ']||'')+'</td></tr>').join('')
+      +'</tbody></table></div>';
+  }
+
+  if(duty.length){
+    h+='<h3 style="font-size:13.5px;font-weight:700;color:var(--green-d);margin:16px 2px 8px">คนที่เข้าเวรช่วงวันตรวจ ('+duty.length+' คน)</h3>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:7px">Process 200 คะแนน = ผู้ตรวจถามความรู้พนักงานที่อยู่หน้างานวันนั้น</div>'
+      +'<div style="font-size:13px;margin-bottom:8px">'+duty.map(x=>esc(x['ชื่อ'])).join(' · ')+'</div>'
+      +'<button class="btn btn-pri btn-sm" id="qs_exam">ออกชุดสอบซ้อม Process ให้คนกลุ่มนี้</button>';
+  }
+  h+='<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.7">⚠ แผนนี้ให้ "ทำงานประจำให้ครบ" ไม่ใช่จัดฉากเฉพาะวันตรวจ · '
+    +'ข้อบกพร่องมาจากใบตรวจที่คีย์เข้าระบบ ยิ่งคีย์หลายรอบ ยิ่งชี้ได้แม่นว่าข้อไหนโดนซ้ำ</div>';
+  box.innerHTML=h;
+  $('qs_back').onclick=loadAuditDash;
+  const be=$('qs_exam');
+  if(be) be.onclick=()=>{ const ids=duty.map(x=>x.emp_id).filter(Boolean);
+    try{ localStorage.setItem('qssi_exam_emps', JSON.stringify(ids)); }catch(_e){}
+    toast('ok','ไปที่เมนู "แบบทดสอบ" → สร้างเอง → ให้นิดาช่วยร่างคำถาม แล้วเลือกหมวด Process · มอบหมาย '+ids.length+' คนนี้');
+    if(typeof showTab==='function') showTab('exams');
+  };
+}
+
 // ===== แบบทดสอบพนักงาน (HR) =====
 let EXADM=[];
 async function loadExams(){
@@ -10454,7 +10555,7 @@ showTab = function(name){
   else if(name==='exams'){ loadExams(); }
   else if(name==='attnedit'){ loadAttnEdit(); }
   else if(name==='salesDash'){ loadSalesDash(); }
-  else if(name==='auditDash'){ loadAuditDash(); }
+  else if(name==='auditDash'){ loadAuditDash(); if($('au_prep')&&!$('au_prep').dataset.wired){ $('au_prep').dataset.wired='1'; $('au_prep').onclick=qsPrep; } }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
     if($('lvsub') && !$('lvsub').dataset.wired){
       $('lvsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>leavesTab(b.dataset.lvpan));
