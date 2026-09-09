@@ -2388,7 +2388,8 @@ async function open_tasks() {
   return { total: (data ?? []).length, groups: Object.values(g).slice(0, 30) };
 }
 async function qa_expiring(a: any) {
-  const days = Number(a.days) > 0 ? Number(a.days) : 7; const today = bkkToday(); const limit = addDays(today, days);
+  // ★ 9 ก.ย. 2569 — เดิมดีฟอลต์ 7 วัน คนละเลขกับหน้า QA (30 วัน) ทำให้ตอบว่า "ไม่มี" ทั้งที่มี
+  const days = Number(a.days) > 0 ? Number(a.days) : 30; const today = bkkToday(); const limit = addDays(today, days);
   const { data } = await sb.from("qa_items").select("name,expiry_date,qty,zone,branch_id").eq("status", "on_shelf").not("expiry_date", "is", null).lte("expiry_date", limit).order("expiry_date").limit(80);
   return { within_days: days, count: (data ?? []).length, items: (data ?? []).map((i: any) => ({ name: i.name, expiry: i.expiry_date, qty: i.qty, zone: i.zone, branch: i.branch_id })) };
 }
