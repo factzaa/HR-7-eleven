@@ -1558,7 +1558,14 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <select id="au_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><option value="">ทุกสาขา</option></select>
     <select id="au_month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
     <button class="btn btn-pri btn-sm" id="au_go">ดู</button>
-    <button class="btn btn-sec btn-sm" id="au_prep"><svg class="ei" viewBox="0 0 24 24"><path d="M12 2v6"/><path d="M8 5l4-3 4 3"/><circle cx="12" cy="15" r="6"/><path d="M12 12v3l2 1"/></svg> เตรียมรับตรวจ</button>
+  </div>
+  <div class="shsub" id="qssub" style="margin-bottom:10px">
+    <button class="shsub-b on" type="button" data-qs="check">✅ เช็คลิสต์ส่งงาน <span id="qs_badge" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-qs="prep">🎯 สิ่งที่ต้องระวัง</button>
+    <button class="shsub-b" type="button" data-qs="entry">📝 บันทึกผลตรวจ</button>
+    <button class="shsub-b" type="button" data-qs="month">📅 สรุปรายเดือน</button>
+    <button class="shsub-b" type="button" data-qs="dash">📊 แดชบอร์ด</button>
+    <button class="shsub-b" type="button" data-qs="score">คะแนนตรวจ (เดิม)</button>
   </div>
   <div id="au_body"><div class="empty">กำลังโหลด…</div></div>
 </div>
@@ -9379,6 +9386,316 @@ async function aeSave(i,btn){
   if(r&&r.ok){ toast('ok','บันทึกแล้ว'); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
 
+// ===== QSSI · แถบแท็บย่อย =====
+let QS_PANEL='check', QS_DATA=null;
+function qsInit(){
+  const bar=$('qssub');
+  if(bar && !bar.dataset.wired){ bar.dataset.wired='1';
+    bar.querySelectorAll('[data-qs]').forEach(b=>b.onclick=()=>{
+      bar.querySelectorAll('.shsub-b').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+      QS_PANEL=b.dataset.qs; qsRoute();
+    });
+  }
+  qsRoute();
+}
+function qsRoute(){
+  if(QS_PANEL==='check') return qsCheck();
+  if(QS_PANEL==='prep')  return qsPrep();
+  if(QS_PANEL==='entry') return qsEntry();
+  if(QS_PANEL==='month') return qsMonth();
+  if(QS_PANEL==='dash')  return qsDash();
+  return loadAuditDash();
+}
+function qsBranch(){ const v=$('au_branch')?$('au_branch').value:''; return v || ((DATA.branches&&DATA.branches[0])?DATA.branches[0].branch_id:''); }
+function qsCycleNow(){ try{ return (window.HR.bangkokDate?window.HR.bangkokDate():new Date().toISOString().slice(0,10)).slice(0,7); }catch(e){ return new Date().toISOString().slice(0,7); } }
+
+// ===== 1) เช็คลิสต์ส่งงาน =====
+// ★ 9 ก.ย. 2569 — ผู้ใช้บอกว่าหน้าเดิม "ดูไม่รู้ว่าต้องทำอะไร"
+//   หน้านี้จึงเป็นรายการงานจริงที่กดส่งได้ทีละข้อ พร้อมรูปหรือรายงานพิมพ์ และชื่อคนทำ
+async function qsCheck(){
+  const box=$('au_body'); box.innerHTML='<div class="empty">กำลังโหลดเช็คลิสต์…</div>';
+  const br=qsBranch(); if(!br){ box.innerHTML='<div class="empty">เลือกสาขาก่อน</div>'; return; }
+  const r=await post({ action:'hr_qssi_items', password:pwd, branch_id:br, cycle:qsCycleNow() });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  QS_DATA=r;
+  const pct=r.total?Math.round(r.done/r.total*100):0;
+  const bd=$('qs_badge'); if(bd){ bd.style.display=r.done<r.total?'':'none'; bd.textContent=(r.total-r.done); }
+  let h='<div class="card" style="padding:12px;margin-bottom:10px">'
+    +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="flex:1;font-size:15px">รอบเดือน '+esc(r.cycle)+'</b>'
+      +'<b style="font-size:18px;color:'+(pct>=100?'#16a34a':pct>=60?'#c2410c':'#dc2626')+'">'+r.done+'/'+r.total+'</b></div>'
+    +'<div style="height:8px;background:var(--bg);border-radius:20px;overflow:hidden;margin-top:8px"><div style="width:'+pct+'%;height:100%;background:'+(pct>=100?'#16a34a':'#f59e0b')+'"></div></div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-top:7px">ติ๊กทีละข้อ · ข้อที่ต้องมีรูปให้ถ่ายแนบ · ข้อที่ถ่ายรูปไม่ได้ให้พิมพ์รายงานว่าทำอะไรไป</div>'
+  +'</div>';
+  h+=r.groups.map(g=>{
+    const gp=g.total?Math.round(g.done/g.total*100):0;
+    return '<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">'
+    +'<div class="qsg" data-qsg="'+esc(g.cat)+'" style="display:flex;gap:8px;align-items:center;padding:11px 13px;cursor:pointer;background:var(--bg)">'
+      +'<b style="flex:1;font-size:14px">'+esc(g.name)+'</b>'
+      +'<span style="font-size:12.5px;color:'+(gp>=100?'#16a34a':'var(--muted)')+'">'+g.done+'/'+g.total+'</span>'
+      +'<span style="font-size:16px;color:var(--muted)" data-qsarrow="'+esc(g.cat)+'">▾</span></div>'
+    +'<div id="qsg_'+esc(g.cat)+'" style="display:none;padding:0 13px 11px">'
+      +(g.lost.length?('<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:8px 11px;margin:9px 0;font-size:12px">'
+        +'<b style="color:#b91c1c">เคยโดนหักในหมวดนี้</b><br>'
+        +g.lost.map(x=>'· ข้อ '+esc(String(x['ข้อ']||'—'))+' '+esc(String(x['เรื่อง']||'').slice(0,60))+' <b style="color:#dc2626">−'+esc(String(x['เสีย']))+'</b> <span style="color:var(--muted)">('+esc(String(x['รอบ']))+')</span>').join('<br>')
+      +'</div>'):'')
+      +g.items.map(it=>qsItemHtml(it)).join('')
+    +'</div></div>';
+  }).join('');
+  box.innerHTML=h;
+  box.querySelectorAll('.qsg').forEach(b=>b.onclick=()=>{
+    const c=b.dataset.qsg, el=$('qsg_'+c), ar=box.querySelector('[data-qsarrow="'+c+'"]');
+    const open=el.style.display!=='none'; el.style.display=open?'none':'block'; if(ar) ar.textContent=open?'▾':'▴';
+  });
+  qsWireItems(box);
+}
+function qsItemHtml(it){
+  const done=!!it.log;
+  const ph=(it.log&&Array.isArray(it.log.photos))?it.log.photos:[];
+  return '<div class="card" style="padding:11px;margin:9px 0;background:'+(done?'#f0fdf4':'var(--card)')+';border:1px solid '+(done?'#bbf7d0':'var(--line)')+'">'
+    +'<div style="display:flex;gap:8px;align-items:flex-start">'
+      +'<span style="font-size:17px">'+(done?'✅':'⬜')+'</span>'
+      +'<div style="flex:1;min-width:0">'
+        +'<b style="font-size:13.5px">'+esc(it.title)+'</b>'
+        +' <span style="font-size:10.5px;background:var(--glass);border:1px solid var(--line);border-radius:99px;padding:1px 7px;color:var(--muted)">'+esc(it.freq)+'</span>'
+        +(it.need_photo?' <span style="font-size:10.5px;color:#b45309">ต้องมีรูป '+it.min_photos+'</span>':' <span style="font-size:10.5px;color:var(--muted)">พิมพ์รายงานแทนรูปได้</span>')
+        +(it.guide?('<div style="font-size:12.5px;color:var(--ink);margin-top:5px">🔎 '+esc(it.guide)+'</div>'):'')
+        +(it.warn?('<div style="font-size:12px;margin-top:5px;background:#fff7ed;border-left:3px solid #f59e0b;padding:5px 9px;border-radius:0 7px 7px 0">⚠ '+esc(it.warn)+'</div>'):'')
+        +(done?('<div style="font-size:12px;color:#166534;margin-top:6px">ส่งแล้วโดย <b>'+esc(it.log.emp_name||'—')+'</b> · '+esc(String(it.log.done_date||''))
+            +(it.log.note?('<br>รายงาน: '+esc(it.log.note)):'')+'</div>'
+            +(ph.length?('<div class="imgrow" style="margin-top:6px">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:zoom-in">').join('')+'</div>'):'')
+            +'<button class="btn btn-sec btn-sm" data-qsundo="'+it.log.id+'" style="margin-top:7px">ยกเลิกการส่ง</button>')
+          :('<div data-qsform="'+it.id+'" style="margin-top:8px;display:none">'
+            +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">'
+              +'<label class="btn btn-sec btn-sm" style="cursor:pointer">📷 แนบรูป<input type="file" accept="image/*" multiple data-qsfile="'+it.id+'" style="display:none"></label>'
+              +'<span data-qsthumbs="'+it.id+'" style="display:flex;gap:5px;flex-wrap:wrap"></span></div>'
+            +'<textarea data-qsnote="'+it.id+'" rows="2" placeholder="'+(it.need_photo?'หมายเหตุเพิ่มเติม (ถ้าถ่ายรูปไม่ได้ ให้พิมพ์รายงานสิ่งที่ทำตรงนี้)':'พิมพ์รายงานสั้น ๆ ว่าทำอะไรไปบ้าง')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;resize:vertical"></textarea>'
+            +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px">'
+              +'<select data-qsemp="'+it.id+'" style="flex:1;min-width:130px;padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"></select>'
+              +'<button class="btn btn-pri btn-sm" data-qssend="'+it.id+'">ส่งงาน</button></div></div>'
+          +'<button class="btn btn-pri btn-sm" data-qsopen="'+it.id+'" style="margin-top:7px">ทำข้อนี้</button>'))
+      +'</div></div></div>';
+}
+const QS_PH={};
+function qsWireItems(box){
+  const emps=(QS_DATA&&QS_DATA.employees)||[];
+  const opts='<option value="">— ใครเป็นคนทำ —</option>'+emps.map(e=>'<option value="'+esc(e.emp_id)+'">'+esc(e.name)+'</option>').join('');
+  box.querySelectorAll('[data-qsemp]').forEach(sel=>{ sel.innerHTML=opts; });
+  box.querySelectorAll('[data-qsopen]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.qsopen; const f=box.querySelector('[data-qsform="'+id+'"]');
+    f.style.display='block'; b.style.display='none';
+  });
+  box.querySelectorAll('[data-qsfile]').forEach(inp=>inp.onchange=async(e)=>{
+    const id=inp.dataset.qsfile; QS_PH[id]=QS_PH[id]||[];
+    for(const f of [...(e.target.files||[])].slice(0,4)){
+      try{ QS_PH[id].push(await _shrinkImg(f)); }catch(_e){}
+    }
+    e.target.value='';
+    const t=box.querySelector('[data-qsthumbs="'+id+'"]');
+    if(t) t.innerHTML=QS_PH[id].map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="width:46px;height:46px;object-fit:cover;border-radius:7px"><button data-qsrm="'+id+'|'+i+'" style="position:absolute;top:-5px;right:-5px;border:0;background:#dc2626;color:#fff;border-radius:50%;width:17px;height:17px;font-size:11px;cursor:pointer;line-height:1">×</button></span>').join('');
+    box.querySelectorAll('[data-qsrm]').forEach(x=>x.onclick=()=>{ const [i2,k]=x.dataset.qsrm.split('|'); QS_PH[i2].splice(Number(k),1); inp.dispatchEvent(new Event('change')); });
+  });
+  box.querySelectorAll('[data-qssend]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.qssend;
+    const note=(box.querySelector('[data-qsnote="'+id+'"]')||{}).value||'';
+    const sel=box.querySelector('[data-qsemp="'+id+'"]');
+    const emp_id=sel?sel.value:''; const emp_name=sel&&sel.selectedIndex>0?sel.options[sel.selectedIndex].text:'';
+    if(!emp_id){ toast('err','เลือกก่อนว่าใครเป็นคนทำ'); return; }
+    b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
+    const r=await post({ action:'hr_qssi_submit', password:pwd, data:{ branch_id:qsBranch(), item_id:Number(id), cycle:qsCycleNow(), emp_id, emp_name, note, photos:QS_PH[id]||[] } });
+    b.disabled=false; b.textContent=old;
+    if(r&&r.ok){ QS_PH[id]=[]; toast('ok','ส่งงานแล้ว'); qsCheck(); } else toast('err',(r&&r.error)||'ส่งไม่สำเร็จ');
+  });
+  box.querySelectorAll('[data-qsundo]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ยกเลิกการส่งงานข้อนี้?')) return;
+    const r=await post({ action:'hr_qssi_undo', password:pwd, id:Number(b.dataset.qsundo) });
+    if(r&&r.ok){ toast('ok','ยกเลิกแล้ว'); qsCheck(); } else toast('err','ไม่สำเร็จ');
+  });
+}
+function _shrinkImg(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=ev=>{ const im=new Image(); im.onload=()=>{ const mx=1100, sc=Math.min(1,mx/Math.max(im.width,im.height)); const c=document.createElement('canvas'); c.width=im.width*sc; c.height=im.height*sc; c.getContext('2d').drawImage(im,0,0,c.width,c.height); res(c.toDataURL('image/jpeg',0.85)); }; im.onerror=rej; im.src=ev.target.result; }; r.onerror=rej; r.readAsDataURL(file); }); }
+
+// ===== 2) บันทึกผลตรวจ (ผจก. คีย์เอง) =====
+let QS_FIND=[], QS_STK=[];
+function qsEntry(){
+  const box=$('au_body');
+  const brs=(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'">'+esc(b.name)+'</option>').join('');
+  const F=(id,lab,val,w)=>'<div style="width:'+(w||110)+'px"><label style="font-size:12px;color:var(--muted)">'+lab+'</label>'
+    +'<input id="'+id+'" type="number" step="0.01" value="'+(val==null?'':val)+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>';
+  box.innerHTML='<div class="card" style="padding:14px">'
+    +'<h3 style="font-size:15px;font-weight:600;margin-bottom:4px">บันทึกผลตรวจ QSSI</h3>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:11px">คีย์จากใบตรวจที่ผู้ตรวจให้ไว้ · ยิ่งคีย์ข้อบกพร่องละเอียด ระบบยิ่งบอกได้ว่าข้อไหนโดนซ้ำ</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      +'<div style="flex:1;min-width:160px"><label style="font-size:12px;color:var(--muted)">สาขา</label><select id="qe_branch" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px">'+brs+'</select></div>'
+      +'<div style="width:150px"><label style="font-size:12px;color:var(--muted)">วันที่ตรวจ</label><input id="qe_date" type="date" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+      +'<div style="width:80px"><label style="font-size:12px;color:var(--muted)">ครั้งที่</label><input id="qe_round" type="number" value="1" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+      +'<div style="flex:1;min-width:170px"><label style="font-size:12px;color:var(--muted)">ผู้ตรวจ</label><input id="qe_inspector" type="text" placeholder="รหัส - ชื่อ" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+    +'</div>'
+    +'<div style="font-size:12.5px;font-weight:700;color:var(--green-d);margin:10px 0 5px">คะแนนรายหมวด (%)</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      +F('qe_s','S บริการ')+F('qe_a','A สินค้า')+F('qe_v','V สื่อ/ป้าย')+F('qe_e','E สะดวก/ปลอดภัย')
+      +F('qe_q','Q คุณภาพ')+F('qe_c','C สะอาด')+F('qe_qms','QMS เอกสาร')
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      +F('qe_result','Result %')+F('qe_process','Process %')+F('qe_score','คะแนนรวม',null,120)+F('qe_max','คะแนนเต็ม',1000,110)
+      +F('qe_stockout','สินค้าขาด (SKU)',null,130)+F('qe_adjust','คะแนน Adjust %',null,130)
+    +'</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin:14px 0 6px"><b style="flex:1;font-size:13px;color:var(--green-d)">ข้อบกพร่องที่โดนหัก</b>'
+      +'<button class="btn btn-sec btn-sm" id="qe_addf">+ เพิ่มข้อ</button></div>'
+    +'<div id="qe_finds"></div>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin:14px 0 6px"><b style="flex:1;font-size:13px;color:var(--green-d)">สินค้าขาดในร้าน</b>'
+      +'<button class="btn btn-sec btn-sm" id="qe_adds">+ เพิ่มสินค้า</button></div>'
+    +'<div id="qe_stks"></div>'
+    +'<button class="btn btn-pri" id="qe_save" style="width:100%;margin-top:14px">บันทึกผลตรวจ</button>'
+  +'</div>';
+  try{ $('qe_date').value=(window.HR.bangkokDate?window.HR.bangkokDate():new Date().toISOString().slice(0,10)); }catch(e){}
+  const b=qsBranch(); if(b) $('qe_branch').value=b;
+  QS_FIND=[{}]; QS_STK=[];
+  qsRenderFinds(); qsRenderStks();
+  $('qe_addf').onclick=()=>{ qsCollectFinds(); QS_FIND.push({}); qsRenderFinds(); };
+  $('qe_adds').onclick=()=>{ qsCollectStks(); QS_STK.push({}); qsRenderStks(); };
+  $('qe_save').onclick=qsSaveAudit;
+}
+function qsRenderFinds(){
+  const w=$('qe_finds'); if(!w) return;
+  const cats=['S','A','V','E','Q','C','QMS','Process','PR','PI','PKU'];
+  w.innerHTML=QS_FIND.map((f,i)=>'<div class="card" style="padding:10px;margin-bottom:7px;background:var(--bg)">'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">'
+      +'<select data-fc="'+i+'" style="width:96px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'+cats.map(c=>'<option'+(f.cat===c?' selected':'')+'>'+c+'</option>').join('')+'</select>'
+      +'<input data-fn="'+i+'" value="'+esc(f.item_no||'')+'" placeholder="ข้อที่" style="width:74px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+      +'<input data-fs="'+i+'" type="number" step="0.01" value="'+(f.score==null?'':f.score)+'" placeholder="ได้" style="width:74px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+      +'<input data-fm="'+i+'" type="number" step="0.01" value="'+(f.max_score==null?'':f.max_score)+'" placeholder="เต็ม" style="width:74px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+      +'<span style="flex:1"></span>'
+      +(QS_FIND.length>1?'<button class="btn btn-danger btn-sm" data-fd="'+i+'">ลบ</button>':'')+'</div>'
+    +'<input data-fq="'+i+'" value="'+esc(f.question||'')+'" placeholder="คำถาม/หัวข้อตรวจตามใบ" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;margin-bottom:5px">'
+    +'<input data-ff="'+i+'" value="'+esc(f.finding||'')+'" placeholder="สิ่งที่ผู้ตรวจพบ" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;margin-bottom:5px">'
+    +'<input data-fr="'+i+'" value="'+esc(f.reason||'')+'" placeholder="เหตุผล / หลักฐาน (สินค้า จุดที่พบ)" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+  +'</div>').join('');
+  w.querySelectorAll('[data-fd]').forEach(b=>b.onclick=()=>{ qsCollectFinds(); QS_FIND.splice(Number(b.dataset.fd),1); qsRenderFinds(); });
+}
+function qsCollectFinds(){
+  const w=$('qe_finds'); if(!w) return;
+  const g=(k,i)=>{ const el=w.querySelector('['+k+'="'+i+'"]'); return el?el.value:''; };
+  QS_FIND=QS_FIND.map((_,i)=>({ cat:g('data-fc',i), item_no:g('data-fn',i), score:g('data-fs',i), max_score:g('data-fm',i), question:g('data-fq',i), finding:g('data-ff',i), reason:g('data-fr',i) }));
+}
+function qsRenderStks(){
+  const w=$('qe_stks'); if(!w) return;
+  if(!QS_STK.length){ w.innerHTML='<div style="font-size:12.5px;color:var(--muted)">ยังไม่ได้ใส่ — กด "+ เพิ่มสินค้า" ถ้าใบตรวจมีรายการสินค้าขาด</div>'; return; }
+  w.innerHTML=QS_STK.map((x,i)=>'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+    +'<input data-sk="'+i+'" value="'+esc(x.sku||'')+'" placeholder="รหัส" style="width:100px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+    +'<input data-sp="'+i+'" value="'+esc(x.product||'')+'" placeholder="ชื่อสินค้า" style="flex:1;min-width:150px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+    +'<input data-st="'+i+'" type="number" value="'+(x.top_rank==null?'':x.top_rank)+'" placeholder="Top Rank" style="width:96px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+    +'<input data-sc="'+i+'" value="'+esc(x.cause||'')+'" placeholder="สาเหตุ (ร้านสั่งเอง ฯลฯ)" style="width:170px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+    +'<button class="btn btn-danger btn-sm" data-sd="'+i+'">ลบ</button></div>').join('');
+  w.querySelectorAll('[data-sd]').forEach(b=>b.onclick=()=>{ qsCollectStks(); QS_STK.splice(Number(b.dataset.sd),1); qsRenderStks(); });
+}
+function qsCollectStks(){
+  const w=$('qe_stks'); if(!w||!QS_STK.length) return;
+  const g=(k,i)=>{ const el=w.querySelector('['+k+'="'+i+'"]'); return el?el.value:''; };
+  QS_STK=QS_STK.map((_,i)=>({ sku:g('data-sk',i), product:g('data-sp',i), top_rank:g('data-st',i), cause:g('data-sc',i) }));
+}
+async function qsSaveAudit(){
+  qsCollectFinds(); qsCollectStks();
+  const V=id=>{ const e=$(id); return e?e.value:''; };
+  if(!V('qe_date')){ toast('err','ใส่วันที่ตรวจ'); return; }
+  const b=$('qe_save'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_qssi_audit_save', password:pwd, data:{
+    branch_id:V('qe_branch'), inspect_date:V('qe_date'), round:V('qe_round'), inspector:V('qe_inspector'),
+    s:V('qe_s'), a:V('qe_a'), v:V('qe_v'), e:V('qe_e'), q:V('qe_q'), c:V('qe_c'), qms:V('qe_qms'),
+    result:V('qe_result'), process:V('qe_process'), score:V('qe_score'), max_score:V('qe_max'),
+    stockout:V('qe_stockout'), qssi_adjust:V('qe_adjust'),
+    findings:QS_FIND.filter(f=>f.cat&&(f.question||f.finding||f.max_score)), stockouts:QS_STK.filter(x=>x.product||x.sku) } });
+  b.disabled=false; b.textContent=old;
+  if(r&&r.ok) toast('ok','บันทึกแล้ว · ข้อบกพร่อง '+r.findings+' ข้อ · สินค้าขาด '+r.stockouts+' รายการ');
+  else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
+}
+
+// ===== 3) สรุปรายเดือน =====
+async function qsMonth(){
+  const box=$('au_body'); box.innerHTML='<div class="empty">กำลังสรุป…</div>';
+  const r=await post({ action:'hr_qssi_month', password:pwd, branch_id:qsBranch() });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const ms=r.months||[];
+  if(!ms.length){ box.innerHTML='<div class="empty" style="padding:16px">ยังไม่มีข้อมูล — ไปที่ "บันทึกผลตรวจ" เพื่อคีย์ใบตรวจเข้ามาก่อน</div>'; return; }
+  box.innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">กดที่เดือนเพื่อดูรายละเอียด</div>'
+    +ms.map(m=>{
+      const col=m.result==null?'var(--muted)':(m.result>=85?'#16a34a':m.result>=70?'#c2410c':'#dc2626');
+      return '<div class="card" style="padding:0;margin-bottom:9px;overflow:hidden">'
+      +'<div class="qsm" data-qsm="'+esc(m.cycle)+'" style="display:flex;gap:8px;align-items:center;padding:12px 13px;cursor:pointer">'
+        +'<b style="flex:1;font-size:14.5px">'+esc(m.cycle)+'</b>'
+        +(m.result!=null?('<span style="font-size:12px;color:var(--muted)">Result</span> <b style="font-size:17px;color:'+col+'">'+esc(String(m.result))+'</b>'):'<span style="font-size:12.5px;color:var(--muted)">ยังไม่มีผลตรวจ</span>')
+        +(m.lost?(' <span style="font-size:12px;color:#dc2626">เสีย '+m.lost+'</span>'):'')
+        +' <span style="font-size:12px;color:var(--muted)">· ส่งงาน '+m.checks+'</span>'
+        +' <span style="font-size:15px;color:var(--muted)">▾</span></div>'
+      +'<div id="qsm_'+esc(m.cycle)+'" style="display:none;padding:0 13px 12px">'
+        +(m.cats?('<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">'+Object.entries(m.cats).map(([k,v])=>{
+            const n=Number(v); const c=isNaN(n)?'var(--muted)':(n>=90?'#16a34a':n>=70?'#c2410c':'#dc2626');
+            return '<span style="font-size:12px;border:1px solid var(--line);border-radius:99px;padding:3px 10px">'+k+' <b style="color:'+c+'">'+(v==null?'—':v)+'</b></span>';}).join('')+'</div>'):'')
+        +(m.inspect_date?('<div style="font-size:12px;color:var(--muted);margin-bottom:8px">ตรวจ '+esc(String(m.inspect_date))+(m.inspector?(' · '+esc(m.inspector)):'')+'</div>'):'')
+        +(m.findings.length?('<div style="font-size:12.5px;font-weight:700;margin:8px 0 5px">ข้อบกพร่อง '+m.findings.length+' ข้อ</div>'
+          +'<div class="tablewrap"><table style="font-size:12px"><thead><tr><th>หมวด</th><th>ข้อ</th><th>เรื่อง</th><th>ที่พบ</th><th style="text-align:center">เสีย</th></tr></thead><tbody>'
+          +m.findings.map(f=>'<tr><td>'+esc(f.cat)+'</td><td>'+esc(String(f.item_no||'—'))+'</td><td>'+esc(String(f.question||'').slice(0,70))+'</td><td>'+esc(String(f.finding||'').slice(0,70))+'</td><td style="text-align:center;color:#dc2626">−'+esc(String(f.lost))+'</td></tr>').join('')
+          +'</tbody></table></div>'):'<div style="font-size:12.5px;color:var(--muted)">ยังไม่ได้คีย์ข้อบกพร่องของเดือนนี้</div>')
+        +(m.stockouts.length?('<div style="font-size:12.5px;font-weight:700;margin:10px 0 5px">สินค้าขาด '+m.stockouts.length+' รายการ</div>'
+          +'<div style="font-size:12px;color:var(--muted)">'+m.stockouts.map(x=>esc(x.product||x.sku)+(x.cause?(' ('+esc(x.cause)+')'):'')).join(' · ')+'</div>'):'')
+        +(m.checkers.length?('<div style="font-size:12.5px;margin-top:10px"><b>คนที่ส่งงานเตรียมตรวจ:</b> '+esc(m.checkers.join(' · '))+'</div>'):'')
+        +(m.notes.length?('<div style="margin-top:10px;background:#F3F0FF;border-radius:10px;padding:10px 12px"><b style="font-size:12.5px;color:#6d28d9">🧠 โน้ตของนิดา</b>'
+          +m.notes.map(n=>'<div style="font-size:12.5px;color:#4c1d95;margin-top:5px;white-space:pre-wrap">'+esc(n.body)+'</div>').join('')+'</div>'):'')
+      +'</div></div>';
+    }).join('');
+  box.querySelectorAll('.qsm').forEach(b=>b.onclick=()=>{ const el=$('qsm_'+b.dataset.qsm); el.style.display=el.style.display==='none'?'block':'none'; });
+}
+
+// ===== 4) แดชบอร์ด =====
+async function qsDash(){
+  const box=$('au_body'); box.innerHTML='<div class="empty">กำลังวิเคราะห์…</div>';
+  const r=await post({ action:'hr_qssi_dash', password:pwd });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const cy=r.cycles||[], grid=r.grid||[];
+  const col=v=>v==null?'var(--muted)':(v>=85?'#16a34a':v>=70?'#c2410c':'#dc2626');
+  let h='<div class="card" style="padding:12px;margin-bottom:10px"><b style="font-size:14px">Result % เทียบเดือน · เทียบสาขา</b>'
+    +'<div class="tablewrap" style="margin-top:9px"><table style="font-size:12.5px"><thead><tr><th>สาขา</th>'
+    +cy.map(c=>'<th style="text-align:center">'+esc(c)+'</th>').join('')+'<th style="text-align:center">แนวโน้ม</th></tr></thead><tbody>'
+    +grid.map(g=>{
+      const vals=g.months.map(m=>m.result);
+      const last2=vals.filter(v=>v!=null).slice(-2);
+      const tr=last2.length===2?(last2[1]-last2[0]):null;
+      return '<tr><td><b>'+esc(g.name)+'</b></td>'
+        +g.months.map(m=>'<td style="text-align:center'+(m.result!=null?(';color:'+col(m.result)+';font-weight:700'):'')+'">'+(m.result!=null?m.result:'—')+'</td>').join('')
+        +'<td style="text-align:center;font-weight:700;color:'+(tr==null?'var(--muted)':(tr>=0?'#16a34a':'#dc2626'))+'">'+(tr==null?'—':(tr>=0?'▲ +':'▼ ')+tr.toFixed(2))+'</td></tr>';
+    }).join('')+'</tbody></table></div></div>';
+  const ca=r.cat_avg||{};
+  h+='<div class="card" style="padding:12px;margin-bottom:10px"><b style="font-size:14px">คะแนนเฉลี่ยรายหมวด (ทุกสาขาทุกรอบ)</b>'
+    +'<div style="margin-top:9px">'+Object.entries(ca).map(([k,v])=>{
+      const n=Number(v)||0;
+      return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span style="width:44px;font-size:12.5px;font-weight:700">'+esc(k)+'</span>'
+        +'<div style="flex:1;height:9px;background:var(--bg);border-radius:20px;overflow:hidden"><div style="width:'+Math.max(0,Math.min(100,n))+'%;height:100%;background:'+col(n)+'"></div></div>'
+        +'<b style="width:52px;text-align:right;font-size:12.5px;color:'+col(n)+'">'+(v==null?'—':v)+'</b></div>';
+    }).join('')+'</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:5px">หมวดที่แถบสั้นที่สุด = จุดอ่อนร่วมของทุกสาขา ควรแก้เป็นระบบ ไม่ใช่แก้ทีละสาขา</div></div>';
+  const rp=r.repeats||[];
+  h+='<div class="card" style="padding:12px"><b style="font-size:14px">ข้อที่โดนหักซ้ำมากที่สุด</b>';
+  if(!rp.length) h+='<div style="font-size:12.5px;color:var(--muted);margin-top:8px">ยังไม่มีข้อมูลข้อบกพร่อง — คีย์ใบตรวจเข้ามาหลาย ๆ รอบแล้วหน้านี้จะบอกได้ว่าข้อไหนเป็นรูรั่วประจำ</div>';
+  else h+='<div class="tablewrap" style="margin-top:9px"><table style="font-size:12.5px"><thead><tr><th>หมวด</th><th>ข้อ</th><th>เรื่อง</th><th style="text-align:center">โดนซ้ำ</th><th style="text-align:center">เสียรวม</th><th>สาขา</th></tr></thead><tbody>'
+    +rp.map(x=>'<tr><td>'+esc(x.cat)+'</td><td>'+esc(String(x.item_no||'—'))+'</td><td>'+esc(String(x.question||'').slice(0,60))+'</td>'
+      +'<td style="text-align:center"><b>'+x.times+'</b></td><td style="text-align:center;color:#dc2626">−'+x.lost+'</td><td style="font-size:11.5px;color:var(--muted)">'+esc(x.branches.join(', '))+'</td></tr>').join('')
+    +'</tbody></table></div>';
+  h+='</div>';
+  h+='<div class="card" style="padding:12px;margin-top:10px;background:#F3F0FF;border:0">'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="flex:1;font-size:14px;color:#6d28d9">🧠 โน้ตของนิดาสำหรับเดือนถัดไป</b>'
+    +'<button class="btn btn-pri btn-sm" id="qs_note">ให้นิดาเขียนโน้ต</button></div>'
+    +'<div id="qs_noteout" style="font-size:12.5px;color:#4c1d95;margin-top:8px;white-space:pre-wrap"></div></div>';
+  box.innerHTML=h;
+  $('qs_note').onclick=qsMakeNote;
+}
+async function qsMakeNote(){
+  const b=$('qs_note'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
+  const out=$('qs_noteout'); out.textContent='นิดากำลังอ่านผลตรวจย้อนหลังและงานที่ส่งไป…';
+  const j=await cmPost({ mode:'qssi_note', branch_id:qsBranch() });
+  b.disabled=false; b.textContent=old;
+  if(!j||!j.ok){ out.textContent=(j&&j.error)||'เขียนโน้ตไม่สำเร็จ'; return; }
+  out.textContent=j.body||'';
+  if(j.saved) toast('ok','บันทึกโน้ตสำหรับเดือน '+j.cycle+' แล้ว');
+}
+
 // ===== เตรียมร้านรับตรวจ QSSI =====
 // ★ 9 ก.ย. 2569 — เอาข้อบกพร่องรอบก่อน + เกณฑ์รายข้อ + งานค้างจริง มาต่อกัน
 //   แล้วเรียงตาม "คะแนนที่จะเสีย" ไม่ใช่ไล่ทุกข้อ — ทำสามอันดับแรกก่อนคุ้มที่สุด
@@ -9397,8 +9714,7 @@ async function qsPrep(){
   const last=d['ผลรอบล่าสุด']||{};
   const tile=(t,v,c)=>'<div style="flex:1;min-width:104px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px">'
     +'<div style="font-size:12px;color:var(--muted)">'+esc(t)+'</div><div style="font-size:21px;font-weight:600'+(c?(';color:'+c):'')+'">'+esc(String(v))+'</div></div>';
-  let h='<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">เตรียมรับตรวจ · '+esc(d['สาขา']||'')+'</h3>'
-    +'<button class="btn btn-sec btn-sm" id="qs_back">← คะแนนตรวจ</button></div>'
+  let h='<div class="toolbar" style="margin-bottom:10px"><h3 style="flex:1;font-size:15px;font-weight:600">สิ่งที่ต้องระวังเป็นพิเศษ · '+esc(d['สาขา']||'')+'</h3></div>'
     +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">วันตรวจที่ใช้วางแผน: '+esc(d['วันตรวจที่ใช้วางแผน']||'—')+'</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
       +tile('เหลืออีก', d['เหลืออีก']||'—')
@@ -9470,7 +9786,7 @@ async function qsPrep(){
   h+='<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.7">⚠ แผนนี้ให้ "ทำงานประจำให้ครบ" ไม่ใช่จัดฉากเฉพาะวันตรวจ · '
     +'ข้อบกพร่องมาจากใบตรวจที่คีย์เข้าระบบ ยิ่งคีย์หลายรอบ ยิ่งชี้ได้แม่นว่าข้อไหนโดนซ้ำ</div>';
   box.innerHTML=h;
-  $('qs_back').onclick=loadAuditDash;
+  const bk=$('qs_back'); if(bk) bk.onclick=()=>{ QS_PANEL='score'; const bar=$('qssub'); if(bar){ bar.querySelectorAll('.shsub-b').forEach(x=>x.classList.remove('on')); const t=bar.querySelector('[data-qs="score"]'); if(t) t.classList.add('on'); } loadAuditDash(); };
   const be=$('qs_exam');
   if(be) be.onclick=()=>{ const ids=duty.map(x=>x.emp_id).filter(Boolean);
     try{ localStorage.setItem('qssi_exam_emps', JSON.stringify(ids)); }catch(_e){}
@@ -10555,7 +10871,7 @@ showTab = function(name){
   else if(name==='exams'){ loadExams(); }
   else if(name==='attnedit'){ loadAttnEdit(); }
   else if(name==='salesDash'){ loadSalesDash(); }
-  else if(name==='auditDash'){ loadAuditDash(); if($('au_prep')&&!$('au_prep').dataset.wired){ $('au_prep').dataset.wired='1'; $('au_prep').onclick=qsPrep; } }
+  else if(name==='auditDash'){ qsInit(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
     if($('lvsub') && !$('lvsub').dataset.wired){
       $('lvsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>leavesTab(b.dataset.lvpan));

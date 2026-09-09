@@ -180,6 +180,13 @@
         case 'hr_exam_delete':      return await hrExamDelete(p.id);
         case 'hr_exam_results':     return await hrExamResults(p.id);
         case 'hr_exam_wrong_spots': return await hrExamWrongSpots(p.id);
+        case 'hr_qssi_items':       return await hrQssiItems(p);
+        case 'hr_qssi_submit':      return await hrQssiSubmit(p);
+        case 'hr_qssi_undo':        return await hrQssiUndo(p);
+        case 'hr_qssi_audit_save':  return await hrQssiAuditSave(p);
+        case 'hr_qssi_month':       return await hrQssiMonth(p);
+        case 'hr_qssi_dash':        return await hrQssiDash(p);
+        case 'hr_qssi_note_save':   return await hrQssiNoteSave(p);
         case 'hr_exam_bank_meta':   return await hrExamBankMeta();
         case 'hr_exam_bank_pick':   return await hrExamBankPick(p);
         case 'hr_exam_retest':      return await hrExamRetest(p);
@@ -816,6 +823,217 @@
       .sort((a, b) => b.wrong_pct - a.wrong_pct);
     return { ok: true, exam: ex, takers, spots };
   }
+  // ============================================================
+  // QSSI · เช็คลิสต์ส่งงาน + บันทึกผลตรวจ + สรุป/แดชบอร์ด
+  // ★ 9 ก.ย. 2569 — หน้า "เตรียมรับตรวจ" เดิมบอกแต่ว่า "ควรทำอะไร" แต่ไม่มีที่ให้กดส่งงาน
+  //   รอบนี้ทำเป็นเช็คลิสต์จริง: ติ๊ก + แนบรูป (หรือพิมพ์รายงานถ้าถ่ายรูปไม่ได้) + บันทึกว่าใครทำ
+  // ============================================================
+  const QSSI_CATS = ['S', 'A', 'V', 'E', 'Q', 'C', 'QMS', 'Process'];
+  const QSSI_CAT_NAME = { S: 'Service — บริการ', A: 'Assortment — สินค้า', V: 'Value — สื่อ/ป้าย/ราคา', E: 'Environment — สะดวก/ปลอดภัย', Q: 'Quality — คุณภาพสินค้า', C: 'Cleanliness — ความสะอาด', QMS: 'QMS — เอกสาร/การจัดการ', Process: 'Process — ความรู้พนักงาน' };
+  function qssiCycle(x) { const d = x ? String(x) : bkkToday(); return d.slice(0, 7); }
+
+  // รายการเช็คลิสต์ + สถานะของรอบนี้ + "เคยพลาดข้อไหน" จากใบตรวจจริง
+  async function hrQssiItems(p) {
+    p = p || {};
+    const branch = String(p.branch_id || '');
+    if (!branch) return { ok: false, error: 'ยังไม่ได้เลือกสาขา' };
+    const cycle = qssiCycle(p.cycle);
+    const [itR, lgR, fdR, emR] = await Promise.all([
+      sb().from('qssi_check_items').select('*').eq('active', true).order('sort'),
+      sb().from('qssi_check_logs').select('*').eq('branch_id', branch).eq('cycle', cycle).order('created_at', { ascending: false }),
+      sb().from('qssi_findings').select('cat,item_no,question,finding,score,max_score,inspect_date').eq('branch_id', branch).order('inspect_date', { ascending: false }).limit(120),
+      sb().from('employees').select('emp_id,name,nickname').eq('branch_id', branch).eq('active', true).order('emp_id'),
+    ]);
+    if (itR.error) return { ok: false, error: itR.error.message + ' (ยังไม่ได้รัน supabase/qssi_check.sql?)' };
+    const logs = lgR.data || [];
+    const byItem = {};
+    logs.forEach(l => { if (!byItem[l.item_id]) byItem[l.item_id] = l; });
+    // ข้อบกพร่องจริงจากใบตรวจ จัดกลุ่มตามหมวด เพื่อโชว์ว่า "หมวดนี้เคยโดนหักอะไร"
+    const lostByCat = {};
+    (fdR.data || []).forEach(f => {
+      const lost = (Number(f.max_score) || 0) - (Number(f.score) || 0);
+      if (lost <= 0) return;
+      (lostByCat[f.cat] = lostByCat[f.cat] || []).push({ ข้อ: f.item_no, เรื่อง: f.question, ที่พบ: f.finding, เสีย: +lost.toFixed(2), รอบ: f.inspect_date });
+    });
+    Object.keys(lostByCat).forEach(k => { lostByCat[k].sort((a, b) => b.เสีย - a.เสีย); lostByCat[k] = lostByCat[k].slice(0, 4); });
+
+    const items = (itR.data || []).map(it => ({ ...it, log: byItem[it.id] || null }));
+    const groups = QSSI_CATS.map(c => {
+      const list = items.filter(x => x.cat === c);
+      return { cat: c, name: QSSI_CAT_NAME[c] || c, total: list.length, done: list.filter(x => x.log).length, lost: lostByCat[c] || [], items: list };
+    }).filter(g => g.total);
+    return {
+      ok: true, cycle, branch_id: branch, groups,
+      total: items.length, done: items.filter(x => x.log).length,
+      employees: (emR.data || []).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })),
+    };
+  }
+
+  // ส่งงาน 1 ข้อ — รูปเป็น data URL จะอัปขึ้น Storage ให้เอง
+  async function hrQssiSubmit(p) {
+    p = p || {};
+    const d = p.data || {};
+    if (!d.branch_id || !d.item_id) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    const { data: it } = await sb().from('qssi_check_items').select('*').eq('id', Number(d.item_id)).maybeSingle();
+    if (!it) return { ok: false, error: 'ไม่พบรายการนี้' };
+    const photos = [];
+    for (const ph of (Array.isArray(d.photos) ? d.photos : [])) {
+      if (!ph) continue;
+      if (typeof ph === 'string' && /^https?:/i.test(ph)) { photos.push(ph); continue; }
+      try { photos.push(await window.HR.uploadPhoto('employee-docs', 'qssi/' + d.branch_id + '_' + d.item_id + '_' + Date.now() + '_' + photos.length + '.jpg', ph)); } catch (e) { /* รูปพังไม่ให้ล้มทั้งงาน */ }
+    }
+    const note = String(d.note || '').trim();
+    if (it.need_photo && !photos.length && !note) return { ok: false, error: 'ข้อนี้ต้องแนบรูป — ถ้าถ่ายรูปไม่ได้จริง ๆ ให้พิมพ์รายงานสิ่งที่ทำแทน' };
+    if (!it.need_photo && !note && !photos.length) return { ok: false, error: 'พิมพ์รายงานสั้น ๆ ว่าทำอะไรไปบ้าง' };
+    const row = {
+      branch_id: String(d.branch_id), cycle: qssiCycle(d.cycle), item_id: Number(d.item_id),
+      emp_id: d.emp_id ? String(d.emp_id) : null, emp_name: (d.emp_name || '').trim() || null,
+      photos: photos.length ? photos : null, note: note || null,
+      status: d.status === 'issue' ? 'issue' : 'done',
+    };
+    const { error } = await sb().from('qssi_check_logs').insert(row);
+    if (error) return { ok: false, error: error.message };
+    await logAct('ส่งงานเตรียมตรวจ QSSI', null, it.title + ' · ' + (row.emp_name || '-'));
+    return { ok: true, photos: photos.length };
+  }
+
+  async function hrQssiUndo(p) {
+    if (!p || !p.id) return { ok: false, error: 'ไม่ระบุ' };
+    const { error } = await sb().from('qssi_check_logs').delete().eq('id', Number(p.id));
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
+  // ผจก. คีย์ผลตรวจเอง — เก็บทั้งคะแนนรายหมวด ข้อบกพร่องรายข้อ และสินค้าขาด
+  async function hrQssiAuditSave(p) {
+    const d = (p && p.data) || {};
+    if (!d.branch_id || !d.inspect_date) return { ok: false, error: 'ต้องมีสาขาและวันที่ตรวจ' };
+    const N = (v) => (v === '' || v == null || isNaN(Number(v))) ? null : Number(v);
+    const key = 'qssi_' + d.branch_id + '_' + String(d.inspect_date).replace(/-/g, '');
+    const row = {
+      report_key: key, branch_id: String(d.branch_id), branch_code: String(d.branch_id),
+      round: N(d.round) || 1, inspector: (d.inspector || '').trim() || null, inspect_date: d.inspect_date,
+      score: N(d.score), max_score: N(d.max_score) || 1000,
+      s: N(d.s), a: N(d.a), v: N(d.v), e: N(d.e), q: N(d.q), c: N(d.c), qms: N(d.qms),
+      result: N(d.result), process: N(d.process), stockout: N(d.stockout), qssi_adjust: N(d.qssi_adjust),
+      source: 'ผจก.คีย์เอง', extra: d.extra || null,
+    };
+    const { error } = await sb().from('audit_reports').upsert(row, { onConflict: 'report_key' });
+    if (error) return { ok: false, error: error.message };
+
+    const finds = Array.isArray(d.findings) ? d.findings.filter(f => f && (f.cat || '').trim()) : [];
+    await sb().from('qssi_findings').delete().eq('branch_id', row.branch_id).eq('inspect_date', row.inspect_date);
+    if (finds.length) {
+      const fr = finds.map(f => ({
+        branch_id: row.branch_id, inspect_date: row.inspect_date, round: row.round,
+        cat: String(f.cat).trim(), item_no: (f.item_no || '').trim() || null,
+        question: (f.question || '').trim() || null, finding: (f.finding || '').trim() || null,
+        reason: (f.reason || '').trim() || null, evidence: (f.evidence || '').trim() || null,
+        score: N(f.score), max_score: N(f.max_score),
+        car_code: (f.car_code || '').trim() || null, car_before: (f.car_before || '').trim() || null, car_after: (f.car_after || '').trim() || null,
+      }));
+      const { error: fe } = await sb().from('qssi_findings').insert(fr);
+      if (fe) return { ok: false, error: 'บันทึกข้อบกพร่องไม่สำเร็จ: ' + fe.message };
+    }
+    const stk = Array.isArray(d.stockouts) ? d.stockouts.filter(x => x && (x.product || x.sku)) : [];
+    await sb().from('qssi_stockout').delete().eq('branch_id', row.branch_id).eq('inspect_date', row.inspect_date);
+    if (stk.length) {
+      await sb().from('qssi_stockout').insert(stk.map(x => ({
+        branch_id: row.branch_id, inspect_date: row.inspect_date,
+        sku: (x.sku || '').trim() || null, product: (x.product || '').trim() || null,
+        top_rank: N(x.top_rank), cause: (x.cause || '').trim() || null, bucket: (x.bucket || '').trim() || null,
+      })));
+    }
+    await logAct('บันทึกผลตรวจ QSSI', null, row.branch_id + ' · ' + row.inspect_date + ' · ข้อบกพร่อง ' + finds.length + ' ข้อ');
+    return { ok: true, findings: finds.length, stockouts: stk.length };
+  }
+
+  // สรุปรายเดือน — กดเข้าไปดูรายละเอียดได้
+  async function hrQssiMonth(p) {
+    p = p || {};
+    const branch = String(p.branch_id || '');
+    const [auR, fdR, stR, lgR, itR, noR] = await Promise.all([
+      branch ? sb().from('audit_reports').select('*').eq('branch_id', branch).order('inspect_date', { ascending: false }).limit(60)
+             : sb().from('audit_reports').select('*').order('inspect_date', { ascending: false }).limit(120),
+      branch ? sb().from('qssi_findings').select('*').eq('branch_id', branch).limit(600) : sb().from('qssi_findings').select('*').limit(900),
+      branch ? sb().from('qssi_stockout').select('*').eq('branch_id', branch).limit(400) : sb().from('qssi_stockout').select('*').limit(600),
+      branch ? sb().from('qssi_check_logs').select('cycle,item_id,emp_name,status').eq('branch_id', branch).limit(2000) : sb().from('qssi_check_logs').select('cycle,item_id,emp_name,status,branch_id').limit(3000),
+      sb().from('qssi_check_items').select('id,cat,title').eq('active', true),
+      branch ? sb().from('qssi_notes').select('*').eq('branch_id', branch).order('cycle', { ascending: false }).limit(24) : sb().from('qssi_notes').select('*').order('cycle', { ascending: false }).limit(40),
+    ]);
+    const itBy = {}; (itR.data || []).forEach(x => itBy[x.id] = x);
+    const months = {};
+    const M = (k) => (months[k] = months[k] || { cycle: k, audits: [], findings: [], stockouts: [], checks: 0, checkers: {}, notes: [] });
+    (auR.data || []).forEach(r => M(String(r.inspect_date).slice(0, 7)).audits.push(r));
+    (fdR.data || []).forEach(f => M(String(f.inspect_date).slice(0, 7)).findings.push(f));
+    (stR.data || []).forEach(x => M(String(x.inspect_date).slice(0, 7)).stockouts.push(x));
+    (lgR.data || []).forEach(l => { const m = M(l.cycle); m.checks++; if (l.emp_name) m.checkers[l.emp_name] = (m.checkers[l.emp_name] || 0) + 1; });
+    (noR.data || []).forEach(n => M(n.cycle).notes.push(n));
+    const rows = Object.values(months).sort((a, b) => b.cycle.localeCompare(a.cycle)).map(m => {
+      const au = m.audits[0] || null;
+      const lost = m.findings.reduce((t, f) => t + Math.max(0, (Number(f.max_score) || 0) - (Number(f.score) || 0)), 0);
+      const byCat = {};
+      m.findings.forEach(f => { const l = Math.max(0, (Number(f.max_score) || 0) - (Number(f.score) || 0)); byCat[f.cat] = (byCat[f.cat] || 0) + l; });
+      return {
+        cycle: m.cycle,
+        result: au ? au.result : null, process: au ? au.process : null, score: au ? au.score : null,
+        inspect_date: au ? au.inspect_date : null, inspector: au ? au.inspector : null,
+        cats: au ? { S: au.s, A: au.a, V: au.v, E: au.e, Q: au.q, C: au.c, QMS: au.qms } : null,
+        findings: m.findings.map(f => ({ ...f, lost: +Math.max(0, (Number(f.max_score) || 0) - (Number(f.score) || 0)).toFixed(2) })).sort((a, b) => b.lost - a.lost),
+        lost: +lost.toFixed(2), lost_by_cat: byCat,
+        stockouts: m.stockouts,
+        checks: m.checks,
+        checkers: Object.entries(m.checkers).sort((a, b) => b[1] - a[1]).map(([n, c]) => n + ' (' + c + ')'),
+        notes: m.notes,
+      };
+    });
+    return { ok: true, branch_id: branch || null, months: rows, item_names: itBy };
+  }
+
+  // แดชบอร์ด — เทียบเดือนและเทียบสาขา
+  async function hrQssiDash() {
+    const [auR, fdR, brR] = await Promise.all([
+      sb().from('audit_reports').select('*').order('inspect_date', { ascending: true }).limit(300),
+      sb().from('qssi_findings').select('branch_id,inspect_date,cat,item_no,question,score,max_score').limit(1200),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    const brN = {}; (brR.data || []).forEach(b => brN[b.branch_id] = b.name);
+    const cycles = [...new Set((auR.data || []).map(r => String(r.inspect_date).slice(0, 7)))].sort();
+    const branches = [...new Set((auR.data || []).map(r => r.branch_id))].sort();
+    const cell = {};
+    (auR.data || []).forEach(r => { cell[r.branch_id + '|' + String(r.inspect_date).slice(0, 7)] = r; });
+    const grid = branches.map(b => ({
+      branch_id: b, name: brN[b] || b,
+      months: cycles.map(c => { const r = cell[b + '|' + c]; return r ? { cycle: c, result: Number(r.result), process: Number(r.process), score: Number(r.score), cats: { S: r.s, A: r.a, V: r.v, E: r.e, Q: r.q, C: r.c, QMS: r.qms } } : { cycle: c, result: null }; }),
+    }));
+    // ข้อที่โดนซ้ำมากสุด (ทุกสาขา)
+    const rep = {};
+    (fdR.data || []).forEach(f => {
+      const lost = Math.max(0, (Number(f.max_score) || 0) - (Number(f.score) || 0));
+      if (lost <= 0) return;
+      const k = f.cat + '|' + (f.item_no || '');
+      const o2 = rep[k] = rep[k] || { cat: f.cat, item_no: f.item_no, question: f.question, times: 0, lost: 0, branches: {} };
+      o2.times++; o2.lost += lost; o2.branches[brN[f.branch_id] || f.branch_id] = true;
+    });
+    const repeats = Object.values(rep).map(x => ({ ...x, lost: +x.lost.toFixed(2), branches: Object.keys(x.branches) }))
+      .sort((a, b) => (b.times - a.times) || (b.lost - a.lost)).slice(0, 12);
+    // เฉลี่ยรายหมวดทุกสาขา
+    const catAvg = {};
+    ['s', 'a', 'v', 'e', 'q', 'c', 'qms'].forEach(k => {
+      const vals = (auR.data || []).map(r => Number(r[k])).filter(v => !isNaN(v));
+      catAvg[k.toUpperCase()] = vals.length ? +(vals.reduce((x, y) => x + y, 0) / vals.length).toFixed(1) : null;
+    });
+    return { ok: true, cycles, grid, repeats, cat_avg: catAvg };
+  }
+
+  async function hrQssiNoteSave(p) {
+    const d = (p && p.data) || {};
+    if (!d.branch_id || !d.cycle || !String(d.body || '').trim()) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    const { error } = await sb().from('qssi_notes').insert({ branch_id: String(d.branch_id), cycle: String(d.cycle), body: String(d.body).trim(), created_by: d.created_by || 'นิดา (AI)' });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
   // ============================================================
   // คลังข้อสอบคู่มือ (course_quiz) → ชุดแบบทดสอบ (exams)
   // ★ 9 ก.ย. 2569 — เดิมสร้างชุดสอบต้องพิมพ์คำถามเองทีละข้อ ทั้งที่มีคลังข้อสอบ
