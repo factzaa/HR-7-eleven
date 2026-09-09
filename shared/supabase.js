@@ -1990,7 +1990,10 @@
     const extra=String(d.note||'').trim();
     if(!add.length && !extra) throw new Error('ยังไม่ได้เลือกรูป หรือพิมพ์บอกว่าเป็นจุดไหน');
     const who=emp.nickname||emp.name||String(d.emp_id);
-    const line='➕ '+who+' เพิ่ม'+(add.length?(add.length+' รูป'):'')+(extra?((add.length?' · ':'')+extra):'');
+    // ตอบข้อความเปล่า ๆ = 💬 · แนบรูปด้วย = ➕ (อ่านย้อนหลังแล้วรู้ว่าอันไหนคือคำตอบ อันไหนคือรูปเพิ่ม)
+    const line = add.length
+      ? ('➕ '+who+' เพิ่ม '+add.length+' รูป'+(extra?(' · '+extra):''))
+      : ('💬 '+who+' ตอบ: '+extra);
     const note=String(log.note||'') ? (String(log.note)+'\n'+line) : line;
     // พนักงานเพิ่มรูปตอบกลับ = ถือว่าจัดการตามที่ ผจก. ขอแล้ว ปลดธง need_fix ให้ ผจก. มาดูใหม่
     const { error }=await sb.from('qssi_check_logs').update({ photos: cur.concat(add), note, need_fix:false }).eq('id', log.id);
