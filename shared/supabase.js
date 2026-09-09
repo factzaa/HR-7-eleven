@@ -1846,19 +1846,40 @@
 
   // ---------- QA สินค้าใกล้หมดอายุ (พนักงานบันทึก/ดู + ระบบจำบาร์โค้ด) ----------
   function _addDaysStr(s, n){ return new Date(new Date(s+'T00:00:00Z').getTime()+n*86400000).toISOString().slice(0,10); }
+  // ★ 9 ก.ย. 2569 — เดิมโชว์เฉพาะโฟลเดอร์ที่ HR "มอบหมายรายคน" เท่านั้น
+  //   เคสจริง: พนักงาน 21 จาก 45 คนไม่ถูกมอบหมายเลย (สาขาตลาดหล่มสัก 14 จาก 15 คน)
+  //   เปิดหน้า QA แล้วขึ้น "ยังไม่มีโฟลเดอร์ที่มอบหมายให้คุณ" ทั้งที่สาขามีของใกล้หมดอายุ 25 รายการ
+  //   แก้เป็น: เห็นโฟลเดอร์ "ของสาขาตัวเอง" ทุกใบ · ใบที่ถูกมอบหมายจะมีธง mine=true ให้ UI ขึ้นป้าย
+  //   (qa_folders ไม่มีคอลัมน์สาขา — สาขาของโฟลเดอร์จึงดูจากสินค้าในใบ + สาขาของคนที่ถูกมอบหมาย
+  //    ทางที่สองสำคัญ เพราะโฟลเดอร์เดือนใหม่ที่ยังไม่มีสินค้าจะไม่มีใครเห็นเลย)
   async function getQaFolders(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const { data: asg } = await sb.from('qa_folder_assignees').select('folder_id').eq('emp_id', empId);
-    const ids=[...new Set((asg||[]).map(a=>a.folder_id))];
-    if(!ids.length) return { emp, rows:[] };
+    const mine=new Set((asg||[]).map(a=>a.folder_id));
+    const ids=new Set(mine);
+    if(emp.branch_id){
+      const [biR, beR] = await Promise.all([
+        sb.from('qa_items').select('folder_id').eq('branch_id', emp.branch_id).limit(5000),
+        sb.from('employees').select('emp_id').eq('branch_id', emp.branch_id).limit(300),
+      ]);
+      (biR.data||[]).forEach(x=>ids.add(x.folder_id));
+      const mates=(beR.data||[]).map(x=>x.emp_id);
+      if(mates.length){
+        const { data: ba } = await sb.from('qa_folder_assignees').select('folder_id').in('emp_id', mates).limit(2000);
+        (ba||[]).forEach(x=>ids.add(x.folder_id));
+      }
+    }
+    const idList=[...ids];
+    if(!idList.length) return { emp, rows:[] };
     const [fR, itR] = await Promise.all([
-      sb.from('qa_folders').select('*').in('id', ids).eq('active', true).order('created_at', { ascending:false }),
-      sb.from('qa_items').select('folder_id,status,expiry_date').in('folder_id', ids),
+      sb.from('qa_folders').select('*').in('id', idList).eq('active', true).order('created_at', { ascending:false }),
+      sb.from('qa_items').select('folder_id,status,expiry_date').in('folder_id', idList),
     ]);
     const today=bangkokDate(); const soon=_addDaysStr(today, 30);
     const cnt={};
     (itR.data||[]).forEach(i=>{ const o=cnt[i.folder_id]=cnt[i.folder_id]||{ total:0, on_shelf:0, expiring:0 }; o.total++; if(i.status==='on_shelf'){ o.on_shelf++; if(i.expiry_date&&i.expiry_date>=today&&i.expiry_date<=soon) o.expiring++; } });
-    const rows=(fR.data||[]).map(f=>({ ...f, stats: cnt[f.id]||{ total:0, on_shelf:0, expiring:0 } }));
+    const rows=(fR.data||[]).map(f=>({ ...f, mine: mine.has(f.id), stats: cnt[f.id]||{ total:0, on_shelf:0, expiring:0 } }))
+      .sort((a,b)=>(b.mine?1:0)-(a.mine?1:0));   // งานที่มอบหมายให้เราขึ้นก่อน
     return { emp, rows };
   }
   async function getQaItems(folderId){
