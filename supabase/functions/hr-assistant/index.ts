@@ -3929,6 +3929,163 @@ async function universal_search(a: any) {
 }
 // ★ ออกข้อสอบพนักงานจากคลังความรู้ (grounded) → บันทึกเป็น "ฉบับร่าง" ให้ HR ตรวจ/แก้/เผยแพร่ที่เมนูแบบทดสอบ
 // ============================================================
+// ★ 9 ก.ย. 2569 — เตรียมร้านรับตรวจ QSSI
+//   ใบตรวจจริงให้คะแนน 1000 = Result 800 (S/A/V/E/Q/C/QMS) + Process 200
+//   ของที่ทำให้เสียคะแนนหนักเป็น "เรื่องที่เตรียมล่วงหน้าได้เกือบทั้งหมด"
+//   เครื่องมือนี้จึงเอา 3 อย่างมาต่อกัน: ข้อบกพร่องรอบก่อน · เกณฑ์รายข้อ · งานค้างจริงวันนี้
+//   ⚠ ตั้งใจให้ "เตรียมงานให้ได้มาตรฐานจริง" ไม่ใช่จัดฉากเฉพาะวันตรวจ
+// ============================================================
+const QSSI_CAT_TH: Record<string, string> = {
+  S: "Service — บริการ", A: "Assortment — สินค้า", V: "Value — สื่อ/ป้าย/ราคา",
+  E: "Environment — สะดวก/ปลอดภัย", Q: "Quality — คุณภาพสินค้า/สุขลักษณะ",
+  C: "Cleanliness — ความสะอาด", QMS: "QMS — เอกสาร/การจัดการ",
+  Process: "Process — ความรู้พนักงาน", PR: "PR", PI: "PI", PKU: "PKU",
+};
+const QSSI_CAT_MAX: Record<string, number> = { S: 60, A: 225, V: 100, E: 50, Q: 185, C: 130, QMS: 50, Process: 200 };
+
+function qssiDaysBetween(a: string, b: string): number {
+  return Math.round((new Date(b + "T00:00:00Z").getTime() - new Date(a + "T00:00:00Z").getTime()) / 86400000);
+}
+
+async function qssi_plan(a: any) {
+  const bid = a?.branch_id ? await resolveBranchId(String(a.branch_id)) : null;
+  const today = bkkToday();
+
+  // ── ผลตรวจย้อนหลัง ──
+  let aq: any = sb.from("audit_reports").select("*").order("inspect_date", { ascending: false }).limit(40);
+  if (bid) aq = aq.eq("branch_id", bid);
+  const { data: audits } = await aq;
+  if (!audits || !audits.length) return { error: "ยังไม่มีผลตรวจ QSSI ในระบบ" + (bid ? " ของสาขานี้" : "") + " — ต้องคีย์ผลรอบล่าสุดเข้าก่อนถึงจะวางแผนได้" };
+
+  const byBranch: Record<string, any[]> = {};
+  audits.forEach((r: any) => { (byBranch[r.branch_id] = byBranch[r.branch_id] || []).push(r); });
+  const { data: brs } = await sb.from("branches").select("branch_id,name");
+  const brName: Record<string, string> = {}; (brs || []).forEach((b: any) => brName[b.branch_id] = b.name);
+
+  // ── วันตรวจรอบหน้า: ถ้าไม่ระบุ ประมาณจากช่วงห่างเฉลี่ยของรอบที่ผ่านมา ──
+  const targetBranch = bid || Object.keys(byBranch)[0];
+  const hist = (byBranch[targetBranch] || []).slice().sort((x: any, y: any) => String(x.inspect_date).localeCompare(String(y.inspect_date)));
+  let due = String(a?.inspect_date || "").trim();
+  let dueGuess = false;
+  if (!due) {
+    const gaps: number[] = [];
+    for (let i = 1; i < hist.length; i++) gaps.push(qssiDaysBetween(hist[i - 1].inspect_date, hist[i].inspect_date));
+    const avg = gaps.length ? Math.round(gaps.reduce((x, y) => x + y, 0) / gaps.length) : 30;
+    due = addDays(String(hist[hist.length - 1].inspect_date), Math.max(14, Math.min(45, avg)));
+    dueGuess = true;
+  }
+  const daysLeft = qssiDaysBetween(today, due);
+
+  // ── ข้อบกพร่องย้อนหลัง + นับว่าโดนซ้ำกี่รอบ ──
+  let fq: any = sb.from("qssi_findings").select("*").order("inspect_date", { ascending: false }).limit(400);
+  if (bid) fq = fq.eq("branch_id", bid);
+  const { data: finds } = await fq;
+  const repeat: Record<string, number> = {};
+  (finds || []).forEach((f: any) => { const k = f.cat + "|" + (f.item_no || ""); repeat[k] = (repeat[k] || 0) + 1; });
+
+  const { data: crit } = await sb.from("qssi_criteria").select("*").eq("active", true).limit(300);
+  const critBy: Record<string, any> = {}; (crit || []).forEach((c: any) => critBy[c.cat + "|" + (c.item_no || "")] = c);
+
+  // ── งานค้างจริงวันนี้ (ของสาขาเป้าหมาย) ──
+  const monthStr = today.slice(0, 7);
+  const soon30 = addDays(today, 30);
+  const [dailyDef, dailyLog, shAsg, shChk, qaItems, taskOpen, spOpen, sched] = await Promise.all([
+    sb.from("mgr_daily_defs").select("id,title").eq("active", true),
+    sb.from("mgr_daily_logs").select("def_id,status,work_date").eq("branch_id", targetBranch).eq("work_date", today),
+    sb.from("shelf_assignments").select("shelf_id,emp_id").eq("branch_id", targetBranch).eq("month", monthStr),
+    sb.from("shelf_checks").select("shelf_id,emp_id,check_date").eq("branch_id", targetBranch).gte("check_date", addDays(today, -7)),
+    sb.from("qa_items").select("name,expiry_date,qty,zone").eq("branch_id", targetBranch).eq("status", "on_shelf").not("expiry_date", "is", null).lte("expiry_date", soon30).order("expiry_date").limit(60),
+    sb.from("task_assignments").select("title,status,work_date").eq("branch_id", targetBranch).gte("work_date", addDays(today, -3)).in("status", ["todo", "sent_back"]).limit(200),
+    sb.from("special_task_assignees").select("task_id,status").eq("branch_id", targetBranch).in("status", ["todo", "sent_back"]).limit(60),
+    sb.from("schedules").select("emp_id,work_date,shift_id").eq("branch_id", targetBranch).gte("work_date", addDays(due, -2)).lte("work_date", addDays(due, 2)).limit(120),
+  ]);
+  const doneDef = new Set((dailyLog.data || []).filter((x: any) => x.status === "done" || x.status === "approved").map((x: any) => x.def_id));
+  const dailyLeft = (dailyDef.data || []).filter((d: any) => !doneDef.has(d.id)).map((d: any) => d.title);
+  const chkKey = new Set((shChk.data || []).map((x: any) => x.shelf_id + "|" + x.emp_id));
+  const shelfLeft = (shAsg.data || []).filter((x: any) => !chkKey.has(x.shelf_id + "|" + x.emp_id)).length;
+  const qaSoon = (qaItems.data || []);
+  const qaOver = qaSoon.filter((x: any) => String(x.expiry_date) < today);
+
+  // ── สินค้าขาดรอบก่อน ──
+  let sq: any = sb.from("qssi_stockout").select("*").order("inspect_date", { ascending: false }).limit(80);
+  if (bid) sq = sq.eq("branch_id", bid);
+  const { data: stock } = await sq;
+  const stockLast = (stock || []).filter((x: any) => String(x.inspect_date) === String((stock || [])[0]?.inspect_date));
+
+  // ── รายการเสี่ยง: เรียงตามคะแนนที่เคยเสีย ──
+  const lastDate = hist.length ? String(hist[hist.length - 1].inspect_date) : null;
+  const risks = (finds || [])
+    .filter((f: any) => (Number(f.max_score) || 0) - (Number(f.score) || 0) > 0)
+    .map((f: any) => {
+      const k = f.cat + "|" + (f.item_no || "");
+      const c = critBy[k] || {};
+      return {
+        หมวด: QSSI_CAT_TH[f.cat] || f.cat, ข้อ: f.item_no, คำถาม: f.question,
+        รอบที่เจอ: f.inspect_date, สาขา: brName[f.branch_id] || f.branch_id,
+        เคยเสีย: +((Number(f.max_score) || 0) - (Number(f.score) || 0)).toFixed(2),
+        เต็ม: f.max_score, สิ่งที่พบ: f.finding,
+        โดนซ้ำ: repeat[k] || 1,
+        เตรียมยังไง: c.prepare || null, งานในระบบที่เกี่ยว: c.link_ref || null,
+        ควรเริ่มก่อนวันตรวจ: c.lead_days != null ? c.lead_days : 3,
+      };
+    })
+    .sort((x: any, y: any) => (y.โดนซ้ำ - x.โดนซ้ำ) || (y.เคยเสีย - x.เคยเสีย));
+
+  // ── แผนถอยหลัง ──
+  const buckets: Record<string, any[]> = {};
+  risks.forEach((r: any) => {
+    const lead = Math.max(1, Number(r.ควรเริ่มก่อนวันตรวจ) || 3);
+    const day = addDays(due, -lead);
+    (buckets[day] = buckets[day] || []).push({ ทำอะไร: r.เตรียมยังไง || ("แก้ข้อ " + r.ข้อ + " " + (r.คำถาม || "")), หมวด: r.หมวด, ข้อ: r.ข้อ, คะแนนที่กันไว้ได้: r.เคยเสีย, งานในระบบ: r.งานในระบบที่เกี่ยว });
+  });
+  const plan = Object.keys(buckets).sort().map((d) => ({
+    วันที่: d, เหลืออีก: qssiDaysBetween(today, d) + " วัน",
+    เลยกำหนดไปแล้ว: qssiDaysBetween(today, d) < 0,
+    รายการ: buckets[d],
+  }));
+
+  // ── ใครเข้าเวรช่วงตรวจ (ไว้ออกชุดสอบ Process) ──
+  const empIds = [...new Set((sched.data || []).map((x: any) => x.emp_id))];
+  const { data: emps } = empIds.length ? await sb.from("employees").select("emp_id,name,nickname").in("emp_id", empIds) : { data: [] as any[] };
+  const onDuty = (emps || []).map((e: any) => ({ emp_id: e.emp_id, ชื่อ: e.nickname || e.name }));
+
+  const last = hist[hist.length - 1] || {};
+  const catNow: any = {};
+  ["S", "A", "V", "E", "Q", "C", "QMS"].forEach((k) => { const v = last[k.toLowerCase()]; if (v != null) catNow[QSSI_CAT_TH[k]] = +Number(v).toFixed(2); });
+  const weak = Object.entries(catNow).sort((x: any, y: any) => x[1] - y[1]).slice(0, 3).map(([k, v]) => k + " " + v + "%");
+
+  return {
+    สาขา: brName[targetBranch] || targetBranch,
+    วันตรวจที่ใช้วางแผน: due + (dueGuess ? " (ประมาณจากช่วงห่างรอบก่อน ๆ — ถ้ารู้วันจริงให้ระบุมา)" : ""),
+    เหลืออีก: daysLeft + " วัน",
+    ผลรอบล่าสุด: { วันที่: last.inspect_date, Result: last.result, Process: last.process, คะแนนรวม: last.score, สินค้าขาด: last.stockout },
+    คะแนนรายหมวดรอบล่าสุด: catNow,
+    หมวดที่อ่อนสุด: weak,
+    ประวัติคะแนน: hist.map((r: any) => ({ วันที่: r.inspect_date, Result: r.result, Process: r.process })),
+    รายการเสี่ยงเรียงตามคะแนนที่จะเสีย: risks.slice(0, 20),
+    รวมคะแนนที่กันไว้ได้ถ้าแก้ครบ: +risks.reduce((t: number, r: any) => t + r.เคยเสีย, 0).toFixed(2),
+    แผนถอยหลังจากวันตรวจ: plan,
+    งานค้างจริงตอนนี้: {
+      งานประจำวันผจก_ยังไม่ทำวันนี้: dailyLeft,
+      เชลฟ์ยังไม่ตรวจในรอบ7วัน: shelfLeft,
+      QA_ใกล้หมดอายุ30วัน: qaSoon.length,
+      QA_เลยวันหมดอายุแล้ว: qaOver.length,
+      QA_รายการที่ใกล้ที่สุด: qaSoon.slice(0, 5).map((x: any) => x.name + " หมด " + x.expiry_date),
+      งานในกะค้าง: (taskOpen.data || []).length,
+      งานพิเศษค้าง: (spOpen.data || []).length,
+    },
+    สินค้าที่เคยขาดรอบก่อน: stockLast.map((x: any) => ({ รหัส: x.sku, สินค้า: x.product, TopRank: x.top_rank, สาเหตุ: x.cause })),
+    คนที่เข้าเวรช่วงวันตรวจ: onDuty,
+    note: "★ วิธีตอบ: (1) บอกก่อนว่าเหลือกี่วันและรอบล่าสุดได้เท่าไร (2) ชี้ 3 เรื่องที่คุ้มที่สุด — เรียงจาก 'คะแนนที่จะเสีย' และ 'โดนซ้ำ' ไม่ใช่ไล่ทุกข้อ "
+      + "(3) กางแผนเป็นวัน ๆ ตาม 'แผนถอยหลังจากวันตรวจ' พร้อมบอกว่าใช้งานไหนในระบบพิสูจน์ว่าทำแล้ว (4) ถ้ามีข้อไหน 'เลยกำหนดไปแล้ว' ให้เตือนว่าต้องรีบทำวันนี้ "
+      + "(5) ถ้าสินค้าที่เคยขาดเป็นอาหารพร้อมทานและสาเหตุคือ 'ร้านสั่งเอง' ให้ชี้ว่าเป็นปัญหาการสั่งของ ไม่ใช่การจัดเรียง — แนะนำให้ดูยอดขายย้อนหลังก่อนสั่ง "
+      + "(6) ถ้ามีสาเหตุ 'โครงสร้างพนักงานขาด' ให้โยงกับตารางเวรว่าผลัดไหนคนไม่พอ "
+      + "(7) Process = ผู้ตรวจถามความรู้พนักงาน — ให้เสนอออกชุดสอบซ้อมให้ 'คนที่เข้าเวรช่วงวันตรวจ' จากเมนูแบบทดสอบ "
+      + "· ❌ ห้ามแนะนำให้จัดฉากเฉพาะวันตรวจ ให้เน้นทำงานประจำให้ครบ",
+  };
+}
+
+// ============================================================
 // ★ 9 ก.ย. 2569 — คลังวัตถุดิบสำหรับ "ออกข้อสอบ"
 //   เดิม create_exam อ่านได้แค่ nida_knowledge (PDF ที่นำเข้า) อย่างเดียว
 //   ทั้งที่คู่มือหลักสูตร 93 บท 1,090 ขั้นตอน · ใบโปรฯ · ระเบียบบริษัท อยู่คนละที่กันหมด
@@ -4389,7 +4546,7 @@ async function task_compliance(a: any) {
   return { period_days: days, branches, note: "ความสม่ำเสมอการส่งงานรายผลัด (นับจากอัลบั้ม 'ส่งงานผลัด...' ในกลุ่มสาขา) · คาดหวัง 3 ผลัด/วัน (เช้า/บ่าย/ดึก) · incomplete=วันที่ส่งไม่ครบ 3 ผลัด · ⚠ เป็นการนับจากที่แจ้งในไลน์ อาจมีวันที่ส่งแต่ไม่ได้ตั้งชื่ออัลบั้มให้ชัด — ใช้เป็นสัญญาณเตือนติดตาม ไม่ใช่ลงโทษทันที" };
 }
 
-const TOOLS: Record<string, (a: any) => Promise<any>> = { find_branch, mgr_eval, branch_line_feed, line_activity_scan, sales_report, audit_report, announcements, task_compliance, classify_group_images, get_group_images, search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, shelf_status, unregistered_faces, hr_handbook, app_guide, analyze_image, goods_receipts, warnings_list, score_status, payroll_summary, holidays_list, list_tables, describe_table, run_sql, applicants_list, app_data, night_allowance_summary, rider_mileage_check, advance_pending, incomplete_profiles, dual_shift_report, get_document, knowledge_search, remember_document, promo_search, promo_sheet, sop_search, sales_boost, open_menu, morning_digest, anomaly_scan, retention_risk, staffing_forecast, suggest_cover, mgr_login_activity, mgr_actions, universal_search, create_exam, branch_workload, web_search: (a: any) => webSearch(a?.query) };
+const TOOLS: Record<string, (a: any) => Promise<any>> = { find_branch, mgr_eval, branch_line_feed, line_activity_scan, sales_report, audit_report, announcements, task_compliance, classify_group_images, get_group_images, search_employees, attendance_overview, discipline_status, branch_compare, weekly_trend, employee_detail, employee_contact, pending_leaves, open_tasks, qa_expiring, schedule_on, query_table, task_history, shelf_status, unregistered_faces, hr_handbook, app_guide, analyze_image, goods_receipts, warnings_list, score_status, payroll_summary, holidays_list, list_tables, describe_table, run_sql, applicants_list, app_data, night_allowance_summary, rider_mileage_check, advance_pending, incomplete_profiles, dual_shift_report, get_document, knowledge_search, remember_document, promo_search, promo_sheet, sop_search, sales_boost, open_menu, morning_digest, anomaly_scan, retention_risk, staffing_forecast, suggest_cover, mgr_login_activity, mgr_actions, universal_search, create_exam, qssi_plan, branch_workload, web_search: (a: any) => webSearch(a?.query) };
 
 const DECLS = [
   { name: "find_branch", description: "ค้นหาสาขาจากรหัสหรือชื่อ (ทนศูนย์นำหน้า เช่น 06573/6573 และชื่อบางส่วน เช่น 'ตลาดหล่มสัก') — ต้องเรียกทุกครั้งที่ผู้ใช้อ้างถึงสาขา ก่อนจะสรุปว่า 'พบ/ไม่พบ' ห้ามตอบว่าไม่พบสาขาโดยไม่เรียกเครื่องมือนี้ก่อน", parameters: { type: "object", properties: { query: { type: "string" } } } },
@@ -4405,6 +4562,7 @@ const DECLS = [
   { name: "branch_workload", description: "★ งานค้างของผู้จัดการ/สาขา 'แบบครบ' — รวม mgr_tasks (งานที่ HR มอบหมาย เช่น Product Recall) + งานในกะที่รอตรวจ + งานที่ถูกตีกลับ · ใช้ทุกครั้งที่ถาม 'ผจก./สาขา X มีงานค้างอะไรบ้าง / งานที่มอบหมายให้ ผจก. เสร็จหรือยัง / สาขานี้ค้างงานไหม' · ระบุ branch_id (ไม่ใส่=ทุกสาขา) · ❌ อย่าใช้ open_tasks เดี่ยว ๆ ตอบเรื่องนี้ (มันไม่รวม mgr_tasks จะตอบว่าไม่มีทั้งที่มี)", parameters: { type: "object", properties: { branch_id: { type: "string" } } } },
   { name: "mgr_login_activity", description: "★ ความถี่การเข้าระบบของผู้จัดการรายสาขา (ใครเข้าตรวจงานบ่อย/ไม่ค่อยเข้า/ไม่เคยเข้าเลย) — ใช้เมื่อถาม 'ผจก. เข้าระบบบ่อยแค่ไหน/สาขาไหน ผจก. ไม่ค่อยเข้า/ใครไม่เข้าตรวจงาน' · start,end (YYYY-MM-DD · ไม่ใส่=30 วันล่าสุด) · branch_id (เจาะสาขา) · คืน never_logged_in + rarely_logged_in + managers (เรียงเข้าน้อยสุดก่อน)", parameters: { type: "object", properties: { start: { type: "string" }, end: { type: "string" }, branch_id: { type: "string" } } } },
   { name: "create_exam", description: "★ ออกข้อสอบพนักงาน — เลือก 'แหล่งข้อมูล' ได้ 4 ทาง: manual=คู่มือหลักสูตร (93 บท 1,090 ขั้นตอน · เจาะรายบทได้ด้วย course_code+lesson_nos) · promo=ใบโปรโมชั่น (sheet_ids · ⚠ ข้อสอบจะหมดอายุพร้อมโปรฯ ต้องเตือน HR) · knowledge=คลังความรู้ PDF ที่นำเข้า · rules=ระเบียบบริษัท/วินัย · ไม่ระบุ = manual+knowledge · instruction=บอกได้ว่าอยากให้ถามแนวไหน (เช่น 'เน้นสถานการณ์หน้างานเรื่องรับสินค้าแช่เย็น') · count=จำนวนข้อ · ★ ทุกข้อถูกตรวจย้อนว่าข้อความอ้างอิงอยู่ในต้นทางจริงแบบคำต่อคำ ข้อที่ตรวจไม่ผ่านถูกตัดทิ้ง · ★ ส่ง exam_id มาด้วย = เพิ่มข้อเข้าชุดเดิม (ต้องยังไม่เผยแพร่) ไม่ระบุ = สร้างชุดใหม่เป็น 'ฉบับร่าง' · ห้ามเผยแพร่เอง ให้ HR เปิดเมนู 'แบบทดสอบ' ตรวจแล้วกดเผยแพร่", parameters: { type: "object", properties: { topic: { type: "string" }, instruction: { type: "string" }, sources: { type: "array", items: { type: "string" } }, course_code: { type: "string" }, lesson_nos: { type: "array", items: { type: "string" } }, sections: { type: "array", items: { type: "string" } }, sheet_ids: { type: "array", items: { type: "number" } }, kn_ids: { type: "array", items: { type: "number" } }, exam_id: { type: "number" }, title: { type: "string" }, count: { type: "number" }, pass_percent: { type: "number" }, max_attempts: { type: "number" }, time_limit_min: { type: "number" }, scope: { type: "string" }, branch_ids: { type: "array", items: { type: "string" } } } } },
+  { name: "qssi_plan", description: "★ วางแผนเตรียมร้านรับตรวจ QSSI — ใช้เมื่อถาม 'เตรียมตรวจ QSSI/ผู้ตรวจจะมาแล้วต้องทำอะไร/เตรียมร้านยังไงให้คะแนนดีขึ้น/ข้อไหนเคยโดนหักบ่อย' · branch_id (ชื่อหรือรหัสสาขา) · inspect_date=วันตรวจถ้ารู้ (ไม่ใส่=ประมาณจากช่วงห่างรอบก่อน) · คืน: คะแนนรายหมวดรอบล่าสุด + หมวดที่อ่อนสุด + รายการเสี่ยงเรียงตามคะแนนที่จะเสียและจำนวนรอบที่โดนซ้ำ + แผนถอยหลังเป็นวัน ๆ + งานค้างจริงตอนนี้ + สินค้าที่เคยขาดพร้อมสาเหตุ + รายชื่อคนที่เข้าเวรช่วงวันตรวจ (ไว้ออกชุดสอบ Process)", parameters: { type: "object", properties: { branch_id: { type: "string" }, inspect_date: { type: "string" } } } },
   { name: "universal_search", description: "★ ค้นหารวมศูนย์ 'ข้ามทุกตารางหลัก' ในคำสั่งเดียว (พนักงาน·สาขา·ประวัติการกระทำ·งาน ผจก.·งานในกะ·ประกาศ·ใบเตือน·QA·ใบลา·คลังความรู้) — ใช้เมื่อไม่แน่ใจว่าข้อมูลอยู่ตารางไหน หรือคำถามกว้าง/อยากกวาดทุกที่ก่อนสรุปว่า 'มี/ไม่มี' · query=คำค้น (ชื่อคน/คำในงาน/คำสำคัญ) · branch_id เจาะสาขาได้ · limit ต่อตาราง · คืน results แยกตามหมวด — จากนั้นค่อยเจาะลึกด้วยเครื่องมือเฉพาะทาง", parameters: { type: "object", properties: { query: { type: "string" }, branch_id: { type: "string" }, limit: { type: "number" } }, required: ["query"] } },
   { name: "mgr_actions", description: "★ สิ่งที่ 'ผจก. ลงมือทำจริงในแอป' ตามวัน/ช่วง/สาขา (จาก activity_log) — ใช้เมื่อถาม 'วันนี้ ผจก.ทำอะไรไปบ้าง / ผจก.สาขา X ดำเนินการอะไร / เมื่อวาน ผจก.ทำอะไร / ผจก.คนนี้ทำอะไรบ้าง' · start,end (YYYY-MM-DD · ไม่ใส่=วันนี้) · branch_id · emp_id (เจาะคนเดียว) · คืน managers[] (จัดกลุ่มรายคน + รายการการกระทำ+เวลา) และ by_action (นับตามประเภท) · ⚠ ครอบคลุมเฉพาะการกระทำที่ผ่านแอป ไม่รวมกิจกรรมในกลุ่มไลน์ (ใช้ branch_line_feed สำหรับกลุ่มไลน์)", parameters: { type: "object", properties: { start: { type: "string" }, end: { type: "string" }, branch_id: { type: "string" }, emp_id: { type: "string" } } } },
   { name: "get_group_images", description: "★ ดึงรูปในกลุ่มไลน์มา 'แสดงเป็นการ์ดรูปในแชท' (ไม่วิเคราะห์เนื้อหา = ไม่มีค่าใช้จ่าย) — ใช้เมื่อผู้ใช้ขอดูรูปในกลุ่ม · ★ ถ้าผู้ใช้อ้างถึง 'รูปของคนใดคนหนึ่ง' หรือ 'เรื่อง/ช่วงเวลาที่พูดถึงก่อนหน้า' (เช่น 'ขอดูรูปที่คุณ wanwisa โพสต์เรื่องเติมของ') ให้ส่ง sender=ชื่อคนนั้น และ on_date='YYYY-MM-DD' (วันที่ไทยจากบริบทก่อนหน้า) เพื่อกรองให้ตรง · พารามิเตอร์: branch_id หรือ group · sender (ชื่อผู้โพสต์ กรองแบบ contains) · on_date ('YYYY-MM-DD' วันที่ไทย) · hours (ดีฟอลต์ 48 · จะถูกขยายอัตโนมัติเมื่อระบุ sender/on_date) · limit (ดีฟอลต์ 8 สูงสุด 20) · แสดงเฉพาะรูปสดจาก webhook · ถ้าอยากรู้ 'ว่ารูปคืออะไร' ใช้ classify_group_images แทน", parameters: { type: "object", properties: { branch_id: { type: "string" }, group: { type: "string" }, sender: { type: "string" }, on_date: { type: "string" }, hours: { type: "number" }, limit: { type: "number" } } } },
@@ -4753,6 +4911,7 @@ const SYS = `คุณคือ "น้องนิดา" ผู้ช่วย
 - ★ คำถามเจาะจงว่า "มีแจ้ง/มีพูดถึง X ไหม" (เช่น นำเงินฝากธนาคาร/รับของ/ของขาด/ชื่อคน) → ใช้ branch_line_feed(keyword=...) ค้นด้วยคำก่อน · keyword ใส่ได้หลายคำคั่นจุลภาค (OR) — สำคัญมาก ให้ใส่คำพ้อง/คำที่พนักงานใช้จริงหลายแบบเสมอ เช่น เรื่องนำเงินฝากธนาคารให้ใช้ keyword="ฝากเงิน,ฝากธนาคาร,นำฝาก,นับเงิน,ฝากแบงค์" (พนักงานมักพิมพ์สั้น ๆ ว่า "ฝากเงินเรียบร้อย"/"นับเงินเสร็จ") · ตั้ง hours ให้กว้างพอ (เช่น 48) ถ้าถามว่า "วันนี้/ล่าสุด" แต่ยังไม่พบ ❌ อย่าสรุปว่า "ไม่มี" จาก line_activity_scan อย่างเดียว (จับเฉพาะสัญญาณด่วน ไม่ใช่ทุกคำ) และอย่าสรุป "ไม่มี" จนกว่าจะลองคำพ้องหลายแบบแล้ว
 - ประกาศ/สิ่งที่ต้องทำ: "มีประกาศ/คำสั่งอะไร/อะไรใกล้ครบกำหนด/เลยกำหนดไหม" → announcements (มีเดดไลน์+overdue) · ความสม่ำเสมอส่งงาน: "สาขาไหนส่งงานไม่ครบ/ผลัดไหนขาด" → task_compliance · เรื่องเงิน/ความปลอดภัย/ของหาย/ทะเลาะ → line_activity_scan หรือ branch_line_feed(category=issue) แล้วเตือน HR ให้ตรวจสอบ (ยกข้อความจริง ไม่ตัดสินเอง)
 - คะแนนตรวจร้าน: "QSSI/คะแนนตรวจ สาขาไหนดี-แย่/หมวดไหนตก" → audit_report
+- ★ เตรียมรับตรวจ: "เตรียมตรวจ QSSI / ผู้ตรวจจะมาต้องทำอะไร / ทำยังไงให้คะแนนขึ้น" → qssi_plan (ไม่ใช่ audit_report) · ตอบเป็นแผนรายวันที่ทำได้จริง เรียงตามคะแนนที่จะเสีย ไม่ใช่ไล่ทุกข้อ
 - ดูรูปในกลุ่ม (แยก 2 กรณี): (ก) "ส่งรูปมาดู/ขอดูรูปในกลุ่ม/มีรูปอะไรส่งเข้ามาบ้าง" = แค่อยากเห็นรูป → get_group_images (แสดงเป็นการ์ดรูปในแชท ไม่มีค่าใช้จ่าย) · (ข) "รูปนั้นคืออะไร/มีรูปข่าวสาร-โปรโมชั่นไหม/สรุปเนื้อหารูป" = อยากรู้เนื้อหา → classify_group_images (เปิดอ่านด้วย vision + ติดป้ายหมวดให้ · มีค่าใช้จ่าย) · ทั้งคู่แสดงรูปให้เห็นในแชท และรับ group='ผจก.' ได้ · ดูได้เฉพาะรูปสดจาก webhook
 - ยอดขาย: ถามยอดขาย/เทียบสาขา/เข้าเป้า/เทรนด์/ต่อหัว/All Cafe/Delivery → sales_report (มาจากที่พนักงานแจ้งยอดในกลุ่มไลน์ แยกเป็นมาตรฐานแล้ว) ❌ อย่าไปนั่งอ่าน/บวกจาก branch_line_feed เอง · ระบุช่วง achieve_pct + ถ้าบางวันข้อมูลขาดให้บอกว่าอาจสาขายังไม่แจ้ง ไม่ใช่ยอดตก
 - ★ แก้/ลบยอดขายที่คีย์ผิด: ยอดขายเก็บในตาราง sales_daily (คีย์ = branch_id + sale_date + shift) · ถ้าผู้ใช้บอก "ยอดวันนี้/เมื่อวานคีย์ผิด อัพเดตใหม่แล้ว ลบของผิดออก" → (1) run_sql/query_table ดูแถวของ sale_date+branch นั้นก่อนว่ามีกี่แถว/ค่าอะไร (2) ลบแถวที่ผิดด้วย db_delete table='sales_daily' where={branch_id, sale_date, shift} หรือแก้ค่าด้วย db_update — สรุปให้ยืนยันก่อนทำเสมอ · ถ้าไม่รู้ว่าสาขาไหน/วันไหน ให้ถามผู้ใช้ก่อน (อย่าเดา) · ทำนองเดียวกันแก้คะแนนตรวจร้านที่ผิดใน audit_reports ได้
@@ -5597,6 +5756,10 @@ Deno.serve(async (req) => {
     //   คืน "ข้อร่าง" กลับไปให้ติ๊กเลือกทีละข้อ — ยังไม่บันทึกลงชุดใด ๆ
     //   ต่างจากเครื่องมือ create_exam ในแชทที่บันทึกเป็นชุดร่างให้เลย
     // ============================================================
+    if (body.mode === "qssi_prep") {
+      const r = await qssi_plan(body);
+      return json(r.error ? { ok: false, error: r.error } : { ok: true, data: r });
+    }
     if (body.mode === "exam_meta") {
       const [{ data: ls }, { data: shs }, { data: kn }] = await Promise.all([
         sb.from("course_lessons").select("course_code,course_name,section,lesson_no,title").eq("active", true).order("lesson_no").limit(200),
