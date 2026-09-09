@@ -203,11 +203,13 @@ $('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearE
 async function loadFolders(){
   $('folders_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
   let r; try{ r=await window.HR.getQaFolders(EMP.emp_id); }catch(e){ $('folders_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
-  if(!r.rows.length){ $('folders_body').innerHTML='<div class="card muted">ยังไม่มีโฟลเดอร์ที่มอบหมายให้คุณ</div>'; return; }
+  if(!r.rows.length){ $('folders_body').innerHTML='<div class="card muted">สาขาของคุณยังไม่มีโฟลเดอร์ QA — กด "+ สร้างโฟลเดอร์ใหม่" ได้เลย</div>'; return; }
   $('folders_body').innerHTML=r.rows.map(f=>{
     const s=f.stats||{total:0,on_shelf:0,expiring:0};
     return '<div class="fcard" data-fid="'+f.id+'">'
-      +'<div style="font-weight:700;font-size:15px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '+esc(f.title)+(s.expiring>0?'<span class="badge">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
+      +'<div style="font-weight:700;font-size:15px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '+esc(f.title)
+      +(f.mine?'<span style="font-size:11px;font-weight:700;background:#dcfce7;color:#166534;border-radius:99px;padding:2px 8px;margin-left:6px">งานของฉัน</span>':'<span style="font-size:11px;background:#eef2ff;color:#3730a3;border-radius:99px;padding:2px 8px;margin-left:6px">ของสาขา</span>')
+      +(s.expiring>0?'<span class="badge">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
       +(f.target_month?'<div class="muted" style="margin-top:2px">เดือนเป้าหมาย: '+esc(f.target_month)+'</div>':'')
       +(f.note?'<div class="muted" style="margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(f.note)+'</div>':'')
       +'<div class="muted" style="margin-top:4px">บันทึกแล้ว '+s.total+' รายการ · ยังอยู่บนเชลฟ์ '+s.on_shelf+'</div>'
