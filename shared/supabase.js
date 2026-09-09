@@ -1908,16 +1908,19 @@
       try{ photos.push(await uploadPhoto('employee-docs','qssi/'+(emp.branch_id||'x')+'_'+d.item_id+'_'+Date.now()+'_'+photos.length+'.jpg', ph)); }catch(e){}
     }
     const note=String(d.note||'').trim();
-    if(it.need_photo && !photos.length && !note) throw new Error('ข้อนี้ต้องแนบรูป — ถ้าถ่ายไม่ได้จริง ๆ ให้พิมพ์รายงานสิ่งที่ทำแทน');
-    if(!it.need_photo && !note && !photos.length) throw new Error('พิมพ์รายงานสั้น ๆ ว่าทำอะไรไปบ้าง');
-    // ★ ถ้ามีร่างค้างอยู่ ให้ "ต่อยอดแถวเดิม" ไม่สร้างแถวใหม่ — รูปที่เซฟไว้ตอนร่างจะไม่หาย
+    // ★ 9 ก.ย. 2569 — ต้องอ่านแถวร่างก่อนตรวจ "ต้องแนบรูป"
+    //   เดิมตรวจจาก d.photos เท่านั้น แต่หน้าพนักงานเซฟร่างอัตโนมัติแล้วเคลียร์รูปในหน้าจอทิ้ง
+    //   ทำให้คนที่เซฟร่างไว้ 20 รูปกดส่งไม่ได้ ขึ้นว่า "ข้อนี้ต้องแนบรูป"
     const cycle2=bangkokDate().slice(0,7);
     const { data: exist }=await sb.from('qssi_check_logs').select('id,photos,note')
       .eq('branch_id', emp.branch_id||'').eq('cycle', cycle2).eq('item_id', Number(d.item_id)).maybeSingle();
+    const cur=(exist&&Array.isArray(exist.photos))?exist.photos:[];
+    const all=cur.concat(photos);                                  // ร่างที่เซฟไว้ + ที่เพิ่งเลือกเพิ่ม
+    const anyNote=note||String((exist&&exist.note)||'').trim();     // หมายเหตุที่เคยเซฟไว้ก็นับ
+    if(it.need_photo && !all.length && !anyNote) throw new Error('ข้อนี้ต้องแนบรูป — ถ้าถ่ายไม่ได้จริง ๆ ให้พิมพ์รายงานสิ่งที่ทำแทน');
+    if(!it.need_photo && !anyNote && !all.length) throw new Error('พิมพ์รายงานสั้น ๆ ว่าทำอะไรไปบ้าง');
+    // ถ้ามีร่างค้างอยู่ ให้ "ต่อยอดแถวเดิม" ไม่สร้างแถวใหม่ — รูปที่เซฟไว้ตอนร่างจะไม่หาย
     if(exist){
-      const cur=Array.isArray(exist.photos)?exist.photos:[];
-      const all=cur.concat(photos);
-      if(it.need_photo && !all.length && !note) throw new Error('ข้อนี้ต้องแนบรูป — ถ้าถ่ายไม่ได้จริง ๆ ให้พิมพ์รายงานสิ่งที่ทำแทน');
       const { error:e2 }=await sb.from('qssi_check_logs').update({
         emp_id: String(d.emp_id), emp_name: emp.nickname||emp.name||null,
         photos: all.length?all:null, note: note||exist.note||null, status:'done',
