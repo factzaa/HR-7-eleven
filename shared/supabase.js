@@ -1844,6 +1844,78 @@
     return { ok:true, id:rid };
   }
 
+  // ---------- QSSI · เช็คลิสต์เตรียมรับตรวจ (ฝั่งพนักงาน) ----------
+  // ★ 9 ก.ย. 2569 — ผจก. มอบหมายหัวข้อจากแอป HR แล้วพนักงานมาส่งงานที่หน้านี้
+  //   งานที่ถูกมอบหมายให้เราขึ้นก่อน · ที่เหลือของสาขายังหยิบทำได้ (กันงานค้างเพราะยังไม่มอบหมาย)
+  const QSSI_CAT_NAME_EMP = { S:'Service — บริการ', A:'Assortment — สินค้า', V:'Value — สื่อ/ป้าย/ราคา', E:'Environment — สะดวก/ปลอดภัย', Q:'Quality — คุณภาพสินค้า', C:'Cleanliness — ความสะอาด', QMS:'QMS — เอกสาร/การจัดการ', Process:'Process — ความรู้พนักงาน' };
+  async function getQssiChecklist(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const branch=emp.branch_id||'';
+    const cycle=bangkokDate().slice(0,7);
+    const [itR,lgR,asR,fdR]=await Promise.all([
+      sb.from('qssi_check_items').select('*').eq('active',true).order('sort'),
+      sb.from('qssi_check_logs').select('*').eq('branch_id',branch).eq('cycle',cycle).order('created_at',{ascending:false}),
+      sb.from('qssi_assignments').select('*').eq('branch_id',branch).eq('cycle',cycle),
+      sb.from('qssi_findings').select('cat,item_no,question,finding,score,max_score,inspect_date').eq('branch_id',branch).order('inspect_date',{ascending:false}).limit(80),
+    ]);
+    if(itR.error) throw new Error('ยังไม่ได้ตั้งค่ารายการตรวจ (ให้ HR รัน qssi_check.sql)');
+    const byItem={}; (lgR.data||[]).forEach(l=>{ if(!byItem[l.item_id]) byItem[l.item_id]=l; });
+    const asgBy={}; (asR.data||[]).forEach(a=>{ (asgBy[a.item_id]=asgBy[a.item_id]||[]).push(a); });
+    const lostByCat={};
+    (fdR.data||[]).forEach(f=>{
+      const lost=(Number(f.max_score)||0)-(Number(f.score)||0); if(lost<=0) return;
+      (lostByCat[f.cat]=lostByCat[f.cat]||[]).push({ item_no:f.item_no, question:f.question, finding:f.finding, lost:+lost.toFixed(2), date:f.inspect_date });
+    });
+    Object.keys(lostByCat).forEach(k=>{ lostByCat[k].sort((a,b)=>b.lost-a.lost); lostByCat[k]=lostByCat[k].slice(0,3); });
+    const items=(itR.data||[]).map(it=>{
+      const asg=asgBy[it.id]||[];
+      return { ...it, log:byItem[it.id]||null, assigns:asg, mine:asg.some(a=>String(a.emp_id)===String(empId)) };
+    });
+    const mine=items.filter(x=>x.mine);
+    const others=items.filter(x=>!x.mine);
+    const group=(list)=>{
+      const gs={};
+      list.forEach(x=>{ (gs[x.cat]=gs[x.cat]||[]).push(x); });
+      return Object.keys(gs).map(c=>({ cat:c, name:QSSI_CAT_NAME_EMP[c]||c, items:gs[c], lost:lostByCat[c]||[],
+        done:gs[c].filter(x=>x.log).length, total:gs[c].length }));
+    };
+    return { emp, cycle, branch_id:branch,
+      mine:{ groups:group(mine), total:mine.length, done:mine.filter(x=>x.log).length },
+      others:{ groups:group(others), total:others.length, done:others.filter(x=>x.log).length } };
+  }
+  async function submitQssiCheck(d){
+    d=d||{};
+    if(!d.emp_id||!d.item_id) throw new Error('ข้อมูลไม่ครบ');
+    const emp=await lookupEmployee(d.emp_id); if(!emp) throw new Error('ไม่พบรหัสพนักงาน');
+    const { data: it } = await sb.from('qssi_check_items').select('*').eq('id',Number(d.item_id)).maybeSingle();
+    if(!it) throw new Error('ไม่พบรายการนี้');
+    const photos=[];
+    for(const ph of (d.photos||[])){
+      if(!ph) continue;
+      if(typeof ph==='string'&&/^https?:/i.test(ph)){ photos.push(ph); continue; }
+      try{ photos.push(await uploadPhoto('employee-docs','qssi/'+(emp.branch_id||'x')+'_'+d.item_id+'_'+Date.now()+'_'+photos.length+'.jpg', ph)); }catch(e){}
+    }
+    const note=String(d.note||'').trim();
+    if(it.need_photo && !photos.length && !note) throw new Error('ข้อนี้ต้องแนบรูป — ถ้าถ่ายไม่ได้จริง ๆ ให้พิมพ์รายงานสิ่งที่ทำแทน');
+    if(!it.need_photo && !note && !photos.length) throw new Error('พิมพ์รายงานสั้น ๆ ว่าทำอะไรไปบ้าง');
+    const { error }=await sb.from('qssi_check_logs').insert({
+      branch_id: emp.branch_id||'', cycle: bangkokDate().slice(0,7), item_id: Number(d.item_id),
+      emp_id: String(d.emp_id), emp_name: emp.nickname||emp.name||null,
+      photos: photos.length?photos:null, note: note||null, status:'done',
+    });
+    if(error) throw error;
+    return { ok:true, photos:photos.length };
+  }
+  async function undoQssiCheck(id, empId){
+    if(!id) throw new Error('ไม่ระบุ');
+    const { data: row } = await sb.from('qssi_check_logs').select('emp_id').eq('id',Number(id)).maybeSingle();
+    if(!row) throw new Error('ไม่พบรายการ');
+    if(String(row.emp_id)!==String(empId)) throw new Error('ยกเลิกได้เฉพาะงานที่ตัวเองส่ง');
+    const { error }=await sb.from('qssi_check_logs').delete().eq('id',Number(id));
+    if(error) throw error;
+    return { ok:true };
+  }
+
   // ---------- QA สินค้าใกล้หมดอายุ (พนักงานบันทึก/ดู + ระบบจำบาร์โค้ด) ----------
   function _addDaysStr(s, n){ return new Date(new Date(s+'T00:00:00Z').getTime()+n*86400000).toISOString().slice(0,10); }
   // ★ 9 ก.ย. 2569 — เดิมโชว์เฉพาะโฟลเดอร์ที่ HR "มอบหมายรายคน" เท่านั้น
@@ -2626,6 +2698,6 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

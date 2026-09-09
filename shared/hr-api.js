@@ -187,6 +187,7 @@
         case 'hr_qssi_month':       return await hrQssiMonth(p);
         case 'hr_qssi_dash':        return await hrQssiDash(p);
         case 'hr_qssi_note_save':   return await hrQssiNoteSave(p);
+        case 'hr_qssi_assign_save': return await hrQssiAssignSave(p);
         case 'hr_exam_bank_meta':   return await hrExamBankMeta();
         case 'hr_exam_bank_pick':   return await hrExamBankPick(p);
         case 'hr_exam_retest':      return await hrExamRetest(p);
@@ -838,11 +839,12 @@
     const branch = String(p.branch_id || '');
     if (!branch) return { ok: false, error: 'ยังไม่ได้เลือกสาขา' };
     const cycle = qssiCycle(p.cycle);
-    const [itR, lgR, fdR, emR] = await Promise.all([
+    const [itR, lgR, fdR, emR, asR] = await Promise.all([
       sb().from('qssi_check_items').select('*').eq('active', true).order('sort'),
       sb().from('qssi_check_logs').select('*').eq('branch_id', branch).eq('cycle', cycle).order('created_at', { ascending: false }),
       sb().from('qssi_findings').select('cat,item_no,question,finding,score,max_score,inspect_date').eq('branch_id', branch).order('inspect_date', { ascending: false }).limit(120),
       sb().from('employees').select('emp_id,name,nickname').eq('branch_id', branch).eq('active', true).order('emp_id'),
+      sb().from('qssi_assignments').select('*').eq('branch_id', branch).eq('cycle', cycle),
     ]);
     if (itR.error) return { ok: false, error: itR.error.message + ' (ยังไม่ได้รัน supabase/qssi_check.sql?)' };
     const logs = lgR.data || [];
@@ -857,7 +859,9 @@
     });
     Object.keys(lostByCat).forEach(k => { lostByCat[k].sort((a, b) => b.เสีย - a.เสีย); lostByCat[k] = lostByCat[k].slice(0, 4); });
 
-    const items = (itR.data || []).map(it => ({ ...it, log: byItem[it.id] || null }));
+    const asgBy = {};
+    (asR.data || []).forEach(a => { (asgBy[a.item_id] = asgBy[a.item_id] || []).push(a); });
+    const items = (itR.data || []).map(it => ({ ...it, log: byItem[it.id] || null, assigns: asgBy[it.id] || [] }));
     const groups = QSSI_CATS.map(c => {
       const list = items.filter(x => x.cat === c);
       return { cat: c, name: QSSI_CAT_NAME[c] || c, total: list.length, done: list.filter(x => x.log).length, lost: lostByCat[c] || [], items: list };
@@ -866,7 +870,28 @@
       ok: true, cycle, branch_id: branch, groups,
       total: items.length, done: items.filter(x => x.log).length,
       employees: (emR.data || []).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })),
+      assigned: (asR.data || []).length,
     };
+  }
+
+  // ผจก. มอบหมายหัวข้อให้พนักงาน — ส่งมาทั้งชุดของรอบเดือนนั้น แล้วเขียนทับ
+  async function hrQssiAssignSave(p) {
+    const d = (p && p.data) || {};
+    const branch = String(d.branch_id || '');
+    const cycle = qssiCycle(d.cycle);
+    if (!branch) return { ok: false, error: 'ไม่ระบุสาขา' };
+    const rows = (Array.isArray(d.rows) ? d.rows : []).filter(r => r && r.item_id && r.emp_id);
+    await sb().from('qssi_assignments').delete().eq('branch_id', branch).eq('cycle', cycle);
+    if (rows.length) {
+      const { error } = await sb().from('qssi_assignments').insert(rows.map(r => ({
+        branch_id: branch, cycle, item_id: Number(r.item_id),
+        emp_id: String(r.emp_id), emp_name: (r.emp_name || '').trim() || null,
+        due_date: (r.due_date || '').trim() || null, created_by: d.created_by || 'ผจก.',
+      })));
+      if (error) return { ok: false, error: error.message };
+    }
+    await logAct('มอบหมายงานเตรียมตรวจ QSSI', null, branch + ' · รอบ ' + cycle + ' · ' + rows.length + ' รายการ');
+    return { ok: true, count: rows.length };
   }
 
   // ส่งงาน 1 ข้อ — รูปเป็น data URL จะอัปขึ้น Storage ให้เอง
