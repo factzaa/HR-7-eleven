@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7-Eleven · เตรียมตรวจ QSSI</title>
+<link rel="manifest" href="../manifest.webmanifest">
+<meta name="theme-color" content="#16a34a">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#16a34a;--green-d:#15803d;--orange:#ea580c;--ink:#1f2937;--bg:#f3f4f6;--line:#e5e7eb;--muted:#6b7280}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Kanit','Anuphan',system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:14px;min-height:100vh}
+  .wrap{max-width:640px;margin:0 auto}
+  .top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .top h1{font-size:17px;font-weight:700;flex:1}
+  .home{text-decoration:none;color:var(--muted);border:1.5px solid var(--line);background:#fff;border-radius:9px;padding:7px 12px;font-weight:600;font-size:13px}
+  .card{background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.05);padding:14px;margin-bottom:10px}
+  label{display:block;font-size:13px;font-weight:600;margin:8px 0 4px}
+  input,textarea,select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;background:#fff}
+  input:focus,textarea:focus{outline:none;border-color:var(--green)}
+  .btn{border:0;border-radius:11px;padding:12px 16px;font:inherit;font-size:15px;font-weight:600;color:#fff;background:var(--green);cursor:pointer}
+  .btn:disabled{opacity:.6}
+  .btn.sec{background:#fff;color:var(--ink);border:1.5px solid var(--line);font-size:13.5px;padding:8px 12px}
+  .btn.sm{font-size:13.5px;padding:8px 13px}
+  .hide{display:none}
+  .who{display:flex;gap:8px;align-items:center;background:#fff;border-radius:12px;padding:10px 13px;margin-bottom:10px;box-shadow:0 3px 10px rgba(0,0,0,.05)}
+  .who b{font-size:14.5px}
+  .muted{color:var(--muted);font-size:12.5px}
+  .bar{height:9px;background:var(--bg);border-radius:20px;overflow:hidden;margin-top:8px}
+  .bar>div{height:100%;background:var(--green);transition:width .3s}
+  .gh{display:flex;gap:8px;align-items:center;padding:11px 13px;cursor:pointer;background:#f9fafb;border-radius:12px}
+  .gh b{flex:1;font-size:14px}
+  .it{border:1px solid var(--line);border-radius:12px;padding:11px;margin:9px 0}
+  .it.done{background:#f0fdf4;border-color:#bbf7d0}
+  .pill{font-size:10.5px;border-radius:99px;padding:2px 8px;white-space:nowrap}
+  .pill.f{background:#f3f4f6;color:var(--muted);border:1px solid var(--line)}
+  .pill.p{background:#fef3c7;color:#92400e}
+  .pill.n{background:#e0e7ff;color:#3730a3}
+  .guide{font-size:12.5px;margin-top:5px}
+  .warn{font-size:12px;margin-top:5px;background:#fff7ed;border-left:3px solid #f59e0b;padding:6px 9px;border-radius:0 7px 7px 0}
+  .lost{background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:8px 11px;margin:8px 0;font-size:12px}
+  .thumbs{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .thumbs img{width:52px;height:52px;object-fit:cover;border-radius:8px}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;max-width:92%;text-align:center;z-index:9}
+  .toast.show{opacity:1}
+  .toast.err{background:#dc2626}.toast.ok{background:#16a34a}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .tabs{display:flex;gap:7px;margin-bottom:11px}
+  .tabs button{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:11px;padding:9px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;color:var(--muted)}
+  .tabs button.on{background:var(--green);color:#fff;border-color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>✅ เตรียมตรวจ QSSI</h1>
+    <a class="home" href="../">← หน้าแรก</a>
+  </div>
+
+  <div id="step_id">
+    <div class="card">
+      <label>รหัสพนักงาน</label>
+      <input id="empId" type="text" inputmode="numeric" placeholder="เช่น 0657379">
+      <div class="muted" style="margin-top:6px">ใส่รหัสเพื่อดูงานเตรียมตรวจที่ผู้จัดการมอบหมายให้คุณ</div>
+      <button class="btn" id="goBtn" style="width:100%;margin-top:12px">เริ่ม</button>
+    </div>
+  </div>
+
+  <div id="step_list" class="hide">
+    <div class="who">
+      <div style="flex:1"><b id="f_nm">—</b><div class="muted" id="f_sub"></div></div>
+      <button class="btn sec" id="changeBtn">เปลี่ยนคน</button>
+    </div>
+    <div class="tabs">
+      <button id="tb_mine" class="on">งานของฉัน <span id="c_mine"></span></button>
+      <button id="tb_other">งานของสาขา <span id="c_other"></span></button>
+    </div>
+    <div id="listBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',3200);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+let EMP=null, DATA=null, TAB='mine', PH={};
+
+function shrink(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=ev=>{const im=new Image();im.onload=()=>{const mx=1100,sc=Math.min(1,mx/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=im.width*sc;c.height=im.height*sc;c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',0.85));};im.onerror=rej;im.src=ev.target.result;};r.onerror=rej;r.readAsDataURL(file);});}
+
+$('goBtn').onclick=async()=>{
+  const id=$('empId').value.trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  const b=$('goBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+  try{
+    DATA=await window.HR.getQssiChecklist(id);
+    EMP=DATA.emp;
+    if(EMP.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); }
+    else{
+      try{ HRSession.setEmp(EMP.emp_id); }catch(e){}
+      $('f_nm').textContent=EMP.nickname||EMP.name;
+      $('f_sub').textContent='รหัส '+EMP.emp_id+' · รอบเดือน '+DATA.cycle;
+      $('step_id').classList.add('hide'); $('step_list').classList.remove('hide');
+      render();
+    }
+  }catch(e){ toast('err', e.message||'เกิดข้อผิดพลาด'); }
+  b.disabled=false; b.textContent='เริ่ม';
+};
+$('changeBtn').onclick=()=>{ EMP=null; DATA=null; $('empId').value=''; try{HRSession.clearEmp();}catch(e){} $('step_list').classList.add('hide'); $('step_id').classList.remove('hide'); };
+$('tb_mine').onclick=()=>{ TAB='mine'; render(); };
+$('tb_other').onclick=()=>{ TAB='other'; render(); };
+
+function render(){
+  if(!DATA) return;
+  $('tb_mine').className=TAB==='mine'?'on':'';
+  $('tb_other').className=TAB==='other'?'on':'';
+  $('c_mine').textContent=DATA.mine.total?('('+DATA.mine.done+'/'+DATA.mine.total+')'):'(0)';
+  $('c_other').textContent='('+DATA.others.done+'/'+DATA.others.total+')';
+  const src=TAB==='mine'?DATA.mine:DATA.others;
+  const box=$('listBody');
+  if(!src.total){
+    box.innerHTML='<div class="card" style="text-align:center;padding:22px">'
+      +'<div style="font-size:30px">'+(TAB==='mine'?'🎉':'📋')+'</div>'
+      +'<b style="display:block;margin-top:6px">'+(TAB==='mine'?'ยังไม่มีงานที่มอบหมายให้คุณ':'ไม่มีรายการ')+'</b>'
+      +'<div class="muted" style="margin-top:5px">'+(TAB==='mine'?'ลองดูแท็บ "งานของสาขา" — หยิบทำได้เลยถ้ามีเวลา':'')+'</div></div>';
+    return;
+  }
+  const pct=src.total?Math.round(src.done/src.total*100):0;
+  let h='<div class="card"><div style="display:flex;gap:8px;align-items:baseline"><b style="flex:1;font-size:15px">'
+    +(TAB==='mine'?'งานที่ต้องทำของคุณ':'งานที่เหลือของสาขา')+'</b>'
+    +'<b style="font-size:17px;color:'+(pct>=100?'#16a34a':pct>=50?'#c2410c':'#dc2626')+'">'+src.done+'/'+src.total+'</b></div>'
+    +'<div class="bar"><div style="width:'+pct+'%"></div></div></div>';
+  h+=src.groups.map(g=>'<div class="card" style="padding:0;overflow:hidden">'
+    +'<div class="gh" data-g="'+esc(g.cat)+'"><b>'+esc(g.name)+'</b>'
+      +'<span class="muted">'+g.done+'/'+g.total+'</span><span class="muted" data-ar="'+esc(g.cat)+'">▾</span></div>'
+    +'<div id="g_'+esc(g.cat)+'" class="hide" style="padding:0 12px 10px">'
+      +(g.lost.length?('<div class="lost"><b style="color:#b91c1c">หมวดนี้เคยโดนหักคะแนน</b><br>'
+        +g.lost.map(x=>'· '+esc(String(x.question||'').slice(0,58))+' <b style="color:#dc2626">−'+esc(String(x.lost))+'</b>').join('<br>')+'</div>'):'')
+      +g.items.map(itHtml).join('')
+    +'</div></div>').join('');
+  box.innerHTML=h;
+  box.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{
+    const c=b.dataset.g, el=$('g_'+c), ar=box.querySelector('[data-ar="'+c+'"]');
+    const open=!el.classList.contains('hide');
+    el.classList.toggle('hide'); if(ar) ar.textContent=open?'▾':'▴';
+  });
+  wire(box);
+}
+function itHtml(it){
+  const done=!!it.log, ph=(it.log&&Array.isArray(it.log.photos))?it.log.photos:[];
+  const mineNow=it.log&&EMP&&String(it.log.emp_id)===String(EMP.emp_id);
+  return '<div class="it'+(done?' done':'')+'">'
+    +'<div style="display:flex;gap:7px;align-items:flex-start">'
+    +'<span style="font-size:16px">'+(done?'✅':'⬜')+'</span><div style="flex:1;min-width:0">'
+    +'<b style="font-size:13.5px">'+esc(it.title)+'</b> <span class="pill f">'+esc(it.freq)+'</span>'
+    +(it.need_photo?(' <span class="pill p">ต้องมีรูป</span>'):' <span class="pill f">พิมพ์รายงานแทนได้</span>')
+    +(it.mine?' <span class="pill n">งานของฉัน</span>':'')
+    +(it.guide?('<div class="guide">🔎 '+esc(it.guide)+'</div>'):'')
+    +(it.warn?('<div class="warn">⚠ '+esc(it.warn)+'</div>'):'')
+    +(done
+      ?('<div style="font-size:12px;color:#166534;margin-top:6px">ส่งแล้วโดย <b>'+esc(it.log.emp_name||'—')+'</b> · '+esc(String(it.log.done_date||''))
+        +(it.log.note?('<br>รายงาน: '+esc(it.log.note)):'')+'</div>'
+        +(ph.length?('<div class="thumbs">'+ph.map(u=>'<img src="'+esc(u)+'">').join('')+'</div>'):'')
+        +(mineNow?('<button class="btn sec sm" data-undo="'+it.log.id+'" style="margin-top:7px">ยกเลิกการส่ง</button>'):''))
+      :('<div data-form="'+it.id+'" class="hide" style="margin-top:8px">'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">'
+          +'<label class="btn sec sm" style="cursor:pointer;margin:0;display:inline-block">📷 ถ่าย/แนบรูป<input type="file" accept="image/*" capture="environment" multiple data-file="'+it.id+'" style="display:none"></label>'
+          +'<span data-th="'+it.id+'" class="thumbs"></span></div>'
+        +'<textarea data-note="'+it.id+'" rows="2" placeholder="'+(it.need_photo?'หมายเหตุ (ถ้าถ่ายรูปไม่ได้ ให้พิมพ์รายงานสิ่งที่ทำตรงนี้)':'พิมพ์รายงานสั้น ๆ ว่าทำอะไรไปบ้าง')+'"></textarea>'
+        +'<button class="btn" data-send="'+it.id+'" style="width:100%;margin-top:8px">ส่งงาน</button></div>'
+      +'<button class="btn sm" data-open="'+it.id+'" style="margin-top:7px">ทำข้อนี้</button>'))
+    +'</div></div></div>';
+}
+function wire(box){
+  box.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{ box.querySelector('[data-form="'+b.dataset.open+'"]').classList.remove('hide'); b.classList.add('hide'); });
+  box.querySelectorAll('[data-file]').forEach(inp=>inp.onchange=async e=>{
+    const id=inp.dataset.file; PH[id]=PH[id]||[];
+    for(const f of [...(e.target.files||[])].slice(0,4)){ try{ PH[id].push(await shrink(f)); }catch(_e){} }
+    e.target.value='';
+    const t=box.querySelector('[data-th="'+id+'"]');
+    if(t) t.innerHTML=PH[id].map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'"><button data-rm="'+id+'|'+i+'" style="position:absolute;top:-5px;right:-5px;border:0;background:#dc2626;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;line-height:1">×</button></span>').join('');
+    box.querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{ const [i2,k]=x.dataset.rm.split('|'); PH[i2].splice(Number(k),1); inp.dispatchEvent(new Event('change')); });
+  });
+  box.querySelectorAll('[data-send]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.send;
+    const note=(box.querySelector('[data-note="'+id+'"]')||{}).value||'';
+    b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    try{
+      await window.HR.submitQssiCheck({ emp_id:EMP.emp_id, item_id:Number(id), note, photos:PH[id]||[] });
+      PH[id]=[]; toast('ok','ส่งงานแล้ว ขอบคุณครับ');
+      DATA=await window.HR.getQssiChecklist(EMP.emp_id); render();
+    }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); b.disabled=false; b.textContent='ส่งงาน'; }
+  });
+  box.querySelectorAll('[data-undo]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ยกเลิกการส่งงานข้อนี้?')) return;
+    try{ await window.HR.undoQssiCheck(Number(b.dataset.undo), EMP.emp_id); toast('ok','ยกเลิกแล้ว');
+      DATA=await window.HR.getQssiChecklist(EMP.emp_id); render(); }
+    catch(e){ toast('err', e.message||'ไม่สำเร็จ'); }
+  });
+}
+</script>
+</body>
+</html>

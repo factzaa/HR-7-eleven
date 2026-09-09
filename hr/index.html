@@ -1561,6 +1561,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
   <div class="shsub" id="qssub" style="margin-bottom:10px">
     <button class="shsub-b on" type="button" data-qs="check">✅ เช็คลิสต์ส่งงาน <span id="qs_badge" class="shsub-badge" style="display:none">0</span></button>
+    <button class="shsub-b" type="button" data-qs="assign">👥 มอบหมายงาน</button>
     <button class="shsub-b" type="button" data-qs="prep">🎯 สิ่งที่ต้องระวัง</button>
     <button class="shsub-b" type="button" data-qs="entry">📝 บันทึกผลตรวจ</button>
     <button class="shsub-b" type="button" data-qs="month">📅 สรุปรายเดือน</button>
@@ -3078,7 +3079,7 @@ let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 // ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','schedule','discipline','terminate','advance','rider'];
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','auditDash','schedule','discipline','terminate','advance','rider'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -9388,7 +9389,26 @@ async function aeSave(i,btn){
 
 // ===== QSSI · แถบแท็บย่อย =====
 let QS_PANEL='check', QS_DATA=null;
+// ★ 9 ก.ย. 2569 — ตัวเลือกสาขา/เดือนเดิมถูกเติมใน loadAuditDash() เท่านั้น
+//   พอเปลี่ยนหน้า QSSI มาเข้า qsInit() แทน ดรอปดาวเลยว่างเปล่า กดเลือกอะไรไม่ได้
+function qsFillSelectors(){
+  const bs=$('au_branch');
+  if(bs && bs.options.length<=1){
+    bs.innerHTML='<option value="">— เลือกสาขา —</option>'+(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'">'+esc(b.name)+'</option>').join('');
+  }
+  const ms=$('au_month');
+  if(ms && !ms.options.length){
+    const TM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const pad=n=>String(n).padStart(2,'0');
+    const now=new Date(Date.now()+7*3600*1000); let opts='<option value="">ทั้งหมด</option>';
+    for(let i=0;i<18;i++){ const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1)); const y=d.getUTCFullYear(),m=d.getUTCMonth(); opts+='<option value="'+y+'-'+pad(m+1)+'">'+TM[m]+' '+(y+543)+'</option>'; }
+    ms.innerHTML=opts;
+  }
+  // ★ โหมด ผจก. — ล็อกไว้ที่สาขาตัวเองเสมอ ห้ามดูข้ามสาขา
+  if(MGR_MODE && bs){ bs.value=MGR_BRANCH; bs.disabled=true; }
+  else if(bs && !bs.value && (DATA.branches||[]).length===1) bs.value=DATA.branches[0].branch_id;
+}
 function qsInit(){
+  qsFillSelectors();
   const bar=$('qssub');
   if(bar && !bar.dataset.wired){ bar.dataset.wired='1';
     bar.querySelectorAll('[data-qs]').forEach(b=>b.onclick=()=>{
@@ -9396,17 +9416,36 @@ function qsInit(){
       QS_PANEL=b.dataset.qs; qsRoute();
     });
   }
+  if(!$('au_body').dataset.qswired){ $('au_body').dataset.qswired='1';
+    if($('au_branch')) $('au_branch').addEventListener('change', qsRoute);
+    if($('au_month'))  $('au_month').addEventListener('change', ()=>{ if(QS_PANEL==='score') loadAuditDash(); });
+    if($('au_go'))     $('au_go').addEventListener('click', qsRoute);
+  }
   qsRoute();
 }
+// การ์ดเตือนเมื่อยังไม่เลือกสาขา — หน้าที่ทำงานรายสาขาต้องรู้ว่าทำของสาขาไหน
+function qsNeedBranch(){
+  $('au_body').innerHTML='<div class="card" style="padding:18px;text-align:center">'
+    +'<div style="font-size:32px">🏪</div>'
+    +'<b style="font-size:15px;display:block;margin-top:6px">เลือกสาขาก่อน</b>'
+    +'<div style="font-size:13px;color:var(--muted);margin-top:5px">หน้านี้ทำงานแยกรายสาขา — เลือกสาขาจากช่องด้านบนขวา แล้วหน้าจะโหลดให้เอง</div></div>';
+}
+function qsBranchName(id){ const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(id)); return b?b.name:(id||'—'); }
+function qsHead(t){ return '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:9px">'
+  +'<b style="font-size:15px">'+esc(t)+'</b>'
+  +'<span style="font-size:12.5px;background:#dcfce7;color:#166534;border-radius:99px;padding:2px 10px">'+esc(qsBranchName(qsBranch()))+'</span></div>'; }
 function qsRoute(){
   if(QS_PANEL==='check') return qsCheck();
+  if(QS_PANEL==='assign') return qsAssign();
   if(QS_PANEL==='prep')  return qsPrep();
   if(QS_PANEL==='entry') return qsEntry();
   if(QS_PANEL==='month') return qsMonth();
   if(QS_PANEL==='dash')  return qsDash();
   return loadAuditDash();
 }
-function qsBranch(){ const v=$('au_branch')?$('au_branch').value:''; return v || ((DATA.branches&&DATA.branches[0])?DATA.branches[0].branch_id:''); }
+// ★ เดิม: ถ้าเลือก 'ทุกสาขา' จะแอบใช้สาขาแรกโดยไม่บอก ทำให้ดูเหมือนไม่แยกสาขา
+//   ตอนนี้: ผจก. ล็อกสาขาตัวเอง · HR ต้องเลือกสาขาจริงก่อนถึงจะทำงานรายสาขาได้
+function qsBranch(){ if(MGR_MODE) return MGR_BRANCH||''; const e=$('au_branch'); return e?(e.value||''):''; }
 function qsCycleNow(){ try{ return (window.HR.bangkokDate?window.HR.bangkokDate():new Date().toISOString().slice(0,10)).slice(0,7); }catch(e){ return new Date().toISOString().slice(0,7); } }
 
 // ===== 1) เช็คลิสต์ส่งงาน =====
@@ -9414,13 +9453,14 @@ function qsCycleNow(){ try{ return (window.HR.bangkokDate?window.HR.bangkokDate(
 //   หน้านี้จึงเป็นรายการงานจริงที่กดส่งได้ทีละข้อ พร้อมรูปหรือรายงานพิมพ์ และชื่อคนทำ
 async function qsCheck(){
   const box=$('au_body'); box.innerHTML='<div class="empty">กำลังโหลดเช็คลิสต์…</div>';
-  const br=qsBranch(); if(!br){ box.innerHTML='<div class="empty">เลือกสาขาก่อน</div>'; return; }
+  const br=qsBranch(); if(!br){ qsNeedBranch(); return; }
   const r=await post({ action:'hr_qssi_items', password:pwd, branch_id:br, cycle:qsCycleNow() });
   if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
   QS_DATA=r;
   const pct=r.total?Math.round(r.done/r.total*100):0;
   const bd=$('qs_badge'); if(bd){ bd.style.display=r.done<r.total?'':'none'; bd.textContent=(r.total-r.done); }
-  let h='<div class="card" style="padding:12px;margin-bottom:10px">'
+  let h=qsHead('เช็คลิสต์ส่งงาน')
+    +'<div class="card" style="padding:12px;margin-bottom:10px">'
     +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="flex:1;font-size:15px">รอบเดือน '+esc(r.cycle)+'</b>'
       +'<b style="font-size:18px;color:'+(pct>=100?'#16a34a':pct>=60?'#c2410c':'#dc2626')+'">'+r.done+'/'+r.total+'</b></div>'
     +'<div style="height:8px;background:var(--bg);border-radius:20px;overflow:hidden;margin-top:8px"><div style="width:'+pct+'%;height:100%;background:'+(pct>=100?'#16a34a':'#f59e0b')+'"></div></div>'
@@ -9457,6 +9497,7 @@ function qsItemHtml(it){
       +'<div style="flex:1;min-width:0">'
         +'<b style="font-size:13.5px">'+esc(it.title)+'</b>'
         +' <span style="font-size:10.5px;background:var(--glass);border:1px solid var(--line);border-radius:99px;padding:1px 7px;color:var(--muted)">'+esc(it.freq)+'</span>'
+        +(((it.assigns||[]).length)?(' <span style="font-size:10.5px;background:#e0e7ff;color:#3730a3;border-radius:99px;padding:1px 8px">มอบให้ '+esc(it.assigns.map(a=>a.emp_name||a.emp_id).join(', '))+(it.assigns[0].due_date?(' · ส่ง '+esc(String(it.assigns[0].due_date))):'')+'</span>'):'')
         +(it.need_photo?' <span style="font-size:10.5px;color:#b45309">ต้องมีรูป '+it.min_photos+'</span>':' <span style="font-size:10.5px;color:var(--muted)">พิมพ์รายงานแทนรูปได้</span>')
         +(it.guide?('<div style="font-size:12.5px;color:var(--ink);margin-top:5px">🔎 '+esc(it.guide)+'</div>'):'')
         +(it.warn?('<div style="font-size:12px;margin-top:5px;background:#fff7ed;border-left:3px solid #f59e0b;padding:5px 9px;border-radius:0 7px 7px 0">⚠ '+esc(it.warn)+'</div>'):'')
@@ -9513,6 +9554,61 @@ function qsWireItems(box){
 }
 function _shrinkImg(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=ev=>{ const im=new Image(); im.onload=()=>{ const mx=1100, sc=Math.min(1,mx/Math.max(im.width,im.height)); const c=document.createElement('canvas'); c.width=im.width*sc; c.height=im.height*sc; c.getContext('2d').drawImage(im,0,0,c.width,c.height); res(c.toDataURL('image/jpeg',0.85)); }; im.onerror=rej; im.src=ev.target.result; }; r.onerror=rej; r.readAsDataURL(file); }); }
 
+// ===== 1.5) ผจก. มอบหมายหัวข้อให้พนักงาน =====
+// ★ 9 ก.ย. 2569 — พนักงานเปิดหน้า qssi/ แล้วจะเห็น "งานของฉัน" จากตรงนี้
+let QS_ASG={};
+async function qsAssign(){
+  const box=$('au_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const br=qsBranch(); if(!br){ qsNeedBranch(); return; }
+  const r=await post({ action:'hr_qssi_items', password:pwd, branch_id:br, cycle:qsCycleNow() });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  QS_DATA=r; QS_ASG={};
+  r.groups.forEach(g=>g.items.forEach(it=>{ const a=(it.assigns||[])[0]; if(a) QS_ASG[it.id]={emp_id:a.emp_id, emp_name:a.emp_name, due_date:a.due_date||''}; }));
+  const emps=r.employees||[];
+  if(!emps.length){ box.innerHTML='<div class="empty">สาขานี้ยังไม่มีพนักงานในระบบ</div>'; return; }
+  const opts=id=>'<option value="">— ยังไม่มอบหมาย —</option>'+emps.map(e=>'<option value="'+esc(e.emp_id)+'"'+((QS_ASG[id]&&QS_ASG[id].emp_id===e.emp_id)?' selected':'')+'>'+esc(e.name)+'</option>').join('');
+  let h=qsHead('มอบหมายงานเตรียมตรวจ')
+    +'<div class="card" style="padding:12px;margin-bottom:10px">'
+    +'<b style="font-size:15px">รอบ '+esc(r.cycle)+'</b>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin-top:4px">เลือกว่าใครรับผิดชอบข้อไหน · พนักงานเปิดหน้า "เตรียมตรวจ QSSI" ในแอปพนักงานแล้วจะเห็นเฉพาะงานของตัวเองขึ้นก่อน</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:flex-end">'
+      +'<div style="width:160px"><label style="font-size:12px;color:var(--muted)">กำหนดส่งทุกข้อ</label><input id="qa_due" type="date" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+      +'<button class="btn btn-sec btn-sm" id="qa_spread">แบ่งงานให้ทุกคนเท่า ๆ กัน</button>'
+      +'<button class="btn btn-sec btn-sm" id="qa_clear">ล้างทั้งหมด</button>'
+      +'<span style="flex:1"></span><button class="btn btn-pri" id="qa_save">บันทึกการมอบหมาย</button></div>'
+  +'</div>';
+  h+=r.groups.map(g=>'<div class="card" style="padding:11px;margin-bottom:9px">'
+    +'<b style="font-size:13.5px;color:var(--green-d)">'+esc(g.name)+'</b>'
+    +g.items.map(it=>'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--line)">'
+      +'<span style="flex:1;min-width:170px;font-size:12.5px">'+esc(it.title)+(it.log?' <span style="color:#16a34a">✓ ส่งแล้ว</span>':'')+'</span>'
+      +'<select data-qaemp="'+it.id+'" style="width:170px;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:12.5px">'+opts(it.id)+'</select>'
+    +'</div>').join('')
+  +'</div>').join('');
+  box.innerHTML=h;
+  const due=$('qa_due'); if(due){ const f=Object.values(QS_ASG).find(x=>x.due_date); if(f) due.value=f.due_date; }
+  box.querySelectorAll('[data-qaemp]').forEach(sel=>sel.onchange=()=>{
+    const id=sel.dataset.qaemp;
+    if(!sel.value){ delete QS_ASG[id]; return; }
+    QS_ASG[id]={ emp_id:sel.value, emp_name:sel.options[sel.selectedIndex].text, due_date:(due?due.value:'') };
+  });
+  $('qa_clear').onclick=()=>{ QS_ASG={}; box.querySelectorAll('[data-qaemp]').forEach(s2=>s2.value=''); toast('ok','ล้างแล้ว — อย่าลืมกดบันทึก'); };
+  $('qa_spread').onclick=()=>{
+    const ids=[]; r.groups.forEach(g=>g.items.forEach(it=>ids.push(it.id)));
+    ids.forEach((id,i)=>{ const e=emps[i%emps.length]; QS_ASG[id]={emp_id:e.emp_id, emp_name:e.name, due_date:(due?due.value:'')}; });
+    box.querySelectorAll('[data-qaemp]').forEach(s2=>{ const a=QS_ASG[s2.dataset.qaemp]; s2.value=a?a.emp_id:''; });
+    toast('ok','แบ่งให้ '+emps.length+' คนแล้ว — ปรับได้ก่อนกดบันทึก');
+  };
+  $('qa_save').onclick=async()=>{
+    const b=$('qa_save'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
+    const d=due?due.value:'';
+    const rows=Object.entries(QS_ASG).map(([item_id,a])=>({ item_id:Number(item_id), emp_id:a.emp_id, emp_name:a.emp_name, due_date:a.due_date||d }));
+    const res=await post({ action:'hr_qssi_assign_save', password:pwd, data:{ branch_id:br, cycle:qsCycleNow(), rows } });
+    b.disabled=false; b.textContent=old;
+    if(res&&res.ok) toast('ok','บันทึกแล้ว '+res.count+' รายการ');
+    else toast('err',(res&&res.error)||'บันทึกไม่สำเร็จ');
+  };
+}
+
 // ===== 2) บันทึกผลตรวจ (ผจก. คีย์เอง) =====
 let QS_FIND=[], QS_STK=[];
 function qsEntry(){
@@ -9548,6 +9644,7 @@ function qsEntry(){
   +'</div>';
   try{ $('qe_date').value=(window.HR.bangkokDate?window.HR.bangkokDate():new Date().toISOString().slice(0,10)); }catch(e){}
   const b=qsBranch(); if(b) $('qe_branch').value=b;
+  if(MGR_MODE && $('qe_branch')) $('qe_branch').disabled=true;
   QS_FIND=[{}]; QS_STK=[];
   qsRenderFinds(); qsRenderStks();
   $('qe_addf').onclick=()=>{ qsCollectFinds(); QS_FIND.push({}); qsRenderFinds(); };
@@ -9611,11 +9708,16 @@ async function qsSaveAudit(){
 // ===== 3) สรุปรายเดือน =====
 async function qsMonth(){
   const box=$('au_body'); box.innerHTML='<div class="empty">กำลังสรุป…</div>';
-  const r=await post({ action:'hr_qssi_month', password:pwd, branch_id:qsBranch() });
+  // ★ ต้องเลือกสาขา — ถ้ารวมทุกสาขา ตัวเลขรายเดือนจะปนกันจนอ่านผิด (การเทียบข้ามสาขาอยู่ที่แดชบอร์ด)
+  const br=qsBranch(); if(!br){ qsNeedBranch(); return; }
+  const r=await post({ action:'hr_qssi_month', password:pwd, branch_id:br });
   if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
   const ms=r.months||[];
   if(!ms.length){ box.innerHTML='<div class="empty" style="padding:16px">ยังไม่มีข้อมูล — ไปที่ "บันทึกผลตรวจ" เพื่อคีย์ใบตรวจเข้ามาก่อน</div>'; return; }
-  box.innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">กดที่เดือนเพื่อดูรายละเอียด</div>'
+  box.innerHTML='<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:9px">'
+    +'<b style="font-size:15px">สรุปรายเดือน</b>'
+    +'<span style="font-size:12.5px;background:#dcfce7;color:#166534;border-radius:99px;padding:2px 10px">'+esc(qsBranchName(qsBranch()))+'</span>'
+    +'<span style="font-size:12.5px;color:var(--muted)">· กดที่เดือนเพื่อดูรายละเอียด</span></div>'
     +ms.map(m=>{
       const col=m.result==null?'var(--muted)':(m.result>=85?'#16a34a':m.result>=70?'#c2410c':'#dc2626');
       return '<div class="card" style="padding:0;margin-bottom:9px;overflow:hidden">'
@@ -9649,7 +9751,9 @@ async function qsDash(){
   const box=$('au_body'); box.innerHTML='<div class="empty">กำลังวิเคราะห์…</div>';
   const r=await post({ action:'hr_qssi_dash', password:pwd });
   if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
-  const cy=r.cycles||[], grid=r.grid||[];
+  const cy=r.cycles||[];
+  // ★ ผจก. ดูได้เฉพาะสาขาตัวเอง — การเทียบข้ามสาขาเป็นของ HR
+  const grid=(r.grid||[]).filter(g=>!MGR_MODE || String(g.branch_id)===String(MGR_BRANCH));
   const col=v=>v==null?'var(--muted)':(v>=85?'#16a34a':v>=70?'#c2410c':'#dc2626');
   let h='<div class="card" style="padding:12px;margin-bottom:10px"><b style="font-size:14px">Result % เทียบเดือน · เทียบสาขา</b>'
     +'<div class="tablewrap" style="margin-top:9px"><table style="font-size:12.5px"><thead><tr><th>สาขา</th>'
@@ -9701,8 +9805,8 @@ async function qsMakeNote(){
 //   แล้วเรียงตาม "คะแนนที่จะเสีย" ไม่ใช่ไล่ทุกข้อ — ทำสามอันดับแรกก่อนคุ้มที่สุด
 async function qsPrep(){
   const box=$('au_body'); box.innerHTML='<div class="empty">กำลังรวบรวมข้อมูล…</div>';
-  const br=$('au_branch')?$('au_branch').value:'';
-  const j=await cmPost({ mode:'qssi_prep', branch_id:br||undefined });
+  const br=qsBranch(); if(!br){ qsNeedBranch(); return; }
+  const j=await cmPost({ mode:'qssi_prep', branch_id:br });
   if(!j||!j.ok){ box.innerHTML='<div class="empty">'+esc((j&&j.error)||'ดึงข้อมูลไม่สำเร็จ')+'</div>'; return; }
   const d=j.data||{};
   const risks=d['รายการเสี่ยงเรียงตามคะแนนที่จะเสีย']||[];
