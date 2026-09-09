@@ -1859,7 +1859,9 @@
       sb.from('qssi_findings').select('cat,item_no,question,finding,score,max_score,inspect_date').eq('branch_id',branch).order('inspect_date',{ascending:false}).limit(80),
     ]);
     if(itR.error) throw new Error('ยังไม่ได้ตั้งค่ารายการตรวจ (ให้ HR รัน qssi_check.sql)');
+    // ★ 10 ก.ย. 2569 — ร่าง (status='draft') = เก็บรูปไว้แล้วแต่ยังไม่กดส่ง ต้องไม่นับว่าเสร็จ
     const byItem={}; (lgR.data||[]).forEach(l=>{ if(!byItem[l.item_id]) byItem[l.item_id]=l; });
+    const isDone=l=>!!l && String(l.status||'done')==='done';
     const asgBy={}; (asR.data||[]).forEach(a=>{ (asgBy[a.item_id]=asgBy[a.item_id]||[]).push(a); });
     const lostByCat={};
     (fdR.data||[]).forEach(f=>{
@@ -1877,11 +1879,11 @@
       const gs={};
       list.forEach(x=>{ (gs[x.cat]=gs[x.cat]||[]).push(x); });
       return Object.keys(gs).map(c=>({ cat:c, name:QSSI_CAT_NAME_EMP[c]||c, items:gs[c], lost:lostByCat[c]||[],
-        done:gs[c].filter(x=>x.log).length, total:gs[c].length }));
+        done:gs[c].filter(x=>isDone(x.log)).length, total:gs[c].length }));
     };
     return { emp, cycle, branch_id:branch,
-      mine:{ groups:group(mine), total:mine.length, done:mine.filter(x=>x.log).length },
-      others:{ groups:group(others), total:others.length, done:others.filter(x=>x.log).length } };
+      mine:{ groups:group(mine), total:mine.length, done:mine.filter(x=>isDone(x.log)).length },
+      others:{ groups:group(others), total:others.length, done:others.filter(x=>isDone(x.log)).length } };
   }
   async function submitQssiCheck(d){
     d=d||{};
@@ -1898,13 +1900,92 @@
     const note=String(d.note||'').trim();
     if(it.need_photo && !photos.length && !note) throw new Error('ข้อนี้ต้องแนบรูป — ถ้าถ่ายไม่ได้จริง ๆ ให้พิมพ์รายงานสิ่งที่ทำแทน');
     if(!it.need_photo && !note && !photos.length) throw new Error('พิมพ์รายงานสั้น ๆ ว่าทำอะไรไปบ้าง');
+    // ★ ถ้ามีร่างค้างอยู่ ให้ "ต่อยอดแถวเดิม" ไม่สร้างแถวใหม่ — รูปที่เซฟไว้ตอนร่างจะไม่หาย
+    const cycle2=bangkokDate().slice(0,7);
+    const { data: exist }=await sb.from('qssi_check_logs').select('id,photos,note')
+      .eq('branch_id', emp.branch_id||'').eq('cycle', cycle2).eq('item_id', Number(d.item_id)).maybeSingle();
+    if(exist){
+      const cur=Array.isArray(exist.photos)?exist.photos:[];
+      const all=cur.concat(photos);
+      if(it.need_photo && !all.length && !note) throw new Error('ข้อนี้ต้องแนบรูป — ถ้าถ่ายไม่ได้จริง ๆ ให้พิมพ์รายงานสิ่งที่ทำแทน');
+      const { error:e2 }=await sb.from('qssi_check_logs').update({
+        emp_id: String(d.emp_id), emp_name: emp.nickname||emp.name||null,
+        photos: all.length?all:null, note: note||exist.note||null, status:'done',
+        done_date: bangkokDate(), need_fix:false, mgr_note:null, mgr_by:null, mgr_at:null,
+      }).eq('id', exist.id);
+      if(e2) throw e2;
+      return { ok:true, photos:all.length };
+    }
     const { error }=await sb.from('qssi_check_logs').insert({
-      branch_id: emp.branch_id||'', cycle: bangkokDate().slice(0,7), item_id: Number(d.item_id),
+      branch_id: emp.branch_id||'', cycle: cycle2, item_id: Number(d.item_id),
       emp_id: String(d.emp_id), emp_name: emp.nickname||emp.name||null,
       photos: photos.length?photos:null, note: note||null, status:'done',
     });
     if(error) throw error;
     return { ok:true, photos:photos.length };
+  }
+  // ★ 10 ก.ย. 2569 — บันทึกรูปเข้าระบบทันทีที่เลือก โดยยังไม่กดส่ง (กันรูปหายเวลาปิดแอป/รีเฟรช)
+  //   เก็บเป็นแถวเดียวกับตอนส่งจริง แค่ status='draft' · กดส่งทีหลังจะอัปเดตแถวเดิมเป็น 'done'
+  async function saveQssiDraft(d){
+    d=d||{};
+    if(!d.emp_id||!d.item_id) throw new Error('ข้อมูลไม่ครบ');
+    const emp=await lookupEmployee(d.emp_id); if(!emp) throw new Error('ไม่พบรหัสพนักงาน');
+    const branch=emp.branch_id||'', cycle=bangkokDate().slice(0,7);
+    const add=[];
+    for(const ph of (d.photos||[])){
+      if(!ph) continue;
+      if(typeof ph==='string'&&/^https?:/i.test(ph)){ add.push(ph); continue; }
+      try{ add.push(await uploadPhoto('employee-docs','qssi/'+(branch||'x')+'_'+d.item_id+'_d'+Date.now()+'_'+add.length+'.jpg', ph)); }catch(e){}
+    }
+    const note=String(d.note||'').trim();
+    const { data: exist }=await sb.from('qssi_check_logs').select('id,photos,note,status')
+      .eq('branch_id',branch).eq('cycle',cycle).eq('item_id',Number(d.item_id)).maybeSingle();
+    if(exist){
+      const cur=Array.isArray(exist.photos)?exist.photos:[];
+      const all=cur.concat(add);
+      const { error }=await sb.from('qssi_check_logs').update({
+        photos: all.length?all:null, note: note||exist.note||null,
+        emp_id: String(d.emp_id), emp_name: emp.nickname||emp.name||null,
+      }).eq('id', exist.id);
+      if(error) throw error;
+      return { ok:true, log_id:exist.id, total:all.length, status:exist.status||'draft' };
+    }
+    const { data: ins, error }=await sb.from('qssi_check_logs').insert({
+      branch_id:branch, cycle, item_id:Number(d.item_id),
+      emp_id:String(d.emp_id), emp_name:emp.nickname||emp.name||null,
+      photos: add.length?add:null, note: note||null, status:'draft',
+    }).select('id').maybeSingle();
+    if(error) throw error;
+    return { ok:true, log_id:(ins&&ins.id)||null, total:add.length, status:'draft' };
+  }
+
+  // ★ 10 ก.ย. 2569 — เพิ่มรูปเข้างานที่ "ส่งไปแล้ว" ได้
+  //   เหตุผล: 1 ข้อ (เช่น ความสะอาดพื้นที่หน้าร้าน) มีหลายจุดต้องถ่าย ถ่ายรอบเดียวไม่ครบ
+  //   เดิมส่งแล้วเหลือแค่ปุ่มยกเลิก ต้องยกเลิกแล้วเริ่มใหม่ = รูปเดิมหาย
+  //   คนในสาขาเดียวกันเพิ่มรูปได้ทุกคน (คนละคนถ่ายคนละจุดได้) · ระบบต่อท้ายชื่อคนเพิ่มไว้ในรายงาน
+  async function addQssiPhotos(d){
+    d=d||{};
+    if(!d.emp_id||!d.log_id) throw new Error('ข้อมูลไม่ครบ');
+    const emp=await lookupEmployee(d.emp_id); if(!emp) throw new Error('ไม่พบรหัสพนักงาน');
+    const { data: log } = await sb.from('qssi_check_logs').select('id,branch_id,photos,note').eq('id',Number(d.log_id)).maybeSingle();
+    if(!log) throw new Error('ไม่พบงานที่ส่งไว้');
+    if(String(log.branch_id||'')!==String(emp.branch_id||'')) throw new Error('เพิ่มรูปได้เฉพาะงานของสาขาตัวเอง');
+    const cur=Array.isArray(log.photos)?log.photos.slice():[];
+    const add=[];
+    for(const ph of (d.photos||[])){
+      if(!ph) continue;
+      if(typeof ph==='string'&&/^https?:/i.test(ph)){ add.push(ph); continue; }
+      try{ add.push(await uploadPhoto('employee-docs','qssi/'+(emp.branch_id||'x')+'_log'+log.id+'_'+Date.now()+'_'+add.length+'.jpg', ph)); }catch(e){}
+    }
+    const extra=String(d.note||'').trim();
+    if(!add.length && !extra) throw new Error('ยังไม่ได้เลือกรูป หรือพิมพ์บอกว่าเป็นจุดไหน');
+    const who=emp.nickname||emp.name||String(d.emp_id);
+    const line='➕ '+who+' เพิ่ม'+(add.length?(add.length+' รูป'):'')+(extra?((add.length?' · ':'')+extra):'');
+    const note=String(log.note||'') ? (String(log.note)+'\n'+line) : line;
+    // พนักงานเพิ่มรูปตอบกลับ = ถือว่าจัดการตามที่ ผจก. ขอแล้ว ปลดธง need_fix ให้ ผจก. มาดูใหม่
+    const { error }=await sb.from('qssi_check_logs').update({ photos: cur.concat(add), note, need_fix:false }).eq('id', log.id);
+    if(error) throw error;
+    return { ok:true, added:add.length, total:cur.length+add.length };
   }
   async function undoQssiCheck(id, empId){
     if(!id) throw new Error('ไม่ระบุ');
@@ -2698,6 +2779,6 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

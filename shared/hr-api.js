@@ -188,6 +188,7 @@
         case 'hr_qssi_dash':        return await hrQssiDash(p);
         case 'hr_qssi_note_save':   return await hrQssiNoteSave(p);
         case 'hr_qssi_assign_save': return await hrQssiAssignSave(p);
+        case 'hr_qssi_comment':     return await hrQssiComment(p);
         case 'hr_exam_bank_meta':   return await hrExamBankMeta();
         case 'hr_exam_bank_pick':   return await hrExamBankPick(p);
         case 'hr_exam_retest':      return await hrExamRetest(p);
@@ -864,7 +865,8 @@
     const items = (itR.data || []).map(it => ({ ...it, log: byItem[it.id] || null, assigns: asgBy[it.id] || [] }));
     const groups = QSSI_CATS.map(c => {
       const list = items.filter(x => x.cat === c);
-      return { cat: c, name: QSSI_CAT_NAME[c] || c, total: list.length, done: list.filter(x => x.log).length, lost: lostByCat[c] || [], items: list };
+      // ★ 10 ก.ย. 2569 — status 'draft' = เก็บรูปไว้แต่ยังไม่กดส่ง ต้องไม่นับว่าเสร็จ
+      return { cat: c, name: QSSI_CAT_NAME[c] || c, total: list.length, done: list.filter(x => qssiDone(x.log)).length, lost: lostByCat[c] || [], items: list };
     }).filter(g => g.total);
     return {
       ok: true, cycle, branch_id: branch, groups,
@@ -875,6 +877,35 @@
   }
 
   // ผจก. มอบหมายหัวข้อให้พนักงาน — ส่งมาทั้งชุดของรอบเดือนนั้น แล้วเขียนทับ
+  const qssiDone = l => !!l && String(l.status || 'done') === 'done';
+  // ★ 10 ก.ย. 2569 — ผจก./HR คอมเมนต์งาน QSSI ที่พนักงานส่งมา + วงจุดที่ต้องแก้บนรูป
+  //   need_fix = true → พนักงานเห็นกล่องแดง "ขอให้แก้งาน" ในหน้า qssi/
+  //   พอพนักงานเพิ่มรูปตอบกลับ ระบบจะปลด need_fix ให้เอง (ดู addQssiPhotos ใน shared/supabase.js)
+  async function hrQssiComment(p) {
+    p = p || {};
+    const id = Number(p.log_id || 0);
+    if (!id) return { ok: false, error: 'ไม่ระบุงาน' };
+    const note = String(p.note || '').trim();
+    const mk = Array.isArray(p.markup) ? p.markup : [];
+    if (!note && !mk.length) return { ok: false, error: 'พิมพ์คอมเมนต์ หรือวงจุดที่ต้องแก้อย่างน้อยอย่างใดอย่างหนึ่ง' };
+    const urls = [];
+    for (const m of mk) {
+      if (typeof m === 'string' && m.startsWith('data:')) {
+        try { urls.push(await window.HR.uploadPhoto('employee-docs', 'qssi/mgr' + id + '_' + Date.now() + '_' + urls.length + '.jpg', m)); } catch (e) { console.warn('qssi markup', e); }
+      } else if (typeof m === 'string' && m) urls.push(m);
+    }
+    const upd = {
+      mgr_note: note || null,
+      mgr_by: (p.by || 'ผู้จัดการ'),
+      mgr_at: new Date().toISOString(),
+      need_fix: p.need_fix === true,
+    };
+    if (urls.length) upd.mgr_photos = urls;
+    const { error } = await sb().from('qssi_check_logs').update(upd).eq('id', id);
+    if (error) return { ok: false, error: error.message };
+    await logAct(p.need_fix === true ? 'ขอให้แก้งาน QSSI' : 'คอมเมนต์งาน QSSI', null, 'log ' + id + (note ? (' · ' + note) : '') + (urls.length ? (' · วงจุด ' + urls.length + ' รูป') : ''));
+    return { ok: true, photos: urls.length };
+  }
   async function hrQssiAssignSave(p) {
     const d = (p && p.data) || {};
     const branch = String(d.branch_id || '');
