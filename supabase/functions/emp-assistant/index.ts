@@ -65,11 +65,26 @@ async function shelf_todo(branch: string) {
     .map((r: any) => ({ shelf: (shBy[r.shelf_id] || {}).name || ("#" + r.shelf_id), code: (shBy[r.shelf_id] || {}).shelf_code || "", responsible: empBy[r.emp_id] || r.emp_id }));
   return { count: todo.length, shelves: todo };
 }
+// ★ 9 ก.ย. 2569 — เดิมกรอบ 14 วัน แต่หน้า QA นับ 30 วัน คนละเลขกัน
+//   เคสจริง (9 ก.ย.): ของชิ้นที่ใกล้ที่สุดหมด 20 ก.ย./1 ต.ค. → ในกรอบ 14 วันได้ 0
+//   นิดาเลยตอบว่า "ไม่มีสินค้าใกล้หมดอายุ" ทั้งที่ใน 30 วันมี 44 รายการ
+//   แก้เป็น 30 วันให้ตรงกับหน้า QA · และถ้าในกรอบไม่มีจริง ให้ส่ง "รายการที่ใกล้ที่สุด" กลับไปด้วย
+//   ห้ามตอบลอย ๆ ว่าไม่มี
 async function qa_expiring(a: any, branch: string) {
-  const days = Number(a.days) > 0 ? Number(a.days) : 14; const today = bkkToday(); const limit = addDays(today, days);
+  const days = Number(a.days) > 0 ? Number(a.days) : 30; const today = bkkToday(); const limit = addDays(today, days);
   const { data } = await sb.from("qa_items").select("name,expiry_date,qty,zone,status")
     .eq("branch_id", branch).eq("status", "on_shelf").not("expiry_date", "is", null).lte("expiry_date", limit).order("expiry_date").limit(80);
-  return { within_days: days, count: (data ?? []).length, items: (data ?? []).map((i: any) => ({ name: i.name, expiry: i.expiry_date, qty: i.qty, zone: i.zone })) };
+  const rows = data ?? [];
+  const shape = (i: any) => ({ name: i.name, expiry: i.expiry_date, qty: i.qty, zone: i.zone });
+  if (rows.length) return { within_days: days, count: rows.length, items: rows.map(shape) };
+  // ไม่มีในกรอบ → ดูของถัดไปให้ ไม่ปล่อยให้ตอบว่า "ไม่มี" เฉย ๆ
+  const { data: nx } = await sb.from("qa_items").select("name,expiry_date,qty,zone")
+    .eq("branch_id", branch).eq("status", "on_shelf").not("expiry_date", "is", null).gt("expiry_date", limit).order("expiry_date").limit(10);
+  return { within_days: days, count: 0, items: [],
+    next_items: (nx ?? []).map(shape),
+    note: (nx ?? []).length
+      ? "ยังไม่มีของที่หมดอายุภายใน " + days + " วัน · ให้บอกรายการที่ใกล้ที่สุดใน next_items พร้อมวันหมดอายุ แล้วชวนให้ไปดูหน้า QA สินค้า ห้ามตอบแค่ว่า 'ไม่มี'"
+      : "สาขานี้ยังไม่มีสินค้าที่บันทึกไว้บนเชลฟ์เลย — ให้แนะนำให้ไปบันทึกที่หน้า QA สินค้าก่อน" };
 }
 async function special_open(branch: string) {
   const { data: asg } = await sb.from("special_task_assignees").select("task_id,emp_id,status").eq("branch_id", branch).in("status", ["todo", "sent_back"]);
@@ -86,8 +101,8 @@ async function special_open(branch: string) {
   return { count: items.length, items };
 }
 async function branch_summary(branch: string) {
-  const [t, s, q, sp] = await Promise.all([shift_tasks(branch), shelf_todo(branch), qa_expiring({ days: 7 }, branch), special_open(branch)]);
-  return { งานในกะค้าง: t.count, เชลฟ์ยังไม่ตรวจ: s.count, สินค้าใกล้หมดอายุ7วัน: q.count, งานพิเศษค้าง: sp.count };
+  const [t, s, q, sp] = await Promise.all([shift_tasks(branch), shelf_todo(branch), qa_expiring({ days: 30 }, branch), special_open(branch)]);
+  return { งานในกะค้าง: t.count, เชลฟ์ยังไม่ตรวจ: s.count, สินค้าใกล้หมดอายุ30วัน: q.count, งานพิเศษค้าง: sp.count };
 }
 
 // ============ เครื่องมือรายบุคคล (อ่านเฉพาะข้อมูลของผู้ที่คุย) — ใหม่ ============
@@ -240,7 +255,7 @@ const TOOLS: Record<string, (a: any, c: Ctx) => Promise<any>> = {
 const DECLS = [
   { name: "shift_tasks", description: "งานในกะของสาขาที่ยังไม่ผ่าน (วันนี้+เมื่อวาน) — ระบบแสดงเป็นการ์ดแยกกะ + ปุ่มไปหน้าส่งงานให้เอง", parameters: { type: "object", properties: {} } },
   { name: "shelf_todo", description: "เชลฟ์ในสาขาที่ยังไม่ได้ทำเช็กลิสต์วันนี้", parameters: { type: "object", properties: {} } },
-  { name: "qa_expiring", description: "สินค้าใกล้หมดอายุในสาขาภายใน N วัน (ดีฟอลต์ 14)", parameters: { type: "object", properties: { days: { type: "number" } } } },
+  { name: "qa_expiring", description: "สินค้าใกล้หมดอายุในสาขาภายใน N วัน (ดีฟอลต์ 30 · ตรงกับที่หน้า QA สินค้าใช้นับ) — ถ้าในกรอบไม่มี จะส่ง next_items = รายการที่ใกล้หมดอายุที่สุดมาให้ ต้องบอกรายการเหล่านั้นพร้อมวันหมดอายุ ห้ามตอบแค่ว่า 'ไม่มี'", parameters: { type: "object", properties: { days: { type: "number" } } } },
   { name: "special_open", description: "งานพิเศษของสาขาที่ยังไม่เสร็จ (todo/ถูกตีกลับ)", parameters: { type: "object", properties: {} } },
   { name: "branch_summary", description: "สรุปจำนวนงานค้างทั้งหมดของสาขา (งานในกะ/เชลฟ์/สินค้าใกล้หมดอายุ/งานพิเศษ)", parameters: { type: "object", properties: {} } },
   { name: "staff_handbook", description: "คู่มือ/วิธีทำงาน/ระเบียบย่อสำหรับพนักงาน (ลงเวลา, ควบกะ, ส่งงาน, เชลฟ์, FIFO, มาตรฐานบริการ, การลา)", parameters: { type: "object", properties: {} } },
@@ -331,9 +346,9 @@ Deno.serve(async (req) => {
             cards = { type: "tasks", groups: Object.values(g) };
             addLink("➜ ไปหน้าส่งงาน", LINK.handover);
           } else if (nm === "shelf_todo" && result.count > 0) addLink("➜ ไปหน้าดูแลเชลฟ์", LINK.shelf);
-          else if (nm === "qa_expiring" && result.count > 0) addLink("➜ ไปหน้า QA สินค้า", LINK.qa);
+          else if (nm === "qa_expiring" && (result.count > 0 || (result.next_items || []).length)) addLink("➜ ไปหน้า QA สินค้า", LINK.qa);
           else if (nm === "special_open" && result.count > 0) addLink("➜ ไปหน้างานพิเศษ", LINK.handover);
-          else if (nm === "branch_summary") { if (result["งานในกะค้าง"]) addLink("➜ งานในกะ", LINK.handover); if (result["เชลฟ์ยังไม่ตรวจ"]) addLink("➜ ดูแลเชลฟ์", LINK.shelf); if (result["สินค้าใกล้หมดอายุ7วัน"]) addLink("➜ QA สินค้า", LINK.qa); }
+          else if (nm === "branch_summary") { if (result["งานในกะค้าง"]) addLink("➜ งานในกะ", LINK.handover); if (result["เชลฟ์ยังไม่ตรวจ"]) addLink("➜ ดูแลเชลฟ์", LINK.shelf); if (result["สินค้าใกล้หมดอายุ30วัน"]) addLink("➜ QA สินค้า", LINK.qa); }
           else if (nm === "my_leave") addLink("➜ ไปหน้าขอลา", LINK.leave);
           else if (nm === "my_leave_proposals" && result.count > 0) addLink("➜ ไปตอบข้อเสนอแนะ (หน้าขอลา)", LINK.leave);
           else if (nm === "my_standing" || nm === "my_attendance") addLink("➜ ดูสถานะของฉัน", LINK.home);
