@@ -106,7 +106,7 @@
     // หา "กะวันนี้" จากตารางเวรก่อน (authoritative) แล้วค่อย fallback กะประจำที่ส่งมา
     // กันบั๊ก: ถ้าใช้ default_shift อย่างเดียว คนที่จัดกะผ่านตารางเวร (default_shift ว่าง) จะคำนวณสายไม่ได้
     let useShift = shiftId || null;
-    const sched = (await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', workDate).maybeSingle()).data;
+    const sched = await _schedOne(empId, workDate);
     const hasSchedule = !!(sched && sched.shift_id);
     if (hasSchedule) useShift = sched.shift_id;
 
@@ -163,7 +163,7 @@
       const nowMs = Date.now();
       const st = await _loadSettings();
       // ★ วันนี้ไม่มีตารางเวรเลยหรือไม่ (ไว้เตือน "เข้างานนอกตาราง")
-      const todaySched = (await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', today).maybeSingle()).data;
+      const todaySched = await _schedOne(empId, today);
       out.noSchedule = !(todaySched && todaySched.shift_id);
       const earlyMin = Number(st.checkin_early_min || 180);      // เข้างานก่อนกะได้ไม่เกิน N นาที
       const recentHrs = Number(st.recent_checkout_hours || 8);   // เพิ่งออกงานภายใน N ชม. → เตือน
@@ -1361,13 +1361,17 @@
     if (emp.active === false) throw new Error('รหัสนี้ถูกปิดใช้งาน');
     const today = bangkokDate();
     let shift = shiftId;
+    let _leadBranch = null;
     if (!shift) {
-      const sc = (await sb.from('schedules').select('shift_id').eq('emp_id', emp.emp_id).eq('work_date', today).maybeSingle()).data;
+      const sc = await _schedOne(emp.emp_id, today);
       shift = (sc && sc.shift_id) || emp.default_shift || '';
+      // ★ ไปช่วยสาขาอื่น: ใช้สาขาจากตารางเวร ไม่ใช่สาขาประจำ (เดิมเขียนแถวหัวหน้าผลัดผิดสาขา)
+      if (sc && sc.branch_id) _leadBranch = sc.branch_id;
     }
-    await sb.from('shift_leads').upsert({ work_date: today, branch_id: emp.branch_id || null, shift_id: shift, emp_id: emp.emp_id, emp_name: emp.nickname || emp.name }, { onConflict: 'work_date,branch_id,shift_id' });
-    try { await sb.from('activity_log').insert({ action: 'คุมผลัด', emp_id: emp.emp_id, detail: 'รับเป็นหัวหน้าผลัด กะ ' + (shift || '-') + ' สาขา ' + (emp.branch_id || '-'), actor: emp.nickname || emp.name }); } catch (e) {}
-    return { ok: true, emp, shift, branch_id: emp.branch_id || '' };
+    const _br = _leadBranch || emp.branch_id || null;
+    await sb.from('shift_leads').upsert({ work_date: today, branch_id: _br, shift_id: shift, emp_id: emp.emp_id, emp_name: emp.nickname || emp.name }, { onConflict: 'work_date,branch_id,shift_id' });
+    try { await sb.from('activity_log').insert({ action: 'คุมผลัด', emp_id: emp.emp_id, detail: 'รับเป็นหัวหน้าผลัด กะ ' + (shift || '-') + ' สาขา ' + (_br || '-'), actor: emp.nickname || emp.name }); } catch (e) {}
+    return { ok: true, emp, shift, branch_id: _br || '' };
   }
   // เพิ่มคนเข้ากะวันนี้เฉพาะกิจ (กรณียังไม่จัดตารางเวร) = สร้างแถวตารางเวรของวันนี้
   // by* = คนที่กดเพิ่ม (หัวหน้าผลัด) เพื่อบันทึกลง log ให้ตามรอยได้ว่ากะนี้ใครเพิ่ม
@@ -1429,11 +1433,46 @@
     return { ok: true };
   }
 
+
+  // ★ 10 ก.ย. 2569 — ตารางเวรของวันเดียวกันอาจมีมากกว่า 1 แถว (จัดซ้อน / เปลี่ยนกะแล้วไม่ลบของเดิม)
+  //   เดิมทุกที่ใช้ .maybeSingle() ซึ่ง Supabase จะคืน error ทันทีที่เจอ >1 แถว แล้ว .data กลายเป็น null
+  //   ผล: ระบบคิดว่า "วันนี้ไม่มีกะ" → _assertHasShift() เด้ง กดงานรับส่งผลัดไม่ได้
+  //        และสาขาตกไปใช้ emp.branch_id (สาขาประจำ) แทนสาขาที่ไปช่วยจริง
+  //   ใหม่: ดึงทุกแถว แล้วเลือกแถวที่ถูกต้องที่สุด — ยึด "ใบลงเวลาจริงของวันนั้น" ก่อนเสมอ
+  async function _schedOne(empId, workDate){
+    if(!empId || !workDate) return null;
+    try{
+      const rows=(await sb.from('schedules').select('shift_id,branch_id')
+        .eq('emp_id',empId).eq('work_date',workDate)).data||[];
+      if(!rows.length) return null;
+      if(rows.length===1) return rows[0];
+      // 1) แถวที่ตรงกับกะในใบลงเวลาของวันนั้น = เขาทำกะไหนจริง ๆ
+      const att=(await sb.from('attendance').select('shift_id,branch_id')
+        .eq('emp_id',empId).eq('work_date',workDate).limit(1)).data||[];
+      const a=att[0];
+      let pick = (a && a.shift_id) ? (rows.filter(r=>r.shift_id===a.shift_id)[0]||null) : null;
+      // 2) ยังไม่ลงเวลา → เอากะที่เวลาเริ่มใกล้ตอนนี้ที่สุด
+      if(!pick){
+        const sids=rows.map(r=>r.shift_id).filter(Boolean);
+        const shs=sids.length?((await sb.from('shifts').select('shift_id,start_time').in('shift_id',sids)).data||[]):[];
+        const st={}; shs.forEach(x=>{ st[x.shift_id]=_hm2m(String(x.start_time||'').slice(0,5)); });
+        const now=_nowBkkMin();
+        pick=rows.slice().sort((x,y)=>{
+          const dx=Math.abs((st[x.shift_id]!==undefined?st[x.shift_id]:0)-now);
+          const dy=Math.abs((st[y.shift_id]!==undefined?st[y.shift_id]:0)-now);
+          return dx-dy;
+        })[0]||rows[0];
+      }
+      try{ console.warn('[schedules] ตารางเวรซ้อน '+rows.length+' แถว · emp '+empId+' '+workDate+' → ใช้กะ '+(pick&&pick.shift_id)); }catch(e){}
+      return pick;
+    }catch(e){ return null; }
+  }
+
   // ===== ระบบงานผลัดใหม่ (เฟส 1) =====
   function _addDays(dateStr, n){ const d=new Date(dateStr+'T00:00:00'); d.setDate(d.getDate()+n); return _iso(d); }
   async function _empShiftToday(emp){
     const today=bangkokDate();
-    const sc=(await sb.from('schedules').select('shift_id').eq('emp_id',emp.emp_id).eq('work_date',today).maybeSingle()).data;
+    const sc=await _schedOne(emp.emp_id, today);
     return (sc&&sc.shift_id)||emp.default_shift||'';
   }
   async function _prevShift(curShift){
@@ -1447,7 +1486,7 @@
   // ---- ผลัดหลัก (จัดกลุ่ม): group = main_shift ของกะ (ว่าง = ใช้ shift_id เดิม = พิเศษ) ----
   async function _empGroup(emp){
     const today=bangkokDate();
-    const sc=(await sb.from('schedules').select('shift_id').eq('emp_id',emp.emp_id).eq('work_date',today).maybeSingle()).data;
+    const sc=await _schedOne(emp.emp_id, today);
     const raw=(sc&&sc.shift_id)||emp.default_shift||'';
     if(!raw) return '';
     const sh=(await sb.from('shifts').select('main_shift').eq('shift_id',raw).maybeSingle()).data;
@@ -1466,7 +1505,7 @@
       return { workDate: open.work_date, group: (sh&&sh.main_shift)||open.shift_id, branch: open.branch_id||emp.branch_id||'' };
     }
     // อิงตารางเวรวันนี้ (รองรับไปทำแทนสาขาอื่น: ใช้สาขา+กะจากตารางเวร ไม่ใช่สาขาประจำ)
-    const sc=(await sb.from('schedules').select('shift_id,branch_id').eq('emp_id',emp.emp_id).eq('work_date',today).maybeSingle()).data;
+    const sc=await _schedOne(emp.emp_id, today);
     const raw=(sc&&sc.shift_id)||emp.default_shift||'';
     let group=raw;
     if(raw){ const sh=(await sb.from('shifts').select('main_shift').eq('shift_id',raw).maybeSingle()).data; group=(sh&&sh.main_shift)||raw; }

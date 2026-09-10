@@ -2456,7 +2456,9 @@
       if (error) return { ok: false, error: error.message };
     } else {
       if (d.status === 'absent') { await logAct('บันทึกลงเวลา (ขาด)', d.emp_id, d.work_date); return { ok: true }; }   // ไม่ต้องสร้างแถวถ้าตั้งขาดและยังไม่มีแถว
-      const sc = (await sb().from('schedules').select('shift_id,branch_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date).maybeSingle()).data;
+      // ★ 10 ก.ย. 2569 — ตารางเวรวันเดียวกันอาจมีหลายแถว · .maybeSingle() จะคืน null ทั้งก้อน
+      const _scRows = (await sb().from('schedules').select('shift_id,branch_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date)).data || [];
+      const sc = _scRows.length ? (_scRows.filter(r => r.shift_id === d.shift_id)[0] || _scRows[0]) : null;
       const emp = (await sb().from('employees').select('branch_id,default_shift').eq('emp_id', d.emp_id).maybeSingle()).data;
       const row = Object.assign({ emp_id: d.emp_id, work_date: d.work_date,
         shift_id: d.shift_id || (sc && sc.shift_id) || (emp && emp.default_shift) || null,
