@@ -2502,6 +2502,14 @@
       shift_id: d.shift_id || null, branch_id,
       is_cover, note: d.note || null,
     };
+    // ★ 10 ก.ย. 2569 — กันจัดกะซ้อนโดยไม่ตั้งใจ
+    //   "ควบกะ" จริงต้องเป็นคนละช่วงเวลา (เช่น เช้า + ดึก) · ถ้าเวลาทับกันแปลว่าจัดผิด
+    //   เคสจริง: เอิร์ท 10 ก.ย. ได้ทั้ง A (12:30-22:30) และ M10 (10:00-20:00) → ทับกัน 7.5 ชม.
+    //   ปล่อยผ่านไม่ได้เพราะทำให้จ่ายวันทำงานซ้ำ และตอน v171 ทำให้ระบบมองว่า "ไม่มีกะ"
+    if (d.shift_id && !d.force) {
+      const ovl = await _schedOverlap(d.emp_id, d.work_date, d.shift_id);
+      if (ovl) return { ok: false, code: 'OVERLAP', error: ovl };
+    }
     const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
     // log ทุกการบันทึกกะ เพื่อให้ตามรอยได้ว่าใคร/เมื่อไร เพิ่ม-เปลี่ยนกะ (กันเคส "กะเพิ่มเอง")
@@ -2525,6 +2533,33 @@
       }
     } catch (e) { console.warn('sync attendance shift', e); }
     return { ok: true, is_cover };
+  }
+  // คืนข้อความเตือนถ้ากะใหม่ "เวลาทับ" กับกะเดิมของคนนี้ในวันเดียวกัน · ไม่ทับ = null (ควบกะได้ตามปกติ)
+  async function _schedOverlap(empId, workDate, newShift) {
+    try {
+      const cur = (await sb().from('schedules').select('shift_id')
+        .eq('emp_id', empId).eq('work_date', workDate)).data || [];
+      const others = cur.map(r => r.shift_id).filter(x => x && x !== newShift);
+      if (!others.length) return null;
+      const shs = (await sb().from('shifts').select('shift_id,name,start_time,end_time')
+        .in('shift_id', others.concat([newShift]))).data || [];
+      const by = {}; shs.forEach(x => { by[x.shift_id] = x; });
+      const m = hm => { const q = String(hm || '').split(':'); return (parseInt(q[0]) || 0) * 60 + (parseInt(q[1]) || 0); };
+      // กะข้ามคืน (end <= start) → บวก 24 ชม. ให้ปลายทาง
+      const span = sh => { if (!sh || !sh.start_time) return null; const a = m(sh.start_time), b0 = m(sh.end_time); return [a, b0 <= a ? b0 + 1440 : b0]; };
+      const nw = span(by[newShift]); if (!nw) return null;
+      for (const o of others) {
+        const os = span(by[o]); if (!os) continue;
+        // ทั้งสองกะเริ่มใน work_date เดียวกัน · กะข้ามคืนถูกยืดเลย 24:00 ไปแล้วใน span()
+        // จึงเทียบตรง ๆ พอ (ห้ามเลื่อน ±24 ชม. ไม่งั้น เช้า+ดึก ซึ่งเป็นควบกะที่ถูกต้อง จะโดนเตือนผิด)
+        const hit = Math.min(nw[1], os[1]) - Math.max(nw[0], os[0]);
+        if (hit > 0) {
+          const nm = x => (by[x] && by[x].name) ? (by[x].name + ' (' + String(by[x].start_time).slice(0, 5) + '-' + String(by[x].end_time).slice(0, 5) + ')') : x;
+          return 'วันนี้เขามีกะ ' + nm(o) + ' อยู่แล้ว · กะใหม่ ' + nm(newShift) + ' เวลาทับกัน ' + (Math.round(hit / 6) / 10) + ' ชม. — ควบกะต้องเป็นคนละช่วงเวลา ถ้าจะเปลี่ยนกะให้ลบกะเดิมก่อน';
+        }
+      }
+      return null;
+    } catch (e) { return null; }
   }
   async function hrSchedDelete(empId, workDate, shiftId) {
     let q = sb().from('schedules').delete().eq('emp_id', empId).eq('work_date', workDate);

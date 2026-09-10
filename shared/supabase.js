@@ -1442,10 +1442,14 @@
   async function _schedOne(empId, workDate){
     if(!empId || !workDate) return null;
     try{
-      const rows=(await sb.from('schedules').select('shift_id,branch_id')
+      let rows=(await sb.from('schedules').select('shift_id,branch_id')
         .eq('emp_id',empId).eq('work_date',workDate)).data||[];
       if(!rows.length) return null;
       if(rows.length===1) return rows[0];
+      // ★ แถว "หยุด" (shift_id ว่าง) ปนกับกะจริงในวันเดียวกัน → ตัดแถวหยุดทิ้ง ไม่งั้นจะกลายเป็น "ไม่มีกะ"
+      const real=rows.filter(r=>r.shift_id&&String(r.shift_id).trim());
+      if(real.length===1) return real[0];
+      if(real.length) rows=real;
       // 1) แถวที่ตรงกับกะในใบลงเวลาของวันนั้น = เขาทำกะไหนจริง ๆ
       const att=(await sb.from('attendance').select('shift_id,branch_id')
         .eq('emp_id',empId).eq('work_date',workDate).limit(1)).data||[];
