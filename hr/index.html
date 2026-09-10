@@ -14085,7 +14085,12 @@ async function scAddShift(emp, date, shiftId){
     const r=await post({ action:'hr_sched_fill_week', password:pwd, data:{ emp_id:emp, start:scWeek, shift_id:shiftId } });
     if(!r.ok) toast('err', r.error||'ไม่สำเร็จ'); else toast('ok','จัดกะทั้งสัปดาห์ให้แล้ว — แก้รายวันได้');
   } else {
-    const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'' } });
+    let r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'' } });
+    // ★ กะใหม่เวลาทับกะเดิม = น่าจะจัดผิด · ถามก่อนแล้วค่อยยืนยัน (ควบกะคนละช่วงเวลาไม่ถูกถาม)
+    if(!r.ok && r.code==='OVERLAP'){
+      if(!confirm(r.error+'\n\nยืนยันจะจัดซ้อนจริงไหม?')){ loadSchedule(); return; }
+      r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'', force:true } });
+    }
     if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
   }
   loadSchedule();
@@ -14093,11 +14098,11 @@ async function scAddShift(emp, date, shiftId){
 async function scEditShift(emp, date, oldShift, newShift){
   if(newShift===oldShift) return;
   await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date, shift_id:oldShift });
-  if(newShift){ const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'' } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
+  if(newShift){ const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'', force:true } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
   loadSchedule();
 }
 async function scEditBranch(emp, date, shiftId, branchId){
-  const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:branchId, note:'' } });
+  const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:branchId, note:'', force:true } });
   if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
   loadSchedule();
 }
