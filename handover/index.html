@@ -663,6 +663,7 @@ async function openM2(){
   html += renderMyShelvesHTML(shv);
   // ===== งานตามกะ =====
   if(r){
+  window.TASK_DET={}; (r.details||[]).forEach(function(d){ window.TASK_DET[d.id]=d; });
   html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3>';
   if(!r.mine.length) html+='<div class="card muted">ยังไม่มีงานที่มอบหมายให้คุณ</div>';
   else html+=r.mine.map(a=>{
@@ -672,6 +673,7 @@ async function openM2(){
     else if(a.status==='approved' && a.needs_mgr===true && !a.mgr_checked_at) s=['ผ่านผลัดถัดไป · รอ ผจก.','ok'];
     const min=(r.unassigned.find(x=>x.id===a.task_def_id)||{}).min_photos; // อาจ undefined → ใช้ require_photo
     let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
+    c+=taskDetailHTML(window.TASK_DET[a.task_def_id]);
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
     if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:2px 0 4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
     if(isEdit){ c+=flowStepsHTML(a); }
@@ -692,7 +694,7 @@ async function openM2(){
   // งานที่ยังว่าง (รายการ)
   html+='<h3 class="sec">งานที่ยังว่าง (ดึงมาทำเองได้)</h3>';
   if(!r.unassigned.length) html+='<div class="muted" style="padding:4px 2px">ไม่มีงานว่าง</div>';
-  else html+=r.unassigned.map(d=>'<div class="listrow"><div class="t">'+esc(d.title)+(d.min_photos>0?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>'+d.min_photos+'</span>':'')+'</div><button class="btn btn-sec btn-sm" data-pull="'+d.id+'">ดึงมาทำ</button></div>').join('');
+  else html+=r.unassigned.map(d=>'<div class="listrow"><div class="t">'+esc(d.title)+(d.min_photos>0?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>'+d.min_photos+'</span>':'')+'</div><button class="btn btn-sec btn-sm" data-pull="'+d.id+'">ดึงมาทำ</button></div>'+taskDetailHTML(d)).join('');
   // สถานะทีม
   html+='<h3 class="sec">สถานะทีมในผลัด</h3>';
   if(!r.team.length) html+='<div class="muted" style="padding:4px 2px">ยังไม่มีการมอบหมาย</div>';
@@ -1365,6 +1367,24 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
     btn.disabled=false;
   };
 })();
+</script>
+<script>
+// รายละเอียดปฏิบัติ / เกณฑ์การตรวจสอบ / วิธีถ่ายรูป (พับไว้ กดดูได้)
+function taskDetailHTML(d){
+  if(!d) return '';
+  if(!d.how_to && !d.criteria && !d.photo_hint) return '';
+  var li=function(t){ return String(t||'').split('\n').filter(function(x){return x.trim();})
+    .map(function(x){ return '<li>'+esc(x.replace(/^\u2022\s*/,''))+'</li>'; }).join(''); };
+  var id='dtl_'+d.id+'_'+Math.floor(Math.random()*100000);
+  return '<div style="margin:6px 0 2px">'
+   +'<button type="button" class="btn btn-sec btn-sm" style="font-size:12px" onclick="var e=document.getElementById(\''+id+'\');e.style.display=(e.style.display===\'none\'?\'block\':\'none\')">วิธีทำ / เกณฑ์ตรวจ</button>'
+   +'<div id="'+id+'" style="display:none;margin-top:6px;font-size:12.5px;line-height:1.7;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:9px">'
+   +(d.how_to?'<div style="font-weight:700">วิธีทำ</div><ul style="margin:3px 0 6px;padding-left:18px">'+li(d.how_to)+'</ul>':'')
+   +(d.criteria?'<div style="font-weight:700">เกณฑ์การตรวจสอบ</div><ul style="margin:3px 0 6px;padding-left:18px">'+li(d.criteria)+'</ul>':'')
+   +(d.photo_hint?'<div style="font-weight:700">วิธีถ่ายรูป</div><div>'+esc(d.photo_hint)+'</div>':'')
+   +'</div></div>';
+}
+window.TASK_DET={};
 </script>
 </body>
 </html>

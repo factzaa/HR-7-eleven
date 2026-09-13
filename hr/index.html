@@ -570,6 +570,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_salesDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg></span>ยอดขาย (ไลน์)</button>
   <button class="tab" id="tab_auditDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></span>ตรวจร้าน QSSI</button>
   <button class="tab" id="tab_handover"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 8l4-4 4 4M8 4v9"/><path d="M20 16l-4 4-4-4M16 20v-9"/></svg></span>ส่ง/รับผลัด</button>
+  <button class="tab" id="tab_taskset"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M8 14l2 2 4-4"/></svg></span>ตั้งค่างานในกะ</button>
   <button class="tab" id="tab_special"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg></span>งานพิเศษ</button>
   <button class="tab" id="tab_qa"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3l2.3 1.7 2.8-.2 1 2.7 2.4 1.5-.9 2.7.9 2.7-2.4 1.5-1 2.7-2.8-.2L12 21l-2.3-1.7-2.8.2-1-2.7L3.5 15l.9-2.7-.9-2.7 2.4-1.5 1-2.7 2.8.2z"/><path d="M9 12l2 2 4-4"/></svg></span>QA สินค้า</button>
   <button class="tab" id="tab_shelf"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg></span>เชลฟ์ประจำเดือน</button>
@@ -2547,6 +2548,33 @@ function mrNav(d){
 </div>
 
 <!-- Settings: ตั้งค่ากะ -->
+<div id="view_taskset" class="container" style="display:none">
+  <div class="toolbar">
+    <h2 style="flex:1">ตั้งค่างานในกะ</h2>
+    <button class="btn btn-sec btn-sm" id="ts_reload">รีเฟรช</button>
+  </div>
+
+  <div class="card" style="padding:12px;margin-bottom:12px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:13px;font-weight:600">สาขา</label>
+      <select id="ts_branch" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"></select>
+      <input id="ts_q" placeholder="ค้นหาชื่องาน…" style="flex:1;min-width:150px;padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
+      <select id="ts_freq" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
+        <option value="">ทุกรอบ</option><option value="daily">รายวัน</option><option value="weekly">รายสัปดาห์</option><option value="monthly">รายเดือน</option>
+      </select>
+      <select id="ts_step" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"><option value="">ทุกขั้นตอน</option></select>
+      <select id="ts_state" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
+        <option value="">เปิด+ปิด</option><option value="on">เฉพาะที่เปิดใช้</option><option value="off">เฉพาะที่ปิดอยู่</option>
+      </select>
+      <input type="month" id="ts_month" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
+    </div>
+    <div id="ts_hint" style="font-size:12.5px;color:var(--muted);margin-top:8px"></div>
+    <div id="ts_v2box" style="margin-top:8px"></div>
+  </div>
+
+  <div id="ts_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
 <div id="view_settings" class="container" style="display:none">
   <div class="toolbar">
     <h3 style="flex:1; font-size:15px; font-weight:600">ตั้งค่ากะเข้างาน</h3>
@@ -2729,12 +2757,8 @@ function mrNav(d){
     <div style="font-size:12px;color:var(--muted);margin-top:4px">รอบเงินเดือน = วันที่ <b>21 เดือนก่อน ถึง 20 เดือนปัจจุบัน</b> · เช่น 26 วัน — ถ้าวันทำงานในรอบไม่ถึงเกณฑ์: <b>ไม่ได้รับเบี้ยวินัย</b> (โบนัส + เบี้ยขยัน) <b>และหักคะแนน</b>ตามที่ตั้ง · ตั้งวัน = 0 หรือคะแนน = 0 เพื่อปิดส่วนนั้น · นับควบกะตามตารางเวรให้ด้วย</div>
   </div>
 
-  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ (ตั้งค่าได้)</h3><button class="btn btn-pri btn-sm" id="td_new">+ เพิ่มงาน</button></div>
-  <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>งาน</th><th>กะ</th><th>รูปขั้นต่ำ</th><th>ลำดับ</th><th>เปิดใช้</th><th>ผจก.ตรวจ</th><th></th></tr></thead>
-    <tbody id="tdRows"></tbody>
-  </table></div></div>
-  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">รายการนี้ใช้ตอน "มอบหมายงาน" ในแท็บ ส่ง/รับผลัด · ติ๊ก "ต้องแนบรูป" = พนักงานต้องถ่ายรูปก่อนส่งงานนั้น</div>
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">รายการงานในกะ</h3></div>
+  <div class="card" style="padding:14px"><div style="font-size:13px;line-height:1.7">ย้ายไปอยู่ที่เมนู <b>งาน &amp; ตรวจ → ตั้งค่างานในกะ</b> แล้ว <button class="btn btn-pri btn-sm" onclick="showTab('taskset')">เปิดเมนูตั้งค่างานในกะ</button><br><span style="color:var(--muted);font-size:12.5px">ที่เมนูใหม่ตั้งค่าแยกรายสาขาได้ · กำหนดรอบรายวัน/สัปดาห์/เดือนแบบปฏิทิน · เปิด-ปิดงานได้เฉพาะ HR</span></div></div>
 
   <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> AI ช่วยวิเคราะห์รูปแบบการตรวจ</h3><button class="btn btn-pri btn-sm" id="air_go">วิเคราะห์จากประวัติ</button></div>
   <div class="card" style="padding:14px">
@@ -3079,7 +3103,7 @@ let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 // ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','special','qa','shelf','auditDash','schedule','discipline','terminate','advance','rider'];
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','discipline','terminate','advance','rider'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -11046,7 +11070,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
+const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -11068,6 +11092,7 @@ showTab = function(name){
   else if(name==='mgreval') loadMgrEval();
   else if(name==='analytics') loadAnalytics();
   else if(name==='handover'){ loadTaskTab(); }
+  else if(name==='taskset'){ loadTaskSet(); }
   else if(name==='special'){ loadSpecialTab(); }
   else if(name==='qa'){ loadQaTab(); }
   else if(name==='shelf'){ loadShelfTab(); }
@@ -11086,7 +11111,7 @@ showTab = function(name){
   else if(name==='branches') loadBranches();
   else if(name==='goods') loadGoodsTab();
   else if(name==='poster') loadPosterTab();
-  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadTaskDefs(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
+  else if(name==='settings'){ loadShifts(); loadLeaveTypes(); loadDiscRules(); loadScoreSettings(); loadRuleStatus(); loadCheckoutGrace(); loadPositions(); loadMdailyDefs(); }
   else if(name==='mgrtaskset') loadMgrTaskSet();
   else if(name==='mgrdash') loadMgrDash();
   else if(name==='submissions') loadSubmissions();
@@ -11455,11 +11480,358 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
   }catch(e){ toast('err',String(e.message||e)); }
   b.textContent='ส่งเข้ากลุ่ม LINE'; };
 
+
+// ============================================================
+// ตั้งค่างานในกะ (v2) — แยกออกจากหน้า "ตั้งค่ากะ"
+//   HR   : แก้ได้ทุกอย่าง (เนื้อหา · เปิด-ปิด · รอบ · กะ · วัน · ปฏิทิน)
+//   ผจก. : เห็นเฉพาะสาขาตัวเอง · ตั้งได้เฉพาะ "ให้ผลัดไหนทำ" และ "กำหนดวัน"
+// ============================================================
+const TS = { rows:[], ov:{}, dates:{}, branches:[], role:'hr', branch:'', month:'', open:{} };
+const TS_DOW = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+const TS_STEPS = {1:'เตรียมความพร้อมก่อนรับผลัด',2:'ตรวจรับผลัด',3:'งานประจำผลัด',4:'งานตามรอบ/สัปดาห์',5:'รับสินค้า',6:'ขายและบริการ',7:'ตรวจมาตรฐาน QSSI',8:'สรุปผลัด',9:'ส่งผลัด'};
+const TS_QN = {S:'S บริการ',A:'A สินค้า',V:'V ป้าย/สื่อ',E:'E สะดวกปลอดภัย',Q:'Q คุณภาพ',C:'C ความสะอาด',QMS:'QMS เอกสาร',PR:'Process'};
+
+function tsIsHR(){ return TS.role==='hr' && !MGR_MODE; }
+function tsShiftList(){
+  const g=(typeof groupShifts==='function'?groupShifts():[]).filter(s=>['M','A','N'].indexOf(s.shift_id)>=0);
+  return g.length ? g.map(s=>({id:s.shift_id,name:s.name})) : [{id:'M',name:'เช้า'},{id:'A',name:'บ่าย'},{id:'N',name:'ดึก'}];
+}
+function tsMonthStr(){ const el=$('ts_month'); if(el && el.value) return el.value;
+  const d=new Date(); const s=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); if(el) el.value=s; return s; }
+function tsOv(id){ return TS.ov[id]||{}; }
+function tsActive(d){ const o=tsOv(d.id); return (o.active==null) ? (d.active!==false) : !!o.active; }
+function tsShiftIds(d){ const o=tsOv(d.id); const v=(o.shift_ids==null? d.shift_ids : o.shift_ids); return Array.isArray(v)?v:[]; }
+function tsDow(d){ const o=tsOv(d.id); const v=(o.days_of_week==null? d.days_of_week : o.days_of_week); return Array.isArray(v)?v:[]; }
+function tsDom(d){ const o=tsOv(d.id); const v=(o.day_of_month==null? d.day_of_month : o.day_of_month); return Array.isArray(v)?v:[]; }
+function tsHasOv(d,k){ const o=tsOv(d.id); return !!(o && o[k]!=null); }
+function tsDateKey(id,ds){ return id+'|'+ds; }
+function tsOccurs(d, dateStr){
+  const ex=TS.dates[tsDateKey(d.id,dateStr)];
+  if(ex) return ex.mode!=='skip';
+  if(!tsActive(d)) return false;
+  const dt=new Date(dateStr+'T00:00:00'), dd=dt.getDate(), dw=dt.getDay();
+  const last=new Date(dt.getFullYear(), dt.getMonth()+1, 0).getDate();
+  const f=String(d.freq||'daily');
+  if(f==='daily') return true;
+  if(f==='weekly'){ const w=tsDow(d); return w.length ? w.indexOf(dw)>=0 : false; }
+  if(f==='monthly'){ const m=tsDom(d); if(!m.length) return false; return m.indexOf(dd)>=0 || (m.indexOf(0)>=0 && dd===last); }
+  return false;
+}
+
+async function loadTaskSet(){
+  const bs=$('ts_branch'); if(!bs) return;
+  if(!bs.dataset.wired){
+    bs.dataset.wired='1';
+    bs.onchange=()=>{ TS.open={}; loadTaskSet(); };
+    $('ts_month').onchange=()=>loadTaskSet();
+    $('ts_reload').onclick=()=>loadTaskSet();
+    ['ts_q','ts_freq','ts_step','ts_state'].forEach(k=>{ const e=$(k); if(e){ e.oninput=()=>tsRender(); e.onchange=()=>tsRender(); } });
+    const st=$('ts_step'); if(st && st.options.length<=1){ Object.keys(TS_STEPS).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k+'. '+TS_STEPS[k]; st.appendChild(o); }); }
+  }
+  $('ts_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const month=tsMonthStr();
+  const r=await post({ action:'hr_taskset_get', ...authBody(), branch:(MGR_MODE?MGR_BRANCH:(bs.value||'')), month });
+  if(!r||!r.ok){ $('ts_body').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  TS.rows=r.rows||[]; TS.role=r.role||'hr'; TS.branch=r.branch||''; TS.month=month; TS.branches=r.branches||[];
+  TS.ov={}; (r.overrides||[]).forEach(o=>{ TS.ov[o.task_def_id]=o; });
+  TS.dates={}; (r.dates||[]).forEach(x=>{ TS.dates[tsDateKey(x.task_def_id,x.work_date)]=x; });
+  if(bs.dataset.filled!=='1'){
+    bs.innerHTML = (MGR_MODE?'':'<option value="">— ค่ากลาง (ทุกสาขา) —</option>')
+      + TS.branches.map(b=>'<option value="'+esc(b.branch_id)+'">'+esc(b.branch_id+' '+(b.name||''))+'</option>').join('');
+    if(MGR_MODE){ bs.value=MGR_BRANCH; bs.disabled=true; }
+    bs.dataset.filled='1';
+  }
+  tsRenderHint(); tsRender();
+}
+
+function tsRenderHint(){
+  const b=TS.branch;
+  const bn=(TS.branches.find(x=>String(x.branch_id)===String(b))||{}).name||'';
+  $('ts_hint').innerHTML = tsIsHR()
+    ? (b ? ('กำลังตั้งค่า <b>เฉพาะสาขา '+esc(b+' '+bn)+'</b> · ช่องที่ไม่ตั้งเองจะใช้ค่ากลาง · <b>เปิด-ปิดงานได้เฉพาะ HR</b>')
+         : 'กำลังตั้งค่า <b>ค่ากลาง</b> (ใช้กับทุกสาขาที่ไม่ได้ตั้งเอง) · เลือกสาขาเพื่อตั้งค่าเฉพาะสาขานั้น')
+    : ('สาขา <b>'+esc(b+' '+bn)+'</b> · ผู้จัดการตั้งได้เฉพาะ <b>"ให้ผลัดไหนทำ"</b> และ <b>"กำหนดวัน"</b> · การเปิด-ปิดงานและเนื้อหางาน แก้ได้เฉพาะฝั่ง HR');
+  const box=$('ts_v2box'); if(!box) return;
+  if(!tsIsHR() || !TS.branch){ box.innerHTML=''; return; }
+  const br=TS.branches.find(x=>String(x.branch_id)===String(TS.branch))||{};
+  const on=!!br.task_v2;
+  box.innerHTML='<label style="display:inline-flex;gap:7px;align-items:center;font-size:13px;font-weight:600;'
+    +'background:'+(on?'#dcfce7':'#f1f5f9')+';padding:7px 11px;border-radius:9px;cursor:pointer">'
+    +'<input type="checkbox" id="ts_v2" '+(on?'checked':'')+'> ใช้แคตตาล็อกงานชุดใหม่ (v2) กับสาขานี้</label>'
+    +'<span style="font-size:12px;color:var(--muted);margin-left:8px">ยังไม่ติ๊ก = สาขานี้ยังใช้รายการงานเดิม</span>';
+  $('ts_v2').onchange=async(e)=>{
+    const r=await post({ action:'hr_taskset_v2flag', ...authBody(), data:{ branch_id:TS.branch, on:e.target.checked } });
+    if(r&&r.ok){ br.task_v2=e.target.checked; toast('ok','บันทึกแล้ว'); tsRenderHint(); }
+    else { e.target.checked=!e.target.checked; toast('err',(r&&r.error)||'ไม่สำเร็จ'); }
+  };
+}
+
+function tsChip(label, on, attrs){
+  return '<button type="button" class="btn btn-sm" '+attrs+' style="padding:4px 10px;border-radius:999px;font-size:12.5px;'
+    +(on?'background:#00582f;color:#fff;border-color:#00582f':'background:#fff;color:#334155;border:1.5px solid var(--line2)')+'">'+esc(label)+'</button>';
+}
+
+function tsRender(){
+  const q=($('ts_q').value||'').trim().toLowerCase();
+  const ff=$('ts_freq').value, fs=$('ts_step').value, fst=$('ts_state').value;
+  const rows=TS.rows.filter(d=>{
+    if(q && String(d.title||'').toLowerCase().indexOf(q)<0) return false;
+    if(ff && String(d.freq||'daily')!==ff) return false;
+    if(fs && String(d.step==null?'':d.step)!==fs) return false;
+    const on=tsActive(d);
+    if(fst==='on' && !on) return false;
+    if(fst==='off' && on) return false;
+    return true;
+  });
+  if(!rows.length){ $('ts_body').innerHTML='<div class="empty">ไม่พบงานตามเงื่อนไข</div>'; return; }
+  const byStep={};
+  rows.forEach(d=>{ const k=(d.step==null?'0':String(d.step)); (byStep[k]=byStep[k]||[]).push(d); });
+  const keys=Object.keys(byStep).sort((a,b)=>(a==='0'?99:+a)-(b==='0'?99:+b));
+  const nOn=rows.filter(tsActive).length;
+  $('ts_body').innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">แสดง '+rows.length+' งาน · เปิดใช้ '+nOn+' · ปิด '+(rows.length-nOn)+'</div>'
+   + keys.map(k=>{
+      const title = k==='0' ? 'งานเดิมในระบบ (ยังไม่จัดขั้นตอน)' : ('ขั้นตอน '+k+' · '+(TS_STEPS[k]||''));
+      return '<div style="margin:14px 0 8px;font-weight:700;font-size:14px;color:#00582f">'+esc(title)
+        +' <span style="font-weight:400;color:var(--muted);font-size:12.5px">('+byStep[k].length+')</span></div>'
+        + byStep[k].map(tsCard).join('');
+   }).join('');
+  tsWire();
+}
+
+function tsCard(d){
+  const on=tsActive(d), open=!!TS.open[d.id];
+  const f=String(d.freq||'daily');
+  const fLabel={daily:'ทุกวัน',weekly:'รายสัปดาห์',monthly:'รายเดือน'}[f]||f;
+  const shs=tsShiftIds(d), shl=tsShiftList();
+  const shTxt = shs.length ? shs.map(x=>(shl.filter(s=>s.id===x)[0]||{name:x}).name).join(' · ') : 'ยังไม่ระบุผลัด';
+  const dowTxt = f==='weekly' ? (tsDow(d).length? tsDow(d).slice().sort().map(i=>TS_DOW[i]).join(' ') : 'ยังไม่ระบุวัน') : '';
+  const domTxt = f==='monthly' ? (tsDom(d).length? tsDom(d).map(x=>x===0?'สิ้นเดือน':('วันที่ '+x)).join(', ') : 'ยังไม่ระบุวันที่') : '';
+  const ovMark = (tsHasOv(d,'shift_ids')||tsHasOv(d,'days_of_week')||tsHasOv(d,'day_of_month')||tsHasOv(d,'active'))
+    ? '<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:999px;margin-left:6px">ตั้งเฉพาะสาขา</span>' : '';
+  return '<div class="card" style="padding:0;margin-bottom:8px;overflow:hidden;'+(on?'':'opacity:.62')+'">'
+   +'<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;cursor:pointer" data-tstoggle="'+d.id+'">'
+     +'<div style="flex:1;min-width:0">'
+       +'<div style="font-weight:600;font-size:13.5px;line-height:1.5">'+esc(d.title||'')+ovMark+'</div>'
+       +'<div style="font-size:12px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap">'
+         +(d.qssi_cat?'<span>'+esc(TS_QN[d.qssi_cat]||d.qssi_cat)+'</span>':'')
+         +'<span>'+esc(fLabel)+(dowTxt?(' · '+esc(dowTxt)):'')+(domTxt?(' · '+esc(domTxt)):'')+'</span>'
+         +'<span>ผลัด: '+esc(shTxt)+'</span>'
+         +(d.who_label?'<span>ผู้ทำ: '+esc(d.who_label)+'</span>':'')
+         +(d.min_photos?'<span>รูป '+d.min_photos+'</span>':'')
+       +'</div>'
+     +'</div>'
+     +'<span style="font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;'+(on?'background:#dcfce7;color:#166534':'background:#f1f5f9;color:#64748b')+'">'+(on?'เปิด':'ปิด')+'</span>'
+     +'<span style="color:#94a3b8;font-size:13px">'+(open?'▲':'▼')+'</span>'
+   +'</div>'
+   +(open? tsPanel(d) : '')
+   +'</div>';
+}
+
+function tsPanel(d){
+  const hr=tsIsHR(), f=String(d.freq||'daily');
+  const shl=tsShiftList(), shs=tsShiftIds(d);
+  let h='<div style="border-top:1px solid var(--line2);padding:12px;background:#fbfdfc">';
+
+  h+='<div style="font-size:12.5px;font-weight:700;margin-bottom:6px">1. เปิด-ปิดงาน '+(hr?'':'<span style="font-weight:400;color:var(--muted)">(เฉพาะ HR)</span>')+'</div>';
+  if(hr){
+    if(TS.branch){
+      const o=tsOv(d.id), v=(o.active==null?'':(o.active?'on':'off'));
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+        +tsChip('ใช้ค่ากลาง ('+((d.active!==false)?'เปิด':'ปิด')+')', v==='', 'data-tsact="'+d.id+'" data-v=""')
+        +tsChip('เปิดที่สาขานี้', v==='on', 'data-tsact="'+d.id+'" data-v="on"')
+        +tsChip('ปิดที่สาขานี้', v==='off', 'data-tsact="'+d.id+'" data-v="off"')
+        +'</div>';
+    } else {
+      h+='<div style="display:flex;gap:6px;margin-bottom:12px">'
+        +tsChip('เปิดใช้', d.active!==false, 'data-tscact="'+d.id+'" data-v="on"')
+        +tsChip('ปิด', d.active===false, 'data-tscact="'+d.id+'" data-v="off"')
+        +'</div>';
+    }
+  } else {
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">'+(tsActive(d)?'งานนี้เปิดใช้อยู่':'งานนี้ถูกปิดไว้')+'</div>';
+  }
+
+  h+='<div style="font-size:12.5px;font-weight:700;margin-bottom:6px">2. ให้ผลัดไหนทำ'
+   +(TS.branch?' <span style="font-weight:400;color:var(--muted)">(เฉพาะสาขานี้)</span>':' <span style="font-weight:400;color:var(--muted)">(ค่ากลาง)</span>')+'</div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+   + shl.map(s=>tsChip(s.name, shs.indexOf(s.id)>=0, 'data-tssh="'+d.id+'" data-v="'+s.id+'"')).join('')
+   + (TS.branch && tsHasOv(d,'shift_ids') ? '<button type="button" class="btn btn-sec btn-sm" data-tsclear="'+d.id+'" data-k="shift_ids" style="font-size:12px">กลับไปใช้ค่ากลาง</button>' : '')
+   +'</div>';
+
+  h+='<div style="font-size:12.5px;font-weight:700;margin:12px 0 6px">3. รอบการทำงานและวัน</div>';
+  if(hr){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+      +tsChip('ทุกวัน', f==='daily', 'data-tsfreq="'+d.id+'" data-v="daily"')
+      +tsChip('รายสัปดาห์', f==='weekly', 'data-tsfreq="'+d.id+'" data-v="weekly"')
+      +tsChip('รายเดือน', f==='monthly', 'data-tsfreq="'+d.id+'" data-v="monthly"')
+      +'</div>';
+  } else {
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">รอบ: '+({daily:'ทุกวัน',weekly:'รายสัปดาห์',monthly:'รายเดือน'}[f]||f)+'</div>';
+  }
+  if(f==='weekly'){
+    const w=tsDow(d);
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+      + TS_DOW.map((nm,i)=>tsChip(nm, w.indexOf(i)>=0, 'data-tsdow="'+d.id+'" data-v="'+i+'"')).join('')
+      + (TS.branch && tsHasOv(d,'days_of_week') ? '<button type="button" class="btn btn-sec btn-sm" data-tsclear="'+d.id+'" data-k="days_of_week" style="font-size:12px">กลับไปใช้ค่ากลาง</button>' : '')
+      +'</div>';
+  }
+  if(f==='monthly'){
+    const m=tsDom(d); let g='';
+    for(let i=1;i<=31;i++) g+=tsChip(String(i), m.indexOf(i)>=0, 'data-tsdom="'+d.id+'" data-v="'+i+'"');
+    g+=tsChip('สิ้นเดือน', m.indexOf(0)>=0, 'data-tsdom="'+d.id+'" data-v="0"');
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">'+g
+      + (TS.branch && tsHasOv(d,'day_of_month') ? '<button type="button" class="btn btn-sec btn-sm" data-tsclear="'+d.id+'" data-k="day_of_month" style="font-size:12px">กลับไปใช้ค่ากลาง</button>' : '')
+      +'</div>';
+  }
+
+  h+='<div style="font-size:12.5px;font-weight:700;margin:12px 0 6px">4. ปฏิทินเดือน '+esc(TS.month)+'</div>';
+  h+= TS.branch ? tsCalendar(d) : '<div style="font-size:12.5px;color:var(--muted)">เลือกสาขาก่อน จึงจะกำหนดวันที่เฉพาะสาขาได้</div>';
+
+  h+='<div style="font-size:12.5px;font-weight:700;margin:14px 0 6px">5. รายละเอียดปฏิบัติ · เกณฑ์การตรวจสอบ · วิธีถ่ายรูป</div>';
+  if(hr){
+    const ta=(id,lab,val,rows)=>'<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--muted);margin-bottom:3px">'+lab+'</div>'
+      +'<textarea id="'+id+'" rows="'+rows+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:12.5px;line-height:1.6;box-sizing:border-box">'+esc(val||'')+'</textarea></div>';
+    h+= ta('ts_how_'+d.id,'วิธีทำ (บรรทัดละข้อ)', d.how_to, 6)
+      + ta('ts_cr_'+d.id,'เกณฑ์การตรวจสอบ (บรรทัดละข้อ)', d.criteria, 5)
+      + ta('ts_ph_'+d.id,'วิธีถ่ายรูป / หลักฐาน', d.photo_hint, 2)
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+      + '<label style="font-size:12px">รูปขั้นต่ำ</label><input type="number" min="0" max="9" id="ts_mp_'+d.id+'" value="'+(d.min_photos!=null?d.min_photos:(d.require_photo?1:0))+'" style="width:60px;padding:6px;border:1.5px solid var(--line2);border-radius:8px;text-align:center">'
+      + '<label style="font-size:12px;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="ts_mgr_'+d.id+'" '+(d.mgr_review?'checked':'')+'> ให้ ผจก.ตรวจ</label>'
+      + '<label style="font-size:12px">ผู้รับผิดชอบ</label><input type="text" id="ts_who_'+d.id+'" value="'+esc(d.who_label||'')+'" style="width:170px;padding:6px;border:1.5px solid var(--line2);border-radius:8px">'
+      + '<button class="btn btn-pri btn-sm" data-tssave="'+d.id+'">บันทึกเนื้อหา</button>'
+      + '</div>'
+      + (d.source_ref?'<div style="font-size:11.5px;color:var(--muted)">อ้างอิง: '+esc(d.source_ref)+'</div>':'')
+      + (d.needs_manual?'<div style="font-size:11.5px;color:#b45309;margin-top:4px">⚠ ยังไม่มีในคู่มือฉบับใหม่: '+esc(d.manual_note||'')+'</div>':'');
+  } else {
+    const list=(t)=>String(t||'').split('\n').filter(x=>x.trim()).map(x=>'<li>'+esc(x.replace(/^•\s*/,''))+'</li>').join('');
+    h+='<div style="font-size:12.5px;line-height:1.7">'
+      +(d.how_to?'<div style="font-weight:600;margin-top:4px">วิธีทำ</div><ul style="margin:4px 0 0;padding-left:18px">'+list(d.how_to)+'</ul>':'')
+      +(d.criteria?'<div style="font-weight:600;margin-top:8px">เกณฑ์การตรวจสอบ</div><ul style="margin:4px 0 0;padding-left:18px">'+list(d.criteria)+'</ul>':'')
+      +(d.photo_hint?'<div style="font-weight:600;margin-top:8px">วิธีถ่ายรูป</div><div>'+esc(d.photo_hint)+'</div>':'')
+      +'</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+function tsCalendar(d){
+  const m=String(TS.month||'').match(/^(\d{4})-(\d{2})$/); if(!m) return '';
+  const y=+m[1], mo=+m[2];
+  const first=new Date(y,mo-1,1).getDay();
+  const last=new Date(y,mo,0).getDate();
+  let cells='';
+  for(let i=0;i<first;i++) cells+='<div></div>';
+  for(let day=1;day<=last;day++){
+    const ds=y+'-'+String(mo).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    const ex=TS.dates[tsDateKey(d.id,ds)];
+    const occ=tsOccurs(d,ds);
+    let bg='#fff', col='#334155', bd='var(--line2)', tag='';
+    if(ex && ex.mode==='skip'){ bg='#fee2e2'; col='#991b1b'; bd='#fca5a5'; tag='ข้าม'; }
+    else if(ex){ bg='#dbeafe'; col='#1e40af'; bd='#93c5fd'; tag='เพิ่ม'; }
+    else if(occ){ bg='#dcfce7'; col='#166534'; bd='#86efac'; }
+    cells+='<div data-tsday="'+d.id+'" data-ds="'+ds+'" title="กดเพื่อสลับ: ปกติ → เพิ่มวันนี้ → ข้ามวันนี้" '
+      +'style="cursor:pointer;text-align:center;padding:6px 0;border:1.5px solid '+bd+';border-radius:8px;background:'+bg+';color:'+col+';font-size:12px;font-weight:600">'
+      +day+(tag?('<div style="font-size:9.5px;font-weight:500">'+tag+'</div>'):'')+'</div>';
+  }
+  return '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;max-width:340px">'
+    + TS_DOW.map(x=>'<div style="text-align:center;font-size:11px;color:var(--muted)">'+x+'</div>').join('')
+    + cells + '</div>'
+    + '<div style="font-size:11.5px;color:var(--muted);margin-top:6px">เขียว = ต้องทำตามรอบ · ฟ้า = เพิ่มเฉพาะวันนี้ · แดง = ข้ามเฉพาะวันนี้</div>';
+}
+
+async function tsSaveBranch(id, patch){
+  if(TS.branch){
+    const r=await post({ action:'hr_taskset_branch', ...authBody(), branch:TS.branch, data:Object.assign({ task_def_id:id, branch_id:TS.branch }, patch) });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ'); return false; }
+    TS.ov[id]=Object.assign({ task_def_id:id, branch_id:TS.branch }, TS.ov[id]||{}, patch);
+  } else {
+    if(!tsIsHR()){ toast('err','ต้องเลือกสาขาก่อน'); return false; }
+    const r=await post({ action:'hr_taskset_save', ...authBody(), data:Object.assign({ id }, patch) });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ'); return false; }
+    const d=TS.rows.filter(x=>x.id===id)[0]; if(d) Object.assign(d, patch);
+  }
+  toast('ok','บันทึกแล้ว'); return true;
+}
+
+function tsWire(){
+  document.querySelectorAll('[data-tstoggle]').forEach(el=>el.onclick=(e)=>{
+    if(e.target.closest('button,input,textarea,select')) return;
+    const id=Number(el.dataset.tstoggle); TS.open[id]=!TS.open[id]; tsRender();
+  });
+  document.querySelectorAll('[data-tsact]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tsact), v=b.dataset.v, val=(v===''?null:v==='on');
+    const r=await post({ action:'hr_taskset_branch', ...authBody(), branch:TS.branch, data:{ task_def_id:id, branch_id:TS.branch, active:val } });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+    TS.ov[id]=Object.assign({}, TS.ov[id]||{}, { task_def_id:id, branch_id:TS.branch, active:val });
+    toast('ok','บันทึกแล้ว'); tsRender();
+  });
+  document.querySelectorAll('[data-tscact]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tscact), on=b.dataset.v==='on';
+    const r=await post({ action:'hr_taskset_save', ...authBody(), data:{ id, active:on } });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+    const d=TS.rows.filter(x=>x.id===id)[0]; if(d) d.active=on;
+    toast('ok','บันทึกแล้ว'); tsRender();
+  });
+  document.querySelectorAll('[data-tssh]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tssh), v=b.dataset.v, d=TS.rows.filter(x=>x.id===id)[0];
+    const cur=tsShiftIds(d).slice(); const i=cur.indexOf(v); if(i>=0) cur.splice(i,1); else cur.push(v);
+    if(await tsSaveBranch(id,{ shift_ids:cur })) tsRender();
+  });
+  document.querySelectorAll('[data-tsdow]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tsdow), v=Number(b.dataset.v), d=TS.rows.filter(x=>x.id===id)[0];
+    const cur=tsDow(d).slice(); const i=cur.indexOf(v); if(i>=0) cur.splice(i,1); else cur.push(v); cur.sort((a,b)=>a-b);
+    if(await tsSaveBranch(id,{ days_of_week:cur })) tsRender();
+  });
+  document.querySelectorAll('[data-tsdom]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tsdom), v=Number(b.dataset.v), d=TS.rows.filter(x=>x.id===id)[0];
+    const cur=tsDom(d).slice(); const i=cur.indexOf(v); if(i>=0) cur.splice(i,1); else cur.push(v); cur.sort((a,b)=>a-b);
+    if(await tsSaveBranch(id,{ day_of_month:cur })) tsRender();
+  });
+  document.querySelectorAll('[data-tsfreq]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tsfreq), v=b.dataset.v;
+    const r=await post({ action:'hr_taskset_save', ...authBody(), data:{ id, freq:v } });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+    const d=TS.rows.filter(x=>x.id===id)[0]; if(d) d.freq=v;
+    toast('ok','บันทึกแล้ว'); tsRender();
+  });
+  document.querySelectorAll('[data-tsclear]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tsclear), k=b.dataset.k, patch={}; patch[k]=null;
+    const r=await post({ action:'hr_taskset_branch', ...authBody(), branch:TS.branch, data:Object.assign({ task_def_id:id, branch_id:TS.branch }, patch) });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+    if(TS.ov[id]) TS.ov[id][k]=null;
+    toast('ok','กลับไปใช้ค่ากลางแล้ว'); tsRender();
+  });
+  document.querySelectorAll('[data-tsday]').forEach(el=>el.onclick=async()=>{
+    const id=Number(el.dataset.tsday), ds=el.dataset.ds;
+    const ex=TS.dates[tsDateKey(id,ds)];
+    let payload;
+    if(!ex) payload={ task_def_id:id, branch_id:TS.branch, work_date:ds, mode:'add' };
+    else if(ex.mode==='add') payload={ task_def_id:id, branch_id:TS.branch, work_date:ds, mode:'skip' };
+    else payload={ task_def_id:id, branch_id:TS.branch, work_date:ds, remove:true };
+    const r=await post({ action:'hr_taskset_date', ...authBody(), branch:TS.branch, data:payload });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+    if(payload.remove) delete TS.dates[tsDateKey(id,ds)];
+    else TS.dates[tsDateKey(id,ds)]={ task_def_id:id, branch_id:TS.branch, work_date:ds, mode:payload.mode };
+    tsRender();
+  });
+  document.querySelectorAll('[data-tssave]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tssave);
+    const data={ id,
+      how_to:$('ts_how_'+id).value, criteria:$('ts_cr_'+id).value, photo_hint:$('ts_ph_'+id).value,
+      min_photos:$('ts_mp_'+id).value, mgr_review:$('ts_mgr_'+id).checked, who_label:$('ts_who_'+id).value };
+    const r=await post({ action:'hr_taskset_save', ...authBody(), data });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+    const d=TS.rows.filter(x=>x.id===id)[0];
+    if(d) Object.assign(d,{ how_to:data.how_to, criteria:data.criteria, photo_hint:data.photo_hint, min_photos:Number(data.min_photos)||0, mgr_review:data.mgr_review, who_label:data.who_label });
+    toast('ok','บันทึกเนื้อหาแล้ว');
+  });
+}
+
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
 const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','special','qa','shelf','exams','lineFeed'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','taskset','special','qa','shelf','exams','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','attnedit','schedule','leaves'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },

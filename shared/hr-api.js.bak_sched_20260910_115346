@@ -316,11 +316,6 @@
         case 'hr_task_defs_get':     return await hrTaskDefsGet();
         case 'hr_task_def_save':     return await hrTaskDefSave(p.data);
         case 'hr_task_def_delete':   return await hrTaskDefDelete(p.id);
-        case 'hr_taskset_get':       return await hrTaskSetGet(p);
-        case 'hr_taskset_save':      return await hrTaskSetSave(p);
-        case 'hr_taskset_branch':    return await hrTaskSetBranch(p);
-        case 'hr_taskset_date':      return await hrTaskSetDate(p);
-        case 'hr_taskset_v2flag':    return await hrTaskSetV2Flag(p);
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
@@ -2461,9 +2456,7 @@
       if (error) return { ok: false, error: error.message };
     } else {
       if (d.status === 'absent') { await logAct('บันทึกลงเวลา (ขาด)', d.emp_id, d.work_date); return { ok: true }; }   // ไม่ต้องสร้างแถวถ้าตั้งขาดและยังไม่มีแถว
-      // ★ 10 ก.ย. 2569 — ตารางเวรวันเดียวกันอาจมีหลายแถว · .maybeSingle() จะคืน null ทั้งก้อน
-      const _scRows = (await sb().from('schedules').select('shift_id,branch_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date)).data || [];
-      const sc = _scRows.length ? (_scRows.filter(r => r.shift_id === d.shift_id)[0] || _scRows[0]) : null;
+      const sc = (await sb().from('schedules').select('shift_id,branch_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date).maybeSingle()).data;
       const emp = (await sb().from('employees').select('branch_id,default_shift').eq('emp_id', d.emp_id).maybeSingle()).data;
       const row = Object.assign({ emp_id: d.emp_id, work_date: d.work_date,
         shift_id: d.shift_id || (sc && sc.shift_id) || (emp && emp.default_shift) || null,
@@ -2507,14 +2500,6 @@
       shift_id: d.shift_id || null, branch_id,
       is_cover, note: d.note || null,
     };
-    // ★ 10 ก.ย. 2569 — กันจัดกะซ้อนโดยไม่ตั้งใจ
-    //   "ควบกะ" จริงต้องเป็นคนละช่วงเวลา (เช่น เช้า + ดึก) · ถ้าเวลาทับกันแปลว่าจัดผิด
-    //   เคสจริง: เอิร์ท 10 ก.ย. ได้ทั้ง A (12:30-22:30) และ M10 (10:00-20:00) → ทับกัน 7.5 ชม.
-    //   ปล่อยผ่านไม่ได้เพราะทำให้จ่ายวันทำงานซ้ำ และตอน v171 ทำให้ระบบมองว่า "ไม่มีกะ"
-    if (d.shift_id && !d.force) {
-      const ovl = await _schedOverlap(d.emp_id, d.work_date, d.shift_id);
-      if (ovl) return { ok: false, code: 'OVERLAP', error: ovl };
-    }
     const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
     // log ทุกการบันทึกกะ เพื่อให้ตามรอยได้ว่าใคร/เมื่อไร เพิ่ม-เปลี่ยนกะ (กันเคส "กะเพิ่มเอง")
@@ -2538,33 +2523,6 @@
       }
     } catch (e) { console.warn('sync attendance shift', e); }
     return { ok: true, is_cover };
-  }
-  // คืนข้อความเตือนถ้ากะใหม่ "เวลาทับ" กับกะเดิมของคนนี้ในวันเดียวกัน · ไม่ทับ = null (ควบกะได้ตามปกติ)
-  async function _schedOverlap(empId, workDate, newShift) {
-    try {
-      const cur = (await sb().from('schedules').select('shift_id')
-        .eq('emp_id', empId).eq('work_date', workDate)).data || [];
-      const others = cur.map(r => r.shift_id).filter(x => x && x !== newShift);
-      if (!others.length) return null;
-      const shs = (await sb().from('shifts').select('shift_id,name,start_time,end_time')
-        .in('shift_id', others.concat([newShift]))).data || [];
-      const by = {}; shs.forEach(x => { by[x.shift_id] = x; });
-      const m = hm => { const q = String(hm || '').split(':'); return (parseInt(q[0]) || 0) * 60 + (parseInt(q[1]) || 0); };
-      // กะข้ามคืน (end <= start) → บวก 24 ชม. ให้ปลายทาง
-      const span = sh => { if (!sh || !sh.start_time) return null; const a = m(sh.start_time), b0 = m(sh.end_time); return [a, b0 <= a ? b0 + 1440 : b0]; };
-      const nw = span(by[newShift]); if (!nw) return null;
-      for (const o of others) {
-        const os = span(by[o]); if (!os) continue;
-        // ทั้งสองกะเริ่มใน work_date เดียวกัน · กะข้ามคืนถูกยืดเลย 24:00 ไปแล้วใน span()
-        // จึงเทียบตรง ๆ พอ (ห้ามเลื่อน ±24 ชม. ไม่งั้น เช้า+ดึก ซึ่งเป็นควบกะที่ถูกต้อง จะโดนเตือนผิด)
-        const hit = Math.min(nw[1], os[1]) - Math.max(nw[0], os[0]);
-        if (hit > 0) {
-          const nm = x => (by[x] && by[x].name) ? (by[x].name + ' (' + String(by[x].start_time).slice(0, 5) + '-' + String(by[x].end_time).slice(0, 5) + ')') : x;
-          return 'วันนี้เขามีกะ ' + nm(o) + ' อยู่แล้ว · กะใหม่ ' + nm(newShift) + ' เวลาทับกัน ' + (Math.round(hit / 6) / 10) + ' ชม. — ควบกะต้องเป็นคนละช่วงเวลา ถ้าจะเปลี่ยนกะให้ลบกะเดิมก่อน';
-        }
-      }
-      return null;
-    } catch (e) { return null; }
   }
   async function hrSchedDelete(empId, workDate, shiftId) {
     let q = sb().from('schedules').delete().eq('emp_id', empId).eq('work_date', workDate);
@@ -4802,130 +4760,6 @@
     if (error) throw error;
     return { ok: true };
   }
-
-  // ---------- TASKS v2: ตั้งค่างานในกะรายสาขา ----------
-  //   HR  : แก้ได้ทุกอย่าง (เนื้อหางาน · เปิด-ปิด · รอบ/วัน · กะ)
-  //   ผจก.: แก้ได้เฉพาะ "งานนี้ให้ผลัดไหนทำ" + "กำหนดวัน" ของสาขาตัวเองเท่านั้น
-  async function _tsActor(auth) {
-    auth = auth || {};
-    if (!auth.mgr_emp) return { role: 'hr', branch_id: null, emp_id: null, name: 'สำนักงาน (HR)' };
-    const { data } = await sb().rpc('mgr_login', { p_emp_id: String(auth.mgr_emp), p_pin: String(auth.mgr_pin || '') });
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row || !row.branch_id) return { role: 'invalid', branch_id: null, emp_id: null, name: '' };
-    return { role: 'mgr', branch_id: String(row.branch_id), emp_id: String(auth.mgr_emp), name: (row.nickname || row.name || 'ผจก.') };
-  }
-  const _tsArr  = v => Array.isArray(v) ? v : [];
-  const _tsInts = v => _tsArr(v).map(x => parseInt(x, 10)).filter(x => !isNaN(x));
-
-  async function hrTaskSetGet(p) {
-    const actor = await _tsActor(p);
-    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
-    const branch = (actor.role === 'mgr') ? actor.branch_id : String(p.branch || '');
-    const { data: defs, error } = await sb().from('task_defs').select('*');
-    if (error) throw error;
-    let brs = [];
-    try { const b = await sb().from('branches').select('branch_id,name,task_v2').order('branch_id'); brs = b.data || []; }
-    catch (e) { const b = await sb().from('branches').select('branch_id,name').order('branch_id'); brs = b.data || []; }
-    let ov = [], dates = [];
-    if (branch) {
-      const o = await sb().from('task_def_branches').select('*').eq('branch_id', branch);
-      ov = o.data || [];
-      const m = String(p.month || '').match(/^(\d{4})-(\d{2})$/);
-      if (m) {
-        const d = await sb().from('task_def_dates').select('*').eq('branch_id', branch)
-          .gte('work_date', m[1] + '-' + m[2] + '-01').lte('work_date', m[1] + '-' + m[2] + '-31');
-        dates = d.data || [];
-      }
-    }
-    const rows = (defs || []).slice().sort((a, b) =>
-      ((a.step == null ? 99 : a.step) - (b.step == null ? 99 : b.step)) || ((a.sort || 0) - (b.sort || 0)) || (a.id - b.id));
-    return { ok: true, role: actor.role, branch, rows, branches: brs, overrides: ov, dates };
-  }
-
-  // แก้ "ค่ากลาง" ของงาน — HR เท่านั้น
-  async function hrTaskSetSave(p) {
-    const actor = await _tsActor(p);
-    if (actor.role !== 'hr') return { ok: false, error: 'เปิด-ปิด/แก้ไขงาน ทำได้เฉพาะฝั่ง HR' };
-    const d = p.data || {};
-    if (!d.id) return { ok: false, error: 'ไม่พบงาน' };
-    const row = {};
-    ['title', 'how_to', 'criteria', 'photo_hint', 'source_ref', 'qssi_cat', 'who_label', 'link_kind', 'group_kind', 'manual_note']
-      .forEach(k => { if (k in d) row[k] = (d[k] === '' ? null : d[k]); });
-    if ('freq' in d) row.freq = ['daily', 'weekly', 'monthly'].includes(d.freq) ? d.freq : 'daily';
-    if ('days_of_week' in d) row.days_of_week = _tsInts(d.days_of_week);
-    if ('day_of_month' in d) row.day_of_month = _tsInts(d.day_of_month);
-    if ('shift_ids' in d)    row.shift_ids    = _tsArr(d.shift_ids).map(String);
-    if ('active' in d)       row.active       = !!d.active;
-    if ('mgr_review' in d)   row.mgr_review   = !!d.mgr_review;
-    if ('needs_manual' in d) row.needs_manual = !!d.needs_manual;
-    if ('sort' in d)         row.sort         = Number(d.sort) || 0;
-    if ('step' in d)         row.step         = (d.step === '' || d.step == null) ? null : Number(d.step);
-    if ('min_photos' in d)   { const mp = Math.max(0, Number(d.min_photos) || 0); row.min_photos = mp; row.require_photo = mp > 0; }
-    if (!Object.keys(row).length) return { ok: false, error: 'ไม่มีข้อมูลให้บันทึก' };
-    const { error } = await sb().from('task_defs').update(row).eq('id', d.id);
-    if (error) throw error;
-    return { ok: true };
-  }
-
-  // ตั้งค่าเฉพาะสาขา — HR ตั้งได้ทุกช่อง · ผจก. ตั้งได้เฉพาะ shift_ids / วัน
-  async function hrTaskSetBranch(p) {
-    const actor = await _tsActor(p);
-    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
-    const d = p.data || {};
-    const branch = (actor.role === 'mgr') ? actor.branch_id : String(d.branch_id || p.branch || '');
-    if (!branch) return { ok: false, error: 'ต้องเลือกสาขาก่อน' };
-    if (!d.task_def_id) return { ok: false, error: 'ไม่พบงาน' };
-    const row = {
-      task_def_id: Number(d.task_def_id), branch_id: branch,
-      updated_by: actor.emp_id || 'hr', updated_role: actor.role, updated_at: new Date().toISOString(),
-    };
-    if ('shift_ids' in d)    row.shift_ids    = (d.shift_ids === null)    ? null : _tsArr(d.shift_ids).map(String);
-    if ('days_of_week' in d) row.days_of_week = (d.days_of_week === null) ? null : _tsInts(d.days_of_week);
-    if ('day_of_month' in d) row.day_of_month = (d.day_of_month === null) ? null : _tsInts(d.day_of_month);
-    if ('note' in d)         row.note         = d.note || null;
-    if ('active' in d) {
-      if (actor.role !== 'hr') return { ok: false, error: 'เปิด-ปิดงาน ทำได้เฉพาะฝั่ง HR' };
-      row.active = (d.active === null) ? null : !!d.active;
-    }
-    const { error } = await sb().from('task_def_branches').upsert(row, { onConflict: 'task_def_id,branch_id' });
-    if (error) throw error;
-    return { ok: true };
-  }
-
-  // ปฏิทิน: ระบุวันที่เพิ่มงาน (add) หรือข้ามงาน (skip) เฉพาะวัน — HR และ ผจก. ทำได้
-  async function hrTaskSetDate(p) {
-    const actor = await _tsActor(p);
-    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
-    const d = p.data || {};
-    const branch = (actor.role === 'mgr') ? actor.branch_id : String(d.branch_id || p.branch || '');
-    if (!branch || !d.task_def_id || !d.work_date) return { ok: false, error: 'ข้อมูลไม่ครบ' };
-    if (d.remove) {
-      const { error } = await sb().from('task_def_dates').delete()
-        .eq('task_def_id', Number(d.task_def_id)).eq('branch_id', branch).eq('work_date', d.work_date);
-      if (error) throw error;
-      return { ok: true };
-    }
-    const row = {
-      task_def_id: Number(d.task_def_id), branch_id: branch, work_date: d.work_date,
-      mode: (d.mode === 'skip' ? 'skip' : 'add'), note: d.note || null, created_by: actor.emp_id || 'hr',
-    };
-    const { error } = await sb().from('task_def_dates').upsert(row, { onConflict: 'task_def_id,branch_id,work_date' });
-    if (error) throw error;
-    return { ok: true };
-  }
-
-  // เปิด/ปิดการใช้แคตตาล็อกใหม่ (v2) รายสาขา — HR เท่านั้น
-  async function hrTaskSetV2Flag(p) {
-    const actor = await _tsActor(p);
-    if (actor.role !== 'hr') return { ok: false, error: 'เฉพาะ HR เท่านั้น' };
-    const d = p.data || {};
-    const b = String(d.branch_id || '');
-    if (!b) return { ok: false, error: 'ต้องเลือกสาขา' };
-    const { error } = await sb().from('branches').update({ task_v2: !!d.on }).eq('branch_id', b);
-    if (error) throw error;
-    return { ok: true };
-  }
-
   async function hrTaskAssign(d) {
     if (!d || !d.emp_id || !Array.isArray(d.def_ids) || !d.def_ids.length) return { ok: false, error: 'เลือกพนักงานและงานอย่างน้อย 1 รายการ' };
     const date = d.work_date || bkkToday();
