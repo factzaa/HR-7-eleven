@@ -11489,7 +11489,8 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 // ============================================================
 const TS = { rows:[], ov:{}, dates:{}, branches:[], role:'hr', branch:'', month:'', open:{} };
 const TS_DOW = ['อา','จ','อ','พ','พฤ','ศ','ส'];
-const TS_STEPS = {1:'เตรียมความพร้อมก่อนรับผลัด',2:'ตรวจรับผลัด',3:'งานประจำผลัด',4:'งานตามรอบ/สัปดาห์',5:'รับสินค้า',6:'ขายและบริการ',7:'ตรวจมาตรฐาน QSSI',8:'สรุปผลัด',9:'ส่งผลัด'};
+const TS_STEPS = {1:'เตรียมความพร้อมก่อนรับผลัด',2:'การรับผลัด',3:'ดำเนินการขายและให้บริการ',4:'การจัดการสินค้า',5:'การจัดการคุณภาพสินค้าอาหารและเครื่องดื่ม (QA)',6:'Shift Survey ตรวจสอบเงินสดระหว่างผลัด',7:'การปิดผลัดและส่งผลัด',8:'On-line ข้อมูลการขายและส่งเอกสารสิ้นวัน',9:'การนำเงินฝากธนาคาร'};
+const TS_WHEN  = {1:'ก่อนเวลาเริ่มกะ 30 นาที',2:'นาทีแรกของกะ',3:'ตลอดกะ',4:'ตลอดกะ ตามรอบของแต่ละงาน',5:'ตามรอบของแต่ละผลัด',6:'อย่างน้อย 1 รอบต่อกะ',7:'ท้ายกะ',8:'ผลัดดึก ก่อนสว่าง',9:'ผลัดเช้า / ผู้จัดการ'};
 const TS_QN = {S:'S บริการ',A:'A สินค้า',V:'V ป้าย/สื่อ',E:'E สะดวกปลอดภัย',Q:'Q คุณภาพ',C:'C ความสะอาด',QMS:'QMS เอกสาร',PR:'Process'};
 
 function tsIsHR(){ return TS.role==='hr' && !MGR_MODE; }
@@ -11603,7 +11604,7 @@ function tsRender(){
   const nOn=rows.filter(tsActive).length;
   $('ts_body').innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">แสดง '+rows.length+' งาน · เปิดใช้ '+nOn+' · ปิด '+(rows.length-nOn)+'</div>'
    + keys.map(k=>{
-      const title = k==='0' ? 'งานเดิมในระบบ (ยังไม่จัดขั้นตอน)' : ('ขั้นตอน '+k+' · '+(TS_STEPS[k]||''));
+      const title = k==='0' ? 'งานเดิมในระบบ (ยังไม่จัดขั้นตอน)' : ('ขั้นตอน '+k+' · '+(TS_STEPS[k]||'')+(TS_WHEN[k]?('  —  '+TS_WHEN[k]):''));
       return '<div style="margin:14px 0 8px;font-weight:700;font-size:14px;color:#00582f">'+esc(title)
         +' <span style="font-weight:400;color:var(--muted);font-size:12.5px">('+byStep[k].length+')</span></div>'
         + byStep[k].map(tsCard).join('');
