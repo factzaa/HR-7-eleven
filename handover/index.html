@@ -562,6 +562,12 @@ $('goBtn').onclick=async()=>{
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"
     refreshCoCard();         // การ์ดเตือนกดออก/ควบกะ
     if(window.refreshNotifyBtn) window.refreshNotifyBtn();
+    // ★ ลิงก์ตรงจากการ์ด LINE — ?go=review เปิดหน้า "ตรวจรับผลัด" ให้ทันที
+    try{
+      const _go=new URLSearchParams(location.search).get('go');
+      if(_go==='review'){ history.replaceState(null,'',location.pathname); openM3(); }
+      else if(_go==='mine'){ history.replaceState(null,'',location.pathname); openM2(); }
+    }catch(_e){}
   }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
   $('goBtn').textContent='เริ่ม';
 };
@@ -664,6 +670,7 @@ async function openM2(){
   // ===== งานตามกะ =====
   if(r){
   window.TASK_DET={}; (r.details||[]).forEach(function(d){ window.TASK_DET[d.id]=d; });
+  window.MY_SHELVES=r.my_shelves||[]; window.AUTO_PICKS=r.auto_picks||{};
   html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3>';
   if(!r.mine.length) html+='<div class="card muted">ยังไม่มีงานที่มอบหมายให้คุณ</div>';
   else html+=r.mine.map(a=>{
@@ -1059,13 +1066,20 @@ async function openM3(){
   $('pv_sub').textContent='ผลัดของคุณ: '+esc(r.cur_name||'-');
   if(r.isMain===false){ $('pv_body').innerHTML='<div class="card warn">กะของคุณเป็น <b>กะพิเศษ</b> ไม่อยู่ในวงจรตรวจรับผลัด (เช้า/บ่าย/ดึก)<br><span class="muted">ถ้าต้องการให้กะนี้ตรวจผลัดก่อนหน้าได้ ให้ผู้จัดการตั้ง "ผลัดหลัก" ของกะนี้ในหน้าตั้งค่ากะ</span></div>'; return; }
   const pend=(r.tasks||[]).filter(t=>t.status==='submitted').length;
-  let head='<div class="card"><div style="font-weight:600">ตรวจงานผลัดก่อนหน้า: '+esc(r.prev_name||'-')+'</div><div class="muted">วันที่ '+esc(String(r.prev_date))+'</div>'
+  let head='<div class="card"><div style="font-weight:600">ตรวจงานผลัดก่อนหน้า: '+esc(r.prev_name||'-')+'</div><div class="muted">วันที่ '+esc(String(r.prev_date))+((r.all_count!=null&&r.all_count>(r.tasks||[]).length)?(' · ต้องตรวจ '+(r.tasks||[]).length+' จาก '+r.all_count+' งาน'):'')+'</div>'
     +(r.canReview?'<div class="pill ok" style="margin-top:6px">คุณเป็นหัวหน้าผลัด — ตรวจ/ตีกลับได้</div>':'<div class="pill warn" style="margin-top:6px">ดูได้อย่างเดียว (เฉพาะหัวหน้าผลัดตรวจได้)</div>')
     +(r.canReview&&pend?'<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12.5px;color:#92400e">'
         +'<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> <b>มีงานรอคุณตรวจ '+pend+' รายการ</b><br>งานเหล่านี้ต้องให้ <b>คุณ (ผลัดถัดไป) ตรวจก่อน</b> — ผู้จัดการจะตรวจซ้ำทีหลัง ไม่ใช่ตรวจแทนคุณ'
         +'<br>ถ้าคุณตรวจผ่านแล้วผู้จัดการตรวจซ้ำไม่ผ่าน <b>ผลัดของคุณจะเป็นผู้รับผิดชอบแก้ไข</b></div>':'')
     +'</div>';
-  if(!r.tasks.length){ $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานบันทึกไว้</div>'; return; }
+  const nrv=(r.noreview||[]);
+  const nrvHtml = nrv.length ? ('<div class="card" style="margin-top:2px"><div style="font-weight:600;margin-bottom:4px">งานอื่นของผลัดก่อนหน้า '+nrv.length+' รายการ <span class="pill muted2">ไม่ต้องตรวจ</span></div>'
+      +'<div class="muted" style="font-size:12.5px;margin-bottom:6px">ตั้งค่าไว้ว่าไม่ต้องให้ผลัดถัดไปตรวจ — ดูได้ แต่ไม่ต้องกดอะไร</div>'
+      +nrv.map(a=>{ const s2=ST(a.status); return '<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line)">'
+        +'<div style="flex:1;font-size:13px">'+esc(a.title)+' <span class="muted">· '+esc(a.emp_name||a.emp_id||'—')+'</span></div>'
+        +'<span class="pill '+s2[1]+'">'+s2[0]+'</span></div>'; }).join('')
+      +'</div>') : '';
+  if(!r.tasks.length){ $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานที่ต้องให้คุณตรวจ</div>'+nrvHtml; return; }
   $('pv_body').innerHTML=head+r.tasks.map(a=>{
     const s=ST(a.status); let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     c+='<div class="muted">ผู้ทำ: '+esc(a.emp_name||a.emp_id||'—')+(a.submitted_at?(' · ส่ง '+fmt(a.submitted_at)):'')+'</div>';
@@ -1074,7 +1088,7 @@ async function openM3(){
     c+=thumbsHtml(a.photos);
     if(r.canReview && a.status==='submitted') c+='<div class="row2" style="margin-top:10px"><button class="btn btn-pri btn-sm" data-ap="'+a.id+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน</button><button class="btn btn-warn btn-sm" data-rb="'+a.id+'">⤴ ตีกลับ</button></div>';
     return c+'</div>';
-  }).join('');
+  }).join('')+nrvHtml;
   PVTASKS={}; r.tasks.forEach(a=>{ PVTASKS[a.id]=a; });
   document.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>doPrevReview(Number(b.dataset.ap),'approved'));
   document.querySelectorAll('[data-rb]').forEach(b=>b.onclick=()=>openMarkupEditor(PVTASKS[Number(b.dataset.rb)]));
@@ -1372,11 +1386,32 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
 // รายละเอียดปฏิบัติ / เกณฑ์การตรวจสอบ / วิธีถ่ายรูป (พับไว้ กดดูได้)
 function taskDetailHTML(d){
   if(!d) return '';
-  if(!d.how_to && !d.criteria && !d.photo_hint) return '';
+  var extra='';
+  // ★ งานที่ผูกกับ Shelf ที่รับผิดชอบ — ดึงรายการ Shelf ของพนักงานคนนี้มาแสดง
+  if(String(d.link_kind||'')==='Shelf'){
+    var sv=(window.MY_SHELVES||[]);
+    extra += '<div style="margin:6px 0 2px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:9px 10px;font-size:12.5px;line-height:1.65">'
+      + '<b>Shelf ที่คุณรับผิดชอบเดือนนี้ ('+sv.length+')</b>'
+      + (sv.length ? ('<div style="margin-top:4px">'+sv.map(function(x){
+            return '• '+esc((x.code?(x.code+' '):'')+(x.name||''))+(x.detail?(' <span style="color:#64748b">'+esc(x.detail)+'</span>'):''); }).join('<br>')+'</div>'
+          + '<div style="color:#1d4ed8;margin-top:5px">ตรวจ/ทำงานนี้เฉพาะ Shelf ข้างบนนี้ของคุณ</div>')
+        : '<div style="margin-top:4px;color:#b45309">ยังไม่ได้รับมอบหมาย Shelf เดือนนี้ — แจ้งผู้จัดการร้านให้มอบหมายก่อน</div>')
+      + '</div>';
+  }
+  // ★ งานที่ระบบสุ่มวันจากตารางเวรของคุณ
+  if(String(d.auto_day||'')==='random_scheduled'){
+    var pk=(window.AUTO_PICKS||{})[d.id];
+    extra += '<div style="margin:6px 0 2px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:9px 10px;font-size:12.5px;line-height:1.65">'
+      + '<b>ระบบสุ่มวันให้จากตารางเวรของคุณ</b>'
+      + (pk ? ('<div style="margin-top:3px">รอบนี้ตรงกับวันที่ <b>'+esc(String(pk.work_date))+'</b>'+(pk.shift_id?(' · กะ '+esc(pk.shift_id)):'')+'</div>') : '')
+      + '<div style="color:#6d28d9;margin-top:3px">'+(String(d.freq||'')==='monthly'?'ทำ 1 ครั้งต่อเดือน':'ทำ 1 ครั้งต่อสัปดาห์')+' — ทำไม่ทันวันที่สุ่ม ยังทำต่อได้จนจบรอบ</div>'
+      + '</div>';
+  }
+  if(!d.how_to && !d.criteria && !d.photo_hint) return extra;
   var li=function(t){ return String(t||'').split('\n').filter(function(x){return x.trim();})
     .map(function(x){ return '<li>'+esc(x.replace(/^\u2022\s*/,''))+'</li>'; }).join(''); };
   var id='dtl_'+d.id+'_'+Math.floor(Math.random()*100000);
-  return '<div style="margin:6px 0 2px">'
+  return extra+'<div style="margin:6px 0 2px">'
    +'<button type="button" class="btn btn-sec btn-sm" style="font-size:12px" onclick="var e=document.getElementById(\''+id+'\');e.style.display=(e.style.display===\'none\'?\'block\':\'none\')">วิธีทำ / เกณฑ์ตรวจ</button>'
    +'<div id="'+id+'" style="display:none;margin-top:6px;font-size:12.5px;line-height:1.7;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:9px">'
    +(d.how_to?'<div style="font-weight:700">วิธีทำ</div><ul style="margin:3px 0 6px;padding-left:18px">'+li(d.how_to)+'</ul>':'')
