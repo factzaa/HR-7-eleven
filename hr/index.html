@@ -2551,6 +2551,7 @@ function mrNav(d){
 <div id="view_taskset" class="container" style="display:none">
   <div class="toolbar">
     <h2 style="flex:1">ตั้งค่างานในกะ</h2>
+    <button class="btn btn-pri btn-sm" id="ts_new">+ เพิ่มงานใหม่</button>
     <button class="btn btn-sec btn-sm" id="ts_reload">รีเฟรช</button>
   </div>
 
@@ -11528,6 +11529,18 @@ async function loadTaskSet(){
     ['ts_q','ts_freq','ts_step','ts_state'].forEach(k=>{ const e=$(k); if(e){ e.oninput=()=>tsRender(); e.onchange=()=>tsRender(); } });
     const st=$('ts_step'); if(st && st.options.length<=1){ Object.keys(TS_STEPS).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k+'. '+TS_STEPS[k]; st.appendChild(o); }); }
   }
+  if($('ts_new') && !$('ts_new').dataset.wired){
+    $('ts_new').dataset.wired='1';
+    $('ts_new').onclick=async()=>{
+      if(!tsIsHR()){ toast('err','เพิ่มงานได้เฉพาะ HR'); return; }
+      const title=prompt('ชื่องานใหม่:'); if(!title||!title.trim()) return;
+      const r=await post({ action:'hr_taskset_create', ...authBody(), data:{ title:title.trim() } });
+      if(!r||!r.ok){ toast('err',(r&&r.error)||'เพิ่มไม่สำเร็จ'); return; }
+      toast('ok','เพิ่มงานแล้ว (ยังปิดอยู่ — เปิดใช้เมื่อพร้อม)');
+      if(r.id) TS.open[r.id]=true;
+      await loadTaskSet();
+    };
+  }
   $('ts_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const month=tsMonthStr();
   const r=await post({ action:'hr_taskset_get', ...authBody(), branch:(MGR_MODE?MGR_BRANCH:(bs.value||'')), month });
@@ -11691,6 +11704,18 @@ function tsPanel(d){
   if(hr){
     const ta=(id,lab,val,rows)=>'<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--muted);margin-bottom:3px">'+lab+'</div>'
       +'<textarea id="'+id+'" rows="'+rows+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:12.5px;line-height:1.6;box-sizing:border-box">'+esc(val||'')+'</textarea></div>';
+    const sopt=Object.keys(TS_STEPS).map(function(k){ return '<option value="'+k+'"'+(String(d.step)===k?' selected':'')+'>'+k+'. '+esc(TS_STEPS[k])+'</option>'; }).join('');
+    const qopt=Object.keys(TS_QN).map(function(k){ return '<option value="'+k+'"'+(d.qssi_cat===k?' selected':'')+'>'+esc(TS_QN[k])+'</option>'; }).join('');
+    h+= '<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--muted);margin-bottom:3px">ชื่องาน</div>'
+      + '<input type="text" id="ts_title_'+d.id+'" value="'+esc(d.title||'')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;box-sizing:border-box"></div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+      + '<label style="font-size:12px">ขั้นตอน</label><select id="ts_step_'+d.id+'" style="padding:6px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:12.5px"><option value="">ไม่ระบุ</option>'+sopt+'</select>'
+      + '<label style="font-size:12px">หมวด QSSI</label><select id="ts_q_'+d.id+'" style="padding:6px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:12.5px"><option value="">ไม่ระบุ</option>'+qopt+'</select>'
+      + '<label style="font-size:12px">ลำดับ</label><input type="number" id="ts_sort_'+d.id+'" value="'+(d.sort||0)+'" style="width:70px;padding:6px;border:1.5px solid var(--line2);border-radius:8px;text-align:center">'
+      + '<label style="font-size:12px">ลิงก์ระบบ</label><input type="text" id="ts_link_'+d.id+'" value="'+esc(d.link_kind||'')+'" placeholder="QA / Shelf / รับสินค้า" style="width:130px;padding:6px;border:1.5px solid var(--line2);border-radius:8px">'
+      + '</div>'
+      + '<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--muted);margin-bottom:3px">อ้างอิงคู่มือ</div>'
+      + '<input type="text" id="ts_ref_'+d.id+'" value="'+esc(d.source_ref||'')+'" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:12.5px;box-sizing:border-box"></div>';
     h+= ta('ts_how_'+d.id,'วิธีทำ (บรรทัดละข้อ)', d.how_to, 6)
       + ta('ts_cr_'+d.id,'เกณฑ์การตรวจสอบ (บรรทัดละข้อ)', d.criteria, 5)
       + ta('ts_ph_'+d.id,'วิธีถ่ายรูป / หลักฐาน', d.photo_hint, 2)
@@ -11699,8 +11724,8 @@ function tsPanel(d){
       + '<label style="font-size:12px;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="ts_mgr_'+d.id+'" '+(d.mgr_review?'checked':'')+'> ให้ ผจก.ตรวจ</label>'
       + '<label style="font-size:12px">ผู้รับผิดชอบ</label><input type="text" id="ts_who_'+d.id+'" value="'+esc(d.who_label||'')+'" style="width:170px;padding:6px;border:1.5px solid var(--line2);border-radius:8px">'
       + '<button class="btn btn-pri btn-sm" data-tssave="'+d.id+'">บันทึกเนื้อหา</button>'
+      + '<button class="btn btn-danger btn-sm" data-tsdel="'+d.id+'">ลบงานนี้</button>'
       + '</div>'
-      + (d.source_ref?'<div style="font-size:11.5px;color:var(--muted)">อ้างอิง: '+esc(d.source_ref)+'</div>':'')
       + (d.needs_manual?'<div style="font-size:11.5px;color:#b45309;margin-top:4px">⚠ ยังไม่มีในคู่มือฉบับใหม่: '+esc(d.manual_note||'')+'</div>':'');
   } else {
     const list=(t)=>String(t||'').split('\n').filter(x=>x.trim()).map(x=>'<li>'+esc(x.replace(/^•\s*/,''))+'</li>').join('');
@@ -11814,16 +11839,30 @@ function tsWire(){
     else TS.dates[tsDateKey(id,ds)]={ task_def_id:id, branch_id:TS.branch, work_date:ds, mode:payload.mode };
     tsRender();
   });
+  document.querySelectorAll('[data-tsdel]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.dataset.tsdel), d=TS.rows.filter(x=>x.id===id)[0]||{};
+    if(!confirm('ลบงาน "'+(d.title||'')+'" ออกจากแคตตาล็อกถาวร?\n(ถ้าเคยมอบหมายไปแล้วระบบจะไม่ยอมลบ ให้กด "ปิด" แทน)')) return;
+    const r=await post({ action:'hr_taskset_delete', ...authBody(), id });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ลบไม่สำเร็จ'); return; }
+    TS.rows=TS.rows.filter(x=>x.id!==id); delete TS.open[id]; delete TS.ov[id];
+    toast('ok','ลบแล้ว'); tsRender();
+  });
   document.querySelectorAll('[data-tssave]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.tssave);
     const data={ id,
+      title:$('ts_title_'+id).value.trim(), step:$('ts_step_'+id).value, qssi_cat:$('ts_q_'+id).value,
+      sort:$('ts_sort_'+id).value, link_kind:$('ts_link_'+id).value, source_ref:$('ts_ref_'+id).value,
       how_to:$('ts_how_'+id).value, criteria:$('ts_cr_'+id).value, photo_hint:$('ts_ph_'+id).value,
       min_photos:$('ts_mp_'+id).value, mgr_review:$('ts_mgr_'+id).checked, who_label:$('ts_who_'+id).value };
+    if(!data.title){ toast('err','ต้องมีชื่องาน'); return; }
     const r=await post({ action:'hr_taskset_save', ...authBody(), data });
     if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
     const d=TS.rows.filter(x=>x.id===id)[0];
-    if(d) Object.assign(d,{ how_to:data.how_to, criteria:data.criteria, photo_hint:data.photo_hint, min_photos:Number(data.min_photos)||0, mgr_review:data.mgr_review, who_label:data.who_label });
-    toast('ok','บันทึกเนื้อหาแล้ว');
+    if(d) Object.assign(d,{ title:data.title, step:(data.step===''?null:Number(data.step)), qssi_cat:data.qssi_cat||null,
+      sort:Number(data.sort)||0, link_kind:data.link_kind||null, source_ref:data.source_ref||null,
+      how_to:data.how_to, criteria:data.criteria, photo_hint:data.photo_hint,
+      min_photos:Number(data.min_photos)||0, mgr_review:data.mgr_review, who_label:data.who_label });
+    toast('ok','บันทึกเนื้อหาแล้ว'); tsRender();
   });
 }
 

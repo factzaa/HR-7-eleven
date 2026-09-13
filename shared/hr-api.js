@@ -321,6 +321,8 @@
         case 'hr_taskset_branch':    return await hrTaskSetBranch(p);
         case 'hr_taskset_date':      return await hrTaskSetDate(p);
         case 'hr_taskset_v2flag':    return await hrTaskSetV2Flag(p);
+        case 'hr_taskset_create':    return await hrTaskSetCreate(p);
+        case 'hr_taskset_delete':    return await hrTaskSetDelete(p);
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
@@ -4922,6 +4924,50 @@
     const b = String(d.branch_id || '');
     if (!b) return { ok: false, error: 'ต้องเลือกสาขา' };
     const { error } = await sb().from('branches').update({ task_v2: !!d.on }).eq('branch_id', b);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+
+  // เพิ่มงานใหม่เข้าแคตตาล็อก — HR เท่านั้น
+  async function hrTaskSetCreate(p) {
+    const actor = await _tsActor(p);
+    if (actor.role !== 'hr') return { ok: false, error: 'เพิ่มงานได้เฉพาะฝั่ง HR' };
+    const d = p.data || {};
+    const title = String(d.title || '').trim();
+    if (!title) return { ok: false, error: 'ต้องมีชื่องาน' };
+    const dup = await sb().from('task_defs').select('id').eq('title', title).maybeSingle();
+    if (dup.data) return { ok: false, error: 'มีงานชื่อนี้อยู่แล้ว' };
+    const mp = Math.max(0, Number(d.min_photos) || 0);
+    const row = {
+      title, active: false, require_photo: mp > 0, min_photos: mp,
+      mgr_review: !!d.mgr_review, sort: Number(d.sort) || 0,
+      step: (d.step === '' || d.step == null) ? null : Number(d.step),
+      group_kind: d.group_kind || null, qssi_cat: d.qssi_cat || null, who_label: d.who_label || null,
+      link_kind: d.link_kind || null, source_ref: d.source_ref || null,
+      how_to: d.how_to || null, criteria: d.criteria || null, photo_hint: d.photo_hint || null,
+      freq: ['daily', 'weekly', 'monthly'].includes(d.freq) ? d.freq : 'daily',
+      days_of_week: _tsInts(d.days_of_week), day_of_month: _tsInts(d.day_of_month),
+      shift_ids: _tsArr(d.shift_ids).map(String), def_version: 2,
+    };
+    const { data, error } = await sb().from('task_defs').insert(row).select('id').maybeSingle();
+    if (error) throw error;
+    return { ok: true, id: data ? data.id : null };
+  }
+
+  // ลบงานออกจากแคตตาล็อก — HR เท่านั้น · ถ้าเคยมอบหมายไปแล้วให้ปิดแทนการลบ
+  async function hrTaskSetDelete(p) {
+    const actor = await _tsActor(p);
+    if (actor.role !== 'hr') return { ok: false, error: 'ลบงานได้เฉพาะฝั่ง HR' };
+    const id = Number(p.id || (p.data || {}).id || 0);
+    if (!id) return { ok: false, error: 'ไม่พบงาน' };
+    const used = await sb().from('task_assignments').select('id', { count: 'exact', head: true }).eq('task_def_id', id);
+    if ((used.count || 0) > 0) {
+      return { ok: false, error: 'งานนี้เคยถูกมอบหมายไปแล้ว ' + used.count + ' ครั้ง — ลบไม่ได้ (ประวัติจะหาย) ให้กด "ปิด" แทน' };
+    }
+    await sb().from('task_def_dates').delete().eq('task_def_id', id);
+    await sb().from('task_def_branches').delete().eq('task_def_id', id);
+    const { error } = await sb().from('task_defs').delete().eq('id', id);
     if (error) throw error;
     return { ok: true };
   }
