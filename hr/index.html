@@ -2555,6 +2555,7 @@ function mrNav(d){
     <button class="btn btn-sec btn-sm" id="ts_allon">✓ ทั้งหมดที่แสดง</button>
     <button class="btn btn-sec btn-sm" id="ts_alloff">✗ ทั้งหมดที่แสดง</button>
     <button class="btn btn-pri btn-sm" id="ts_new">+ เพิ่มงานใหม่</button>
+    <button class="btn btn-warn btn-sm" id="ts_golive" title="เปิดงานชุดใหม่ทั้งหมด ปิดงานเก่า และเปิด v2 ทุกสาขา ในคลิกเดียว">🚀 เปิดใช้งานชุดใหม่</button>
     <button class="btn btn-sec btn-sm" id="ts_reload">รีเฟรช</button>
   </div>
 
@@ -2566,7 +2567,7 @@ function mrNav(d){
       <select id="ts_freq" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
         <option value="">ทุกรอบ</option><option value="daily">รายวัน</option><option value="weekly">รายสัปดาห์</option><option value="monthly">รายเดือน</option>
       </select>
-      <select id="ts_step" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"><option value="">ทุกขั้นตอน</option></select>
+      <select id="ts_step" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"><option value="">ทุกขั้นตอน</option><option value="legacy">งานเดิมในระบบ (ยังไม่จัดขั้นตอน)</option></select>
       <select id="ts_state" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
         <option value="">เปิด+ปิด</option><option value="on">เฉพาะที่เปิดใช้</option><option value="off">เฉพาะที่ปิดอยู่</option>
         <option value="rv">เฉพาะที่ต้องให้ผลัดถัดไปตรวจ</option><option value="norv">เฉพาะที่ไม่ต้องตรวจ</option>
@@ -11535,6 +11536,7 @@ async function loadTaskSet(){
     ['ts_q','ts_freq','ts_step','ts_state'].forEach(k=>{ const e=$(k); if(e){ e.oninput=()=>tsRender(); e.onchange=()=>tsRender(); } });
     const st=$('ts_step'); if(st && st.options.length<=1){ Object.keys(TS_STEPS).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k+'. '+TS_STEPS[k]; st.appendChild(o); }); }
   }
+  if($('ts_golive') && !$('ts_golive').dataset.wired){ $('ts_golive').dataset.wired='1'; $('ts_golive').onclick=tsGoLive; }
   if($('ts_allon') && !$('ts_allon').dataset.wired){
     $('ts_allon').dataset.wired='1';
     $('ts_allon').onclick=()=>tsBulkActive(true);
@@ -11601,7 +11603,8 @@ function tsFiltered(){
   return TS.rows.filter(d=>{
     if(q && String(d.title||'').toLowerCase().indexOf(q)<0) return false;
     if(ff && String(d.freq||'daily')!==ff) return false;
-    if(fs && String(d.step==null?'':d.step)!==fs) return false;
+    if(fs==='legacy'){ if(d.step!=null) return false; }
+    else if(fs && String(d.step==null?'':d.step)!==fs) return false;
     const on=tsActive(d);
     if(fst==='on' && !on) return false;
     if(fst==='off' && on) return false;
@@ -11613,6 +11616,30 @@ function tsFiltered(){
   });
 }
 const TS_FIELD_NAME={active:'เปิดใช้งาน', need_review:'ให้ผลัดถัดไปตรวจ', flex_report:'ส่งเข้ารายงานสิ้นผลัด (LINE)'};
+// ★ เปิดใช้งานแคตตาล็อกชุดใหม่ทั้งชุดในคลิกเดียว: เปิดงานใหม่ทั้งหมด · ปิดงานเก่าในระบบ · เปิด v2 ทุกสาขา
+async function tsGoLive(){
+  if(!tsIsHR()){ toast('err','ทำได้เฉพาะ HR'); return; }
+  const on=TS.rows.filter(d=>d.step!=null).map(d=>d.id);
+  const off=TS.rows.filter(d=>d.step==null).map(d=>d.id);
+  const brs=(TS.branches||[]);
+  if(!on.length){ toast('err','ยังไม่มีงานชุดใหม่ในระบบ'); return; }
+  if(!confirm('เริ่มใช้งานในกะชุดใหม่ทั้งระบบ\n\n'
+    +'• เปิดงานชุดใหม่ '+on.length+' รายการ\n'
+    +'• ปิดงานเก่าในระบบ '+off.length+' รายการ\n'
+    +'• เปิดโหมด v2 ให้ทุกสาขา ('+brs.length+' สาขา)\n\n'
+    +'พนักงานจะเห็นรายการงานชุดใหม่ทันทีในผลัดถัดไป — ย้อนกลับได้ด้วยการปิด v2 รายสาขา')) return;
+  const b=$('ts_golive'); if(b){ b.disabled=true; b.textContent='กำลังเปิด…'; }
+  try{
+    let r=await post({ action:'hr_taskset_bulk', ...authBody(), branch:'', data:{ ids:on, active:true, field:'active', branch_id:'' } });
+    if(!r||!r.ok) throw new Error((r&&r.error)||'เปิดงานใหม่ไม่สำเร็จ');
+    if(off.length){ r=await post({ action:'hr_taskset_bulk', ...authBody(), branch:'', data:{ ids:off, active:false, field:'active', branch_id:'' } });
+      if(!r||!r.ok) throw new Error((r&&r.error)||'ปิดงานเก่าไม่สำเร็จ'); }
+    for(const x of brs){ await post({ action:'hr_taskset_v2flag', ...authBody(), data:{ branch_id:x.branch_id, on:true } }); }
+    toast('ok','เปิดใช้งานชุดใหม่แล้ว — เปิด '+on.length+' · ปิดเก่า '+off.length+' · '+brs.length+' สาขา');
+  }catch(e){ toast('err', String(e.message||e)); }
+  if(b){ b.disabled=false; b.textContent='🚀 เปิดใช้งานชุดใหม่'; }
+  await loadTaskSet();
+}
 async function tsBulkActive(on){
   if(!tsIsHR()){ toast('err','ตั้งค่านี้ทำได้เฉพาะ HR'); return; }
   const rows=tsFiltered();
