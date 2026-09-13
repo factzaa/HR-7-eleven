@@ -2551,8 +2551,9 @@ function mrNav(d){
 <div id="view_taskset" class="container" style="display:none">
   <div class="toolbar">
     <h2 style="flex:1">ตั้งค่างานในกะ</h2>
-    <button class="btn btn-sec btn-sm" id="ts_allon">เปิดทั้งหมดที่แสดง</button>
-    <button class="btn btn-sec btn-sm" id="ts_alloff">ปิดทั้งหมดที่แสดง</button>
+    <select id="ts_bulkfield" title="ปุ่มสองปุ่มถัดไปจะไปตั้งค่าอะไร" style="padding:6px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:12.5px"><option value="active">เปิด-ปิดงาน</option><option value="need_review">ให้ผลัดถัดไปตรวจ</option><option value="flex_report">ส่งเข้ารายงาน LINE</option></select>
+    <button class="btn btn-sec btn-sm" id="ts_allon">✓ ทั้งหมดที่แสดง</button>
+    <button class="btn btn-sec btn-sm" id="ts_alloff">✗ ทั้งหมดที่แสดง</button>
     <button class="btn btn-pri btn-sm" id="ts_new">+ เพิ่มงานใหม่</button>
     <button class="btn btn-sec btn-sm" id="ts_reload">รีเฟรช</button>
   </div>
@@ -2568,6 +2569,8 @@ function mrNav(d){
       <select id="ts_step" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px"><option value="">ทุกขั้นตอน</option></select>
       <select id="ts_state" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
         <option value="">เปิด+ปิด</option><option value="on">เฉพาะที่เปิดใช้</option><option value="off">เฉพาะที่ปิดอยู่</option>
+        <option value="rv">เฉพาะที่ต้องให้ผลัดถัดไปตรวจ</option><option value="norv">เฉพาะที่ไม่ต้องตรวจ</option>
+        <option value="flex">เฉพาะที่อยู่ในรายงาน LINE</option><option value="noflex">เฉพาะที่ไม่อยู่ในรายงาน LINE</option>
       </select>
       <input type="month" id="ts_month" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">
     </div>
@@ -11602,19 +11605,26 @@ function tsFiltered(){
     const on=tsActive(d);
     if(fst==='on' && !on) return false;
     if(fst==='off' && on) return false;
+    if(fst==='rv' && d.need_review===false) return false;
+    if(fst==='norv' && d.need_review!==false) return false;
+    if(fst==='flex' && !d.flex_report) return false;
+    if(fst==='noflex' && d.flex_report) return false;
     return true;
   });
 }
+const TS_FIELD_NAME={active:'เปิดใช้งาน', need_review:'ให้ผลัดถัดไปตรวจ', flex_report:'ส่งเข้ารายงานสิ้นผลัด (LINE)'};
 async function tsBulkActive(on){
-  if(!tsIsHR()){ toast('err','เปิด-ปิดงาน ทำได้เฉพาะ HR'); return; }
+  if(!tsIsHR()){ toast('err','ตั้งค่านี้ทำได้เฉพาะ HR'); return; }
   const rows=tsFiltered();
   if(!rows.length){ toast('err','ไม่มีงานที่แสดงอยู่'); return; }
-  const where = TS.branch ? ('เฉพาะสาขา '+TS.branch) : 'ค่ากลาง (มีผลทุกสาขาที่ไม่ได้ตั้งเอง)';
-  if(!confirm((on?'เปิด':'ปิด')+'งานที่แสดงอยู่ทั้งหมด '+rows.length+' รายการ\nขอบเขต: '+where+'\n\n(กรองก่อนกดได้ เช่น เลือกขั้นตอนหรือรอบ แล้วค่อยกดเปิดเฉพาะกลุ่มนั้น)')) return;
+  const field=($('ts_bulkfield')||{value:'active'}).value||'active';
+  const where = (field==='active' && TS.branch) ? ('เฉพาะสาขา '+TS.branch)
+              : (field==='active' ? 'ค่ากลาง (มีผลทุกสาขาที่ไม่ได้ตั้งเอง)' : 'ค่ากลางของงาน (ทุกสาขา)');
+  if(!confirm('ตั้ง "'+TS_FIELD_NAME[field]+'" = '+(on?'ใช่':'ไม่')+' ให้งานที่แสดงอยู่ '+rows.length+' รายการ\nขอบเขต: '+where+'\n\n(กรองก่อนกดได้ เช่น เลือกขั้นตอนหรือรอบ แล้วค่อยกดเฉพาะกลุ่มนั้น)')) return;
   const r=await post({ action:'hr_taskset_bulk', ...authBody(), branch:TS.branch,
-    data:{ ids:rows.map(d=>d.id), active:on, branch_id:TS.branch } });
+    data:{ ids:rows.map(d=>d.id), active:on, field, branch_id:TS.branch } });
   if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
-  toast('ok',(on?'เปิดแล้ว ':'ปิดแล้ว ')+rows.length+' งาน');
+  toast('ok','ตั้งค่าแล้ว '+rows.length+' งาน');
   await loadTaskSet();
 }
 function tsRender(){
@@ -11654,6 +11664,10 @@ function tsCard(d){
          +'<span>ผลัด: '+esc(shTxt)+'</span>'
          +(d.who_label?'<span>ผู้ทำ: '+esc(d.who_label)+'</span>':'')
          +(d.min_photos?'<span>รูป '+d.min_photos+'</span>':'')
+         +(d.need_review!==false?'<span style="color:#b45309;font-weight:600">ผลัดถัดไปตรวจ</span>':'<span>ไม่ต้องตรวจ</span>')
+         +(d.flex_report?'<span style="color:#0369a1;font-weight:600">อยู่ในรายงาน LINE</span>':'')
+         +(d.per_employee?'<span style="color:#1d4ed8;font-weight:600">ตาม Shelf ของพนักงาน</span>':'')
+         +(d.auto_day==='random_scheduled'?'<span style="color:#6d28d9;font-weight:600">สุ่มวันจากตารางเวร</span>':'')
        +'</div>'
      +'</div>'
      +'<span style="font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;'+(on?'background:#dcfce7;color:#166534':'background:#f1f5f9;color:#64748b')+'">'+(on?'เปิด':'ปิด')+'</span>'
@@ -11687,6 +11701,41 @@ function tsPanel(d){
     h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">'+(tsActive(d)?'งานนี้เปิดใช้อยู่':'งานนี้ถูกปิดไว้')+'</div>';
   }
 
+  h+='<div style="font-size:12.5px;font-weight:700;margin:2px 0 6px">1.1 การตรวจและรายงานสิ้นผลัด '+(hr?'':'<span style="font-weight:400;color:var(--muted)">(เฉพาะ HR)</span>')+'</div>';
+  if(hr){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:center">'
+      +'<span style="font-size:12px;color:var(--muted);width:100%">ผลัดถัดไปต้องตรวจงานนี้ไหม</span>'
+      +tsChip('ต้องตรวจ', d.need_review!==false, 'data-tsrv="'+d.id+'" data-v="1"')
+      +tsChip('ไม่ต้องตรวจ (ส่งแล้วผ่านเลย)', d.need_review===false, 'data-tsrv="'+d.id+'" data-v="0"')
+      +'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">'
+      +'<span style="font-size:12px;color:var(--muted);width:100%">ส่งรูป+สถานะงานนี้เข้ารายงานสิ้นผลัดใน LINE ไหม</span>'
+      +tsChip('ส่งเข้ารายงาน', !!d.flex_report, 'data-tsfx="'+d.id+'" data-v="1"')
+      +tsChip('ไม่ส่ง', !d.flex_report, 'data-tsfx="'+d.id+'" data-v="0"')
+      +'</div>';
+  } else {
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">'
+      +(d.need_review!==false?'ผลัดถัดไปต้องตรวจงานนี้':'ไม่ต้องให้ผลัดถัดไปตรวจ')
+      +(d.flex_report?' · อยู่ในรายงานสิ้นผลัดใน LINE':'')+'</div>';
+  }
+  h+='<div style="font-size:12.5px;font-weight:700;margin:2px 0 6px">1.2 งานที่ผูกกับตัวพนักงาน '+(hr?'':'<span style="font-weight:400;color:var(--muted)">(เฉพาะ HR)</span>')+'</div>';
+  if(hr){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:center">'
+      +'<span style="font-size:12px;color:var(--muted);width:100%">ดึงรายการ Shelf ที่พนักงานคนนั้นรับผิดชอบมาแสดงในงานนี้</span>'
+      +tsChip('ดึง Shelf ของพนักงาน', !!d.per_employee, 'data-tspe="'+d.id+'" data-v="1"')
+      +tsChip('ไม่ดึง', !d.per_employee, 'data-tspe="'+d.id+'" data-v="0"')
+      +'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">'
+      +'<span style="font-size:12px;color:var(--muted);width:100%">กำหนดวันเอง หรือให้ระบบสุ่มวันจากตารางเวรของพนักงานคนนั้น (ใช้กับงานรายสัปดาห์/รายเดือน)</span>'
+      +tsChip('ใช้วันที่ตั้งไว้', d.auto_day!=='random_scheduled', 'data-tsad="'+d.id+'" data-v="0"')
+      +tsChip('สุ่มจากตารางเวรของพนักงาน', d.auto_day==='random_scheduled', 'data-tsad="'+d.id+'" data-v="1"')
+      +'</div>'
+      +(d.auto_day==='random_scheduled'?'<div style="font-size:11.5px;color:#6d28d9;margin:-8px 0 12px">สุ่ม 1 วันต่อคนต่อรอบจากวันที่คนนั้นมีเวรจริง · ล็อกผลไว้ไม่เปลี่ยนกลางรอบ · งานนี้จะไม่ขึ้นบนกระดานแจกงานของหัวหน้าผลัด (พนักงานดึงเอง)</div>':'');
+  } else {
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">'
+      +(d.per_employee?'ดึง Shelf ที่พนักงานรับผิดชอบ':'ไม่ผูกกับ Shelf ของพนักงาน')
+      +(d.auto_day==='random_scheduled'?' · ระบบสุ่มวันจากตารางเวรของพนักงาน':'')+'</div>';
+  }
   h+='<div style="font-size:12.5px;font-weight:700;margin-bottom:6px">2. ให้ผลัดไหนทำ'
    +(TS.branch?' <span style="font-weight:400;color:var(--muted)">(เฉพาะสาขานี้)</span>':' <span style="font-weight:400;color:var(--muted)">(ค่ากลาง)</span>')+'</div>'
    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
@@ -11862,6 +11911,17 @@ function tsWire(){
     else TS.dates[tsDateKey(id,ds)]={ task_def_id:id, branch_id:TS.branch, work_date:ds, mode:payload.mode };
     tsRender();
   });
+  const tsFlagSet=async(id,key,val)=>{
+    const data={ id }; data[key]=val;
+    const r=await post({ action:'hr_taskset_save', ...authBody(), data });
+    if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+    const d=TS.rows.filter(x=>x.id===id)[0]; if(d) d[key]=val;
+    toast('ok','บันทึกแล้ว'); tsRender();
+  };
+  document.querySelectorAll('[data-tspe]').forEach(b=>b.onclick=()=>tsFlagSet(Number(b.dataset.tspe),'per_employee',b.dataset.v==='1'));
+  document.querySelectorAll('[data-tsad]').forEach(b=>b.onclick=()=>tsFlagSet(Number(b.dataset.tsad),'auto_day',b.dataset.v==='1'?'random_scheduled':''));
+  document.querySelectorAll('[data-tsrv]').forEach(b=>b.onclick=()=>tsFlagSet(Number(b.dataset.tsrv),'need_review',b.dataset.v==='1'));
+  document.querySelectorAll('[data-tsfx]').forEach(b=>b.onclick=()=>tsFlagSet(Number(b.dataset.tsfx),'flex_report',b.dataset.v==='1'));
   document.querySelectorAll('[data-tsdel]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.tsdel), d=TS.rows.filter(x=>x.id===id)[0]||{};
     if(!confirm('ลบงาน "'+(d.title||'')+'" ออกจากแคตตาล็อกถาวร?\n(ถ้าเคยมอบหมายไปแล้วระบบจะไม่ยอมลบ ให้กด "ปิด" แทน)')) return;
