@@ -2551,6 +2551,8 @@ function mrNav(d){
 <div id="view_taskset" class="container" style="display:none">
   <div class="toolbar">
     <h2 style="flex:1">ตั้งค่างานในกะ</h2>
+    <button class="btn btn-sec btn-sm" id="ts_allon">เปิดทั้งหมดที่แสดง</button>
+    <button class="btn btn-sec btn-sm" id="ts_alloff">ปิดทั้งหมดที่แสดง</button>
     <button class="btn btn-pri btn-sm" id="ts_new">+ เพิ่มงานใหม่</button>
     <button class="btn btn-sec btn-sm" id="ts_reload">รีเฟรช</button>
   </div>
@@ -11530,6 +11532,11 @@ async function loadTaskSet(){
     ['ts_q','ts_freq','ts_step','ts_state'].forEach(k=>{ const e=$(k); if(e){ e.oninput=()=>tsRender(); e.onchange=()=>tsRender(); } });
     const st=$('ts_step'); if(st && st.options.length<=1){ Object.keys(TS_STEPS).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k+'. '+TS_STEPS[k]; st.appendChild(o); }); }
   }
+  if($('ts_allon') && !$('ts_allon').dataset.wired){
+    $('ts_allon').dataset.wired='1';
+    $('ts_allon').onclick=()=>tsBulkActive(true);
+    $('ts_alloff').onclick=()=>tsBulkActive(false);
+  }
   if($('ts_new') && !$('ts_new').dataset.wired){
     $('ts_new').dataset.wired='1';
     $('ts_new').onclick=async()=>{
@@ -11585,10 +11592,10 @@ function tsChip(label, on, attrs){
     +(on?'background:#00582f;color:#fff;border-color:#00582f':'background:#fff;color:#334155;border:1.5px solid var(--line2)')+'">'+esc(label)+'</button>';
 }
 
-function tsRender(){
+function tsFiltered(){
   const q=($('ts_q').value||'').trim().toLowerCase();
   const ff=$('ts_freq').value, fs=$('ts_step').value, fst=$('ts_state').value;
-  const rows=TS.rows.filter(d=>{
+  return TS.rows.filter(d=>{
     if(q && String(d.title||'').toLowerCase().indexOf(q)<0) return false;
     if(ff && String(d.freq||'daily')!==ff) return false;
     if(fs && String(d.step==null?'':d.step)!==fs) return false;
@@ -11597,6 +11604,21 @@ function tsRender(){
     if(fst==='off' && on) return false;
     return true;
   });
+}
+async function tsBulkActive(on){
+  if(!tsIsHR()){ toast('err','เปิด-ปิดงาน ทำได้เฉพาะ HR'); return; }
+  const rows=tsFiltered();
+  if(!rows.length){ toast('err','ไม่มีงานที่แสดงอยู่'); return; }
+  const where = TS.branch ? ('เฉพาะสาขา '+TS.branch) : 'ค่ากลาง (มีผลทุกสาขาที่ไม่ได้ตั้งเอง)';
+  if(!confirm((on?'เปิด':'ปิด')+'งานที่แสดงอยู่ทั้งหมด '+rows.length+' รายการ\nขอบเขต: '+where+'\n\n(กรองก่อนกดได้ เช่น เลือกขั้นตอนหรือรอบ แล้วค่อยกดเปิดเฉพาะกลุ่มนั้น)')) return;
+  const r=await post({ action:'hr_taskset_bulk', ...authBody(), branch:TS.branch,
+    data:{ ids:rows.map(d=>d.id), active:on, branch_id:TS.branch } });
+  if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+  toast('ok',(on?'เปิดแล้ว ':'ปิดแล้ว ')+rows.length+' งาน');
+  await loadTaskSet();
+}
+function tsRender(){
+  const rows=tsFiltered();
   if(!rows.length){ $('ts_body').innerHTML='<div class="empty">ไม่พบงานตามเงื่อนไข</div>'; return; }
   const byStep={};
   rows.forEach(d=>{ const k=(d.step==null?'0':String(d.step)); (byStep[k]=byStep[k]||[]).push(d); });

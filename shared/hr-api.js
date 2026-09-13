@@ -323,6 +323,7 @@
         case 'hr_taskset_v2flag':    return await hrTaskSetV2Flag(p);
         case 'hr_taskset_create':    return await hrTaskSetCreate(p);
         case 'hr_taskset_delete':    return await hrTaskSetDelete(p);
+        case 'hr_taskset_bulk':      return await hrTaskSetBulk(p);
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
@@ -4970,6 +4971,30 @@
     const { error } = await sb().from('task_defs').delete().eq('id', id);
     if (error) throw error;
     return { ok: true };
+  }
+
+
+  // เปิด/ปิดงานหลายรายการพร้อมกัน — HR เท่านั้น
+  async function hrTaskSetBulk(p) {
+    const actor = await _tsActor(p);
+    if (actor.role !== 'hr') return { ok: false, error: 'เปิด-ปิดงาน ทำได้เฉพาะฝั่ง HR' };
+    const d = p.data || {};
+    const ids = _tsArr(d.ids).map(Number).filter(function (x) { return x > 0; });
+    if (!ids.length) return { ok: false, error: 'ไม่มีงานให้ตั้งค่า' };
+    const branch = String(d.branch_id || '');
+    const on = !!d.active;
+    if (!branch) {
+      const { error } = await sb().from('task_defs').update({ active: on }).in('id', ids);
+      if (error) throw error;
+      return { ok: true, n: ids.length, scope: 'central' };
+    }
+    const now = new Date().toISOString();
+    const rows = ids.map(function (id) {
+      return { task_def_id: id, branch_id: branch, active: on, updated_by: 'hr', updated_role: 'hr', updated_at: now };
+    });
+    const { error } = await sb().from('task_def_branches').upsert(rows, { onConflict: 'task_def_id,branch_id' });
+    if (error) throw error;
+    return { ok: true, n: ids.length, scope: 'branch' };
   }
 
   async function hrTaskAssign(d) {
