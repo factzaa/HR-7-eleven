@@ -1358,10 +1358,73 @@
       return true;
     });
   }
+
+  // ---------- งานที่ผูกกับตัวพนักงาน: สุ่มวันจากตารางเวรของคนนั้น ----------
+  //   weekly  → สุ่ม 1 วันจากวันที่มีเวรในสัปดาห์นั้น (จ.–อา.)
+  //   monthly → สุ่ม 1 วันจากวันที่มีเวรในเดือนนั้น
+  //   ล็อกผลไว้ในตาราง task_week_picks (1 ครั้งต่อคน/งาน/รอบ) — สุ่มครั้งเดียวแล้วไม่เปลี่ยน
+  function _dstr(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function _periodOf(freq, dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (String(freq) === 'monthly') {
+      const s = new Date(d.getFullYear(), d.getMonth(), 1);
+      const e = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      return { start: _dstr(s), end: _dstr(e) };
+    }
+    const dow = (d.getDay() + 6) % 7;                 // จันทร์ = 0
+    const s = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
+    const e = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow + 6);
+    return { start: _dstr(s), end: _dstr(e) };
+  }
+  function _hash32(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0); }
+  async function _autoDayFilter(defs, emp, branch, workDate) {
+    const auto = (defs || []).filter(d => d && d.auto_day === 'random_scheduled');
+    if (!auto.length) return { defs: defs || [], picks: {} };
+    const picks = {};
+    // ดึงผลสุ่มที่ล็อกไว้แล้วของทุกงาน (คนละรอบกันได้ เพราะ weekly/monthly ไม่เท่ากัน)
+    const byStart = {};
+    auto.forEach(d => { const p = _periodOf(d.freq, workDate); (byStart[p.start] = byStart[p.start] || []).push(d); });
+    for (const start of Object.keys(byStart)) {
+      const group = byStart[start];
+      const ids = group.map(d => d.id);
+      let have = {};
+      try {
+        const { data } = await sb.from('task_week_picks').select('*').in('task_def_id', ids).eq('emp_id', emp.emp_id).eq('week_start', start);
+        (data || []).forEach(p => { have[p.task_def_id] = p; });
+      } catch (e) { /* ตารางยังไม่ถูกสร้าง */ }
+      const need = group.filter(d => !have[d.id]);
+      if (need.length) {
+        const end = _periodOf(need[0].freq, workDate).end;
+        let sc = [];
+        try {
+          const r = await sb.from('schedules').select('work_date,shift_id,branch_id').eq('emp_id', emp.emp_id)
+            .gte('work_date', start).lte('work_date', end).order('work_date');
+          sc = (r.data || []).filter(x => x.shift_id);
+        } catch (e) { /* */ }
+        for (const d of need) {
+          if (!sc.length) continue;                     // ไม่มีเวรในรอบนี้ → ไม่ต้องทำ
+          const s = sc[_hash32(d.id + '|' + emp.emp_id + '|' + start) % sc.length];
+          const row = { task_def_id: d.id, emp_id: emp.emp_id, week_start: start, branch_id: s.branch_id || branch || null, work_date: s.work_date, shift_id: s.shift_id || null };
+          try { await sb.from('task_week_picks').upsert(row, { onConflict: 'task_def_id,emp_id,week_start' }); } catch (e) { /* */ }
+          have[d.id] = row;
+        }
+      }
+      Object.keys(have).forEach(k => { picks[k] = have[k]; });
+    }
+    // ขึ้นให้เห็นตั้งแต่วันที่สุ่มได้ ไปจนจบรอบ (ทำไม่ทันวันนั้นก็ยังเห็น ไม่หายเงียบ)
+    const out = (defs || []).filter(d => {
+      if (!d || d.auto_day !== 'random_scheduled') return true;
+      const p = picks[d.id]; if (!p) return false;
+      return String(workDate) >= String(p.work_date);
+    });
+    return { defs: out, picks };
+  }
   function _defBrief(d) {
     return { id: d.id, title: d.title, min_photos: d.min_photos || 0, require_photo: !!d.require_photo,
       how_to: d.how_to || '', criteria: d.criteria || '', photo_hint: d.photo_hint || '',
-      who_label: d.who_label || '', qssi_cat: d.qssi_cat || '', step: (d.step == null ? null : d.step), freq: d.freq || 'daily' };
+      who_label: d.who_label || '', qssi_cat: d.qssi_cat || '', step: (d.step == null ? null : d.step), freq: d.freq || 'daily',
+      need_review: d.need_review !== false, flex_report: !!d.flex_report,
+      link_kind: d.link_kind || '', per_employee: !!d.per_employee, auto_day: d.auto_day || '' };
   }
 
   // ---------- กระดานงานตามกะ (พนักงานหยิบทำเอง/แบ่งงานกันเอง) ----------
@@ -1386,7 +1449,7 @@
     const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
     // คนในกะ = จากตารางเวร แต่ตัดคนที่ปิดใช้งานออก (nameOf มีเฉพาะ active) — กันคนที่ลาออก/ปิดใช้งานโผล่ในรายชื่อ+ดรอปดาวน์มอบงาน
     const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group && nameOf[r.emp_id]).map(r => r.emp_id))];
-    const defs = defsR || [];
+    const defs = (defsR || []).filter(d => !d.auto_day);   // งานที่สุ่มวันรายคน = พนักงานดึงเองในเมนูของตัวเอง
     const byDef = {}; (asgR.data || []).forEach(a => { byDef[a.task_def_id] = a; });
     return {
       emp, shift: group, work_date: today, branch, shifts: shR.data || [],
@@ -1636,12 +1699,19 @@
       sb.from('shifts').select('name').eq('shift_id',shift).maybeSingle(),
       sb.from('shift_leads').select('emp_id,emp_name').eq('work_date',today).eq('branch_id',branch||'').eq('shift_id',shift).maybeSingle(),
     ]);
-    const defs=defsR||[];
+    const _af=await _autoDayFilter(defsR||[], emp, branch, today);
+    const defs=_af.defs;
+    let myShelves=[];
+    if(defs.some(d=>String(d.link_kind||'')==='Shelf')){
+      try{ const sh=await getMyShelves(emp.emp_id);
+        myShelves=(sh.rows||[]).map(r=>({ shelf_id:r.shelf_id, code:r.shelf_code||'', name:r.name||'', detail:r.detail||'' })); }catch(e){}
+    }
     const asg=asgR.data||[]; const byDef={}; asg.forEach(a=>{ byDef[a.task_def_id]=a; });
     return { emp, shift, shift_name: shR.data?shR.data.name:shift,
       leader: leadR.data?{ emp_id:leadR.data.emp_id, name:leadR.data.emp_name }:null,
       mine: asg.filter(a=>a.emp_id===emp.emp_id), team: asg,
       details: defs.map(_defBrief),
+      my_shelves: myShelves, auto_picks: _af.picks,
       unassigned: defs.filter(d=>!byDef[d.id]).map(_defBrief) };
   }
   async function pullTask({ empId, task_def_id }){
@@ -1662,7 +1732,7 @@
     // งานที่ ผจก.ตีกลับให้ "ผู้ตรวจของผลัดถัดไป" แก้ → คนแก้ไม่ได้อยู่กะเดียวกับงานเดิม จึงไม่ต้องเช็กว่ากะเริ่มหรือยัง
     const isFix = !!(row.fix_emp && !row.fix_done_at && row.status==='sent_back');
     if(!isFix) await _assertShiftStarted(row.shift_id, row.work_date);
-    const def=(await sb.from('task_defs').select('min_photos,mgr_review').eq('id',row.task_def_id).maybeSingle()).data;
+    const def=(await sb.from('task_defs').select('min_photos,mgr_review,need_review').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
     // needs_mgr = งานติ๊ก "ผจก.ตรวจ" และกะนั้นเป็นกะที่ ผจก.ตรวจ (บางกะ เช่นดึก ไม่อยู่ในเวลา ผจก.)
     let shiftMgr=true;
@@ -1677,7 +1747,13 @@
       else urls.push(await uploadPhoto('employee-docs','task/'+(row.branch_id||'x')+'_'+id+'_'+Date.now()+'_'+urls.length+'.jpg', p));
     }
     if(urls.length < minP) throw new Error('งานนี้ต้องแนบรูปอย่างน้อย '+minP+' รูป');
-    const upd={ status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(), reviewer:null, review_note:null, reviewed_at:null, needs_mgr: wantMgr };
+    // งานที่ตั้งค่าไว้ว่า "ไม่ต้องให้ผลัดถัดไปตรวจ" → ส่งแล้วผ่านเลย (ผจก. ยังตรวจได้ถ้าติ๊ก ผจก.ตรวจ)
+    const skipReview = !!(def && def.need_review === false);
+    const upd = skipReview
+      ? { status:'approved', emp_note:note||null, submitted_at:new Date().toISOString(),
+          reviewer:'ไม่ต้องตรวจ (ตั้งค่าไว้)', review_note:null, reviewed_at:new Date().toISOString(), needs_mgr: wantMgr }
+      : { status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(),
+          reviewer:null, review_note:null, reviewed_at:null, needs_mgr: wantMgr };
     upd.photos = urls.length?urls:null; upd.photo_url = urls.length?urls[0]:null;
     if(isFix){
       // เก็บ "รูปก่อนแก้ไข" เป็นประวัติ (ก่อนเขียนทับด้วยชุดใหม่) — โชว์ในรายงานรับส่งผลัด
@@ -1706,9 +1782,17 @@
     const pv=await _prevMainGroup(curGroup, today);   // อิง work_date ของกะที่ทำ (รองรับกะดึกข้ามคืน)
     const lead=(await sb.from('shift_leads').select('emp_id').eq('work_date',today).eq('branch_id',branch||'').eq('shift_id',curGroup).maybeSingle()).data;
     const canReview=!!(lead&&lead.emp_id===emp.emp_id)&&pv.isMain;   // ตรวจได้เฉพาะหัวหน้าผลัดของผลัดหลัก
-    let tasks=[];
-    if(pv.group) tasks=(await sb.from('task_assignments').select('*').eq('branch_id',branch||'').eq('work_date',pv.date).eq('shift_id',pv.group).order('id')).data||[];
-    return { emp, curShift:curGroup, cur_name:await _shiftName(curGroup), prev_shift: pv.group, prev_name: pv.group?(await _shiftName(pv.group)):'-', prev_date: pv.date, isMain:pv.isMain, canReview, tasks };
+    let all=[];
+    if(pv.group) all=(await sb.from('task_assignments').select('*').eq('branch_id',branch||'').eq('work_date',pv.date).eq('shift_id',pv.group).order('id')).data||[];
+    // แยกงานที่ "ต้องให้ผลัดถัดไปตรวจ" ออกจากงานที่ตั้งค่าไว้ว่าไม่ต้องตรวจ
+    let needMap={};
+    const dids=[...new Set(all.map(a=>a.task_def_id).filter(Boolean))];
+    if(dids.length){ const {data:df}=await sb.from('task_defs').select('id,need_review').in('id',dids);
+      (df||[]).forEach(d=>{ needMap[d.id]= d.need_review!==false; }); }
+    const mustReview = a => (a.task_def_id==null) ? true : (needMap[a.task_def_id]!==false);
+    const tasks = all.filter(mustReview);
+    const noreview = all.filter(a=>!mustReview(a));
+    return { emp, curShift:curGroup, cur_name:await _shiftName(curGroup), prev_shift: pv.group, prev_name: pv.group?(await _shiftName(pv.group)):'-', prev_date: pv.date, isMain:pv.isMain, canReview, tasks, noreview, all_count: all.length };
   }
   async function reviewPrevTask({ reviewerId, id, status, note, markup }){
     const emp=await lookupEmployee(reviewerId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');

@@ -4861,6 +4861,11 @@
     if ('active' in d)       row.active       = !!d.active;
     if ('mgr_review' in d)   row.mgr_review   = !!d.mgr_review;
     if ('needs_manual' in d) row.needs_manual = !!d.needs_manual;
+    if ('need_review' in d) row.need_review = !!d.need_review;
+    if ('flex_report' in d) row.flex_report = !!d.flex_report;
+    if ('flex_label' in d)  row.flex_label  = d.flex_label || null;
+    if ('per_employee' in d) row.per_employee = !!d.per_employee;
+    if ('auto_day' in d)     row.auto_day     = (d.auto_day === 'random_scheduled') ? 'random_scheduled' : null;
     if ('sort' in d)         row.sort         = Number(d.sort) || 0;
     if ('step' in d)         row.step         = (d.step === '' || d.step == null) ? null : Number(d.step);
     if ('min_photos' in d)   { const mp = Math.max(0, Number(d.min_photos) || 0); row.min_photos = mp; row.require_photo = mp > 0; }
@@ -4947,6 +4952,7 @@
       group_kind: d.group_kind || null, qssi_cat: d.qssi_cat || null, who_label: d.who_label || null,
       link_kind: d.link_kind || null, source_ref: d.source_ref || null,
       how_to: d.how_to || null, criteria: d.criteria || null, photo_hint: d.photo_hint || null,
+      need_review: d.need_review !== false, flex_report: !!d.flex_report, flex_label: d.flex_label || null,
       freq: ['daily', 'weekly', 'monthly'].includes(d.freq) ? d.freq : 'daily',
       days_of_week: _tsInts(d.days_of_week), day_of_month: _tsInts(d.day_of_month),
       shift_ids: _tsArr(d.shift_ids).map(String), def_version: 2,
@@ -4983,10 +4989,14 @@
     if (!ids.length) return { ok: false, error: 'ไม่มีงานให้ตั้งค่า' };
     const branch = String(d.branch_id || '');
     const on = !!d.active;
-    if (!branch) {
-      const { error } = await sb().from('task_defs').update({ active: on }).in('id', ids);
+    const FIELD = ['active', 'need_review', 'flex_report'];
+    const field = FIELD.indexOf(String(d.field || '')) >= 0 ? String(d.field) : 'active';
+    // need_review / flex_report เป็นค่ากลางของงาน (ไม่แยกสาขา) — ตั้งที่ task_defs เสมอ
+    if (!branch || field !== 'active') {
+      const patch = {}; patch[field] = on;
+      const { error } = await sb().from('task_defs').update(patch).in('id', ids);
       if (error) throw error;
-      return { ok: true, n: ids.length, scope: 'central' };
+      return { ok: true, n: ids.length, scope: 'central', field: field };
     }
     const now = new Date().toISOString();
     const rows = ids.map(function (id) {
