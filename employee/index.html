@@ -678,9 +678,20 @@ function showToast(kind,msg){
 $('toast').onclick = ()=>$('toast').classList.remove('show');
 
 // ====== events ======
-$('empId').addEventListener('input', e=>{
+let PIN_OK_FOR='', PIN_BUSY=false;
+$('empId').addEventListener('input', async e=>{
   e.target.value = e.target.value.replace(/\D/g,'');
   empMatch = lookupEmp(e.target.value);
+  // ★ ประตู PIN ส่วนตัว — พอรหัสตรงกับพนักงานจริง ต้องใส่ PIN ก่อนถึงจะเห็นข้อมูล
+  if(empMatch && PIN_OK_FOR!==empMatch.emp_id && !PIN_BUSY){
+    PIN_BUSY=true;
+    let _ok=false;
+    try{ _ok=await HRSession.pinGate(empMatch); }catch(_e){ _ok=true; }
+    PIN_BUSY=false;
+    if(_ok) PIN_OK_FOR=empMatch.emp_id;
+    else { e.target.value=''; empMatch=null; PIN_OK_FOR=''; }
+  }
+  if(!empMatch) PIN_OK_FOR='';
   try{ if(empMatch) HRSession.setEmp(empMatch.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
   evaluateZone();   // ประเมินสาขาใหม่ โดยยึดสาขาประจำของพนักงานคนนี้
   renderHint($('empHint'), empMatch, e.target.value);
