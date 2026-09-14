@@ -128,6 +128,7 @@ $('goBtn').onclick=async()=>{
     EMP=DATA.emp;
     loadBranchNames();
     if(EMP.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); }
+    else if(!(await HRSession.pinGate(EMP))){ b.disabled=false; b.textContent='เริ่ม'; return; }
     else{
       try{ HRSession.setEmp(EMP.emp_id); }catch(e){}
       $('f_nm').textContent=EMP.nickname||EMP.name;
