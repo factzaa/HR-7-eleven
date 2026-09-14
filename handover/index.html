@@ -612,12 +612,15 @@ async function openLeaderPanel(){
   const inShift=new Set((b.members||[]).map(m=>m.emp_id));
   populateAddList();
   const memOpts=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'">'+esc(m.name)+'</option>').join('');
+  // ★ งานของ ผจก. — เลือกชื่อ ผจก. ไว้ให้ก่อนในดรอปดาวน์
+  const mgrId=((b.managers||[])[0]||{}).emp_id||'';
+  const memOptsMgr=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'"'+(m.emp_id===mgrId?' selected':'')+'>'+esc(m.name)+'</option>').join('');
   if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (ผู้จัดการตั้งที่ "ตั้งค่ากะ")</div>'; return; }
   $('l_board').innerHTML=b.defs.map(d=>{
-    const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
+    const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.mgr_owner?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ผจก.</span>':'')+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
     if(a){ const s=ST(a.status); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
     if(!(b.members||[]).length) body+='<div class="muted">ยังไม่มีคนในกะ — เพิ่มคนด้านบนก่อน</div>';
-    else body+='<div class="row2"><select id="lg_'+d.id+'">'+memOpts+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
+    else body+='<div class="row2"><select id="lg_'+d.id+'">'+((d.mgr_owner&&mgrId)?memOptsMgr:memOpts)+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
     return '<div class="card">'+body+'</div>';
   }).join('');
   document.querySelectorAll('[data-give]').forEach(btn=>btn.onclick=async()=>{
@@ -1417,6 +1420,11 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
 function taskDetailHTML(d){
   if(!d) return '';
   var extra='';
+  // ★ งานที่เป็นหน้าที่ของ ผจก. โดยตรง
+  if(d.mgr_owner){
+    extra += '<div style="margin:6px 0 2px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 10px;font-size:12.5px;line-height:1.65;color:#92400e">'
+      + '<b>งานของผู้จัดการร้าน</b><div style="margin-top:2px">ระบบมอบงานนี้ให้ ผจก. ของสาขาอัตโนมัติ — ถ้า ผจก. ไม่อยู่ หัวหน้าผลัดเปลี่ยนคนทำได้</div></div>';
+  }
   // ★ งานที่ผูกกับ Shelf ที่รับผิดชอบ — ดึงรายการ Shelf ของพนักงานคนนี้มาแสดง
   if(String(d.link_kind||'')==='Shelf'){
     var sv=(window.MY_SHELVES||[]);
