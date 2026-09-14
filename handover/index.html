@@ -1092,13 +1092,22 @@ async function openM3(){
         +'<br>ถ้าคุณตรวจผ่านแล้วผู้จัดการตรวจซ้ำไม่ผ่าน <b>ผลัดของคุณจะเป็นผู้รับผิดชอบแก้ไข</b></div>':'')
     +'</div>';
   const nrv=(r.noreview||[]);
+  // ★ แก้ 14 ก.ย. 69: งานที่ตั้งค่า "ไม่ต้องตรวจ" ก็ต้องแจ้งแก้ได้ ถ้าเจอว่าทำไม่เรียบร้อย
   const nrvHtml = nrv.length ? ('<div class="card" style="margin-top:2px"><div style="font-weight:600;margin-bottom:4px">งานอื่นของผลัดก่อนหน้า '+nrv.length+' รายการ <span class="pill muted2">ไม่ต้องตรวจ</span></div>'
-      +'<div class="muted" style="font-size:12.5px;margin-bottom:6px">ตั้งค่าไว้ว่าไม่ต้องให้ผลัดถัดไปตรวจ — ดูได้ แต่ไม่ต้องกดอะไร</div>'
-      +nrv.map(a=>{ const s2=ST(a.status); return '<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line)">'
-        +'<div style="flex:1;font-size:13px">'+esc(a.title)+' <span class="muted">· '+esc(a.emp_name||a.emp_id||'—')+'</span></div>'
-        +'<span class="pill '+s2[1]+'">'+s2[0]+'</span></div>'; }).join('')
+      +'<div class="muted" style="font-size:12.5px;margin-bottom:6px">ตั้งค่าไว้ว่าไม่ต้องตรวจทุกใบ — ไม่ต้องไล่กดผ่าน'+(r.canReview?' แต่ถ้าเจอว่า<b>ทำไม่เรียบร้อย</b> กด “แจ้งแก้” ส่งกลับให้ผลัดก่อนหน้าแก้ได้':'')+'</div>'
+      +nrv.map(a=>{ const s2=ST(a.status); return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)">'
+        +'<div style="flex:1;font-size:13px">'+esc(a.title)+' <span class="muted">· '+esc(a.emp_name||a.emp_id||'—')+'</span>'
+          +(a.review_note?('<div style="color:#b45309;font-size:12px;margin-top:2px">↳ '+esc(a.review_note)+'</div>'):'')+'</div>'
+        +'<span class="pill '+s2[1]+'">'+s2[0]+'</span>'
+        +((r.canReview && a.status!=='sent_back')?('<button class="btn btn-warn btn-sm" data-rb="'+a.id+'" style="flex:none;padding:5px 10px;font-size:12px">⤴ แจ้งแก้</button>'):'')
+        +'</div>'; }).join('')
       +'</div>') : '';
-  if(!r.tasks.length){ $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานที่ต้องให้คุณตรวจ</div>'+nrvHtml; return; }
+  if(!r.tasks.length){
+    $('pv_body').innerHTML=head+'<div class="card muted">ผลัดก่อนหน้าไม่มีงานที่ต้องให้คุณตรวจ</div>'+nrvHtml;
+    PVTASKS={}; nrv.forEach(a=>{ PVTASKS[a.id]=a; });
+    document.querySelectorAll('[data-rb]').forEach(b=>b.onclick=()=>openMarkupEditor(PVTASKS[Number(b.dataset.rb)]));
+    return;
+  }
   $('pv_body').innerHTML=head+r.tasks.map(a=>{
     const s=ST(a.status); let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     c+='<div class="muted">ผู้ทำ: '+esc(a.emp_name||a.emp_id||'—')+(a.submitted_at?(' · ส่ง '+fmt(a.submitted_at)):'')+'</div>';
@@ -1106,9 +1115,11 @@ async function openM3(){
     if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12px;font-weight:700;margin-top:6px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่สั่งแก้</div>'+thumbsHtml(a.review_markup);
     c+=thumbsHtml(a.photos);
     if(r.canReview && a.status==='submitted') c+='<div class="row2" style="margin-top:10px"><button class="btn btn-pri btn-sm" data-ap="'+a.id+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน</button><button class="btn btn-warn btn-sm" data-rb="'+a.id+'">⤴ ตีกลับ</button></div>';
+    // ★ ตรวจผ่านไปแล้วแต่มาเจอทีหลังว่าไม่เรียบร้อย → ยังแจ้งแก้ได้
+    else if(r.canReview && a.status==='approved') c+='<div style="margin-top:10px"><button class="btn btn-warn btn-sm" data-rb="'+a.id+'">⤴ แจ้งแก้ (เจอว่าไม่เรียบร้อย)</button></div>';
     return c+'</div>';
   }).join('')+nrvHtml;
-  PVTASKS={}; r.tasks.forEach(a=>{ PVTASKS[a.id]=a; });
+  PVTASKS={}; r.tasks.forEach(a=>{ PVTASKS[a.id]=a; }); nrv.forEach(a=>{ PVTASKS[a.id]=a; });
   document.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>doPrevReview(Number(b.dataset.ap),'approved'));
   document.querySelectorAll('[data-rb]').forEach(b=>b.onclick=()=>openMarkupEditor(PVTASKS[Number(b.dataset.rb)]));
 }
