@@ -4867,6 +4867,7 @@
     if ('flex_report' in d) row.flex_report = !!d.flex_report;
     if ('flex_label' in d)  row.flex_label  = d.flex_label || null;
     if ('per_employee' in d) row.per_employee = !!d.per_employee;
+    if ('mgr_owner' in d)    row.mgr_owner    = !!d.mgr_owner;   // ★ ผจก. รับผิดชอบงานนี้ (ระบบมอบให้อัตโนมัติ)
     if ('auto_day' in d)     row.auto_day     = (d.auto_day === 'random_scheduled') ? 'random_scheduled' : null;
     if ('sort' in d)         row.sort         = Number(d.sort) || 0;
     if ('step' in d)         row.step         = (d.step === '' || d.step == null) ? null : Number(d.step);
@@ -4955,6 +4956,7 @@
       link_kind: d.link_kind || null, source_ref: d.source_ref || null,
       how_to: d.how_to || null, criteria: d.criteria || null, photo_hint: d.photo_hint || null,
       need_review: d.need_review !== false, flex_report: !!d.flex_report, flex_label: d.flex_label || null,
+      mgr_owner: !!d.mgr_owner,
       freq: ['daily', 'weekly', 'monthly'].includes(d.freq) ? d.freq : 'daily',
       days_of_week: _tsInts(d.days_of_week), day_of_month: _tsInts(d.day_of_month),
       shift_ids: _tsArr(d.shift_ids).map(String), def_version: 2,

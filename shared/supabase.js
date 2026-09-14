@@ -1424,7 +1424,81 @@
       how_to: d.how_to || '', criteria: d.criteria || '', photo_hint: d.photo_hint || '',
       who_label: d.who_label || '', qssi_cat: d.qssi_cat || '', step: (d.step == null ? null : d.step), freq: d.freq || 'daily',
       need_review: d.need_review !== false, flex_report: !!d.flex_report,
-      link_kind: d.link_kind || '', per_employee: !!d.per_employee, auto_day: d.auto_day || '' };
+      link_kind: d.link_kind || '', per_employee: !!d.per_employee, auto_day: d.auto_day || '',
+      mgr_owner: !!d.mgr_owner };
+  }
+
+  // ============================================================
+  // ★ ผจก. ในโฟลว์งานในกะ (14 ก.ย. 69)
+  //   ผจก. มีกะของตัวเอง (MNG 08:00-20:00) ไม่ได้สังกัดผลัดเช้า/บ่าย/ดึก
+  //   จึงไม่เคยโผล่ในรายชื่อ "คนในกะ" ทำให้หัวหน้าผลัดมอบงานให้ไม่ได้
+  //   กติกาใหม่: ผจก. โผล่ในผลัดที่ "ช่วงเวลาทับกัน" กับกะของเขา
+  //   เช่น MNG 08:00-20:00 → โผล่ในเช้า(06:30-16:30) และบ่าย(12:30-22:30) แต่ไม่โผล่ในดึก
+  // ============================================================
+  function _hm(t){ const m=String(t||'').match(/(\d{1,2}):(\d{2})/); return m?(+m[1]*60 + +m[2]):null; }
+  function _span(sh){
+    const a=_hm(sh&&sh.start_time), b=_hm(sh&&sh.end_time);
+    if(a==null||b==null) return null;
+    return { a, b: (b<=a ? b+1440 : b) };            // กะข้ามคืน → บวก 24 ชม.
+  }
+  // ทับกันจริงต้องอย่างน้อย 60 นาที — กันเคสคาบเกี่ยวหัว-ท้ายกะแค่ครึ่งชั่วโมง
+  // (เช่น ผจก. เริ่ม 08:00 ส่วนกะดึกเลิก 08:30 = ทับ 30 นาที ไม่ถือว่าอยู่ผลัดดึก)
+  const _MIN_OVERLAP = 60;
+  function _overlap(x, y){
+    if(!x||!y) return false;
+    for(const sft of [0, 1440, -1440]){
+      const lo=Math.max(x.a, y.a+sft), hi=Math.min(x.b, y.b+sft);
+      if(hi-lo >= _MIN_OVERLAP) return true;
+    }
+    return false;
+  }
+  // คืนรายชื่อ ผจก. ที่เข้าเวรวันนั้นที่สาขานั้น และกะทับกับผลัด group
+  async function _mgrOnDuty(branch, workDate, group){
+    if(!branch || !group) return [];
+    try{
+      const [{data:shs},{data:scs}] = await Promise.all([
+        sb.from('shifts').select('shift_id,start_time,end_time'),
+        sb.from('schedules').select('emp_id,shift_id').eq('branch_id',branch).eq('work_date',workDate),
+      ]);
+      const shById={}; (shs||[]).forEach(x=>{ shById[x.shift_id]=x; });
+      const gSpan=_span(shById[group]); if(!gSpan) return [];
+      const ids=[...new Set((scs||[]).map(r=>r.emp_id))];
+      if(!ids.length) return [];
+      const {data:emps}=await sb.from('employees').select('emp_id,name,nickname,is_manager')
+        .in('emp_id', ids).eq('active',true).eq('is_manager',true);
+      if(!emps||!emps.length) return [];
+      const isMgr={}; emps.forEach(e=>{ isMgr[e.emp_id]=e; });
+      const out=[], seen={};
+      (scs||[]).forEach(r=>{
+        const e=isMgr[r.emp_id]; if(!e || seen[r.emp_id]) return;
+        if(!_overlap(gSpan, _span(shById[r.shift_id]))) return;
+        seen[r.emp_id]=1;
+        out.push({ emp_id:e.emp_id, name:(e.nickname||e.name), is_mgr:true, shift_id:r.shift_id });
+      });
+      return out;
+    }catch(e){ return []; }
+  }
+  // งานที่ติ๊ก "ผจก. รับผิดชอบ" → มอบให้ ผจก. ของสาขานั้นอัตโนมัติ (ถ้ายังไม่มีคนถือ)
+  async function _autoAssignMgr(defs, branch, workDate, group){
+    try{
+      const owned=(defs||[]).filter(d=>d && d.mgr_owner);
+      if(!owned.length) return 0;
+      const mgrs=await _mgrOnDuty(branch, workDate, group);
+      if(!mgrs.length) return 0;
+      const m=mgrs[0];
+      const ids=owned.map(d=>d.id);
+      const {data:have}=await sb.from('task_assignments').select('task_def_id')
+        .eq('branch_id',branch).eq('work_date',workDate).eq('shift_id',group).in('task_def_id',ids);
+      const has={}; (have||[]).forEach(a=>{ has[a.task_def_id]=1; });
+      const rows=owned.filter(d=>!has[d.id]).map(d=>({
+        work_date:workDate, branch_id:branch, shift_id:group, task_def_id:d.id,
+        title:d.title, require_photo:(d.min_photos||0)>0,
+        emp_id:m.emp_id, emp_name:m.name, status:'todo',
+      }));
+      if(!rows.length) return 0;
+      await sb.from('task_assignments').insert(rows);
+      return rows.length;
+    }catch(e){ return 0; }
   }
 
   // ---------- กระดานงานตามกะ (พนักงานหยิบทำเอง/แบ่งงานกันเอง) ----------
@@ -1450,10 +1524,19 @@
     // คนในกะ = จากตารางเวร แต่ตัดคนที่ปิดใช้งานออก (nameOf มีเฉพาะ active) — กันคนที่ลาออก/ปิดใช้งานโผล่ในรายชื่อ+ดรอปดาวน์มอบงาน
     const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group && nameOf[r.emp_id]).map(r => r.emp_id))];
     const defs = (defsR || []).filter(d => !d.auto_day);   // งานที่สุ่มวันรายคน = พนักงานดึงเองในเมนูของตัวเอง
-    const byDef = {}; (asgR.data || []).forEach(a => { byDef[a.task_def_id] = a; });
+    // ★ ผจก. — เข้าร่วมผลัดที่เวลาทับกัน + งานที่ติ๊ก "ผจก.รับผิดชอบ" มอบให้อัตโนมัติ
+    const mgrs = await _mgrOnDuty(branch, today, group);
+    let asgRows = asgR.data || [];
+    if (await _autoAssignMgr(defs, branch, today, group)) {
+      const re = await sb.from('task_assignments').select('*').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', group);
+      asgRows = re.data || asgRows;
+    }
+    const byDef = {}; asgRows.forEach(a => { byDef[a.task_def_id] = a; });
     return {
       emp, shift: group, work_date: today, branch, shifts: shR.data || [],
-      members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id })),       // คนในกะวันนี้ (จากตารางเวรจริง)
+      members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id }))       // คนในกะวันนี้ (จากตารางเวรจริง)
+        .concat(mgrs.filter(m => !memberIds.includes(m.emp_id)).map(m => ({ emp_id: m.emp_id, name: m.name + ' · ผจก.', is_mgr: true }))),
+      managers: mgrs,
       colleagues: (empsR.data || []).filter(e => (e.branch_id || '') === (branch || '')).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })), // ทุกคนในสาขา (ไว้เพิ่มเข้ากะ)
       all_staff: (empsR.data || []).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '', same_branch: (e.branch_id || '') === (branch || '') })), // ทุกคนทุกสาขา (ไว้เพิ่มคนข้ามสาขามาช่วย)
       scheduled: memberIds.includes(emp.emp_id),
@@ -1706,16 +1789,37 @@
     ]);
     const _af=await _autoDayFilter(defsR||[], emp, branch, today);
     const defs=_af.defs;
+    try{ await _autoAssignMgr(defs, branch, today, shift); }catch(e){}   // ★ งานของ ผจก. → มอบอัตโนมัติ
     let myShelves=[];
     if(defs.some(d=>String(d.link_kind||'')==='Shelf')){
       try{ const sh=await getMyShelves(emp.emp_id);
         myShelves=(sh.rows||[]).map(r=>({ shelf_id:r.shelf_id, code:r.shelf_code||'', name:r.name||'', detail:r.detail||'' })); }catch(e){}
     }
     const asg=asgR.data||[]; const byDef={}; asg.forEach(a=>{ byDef[a.task_def_id]=a; });
+    // ★ ผจก. — งานที่ระบบมอบให้ ผจก. ถูกเก็บไว้ใต้ผลัดเช้า/บ่าย ไม่ใช่กะ MNG
+    //   จึงต้องดึงงานของตัวเองข้ามผลัดมารวมใน "งานของฉัน" ด้วย
+    let mine=asg.filter(a=>a.emp_id===emp.emp_id);
+    if(emp.is_manager){
+      try{
+        const {data:extra}=await sb.from('task_assignments').select('*')
+          .eq('branch_id',branch||'').eq('work_date',today).eq('emp_id',emp.emp_id);
+        const seen={}; mine.forEach(a=>{ seen[a.id]=1; });
+        (extra||[]).forEach(a=>{ if(!seen[a.id]){ seen[a.id]=1; mine.push(a); } });
+      }catch(e){}
+    }
+    let details=defs.map(_defBrief);
+    if(emp.is_manager){
+      const known={}; details.forEach(d=>{ known[d.id]=1; });
+      const need=[...new Set(mine.map(a=>a.task_def_id).filter(id=>id&&!known[id]))];
+      if(need.length){
+        try{ const {data:ex}=await sb.from('task_defs').select('*').in('id',need);
+          (ex||[]).forEach(d=>details.push(_defBrief(d))); }catch(e){}
+      }
+    }
     return { emp, shift, shift_name: shR.data?shR.data.name:shift,
       leader: leadR.data?{ emp_id:leadR.data.emp_id, name:leadR.data.emp_name }:null,
-      mine: asg.filter(a=>a.emp_id===emp.emp_id), team: asg,
-      details: defs.map(_defBrief),
+      mine, team: asg,
+      details,
       my_shelves: myShelves, auto_picks: _af.picks,
       unassigned: defs.filter(d=>!byDef[d.id]).map(_defBrief) };
   }
