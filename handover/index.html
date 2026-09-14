@@ -36,6 +36,14 @@
   .thumbs{display:flex;gap:6px;overflow-x:auto;padding:2px 0;margin-top:6px;-webkit-overflow-scrolling:touch;}
   .thumbs img{height:66px;border-radius:8px;flex:none;border:1px solid var(--line);cursor:pointer;}
   .listrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);border-radius:11px;margin-bottom:8px;}
+  .stephead{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:#00582f;
+    background:#eaf5ef;border:1px solid #cfe6da;border-radius:10px;padding:7px 11px;margin:14px 0 8px;line-height:1.45}
+  .stephead .n{flex:none;width:22px;height:22px;border-radius:7px;background:#00582f;color:#fff;
+    display:grid;place-items:center;font-size:12px}
+  .stephead .c{margin-left:auto;font-weight:600;color:#5b7d6b;font-size:12px}
+  .taskcard{border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:#fff}
+  .taskcard .top{display:flex;align-items:center;gap:10px}
+  .taskcard .t{flex:1;font-size:14.5px;font-weight:600;line-height:1.5}
   .listrow .t{flex:1;font-size:14.5px;}
   .muted{color:var(--muted);font-size:13.5px;}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);padding:12px 18px;border-radius:11px;color:#fff;font-weight:500;font-size:14.5px;display:none;z-index:50;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.18);text-align:center;}
@@ -673,7 +681,7 @@ async function openM2(){
   window.MY_SHELVES=r.my_shelves||[]; window.AUTO_PICKS=r.auto_picks||{};
   html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3>';
   if(!r.mine.length) html+='<div class="card muted">ยังไม่มีงานที่มอบหมายให้คุณ</div>';
-  else html+=r.mine.map(a=>{
+  else { const _mineCard=(a)=>{
     let s=ST(a.status); const isEdit=(a.status==='submitted'); const canDo=(a.status==='todo'||a.status==='sent_back'||isEdit);
     // ป้ายสถานะให้ตรงลำดับจริง: ส่งแล้ว = รอผลัดถัดไปตรวจ · ผ่านผลัดถัดไปแล้วแต่ยังรอ ผจก. = บอกให้ชัด
     if(a.status==='submitted') s=['รอผลัดถัดไปตรวจ','warn'];
@@ -697,11 +705,20 @@ async function openM2(){
         +'<button class="btn btn-pri" data-sub="'+a.id+'">'+(isEdit?'อัปเดต / ส่งใหม่':'ส่งงาน')+'</button>';
     }
     return c+'</div>';
-  }).join('');
+  };
+  html+=groupSteps(r.mine, function(a){ return stepOfDef(a.task_def_id); })
+        .map(function(gp){ return stepHead(gp[0],gp[1].length)+gp[1].map(_mineCard).join(''); }).join('');
+  }
   // งานที่ยังว่าง (รายการ)
   html+='<h3 class="sec">งานที่ยังว่าง (ดึงมาทำเองได้)</h3>';
   if(!r.unassigned.length) html+='<div class="muted" style="padding:4px 2px">ไม่มีงานว่าง</div>';
-  else html+=r.unassigned.map(d=>'<div class="listrow"><div class="t">'+esc(d.title)+(d.min_photos>0?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>'+d.min_photos+'</span>':'')+'</div><button class="btn btn-sec btn-sm" data-pull="'+d.id+'">ดึงมาทำ</button></div>'+taskDetailHTML(d)).join('');
+  else html+=groupSteps(r.unassigned, function(d){ return (d.step!=null?Number(d.step):0); })
+    .map(function(gp){ return stepHead(gp[0],gp[1].length)+gp[1].map(function(d){
+      return '<div class="taskcard"><div class="top"><div class="t">'+esc(d.title)
+        +(d.min_photos>0?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg>'+d.min_photos+'</span>':'')
+        +'</div><button class="btn btn-sec btn-sm" style="flex:none" data-pull="'+d.id+'">ดึงมาทำ</button></div>'
+        +taskDetailHTML(d)+'</div>';
+    }).join(''); }).join('');
   // สถานะทีม
   html+='<h3 class="sec">สถานะทีมในผลัด</h3>';
   if(!r.team.length) html+='<div class="muted" style="padding:4px 2px">ยังไม่มีการมอบหมาย</div>';
@@ -1420,6 +1437,19 @@ function taskDetailHTML(d){
    +'</div></div>';
 }
 window.TASK_DET={};
+var HO_STEPS={1:'เตรียมความพร้อมก่อนรับผลัด',2:'การรับผลัด',3:'ดำเนินการขายและให้บริการ',
+ 4:'การจัดการสินค้า',5:'การจัดการคุณภาพสินค้าอาหารและเครื่องดื่ม (QA)',6:'Shift Survey ตรวจสอบเงินสดระหว่างผลัด',
+ 7:'การปิดผลัดและส่งผลัด',8:'On-line ข้อมูลการขายและส่งเอกสารสิ้นวัน',9:'การนำเงินฝากธนาคาร'};
+function stepOfDef(id){ var d=(window.TASK_DET||{})[id]; return (d && d.step!=null) ? Number(d.step) : 0; }
+function stepHead(k,n){
+  return '<div class="stephead">'+(k? ('<span class="n">'+k+'</span>'+esc(HO_STEPS[k]||('ขั้นตอน '+k)))
+    : '<span class="n">•</span>งานอื่น ๆ')+'<span class="c">'+n+' งาน</span></div>';
+}
+function groupSteps(items, getStep){
+  var g={}; (items||[]).forEach(function(x){ var k=getStep(x)||0; (g[k]=g[k]||[]).push(x); });
+  return Object.keys(g).map(Number).sort(function(a,b){ return (a===0?99:a)-(b===0?99:b); })
+    .map(function(k){ return [k, g[k]]; });
+}
 </script>
 </body>
 </html>
