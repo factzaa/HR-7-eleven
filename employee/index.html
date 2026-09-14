@@ -31,7 +31,8 @@
   .stripe .g{background:var(--green);} .stripe .o{background:var(--orange);} .stripe .r{background:var(--red);}
   /* ★ แก้ 14 ก.ย. 69: เดิม .inner ไม่มี overflow → การ์ดไรเดอร์/เบิกฉุกเฉินที่ต่อท้าย
      ทำให้เนื้อหาล้นออกนอกจอและเลื่อนไม่ได้ (body overflow:hidden) จนกดปุ่มล่างไม่ได้ */
-  .inner{flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; padding:12px 14px 14px;
+  .inner{flex:1; min-height:0; display:flex; flex-direction:column; gap:10px;
+       padding:12px 14px calc(26px + env(safe-area-inset-bottom, 0px));
        overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain;}
 
   header{flex:none; display:flex; align-items:center; gap:11px;}
@@ -141,6 +142,29 @@ button.in{box-shadow:0 6px 16px rgba(0,112,60,.24)}
 </style>
 </head>
 <body>
+<script>
+// ★ แก้ 14 ก.ย. 69: บางเครื่อง (Android ปุ่ม 3 ปุ่ม / iOS แถบล่าง) ค่า 100dvh ยังสูงเกิน
+//   พื้นที่ที่มองเห็นจริง ทำให้เนื้อหาใบล่างสุด (การ์ดไรเดอร์) ตกขอบและเลื่อนลงไปไม่ถึง
+//   จึงวัดความสูงจาก visualViewport แล้วยัดใส่ .app ตรงๆ + อัปเดตทุกครั้งที่จอเปลี่ยน
+(function(){
+  function fitApp(){
+    var vv = window.visualViewport;
+    var h = vv ? vv.height : (window.innerHeight || 0);
+    if(!h) return;
+    var el = document.querySelector('.app');
+    if(el) el.style.height = Math.round(h) + 'px';
+  }
+  window.addEventListener('resize', fitApp);
+  window.addEventListener('orientationchange', function(){ setTimeout(fitApp, 250); });
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize', fitApp);
+    window.visualViewport.addEventListener('scroll', fitApp);
+  }
+  document.addEventListener('DOMContentLoaded', fitApp);
+  window.addEventListener('load', function(){ fitApp(); setTimeout(fitApp, 300); });
+  fitApp();
+})();
+</script>
 <div class="app">
   <div class="stripe"><i class="g"></i><i class="o"></i><i class="r"></i></div>
   <div class="inner">
