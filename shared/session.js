@@ -32,7 +32,7 @@
       'font:inherit;font-size:22px;text-align:center;letter-spacing:10px;margin-bottom:9px;background:#f8fafc}' +
       '#hrPinBox input.txt{font-size:16px;letter-spacing:2px}' +
       '#hrPinBox input:focus{outline:none;border-color:#00582f;background:#fff}' +
-      '#hrPinBox .err{font-size:12.5px;color:#dc2626;min-height:18px;margin-bottom:6px;line-height:1.5}' +
+      '#hrPinBox .err{font-size:12.5px;color:#dc2626;min-height:18px;margin-bottom:6px;line-height:1.55;white-space:pre-line}' +
       '#hrPinBox .bt{display:flex;gap:8px;margin-top:2px}' +
       '#hrPinBox button{flex:1;padding:12px;border-radius:12px;border:0;font:inherit;font-size:15px;font-weight:600;cursor:pointer}' +
       '#hrPinOk{background:#00582f;color:#fff}#hrPinCancel{background:#f1f5f9;color:#475569}' +
@@ -135,7 +135,22 @@
           resolve(v);
         }
 
-        function fail(code) { paint(MSG[code] || ('ไม่สำเร็จ (' + code + ')')); }
+        function lockMsg(min) {
+          return 'ใส่ PIN ผิดหลายครั้ง — รออีก ' + (min > 0 ? min : 10) + ' นาที\nหรือกด "ลืม PIN ?" ด้านล่างเพื่อตั้ง PIN ใหม่ได้เลย';
+        }
+        function fail(code) {
+          if (code === 'locked') {
+            return paint(mode === 'reset'
+              ? 'ยืนยันตัวตนผิดหลายครั้ง — ลองใหม่อีก 15 นาที หรือแจ้งผู้จัดการร้านให้รีเซ็ตให้'
+              : lockMsg(0));
+          }
+          if (code === 'wrong_answer') {
+            return paint(st.reset_by === 'birth'
+              ? 'วันเกิดไม่ตรงกับที่บันทึกไว้ — ลองพิมพ์แบบ 05/09/2543 หรือ 2000-09-05'
+              : 'เลข 4 ตัวท้ายบัตรประชาชนไม่ตรงกับที่บันทึกไว้ — ถ้ายังไม่ได้ แจ้งผู้จัดการร้านให้รีเซ็ตให้');
+          }
+          paint(MSG[code] || ('ไม่สำเร็จ (' + code + ')'));
+        }
 
         function submit() {
           if (busy) return; busy = true;
@@ -173,15 +188,20 @@
         bOk.onclick = submit;
         bNo.onclick = function () { close(false); };
         link.onclick = function () {
-          if (mode === 'login') { if (st.reset_by === 'hr') { paint('ข้อมูลยืนยันตัวตนยังไม่ครบ — แจ้งผู้จัดการร้านให้รีเซ็ต PIN ให้'); return; } mode = 'reset'; }
-          else if (mode === 'reset') mode = 'login';
+          if (mode === 'login') {
+            if (st.reset_by === 'hr') { paint('ข้อมูลยืนยันตัวตนยังไม่ครบ — แจ้งผู้จัดการร้านให้รีเซ็ต PIN ให้'); return; }
+            mode = 'reset';
+            paint(st.reset_locked ? 'ยืนยันตัวตนผิดหลายครั้ง — ลองใหม่อีก 15 นาที' : '');
+            return;
+          }
+          if (mode === 'reset') mode = 'login';
           paint('');
         };
         p1.onkeydown = function (ev) { if (ev.key === 'Enter') { if (p2.style.display === 'none') submit(); else p2.focus(); } };
         p2.onkeydown = function (ev) { if (ev.key === 'Enter') submit(); };
 
         ov.classList.add('on');
-        if (st.locked) { paint(MSG.locked); bOk.disabled = true; setTimeout(function(){ bOk.disabled = false; }, 1500); }
+        if (st.locked) paint(lockMsg(Number(st.lock_min) || 0));
         else paint('');
       });
     }).catch(function (e) {
