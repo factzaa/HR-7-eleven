@@ -36,7 +36,10 @@
       '#hrPinBox .bt{display:flex;gap:8px;margin-top:2px}' +
       '#hrPinBox button{flex:1;padding:12px;border-radius:12px;border:0;font:inherit;font-size:15px;font-weight:600;cursor:pointer}' +
       '#hrPinOk{background:#00582f;color:#fff}#hrPinCancel{background:#f1f5f9;color:#475569}' +
-      '#hrPinLink{display:block;margin-top:12px;font-size:12.5px;color:#0369a1;text-decoration:underline;cursor:pointer}';
+      '#hrPinLink{display:block;margin-top:12px;font-size:12.5px;color:#0369a1;text-decoration:underline;cursor:pointer}' +
+      '#hrViewBadge{position:fixed;top:6px;right:6px;z-index:100020;pointer-events:none;' +
+      'background:#b91c1c;color:#fff;font:600 11px/1.35 "Kanit",system-ui,sans-serif;' +
+      'padding:5px 10px;border-radius:999px;box-shadow:0 4px 14px -4px rgba(0,0,0,.5);max-width:64vw;text-align:center}';
     document.head.appendChild(css);
     var d = document.createElement('div');
     d.id = 'hrPinOv';
@@ -52,6 +55,46 @@
         '<span id="hrPinLink"></span>' +
       '</div>';
     document.body.appendChild(d);
+  }
+
+  // ============================================================
+  // ★ โหมดผู้ตรวจ (HR) — ใส่ "รหัสผู้ตรวจ 6 หลัก" แทน PIN ของพนักงาน
+  //   เพื่อเปิดดูหน้าพนักงานคนไหน สาขาไหนก็ได้ ตามที่เขาเห็นจริง
+  //   ทำรายการได้ปกติ แต่ทุกครั้งจะถูกบันทึกลง activity_log ว่าทำในโหมดผู้ตรวจ
+  // ============================================================
+  var VIEW_AS = null;
+
+  function viewBadge(nameTxt, empId) {
+    var b = document.getElementById('hrViewBadge');
+    if (!b) { b = document.createElement('div'); b.id = 'hrViewBadge'; document.body.appendChild(b); }
+    b.textContent = 'โหมดผู้ตรวจ · กำลังดูในมุมมองของ ' + (nameTxt || empId);
+  }
+
+  // ดักทุกฟังก์ชันที่ "เขียนข้อมูล" บน window.HR แล้วบันทึก log ก่อนทำงานจริง
+  var WRITE_FN = /^(submit|do|review|pull|claim|ack|request|accept|register|check|assign|add|save|undo|mark|release|receive|report|respond|cancel|extend|leader|create|qa[A-Z])/;
+  function armViewLog(empId) {
+    var H = window.HR;
+    if (!H || H.__hrViewWrapped) return;
+    H.__hrViewWrapped = true;
+    Object.keys(H).forEach(function (k) {
+      if (typeof H[k] !== 'function' || !WRITE_FN.test(k)) return;
+      var orig = H[k];
+      H[k] = function () {
+        try {
+          H.sb.from('activity_log').insert({
+            actor: 'HR (โหมดผู้ตรวจ)', action: 'ทำรายการแทนพนักงาน', emp_id: empId,
+            detail: k + '() · หน้า ' + location.pathname
+          }).then(function () {}, function () {});
+        } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+    });
+  }
+
+  function enterViewMode(empId, nameTxt) {
+    VIEW_AS = empId;
+    viewBadge(nameTxt, empId);
+    armViewLog(empId);
   }
 
   function rpc(name, args) {
@@ -111,6 +154,7 @@
             eTitle.textContent = 'ใส่ PIN';
             eSub.textContent = 'ใส่ PIN 4 หลักของคุณเพื่อเข้าใช้งาน';
             p2.style.display = 'none';
+            p1.setAttribute('maxlength', '6');   // ★ เผื่อรหัสผู้ตรวจ 6 หลักของ HR (พนักงานยังใช้ 4 หลักเหมือนเดิม)
             link.textContent = 'ลืม PIN ?';
           } else {
             eTitle.textContent = 'ยืนยันตัวตน';
@@ -157,7 +201,19 @@
           bOk.textContent = 'กำลังตรวจสอบ…';
           var done = function () { busy = false; bOk.textContent = 'ยืนยัน'; };
           if (mode === 'login') {
-            rpc('staff_pin_login', { p_emp_id: empId, p_pin: p1.value.trim() }).then(function (res) {
+            var v = p1.value.trim();
+            // ★ 6 หลัก = รหัสผู้ตรวจของ HR (ไม่ใช่ PIN พนักงาน) — เปิดดูมุมมองของคนนี้
+            if (/^[0-9]{6}$/.test(v)) {
+              rpc('staff_master_login', { p_emp_id: empId, p_pin: v, p_page: location.pathname }).then(function (res) {
+                done();
+                if (res === 'ok') { enterViewMode(empId, who); return close(true); }
+                if (res === 'locked') return paint('รหัสผู้ตรวจถูกล็อกชั่วคราว — ลองใหม่อีก 30 นาที');
+                if (res === 'not_set') return paint('ยังไม่ได้ตั้งรหัสผู้ตรวจในระบบ');
+                paint('PIN ไม่ถูกต้อง');
+              }).catch(function () { done(); paint('PIN ไม่ถูกต้อง'); });
+              return;
+            }
+            rpc('staff_pin_login', { p_emp_id: empId, p_pin: v }).then(function (res) {
               done();
               if (res === 'ok') return close(true);
               if (res === 'no_pin') { mode = 'setup'; return paint(''); }
@@ -216,6 +272,7 @@
     setEmp: function () {},
     clearEmp: function () { try { localStorage.removeItem(KEY); } catch (e) {} },
     prefill: function () { return ''; },
-    pinGate: pinGate
+    pinGate: pinGate,
+    viewAs: function () { return VIEW_AS; }
   };
 })();
