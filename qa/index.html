@@ -188,6 +188,8 @@ $('goBtn').onclick=async()=>{
     const emp=await window.HR.lookupEmployee(id);
     if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); $('goBtn').textContent='เริ่ม'; return; }
     if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); $('goBtn').textContent='เริ่ม'; return; }
+    // ★ ประตู PIN ส่วนตัวของพนักงาน (กันคนอื่นใช้รหัสเราเข้ามาดูข้อมูล)
+    if(!(await HRSession.pinGate(emp))){ $('goBtn').textContent='เริ่ม'; return; }
     EMP=emp;
     try{ HRSession.setEmp(emp.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
     $('f_nm').textContent=emp.nickname||emp.name;
