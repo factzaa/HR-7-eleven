@@ -1656,8 +1656,13 @@
   // ถ้าไม่ส่งมา ใช้วันปฏิทินจริง (fallback)
   async function _prevMainGroup(group, baseDate){
     const today=baseDate||bangkokDate();
-    const list=(await sb.from('shifts').select('shift_id,main_shift,start_time').order('start_time')).data||[];
-    const chain=list.filter(s=>s.main_shift && s.main_shift===s.shift_id).map(s=>s.shift_id);
+    const list=(await sb.from('shifts').select('shift_id,main_shift,start_time,report_shift').order('start_time')).data||[];
+    // ★ แก้ 14 ก.ย. 69: วงจรตรวจรับผลัด = เฉพาะผลัดหลัก เช้า → บ่าย → ดึก
+    //   เดิมใช้เงื่อนไข main_shift===shift_id ซึ่งกะ ผจก. (MNG) ก็เข้าเงื่อนไขด้วย
+    //   ทำให้ "ผลัดก่อนหน้า" ของบ่ายกลายเป็น ผจก. แทนที่จะเป็นเช้า
+    //   ตอนนี้ยึดธง report_shift ที่ HR ติ๊กในหน้าตั้งค่ากะ (ถ้ายังไม่มีใครติ๊ก ค่อยใช้กฎเดิม)
+    const _hasRS=list.some(s=>s.report_shift===true);
+    const chain=list.filter(s=> _hasRS ? (s.report_shift===true) : (s.main_shift && s.main_shift===s.shift_id)).map(s=>s.shift_id);
     const idx=chain.indexOf(group);
     if(idx<0) return { group:null, date:today, isMain:false };
     if(idx===0) return { group: chain[chain.length-1]||null, date:_addDays(today,-1), isMain:true };  // ผลัดหลักแรก(เช้า) → ก่อนหน้า = ผลัดหลักสุดท้ายของวันก่อนหน้า

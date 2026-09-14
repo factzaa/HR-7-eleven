@@ -5196,8 +5196,10 @@
   // หา "ผลัดถัดไป" ของงานนั้น + หัวหน้าผลัดที่เป็นผู้ตรวจ (ใช้ย้อนหาเมื่อแถวเก่าไม่มีร่องรอย checked_by_*)
   async function findNextShiftChecker(t) {
     try {
-      const { data: shifts } = await sb().from('shifts').select('shift_id,main_shift,start_time').order('start_time');
-      const chain = (shifts || []).filter(s => s.main_shift && s.main_shift === s.shift_id).map(s => s.shift_id);
+      const { data: shifts } = await sb().from('shifts').select('shift_id,main_shift,start_time,report_shift').order('start_time');
+      // ★ วงจรผลัดหลักเดียวกับหน้าตรวจรับผลัด — ยึดธง report_shift (เช้า/บ่าย/ดึก) ไม่ให้กะ ผจก. แทรก
+      const _hasRS = (shifts || []).some(s => s.report_shift === true);
+      const chain = (shifts || []).filter(s => _hasRS ? (s.report_shift === true) : (s.main_shift && s.main_shift === s.shift_id)).map(s => s.shift_id);
       const idx = chain.indexOf(t.shift_id);
       if (idx < 0) return null;                                   // กะพิเศษ ไม่อยู่ในวงจรตรวจผลัด
       const isLast = idx === chain.length - 1;
