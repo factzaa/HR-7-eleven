@@ -29,7 +29,10 @@
   .stripe{height:6px; display:flex; flex:none;}
   .stripe i{flex:1; display:block;}
   .stripe .g{background:var(--green);} .stripe .o{background:var(--orange);} .stripe .r{background:var(--red);}
-  .inner{flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; padding:12px 14px 14px;}
+  /* ★ แก้ 14 ก.ย. 69: เดิม .inner ไม่มี overflow → การ์ดไรเดอร์/เบิกฉุกเฉินที่ต่อท้าย
+     ทำให้เนื้อหาล้นออกนอกจอและเลื่อนไม่ได้ (body overflow:hidden) จนกดปุ่มล่างไม่ได้ */
+  .inner{flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; padding:12px 14px 14px;
+       overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain;}
 
   header{flex:none; display:flex; align-items:center; gap:11px;}
   .emblem{width:42px; height:42px; border-radius:11px; overflow:hidden; flex:none; box-shadow:0 2px 0 rgba(0,0,0,.07);}
@@ -39,7 +42,7 @@
   .htext .t2{font-size:15px; font-weight:600; margin-top:1px;}
   #clock{font-family:var(--mono); font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums;}
 
-  .cam{flex:1; min-height:160px; position:relative; border-radius:16px; overflow:hidden;
+  .cam{flex:1 1 auto; min-height:170px; max-height:42dvh; position:relative; border-radius:16px; overflow:hidden;
        background:#0c0f0d; border:1px solid var(--line);}
   video{width:100%; height:100%; object-fit:cover; transform:scaleX(-1);}
   .ring{position:absolute; inset:0; border:3px solid transparent; border-radius:16px;
@@ -79,7 +82,10 @@
   .pill.bad{background:var(--red-soft); color:var(--red);}
   .pill.idle{background:#eef0ec; color:var(--muted);}
 
-  .btns{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  /* ★ ปักหมุดปุ่มเข้า/ออกงานไว้ล่างสุดของพื้นที่เลื่อน — กันคีย์บอร์ดดันปุ่มหลุดจอ */
+  .btns{display:grid; grid-template-columns:1fr 1fr; gap:10px;
+       position:sticky; bottom:-2px; z-index:6; background:var(--card);
+       padding:7px 0 5px; box-shadow:0 -8px 12px -8px rgba(0,0,0,.18);}
   button.act{border:1.5px solid transparent; border-radius:14px; padding:16px 0; font:inherit;
         font-size:17px; font-weight:600; cursor:pointer; transition:transform .08s, opacity .2s;}
   button.act:active{transform:scale(.98);}
