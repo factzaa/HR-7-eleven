@@ -1629,7 +1629,18 @@
   }
   // หางาน assignment เดิมของ (สาขา+วัน+กะ+งาน)
   async function _findAsg(branch, today, shift, defId) {
-    return (await sb.from('task_assignments').select('id').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', shift).eq('task_def_id', defId).maybeSingle()).data;
+    return (await sb.from('task_assignments').select('id,status,emp_id,emp_name,photos,photo_url').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', shift).eq('task_def_id', defId).maybeSingle()).data;
+  }
+  // ★ 15 ก.ย. 69 — งานที่ส่ง/ตรวจผ่านแล้ว เปลี่ยนคนทำไม่ได้
+  //   การมอบ/ดึงงานจะ reset แถวเดิมเป็น todo แล้วล้างรูป/หมายเหตุทิ้ง — หลักฐานหายถาวร
+  function _assertNotDone(existing){
+    if(!existing) return;
+    var st = String(existing.status || 'todo');
+    if(st === 'submitted' || st === 'approved'){
+      var who = existing.emp_name || existing.emp_id || '';
+      throw new Error('งานนี้' + (st === 'approved' ? 'ตรวจผ่านแล้ว' : 'ส่งแล้ว รอตรวจ')
+        + (who ? (' (โดย ' + who + ')') : '') + ' — เปลี่ยนคนทำไม่ได้ เพราะรูปหลักฐานจะหาย ถ้าทำไม่เรียบร้อยให้ใช้ปุ่ม "แจ้งแก้" แทน');
+    }
   }
   // พนักงานกดทำงานนี้เอง + บันทึกว่าเป็นผู้ทำ (ส่งเลย)
   async function doTaskSelf({ empId, task_def_id, shiftId, photo, note }) {
@@ -1924,6 +1935,7 @@
     await _assertShiftStarted(shift, today, emp);
     await _assertPrevShiftDone(branch, shift, today);
     const existing=await _findAsg(branch,today,shift,task_def_id);
+    _assertNotDone(existing);   // ★ งานที่ส่ง/ตรวจผ่านแล้ว ดึงมาทำทับไม่ได้ — กันรูปหลักฐานหาย
     const base={ emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, status:'todo', photos:null, photo_url:null, emp_note:null, submitted_at:null, reviewer:null, review_note:null, reviewed_at:null };
     if(existing){ const {error}=await sb.from('task_assignments').update(base).eq('id',existing.id); if(error) throw error; }
     else { const {error}=await sb.from('task_assignments').insert(Object.assign({ work_date:today, branch_id:branch||null, shift_id:shift, task_def_id, title:def.title, require_photo:(def.min_photos||0)>0 }, base)); if(error) throw error; }
