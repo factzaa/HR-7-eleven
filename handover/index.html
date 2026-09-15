@@ -279,16 +279,40 @@ function renderTaskThumbs(id){
   if(t) t.innerHTML=arr.map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmTaskPhoto('+id+','+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('');
   if(c) c.textContent = arr.length ? ('แนบแล้ว '+arr.length+' รูป') : 'ยังไม่ได้แนบรูป';
 }
-function rmTaskPhoto(id,i){ if(TASK_PHOTOS[id]){ TASK_PHOTOS[id].splice(i,1); renderTaskThumbs(id); taskDraftSave(id); } }
+function rmTaskPhoto(id,i){
+  if(!TASK_PHOTOS[id]) return;
+  const url=TASK_PHOTOS[id][i];
+  TASK_PHOTOS[id].splice(i,1); renderTaskThumbs(id); taskDraftSave(id);
+  // ★ 15 ก.ย. 69 — รูปที่อัปขึ้นแล้ว ต้องลบออกจากร่างบนเซิร์ฟเวอร์ด้วย ไม่งั้นเครื่องอื่นยังเห็น
+  if(typeof url==='string' && /^https?:/i.test(url) && /^\d+$/.test(String(id))){
+    window.HR.taskDraftDrop({ empId:EMP.emp_id, id:Number(id), url }).catch(()=>{});
+  }
+}
 function wireTaskInput(inpId, taskId){
   const inp=$(inpId); if(!inp) return;
   inp.addEventListener('change',async()=>{
     if(!inp.files||!inp.files.length) return;
     const added=await filesToData(inp.files);
-    TASK_PHOTOS[taskId]=(TASK_PHOTOS[taskId]||[]).concat(added);
     inp.value='';            // เคลียร์เพื่อให้ถ่าย/เลือกเพิ่มได้อีก
-    renderTaskThumbs(taskId);
-    taskDraftSave(taskId);   // ★ เก็บร่างทันทีหลังถ่ายรูป — สลับแอปแล้วกลับมาได้
+    if(!added.length) return;
+    // แสดงรูปทันทีก่อน (ไม่ต้องรอเน็ต) แล้วค่อยอัปโหลดทีละรูป
+    TASK_PHOTOS[taskId]=(TASK_PHOTOS[taskId]||[]).concat(added);
+    renderTaskThumbs(taskId); taskDraftSave(taskId);
+    // ★ 15 ก.ย. 69 — อัปโหลดขึ้น storage ทันทีที่ถ่าย แล้วสลับ data URL เป็น URL จริง
+    //   ทำให้เปิดอีกเครื่องแล้วเห็นรูปที่ถ่ายค้างไว้ · และรูปไม่หายถ้ามือถือดับ
+    const st=$('mc_'+taskId); const oldTxt=st?st.textContent:'';
+    if(st) st.textContent='กำลังอัปโหลด '+added.length+' รูป…';
+    let failed=0;
+    for(const d of added){
+      try{
+        const r=await window.HR.taskDraftPush({ empId:EMP.emp_id, id:Number(taskId), photo:d });
+        const arr=TASK_PHOTOS[taskId]||[]; const at=arr.indexOf(d);
+        if(at>=0 && r && r.url){ arr[at]=r.url; }
+      }catch(e){ failed++; }
+    }
+    renderTaskThumbs(taskId); taskDraftSave(taskId);
+    if(st && failed) st.textContent='อัปโหลดไม่สำเร็จ '+failed+' รูป — รูปยังอยู่ในเครื่องนี้ กดส่งงานได้ตามปกติ';
+    else if(st && !/^แนบแล้ว/.test(st.textContent)) st.textContent=oldTxt;
   });
 }
 
@@ -795,12 +819,27 @@ async function openM2(){
   if(r){
     r.mine.forEach(a=>{ if(a.status==='todo'||a.status==='sent_back'||a.status==='submitted'){
       // งานที่ส่งแล้ว (แก้ไข): โหลดรูปเดิมเข้าชุดแก้ไข เพื่อให้เก็บ/ลบ/เพิ่มได้ และนับรวมกับขั้นต่ำ
-      TASK_PHOTOS[a.id] = (a.status==='submitted' && Array.isArray(a.photos)) ? a.photos.slice() : [];
+      // ★ 15 ก.ย. 69 — งานที่ยังไม่ส่ง: โหลด "ร่างรูป" จากเซิร์ฟเวอร์ → เปิดเครื่องไหนก็เห็นรูปที่ถ่ายค้างไว้
+      TASK_PHOTOS[a.id] = (a.status==='submitted' && Array.isArray(a.photos)) ? a.photos.slice()
+        : (Array.isArray(a.draft_photos) ? a.draft_photos.slice() : []);
       wireTaskInput('mfc_'+a.id, a.id);   // กล้องอย่างเดียว (กันหยิบรูปเก่าจากแกลเลอรี)
-      const nInp=$('mn_'+a.id); if(nInp) nInp.oninput=()=>taskDraftSave(a.id);   // เก็บร่างเมื่อพิมพ์หมายเหตุ
-      if(a.status==='submitted') renderTaskThumbs(a.id);
-      // ★ กู้ร่างที่ค้างไว้ (รูป/หมายเหตุ) ถ้ามี — กันหายเวลาสลับแอป/รีโหลด
-      wipGet('t:'+_dkey(a.id)).then(d=>{ if(!d) return; if(Array.isArray(d.photos)&&d.photos.length) TASK_PHOTOS[a.id]=d.photos.slice(); if(nInp && d.note && !nInp.value) nInp.value=d.note; renderTaskThumbs(a.id); });
+      const nInp=$('mn_'+a.id);
+      if(nInp){
+        if(!nInp.value && a.draft_note) nInp.value=a.draft_note;
+        let _nt=null;
+        nInp.oninput=()=>{ taskDraftSave(a.id);
+          clearTimeout(_nt); _nt=setTimeout(()=>{ window.HR.taskDraftNote({ empId:EMP.emp_id, id:Number(a.id), note:nInp.value }).catch(()=>{}); }, 1200); };
+      }
+      if(a.status==='submitted' || (TASK_PHOTOS[a.id]||[]).length) renderTaskThumbs(a.id);
+      // ★ กู้ร่างในเครื่อง — รวมเฉพาะรูปที่ยังอัปไม่ขึ้น ไม่ทับรูปที่อยู่บนเซิร์ฟเวอร์แล้ว
+      wipGet('t:'+_dkey(a.id)).then(d=>{ if(!d) return;
+        if(Array.isArray(d.photos)&&d.photos.length){
+          const cur=TASK_PHOTOS[a.id]||[];
+          const pend=d.photos.filter(u=>typeof u==='string' && !/^https?:/i.test(u) && cur.indexOf(u)<0);
+          if(pend.length) TASK_PHOTOS[a.id]=cur.concat(pend);
+        }
+        if(nInp && d.note && !nInp.value) nInp.value=d.note;
+        renderTaskThumbs(a.id); });
     }});
     document.querySelectorAll('[data-sub]').forEach(b=>b.onclick=async()=>{
       const id=Number(b.dataset.sub); const note=($('mn_'+id)||{}).value||'';
