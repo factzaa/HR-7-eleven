@@ -124,12 +124,18 @@ $('goBtn').onclick=async()=>{
   const id=$('empId').value.trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
   const b=$('goBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
   try{
+    // ★ แก้ 15 ก.ย. 69 — เดิมโหลดเช็กลิสต์/คอมเมนต์ ผจก. มาก่อนแล้วค่อยถาม PIN
+    //   ใครพิมพ์รหัสเพื่อนแล้วกด "เริ่ม" ก็ดาวน์โหลดข้อมูลได้แม้กดยกเลิก PIN
+    //   ตอนนี้: ยืนยันตัวตนให้ผ่านก่อน แล้วจึงโหลดข้อมูล
+    PH={};                                   // ★ ล้างรูปค้างของคนก่อนหน้า
+    const _e0 = await window.HR.lookupEmployee(id);
+    if(!_e0){ toast('err','ไม่พบรหัสพนักงานนี้'); b.disabled=false; b.textContent='เริ่ม'; return; }
+    if(_e0.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); b.disabled=false; b.textContent='เริ่ม'; return; }
+    if(!(await HRSession.pinGate(_e0))){ EMP=null; DATA=null; PH={}; b.disabled=false; b.textContent='เริ่ม'; return; }
     DATA=await window.HR.getQssiChecklist(id);
     EMP=DATA.emp;
     loadBranchNames();
-    if(EMP.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); }
-    else if(!(await HRSession.pinGate(EMP))){ b.disabled=false; b.textContent='เริ่ม'; return; }
-    else{
+    {
       try{ HRSession.setEmp(EMP.emp_id); }catch(e){}
       $('f_nm').textContent=EMP.nickname||EMP.name;
       $('f_sub').textContent='รหัส '+EMP.emp_id+' · รอบเดือน '+DATA.cycle;
@@ -139,7 +145,7 @@ $('goBtn').onclick=async()=>{
   }catch(e){ toast('err', e.message||'เกิดข้อผิดพลาด'); }
   b.disabled=false; b.textContent='เริ่ม';
 };
-$('changeBtn').onclick=()=>{ EMP=null; DATA=null; $('empId').value=''; try{HRSession.clearEmp();}catch(e){} $('step_list').classList.add('hide'); $('step_id').classList.remove('hide'); };
+$('changeBtn').onclick=()=>{ EMP=null; DATA=null; PH={}; /* ★ ล้างรูปค้างของคนก่อน */ $('empId').value=''; try{HRSession.clearEmp();}catch(e){} $('step_list').classList.add('hide'); $('step_id').classList.remove('hide'); };
 $('tb_mine').onclick=()=>{ TAB='mine'; render(); };
 $('tb_other').onclick=()=>{ TAB='other'; render(); };
 
