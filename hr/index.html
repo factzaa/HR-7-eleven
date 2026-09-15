@@ -11805,8 +11805,18 @@ function tsPanel(d){
    + shl.map(s=>tsChip(s.name, shs.indexOf(s.id)>=0, 'data-tssh="'+d.id+'" data-v="'+s.id+'"')).join('')
    + (TS.branch && tsHasOv(d,'shift_ids') ? '<button type="button" class="btn btn-sec btn-sm" data-tsclear="'+d.id+'" data-k="shift_ids" style="font-size:12px">กลับไปใช้ค่ากลาง</button>' : '')
    +'</div>';
+  // ★ 15 ก.ย. 69 — ไม่เลือกกะ = ระบบตีความว่า "ทุกผลัด" → งานเด้งซ้ำทุกกะ (และ ผจก. เห็น 3 ใบ)
+  if(!shs.length) h+='<div style="background:#fef2f2;border:1.5px solid #fecaca;color:#991b1b;border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:12.5px;line-height:1.6">'
+    +'<b>ยังไม่ได้เลือกผลัด</b> — ระบบจะถือว่างานนี้ทำ<b>ทุกผลัด</b> ทำให้เกิดใบงานซ้ำวันละหลายใบ'
+    +(d.mgr_owner?' และ ผจก. จะเห็นงานเดียวกัน 3 ใบ (เช้า + บ่าย + กะ ผจก.)':'')
+    +'<div style="margin-top:3px">เลือกผลัดอย่างน้อย 1 ผลัดด้านบน'+(d.mgr_owner?' — งาน ผจก. แนะนำให้เลือก <b>บ่าย</b> ผลัดเดียว':'')+'</div></div>';
 
   h+='<div style="font-size:12.5px;font-weight:700;margin:12px 0 6px">3. รอบการทำงานและวัน</div>';
+  // ★ 15 ก.ย. 69 — รายสัปดาห์/รายเดือน ที่ไม่เลือกวัน = งานไม่เคยขึ้นเลย (เงียบ ๆ)
+  if((f==='weekly' && !tsDow(d).length) || (f==='monthly' && !tsDom(d).length))
+    h+='<div style="background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:12.5px;line-height:1.6">'
+      +'<b>ยังไม่ได้เลือก'+(f==='weekly'?'วันในสัปดาห์':'วันที่ของเดือน')+'</b> — งานนี้จะ<b>ไม่ขึ้นในระบบเลย</b> ไม่มีใครเห็นและไม่ถูกนับว่าค้าง'
+      +'<div style="margin-top:3px">เลือกอย่างน้อย 1 วันด้านล่าง</div></div>';
   if(hr){
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
       +tsChip('ทุกวัน', f==='daily', 'data-tsfreq="'+d.id+'" data-v="daily"')
