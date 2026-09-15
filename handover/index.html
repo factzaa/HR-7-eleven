@@ -820,7 +820,24 @@ async function openLeaderPanel(){
   const memOptsMgr=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'"'+(m.emp_id===mgrId?' selected':'')+'>'+esc(m.name)+'</option>').join('');
   if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (ผู้จัดการตั้งที่ "ตั้งค่ากะ")</div>'; return; }
   const _defCard=(d)=>{
-    const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.mgr_owner?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ผจก.</span>':'')+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
+    const a=d.assignment;
+    // ★ ปิดงานที่ทำไม่ได้จริง — ปุ่มเล็กมุมขวาบน ไม่มีข้อความชวนกด (หัวหน้าผลัดเท่านั้น)
+    let _corner='';
+    if(IS_LEAD && !SHIFT_SENT){
+      if(a && a.status==='closed')
+        _corner='<button type="button" data-reopen="'+d.id+'" title="เปิดงานนี้กลับมาทำ" aria-label="เปิดงานนี้กลับมาทำ" '
+          +'style="position:absolute;top:8px;right:8px;width:24px;height:24px;padding:0;display:grid;place-items:center;'
+          +'border:1px solid var(--line);border-radius:7px;background:#fff;color:#64748b;cursor:pointer">'
+          +'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'
+          +'<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>';
+      else if(!a || (a.status!=='submitted' && a.status!=='approved'))
+        _corner='<button type="button" data-close="'+d.id+'" title="ปิดงาน — เฉพาะกรณีทำไม่ได้จริง" aria-label="ปิดงาน" '
+          +'style="position:absolute;top:8px;right:8px;width:24px;height:24px;padding:0;display:grid;place-items:center;'
+          +'border:0;border-radius:7px;background:transparent;color:#cbd5e1;cursor:pointer;opacity:.75">'
+          +'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'
+          +'<circle cx="12" cy="12" r="8.5"/><path d="M6.2 6.2l11.6 11.6"/></svg></button>';
+    }
+    let body='<div style="font-weight:600;margin-bottom:6px'+(_corner?';padding-right:28px':'')+'">'+esc(d.title)+(d.mgr_owner?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ผจก.</span>':'')+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
     if(a){ const s=ST(a.status); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
     // ★ งานที่ปิดเพราะทำไม่ได้ — โชว์เหตุผทและปุ่มเปิดกลับ
     if(a && a.status==='closed'){
@@ -832,13 +849,7 @@ async function openLeaderPanel(){
     body+=taskDetailHTML(d,{noShelf:true});
     if(!(b.members||[]).length) body+='<div class="muted">ยังไม่มีคนในกะ — เพิ่มคนด้านบนก่อน</div>';
     else if(!a || a.status!=='closed') body+='<div class="row2"><select id="lg_'+d.id+'">'+((d.mgr_owner&&mgrId)?memOptsMgr:memOpts)+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
-    // ★ ปิดงานที่ทำไม่ได้จริง (หัวหน้าผลัดเท่านั้น) / ยกเลิกการปิด
-    if(IS_LEAD && !SHIFT_SENT){
-      if(a && a.status==='closed') body+='<button class="btn btn-sec btn-sm" data-reopen="'+d.id+'" style="margin-top:6px">เปิดงานนี้กลับมาทำ</button>';
-      else if(!a || (a.status!=='submitted' && a.status!=='approved'))
-        body+='<button class="btn btn-sec btn-sm" data-close="'+d.id+'" style="margin-top:6px;border-color:#fca5a5;color:#b91c1c">ปิดงาน · ทำไม่ได้</button>';
-    }
-    return '<div class="card">'+body+'</div>';
+    return '<div class="card" style="position:relative">'+_corner+body+'</div>';
   };
   // จัดหมวดตามขั้นตอนการทำงาน + ย่อ/ขยายได้ (ขั้นตอนที่มอบครบแล้วจะพับเก็บให้อัตโนมัติ)
   $('l_board').innerHTML=groupSteps(b.defs, function(d){ return (d.step!=null?Number(d.step):0); })
