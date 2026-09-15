@@ -1935,11 +1935,14 @@
     const isFix = !!(row.fix_emp && !row.fix_done_at && row.status==='sent_back');
     const _subEmp = empId ? await lookupEmployee(empId) : null;
     if(!isFix) await _assertShiftStarted(row.shift_id, row.work_date, _subEmp);
-    const def=(await sb.from('task_defs').select('min_photos,mgr_review,need_review').eq('id',row.task_def_id).maybeSingle()).data;
+    const def=(await sb.from('task_defs').select('min_photos,mgr_review,need_review,mgr_owner').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
     // needs_mgr = งานติ๊ก "ผจก.ตรวจ" และกะนั้นเป็นกะที่ ผจก.ตรวจ (บางกะ เช่นดึก ไม่อยู่ในเวลา ผจก.)
     let shiftMgr=true;
-    if(def && def.mgr_review && row.shift_id){ const sh=(await sb.from('shifts').select('mgr_review').eq('shift_id',row.shift_id).maybeSingle()).data; shiftMgr = !sh || sh.mgr_review!==false; }
+    // ★ 15 ก.ย. 69 — งานที่ติ้ก "ผจก.รับผิดชอบ" เข้าคิวตรวจเสมอ ไม่ต้องดูค่าของกะ
+    //   (mgr_review ระดับกะ มีไว้คุมว่า ผจก. ตรวจงาน "พนักงาน" ในกะนั้นไหม คนละเรื่องกัน
+    //    กะเช้า/บ่ายตั้งปิดไว้ ทำให้งาน ผจก. ทั้งหมดผ่านโดยไม่มีใครตรวจมาตลอด)
+    if(def && def.mgr_review && !def.mgr_owner && row.shift_id){ const sh=(await sb.from('shifts').select('mgr_review').eq('shift_id',row.shift_id).maybeSingle()).data; shiftMgr = !sh || sh.mgr_review!==false; }
     const wantMgr = !!(def && def.mgr_review && shiftMgr);
     const urls=[];
     // photos อาจมีทั้ง "รูปเดิม" (http URL — เก็บไว้ตามเดิม) และ "รูปใหม่" (data URL — อัปโหลด)

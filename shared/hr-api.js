@@ -595,10 +595,11 @@
       sb().from('task_assignments').select('branch_id,task_def_id,shift_id,needs_mgr,status,mgr_checked_at,fix_done_at,work_date').eq('status', 'submitted').is('mgr_checked_at', null).in('work_date', [today, prev]).limit(5000),
       sb().from('mgr_daily_defs').select('id').eq('active', true),
       sb().from('mgr_daily_logs').select('branch_id,def_id,status').eq('work_date', today),
-      sb().from('task_defs').select('id,mgr_review'),
+      sb().from('task_defs').select('id,mgr_review,mgr_owner'),
       sb().from('shifts').select('shift_id,mgr_review,start_time,end_time'),
     ]);
     const defMgr = {}; (tdR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
+    const defOwn = {}; (tdR.data || []).forEach(d => { defOwn[d.id] = !!d.mgr_owner; });
     const shOff = {}, overnight = {};
     (shR.data || []).forEach(s => { shOff[s.shift_id] = (s.mgr_review === false); overnight[s.shift_id] = !!(s.start_time && s.end_time && String(s.end_time) <= String(s.start_time)); });
     const dailyTotal = (dfR.data || []).length;
@@ -608,7 +609,7 @@
     (taR.data || []).forEach(t => {
       const isResubmit = !!t.fix_done_at;
       if (!isResubmit && String(t.work_date) !== today && !overnight[t.shift_id]) return;
-      const needs = t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]);
+      const needs = t.needs_mgr === true || (!!defMgr[t.task_def_id] && (defOwn[t.task_def_id] || !shOff[t.shift_id]));
       if (!needs || !t.branch_id) return;
       review[t.branch_id] = (review[t.branch_id] || 0) + 1;
     });
@@ -5122,12 +5123,14 @@
     const [tR, t2R, brR, dfR, shR] = await Promise.all([
       q, q2,
       sb().from('branches').select('branch_id,name'),
-      sb().from('task_defs').select('id,mgr_review'),
+      sb().from('task_defs').select('id,mgr_review,mgr_owner'),
       sb().from('shifts').select('shift_id,mgr_review,name,start_time,end_time'),
     ]);
     if (tR.error) throw tR.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const defMgr = {}; (dfR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
+    // ★ งานของ ผจก. — เข้าคิวตรวจเสมอ แม้กะนั้นจะปิด "ผจก.ตรวจ" ไว้
+    const defOwn = {}; (dfR.data || []).forEach(d => { defOwn[d.id] = !!d.mgr_owner; });
     const shOff = {}, shName = {}, shOvernight = {};
     (shR.data || []).forEach(s => {
       shOff[s.shift_id] = (s.mgr_review === false);
@@ -5150,7 +5153,7 @@
         // ของเมื่อวาน: เก็บไว้เฉพาะกะข้ามคืน (กะดึกที่คาบเกี่ยวมาถึงวันที่ดูอยู่)
         if (String(t.work_date) !== day && !shOvernight[t.shift_id]) return false;
       }
-      return t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]);
+      return t.needs_mgr === true || (!!defMgr[t.task_def_id] && (defOwn[t.task_def_id] || !shOff[t.shift_id]));
     });
 
     // ชื่อพนักงาน (ผู้ส่ง + ผู้ตรวจของผลัดถัดไป)
@@ -7088,10 +7091,11 @@
         if (branch) { tq = tq.eq('branch_id', branch); tq2 = tq2.eq('branch_id', branch); }
         const [tR, t2R, dfR, shR] = await Promise.all([
           tq, tq2,
-          sb().from('task_defs').select('id,mgr_review'),
+          sb().from('task_defs').select('id,mgr_review,mgr_owner'),
           sb().from('shifts').select('shift_id,mgr_review,start_time,end_time'),
         ]);
         const defMgr = {}; (dfR.data || []).forEach(d => { defMgr[d.id] = !!d.mgr_review; });
+        const defOwn = {}; (dfR.data || []).forEach(d => { defOwn[d.id] = !!d.mgr_owner; });
         const shOff = {}, shOvn = {};
         (shR.data || []).forEach(s => {
           shOff[s.shift_id] = (s.mgr_review === false);
@@ -7104,7 +7108,7 @@
           if (t.mgr_checked_at) return false;
           const isResubmit = !!t.fix_done_at;
           if (!isResubmit && String(t.work_date) !== today && !shOvn[t.shift_id]) return false;
-          return t.needs_mgr === true || (!!defMgr[t.task_def_id] && !shOff[t.shift_id]);
+          return t.needs_mgr === true || (!!defMgr[t.task_def_id] && (defOwn[t.task_def_id] || !shOff[t.shift_id]));
         }).length;
       } catch (_e) { return 0; }
     })();
@@ -7282,7 +7286,8 @@
   async function hrMdailyBoard(date, branch) {
     const d = date || bkkToday();
     const [defR, brR, logR] = await Promise.all([
-      sb().from('mgr_daily_defs').select('*').eq('active', true).order('sort').order('id'),
+      // ★ ไม่กรอง active — งานประจำวันเดิมถูกปิดแล้ว แต่ต้องเปิดดูประวัติย้อนหลังได้
+      sb().from('mgr_daily_defs').select('*').order('sort').order('id'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
       sb().from('mgr_daily_logs').select('*').eq('work_date', d),
     ]);
@@ -7316,7 +7321,7 @@
     const endEff = endMonth < today ? endMonth : today; // ไม่นับวันอนาคต
     const days = (endEff >= start) ? daysBetween(start, endEff) : 0;
     const [defR, brR, logR] = await Promise.all([
-      sb().from('mgr_daily_defs').select('id').eq('active', true),
+      sb().from('mgr_daily_defs').select('id'),   // ★ รายงานย้อนหลัง — นับรวมงานที่ปิดไปแล้วด้วย
       sb().from('branches').select('branch_id,name').order('branch_id'),
       sb().from('mgr_daily_logs').select('branch_id,def_id,work_date,status').gte('work_date', start).lte('work_date', endEff),
     ]);
