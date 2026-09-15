@@ -290,7 +290,7 @@ const MODEL_URL  = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
 // 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
 
 let CFG = { branches:[], shifts:[], employees:[], threshold:0.5 };
-let gps = { lat:null, lng:null, accuracy:null, branch:null, distance:null, within:false };
+let gps = { lat:null, lng:null, accuracy:null, branch:null, distance:null, within:false, ts:0 };
 let empMatch = null, regMatch = null;
 let modelsReady = false, faceDetected = false, busy = false;
 
@@ -427,13 +427,21 @@ function startGeo(){
   if(!navigator.geolocation){ $('zonePill').textContent='ไม่รองรับ GPS'; return; }
   navigator.geolocation.watchPosition(pos=>{
     gps.lat=pos.coords.latitude; gps.lng=pos.coords.longitude; gps.accuracy=pos.coords.accuracy;
+    gps.ts=pos.timestamp||Date.now();          // ★ เก็บเวลาที่ได้พิกัด
     evaluateZone(); updateUI();
-  }, ()=>{ $('zonePill').className='pill bad'; $('zonePill').textContent='ปฏิเสธ GPS'; },
+  }, ()=>{
+    // ★ แก้ 15 ก.ย. 69 — เดิม error callback เขียนแค่ป้าย ไม่ล้างพิกัด
+    //   พิกัดเก่าค้างอยู่ ป้าย "อยู่ในพื้นที่" กลับมาใน 1 วินาที และกดออกงานจากที่บ้านได้
+    gps.lat=null; gps.lng=null; gps.branch=null; gps.within=false; gps.distance=null; gps.ts=0;
+    $('zonePill').className='pill bad'; $('zonePill').textContent='ปฏิเสธ GPS';
+  },
   { enableHighAccuracy:true, maximumAge:3000, timeout:15000 });
 }
 
 function evaluateZone(){
-  if(gps.lat==null||gps.lng==null){ gps.branch=null; gps.within=false; return; }
+  // ★ พิกัดเก่าเกิน 60 วินาที ถือว่าใช้ไม่ได้ (กันค้างค่าเดิมตอนสัญญาณหาย)
+  if(gps.ts && (Date.now()-gps.ts > 60000)){ gps.lat=null; gps.lng=null; }
+  if(gps.lat==null||gps.lng==null){ gps.branch=null; gps.within=false; gps.distance=null; return; }
   let best=null, bestD=Infinity;
   (CFG.branches||[]).forEach(b=>{
     const d=haversine(gps.lat,gps.lng,b.lat,b.lng);
@@ -669,6 +677,7 @@ async function submit(action){
         shift_name: shiftName(r.shift_id||shiftId), branch_name: gps.branch?gps.branch.name:'',
         late_min: r.late_min||0, faceMatch });
     } else {
+      if(!gps.within){ showToast('err','อยู่นอกพื้นที่สาขา — กดออกงานไม่ได้\nถ้าออกงานที่อื่นจริง ให้ยื่นแก้เวลาออกกับหัวหน้า'); return; }
       const curBranch = gps.branch ? gps.branch.branch_id : null;
       const outPhoto = capturePhoto();   // เซลฟีตอนออกงาน (บังคับ)
       let co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, photoDataUrl: outPhoto });
@@ -1281,7 +1290,11 @@ async function showAckPopup(action, info){
     + '<div style="font-size:13px;opacity:.92;margin-top:2px;font-weight:400">'+escH(info.name)+'</div>';
   body.innerHTML='<p style="text-align:center;color:var(--muted)">กำลังโหลดสถานะ…</p>';
   btn.disabled=true; btn.textContent='รับทราบ';
-  let s=null; try{ s=await HR.myStatus(empMatch.emp_id); }catch(e){ console.error(e); }
+  setTimeout(()=>{ try{ btn.disabled=false; }catch(_e){} }, 9000);   // ★ กันปุ่มค้าง disabled ถาวร
+  // ★ แก้ 15 ก.ย. 69 — เดิมไม่มี timeout ถ้า myStatus แขวน ป๊อปอัพค้างเต็มจอ ปิดไม่ได้ทั้งที่ลงเวลาสำเร็จแล้ว
+  let s=null;
+  try{ s=await Promise.race([ HR.myStatus(empMatch.emp_id), new Promise(r=>setTimeout(()=>r(null), 8000)) ]); }
+  catch(e){ console.error(e); }
   if(action==='checkin' && info.late_min>0) head.style.background='var(--red)';
   else if(s && s.discipline && s.discipline.level>=3) head.style.background='var(--red)';
   else if(s && s.discipline && s.discipline.level>0) head.style.background='var(--orange)';
