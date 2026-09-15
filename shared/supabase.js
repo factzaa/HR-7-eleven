@@ -1941,6 +1941,47 @@
     else { const {error}=await sb.from('task_assignments').insert(Object.assign({ work_date:today, branch_id:branch||null, shift_id:shift, task_def_id, title:def.title, require_photo:(def.min_photos||0)>0 }, base)); if(error) throw error; }
     return { ok:true };
   }
+  // ★ 15 ก.ย. 69 — ร่างรูปแบบข้ามเครื่อง
+  //   เดิม: ถ่ายแล้วเก็บเป็น data URL ใน IndexedDB ของเครื่องนั้น → เปิดอีกเครื่องไม่เห็น
+  //   ใหม่: อัปโหลดขึ้น storage ทันทีที่ถ่าย แล้วเก็บ URL ไว้ที่ใบงาน (draft_photos)
+  async function _draftRow(id){
+    const row=(await sb.from('task_assignments').select('id,branch_id,status,emp_id,emp_name,draft_photos').eq('id',id).maybeSingle()).data;
+    if(!row) throw new Error('ไม่พบงานนี้');
+    return row;
+  }
+  async function taskDraftPush({ empId, id, photo }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if(!photo) throw new Error('ไม่มีรูป');
+    const row=await _draftRow(id);
+    if(row.status==='approved') throw new Error('งานนี้ตรวจผ่านแล้ว แนบรูปเพิ่มไม่ได้');
+    const cur=Array.isArray(row.draft_photos)?row.draft_photos.slice():[];
+    if(cur.length>=20) throw new Error('แนบรูปได้สูงสุด 20 รูปต่อ 1 งาน');
+    const url=(typeof photo==='string' && /^https?:/i.test(photo))
+      ? photo
+      : await uploadPhoto('employee-docs','task/'+(row.branch_id||'x')+'_'+id+'_'+Date.now()+'_'+cur.length+'.jpg', photo);
+    cur.push(url);
+    const { error }=await sb.from('task_assignments')
+      .update({ draft_photos:cur, draft_by:emp.emp_id, draft_at:new Date().toISOString() }).eq('id',id);
+    if(error) throw error;
+    return { ok:true, url, photos:cur };
+  }
+  async function taskDraftDrop({ empId, id, url }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const row=await _draftRow(id);
+    const cur=(Array.isArray(row.draft_photos)?row.draft_photos:[]).filter(u=>u!==url);
+    const { error }=await sb.from('task_assignments')
+      .update({ draft_photos:cur.length?cur:null, draft_by:emp.emp_id, draft_at:new Date().toISOString() }).eq('id',id);
+    if(error) throw error;
+    return { ok:true, photos:cur };
+  }
+  async function taskDraftNote({ empId, id, note }){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { error }=await sb.from('task_assignments')
+      .update({ draft_note:String(note||'').slice(0,500), draft_by:emp.emp_id, draft_at:new Date().toISOString() }).eq('id',id);
+    if(error) throw error;
+    return { ok:true };
+  }
+
   async function submitTaskMulti({ id, empId, photos, note }){
     const row=(await sb.from('task_assignments').select('*').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
     // งานที่ ผจก.ตีกลับให้ "ผู้ตรวจของผลัดถัดไป" แก้ → คนแก้ไม่ได้อยู่กะเดียวกับงานเดิม จึงไม่ต้องเช็กว่ากะเริ่มหรือยัง
@@ -1974,6 +2015,8 @@
           reviewer:null, review_note:null, reviewed_at:null, needs_mgr: wantMgr };
     // ★ ไม่แนบรูปมา = ไม่แตะรูปเดิม (เดิมเขียน null ทับ ทำให้รูปหลักฐานหายถาวร)
     if(urls.length){ upd.photos = urls; upd.photo_url = urls[0]; }
+    // ★ ส่งงานแล้ว → ล้างร่าง (รูปถูกย้ายไปอยู่ใน photos แล้ว)
+    upd.draft_photos=null; upd.draft_note=null; upd.draft_by=null; upd.draft_at=null;
     if(isFix){
       // เก็บ "รูปก่อนแก้ไข" เป็นประวัติ (ก่อนเขียนทับด้วยชุดใหม่) — โชว์ในรายงานรับส่งผลัด
       const snap=Array.isArray(row.photos)?row.photos:(row.photo_url?[row.photo_url]:[]);
@@ -3268,6 +3311,6 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
