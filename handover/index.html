@@ -103,6 +103,8 @@
       <button class="imgbtn" id="bMenu2" style="position:relative"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"><span id="spBadge" style="display:none;position:absolute;top:8px;right:10px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;min-width:24px;height:24px;line-height:24px;border-radius:999px;padding:0 7px;box-shadow:0 2px 6px rgba(0,0,0,.3)">0</span></button>
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
       <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
+      <!-- ★ ส่งผลัด — ย้ายมาไว้หน้าแรก ให้หัวหน้าผลัดเห็นทันทีไม่ต้องเข้าเมนูย่อย -->
+      <div id="hoSendCard" style="margin-top:10px"></div>
       <!-- ★ 15 ก.ย. 69 — ย้ายเข้าไปอยู่ในงาน "รับสินค้าจาก DC / Supplier" ของแต่ละผลัดแล้ว -->
       <button class="btn btn-sec" id="bNotify" style="width:100%;margin-top:4px;display:none"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg> เปิดแจ้งเตือนงานบนมือถือนี้</button>
     </div>
@@ -688,6 +690,7 @@ $('goBtn').onclick=async()=>{
     refreshGoodsBtn();       // แสดงปุ่มรับสินค้าเฉพาะผู้คุมผลัด / ปุ่มกดรับตอนยังว่าง
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"
     refreshCoCard();         // การ์ดเตือนกดออก/ควบกะ
+    refreshSendCard();       // ★ การ์ดส่งผลัด (หัวหน้าผลัดกดยืนยันงานพร้อมให้ตรวจ)
     if(window.refreshNotifyBtn) window.refreshNotifyBtn();
     // ★ ลิงก์ตรงจากการ์ด LINE — ?go=review เปิดหน้า "ตรวจรับผลัด" ให้ทันที
     try{
@@ -705,7 +708,7 @@ $('changeBtn').onclick=()=>{
 
 // ============ เมนู 1: หัวหน้าผลัด ============
 $('bMenu1').onclick=openM1;
-$('l_back').onclick=()=>show('step_menu');
+$('l_back').onclick=()=>{ show('step_menu'); refreshSendCard(); };
 async function openM1(){
   show('step_m1'); $('m1_panel').classList.add('hide');
   $('m1_gate').innerHTML='<div class="card muted">กำลังโหลด…</div>';
@@ -774,6 +777,15 @@ function wireCloseTask(){
   }; });
 }
 // ★ ปุ่มส่งผลัด — ยืนยันด้วยรหัสหัวหน้าผลัดเท่านั้น
+// ★ การ์ดส่งผลัดบนหน้าแรก — โหลดสถานะแล้ววาดใหม่ทุกครั้งที่กลับมาหน้าเมนู
+async function refreshSendCard(){
+  var box=$('hoSendCard'); if(!box) return;
+  try{ SS_STATE=await window.HR.shiftSubmitState(EMP.emp_id);
+       IS_LEAD=!!(SS_STATE&&SS_STATE.is_lead); SHIFT_SENT=!!(SS_STATE&&SS_STATE.submitted);
+  }catch(e){ SS_STATE=null; IS_LEAD=false; SHIFT_SENT=false; }
+  box.innerHTML=shiftSendHTML(SS_STATE);
+  wireShiftSend();
+}
 function wireShiftSend(){
   var b=$('bShiftSend'); if(!b) return;
   b.onclick=async function(){
@@ -789,7 +801,7 @@ function wireShiftSend(){
       var r=await window.HR.shiftSubmit({ empId:EMP.emp_id, confirmEmpId:String(code).trim() });
       toast('ok', r.line_sent ? 'ส่งผลัดแล้ว — รายงานเข้าไลน์กลุ่มเรียบร้อย'
         : 'ส่งผลัดแล้ว (ส่งไลน์ไม่สำเร็จ ให้แจ้ง ผจก.)');
-      openLeaderPanel();
+      refreshSendCard();
     }catch(e){ b.disabled=false; b.textContent='ส่งผลัด · ยืนยันงานพร้อมให้ตรวจ'; toast('err',(e.message||'ไม่สำเร็จ')); }
   };
 }
@@ -835,9 +847,6 @@ async function openLeaderPanel(){
       return stepSection('lg',gp[0],stepLabel(gp[0]),'มอบแล้ว '+got+'/'+tot,
         gp[1].map(_defCard).join(''), got>=tot);
     }).join('');
-  // ★ แถบส่งผลัด ต่อท้ายรายการงาน
-  $('l_board').innerHTML += shiftSendHTML(SS_STATE);
-  wireShiftSend();
   wireCloseTask();
   document.querySelectorAll('[data-give]').forEach(btn=>btn.onclick=async()=>{
     const def=Number(btn.dataset.give), to=($('lg_'+def)||{}).value; if(!to){ toast('err','เลือกคนก่อน'); return; }
@@ -863,7 +872,7 @@ $('l_addbtn').onclick=async()=>{
 
 // ============ เมนู 2: งานที่ได้รับมอบหมาย ============
 $('bMenu2').onclick=openM2;
-$('my_back').onclick=()=>show('step_menu');
+$('my_back').onclick=()=>{ show('step_menu'); refreshSendCard(); };
 async function openM2(){
   show('step_m2'); $('my_nm').textContent=EMP.nickname||EMP.name;
   $('my_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';

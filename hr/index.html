@@ -579,6 +579,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_leaves"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9z"/><path d="M12 12v7a2 2 0 0 0 4 0"/></svg></span>ลา & วันหยุด</button>
   <button class="tab" id="tab_schedule"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span>ตารางงาน</button>
   <button class="tab" id="tab_attnedit"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>ปรับปรุงเวลา</button>
+  <button class="tab" id="tab_shiftexit"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h9"/></svg></span>ส่งผลัด &amp; ออกงานฉุกเฉิน</button>
   <button class="tab" id="tab_branches"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg></span>สาขา</button>
   <button class="tab" id="tab_goods"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8v13"/><path d="M12 8S10.5 4 8.5 4a2 2 0 0 0 0 4zM12 8s1.5-4 3.5-4a2 2 0 0 1 0 4z"/></svg></span>รับสินค้า</button>
   <button class="tab" id="tab_manual"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg></span>คู่มือ</button>
@@ -718,7 +719,6 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 
   <div class="shpan" id="mtpan_review" style="display:none">
     <div id="mt_closed" style="margin-bottom:14px"></div>
-    <div id="mt_exit" style="margin-bottom:14px"></div>
     <div id="mt_intask" style="margin-bottom:14px"></div>
     <div id="mt_fixing" style="margin-bottom:14px"></div>
   </div>
@@ -2518,6 +2518,10 @@ function mrNav(d){
 </div>
 
 <!-- สรุปลงเวลา (แก้ไขได้) -->
+<div id="view_shiftexit" class="container" style="display:none">
+  <div id="mt_exit"></div>
+</div>
+
 <div id="view_attnedit" class="container" style="display:none">
   <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h3 style="flex:1;font-size:15px;font-weight:600;min-width:130px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> ปรับปรุงเวลา</h3>
@@ -3114,7 +3118,7 @@ let pwd = sessionStorage.getItem('hr_pwd') || '';
 let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 // ตัวช่วยยืนยันตัวตนสำหรับ edge functions: HR ใช้รหัสผ่าน · ผจก. ใช้รหัสพนักงาน + PIN
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','discipline','terminate','advance','rider'];
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -10701,7 +10705,7 @@ function showMtView(which){
   if(A) A.style.display = which==='assigned'?'block':'none';
   const bar=$('mtsub'); if(bar) bar.querySelectorAll('[data-mtpan]').forEach(b=>b.classList.toggle('on', b.dataset.mtpan===which));
   if(which==='assigned') loadMtasks();
-  else if(which==='review'){ loadClosedTasks(); loadExitOverrides(); loadMtaskIntask(); loadMtaskFixing(); }
+  else if(which==='review'){ loadClosedTasks(); loadMtaskIntask(); loadMtaskFixing(); }
   else if(which==='daily') loadMdaily();
 }
 // ===================================================================
@@ -11169,7 +11173,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
+const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -11198,6 +11202,7 @@ showTab = function(name){
   else if(name==='lineFeed'){ loadLineFeed(); }
   else if(name==='exams'){ loadExams(); }
   else if(name==='attnedit'){ loadAttnEdit(); }
+  else if(name==='shiftexit'){ loadExitOverrides(); }
   else if(name==='salesDash'){ loadSalesDash(); }
   else if(name==='auditDash'){ qsInit(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
@@ -12159,7 +12164,7 @@ const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','taskset','special','qa','shelf','exams','lineFeed'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','attnedit','schedule','leaves'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','attnedit','shiftexit','schedule','leaves'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg>', label:'ไรเดอร์',     tabs:['rider'] },
