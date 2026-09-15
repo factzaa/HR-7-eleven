@@ -860,7 +860,9 @@
 
   // ---------- พนักงานกรอกข้อมูลตัวเอง + อัปเอกสาร (รอ HR อนุมัติ) ----------
   async function lookupEmployee(empId) {
-    const { data } = await sb.from('employees').select('emp_id,name,nickname,active,branch_id,default_shift').eq('emp_id', empId).maybeSingle();
+    // ★ แก้ 15 ก.ย. 69 — ต้องมี is_manager ด้วย ไม่งั้นโค้ดที่เช็ก emp.is_manager ไม่เคยทำงาน
+    //   (ทำให้ ผจก. เปิดหน้ารับส่งผลัดแล้วไม่เห็นงานของตัวเอง)
+    const { data } = await sb.from('employees').select('emp_id,name,nickname,active,branch_id,default_shift,is_manager').eq('emp_id', empId).maybeSingle();
     return data || null;
   }
   // ★ ดึงข้อมูลที่เคยกรอกไว้ มาแสดงในฟอร์ม (แก้ไขต่อได้ ไม่ต้องพิมพ์ใหม่ทั้งหมด)
@@ -1515,6 +1517,19 @@
       return out;
     }catch(e){ return []; }
   }
+  // ★ ผลัดหลัก (เช้า/บ่าย/ดึก) ที่ช่วงเวลาทับกับกะของพนักงานคนนี้
+  //   ใช้ให้ ผจก. เห็นงานของตัวเองที่ถูกเก็บไว้ใต้ผลัดเช้า/บ่าย ไม่ใช่กะ MNG
+  async function _mainGroupsOverlapping(empShiftId){
+    try{
+      const { data: shs } = await sb.from('shifts').select('shift_id,start_time,end_time,main_shift,report_shift');
+      if(!shs || !shs.length) return [];
+      const by={}; shs.forEach(x=>{ by[x.shift_id]=x; });
+      const mine=_span(by[empShiftId]); if(!mine) return [];
+      const hasRS = shs.some(x=>x.report_shift===true);
+      const mains = shs.filter(x=> hasRS ? (x.report_shift===true) : (x.main_shift && x.main_shift===x.shift_id));
+      return mains.filter(m=> m.shift_id!==empShiftId && _overlap(mine, _span(m))).map(m=>m.shift_id);
+    }catch(e){ return []; }
+  }
   // งานที่ติ๊ก "ผจก. รับผิดชอบ" → มอบให้ ผจก. ของสาขานั้นอัตโนมัติ (ถ้ายังไม่มีคนถือ)
   async function _autoAssignMgr(defs, branch, workDate, group){
     try{
@@ -1627,7 +1642,7 @@
     const today = _ctx.workDate;
     const branch = _ctx.branch;
     _assertHasShift(shift);
-    await _assertShiftStarted(shift, today);
+    await _assertShiftStarted(shift, today, emp);
     await _assertPrevShiftDone(branch, shift, today);
     let photo_url = null;
     if (photo) photo_url = await uploadPhoto('employee-docs', 'task/' + (branch || 'x') + '_' + task_def_id + '_' + Date.now() + '.jpg', photo);
@@ -1650,7 +1665,7 @@
     const today = _ctx.workDate;
     const branch = _ctx.branch;
     _assertHasShift(shift);
-    await _assertShiftStarted(shift, today);
+    await _assertShiftStarted(shift, today, by);
     await _assertPrevShiftDone(branch, shift, today);
     const existing = await _findAsg(branch, today, shift, task_def_id);
     _assertNotDone(existing);   // ★ งานที่ส่ง/ตรวจผ่านแล้ว เปลี่ยนคนทำไม่ได้ — กันรูปหลักฐานหาย
@@ -1766,8 +1781,19 @@
       throw new Error('ยังไม่มีกะของวันนี้ — ให้ผู้จัดการจัดตารางเวร หรือหัวหน้าผลัดใช้ "เพิ่มเข้ากะ" ก่อน จึงจะบันทึกงานได้ (งานที่ไม่มีกะจะไม่เข้าระบบตรวจรับผลัด ทำให้คนตรวจมองไม่เห็น)');
   }
   // กฎ 2: ถึงเวลาเข้ากะหรือยัง (ห้ามทำ/แจกงานก่อนเวลาเข้ากะ)
-  async function _assertShiftStarted(group, workDate){
+  async function _assertShiftStarted(group, workDate, emp){
     if(!(await _guardOn('guard_shift_start'))) return;
+    // ★ ผจก. เข้ากะ 08:00–20:00 คาบทั้งผลัดเช้าและบ่าย — งานที่ระบบมอบให้ ผจก.
+    //   ไม่ควรถูกบล็อกเพราะ "ผลัดบ่ายยังไม่เริ่ม" ในเมื่อ ผจก. เข้างานอยู่แล้ว
+    if(emp && emp.is_manager){
+      try{
+        const _mine=(await _schedOne(emp.emp_id, workDate) || {}).shift_id || emp.default_shift;
+        if(_mine){
+          const { data: _s2 } = await sb.from('shifts').select('start_time').eq('shift_id',_mine).maybeSingle();
+          if(_s2 && _s2.start_time && bangkokDate() >= workDate && _nowBkkMin() >= _hm2m(_s2.start_time)) return;
+        }
+      }catch(_e){}
+    }
     const sh=(await sb.from('shifts').select('start_time,name').eq('shift_id',group).maybeSingle()).data;
     if(!sh || !sh.start_time) return;                 // ไม่รู้เวลาเข้ากะ = ไม่บล็อก
     const today=bangkokDate();
@@ -1852,8 +1878,21 @@
     // ★ ผจก. — งานที่ระบบมอบให้ ผจก. ถูกเก็บไว้ใต้ผลัดเช้า/บ่าย ไม่ใช่กะ MNG
     //   จึงต้องดึงงานของตัวเองข้ามผลัดมารวมใน "งานของฉัน" ด้วย
     let mine=asg.filter(a=>a.emp_id===emp.emp_id);
+    // ★ แก้ 15 ก.ย. 69 — ผจก. มีกะของตัวเอง (MNG) แต่งานที่ติ๊ก "ผจก.รับผิดชอบ" ถูกเก็บไว้ใต้ผลัดเช้า/บ่าย
+    //   เดิม: รอให้พนักงานผลัดนั้นเปิดแอปก่อน ระบบถึงจะสร้างงานให้ และ ผจก. ก็ยังหาไม่เจออยู่ดี
+    //   ตอนนี้: ผจก. เปิดหน้าเองแล้วระบบสร้าง+ดึงงานของทุกผลัดที่เวลาทับกับกะ ผจก. มาให้เลย
+    let mgrExtraDefs = [];
     if(emp.is_manager){
       try{
+        const _selfShift = (await _schedOne(emp.emp_id, today) || {}).shift_id || emp.default_shift || shift;
+        const _groups = await _mainGroupsOverlapping(_selfShift);
+        for(const g of _groups){
+          try{
+            const gd = await _taskDefsFor(branch, today, g);
+            await _autoAssignMgr(gd || [], branch, today, g);
+            (gd || []).forEach(d=>{ if(d && d.mgr_owner) mgrExtraDefs.push(d); });
+          }catch(_e){}
+        }
         const {data:extra}=await sb.from('task_assignments').select('*')
           .eq('branch_id',branch||'').eq('work_date',today).eq('emp_id',emp.emp_id);
         const seen={}; mine.forEach(a=>{ seen[a.id]=1; });
@@ -1863,6 +1902,7 @@
     let details=defs.map(_defBrief);
     if(emp.is_manager){
       const known={}; details.forEach(d=>{ known[d.id]=1; });
+      mgrExtraDefs.forEach(d=>{ if(!known[d.id]){ known[d.id]=1; details.push(_defBrief(d)); } });
       const need=[...new Set(mine.map(a=>a.task_def_id).filter(id=>id&&!known[id]))];
       if(need.length){
         try{ const {data:ex}=await sb.from('task_defs').select('*').in('id',need);
@@ -1881,7 +1921,7 @@
     const def=(await sb.from('task_defs').select('*').eq('id',task_def_id).maybeSingle()).data; if(!def) throw new Error('ไม่พบงานนี้');
     const {workDate:today,group:shift,branch}=await _shiftCtx(emp);
     _assertHasShift(shift);
-    await _assertShiftStarted(shift, today);
+    await _assertShiftStarted(shift, today, emp);
     await _assertPrevShiftDone(branch, shift, today);
     const existing=await _findAsg(branch,today,shift,task_def_id);
     const base={ emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, status:'todo', photos:null, photo_url:null, emp_note:null, submitted_at:null, reviewer:null, review_note:null, reviewed_at:null };
@@ -1893,7 +1933,8 @@
     const row=(await sb.from('task_assignments').select('*').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
     // งานที่ ผจก.ตีกลับให้ "ผู้ตรวจของผลัดถัดไป" แก้ → คนแก้ไม่ได้อยู่กะเดียวกับงานเดิม จึงไม่ต้องเช็กว่ากะเริ่มหรือยัง
     const isFix = !!(row.fix_emp && !row.fix_done_at && row.status==='sent_back');
-    if(!isFix) await _assertShiftStarted(row.shift_id, row.work_date);
+    const _subEmp = empId ? await lookupEmployee(empId) : null;
+    if(!isFix) await _assertShiftStarted(row.shift_id, row.work_date, _subEmp);
     const def=(await sb.from('task_defs').select('min_photos,mgr_review,need_review').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
     // needs_mgr = งานติ๊ก "ผจก.ตรวจ" และกะนั้นเป็นกะที่ ผจก.ตรวจ (บางกะ เช่นดึก ไม่อยู่ในเวลา ผจก.)
