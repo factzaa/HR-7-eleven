@@ -11513,6 +11513,7 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 // ============================================================
 const TS = { rows:[], ov:{}, dates:{}, branches:[], role:'hr', branch:'', month:'', open:{} };
 const TS_DOW = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+const TS_QSS=[['','ไม่ใช้'],['1','ตารางที่ 1 · QA สินค้า'],['2','ตารางที่ 2 · ความสะอาดพื้นที่'],['3','ตารางที่ 3 · ความสะอาดอุปกรณ์'],['4','ตารางที่ 4 · การสั่งสินค้า']];
 const TS_STEPS = {1:'เตรียมความพร้อมก่อนรับผลัด',2:'การรับผลัด',3:'ดำเนินการขายและให้บริการ',4:'การจัดการสินค้า',5:'การจัดการคุณภาพสินค้าอาหารและเครื่องดื่ม (QA)',6:'Shift Survey ตรวจสอบเงินสดระหว่างผลัด',7:'การปิดผลัดและส่งผลัด',8:'On-line ข้อมูลการขายและส่งเอกสารสิ้นวัน',9:'การนำเงินฝากธนาคาร'};
 const TS_WHEN  = {1:'ก่อนเวลาเริ่มกะ 30 นาที',2:'นาทีแรกของกะ',3:'ตลอดกะ',4:'ตลอดกะ ตามรอบของแต่ละงาน',5:'ตามรอบของแต่ละผลัด',6:'อย่างน้อย 1 รอบต่อกะ',7:'ท้ายกะ',8:'ผลัดดึก ก่อนสว่าง',9:'ผลัดเช้า / ผู้จัดการ'};
 const TS_QN = {S:'S บริการ',A:'A สินค้า',V:'V ป้าย/สื่อ',E:'E สะดวกปลอดภัย',Q:'Q คุณภาพ',C:'C ความสะอาด',QMS:'QMS เอกสาร',PR:'Process'};
@@ -11858,7 +11859,9 @@ function tsPanel(d){
       + '<label style="font-size:12px">หมวด QSSI</label><select id="ts_q_'+d.id+'" style="padding:6px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:12.5px"><option value="">ไม่ระบุ</option>'+qopt+'</select>'
       + '<label style="font-size:12px">ลำดับ</label><input type="number" id="ts_sort_'+d.id+'" value="'+(d.sort||0)+'" style="width:70px;padding:6px;border:1.5px solid var(--line2);border-radius:8px;text-align:center">'
       + '<label style="font-size:12px">ลิงก์ระบบ</label><input type="text" id="ts_link_'+d.id+'" value="'+esc(d.link_kind||'')+'" placeholder="QA / Shelf / รับสินค้า" style="width:130px;padding:6px;border:1.5px solid var(--line2);border-radius:8px">'
+      + '<label style="font-size:12px">ตารางอ้างอิง</label><select id="ts_qss_'+d.id+'" style="padding:6px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:12.5px">'+TS_QSS.map(function(o){ return '<option value="'+o[0]+'"'+(String(d.qss_table||'')===String(o[0])?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select>'
       + '</div>'
+      + '<div style="font-size:11.5px;color:var(--muted);margin:-4px 0 8px">ถ้าเลือกตารางอ้างอิงไว้ พนักงานจะเห็นปุ่มกดดูรายการที่ต้องทำของผลัดตัวเองในหน้ารับส่งผลัด</div>'
       + '<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--muted);margin-bottom:3px">อ้างอิงคู่มือ</div>'
       + '<input type="text" id="ts_ref_'+d.id+'" value="'+esc(d.source_ref||'')+'" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:12.5px;box-sizing:border-box"></div>';
     h+= ta('ts_how_'+d.id,'วิธีทำ (บรรทัดละข้อ)', d.how_to, 6)
@@ -12009,6 +12012,7 @@ function tsWire(){
     const data={ id,
       title:$('ts_title_'+id).value.trim(), step:$('ts_step_'+id).value, qssi_cat:$('ts_q_'+id).value,
       sort:$('ts_sort_'+id).value, link_kind:$('ts_link_'+id).value, source_ref:$('ts_ref_'+id).value,
+      qss_table:$('ts_qss_'+id).value,
       how_to:$('ts_how_'+id).value, criteria:$('ts_cr_'+id).value, photo_hint:$('ts_ph_'+id).value,
       min_photos:$('ts_mp_'+id).value, mgr_review:$('ts_mgr_'+id).checked, who_label:$('ts_who_'+id).value };
     if(!data.title){ toast('err','ต้องมีชื่องาน'); return; }
@@ -12017,6 +12021,7 @@ function tsWire(){
     const d=TS.rows.filter(x=>x.id===id)[0];
     if(d) Object.assign(d,{ title:data.title, step:(data.step===''?null:Number(data.step)), qssi_cat:data.qssi_cat||null,
       sort:Number(data.sort)||0, link_kind:data.link_kind||null, source_ref:data.source_ref||null,
+      qss_table:(data.qss_table===''?null:Number(data.qss_table)),
       how_to:data.how_to, criteria:data.criteria, photo_hint:data.photo_hint,
       min_photos:Number(data.min_photos)||0, mgr_review:data.mgr_review, who_label:data.who_label });
     toast('ok','บันทึกเนื้อหาแล้ว'); tsRender();

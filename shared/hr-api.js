@@ -4892,6 +4892,7 @@
     if ('per_employee' in d) row.per_employee = !!d.per_employee;
     if ('mgr_owner' in d)    row.mgr_owner    = !!d.mgr_owner;   // ★ ผจก. รับผิดชอบงานนี้ (ระบบมอบให้อัตโนมัติ)
     if ('auto_day' in d)     row.auto_day     = (d.auto_day === 'random_scheduled') ? 'random_scheduled' : null;
+    if ('qss_table' in d)    row.qss_table    = (d.qss_table === '' || d.qss_table == null) ? null : Number(d.qss_table);
     if ('sort' in d)         row.sort         = Number(d.sort) || 0;
     if ('step' in d)         row.step         = (d.step === '' || d.step == null) ? null : Number(d.step);
     if ('min_photos' in d)   { const mp = Math.max(0, Number(d.min_photos) || 0); row.min_photos = mp; row.require_photo = mp > 0; }

@@ -649,7 +649,7 @@ let LBOARD=null;
 async function openLeaderPanel(){
   $('m1_panel').classList.remove('hide');
   $('l_board').innerHTML='<div class="card muted">กำลังโหลด…</div>';
-  let b; try{ b=await window.HR.getShiftBoard(EMP.emp_id, null); LBOARD=b; }catch(e){ $('l_board').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
+  let b; try{ b=await window.HR.getShiftBoard(EMP.emp_id, null); LBOARD=b; window.CUR_SHIFT=b.shift||''; }catch(e){ $('l_board').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   const inShift=new Set((b.members||[]).map(m=>m.emp_id));
   populateAddList();
   const memOpts=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'">'+esc(m.name)+'</option>').join('');
@@ -733,6 +733,7 @@ async function openM2(){
   // ===== งานตามกะ =====
   if(r){
   window.TASK_DET={}; (r.details||[]).forEach(function(d){ window.TASK_DET[d.id]=d; });
+  window.CUR_SHIFT=r.shift||'';
   window.MY_SHELVES=r.my_shelves||[]; window.AUTO_PICKS=r.auto_picks||{};
   html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3>';
   if(!r.mine.length) html+='<div class="card muted">ยังไม่มีงานที่มอบหมายให้คุณ</div>';
@@ -1535,6 +1536,68 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
 </script>
 <script>
 // รายละเอียดปฏิบัติ / เกณฑ์การตรวจสอบ / วิธีถ่ายรูป (พับไว้ กดดูได้)
+// ===== ตารางอ้างอิง QSS Standard — ปุ่มกดดูรายการเฉพาะผลัดของงานนั้น =====
+var QSS_TBL={1:{t:'รายการสินค้าที่ต้อง QA',s:'ตารางที่ 1'},
+             2:{t:'จุดที่ต้องทำความสะอาด',s:'ตารางที่ 2'},
+             3:{t:'อุปกรณ์ที่ต้องทำความสะอาด',s:'ตารางที่ 3'},
+             4:{t:'กลุ่มสินค้าที่ต้องสั่ง',s:'ตารางที่ 4'}};
+var QSS_SHN={M:'ผลัดเช้า',A:'ผลัดบ่าย',N:'ผลัดดึก',MNG:'ผู้จัดการร้าน'};
+function qssShift(){ return String(window.CUR_SHIFT||'').toUpperCase(); }
+function qssBtnHTML(d){
+  var t=Number(d&&d.qss_table||0); if(!t||!QSS_TBL[t]) return '';
+  var sh=qssShift(), shn=QSS_SHN[sh]||'';
+  var box='qss_'+d.id+'_'+Math.floor(Math.random()*100000);
+  return '<div style="margin:6px 0 2px">'
+    +'<button type="button" class="btn btn-sec btn-sm" style="font-size:12px" '
+    +'data-qss="'+t+'" data-qssbox="'+box+'" data-qsssh="'+esc(sh)+'">'
+    +'<svg class="ei" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg> '
+    +esc(QSS_TBL[t].t)+(shn?(' \u00b7 '+esc(shn)):'')+'</button>'
+    +'<div id="'+box+'" style="display:none;margin-top:6px"></div></div>';
+}
+function qssRenderHTML(t,sh,r){
+  var meta=QSS_TBL[t]||{t:'ตารางอ้างอิง',s:''}, shn=QSS_SHN[sh]||'';
+  var h='<div style="font-size:12.5px;line-height:1.7;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:9px">'
+    +'<div style="font-weight:700;margin-bottom:2px">'+esc(meta.t)+(shn?(' — '+esc(shn)):'')+'</div>'
+    +'<div class="muted" style="font-size:11.5px;margin-bottom:6px">'+esc(meta.s)+' QSS Standard \u00b7 '+r.total+' รายการ</div>';
+  if(!r.total){
+    h+='<div style="color:#b45309">ตารางอ้างอิงไม่ได้กำหนดรายการของผลัดนี้ไว้</div>'
+      +'<button type="button" class="btn btn-sec btn-sm" style="font-size:11.5px;margin-top:6px" '
+      +'data-qss="'+t+'" data-qssbox="'+esc(r._box||'')+'" data-qsssh="">ดูทั้งตาราง ('+(r.all_total||0)+' รายการ)</button>';
+    return h+'</div>';
+  }
+  (r.groups||[]).forEach(function(g){
+    if(g.section_label) h+='<div style="font-weight:700;color:#0f766e;margin:8px 0 2px">'+esc(g.section_label)+'</div>';
+    if(g.grp) h+='<div style="font-weight:600;margin:5px 0 1px">'+esc(g.grp)+'</div>';
+    g.items.forEach(function(it){
+      h+='<div style="padding:5px 0;border-top:1px solid var(--line)">'
+        +'<div><span class="muted" style="font-size:11.5px">'+esc(it.code)+'</span> '+esc(it.name)
+        +(it.cycle?(' <span class="muted" style="font-size:11px">\u00b7 '+esc(it.cycle)+'</span>'):'')+'</div>'
+        +'<div style="font-size:11.5px;color:#475569;margin-top:1px">'
+        +(it.freq?esc(it.freq):'')+(it.roles?(' \u00b7 '+esc(it.roles)):'')+'</div>'
+        +(it.note?('<div style="font-size:11.5px;color:#64748b;margin-top:1px">'+esc(it.note)+'</div>'):'')
+        +'</div>';
+    });
+  });
+  h+='<div class="muted" style="font-size:11px;margin-top:8px">อ้างอิงคู่มือมาตรฐาน QSS Standard \u2014 ใช้ภายในร้านเท่านั้น</div>';
+  return h+'</div>';
+}
+var QSS_DONE={};
+document.addEventListener('click', function(ev){
+  var b=ev.target.closest && ev.target.closest('[data-qss]'); if(!b) return;
+  var t=Number(b.getAttribute('data-qss')||0), box=b.getAttribute('data-qssbox')||'';
+  var sh=b.getAttribute('data-qsssh')||'';
+  var el=document.getElementById(box); if(!el) return;
+  var key=t+'|'+sh;
+  if(QSS_DONE[box]===key && el.style.display!=='none'){ el.style.display='none'; return; }
+  el.style.display='block';
+  if(QSS_DONE[box]===key) return;
+  el.innerHTML='<div class="muted" style="font-size:12px">กำลังโหลดตารางอ้างอิง…</div>';
+  window.HR.qssRef({ table_no:t, shift:sh }).then(function(r){
+    r._box=box; el.innerHTML=qssRenderHTML(t,sh,r); QSS_DONE[box]=key;
+  }).catch(function(e){
+    el.innerHTML='<div style="color:#b91c1c;font-size:12px">โหลดตารางอ้างอิงไม่ได้: '+esc(e.message||'')+'</div>';
+  });
+});
 function taskDetailHTML(d,opts){
   if(!d) return '';
   opts=opts||{};
@@ -1564,6 +1627,8 @@ function taskDetailHTML(d,opts){
       + '<div style="color:#6d28d9;margin-top:3px">'+(String(d.freq||'')==='monthly'?'ทำ 1 ครั้งต่อเดือน':'ทำ 1 ครั้งต่อสัปดาห์')+' — ทำไม่ทันวันที่สุ่ม ยังทำต่อได้จนจบรอบ</div>'
       + '</div>';
   }
+  // ★ ตารางอ้างอิง QSS — กดดูรายการที่ต้องทำเฉพาะผลัดนี้
+  extra += qssBtnHTML(d);
   if(!d.how_to && !d.criteria && !d.photo_hint) return extra;
   var li=function(t){ return String(t||'').split('\n').filter(function(x){return x.trim();})
     .map(function(x){ return '<li>'+esc(x.replace(/^\u2022\s*/,''))+'</li>'; }).join(''); };

@@ -1464,7 +1464,8 @@
       who_label: d.who_label || '', qssi_cat: d.qssi_cat || '', step: (d.step == null ? null : d.step), freq: d.freq || 'daily',
       need_review: d.need_review !== false, flex_report: !!d.flex_report,
       link_kind: d.link_kind || '', per_employee: !!d.per_employee, auto_day: d.auto_day || '',
-      mgr_owner: !!d.mgr_owner };
+      mgr_owner: !!d.mgr_owner,
+      qss_table: (d.qss_table == null ? null : Number(d.qss_table)) };
   }
 
   // ============================================================
@@ -2252,6 +2253,28 @@
     const isMine = !!(asg && asg.emp_id === emp.emp_id);
     return { emp, branch, workDate, shift, def, asg, lead, isLead,
       canEdit: !!(def && (isMine || isLead || emp.is_manager)) };
+  }
+  // ===== ตารางอ้างอิง QSS Standard (อ่านอย่างเดียว) =====
+  const _QSS_CACHE = {};
+  async function qssRef({ table_no, shift }){
+    const t = Number(table_no||0);
+    if(!t) return { table_no:0, shift:shift||'', groups:[], total:0 };
+    if(!_QSS_CACHE[t]){
+      const { data, error } = await sb.from('qss_ref').select('*').eq('table_no', t).order('sort');
+      if(error) throw error;
+      _QSS_CACHE[t] = data || [];
+    }
+    const all = _QSS_CACHE[t];
+    const sh = String(shift||'').toUpperCase();
+    const rows = sh ? all.filter(r => (r.shifts||[]).indexOf(sh) >= 0) : all.slice();
+    // จัดกลุ่มตาม section แล้วตาม grp เพื่อให้หน้าเว็บวาดได้เลย
+    const order = [], byKey = {};
+    rows.forEach(function(r){
+      const k = String(r.section||'') + '||' + String(r.grp||'');
+      if(!byKey[k]){ byKey[k] = { section:r.section||'', section_label:r.section_label||'', grp:r.grp||'', items:[] }; order.push(k); }
+      byKey[k].items.push({ code:r.code||'', name:r.name||'', roles:r.roles||'', freq:r.freq||'', cycle:r.cycle||'', note:r.note||'' });
+    });
+    return { table_no:t, shift:sh, total:rows.length, all_total:all.length, groups:order.map(function(k){ return byKey[k]; }) };
   }
   async function getGoodsReceiving(empId){
     const c = await _goodsCtx(empId);
@@ -3311,6 +3334,6 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
