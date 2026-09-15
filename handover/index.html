@@ -103,7 +103,7 @@
       <button class="imgbtn" id="bMenu2" style="position:relative"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"><span id="spBadge" style="display:none;position:absolute;top:8px;right:10px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;min-width:24px;height:24px;line-height:24px;border-radius:999px;padding:0 7px;box-shadow:0 2px 6px rgba(0,0,0,.3)">0</span></button>
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
       <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
-      <button class="btn btn-pri" id="bGoods" style="width:100%;margin-top:4px;display:none"> รับสินค้าจากคลัง (ผู้คุมผลัด)</button>
+      <!-- ★ 15 ก.ย. 69 — ย้ายเข้าไปอยู่ในงาน "รับสินค้าจาก DC / Supplier" ของแต่ละผลัดแล้ว -->
       <button class="btn btn-sec" id="bNotify" style="width:100%;margin-top:4px;display:none"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg> เปิดแจ้งเตือนงานบนมือถือนี้</button>
     </div>
 
@@ -725,6 +725,13 @@ async function openM2(){
     if(isEdit){ c+=flowStepsHTML(a); }
     if(!canDo) c+=flowStepsHTML(a)+thumbsHtml(a.photos);
     if(!canDo&&a.emp_note) c+='<div class="muted" style="margin-top:6px">หมายเหตุ: '+esc(a.emp_note)+'</div>';
+    // ★ 15 ก.ย. 69 — งานที่ผูกกับระบบรับสินค้า ใช้หน้าบันทึกรับสินค้าแทนการ์ดถ่ายรูปปกติ
+    const _lk = String(((window.TASK_DET||{})[a.task_def_id]||{}).link_kind||'');
+    if(_lk === 'รับสินค้า'){
+      c+='<div class="muted" style="font-size:12.5px;margin:4px 0 8px">บันทึกใบรับสินค้าแต่ละคลัง แล้วกดยืนยันปิดงานที่หน้ารับสินค้า — รูปจากใบรับจะแนบเป็นหลักฐานให้อัตโนมัติ ถ้าผลัดนี้ไม่มีของส่ง ติ๊ก "ไม่มีสินค้าจัดส่ง" เพื่อปิดงานได้</div>'
+        +'<button class="btn btn-pri" data-goods="1" style="width:100%">'+(canDo?'เปิดบันทึกรับสินค้า':'ดูใบรับสินค้าของผลัดนี้')+'</button>';
+      return c+'</div>';
+    }
     if(canDo){
       c+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
         +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="mfc_'+a.id+'" style="display:none"></label>'
@@ -801,6 +808,7 @@ async function openM2(){
       try{ const photos = TASK_PHOTOS[id]||[]; await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); await wipDel('t:'+_dkey(id)); toast('ok','ส่งงานแล้ว'); openM2(); }
       catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงาน'; b.disabled=false; }
     });
+    document.querySelectorAll('[data-goods]').forEach(b=>b.onclick=()=>{ GD_FROM_TASK=true; openGoods(); });
     document.querySelectorAll('[data-pull]').forEach(b=>b.onclick=async()=>{
       try{ await window.HR.pullTask({ empId:EMP.emp_id, task_def_id:Number(b.dataset.pull) }); toast('ok','ดึงงานมาเป็นของคุณแล้ว'); openM2(); }
       catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
@@ -1234,12 +1242,12 @@ async function mkSend(){
 }
 
 // ============ รับสินค้า (ผู้คุมผลัด) ============
-let GOODS=null, GD_EDIT=null, GD_PHOTOS=[];
-$('bGoods').onclick=openGoods;
-$('gd_back').onclick=()=>{ show('step_menu'); refreshGoodsBtn(); };
+let GOODS=null, GD_EDIT=null, GD_PHOTOS=[], GD_FROM_TASK=false;
+if($('bGoods')) $('bGoods').onclick=openGoods;   // ★ ปุ่มเมนูหลักถูกถอดออกแล้ว — เข้าผ่านการ์ดงานในผลัด
+$('gd_back').onclick=()=>{ if(GD_FROM_TASK){ GD_FROM_TASK=false; openM2(); } else show('step_menu'); };
 // แสดงปุ่ม "รับสินค้า" เฉพาะผู้คุมผลัดของสาขาวันนี้ · ถ้ายังไม่มีผู้คุม → ปุ่ม "กดรับเป็นผู้คุมผลัด" · ถ้าคนอื่นเป็นผู้คุมแล้ว → ซ่อน
 async function refreshGoodsBtn(){
-  const b=$('bGoods'); if(!b) return; b.style.display='none';
+  const b=$('bGoods'); if(!b) return; b.style.display='none'; return;   // ★ เลิกใช้ปุ่มเมนูหลัก
   try{
     const sc=await window.HR.getShiftController(EMP.emp_id);
     if(!sc||!sc.branch) return;
@@ -1251,24 +1259,34 @@ async function refreshGoodsBtn(){
 async function openGoods(){
   show('step_goods'); $('gd_nm').textContent=EMP.nickname||EMP.name;
   $('gd_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
-  let sc; try{ sc=await window.HR.getShiftController(EMP.emp_id); }catch(e){ $('gd_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
-  $('gd_sub').textContent='สาขา '+esc(branchName(sc.branch))+' · '+esc(String(sc.work_date));
-  if(!sc.branch){ $('gd_body').innerHTML='<div class="card muted">วันนี้ยังไม่มีข้อมูลสาขา/กะของคุณ จึงยังใช้เมนูรับสินค้าไม่ได้</div>'; return; }
-  if(!sc.controller){
-    $('gd_body').innerHTML='<div class="card"><div style="font-weight:700;margin-bottom:6px">ยังไม่มีผู้คุมผลัดของสาขานี้วันนี้</div><div class="muted" style="margin-bottom:10px">กดรับเป็นผู้คุมผลัดเพื่อเปิดเมนูรับสินค้า (1 คน/สาขา/วัน)</div><button class="btn btn-pri" id="gd_claim" style="width:100%"> กดรับเป็นผู้คุมผลัด</button></div>';
-    $('gd_claim').onclick=async()=>{ $('gd_claim').innerHTML='<span class="spin"></span>'; try{ await window.HR.claimShiftController({empId:EMP.emp_id}); toast('ok','คุณเป็นผู้คุมผลัดแล้ว'); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } openGoods(); };
-    return;
-  }
-  if(!sc.is_me){ $('gd_body').innerHTML='<div class="card"><div style="font-weight:700">ผู้คุมผลัดวันนี้: '+esc(sc.controller.emp_name||sc.controller.emp_id)+'</div><div class="muted" style="margin-top:4px">เฉพาะผู้คุมผลัดเท่านั้นที่บันทึกรับสินค้าได้</div></div>'; return; }
   let g; try{ g=await window.HR.getGoodsReceiving(EMP.emp_id); }catch(e){ $('gd_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
+  $('gd_sub').textContent='สาขา '+esc(branchName(g.branch))+' · '+esc(String(g.work_date))+(g.shift?(' · ผลัด '+esc(g.shift)):'');
+  if(!g.branch){ $('gd_body').innerHTML='<div class="card muted">วันนี้ยังไม่มีข้อมูลสาขา/กะของคุณ จึงยังบันทึกรับสินค้าไม่ได้</div>'; return; }
+  if(!g.def_id){ $('gd_body').innerHTML='<div class="card muted">กะนี้ไม่มีงานรับสินค้าในรายการงาน — แจ้งผู้จัดการเปิดงานนี้ใน "ตั้งค่ากะ" ก่อน</div>'; return; }
   GOODS=g; renderGoods();
 }
 function goodsWhOptions(sel){ return '<option value="">— เลือกคลัง —</option>'+(GOODS.warehouses||[]).map(w=>'<option value="'+w.id+'"'+(String(sel)===String(w.id)?' selected':'')+'>'+esc((w.code?('['+w.code+'] '):'')+w.name)+'</option>').join(''); }
 function renderGoods(){
   const g=GOODS;
-  let h='<div class="card" style="padding:10px;margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1"><b>ผู้คุมผลัด:</b> '+esc(EMP.nickname||EMP.name)+'</div><span class="ch" id="gd_release">ปล่อยสิทธิ์</span></div></div>';
+  const done = g.task_status==='submitted' || g.task_status==='approved';
+  // แถบสถานะงานของผลัดนี้
+  let h='<div class="card" style="padding:11px;margin-bottom:10px;border-left:3px solid '+(done?'#16a34a':'#b45309')+'">'
+    +'<div style="font-weight:700;font-size:14px">'+(done?'ปิดงานรับสินค้าผลัดนี้แล้ว':'งานรับสินค้าของผลัดนี้ยังไม่ปิด')+'</div>'
+    +'<div class="muted" style="font-size:12.5px;margin-top:2px">'
+      +(g.no_delivery?'บันทึกไว้ว่า <b>ผลัดนี้ไม่มีสินค้าจัดส่ง</b>'
+        :(g.today.length?('บันทึกแล้ว '+g.today.length+' ใบ')
+          :'ยังไม่มีใบรับสินค้า — บันทึกให้ครบทุกคลัง หรือติ๊กว่าไม่มีสินค้าจัดส่ง'))
+      +(g.assignee?(' · ผู้รับผิดชอบ '+esc(g.assignee)):'')+'</div></div>';
+  if(!g.can_edit){
+    h+='<div class="card" style="background:#fff7ed;border-color:#fdba74;color:#9a3412"><b>คุณยังบันทึกงานนี้ไม่ได้</b>'
+      +'<div style="font-size:13px;margin-top:3px">งานรับสินค้าผลัดนี้'+(g.assignee?('มอบให้ '+esc(g.assignee)):'ยังไม่ได้มอบหมาย')
+      +' — ให้หัวหน้าผลัดมอบงานนี้ให้คุณก่อน หรือกด "ดึงมาทำ" ในหน้างานที่ได้รับมอบหมาย</div></div>';
+  }
+  if(g.other_shifts && g.other_shifts.length){
+    h+='<div class="card" style="padding:9px 11px;background:#f8fafc"><div class="muted" style="font-size:12.5px">ผลัดอื่นของวันนี้บันทึกไว้แล้ว '+g.other_shifts.length+' ใบ (ลังคงค้างคำนวณรวมทั้งวัน)</div></div>';
+  }
   if(!g.warehouses.length){ h+='<div class="card muted">ยังไม่มีคลังในระบบ — ให้ผู้จัดการเพิ่มคลังก่อน</div>'; }
-  else {
+  else if(g.can_edit && !g.no_delivery){
     h+='<div class="card"><h3 class="sec" style="margin-top:0">'+(GD_EDIT?'<svg class="ei" viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg> แก้ไขใบรับสินค้า':'บันทึกรับสินค้า')+'</h3>'
       +'<label>คลัง</label><select id="gd_wh">'+goodsWhOptions(GD_EDIT?GD_EDIT.warehouse_id:'')+'</select>'
       +'<label style="margin-top:8px">เลขที่เอกสาร (เลขรัน 6 หลัก)</label><input id="gd_ref" type="text" inputmode="numeric" maxlength="6" placeholder="เช่น 004521" style="font-size:20px;padding:12px;letter-spacing:2px;text-align:center;font-weight:700" value="'+esc(GD_EDIT?(GD_EDIT.ref_no||''):'')+'">'
@@ -1280,8 +1298,19 @@ function renderGoods(){
       +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-pri" id="gd_save" style="flex:1">'+(GD_EDIT?'อัปเดต':'บันทึก')+'</button>'+(GD_EDIT?'<button class="btn btn-sec" id="gd_cancel" style="flex:none">ยกเลิก</button>':'')+'</div>'
       +'</div>';
   }
-  h+='<h3 class="sec">รับสินค้าวันนี้</h3>';
-  if(!g.today.length) h+='<div class="muted" style="padding:4px 2px">ยังไม่มีการรับสินค้าวันนี้</div>';
+  // ★ กล่องปิดงานของผลัด
+  if(g.can_edit){
+    h+='<div class="card" style="border:1.5px solid #cfe6da;background:#f6fbf8">'
+      +'<div style="font-weight:700;font-size:14px;margin-bottom:6px">ปิดงานรับสินค้าของผลัดนี้</div>'
+      +'<label class="check" style="display:flex;gap:8px;align-items:flex-start;font-size:13.5px;margin-bottom:8px;cursor:pointer">'
+        +'<input type="checkbox" id="gd_nodel" style="margin-top:3px"'+(g.no_delivery?' checked':'')+(g.today.length?' disabled':'')+'>'
+        +'<span>ผลัดนี้<b>ไม่มีสินค้าจัดส่ง</b>'+(g.today.length?' <span class="muted">(ติ๊กไม่ได้ เพราะบันทึกใบรับไปแล้ว)</span>':'')+'</span></label>'
+      +'<div class="muted" style="font-size:12px;margin-bottom:8px">กดยืนยันเมื่อรับของครบทุกคลังของผลัดนี้แล้ว — ระบบจะปิดงานและส่งเข้ารายงานสิ้นผลัด</div>'
+      +'<button class="btn btn-pri" id="gd_confirm" style="width:100%">'+(done?'อัปเดต / ยืนยันใหม่':'ยืนยันปิดงานรับสินค้า')+'</button>'
+      +'</div>';
+  }
+  h+='<h3 class="sec">รับสินค้าผลัดนี้</h3>';
+  if(!g.today.length) h+='<div class="muted" style="padding:4px 2px">'+(g.no_delivery?'ผลัดนี้ไม่มีสินค้าจัดส่ง':'ยังไม่มีการรับสินค้าในผลัดนี้')+'</div>';
   else h+=g.today.map(r=>{ const dcls=(r.diff||0)===0?'ok':'bad';
     return '<div class="card" style="padding:10px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(r.warehouse_name||('คลัง #'+r.warehouse_id))+'</b> <span class="muted">· เลขที่ '+esc(r.ref_no||'-')+'</span></div><span class="ch" data-gedit="'+r.id+'">แก้ไข</span></div>'
       +'<div style="font-size:13px;margin-top:4px">ลังเข้า <b>'+(r.crates_in||0)+'</b> · ลังคืน <b>'+(r.crates_return||0)+'</b> · ควรคืน '+(r.return_expected||0)+' · ส่วนต่าง <span class="pill '+dcls+'">'+((r.diff||0)>0?'+':'')+(r.diff||0)+'</span></div>'
@@ -1296,7 +1325,17 @@ function renderGdThumbs(){ const t=$('gd_thumbs'); if(!t) return; t.innerHTML=(G
 function gdDraftSave(){ if(GD_EDIT) return; wipSave('gd:'+_dkey('new'), { photos: GD_PHOTOS||[] }); }   // เก็บร่างรูปรับสินค้า (เฉพาะใบใหม่)
 function rmGdPhoto(i){ GD_PHOTOS.splice(i,1); renderGdThumbs(); gdDraftSave(); }
 function wireGoods(){
-  $('gd_release')&&($('gd_release').onclick=async()=>{ if(!confirm('ปล่อยสิทธิ์ผู้คุมผลัด? (คนอื่นจะกดรับแทนได้)')) return; try{ await window.HR.releaseShiftController({empId:EMP.emp_id}); toast('ok','ปล่อยสิทธิ์แล้ว'); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } openGoods(); });
+  // ★ ปุ่มยืนยันปิดงานรับสินค้าของผลัด
+  const cf=$('gd_confirm');
+  if(cf) cf.onclick=async()=>{
+    const nodel=!!($('gd_nodel')&&$('gd_nodel').checked);
+    if(nodel && !confirm('ยืนยันว่าผลัดนี้ไม่มีสินค้าจัดส่ง? จะถูกบันทึกลงรายงานสิ้นผลัด')) return;
+    if(cf.disabled) return; cf.disabled=true; cf.innerHTML='<span class="spin"></span>';
+    try{ const r=await window.HR.goodsConfirm({ empId:EMP.emp_id, no_delivery:nodel });
+      toast('ok', r.no_delivery?'บันทึกว่าไม่มีสินค้าจัดส่งแล้ว':'ปิดงานรับสินค้าแล้ว'); openGoods(); }
+    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); cf.disabled=false; cf.textContent='ยืนยันปิดงานรับสินค้า'; }
+  };
+  if(!GOODS.can_edit || GOODS.no_delivery) return;
   if(!GOODS.warehouses.length) return;
   GD_PHOTOS = (GD_EDIT && Array.isArray(GD_EDIT.in_photos)) ? GD_EDIT.in_photos.slice() : [];
   renderGdThumbs();
