@@ -41,6 +41,18 @@
   .stephead .n{flex:none;width:22px;height:22px;border-radius:7px;background:#00582f;color:#fff;
     display:grid;place-items:center;font-size:12px}
   .stephead .c{margin-left:auto;font-weight:600;color:#5b7d6b;font-size:12px}
+  /* หัวข้อขั้นตอนแบบพับเก็บได้ */
+  .stepsec{margin:14px 0 8px}
+  .stepsec>.stephead{cursor:pointer;-webkit-user-select:none;user-select:none;margin:0;-webkit-tap-highlight-color:transparent}
+  .stepsec>.stephead:active{background:#dceee4}
+  .stepsec>.stephead>.cv{flex:none;width:17px;height:17px;color:#3f7a5c;transition:transform .16s ease}
+  .stepsec.col>.stephead>.cv{transform:rotate(-90deg)}
+  .stepsec>.stepbody{margin-top:8px}
+  .stepsec.col>.stepbody{display:none}
+  .stepsec>.stephead>.c{margin-left:auto}
+  .stepdone>.stephead{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
+  .stepdone>.stephead>.n{background:#16a34a}
+  .stepdone>.stephead>.cv{color:#16a34a}
   .taskcard{border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:#fff}
   .taskcard .top{display:flex;align-items:center;gap:10px}
   .taskcard .t{flex:1;font-size:14.5px;font-weight:600;line-height:1.5}
@@ -621,13 +633,21 @@ async function openLeaderPanel(){
   const mgrId=((b.managers||[])[0]||{}).emp_id||'';
   const memOptsMgr=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'"'+(m.emp_id===mgrId?' selected':'')+'>'+esc(m.name)+'</option>').join('');
   if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (ผู้จัดการตั้งที่ "ตั้งค่ากะ")</div>'; return; }
-  $('l_board').innerHTML=b.defs.map(d=>{
+  const _defCard=(d)=>{
     const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.mgr_owner?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ผจก.</span>':'')+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
     if(a){ const s=ST(a.status); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
+    body+=taskDetailHTML(d,{noShelf:true});
     if(!(b.members||[]).length) body+='<div class="muted">ยังไม่มีคนในกะ — เพิ่มคนด้านบนก่อน</div>';
     else body+='<div class="row2"><select id="lg_'+d.id+'">'+((d.mgr_owner&&mgrId)?memOptsMgr:memOpts)+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
     return '<div class="card">'+body+'</div>';
-  }).join('');
+  };
+  // จัดหมวดตามขั้นตอนการทำงาน + ย่อ/ขยายได้ (ขั้นตอนที่มอบครบแล้วจะพับเก็บให้อัตโนมัติ)
+  $('l_board').innerHTML=groupSteps(b.defs, function(d){ return (d.step!=null?Number(d.step):0); })
+    .map(function(gp){
+      var tot=gp[1].length, got=gp[1].filter(function(x){ return !!x.assignment; }).length;
+      return stepSection('lg',gp[0],stepLabel(gp[0]),'มอบแล้ว '+got+'/'+tot,
+        gp[1].map(_defCard).join(''), got>=tot);
+    }).join('');
   document.querySelectorAll('[data-give]').forEach(btn=>btn.onclick=async()=>{
     const def=Number(btn.dataset.give), to=($('lg_'+def)||{}).value; if(!to){ toast('err','เลือกคนก่อน'); return; }
     try{ await window.HR.assignColleague({ byEmpId:EMP.emp_id, toEmpId:to, task_def_id:def, shiftId:b.shift }); toast('ok','แจกงานแล้ว'); openLeaderPanel(); }
@@ -668,6 +688,7 @@ async function openM2(){
     const mineIds=new Set(r.mine.map(x=>String(x.id)));
     fx.rows=fx.rows.filter(x=>!mineIds.has(String(x.id)));
   }
+  var _MY_FIN_HTML='';
   $('my_sub').textContent = r ? ('กะ '+esc(r.shift_name||'-')+(r.leader?(' · หัวหน้าผลัด: '+esc(r.leader.name)):'')) : 'งานพิเศษจากผู้จัดการ';
   let html='';
   // ===== งานที่ผู้จัดการตีกลับให้แก้ (บนสุด — อาจเป็นงานที่เราเป็นคน "ตรวจผ่าน" ไม่ใช่คนส่ง) =====
@@ -716,8 +737,21 @@ async function openM2(){
     }
     return c+'</div>';
   };
-  html+=groupSteps(r.mine, function(a){ return stepOfDef(a.task_def_id); })
-        .map(function(gp){ return stepHead(gp[0],gp[1].length)+gp[1].map(_mineCard).join(''); }).join('');
+  // ★ งานที่กดส่งแล้ว/ผ่านแล้ว → ย้ายลงล่างสุดในหัวข้อ "งานที่ทำเสร็จแล้ว" (พับเก็บไว้)
+  var _mDone=function(a){ return a.status==='submitted'||a.status==='approved'; };
+  var _mPend=r.mine.filter(function(a){ return !_mDone(a); });
+  var _mFin=r.mine.filter(_mDone);
+  if(_mPend.length) html+=groupSteps(_mPend, function(a){ return stepOfDef(a.task_def_id); })
+    .map(function(gp){ return stepSection('my',gp[0],stepLabel(gp[0]),gp[1].length+' งาน',
+      gp[1].map(_mineCard).join(''), false); }).join('');
+  else html+='<div class="card" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;font-weight:600">'
+    +'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ทำงานในกะครบทุกรายการแล้ว</div>';
+  _MY_FIN_HTML = _mFin.length ? stepSection('myfin','done',
+      '<span class="n"><svg class="ei" viewBox="0 0 24 24"><path d="M5 12l5 5 9-9"/></svg></span>งานที่ทำเสร็จแล้ว',
+      _mFin.length+' งาน',
+      groupSteps(_mFin, function(a){ return stepOfDef(a.task_def_id); })
+        .map(function(gp){ return stepHead(gp[0],gp[1].length)+gp[1].map(_mineCard).join(''); }).join(''),
+      true, 'stepdone') : '';
   }
   // งานที่ยังว่าง (รายการ)
   html+='<h3 class="sec">งานที่ยังว่าง (ดึงมาทำเองได้)</h3>';
@@ -737,6 +771,7 @@ async function openM2(){
     // วันนี้ไม่มีกะ — ยังเห็นงานพิเศษได้
     html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3><div class="card muted">'+esc(shiftErr||'วันนี้ยังไม่มีข้อมูลกะของคุณ')+'</div>';
   }
+  html += _MY_FIN_HTML;   // งานที่ทำเสร็จแล้ว = ล่างสุดเสมอ
   $('my_body').innerHTML=html;
   // สะสมรูป (ใช้ TASK_PHOTOS ร่วมกัน: งานตามกะใช้คีย์ตัวเลข, งานพิเศษใช้คีย์ 'sp_'+id)
   TASK_PHOTOS={};
@@ -1422,8 +1457,9 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
 </script>
 <script>
 // รายละเอียดปฏิบัติ / เกณฑ์การตรวจสอบ / วิธีถ่ายรูป (พับไว้ กดดูได้)
-function taskDetailHTML(d){
+function taskDetailHTML(d,opts){
   if(!d) return '';
+  opts=opts||{};
   var extra='';
   // ★ งานที่เป็นหน้าที่ของ ผจก. โดยตรง
   if(d.mgr_owner){
@@ -1431,7 +1467,7 @@ function taskDetailHTML(d){
       + '<b>งานของผู้จัดการร้าน</b><div style="margin-top:2px">ระบบมอบงานนี้ให้ ผจก. ของสาขาอัตโนมัติ — ถ้า ผจก. ไม่อยู่ หัวหน้าผลัดเปลี่ยนคนทำได้</div></div>';
   }
   // ★ งานที่ผูกกับ Shelf ที่รับผิดชอบ — ดึงรายการ Shelf ของพนักงานคนนี้มาแสดง
-  if(String(d.link_kind||'')==='Shelf'){
+  if(String(d.link_kind||'')==='Shelf' && !opts.noShelf){
     var sv=(window.MY_SHELVES||[]);
     extra += '<div style="margin:6px 0 2px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:9px 10px;font-size:12.5px;line-height:1.65">'
       + '<b>Shelf ที่คุณรับผิดชอบเดือนนี้ ('+sv.length+')</b>'
@@ -1476,6 +1512,28 @@ function groupSteps(items, getStep){
   return Object.keys(g).map(Number).sort(function(a,b){ return (a===0?99:a)-(b===0?99:b); })
     .map(function(k){ return [k, g[k]]; });
 }
+// ===== หัวข้อขั้นตอนแบบย่อ/ขยายได้ (จำสถานะไว้ต่อเครื่อง) =====
+function _hoDay(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+var HO_COL=(function(){ try{ var o=JSON.parse(localStorage.getItem('ho_stepcol')||'{}')||{};
+  return (o && o.d===_hoDay() && o.v) ? o.v : {}; }catch(e){ return {}; } })();
+function _hoColSave(){ try{ localStorage.setItem('ho_stepcol', JSON.stringify({d:_hoDay(), v:HO_COL})); }catch(e){} }
+function stepLabel(k){ return k? ('<span class="n">'+k+'</span>'+esc(HO_STEPS[k]||('\u0e02\u0e31\u0e49\u0e19\u0e15\u0e2d\u0e19 '+k)))
+  : '<span class="n">\u2022</span>\u0e07\u0e32\u0e19\u0e2d\u0e37\u0e48\u0e19 \u0e46'; }
+function stepSection(scope,k,label,cnt,inner,defCol,cls){
+  var key=scope+':'+k;
+  var col=(HO_COL[key]!==undefined)?!!HO_COL[key]:!!defCol;
+  return '<div class="stepsec'+(col?' col':'')+(cls?(' '+cls):'')+'" data-sk="'+esc(key)+'">'
+   +'<div class="stephead">'+label+'<span class="c">'+esc(String(cnt))+'</span>'
+   +'<svg class="ei cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>'
+   +'<div class="stepbody">'+inner+'</div></div>';
+}
+document.addEventListener('click', function(ev){
+  var t=ev.target; if(!t||!t.closest) return;
+  var h=t.closest('.stephead'); if(!h) return;
+  var sec=h.parentNode; if(!sec||!sec.classList||!sec.classList.contains('stepsec')) return;
+  var col=sec.classList.toggle('col');
+  var key=sec.getAttribute('data-sk')||''; if(key){ HO_COL[key]=col; _hoColSave(); }
+}, false);
 </script>
 </body>
 </html>
