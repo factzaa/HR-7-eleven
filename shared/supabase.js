@@ -2191,23 +2191,53 @@
     (rcp.data||[]).forEach(r=>{ bal += (r.crates_in||0) - (r.crates_return||0); });
     return bal;
   }
-  async function getGoodsReceiving(empId){
+  // ★ 15 ก.ย. 69 — งานรับสินค้าเข้าโฟลว์งานในผลัด
+  //   สิทธิ์บันทึก = คนที่ได้รับมอบงานรับสินค้าในผลัดนั้น / หัวหน้าผลัด / ผจก.
+  //   (เดิมบังคับเฉพาะ ผู้คุมผลัด ซึ่งมีได้คนเดียว/สาขา/วัน ชนกับงานรายผลัด)
+  async function _goodsDef(branch, workDate, shift){
+    const defs = await _taskDefsFor(branch, workDate, shift);
+    return (defs||[]).find(d => String(d.link_kind||'') === 'รับสินค้า') || null;
+  }
+  async function _goodsCtx(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const {workDate,branch}=await _shiftCtx(emp);
+    const {workDate,branch,group:shift}=await _shiftCtx(emp);
+    const def = (branch && shift) ? await _goodsDef(branch, workDate, shift) : null;
+    let asg = null;
+    if(def) asg = await _findAsg(branch, workDate, shift, def.id);
+    const lead=(await sb.from('shift_leads').select('emp_id,emp_name').eq('work_date',workDate).eq('branch_id',branch||'').eq('shift_id',shift||'').maybeSingle()).data;
+    const isLead = !!(lead && lead.emp_id === emp.emp_id);
+    const isMine = !!(asg && asg.emp_id === emp.emp_id);
+    return { emp, branch, workDate, shift, def, asg, lead, isLead,
+      canEdit: !!(def && (isMine || isLead || emp.is_manager)) };
+  }
+  async function getGoodsReceiving(empId){
+    const c = await _goodsCtx(empId);
+    const { emp, branch, workDate, shift } = c;
     const [whR, todayR]=await Promise.all([
       sb.from('warehouses').select('*').eq('active',true).order('sort').order('id'),
       sb.from('goods_receipts').select('*').eq('branch_id',branch||'').eq('work_date',workDate).order('submitted_at',{ascending:false}),
     ]);
-    const warehouses=whR.data||[]; const today=todayR.data||[];
+    const warehouses=whR.data||[]; const all=todayR.data||[];
+    const mine=all.filter(r => String(r.shift_id||'') === String(shift||''));
     const outstanding={};
     for(const w of warehouses){ outstanding[w.id]=await _whOutstanding(branch, w.id, workDate); }
-    return { emp, branch, work_date:workDate, warehouses, outstanding, today };
+    return { emp, branch, work_date:workDate, shift, warehouses, outstanding,
+      today: mine.filter(r => !r.no_delivery),
+      other_shifts: all.filter(r => String(r.shift_id||'') !== String(shift||'') && !r.no_delivery),
+      no_delivery: mine.some(r => !!r.no_delivery),
+      def_id: c.def ? c.def.id : null,
+      task_status: c.asg ? String(c.asg.status||'todo') : null,
+      assignee: c.asg ? (c.asg.emp_name || c.asg.emp_id || '') : '',
+      can_edit: c.canEdit, is_lead: c.isLead };
   }
   async function submitGoodsReceipt({ empId, id, warehouse_id, ref_no, crates_in, crates_return, in_photos, note }){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     const {workDate,branch}=await _shiftCtx(emp);
-    const ctrl=(await sb.from('shift_controllers').select('emp_id').eq('branch_id',branch||'').eq('work_date',workDate).maybeSingle()).data;
-    if(!ctrl||ctrl.emp_id!==emp.emp_id) throw new Error('เฉพาะผู้คุมผลัดของสาขาวันนี้เท่านั้นที่บันทึกรับสินค้าได้');
+    // ★ 15 ก.ย. 69 — สิทธิ์มาจากงานที่ได้รับมอบในผลัด แทนกติกา "ผู้คุมผลัด 1 คน/สาขา/วัน"
+    const _gc = await _goodsCtx(emp.emp_id);
+    if(!_gc.def) throw new Error('กะนี้ไม่มีงานรับสินค้าในรายการงาน — แจ้งผู้จัดการเปิดงานนี้ใน "ตั้งค่ากะ" ก่อน');
+    if(!_gc.canEdit) throw new Error('งานรับสินค้าผลัดนี้มอบให้ ' + (_gc.asg ? (_gc.asg.emp_name||_gc.asg.emp_id) : 'คนอื่น') + ' — ถ้าต้องการทำเอง ให้หัวหน้าผลัดมอบงานนี้ให้คุณก่อน');
+    const _gShift = _gc.shift || null;
     if(!warehouse_id) throw new Error('เลือกคลังก่อน');
     const ref=String(ref_no||'').trim();
     if(!/^\d{6}$/.test(ref)) throw new Error('เลขรันต้องเป็นตัวเลข 6 หลัก');
@@ -2218,7 +2248,9 @@
     const diff=cret - expected;
     const urls=[];
     for(const p of (in_photos||[])){ if(!p) continue; if(typeof p==='string'&&/^https?:/i.test(p)) urls.push(p); else urls.push(await uploadPhoto('employee-docs','goods/'+(branch||'x')+'_'+warehouse_id+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
-    const row={ ref_no:ref, branch_id:branch, work_date:workDate, warehouse_id, warehouse_code:(wh&&wh.code)||null, warehouse_name:(wh&&wh.name)||null,
+    // ★ มีของเข้าจริงแล้ว → ล้างธง "ผลัดนี้ไม่มีสินค้าจัดส่ง" ที่เคยติ๊กไว้ (ถ้ามี)
+    try{ await sb.from('goods_receipts').delete().eq('branch_id',branch||'').eq('work_date',workDate).eq('shift_id',_gShift||'').eq('no_delivery',true); }catch(e){}
+    const row={ ref_no:ref, branch_id:branch, work_date:workDate, shift_id:_gShift, no_delivery:false, warehouse_id, warehouse_code:(wh&&wh.code)||null, warehouse_name:(wh&&wh.name)||null,
       crates_in:cin, crates_return:cret, return_expected:expected, diff, in_photos:urls.length?urls:null, note:(note||'').trim()||null,
       done_by:emp.emp_id, done_name:emp.nickname||emp.name, updated_at:new Date().toISOString(), line_notified:false };
     let rid=id;
@@ -2232,6 +2264,57 @@
     // ยิง Flex เข้ากลุ่ม LINE ของสาขา (fire-and-forget · edge function กันซ้ำด้วย line_notified)
     try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(base&&rid) fetch(base+'/functions/v1/line-goods-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid})}); }catch(e){}
     return { ok:true, id:rid };
+  }
+
+  // ★ 15 ก.ย. 69 — ปิดงานรับสินค้าของผลัด
+  //   no_delivery = true  → บันทึกว่า "ผลัดนี้ไม่มีสินค้าจัดส่ง" แล้วปิดงาน
+  //   no_delivery = false → ต้องมีใบรับสินค้าอย่างน้อย 1 ใบในผลัดนี้ก่อน
+  async function goodsConfirm({ empId, no_delivery }){
+    const c = await _goodsCtx(empId);
+    if(!c.def) throw new Error('กะนี้ไม่มีงานรับสินค้าในรายการงาน — แจ้งผู้จัดการเปิดงานนี้ใน "ตั้งค่ากะ" ก่อน');
+    if(!c.canEdit) throw new Error('งานรับสินค้าผลัดนี้มอบให้ ' + (c.asg ? (c.asg.emp_name||c.asg.emp_id) : 'คนอื่น') + ' — ถ้าต้องการทำเอง ให้หัวหน้าผลัดมอบงานนี้ให้คุณก่อน');
+    const { emp, branch, workDate, shift, def } = c;
+    const rows=(await sb.from('goods_receipts').select('*').eq('branch_id',branch||'').eq('work_date',workDate).eq('shift_id',shift||'')).data||[];
+    const real=rows.filter(r=>!r.no_delivery);
+    const nd=rows.find(r=>!!r.no_delivery);
+    let note='';
+    if(no_delivery){
+      if(real.length) throw new Error('ผลัดนี้บันทึกรับสินค้าไปแล้ว '+real.length+' ใบ จึงติ๊ก "ไม่มีสินค้าจัดส่ง" ไม่ได้');
+      if(!nd){
+        const { error }=await sb.from('goods_receipts').insert({ branch_id:branch, work_date:workDate, shift_id:shift,
+          no_delivery:true, crates_in:0, crates_return:0, return_expected:0, diff:0,
+          note:'ผลัดนี้ไม่มีสินค้าจัดส่ง', done_by:emp.emp_id, done_name:emp.nickname||emp.name,
+          updated_at:new Date().toISOString(), line_notified:true });
+        if(error) throw error;
+      }
+      note='ผลัดนี้ไม่มีสินค้าจัดส่ง';
+    } else {
+      if(!real.length) throw new Error('ยังไม่มีใบรับสินค้าในผลัดนี้ — บันทึกอย่างน้อย 1 ใบ หรือติ๊ก "ไม่มีสินค้าจัดส่ง"');
+      if(nd){ try{ await sb.from('goods_receipts').delete().eq('id', nd.id); }catch(e){} }
+      const cin=real.reduce((s,r)=>s+(r.crates_in||0),0), cret=real.reduce((s,r)=>s+(r.crates_return||0),0);
+      note='รับสินค้า '+real.length+' ใบ · ลังเข้า '+cin+' · ลังคืน '+cret;
+    }
+    // รูปหลักฐาน = รูปจากใบรับสินค้าของผลัดนี้ (ไม่ต้องถ่ายซ้ำในการ์ดงาน)
+    const photos=[]; real.forEach(r=>{ (Array.isArray(r.in_photos)?r.in_photos:[]).forEach(u=>{ if(typeof u==='string'&&photos.indexOf(u)<0) photos.push(u); }); });
+    // ผจก./HR ตรวจไหม — กติกาเดียวกับการส่งงานปกติ
+    let shiftMgr=true;
+    if(def.mgr_review && !def.mgr_owner && shift){ const sh=(await sb.from('shifts').select('mgr_review').eq('shift_id',shift).maybeSingle()).data; shiftMgr = !sh || sh.mgr_review!==false; }
+    const wantMgr=!!(def.mgr_review && shiftMgr);
+    const now=new Date().toISOString();
+    const skipReview = def.need_review === false;
+    const upd = Object.assign(
+      { emp_note:note, submitted_at:now, needs_mgr:wantMgr, review_note:null },
+      skipReview ? { status:'approved', reviewer:'ไม่ต้องตรวจ (ตั้งค่าไว้)', reviewed_at:now }
+                 : { status:'submitted', reviewer:null, reviewed_at:null },
+      photos.length ? { photos, photo_url:photos[0] } : {});
+    if(c.asg){ const { error }=await sb.from('task_assignments').update(upd).eq('id', c.asg.id); if(error) throw error; }
+    else {
+      const { error }=await sb.from('task_assignments').insert(Object.assign({ work_date:workDate, branch_id:branch||null, shift_id:shift,
+        task_def_id:def.id, title:def.title, require_photo:!!def.require_photo,
+        emp_id:emp.emp_id, emp_name:emp.nickname||emp.name }, upd));
+      if(error) throw error;
+    }
+    return { ok:true, no_delivery:!!no_delivery, receipts:real.length, note };
   }
 
   // ---------- QSSI · เช็คลิสต์เตรียมรับตรวจ (ฝั่งพนักงาน) ----------
@@ -3185,6 +3268,6 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
