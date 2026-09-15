@@ -324,6 +324,11 @@
         case 'hr_taskset_create':    return await hrTaskSetCreate(p);
         case 'hr_taskset_delete':    return await hrTaskSetDelete(p);
         case 'hr_taskset_bulk':      return await hrTaskSetBulk(p);
+        case 'hr_closed_tasks':      return await hrClosedTasks(p);
+        case 'hr_closed_ack':        return await hrClosedAck(p);
+        case 'hr_shift_submits':     return await hrShiftSubmits(p);
+        case 'hr_checkout_override': return await hrCheckoutOverride(p);
+        case 'hr_checkout_override_list': return await hrCheckoutOverrideList(p);
         case 'hr_taskdef_sample_add': return await hrTaskDefSampleAdd(p);
         case 'hr_taskdef_sample_del': return await hrTaskDefSampleDel(p);
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
@@ -5490,6 +5495,85 @@
     if (a.role !== 'hr' && a.role !== 'mgr') return { ok:false, error:'ตั้งรูปตัวอย่างได้เฉพาะ HR และผู้จัดการร้าน' };
     return { ok:true, actor:a };
   }
+  // ===================================================================
+  // งานที่ปิดเพราะทำไม่ได้ + สถานะส่งผลัด + สิทธิออกงานฉุกเฉิน (15 ก.ย. 69)
+  // ===================================================================
+  async function hrClosedTasks(p) {
+    const a = await _tsActor(p);
+    if (a.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    const branch = (a.role === 'mgr') ? a.branch_id : String(p.branch || '');
+    const day = String(p.date || '') || bkkToday();
+    const from = addDays(day, -6);
+    let q = sb().from('task_assignments').select('*')
+      .not('closed_at', 'is', null).gte('work_date', from).lte('work_date', day)
+      .order('closed_at', { ascending: false }).limit(300);
+    if (branch) q = q.eq('branch_id', branch);
+    const { data, error } = await q;
+    if (error) throw error;
+    const rows = data || [];
+    return { ok: true, role: a.role, branch, date: day,
+      rows, pending: rows.filter(r => !r.closed_ack_at).length };
+  }
+
+  async function hrClosedAck(p) {
+    const a = await _tsActor(p);
+    if (a.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    if (a.role !== 'hr' && a.role !== 'mgr') return { ok: false, error: 'รับทราบได้เฉพาะ HR และผู้จัดการร้าน' };
+    const id = Number(p.id || 0); if (!id) return { ok: false, error: 'ไม่พบรายการ' };
+    const { error } = await sb().from('task_assignments').update({
+      closed_ack_by: a.emp_id || 'HR', closed_ack_name: a.name || 'สำนักงาน (HR)',
+      closed_ack_note: (p.note || null), closed_ack_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  async function hrShiftSubmits(p) {
+    const a = await _tsActor(p);
+    if (a.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    const branch = (a.role === 'mgr') ? a.branch_id : String(p.branch || '');
+    const day = String(p.date || '') || bkkToday();
+    let q = sb().from('shift_submits').select('*').eq('work_date', day).order('submitted_at');
+    if (branch) q = q.eq('branch_id', branch);
+    const { data, error } = await q;
+    if (error) throw error;
+    return { ok: true, date: day, branch, rows: data || [] };
+  }
+
+  async function hrCheckoutOverride(p) {
+    const a = await _tsActor(p);
+    if (a.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    if (a.role !== 'hr' && a.role !== 'mgr') return { ok: false, error: 'อนุมัติได้เฉพาะ HR และผู้จัดการร้าน' };
+    const empId = String(p.emp_id || '').trim();
+    if (!empId) return { ok: false, error: 'กรอกรหัสพนักงานที่ต้องการให้ออกงานก่อน' };
+    const reason = String(p.reason || '').trim();
+    if (reason.length < 10) return { ok: false, error: 'ต้องระบุเหตุผลอย่างน้อย 10 ตัวอักษร' };
+    const { data: emp } = await sb().from('employees')
+      .select('emp_id,name,nickname,branch_id,active').eq('emp_id', empId).maybeSingle();
+    if (!emp) return { ok: false, error: 'ไม่พบรหัสพนักงานนี้' };
+    if (a.role === 'mgr' && String(emp.branch_id || '') !== String(a.branch_id || ''))
+      return { ok: false, error: 'พนักงานคนนี้ไม่ได้อยู่สาขาของคุณ' };
+    const day = String(p.date || '') || bkkToday();
+    const row = { work_date: day, branch_id: emp.branch_id || null, shift_id: (p.shift_id || null),
+      emp_id: emp.emp_id, emp_name: emp.nickname || emp.name, reason,
+      granted_by: a.emp_id || 'HR', granted_name: a.name || 'สำนักงาน (HR)' };
+    const { error } = await sb().from('checkout_overrides').upsert(row, { onConflict: 'work_date,emp_id' });
+    if (error) throw error;
+    await logAct('ให้สิทธิออกงานฉุกเฉิน', emp.emp_id, (emp.nickname || emp.name) + ' · ' + reason);
+    return { ok: true, emp_name: emp.nickname || emp.name };
+  }
+
+  async function hrCheckoutOverrideList(p) {
+    const a = await _tsActor(p);
+    if (a.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    const branch = (a.role === 'mgr') ? a.branch_id : String(p.branch || '');
+    const day = String(p.date || '') || bkkToday();
+    let q = sb().from('checkout_overrides').select('*').eq('work_date', day).order('granted_at', { ascending: false });
+    if (branch) q = q.eq('branch_id', branch);
+    const { data, error } = await q;
+    if (error) throw error;
+    return { ok: true, date: day, rows: data || [] };
+  }
+
   async function hrTaskDefSampleAdd(p) {
     const g = await _sampleActor(p); if (!g.ok) return g;
     const id = Number(p.task_def_id || 0);

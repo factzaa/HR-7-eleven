@@ -162,7 +162,7 @@ function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function show(id){['step_id','step_menu','step_m1','step_m2','step_m3','step_goods','step_report'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
 function fmt(t){try{return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'});}catch(e){return '';}}
-function ST(s){return s==='approved'?['ผ่านแล้ว','ok']:s==='submitted'?['รอตรวจ','warn']:s==='sent_back'?['ตีกลับ','bad']:['มอบหมายแล้ว','muted2'];}
+function ST(s){return s==='approved'?['ผ่านแล้ว','ok']:s==='submitted'?['รอตรวจ','warn']:s==='sent_back'?['ตีกลับ','bad']:s==='closed'?['ปิดงาน · ทำไม่ได้','muted2']:['มอบหมายแล้ว','muted2'];}
 // ★ ย่อรูป + ปั๊มวันเวลาก่อนอัปโหลด
 //   เดิม: ถ้าเครื่องถอดรหัสรูปไม่ได้ (HEIC จากไอโฟน / ไฟล์ใหญ่เกิน / แรมไม่พอ) img.onload จะไม่ยิงเลย
 //   → Promise ค้างตลอดกาล → รูปหายเงียบ ๆ โดยไม่มี error (พนักงานคิดว่าแนบแล้ว แต่ในระบบไม่มีรูป)
@@ -725,9 +725,80 @@ async function openM1(){
   };
 }
 let LBOARD=null;
+// ★ ส่งผลัด (15 ก.ย. 69) — หัวหน้าผลัดยืนยันว่างานพร้อมให้ผลัดถัดไปตรวจ
+var IS_LEAD=false, SHIFT_SENT=false, SS_STATE=null;
+function shiftSendHTML(st){
+  if(!st || !st.has_shift) return '';
+  if(st.submitted){
+    var t=new Date(st.submitted.submitted_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+    return '<div class="card" style="background:#f0fdf4;border-color:#bbf7d0">'
+      +'<div style="font-weight:700;color:#166534"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ส่งผลัดแล้ว '+esc(t)+' น.</div>'
+      +'<div class="muted" style="font-size:12.5px;margin-top:3px">โดย '+esc(st.submitted.emp_name||'')
+        +' · ส่งงาน '+st.submitted.done+'/'+st.submitted.total+(st.submitted.closed?(' · ปิดงาน '+st.submitted.closed):'')
+        +'<br>รายงานถูกส่งเข้าไลน์กลุ่มแล้ว ผลัดถัดไปตรวจงานได้เลย</div></div>';
+  }
+  var ok=st.pending.length===0;
+  var h='<div class="card" style="border-left:3px solid '+(ok?'#16a34a':'#dc2626')+'">'
+    +'<div style="font-weight:700">ส่งผลัด</div>'
+    +'<div class="muted" style="font-size:12.5px;margin:3px 0 7px">ส่งงานแล้ว '+st.done+'/'+st.total+' งาน'
+      +(st.closed.length?(' · ปิดงาน '+st.closed.length+' งาน'):'')
+      +(ok?'<br>กดส่งผลัดเพื่อส่งรายงานเข้าไลน์กลุ่มทันที ผลัดถัดไปจะได้ตรวจงานตอนที่ทีมยังอยู่'
+         :('<br>ยังเหลืองานค้าง '+st.pending.length+' รายการ — ทำให้เสร็จ หรือปิดงานพร้อมระบุเหตุผลก่อน'))+'</div>';
+  if(!ok) h+='<div style="font-size:12.5px;color:#b91c1c;line-height:1.7;margin-bottom:7px">'
+    +st.pending.slice(0,8).map(function(x){ return '• '+esc(x.title)+(x.emp_name?(' <span class="muted">· '+esc(x.emp_name)+'</span>'):''); }).join('<br>')
+    +(st.pending.length>8?('<br><span class="muted">…และอีก '+(st.pending.length-8)+' รายการ</span>'):'')+'</div>';
+  if(!st.is_lead) h+='<div class="muted" style="font-size:12.5px">ส่งผลัดได้เฉพาะหัวหน้าผลัด'
+    +(st.lead?(' (' + esc(st.lead.emp_name||st.lead.emp_id) + ')'):' — ยังไม่มีใครรับเป็นหัวหน้าผลัด')+'</div>';
+  else h+='<button class="btn '+(ok?'btn-pri':'btn-sec')+'" id="bShiftSend"'+(ok?'':' disabled style="opacity:.55"')+'>'
+    +'ส่งผลัด · ยืนยันงานพร้อมให้ตรวจ</button>';
+  return h+'</div>';
+}
+// ★ ปุ่มปิดงาน / เปิดงานใหม่ (หัวหน้าผลัด)
+function wireCloseTask(){
+  document.querySelectorAll('[data-close]').forEach(function(b){ b.onclick=async function(){
+    var id=Number(b.dataset.close);
+    var why=prompt('ปิดงานนี้เพราะทำไม่ได้จริง\n\nระบุเหตุผลให้ครบถ้วน (อย่างน้อย 15 ตัวอักษร)\nเช่น "เครื่องชงกาแฟเสีย ช่างนัดเข้ามาซ่อมพรุ่งนี้เช้า แจ้ง ผจก. แล้ว"\n\nเหตุผลนี้จะขึ้นในรายงานสิ้นผลัดและส่งให้ ผจก. รับทราบ');
+    if(why===null) return;
+    if(String(why).trim().length<15){ toast('err','เหตุผลสั้นเกินไป ต้องอย่างน้อย 15 ตัวอักษร'); return; }
+    b.disabled=true;
+    try{ await window.HR.taskCloseCannotDo({ empId:EMP.emp_id, task_def_id:id, reason:String(why).trim() });
+         toast('ok','ปิดงานแล้ว — เหตุผลถูกบันทึกไว้'); openLeaderPanel(); }
+    catch(e){ b.disabled=false; toast('err',(e.message||'ไม่สำเร็จ')); }
+  }; });
+  document.querySelectorAll('[data-reopen]').forEach(function(b){ b.onclick=async function(){
+    if(!confirm('เปิดงานนี้กลับมาทำต่อ?')) return;
+    b.disabled=true;
+    try{ await window.HR.taskReopen({ empId:EMP.emp_id, task_def_id:Number(b.dataset.reopen) });
+         toast('ok','เปิดงานกลับมาแล้ว'); openLeaderPanel(); }
+    catch(e){ b.disabled=false; toast('err',(e.message||'ไม่สำเร็จ')); }
+  }; });
+}
+// ★ ปุ่มส่งผลัด — ยืนยันด้วยรหัสหัวหน้าผลัดเท่านั้น
+function wireShiftSend(){
+  var b=$('bShiftSend'); if(!b) return;
+  b.onclick=async function(){
+    var st=SS_STATE; if(!st||!st.lead) return;
+    if(st.pending.length){ toast('err','ยังมีงานค้างอยู่'); return; }
+    var code=prompt('ยืนยันส่งผลัด\n\nส่งงาน '+st.done+'/'+st.total+' งาน'
+      +(st.closed.length?(' · ปิดงาน '+st.closed.length+' งาน'):'')
+      +'\n\nกดส่งแล้วระบบจะส่งรายงานเข้าไลน์กลุ่มทันที\n\nกรอกรหัสพนักงานของหัวหน้าผลัดเพื่อยืนยัน:');
+    if(code===null) return;
+    if(!String(code).trim()){ toast('err','ต้องกรอกรหัสยืนยัน'); return; }
+    b.disabled=true; b.textContent='กำลังส่ง…';
+    try{
+      var r=await window.HR.shiftSubmit({ empId:EMP.emp_id, confirmEmpId:String(code).trim() });
+      toast('ok', r.line_sent ? 'ส่งผลัดแล้ว — รายงานเข้าไลน์กลุ่มเรียบร้อย'
+        : 'ส่งผลัดแล้ว (ส่งไลน์ไม่สำเร็จ ให้แจ้ง ผจก.)');
+      openLeaderPanel();
+    }catch(e){ b.disabled=false; b.textContent='ส่งผลัด · ยืนยันงานพร้อมให้ตรวจ'; toast('err',(e.message||'ไม่สำเร็จ')); }
+  };
+}
 async function openLeaderPanel(){
   $('m1_panel').classList.remove('hide');
   $('l_board').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  try{ SS_STATE=await window.HR.shiftSubmitState(EMP.emp_id);
+       IS_LEAD=!!(SS_STATE&&SS_STATE.is_lead); SHIFT_SENT=!!(SS_STATE&&SS_STATE.submitted);
+  }catch(e){ SS_STATE=null; IS_LEAD=false; SHIFT_SENT=false; }
   let b; try{ b=await window.HR.getShiftBoard(EMP.emp_id, null); LBOARD=b; window.CUR_SHIFT=b.shift||''; }catch(e){ $('l_board').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   const inShift=new Set((b.members||[]).map(m=>m.emp_id));
   populateAddList();
@@ -739,9 +810,22 @@ async function openLeaderPanel(){
   const _defCard=(d)=>{
     const a=d.assignment; let body='<div style="font-weight:600;margin-bottom:6px">'+esc(d.title)+(d.mgr_owner?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ผจก.</span>':'')+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
     if(a){ const s=ST(a.status); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
+    // ★ งานที่ปิดเพราะทำไม่ได้ — โชว์เหตุผทและปุ่มเปิดกลับ
+    if(a && a.status==='closed'){
+      body+='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:12.5px;line-height:1.6">'
+        +'<b>เหตุผลที่ทำไม่ได้</b><div style="margin-top:2px">'+esc(a.closed_reason||'')+'</div>'
+        +'<div class="muted" style="font-size:11.5px;margin-top:3px">ปิดโดย '+esc(a.closed_by_name||a.closed_by||'')
+          +(a.closed_ack_at?(' · ผจก. รับทราบแล้ว'):' · รอ ผจก. รับทราบ')+'</div></div>';
+    }
     body+=taskDetailHTML(d,{noShelf:true});
     if(!(b.members||[]).length) body+='<div class="muted">ยังไม่มีคนในกะ — เพิ่มคนด้านบนก่อน</div>';
-    else body+='<div class="row2"><select id="lg_'+d.id+'">'+((d.mgr_owner&&mgrId)?memOptsMgr:memOpts)+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
+    else if(!a || a.status!=='closed') body+='<div class="row2"><select id="lg_'+d.id+'">'+((d.mgr_owner&&mgrId)?memOptsMgr:memOpts)+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
+    // ★ ปิดงานที่ทำไม่ได้จริง (หัวหน้าผลัดเท่านั้น) / ยกเลิกการปิด
+    if(IS_LEAD && !SHIFT_SENT){
+      if(a && a.status==='closed') body+='<button class="btn btn-sec btn-sm" data-reopen="'+d.id+'" style="margin-top:6px">เปิดงานนี้กลับมาทำ</button>';
+      else if(!a || (a.status!=='submitted' && a.status!=='approved'))
+        body+='<button class="btn btn-sec btn-sm" data-close="'+d.id+'" style="margin-top:6px;border-color:#fca5a5;color:#b91c1c">ปิดงาน · ทำไม่ได้</button>';
+    }
     return '<div class="card">'+body+'</div>';
   };
   // จัดหมวดตามขั้นตอนการทำงาน + ย่อ/ขยายได้ (ขั้นตอนที่มอบครบแล้วจะพับเก็บให้อัตโนมัติ)
@@ -751,6 +835,10 @@ async function openLeaderPanel(){
       return stepSection('lg',gp[0],stepLabel(gp[0]),'มอบแล้ว '+got+'/'+tot,
         gp[1].map(_defCard).join(''), got>=tot);
     }).join('');
+  // ★ แถบส่งผลัด ต่อท้ายรายการงาน
+  $('l_board').innerHTML += shiftSendHTML(SS_STATE);
+  wireShiftSend();
+  wireCloseTask();
   document.querySelectorAll('[data-give]').forEach(btn=>btn.onclick=async()=>{
     const def=Number(btn.dataset.give), to=($('lg_'+def)||{}).value; if(!to){ toast('err','เลือกคนก่อน'); return; }
     try{ await window.HR.assignColleague({ byEmpId:EMP.emp_id, toEmpId:to, task_def_id:def, shiftId:b.shift }); toast('ok','แจกงานแล้ว'); openLeaderPanel(); }
@@ -784,6 +872,10 @@ async function openM2(){
   let mt={rows:[]}; try{ mt=await window.HR.getMyMgrTasks(EMP.emp_id); }catch(e){}
   let fx={rows:[]}; try{ fx=await window.HR.getMyFixTasks(EMP.emp_id); }catch(e){}
   let shv={rows:[]}; try{ shv=await window.HR.getMyShelves(EMP.emp_id); }catch(e){}   // ★ เชลฟ์ที่รับผิดชอบเดือนนี้
+  // ★ งานที่ถูกตีกลับแล้วค้างข้ามวัน — ล็อกการส่งงานของผลัดนี้จนกว่าจะแก้เสร็จ
+  let ovf={blocked:false,rows:[],waiting:[]};
+  try{ ovf=await window.HR.overdueFixState(EMP.emp_id); }catch(e){}
+  window.OVF=ovf;
   let r=null, shiftErr='';
   try{ r=await window.HR.getMyAssignments(EMP.emp_id); }catch(e){ shiftErr=e.message||''; }
   // กันงานซ้ำ: ถ้างานที่ต้องแก้เป็นงานของกะ/วันนี้ของเราอยู่แล้ว (โผล่ใน "งานของฉัน") ไม่ต้องโชว์ซ้ำในกล่องงานแก้
@@ -796,6 +888,8 @@ async function openM2(){
   let html='';
   // ===== งานที่ผู้จัดการตีกลับให้แก้ (บนสุด — อาจเป็นงานที่เราเป็นคน "ตรวจผ่าน" ไม่ใช่คนส่ง) =====
   html += renderFixTasksHTML(fx.rows||[]);
+  // ★ แบนเนอร์ผลัดถูกล็อก / รอคนที่หยุดกลับมาแก้
+  html += overdueBannerHTML(ovf);
   // ===== งานที่ผู้จัดการมอบหมาย =====
   html += renderMgrTasksHTML(mt.rows||[]);
   // ===== งานพิเศษจากผู้จัดการ =====
@@ -824,6 +918,7 @@ async function openM2(){
     const min=(r.unassigned.find(x=>x.id===a.task_def_id)||{}).min_photos; // อาจ undefined → ใช้ require_photo
     let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     c+=taskDetailHTML(window.TASK_DET[a.task_def_id]);
+    if(a.status==='closed') c+='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:12.5px;line-height:1.6"><b>ปิดงาน — ทำไม่ได้</b><div style="margin-top:2px">'+esc(a.closed_reason||'')+'</div><div class="muted" style="font-size:11.5px;margin-top:3px">ปิดโดย '+esc(a.closed_by_name||'')+'</div></div>';
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
     if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:2px 0 4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
     if(isEdit){ c+=flowStepsHTML(a); }
@@ -849,7 +944,7 @@ async function openM2(){
     return c+'</div>';
   };
   // ★ งานที่กดส่งแล้ว/ผ่านแล้ว → ย้ายลงล่างสุดในหัวข้อ "งานที่ทำเสร็จแล้ว" (พับเก็บไว้)
-  var _mDone=function(a){ return a.status==='submitted'||a.status==='approved'; };
+  var _mDone=function(a){ return a.status==='submitted'||a.status==='approved'||a.status==='closed'; };
   var _mPend=r.mine.filter(function(a){ return !_mDone(a); });
   var _mFin=r.mine.filter(_mDone);
   if(_mPend.length) html+=groupSteps(_mPend, function(a){ return stepOfDef(a.task_def_id); })
@@ -1019,6 +1114,40 @@ function shvPill(c){
   if(c.status==='approved')  return '<span class="pill ok">ผ่านแล้ว</span>';
   if(c.status==='sent_back') return '<span class="pill bad">ตีกลับ — ต้องแก้</span>';
   return '<span class="pill warn">รอตรวจ</span>';
+}
+// ★ แบนเนอร์งานตีกลับค้างข้ามวัน
+function overdueBannerHTML(o){
+  if(!o) return '';
+  var h='';
+  if(o.blocked && (o.rows||[]).length){
+    var byWho={}; o.rows.forEach(function(r){ (byWho[r.who_name]=byWho[r.who_name]||[]).push(r); });
+    h+='<div class="card" style="background:#fef2f2;border-color:#fecaca;border-left:3px solid #dc2626">'
+      +'<div style="font-weight:700;color:#991b1b;font-size:14.5px">'
+        +'<svg class="ei" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> ผลัดนี้ถูกล็อก — ส่งงานไม่ได้</div>'
+      +'<div style="font-size:12.5px;color:#7f1d1d;line-height:1.7;margin-top:4px">'
+        +'มีงานที่ถูกตีกลับค้างจากวันก่อน ยังไม่ได้แก้ ต้องแก้ให้เสร็จก่อนผลัดจึงจะทำงานต่อได้</div>'
+      +'<div style="margin-top:7px;font-size:13px;line-height:1.75;color:#7f1d1d">'
+        +Object.keys(byWho).map(function(n){
+          return '<b>'+esc(n)+'</b> ค้าง '+byWho[n].length+' งาน<br>'
+            +byWho[n].slice(0,4).map(function(r){ return '<span style="font-size:12.5px">• '+esc(r.title)+' <span class="muted">('+esc(r.work_date)+')</span></span>'; }).join('<br>')
+            +(byWho[n].length>4?('<br><span class="muted" style="font-size:12px">…และอีก '+(byWho[n].length-4)+' รายการ</span>'):'');
+        }).join('<br>')
+      +'</div>'
+      +(o.mine?'<div style="margin-top:8px;font-size:12.5px;color:#991b1b;font-weight:600">มีงานของคุณอยู่ในรายการนี้ — เลื่อนลงไปที่ “งานที่ต้องแก้” แล้วส่งใหม่ ระบบจะปลดล็อกทันที</div>'
+        :'<div style="margin-top:8px;font-size:12.5px;color:#991b1b">แจ้งคนที่ระบุให้เข้ามาแก้งาน ระบบจะปลดล็อกให้ทันทีที่แก้เสร็จ</div>')
+      +'</div>';
+  }
+  var w=(o.waiting||[]);
+  if(w.length){
+    var wWho={}; w.forEach(function(r){ (wWho[r.who_name]=wWho[r.who_name]||[]).push(r); });
+    h+='<div class="card" style="background:#fff7ed;border-color:#fed7aa">'
+      +'<div style="font-weight:700;color:#9a3412;font-size:13.5px">งานตีกลับที่ยังค้าง — รอคนที่ต้องแก้เข้าเวร</div>'
+      +'<div style="font-size:12.5px;color:#9a3412;line-height:1.7;margin-top:3px">'
+        +Object.keys(wWho).map(function(n){ return esc(n)+' ค้าง '+wWho[n].length+' งาน <span class="muted">(วันนี้ไม่มีเวร)</span>'; }).join('<br>')
+      +'</div>'
+      +'<div class="muted" style="font-size:11.5px;margin-top:4px">วันนี้ยังทำงานได้ตามปกติ — ระบบจะล็อกเฉพาะวันที่คนนั้นเข้าเวร</div></div>';
+  }
+  return h;
 }
 function renderMyShelvesHTML(shv){
   SHV_DATA=shv;

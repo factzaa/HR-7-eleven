@@ -717,6 +717,8 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
 
   <div class="shpan" id="mtpan_review" style="display:none">
+    <div id="mt_closed" style="margin-bottom:14px"></div>
+    <div id="mt_exit" style="margin-bottom:14px"></div>
     <div id="mt_intask" style="margin-bottom:14px"></div>
     <div id="mt_fixing" style="margin-bottom:14px"></div>
   </div>
@@ -10699,8 +10701,80 @@ function showMtView(which){
   if(A) A.style.display = which==='assigned'?'block':'none';
   const bar=$('mtsub'); if(bar) bar.querySelectorAll('[data-mtpan]').forEach(b=>b.classList.toggle('on', b.dataset.mtpan===which));
   if(which==='assigned') loadMtasks();
-  else if(which==='review'){ loadMtaskIntask(); loadMtaskFixing(); }
+  else if(which==='review'){ loadClosedTasks(); loadExitOverrides(); loadMtaskIntask(); loadMtaskFixing(); }
   else if(which==='daily') loadMdaily();
+}
+// ===================================================================
+// งานที่หัวหน้าผลัดปิดเพราะทำไม่ได้ — ผจก. กดรับทราบ  (15 ก.ย. 69)
+// ===================================================================
+async function loadClosedTasks(){
+  const box=$('mt_closed'); if(!box) return;
+  box.innerHTML='<div class="card"><div class="card-b muted">กำลังโหลด…</div></div>';
+  const r=await post({ action:'hr_closed_tasks', ...authBody() });
+  if(!r||!r.ok){ box.innerHTML='<div class="card"><div class="card-b muted">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div></div>'; return; }
+  const rows=(r.rows||[]);
+  const wait=rows.filter(x=>!x.closed_ack_at), seen=rows.filter(x=>x.closed_ack_at);
+  if(!rows.length){ box.innerHTML=''; return; }
+  const one=(t,ack)=>'<div style="border-top:1px dashed var(--line);padding:9px 0">'
+    +'<div style="font-weight:600;font-size:14px">'+esc(t.title||'')
+      +' <span class="muted" style="font-size:12px;font-weight:400">· กะ '+esc(t.shift_id||'-')+' · '+esc(beDate(t.work_date))+'</span></div>'
+    +'<div style="font-size:12.5px;line-height:1.7;margin-top:3px">'+esc(t.closed_reason||'')+'</div>'
+    +'<div class="muted" style="font-size:12px;margin-top:2px">ปิดโดย '+esc(t.closed_by_name||t.closed_by||'—')
+      +(ack?(' · รับทราบโดย '+esc(t.closed_ack_name||'')+' '+fmtDT(t.closed_ack_at)):'')+'</div>'
+    +(ack?'':'<div style="margin-top:6px"><button class="btn btn-pri btn-sm" data-cack="'+t.id+'">รับทราบ</button></div>')
+    +'</div>';
+  box.innerHTML='<div class="card" style="border-left:3px solid #b45309">'
+    +'<div class="card-h"><h3>งานที่ปิดเพราะทำไม่ได้'+(wait.length?(' <span class="pill" style="background:#fef3c7;color:#92400e">รอรับทราบ '+wait.length+'</span>'):'')+'</h3></div>'
+    +'<div class="card-b" style="padding-top:0">'
+    +(wait.length?wait.map(t=>one(t,false)).join(''):'<div class="muted" style="font-size:12.5px;padding:8px 0">รับทราบครบแล้ว</div>')
+    +(seen.length?('<div class="muted" style="font-size:11.5px;margin-top:10px">รับทราบแล้ว '+seen.length+' รายการ (7 วันล่าสุด)</div>'+seen.slice(0,10).map(t=>one(t,true)).join('')):'')
+    +'</div></div>';
+  box.querySelectorAll('[data-cack]').forEach(b=>b.onclick=async()=>{
+    const note=prompt('รับทราบงานที่ปิดนี้\n\nบันทึกเพิ่มเติม (ไม่ใส่ก็ได้) เช่น สั่งช่างแล้ว / ให้ทำพรุ่งนี้:');
+    if(note===null) return;
+    const r2=await post({ action:'hr_closed_ack', ...authBody(), id:Number(b.dataset.cack), note:(note||'').trim()||null });
+    if(r2&&r2.ok){ toast('ok','รับทราบแล้ว'); loadClosedTasks(); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ');
+  });
+}
+
+// ===================================================================
+// สิทธิออกงานฉุกเฉิน — ผจก. ปลดล็อกให้พนักงานสแกนออกได้ทั้งที่ยังไม่ส่งผลัด
+// ===================================================================
+async function loadExitOverrides(){
+  const box=$('mt_exit'); if(!box) return;
+  const [rs, rl] = await Promise.all([
+    post({ action:'hr_shift_submits', ...authBody() }),
+    post({ action:'hr_checkout_override_list', ...authBody() }),
+  ]);
+  const subs=(rs&&rs.ok&&rs.rows)||[], ovs=(rl&&rl.ok&&rl.rows)||[];
+  box.innerHTML='<div class="card" style="border-left:3px solid #0369a1">'
+    +'<div class="card-h"><h3>ส่งผลัด &amp; สิทธิออกงานฉุกเฉิน</h3></div>'
+    +'<div class="card-b" style="padding-top:0">'
+    +'<div style="font-size:12.5px;line-height:1.75;margin-bottom:8px">'
+      +(subs.length?subs.map(x=>'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> กะ '+esc(x.shift_id)+' ส่งผลัดแล้ว '+fmtDT(x.submitted_at)+' <span class="muted">· '+esc(x.emp_name||'')+' · งาน '+x.done+'/'+x.total+(x.closed?(' · ปิดงาน '+x.closed):'')+'</span>').join('<br>')
+        :'<span class="muted">วันนี้ยังไม่มีกะไหนกดส่งผลัด — พนักงานในกะที่ยังไม่ส่งจะยังสแกนออกงานไม่ได้</span>')
+    +'</div>'
+    +'<div style="border-top:1px dashed var(--line);padding-top:9px">'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:5px">ปลดล็อกให้พนักงานออกงานก่อน (ใช้เมื่อจำเป็นจริง — บันทึกชื่อผู้อนุมัติไว้)</div>'
+    +'<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">'
+      +'<input type="text" id="ovr_emp" placeholder="รหัสพนักงาน" inputmode="numeric" style="width:130px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+      +'<input type="text" id="ovr_why" placeholder="เหตุผล (อย่างน้อย 10 ตัวอักษร)" style="flex:1;min-width:190px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
+      +'<button class="btn btn-pri btn-sm" id="ovr_go">อนุมัติออกงาน</button>'
+    +'</div>'
+    +(ovs.length?('<div style="font-size:12.5px;line-height:1.7;margin-top:9px">อนุมัติไปแล้ววันนี้<br>'
+        +ovs.map(o=>'• '+esc(o.emp_name||o.emp_id)+' <span class="muted">· '+esc(o.reason||'')+' · โดย '+esc(o.granted_name||'')
+          +(o.used_at?' · ออกงานแล้ว':' · ยังไม่ได้ออก')+'</span>').join('<br>')+'</div>'):'')
+    +'</div></div></div>';
+  const go=$('ovr_go'); if(go) go.onclick=async()=>{
+    const emp=($('ovr_emp').value||'').trim(), why=($('ovr_why').value||'').trim();
+    if(!emp){ toast('err','กรอกรหัสพนักงาน'); return; }
+    if(why.length<10){ toast('err','ระบุเหตุผลอย่างน้อย 10 ตัวอักษร'); return; }
+    go.disabled=true;
+    const r=await post({ action:'hr_checkout_override', ...authBody(), emp_id:emp, reason:why });
+    go.disabled=false;
+    if(r&&r.ok){ toast('ok','อนุมัติให้ '+(r.emp_name||emp)+' ออกงานได้แล้ว'); $('ovr_emp').value=''; $('ovr_why').value=''; loadExitOverrides(); }
+    else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+  };
 }
 function intaskReviewer(){ try{ return MGR_MODE ? (typeof mtName==='function'?mtName():'') : ''; }catch(e){ return ''; } }
 // ---------- งานที่ ผจก.สั่งแก้ (รอคนแก้ส่งกลับ) ----------

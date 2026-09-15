@@ -215,6 +215,241 @@
   }
 
   // ---------- เช็กเอาท์ ----------
+  // ===================================================================
+  // ปิดงานที่ทำไม่ได้จริง + ส่งผลัด  (15 ก.ย. 69)
+  //   ปิดงาน  : หัวหน้าผลัดเท่านั้น ต้องระบุเหตุผลให้ครบ → status = 'closed'
+  //   ส่งผลัด : หัวหน้าผลัดยืนยันด้วยรหัสตัวเอง ว่างานพร้อมให้ผลัดถัดไปตรวจ
+  //             จะกดได้ก็ต่อเมื่องานทุกรายการ "ส่งแล้ว" หรือ "ปิดงานพร้อมเหตุผล"
+  // ===================================================================
+  // ===================================================================
+  // งานที่ถูกตีกลับแล้วค้างข้ามวัน → ล็อกการส่งงานของผลัดนั้น (15 ก.ย. 69)
+  //   ตีกลับวันไหน ต้องแก้ให้จบภายในวันนั้น พอขึ้นวันใหม่ยังไม่แก้ = ผลัดนั้นทำงานต่อไม่ได้
+  //   ผลัดที่ถูกล็อก = ผลัดของ "คนที่ต้องแก้" (fix_shift_id ถ้ามี ไม่งั้นใช้ผลัดเดิมของงาน)
+  //   แก้งานเสร็จเมื่อไหร่ ระบบปลดล็อกทันที — และการ "ส่งงานที่แก้" จะไม่ถูกล็อกเด็ดขาด
+  // ===================================================================
+  async function _overdueFixRows(branch, workDate, group){
+    if (!branch || !workDate || !group) return [];
+    const { data } = await sb.from('task_assignments')
+      .select('id,title,work_date,shift_id,fix_shift_id,fix_emp,emp_id,emp_name,review_note,reviewed_at')
+      .eq('branch_id', branch).eq('status', 'sent_back').is('fix_done_at', null)
+      .lt('work_date', workDate).order('work_date').limit(100);
+    const all = data || [];
+    if (!all.length) return [];
+    const whoOf = r => String(r.fix_emp || r.emp_id || '');
+    const ids = [...new Set(all.map(whoOf).filter(Boolean))];
+    const [esR, schR, shR] = await Promise.all([
+      ids.length ? sb.from('employees').select('emp_id,name,nickname').in('emp_id', ids) : Promise.resolve({ data: [] }),
+      ids.length ? sb.from('schedules').select('emp_id,shift_id').eq('work_date', workDate).in('emp_id', ids) : Promise.resolve({ data: [] }),
+      sb.from('shifts').select('shift_id,main_shift'),
+    ]);
+    const nameOf = {}; (esR.data || []).forEach(e => { nameOf[e.emp_id] = e.nickname || e.name; });
+    const grpOf = {}; (shR.data || []).forEach(x => { grpOf[x.shift_id] = x.main_shift || x.shift_id; });
+    // ★ อิงตารางเวรจริง — คนที่ต้องแก้ "วันหยุด" จะไม่ไปล็อกผลัดของคนอื่น
+    const onDuty = {};
+    (schR.data || []).forEach(x => { (onDuty[x.emp_id] = onDuty[x.emp_id] || new Set()).add(grpOf[x.shift_id] || x.shift_id); });
+    const out = [];
+    all.forEach(r => {
+      const who = whoOf(r);
+      const duty = onDuty[who] || null;
+      const worksThisShift = !!(duty && duty.has(group));         // วันนี้เข้าผลัดนี้จริง → ล็อกได้
+      const ownShift = String(r.fix_shift_id || r.shift_id || '') === String(group);
+      if (!worksThisShift && !ownShift) return;                   // ไม่เกี่ยวกับผลัดนี้เลย
+      out.push({ id:r.id, title:r.title || '', work_date:r.work_date, shift_id:r.shift_id,
+        who_id: who, who_name: nameOf[who] || r.emp_name || who || '—',
+        note: r.review_note || '',
+        on_duty: !!duty,                                          // วันนี้มีเวรมั้ย
+        blocking: worksThisShift });                              // ล็อกผลัดนี้หรือแค่รอ
+    });
+    return out;
+  }
+  function _overdueMsg(rows0){
+    const rows = rows0.filter(r => r.blocking);
+    const byWho = {};
+    rows.forEach(r => { (byWho[r.who_name] = byWho[r.who_name] || []).push(r.title); });
+    const who = Object.keys(byWho).map(n => n + ' (' + byWho[n].length + ' งาน)').join(', ');
+    const list = rows.slice(0, 4).map(r => '• ' + r.who_name + ' — ' + r.title + ' [' + r.work_date + ']').join('\n');
+    return 'ผลัดนี้ถูกล็อกชั่วคราว เพราะมีงานที่ถูกตีกลับค้างจากวันก่อนยังไม่ได้แก้\n\n'
+      + list + (rows.length > 4 ? ('\n…และอีก ' + (rows.length - 4) + ' รายการ') : '')
+      + '\n\nคนที่ต้องแก้: ' + who
+      + '\nให้แก้งานที่ค้างให้เสร็จก่อน ระบบจะปลดล็อกให้ทันที';
+  }
+  async function _assertNoOverdueFix(branch, workDate, group){
+    const rows = await _overdueFixRows(branch, workDate, group);
+    const blk = rows.filter(r => r.blocking);
+    if (blk.length){ const e = new Error(_overdueMsg(rows)); e.code = 'OVERDUE_FIX'; e.rows = blk; throw e; }
+  }
+  // สถานะไว้โชว์แบนเนอร์ในหน้าเว็บ
+  async function overdueFixState(empId){
+    try{
+      const emp = await lookupEmployee(empId); if (!emp) return { blocked:false, rows:[] };
+      const { workDate, group, branch } = await _shiftCtx(emp);
+      if (!group) return { blocked:false, rows:[] };
+      const rows = await _overdueFixRows(branch, workDate, group);
+      const blocking = rows.filter(r => r.blocking);
+      const waiting  = rows.filter(r => !r.blocking);       // คนที่ต้องแก้วันนี้หยุด → แค่แจ้งให้รู้ ไม่ล็อก
+      return { blocked: blocking.length > 0, rows: blocking, waiting, shift: group,
+        mine: rows.filter(r => String(r.who_id) === String(emp.emp_id)).length };
+    }catch(e){ return { blocked:false, rows:[] }; }
+  }
+
+  const CLOSE_REASON_MIN = 15;              // เหตุผลต้องยาวพอที่จะเข้าใจได้จริง
+
+  async function _leadOf(branch, today, shift){
+    const { data } = await sb.from('shift_leads').select('emp_id,emp_name')
+      .eq('work_date', today).eq('branch_id', branch || '').eq('shift_id', shift).maybeSingle();
+    return data || null;
+  }
+  async function _assertIsLead(emp, branch, today, shift){
+    const lead = await _leadOf(branch, today, shift);
+    if (!lead) throw new Error('กะนี้ยังไม่มีหัวหน้าผลัด — กดรับเป็นหัวหน้าผลัดก่อน');
+    if (String(lead.emp_id) !== String(emp.emp_id))
+      throw new Error('ทำได้เฉพาะหัวหน้าผลัดเท่านั้น (ตอนนี้คือ ' + (lead.emp_name || lead.emp_id) + ')');
+    return lead;
+  }
+  async function _submitOf(branch, today, shift){
+    const { data } = await sb.from('shift_submits').select('*')
+      .eq('work_date', today).eq('branch_id', branch || '').eq('shift_id', shift).maybeSingle();
+    return data || null;
+  }
+
+  // ---- ปิดงานเพราะทำไม่ได้ ----
+  async function taskCloseCannotDo({ empId, task_def_id, reason }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { workDate: today, group: shift, branch } = await _shiftCtx(emp);
+    _assertHasShift(shift);
+    await _assertIsLead(emp, branch, today, shift);
+    if (await _submitOf(branch, today, shift)) throw new Error('ผลัดนี้ส่งผลัดไปแล้ว แก้ไขงานไม่ได้');
+    const rs = String(reason || '').trim();
+    if (rs.length < CLOSE_REASON_MIN)
+      throw new Error('ต้องระบุเหตุผลให้ครบถ้วน อย่างน้อย ' + CLOSE_REASON_MIN + ' ตัวอักษร (บอกให้ชัดว่าทำไม่ได้เพราะอะไร)');
+    const def = (await sb.from('task_defs').select('id,title').eq('id', task_def_id).maybeSingle()).data;
+    if (!def) throw new Error('ไม่พบงานนี้');
+    const existing = await _findAsg(branch, today, shift, task_def_id);
+    if (existing && (existing.status === 'submitted' || existing.status === 'approved'))
+      throw new Error('งานนี้ส่งไปแล้ว ปิดงานไม่ได้');
+    const nowIso = new Date().toISOString();
+    const patch = { status: 'closed', closed_reason: rs, closed_by: emp.emp_id,
+      closed_by_name: emp.nickname || emp.name, closed_at: nowIso,
+      closed_ack_by: null, closed_ack_name: null, closed_ack_note: null, closed_ack_at: null };
+    if (existing){
+      const { error } = await sb.from('task_assignments').update(patch).eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('task_assignments').insert(Object.assign({
+        branch_id: branch || null, work_date: today, shift_id: shift, task_def_id: def.id,
+        title: def.title, emp_id: emp.emp_id, emp_name: emp.nickname || emp.name }, patch));
+      if (error) throw error;
+    }
+    try{ await sb.from('activity_log').insert({ action:'ปิดงาน (ทำไม่ได้)', emp_id:emp.emp_id,
+      detail: def.title + ' · กะ ' + shift + ' · ' + rs, actor: emp.nickname || emp.name }); }catch(e){}
+    return { ok:true };
+  }
+
+  // ---- ยกเลิกการปิดงาน (เปิดกลับมาทำต่อ) ----
+  async function taskReopen({ empId, task_def_id }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { workDate: today, group: shift, branch } = await _shiftCtx(emp);
+    _assertHasShift(shift);
+    await _assertIsLead(emp, branch, today, shift);
+    if (await _submitOf(branch, today, shift)) throw new Error('ผลัดนี้ส่งผลัดไปแล้ว แก้ไขงานไม่ได้');
+    const existing = await _findAsg(branch, today, shift, task_def_id);
+    if (!existing || existing.status !== 'closed') throw new Error('งานนี้ไม่ได้อยู่ในสถานะปิดงาน');
+    const { error } = await sb.from('task_assignments').update({ status:'todo',
+      closed_reason:null, closed_by:null, closed_by_name:null, closed_at:null,
+      closed_ack_by:null, closed_ack_name:null, closed_ack_note:null, closed_ack_at:null }).eq('id', existing.id);
+    if (error) throw error;
+    return { ok:true };
+  }
+
+  // ---- สถานะปุ่มส่งผลัด ----
+  async function shiftSubmitState(empId){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { workDate: today, group: shift, branch } = await _shiftCtx(emp);
+    if (!shift) return { has_shift:false };
+    const [lead, submitted, defsRaw, asgR] = await Promise.all([
+      _leadOf(branch, today, shift),
+      _submitOf(branch, today, shift),
+      _taskDefsFor(branch, today, shift),
+      sb.from('task_assignments').select('*').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', shift),
+    ]);
+    const defs = (defsRaw || []).filter(d => !d.auto_day);
+    const byDef = {}; (asgR.data || []).forEach(a => { byDef[a.task_def_id] = a; });
+    const pending = [], closed = [];
+    let done = 0;
+    defs.forEach(d => {
+      const a = byDef[d.id];
+      const st = a ? String(a.status || 'todo') : 'todo';
+      if (st === 'submitted' || st === 'approved') done++;
+      else if (st === 'closed') closed.push({ id:d.id, title:d.title, reason:(a && a.closed_reason) || '' });
+      else pending.push({ id:d.id, title:d.title, status:st, emp_name:(a && a.emp_name) || '' });
+    });
+    return { has_shift:true, shift, branch, work_date:today,
+      lead, is_lead: !!(lead && String(lead.emp_id) === String(emp.emp_id)),
+      submitted, total: defs.length, done, closed, pending,
+      can_submit: !!(lead && String(lead.emp_id) === String(emp.emp_id)) && !submitted && pending.length === 0 };
+  }
+
+  // ---- กดส่งผลัด ----
+  async function shiftSubmit({ empId, confirmEmpId, note }){
+    const st = await shiftSubmitState(empId);
+    if (!st.has_shift) throw new Error('วันนี้คุณไม่มีกะ');
+    if (st.submitted) throw new Error('ผลัดนี้ส่งไปแล้วเมื่อ ' + new Date(st.submitted.submitted_at).toLocaleString('th-TH'));
+    if (!st.lead) throw new Error('กะนี้ยังไม่มีหัวหน้าผลัด');
+    if (!st.is_lead) throw new Error('ส่งผลัดได้เฉพาะหัวหน้าผลัด (' + (st.lead.emp_name || st.lead.emp_id) + ')');
+    if (String(confirmEmpId || '').trim() !== String(st.lead.emp_id))
+      throw new Error('รหัสยืนยันไม่ตรงกับหัวหน้าผลัด');
+    if (st.pending.length)
+      throw new Error('ยังมีงานค้าง ' + st.pending.length + ' รายการ — ส่งงานให้ครบ หรือปิดงานพร้อมระบุเหตุผลก่อน');
+    await _assertNoOverdueFix(st.branch, st.work_date, st.shift);   // ★ งานตีกลับค้างข้ามวัน ต้องเคลียร์ก่อนส่งผลัด
+    const emp = await lookupEmployee(empId);
+    const rowIns = { work_date: st.work_date, branch_id: st.branch || '', shift_id: st.shift,
+      emp_id: st.lead.emp_id, emp_name: st.lead.emp_name || (emp.nickname || emp.name),
+      total: st.total, done: st.done, closed: st.closed.length, note: (note || null) };
+    const { error } = await sb.from('shift_submits').insert(rowIns);
+    if (error && !String(error.message || '').match(/duplicate|unique/i)) throw error;
+    try{ await sb.from('activity_log').insert({ action:'ส่งผลัด', emp_id: st.lead.emp_id,
+      detail: 'กะ ' + st.shift + ' สาขา ' + (st.branch || '-') + ' · ส่งงาน ' + st.done + '/' + st.total
+        + (st.closed.length ? (' · ปิดงาน ' + st.closed.length) : ''), actor: st.lead.emp_name || '' }); }catch(e){}
+    // ยิงรายงานเข้าไลน์กลุ่มทันที — ไม่ต้องรอ cron รอบเวลา
+    let line_sent = null;
+    try{
+      const base = String((window.SUPABASE_CONFIG || {}).url || '').replace(/\/$/, '');
+      const res = await fetch(base + '/functions/v1/staff-notify', { method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ kind:'shift_report', branch_id: st.branch || '', shift_id: st.shift, work_date: st.work_date }) });
+      const j = await res.json().catch(() => ({}));
+      line_sent = !!(j && j.ok && j.sent);
+    }catch(e){ line_sent = false; }
+    return { ok:true, line_sent, total: st.total, done: st.done, closed: st.closed.length };
+  }
+
+  // ---- ด่านสแกนออก: ยังไม่ส่งผลัด = ออกงานไม่ได้ ----
+  //   ปลอดภัยไว้ก่อน — ถ้าตรวจไม่สำเร็จด้วยเหตุใดก็ตาม จะ "ไม่ล็อก" คนออกงาน
+  async function _checkoutShiftGate(empId, row){
+    try{
+      const wd = row.work_date, sid = row.shift_id || '';
+      if (!sid) return null;
+      const { data: e } = await sb.from('employees').select('is_manager').eq('emp_id', empId).maybeSingle();
+      if (e && e.is_manager) return null;                       // ผจก. ไม่ติดล็อก (เป็นคนปลดล็อกให้คนอื่น)
+      const { data: ov } = await sb.from('checkout_overrides').select('id,used_at')
+        .eq('emp_id', empId).eq('work_date', wd).maybeSingle();
+      if (ov){
+        try{ if (!ov.used_at) await sb.from('checkout_overrides').update({ used_at: new Date().toISOString() }).eq('id', ov.id); }catch(_e){}
+        return null;                                            // ผจก. อนุมัติออกงานฉุกเฉินไว้แล้ว
+      }
+      const { data: sh } = await sb.from('shifts').select('shift_id,name,main_shift,report_shift').eq('shift_id', sid).maybeSingle();
+      if (sh && sh.report_shift === false) return null;         // กะที่ไม่เข้ารายงาน (เช่น กะ ผจก.) ไม่ล็อก
+      const grp = (sh && (sh.main_shift || sh.shift_id)) || sid;
+      const { data: sub } = await sb.from('shift_submits').select('id')
+        .eq('work_date', wd).eq('branch_id', row.branch_id || '').eq('shift_id', grp).maybeSingle();
+      if (sub) return null;
+      const { data: lead } = await sb.from('shift_leads').select('emp_name')
+        .eq('work_date', wd).eq('branch_id', row.branch_id || '').eq('shift_id', grp).maybeSingle();
+      return { blockedShift:true, shift_id:grp, shift_name:(sh && sh.name) || grp,
+        lead_name:(lead && lead.emp_name) || '', work_date: wd };
+    }catch(e){ return null; }
+  }
+
   async function checkOut({ empId, shiftId, checkoutBranchId, reason, photoDataUrl }) {
     const today = bangkokDate();
     // หาแถวที่ "ยังเปิดอยู่ล่าสุด" (เช็กอินแล้ว ยังไม่เช็กเอาต์) ภายใน 2 วัน — รองรับกะข้ามคืน (เข้าเมื่อวาน ออกวันนี้)
@@ -224,6 +459,9 @@
       .gte('work_date', _addDays(today, -2))
       .order('check_in', { ascending: false }).limit(1).maybeSingle();
     if (!row || !row.check_in) return { ot_hours: 0, none: true };   // ไม่มีแถวที่ค้างเปิดอยู่
+    // ★ 15 ก.ย. 69 — หัวหน้าผลัดยังไม่กดส่งผลัด → คนในผลัดยังออกงานไม่ได้
+    const _blk = await _checkoutShiftGate(empId, row);
+    if (_blk) return _blk;
     const checkinBranch = row.branch_id || null;
     const crossBranch = !!(checkoutBranchId && checkinBranch && checkoutBranchId !== checkinBranch);
     // ข้ามสาขา แต่ยังไม่ได้ใส่เหตุผล → ขอเหตุผลก่อน (ยังไม่ปิดงาน)
@@ -1657,6 +1895,7 @@
     _assertHasShift(shift);
     await _assertShiftStarted(shift, today, emp);
     await _assertPrevShiftDone(branch, shift, today);
+    await _assertNoOverdueFix(branch, today, shift);   // ★ มีงานตีกลับค้างข้ามวัน → ผลัดนี้ทำงานต่อไม่ได้
     let photo_url = null;
     if (photo) photo_url = await uploadPhoto('employee-docs', 'task/' + (branch || 'x') + '_' + task_def_id + '_' + Date.now() + '.jpg', photo);
     if (def.require_photo && !photo_url) throw new Error('งานนี้ต้องแนบรูปก่อนส่ง');
@@ -1680,6 +1919,7 @@
     _assertHasShift(shift);
     await _assertShiftStarted(shift, today, by);
     await _assertPrevShiftDone(branch, shift, today);
+    await _assertNoOverdueFix(branch, today, shift);   // ★ มีงานตีกลับค้างข้ามวัน → ผลัดนี้ทำงานต่อไม่ได้
     const existing = await _findAsg(branch, today, shift, task_def_id);
     _assertNotDone(existing);   // ★ งานที่ส่ง/ตรวจผ่านแล้ว เปลี่ยนคนทำไม่ได้ — กันรูปหลักฐานหาย
     const base = { emp_id: to.emp_id, emp_name: to.nickname || to.name, status: 'todo', photo_url: null, emp_note: null, submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
@@ -1936,8 +2176,9 @@
     _assertHasShift(shift);
     await _assertShiftStarted(shift, today, emp);
     await _assertPrevShiftDone(branch, shift, today);
+    await _assertNoOverdueFix(branch, today, shift);   // ★ มีงานตีกลับค้างข้ามวัน → ผลัดนี้ทำงานต่อไม่ได้
     const existing=await _findAsg(branch,today,shift,task_def_id);
-    _assertNotDone(existing);   // ★ งานที่ส่ง/ตรวจผ่านแล้ว ดึงมาทำทับไม่ได้ — กันรูปหลักฐานหาย
+    _assertNotDone(existing);   // ★ งานที่ส่ง/ตรวจผ่านแล้ว ดึงมาทับไม่ได้ — กันรูปหลักฐานหาย
     const base={ emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, status:'todo', photos:null, photo_url:null, emp_note:null, submitted_at:null, reviewer:null, review_note:null, reviewed_at:null };
     if(existing){ const {error}=await sb.from('task_assignments').update(base).eq('id',existing.id); if(error) throw error; }
     else { const {error}=await sb.from('task_assignments').insert(Object.assign({ work_date:today, branch_id:branch||null, shift_id:shift, task_def_id, title:def.title, require_photo:(def.min_photos||0)>0 }, base)); if(error) throw error; }
@@ -1989,7 +2230,11 @@
     // งานที่ ผจก.ตีกลับให้ "ผู้ตรวจของผลัดถัดไป" แก้ → คนแก้ไม่ได้อยู่กะเดียวกับงานเดิม จึงไม่ต้องเช็กว่ากะเริ่มหรือยัง
     const isFix = !!(row.fix_emp && !row.fix_done_at && row.status==='sent_back');
     const _subEmp = empId ? await lookupEmployee(empId) : null;
-    if(!isFix) await _assertShiftStarted(row.shift_id, row.work_date, _subEmp);
+    // ★ งานที่กำลัง "แก้" ต้องส่งได้เสมอ ไม่งั้นจะปลดล็อกไม่ได้เลย
+    if(!isFix){
+      await _assertShiftStarted(row.shift_id, row.work_date, _subEmp);
+      if(_subEmp){ const _c=await _shiftCtx(_subEmp); await _assertNoOverdueFix(_c.branch, _c.workDate, _c.group); }
+    }
     const def=(await sb.from('task_defs').select('min_photos,mgr_review,need_review,mgr_owner').eq('id',row.task_def_id).maybeSingle()).data;
     const minP=def?(def.min_photos||0):0;
     // needs_mgr = งานติ๊ก "ผจก.ตรวจ" และกะนั้นเป็นกะที่ ผจก.ตรวจ (บางกะ เช่นดึก ไม่อยู่ในเวลา ผจก.)
@@ -2053,7 +2298,8 @@
     const dids=[...new Set(all.map(a=>a.task_def_id).filter(Boolean))];
     if(dids.length){ const {data:df}=await sb.from('task_defs').select('id,need_review').in('id',dids);
       (df||[]).forEach(d=>{ needMap[d.id]= d.need_review!==false; }); }
-    const mustReview = a => (a.task_def_id==null) ? true : (needMap[a.task_def_id]!==false);
+    // ★ งานที่ปิดเพราะทำไม่ได้ (มีเหตุผลกำกับ) ไม่ต้องให้ผลัดถัดไปไล่กดตรวจ
+    const mustReview = a => (String(a.status||'')!=='closed') && ((a.task_def_id==null) ? true : (needMap[a.task_def_id]!==false));
     const tasks = all.filter(mustReview);
     const noreview = all.filter(a=>!mustReview(a));
     return { emp, curShift:curGroup, cur_name:await _shiftName(curGroup), prev_shift: pv.group, prev_name: pv.group?(await _shiftName(pv.group)):'-', prev_date: pv.date, isMain:pv.isMain, canReview, tasks, noreview, all_count: all.length };
@@ -3335,6 +3581,7 @@
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();

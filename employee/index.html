@@ -687,6 +687,14 @@ async function submit(action){
         if(reason===null || !reason.trim()){ showToast('err','ต้องระบุเหตุผลการกดออกข้ามสาขา'); return; }
         co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, reason:reason.trim(), photoDataUrl: outPhoto });
       }
+      // ★ 15 ก.ย. 69 — หัวหน้าผลัดยังไม่กดส่งผลัด → ยังออกงานไม่ได้
+      if(co && co.blockedShift){
+        showToast('err','ยังออกงานไม่ได้ — หัวหน้าผลัดยังไม่ได้กด "ส่งผลัด"'
+          +(co.lead_name?('\nหัวหน้าผลัด: '+co.lead_name):'\nกะนี้ยังไม่มีใครรับเป็นหัวหน้าผลัด')
+          +'\n\nให้หัวหน้าผลัดเข้าหน้ารับส่งผลัดแล้วกดส่งผลัดก่อน'
+          +'\nถ้าจำเป็นต้องออกก่อนจริง ให้ผู้จัดการร้านอนุมัติสิทธิออกงานฉุกเฉินให้');
+        return;
+      }
       if(co && co.none){ showToast('err','ไม่พบการเข้างานที่ค้างอยู่ — อาจเช็กเอาต์ไปแล้ว'); }
       else if(co && co.needReason){ showToast('err','ต้องระบุเหตุผลก่อนกดออก'); }
       else await showAckPopup('checkout', { name:empMatch.name, time:timeStr, cross:!!(co&&co.crossBranch), branch_name:gps.branch?gps.branch.name:'' });
