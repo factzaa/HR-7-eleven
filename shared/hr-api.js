@@ -218,7 +218,7 @@
         case 'hr_sched_save':     return await hrSchedSave(p.data);
         case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id);
         case 'hr_sched_fill_week':return await hrSchedFillWeek(p.data);
-        case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start);
+        case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start, p.branch_id);
         case 'hr_coverage':       return await hrCoverage(p.filter);
         case 'hr_shift_list':     return await hrShiftList();
         case 'hr_shift_save':     return await hrShiftSave(p.data);
@@ -425,7 +425,7 @@
         case 'hr_shelf_pending':     return await hrShelfPending(p);
         case 'hr_shelf_check_review':return await hrShelfCheckReview(p.id, p.status, p.note, p.markup);
         case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
-        case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note);
+        case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note, p);
         case 'hr_mark_duty':            return await hrMarkDuty(p.data);
         case 'hr_duty_list':            return await hrDutyList(p.branch);
         case 'hr_duty_delete':          return await hrDutyDelete(p.emp_id, p.work_date);
@@ -1492,12 +1492,14 @@
       email: d.email || null,
       emergency_name: d.emergency_name || null, emergency_phone: d.emergency_phone || null,
       bank_name: d.bank_name || null, bank_account: d.bank_account || null, id_card: d.id_card || null,
-      active: !!d.active,
-      is_manager: !!d.is_manager,
+      // ★ แก้ 15 ก.ย. 69 — เดิม !!d.active แปลงค่าที่ "ไม่ได้ส่งมา" เป็น false เงียบ ๆ
+      //   payload ที่ไม่ครบจึงปิดใช้งานพนักงาน ล้าง PIN ผจก. และลบเวรล่วงหน้าทิ้งทั้งหมด
+      active: ('active' in d) ? !!d.active : true,
+      is_manager: ('is_manager' in d) ? !!d.is_manager : false,
       is_rider: !!d.is_rider,
     };
     // PIN ผจก.: ยกเลิกสิทธิ์ = ล้าง PIN · ตั้ง ผจก.+กรอก PIN ใหม่ = อัปเดต · ตั้ง ผจก.แต่เว้น PIN = คง PIN เดิม
-    if (!d.is_manager) row.manager_pin = null;
+    if (('is_manager' in d) && !d.is_manager) row.manager_pin = null;   // ★ แตะ PIN เฉพาะตอนที่ส่ง is_manager มาจริง
     else if (d.manager_pin != null && String(d.manager_pin).trim() !== '') row.manager_pin = String(d.manager_pin).trim();
     if (d._photo_base64) row.photo_url = await window.HR.uploadPhoto('employee-photos', d.emp_id + '.jpg', d._photo_base64);
     else if (d.photo_url === '') row.photo_url = null;
@@ -2581,19 +2583,34 @@
     if (!d || !d.emp_id || !d.start || !d.shift_id) return { ok: false, error: 'ข้อมูลไม่ครบ' };
     const { data: emp } = await sb().from('employees').select('branch_id').eq('emp_id', d.emp_id).maybeSingle();
     const home = emp ? emp.branch_id : null;
-    const rows = [];
-    for (let i = 0; i < 7; i++) rows.push({ emp_id: d.emp_id, work_date: addDays(d.start, i), shift_id: d.shift_id, branch_id: home, is_cover: false, note: null });
-    const { error } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date,shift_id' });
-    if (error) throw error;
-    await logAct('จัดกะทั้งสัปดาห์', d.emp_id, 'สัปดาห์ ' + d.start + ' · กะ ' + d.shift_id, d.actor || 'HR');
-    return { ok: true, count: rows.length };
+    // ★ แก้ 15 ก.ย. 69 — เดิมไม่เช็กเวลาทับเลย (ต่างจาก hrSchedSave ที่เช็ก)
+    //   ทำให้ "เติมทั้งสัปดาห์" ทับวันที่มีกะอยู่แล้วกลายเป็นควบกะทับเวลาโดยไม่ตั้งใจ
+    //   แล้วระบบเงินเดือนไปเครดิตเป็น 2 วัน ทั้งที่พนักงานทำงานกะเดียว
+    const rows = [], skipped = [];
+    for (let i = 0; i < 7; i++) {
+      const wd = addDays(d.start, i);
+      const ovl = await _schedOverlap(d.emp_id, wd, d.shift_id);
+      if (ovl) { skipped.push({ work_date: wd, reason: ovl }); continue; }
+      rows.push({ emp_id: d.emp_id, work_date: wd, shift_id: d.shift_id, branch_id: home, is_cover: false, note: null });
+    }
+    if (rows.length) {
+      const { error } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date,shift_id' });
+      if (error) throw error;
+    }
+    await logAct('จัดกะทั้งสัปดาห์', d.emp_id, 'สัปดาห์ ' + d.start + ' · กะ ' + d.shift_id
+      + ' · ลง ' + rows.length + ' วัน' + (skipped.length ? (' · ข้ามเพราะเวลาทับ ' + skipped.length + ' วัน') : ''), d.actor || 'HR');
+    return { ok: true, count: rows.length, skipped };
   }
   // คัดลอกตารางทั้งสัปดาห์ (7 วันจาก from_start) ไปยังสัปดาห์ใหม่ (to_start)
   // "วางทับ" จริง: ล้างกะของสัปดาห์ปลายทางก่อน แล้วค่อยคัดลอกมาใส่
   // (เดิม upsert เฉยๆ ไม่ล้างก่อน → ถ้าปลายทางมีกะคนละกะอยู่แล้ว จะกลายเป็น "ควบกะ" ซ้อนโดยไม่ตั้งใจ)
-  async function hrSchedCopy(fromStart, toStart) {
+  async function hrSchedCopy(fromStart, toStart, branchId) {
+    // ★ แก้ 15 ก.ย. 69 — เดิมไม่กรองสาขา ทำให้กด "คัดลอกสัปดาห์" ตอนกรองสาขาเดียว
+    //   ไปลบตารางเวรของ "ทั้ง 3 สาขา" ในสัปดาห์ปลายทาง กู้คืนไม่ได้
     const fromEnd = addDays(fromStart, 6);
-    const { data, error } = await sb().from('schedules').select('*').gte('work_date', fromStart).lte('work_date', fromEnd);
+    let selQ = sb().from('schedules').select('*').gte('work_date', fromStart).lte('work_date', fromEnd);
+    if (branchId) selQ = selQ.eq('branch_id', branchId);
+    const { data, error } = await selQ;
     if (error) throw error;
     const offset = daysBetween(fromStart, toStart) - 1; // จำนวนวันเลื่อน
     const rows = (data || []).map(s => ({
@@ -2602,8 +2619,9 @@
     }));
     // ★ ล้างสัปดาห์ปลายทางก่อน (ตามความหมาย "วางทับ") — ตัดสาเหตุกะซ้อนเพิ่มเอง
     const toEnd = addDays(toStart, 6);
-    const { data: cleared, error: eDel } = await sb().from('schedules')
-      .delete().gte('work_date', toStart).lte('work_date', toEnd).select('emp_id');
+    let delQ = sb().from('schedules').delete().gte('work_date', toStart).lte('work_date', toEnd);
+    if (branchId) delQ = delQ.eq('branch_id', branchId);   // ★ ลบเฉพาะสาขาที่เลือก
+    const { data: cleared, error: eDel } = await delQ.select('emp_id');
     if (eDel) throw eDel;
     const clearedCount = (cleared || []).length;
     if (!rows.length) {
@@ -3314,7 +3332,9 @@
     const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
     const dvOf = sid => (dvMap[sid] != null ? dvMap[sid] : 1);
     const schByEmp = {};
-    (schR.data || []).forEach(s => { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; });
+    // ★ แก้ 15 ก.ย. 69 — แถวตารางเวรที่ shift_id ว่าง = "วันหยุด" ต้องไม่นับเป็นวันที่ควรมาทำงาน
+    //   (hrDiscipline กรองถูกอยู่แล้ว แต่ hrScoreGet ไม่กรอง → ขาดงานปลอม ตัดเบี้ยขยัน+โบนัส)
+    (schR.data || []).forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
     const bandFor = (sc) => bands.find(b => sc >= b.min_score && sc <= b.max_score) || null;
     // ★ เกณฑ์วันทำงานขั้นต่ำต่อรอบ — ไม่ถึง = หักคะแนน (ที่นี่) + ตัดเบี้ยวินัย (หน้าเงินเดือน) · 0 = ปิด
     const minWD = await getSettingNum('min_work_days', 0);
@@ -3366,7 +3386,9 @@
       let manualDeduct = 0;
       myEv.forEach(ev => { manualDeduct += ev.points; items.push({ label: ev.label || '(เหตุการณ์)', count: 1, points: ev.points, source: 'manual', date: ev.event_date, note: ev.note, id: ev.id }); });
 
-      let score = start + autoDeduct + manualDeduct;
+      // ★ แก้ 15 ก.ย. 69 — เดิม clamp แค่ขอบล่าง คะแนนเกิน 100 จะหาแบนด์ไม่เจอ
+    //   ทำให้คนที่ถูก "บวกคะแนนความดี" เสียโบนัสวินัยทั้งก้อน
+    let score = Math.min(start, start + autoDeduct + manualDeduct);
       if (score < 0) score = 0;
       const band = bandFor(score);
       return {
@@ -6609,6 +6631,10 @@
     }
     let amt = d.approved_amount != null ? (parseInt(d.approved_amount) || 0) : (r.amount_est || 0);
     if (amt <= 0) return { ok: false, error: 'ยอดอนุมัติต้องมากกว่า 0' };
+    // ★ แก้ 15 ก.ย. 69 — เดิมไม่มีเพดาน ผจก.อนุมัติ 50,000 จากใบที่ขอ 400 ได้
+    //   (ชั้นอนุมัติคิดตอนยื่นจาก amount_est เท่านั้น) — ให้ล็อกไม่เกินยอดที่ขอ เหมือน hrAdvanceReview
+    const _est = Number(r.amount_est || 0);
+    if (_est > 0 && amt > _est) return { ok: false, error: 'อนุมัติเกินยอดที่ประเมินไว้ไม่ได้ (ขอ ' + _est.toLocaleString() + ' บาท) — ถ้าต้องเพิ่ม ให้ไรเดอร์ยื่นใบใหม่' };
     await sb().from('rider_claims').update({ status: 'approved', approved_amount: amt, reviewed_by: who, reviewed_at: now, review_note: d.note ? String(d.note).trim() : null }).eq('id', d.id);
     await sb().from('rider_claim_events').insert({ claim_id: d.id, emp_id: r.emp_id, event: 'approve', actor: who, role: me.role, note: d.note ? String(d.note).trim() : null, amount_before: r.amount_est, amount_after: amt });
     try { await sb().from('emp_notifications').insert({ emp_id: r.emp_id, kind: 'info', title: '✅ อนุมัติเบิกซ่อมรถ ' + r.claim_no + ' · ' + amt.toLocaleString() + ' บาท', body: r.item_name + '\nเข้ารับบริการแล้วส่งใบเสร็จภายในกำหนด', ref: 'rider_claim:' + d.id, created_by: who }); } catch (_e) {}
@@ -7604,11 +7630,17 @@
     });
     return { ok: true, rows, pending: rows.filter(r => r.status === 'pending').length };
   }
-  async function hrCheckoutCorrReview(id, status, note) {
+  async function hrCheckoutCorrReview(id, status, note, auth) {
     if (!id) return { ok: false, error: 'ไม่ระบุคำขอ' };
     const { data: c } = await sb().from('checkout_corrections').select('*').eq('id', id).maybeSingle();
     if (!c) return { ok: false, error: 'ไม่พบคำขอ' };
-    const upd = { status: status === 'approved' ? 'approved' : 'rejected', reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString() };
+    // ★ แก้ 15 ก.ย. 69 — เดิมไม่ตรวจอะไรเลย: ผจก.สาขาอื่นอนุมัติข้ามสาขาได้
+    //   และคำขอที่ปฏิเสธไปแล้วถูกกดอนุมัติใหม่ได้ (ซึ่งไปเขียนทับ ot_hours ที่ HR แก้มือไว้)
+    const _me = await _termActor(auth);
+    if (_me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    if (_me.role === 'mgr' && String(c.branch_id || '') !== String(_me.branch_id || '')) return { ok: false, error: 'ดูได้เฉพาะคำขอของสาขาตัวเอง' };
+    if (String(c.status || 'pending') !== 'pending') return { ok: false, error: 'คำขอนี้ถูกตรวจไปแล้ว (' + c.status + ')' };
+    const upd = { status: status === 'approved' ? 'approved' : 'rejected', reviewer: _me.name || 'ผู้จัดการ', review_note: note || null, reviewed_at: new Date().toISOString() };
     const { error } = await sb().from('checkout_corrections').update(upd).eq('id', id);
     if (error) throw error;
     if (upd.status === 'approved') {
@@ -7636,7 +7668,7 @@
     const schBy = {}; (schR.data || []).forEach(s => { schBy[s.work_date] = s; });
     const shBy = {}; (shR.data || []).forEach(s => { shBy[s.shift_id] = s; });
     const note = (d.note || '').trim() || null;
-    const rows = d.dates.map(wd => {
+    let rows = d.dates.map(wd => {
       const sc = schBy[wd];
       const shiftId = d.shift_id || (sc && sc.shift_id) || emp.default_shift || null;   // ★ HR เลือกกะเองได้ · ไม่เลือกค่อยไล่หาจากตารางเวร → กะประจำ
       const sh = shiftId ? shBy[shiftId] : null;
@@ -7650,6 +7682,20 @@
         late_min: 0, ot_hours: 0, status: 'TRAINING', duty_note: note,
       };
     });
+    // ★ แก้ 15 ก.ย. 69 — attendance มี unique (emp_id, work_date) upsert นี้จึงเป็น UPDATE ทับ
+    //   ถ้าวันนั้นมีการสแกนเข้างานจริงอยู่แล้ว การลงวันอบรมจะล้าง check_in/check_out/OT/สาย/รูป ทิ้งถาวร
+    //   ตอนนี้: ข้ามวันที่มีแถวลงเวลาจริง แล้วรายงานกลับให้ HR เห็น
+    let _blocked = [];
+    try {
+      const _keys = rows.map(r => r.work_date);
+      const { data: _ex } = await sb().from('attendance').select('emp_id,work_date,check_in,status')
+        .in('work_date', _keys).in('emp_id', [...new Set(rows.map(r => r.emp_id))]);
+      const _has = {}; (_ex || []).forEach(a => { if (a.check_in && a.status !== 'TRAINING') _has[a.emp_id + '|' + a.work_date] = true; });
+      const _keep = rows.filter(r => !_has[r.emp_id + '|' + r.work_date]);
+      _blocked = rows.filter(r => _has[r.emp_id + '|' + r.work_date]).map(r => r.emp_id + ' ' + r.work_date);
+      rows = _keep;
+    } catch (_e) { /* ถ้าเช็กไม่ได้ ให้ทำต่อแบบเดิม */ }
+    if (!rows.length) return { ok: false, error: 'วันที่เลือกมีการลงเวลาจริงอยู่แล้ว ไม่ลงทับให้ — ' + _blocked.join(', ') };
     const { error } = await sb().from('attendance').upsert(rows, { onConflict: 'emp_id,work_date' });
     if (error) throw error;
     await logAct('บันทึกวันอบรม/ปฏิบัติงานนอกสถานที่', emp.emp_id, rows.length + ' วัน' + (note ? (' · ' + note) : ''));
@@ -8066,9 +8112,11 @@
     const endEff = cyc.end < today ? cyc.end : today;
     const [profR, empR, brR, attR, shR, ctrlR, instR, instChR, schPR] = await Promise.all([
       sb().from('payroll_profiles').select('*'),
-      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
+      // ★ แก้ 15 ก.ย. 69 — เดิม .eq('active',true) ล้มเจตนาของ or(end_date >= ต้นรอบ) ที่ตั้งใจเก็บคนลาออกกลางรอบไว้
+      //   ผลคือพอ HR ปิดใช้งานรหัสวันที่ลาออก แถวค่าจ้างงวดสุดท้ายหายและถูกลบทิ้งตอนคำนวณซ้ำ
+      sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date,is_manager,active').or('active.eq.true,end_date.gte.' + cyc.start).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,work_date,check_in,ot_hours,day_value,shift_id,branch_id,status').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,day_value,shift_id,branch_id,status').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance,name'),
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
@@ -8105,15 +8153,56 @@
     const empById = {}; (empR.data || []).forEach(e => { empById[e.emp_id] = e; });   // แผนที่พนักงาน (ใช้กันควบให้ ผจก.)
     const _schDVsumPR = {}, _schCntPR = {};
     (schPR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schDVsumPR[k] = (_schDVsumPR[k] || 0) + (dvMap[s.shift_id] != null ? dvMap[s.shift_id] : 1); (_schCntPR[k] = _schCntPR[k] || new Set()).add(s.shift_id); } });
+
+    // ★ แก้ 15 ก.ย. 69 — กติกาเครดิตควบกะต้องมี "ชั่วโมงทำงานจริง" รองรับ
+    //   เดิม: จัดเวร 2 กะ + สแกนไม่ครบ → เครดิต 2 วันทันที โดยไม่ดูว่าทำงานจริงกี่ชั่วโมง
+    //   ปัญหาที่เจอจริง: วันที่จัด 2 กะ "ทับเวลากัน" (A+M10, A+M8, A+M, M10+N)
+    //     พนักงานลงเวลาจริงแค่ 10–15 ชม. ไม่ใช่ 20 ชม. แต่ได้ค่าแรง 2 วันเต็ม
+    //   ใหม่: เครดิตควบเต็มเฉพาะเมื่อชั่วโมงทำงานจริง >= DUAL_MIN_RATIO ของเวรที่จัด
+    //     ถ้าไม่ถึง → นับ 1 วันตามที่สแกนจริง ส่วนที่เกินไปเป็น OT ตามกติกาเดิม
+    //     แล้วขึ้นธงเตือนให้ HR ตรวจและตัดสินเอง (ไม่ตัดสินแทน)
+    const DUAL_MIN_RATIO = 0.75;
+    const _hmPR = (t) => { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; };
+    const _shHrPR = {};   // ความยาวกะเป็นชั่วโมง
+    (shR.data || []).forEach(x => { const a = _hmPR(x.start_time), b = _hmPR(x.end_time); if (a != null && b != null) _shHrPR[x.shift_id] = ((b <= a ? b + 1440 : b) - a) / 60; });
+    const _schHrPR = {};  // ชั่วโมงเวรรวมต่อวัน
+    (schPR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schHrPR[k] = (_schHrPR[k] || 0) + (_shHrPR[s.shift_id] || 0); } });
+    const _actHrPR = {};  // ชั่วโมงทำงานจริงต่อวัน (จากเวลาเข้า-ออก)
+    (attR.data || []).forEach(a => {
+      if (!a.check_in || !a.check_out) return;
+      const h = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000;
+      if (h > 0 && h < 26) _actHrPR[a.emp_id + '|' + a.work_date] = h;
+    });
+    const dualWarnBy = {};   // ธงเตือน: วันที่จัดควบแต่ชั่วโมงจริงไม่ถึงเกณฑ์
+    const _dualHrPR = {};    // เก็บชั่วโมงไว้โชว์ในหน้าตรวจ
     Object.keys(workedDV).forEach(emp => { Object.keys(workedDV[emp]).forEach(date => {
       const k = emp + '|' + date, sched = _schDVsumPR[k] || 0, att = workedDV[emp][date] || 0;
-      if (_schCntPR[k] && _schCntPR[k].size >= 2 && sched > att && !(empById[emp] || {}).is_manager) workedDV[emp][date] = sched;   // ควบ + สแกนไม่ครบ → เครดิตตามตาราง
+      if (!(_schCntPR[k] && _schCntPR[k].size >= 2 && sched > att)) return;
+      if ((empById[emp] || {}).is_manager) return;
+      const actHr = _actHrPR[k], needHr = _schHrPR[k] || 0;
+      _dualHrPR[k] = { act: actHr != null ? Math.round(actHr * 10) / 10 : null, need: Math.round(needHr * 10) / 10 };
+      if (actHr != null && needHr > 0 && actHr < needHr * DUAL_MIN_RATIO) {
+        // ไม่เครดิตเพิ่ม — ให้ส่วนที่เกินไปเป็น OT ตามปกติ แล้วขึ้นธงให้ HR ตัดสิน
+        (dualWarnBy[emp] = dualWarnBy[emp] || []).push({
+          date, shifts: [...(_schCntPR[k])].join('+'),
+          sched_days: sched, counted_days: att,
+          sched_hr: Math.round(needHr * 10) / 10, act_hr: Math.round(actHr * 10) / 10,
+          pct: Math.round(actHr / needHr * 100),
+        });
+        _dualHrPR[k].suspect = true;
+        return;
+      }
+      workedDV[emp][date] = sched;   // ควบจริง (ชั่วโมงถึงเกณฑ์) → เครดิตตามตาราง
     }); });
+    Object.values(dualWarnBy).forEach(arr => arr.sort((a, b) => a.date < b.date ? -1 : 1));
     // ★ หักเงินเบิก "ตามรอบจริงไม่เว้นเดือน" — ดึงทุกใบที่ "จ่ายแล้ว + ยังไม่หัก" มาหักในรอบนี้ทันที
     //   (กันพนักงานเบิกเกินค่าแรงแล้วหาย · ไม่ผูกกับ deduct_month ที่อาจเป็นเดือนถัดไป)
     const runMonth = cyc.end.slice(0, 7);          // เดือนสิ้นรอบของรอบที่กำลังคิด
     const payingMonth = bkkToday().slice(0, 7);     // เดือนของ "รอบที่กำลังจะจ่าย" (รอบปัจจุบัน)
-    const carry = runMonth === payingMonth;         // รอบปัจจุบัน = ตกทอดใบเก่าที่ยังไม่หักได้ · รอบอนาคต = เฉพาะใบที่สังกัดรอบนั้นเป๊ะ (ไม่ทบมาโชว์)
+    // ★ แก้ 15 ก.ย. 69 — เดิมเทียบ "เดือนสิ้นรอบ" กับ "เดือนปฏิทินวันนี้" ซึ่งไม่มีทางเท่ากันหลังวันที่ 20
+    //   ทำให้รอบที่คำนวณหลังวันที่ 20 ไม่ดึงใบเบิกค้างของเดือนก่อนมาหักเลย
+    //   ตอนนี้: ถือว่า "รอบที่เริ่มแล้ว" = รอบที่กำลังจะจ่าย → ตกทอดใบเก่าได้
+    const carry = String(cyc.start) <= bkkToday();
     let advByEmp = {};
     try {
       // ข้ามใบที่ถูก "เลื่อนหัก" (defer_rounds > 0)
@@ -8134,8 +8223,18 @@
     // ★ ค่าซ่อมบำรุงรถไรเดอร์ (อนุมัติแล้ว ยังไม่จ่าย) → รายได้ (บริษัทจ่ายคืน จ่ายพร้อมเงินเดือน)
     let maintByEmp = {};
     try {
-      const { data: mRows } = await sb().from('rider_claims').select('emp_id,approved_amount,amount_est').eq('status', 'approved');
-      (mRows || []).forEach(r => { const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount_est) || 0; if (amt > 0) maintByEmp[r.emp_id] = (maintByEmp[r.emp_id] || 0) + amt; });
+      // ★ แก้ 15 ก.ย. 69 — เดิมดึง "ทุกใบที่อนุมัติ" โดยไม่ผูกรอบ
+      //   ใบเดียวจึงถูกใส่เป็นรายได้ได้หลายรอบ และตอนปิดรอบก็ตี paid ทุกใบ → จ่ายซ้ำ
+      //   ตอนนี้: เอาเฉพาะใบที่อนุมัติภายในรอบนี้ (reviewed_at) และยังไม่ผูกกับรอบอื่น
+      let mq = sb().from('rider_claims').select('emp_id,approved_amount,amount_est,reviewed_at,payroll_ref')
+        .eq('status', 'approved').is('payroll_ref', null);
+      const { data: mRows } = await mq;
+      (mRows || []).forEach(r => {
+        const _d = String(r.reviewed_at || '').slice(0, 10);
+        if (_d && (_d < cyc.start || _d > cyc.end)) return;      // อนุมัติคนละรอบ → ไม่เอา
+        const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount_est) || 0;
+        if (amt > 0) maintByEmp[r.emp_id] = (maintByEmp[r.emp_id] || 0) + amt;
+      });
     } catch (_e) { /* ยังไม่มีระบบซ่อม */ }
     // ★ ค่าที่ ผจก.ระดับสูงกรอกในหน้าตรวจ (payroll_review) — ดึงมาผสมเข้าเงินเดือน
     let reviewMap = {};
@@ -8259,7 +8358,11 @@
     (schPR.data || []).forEach(s => _addSetPR(s.emp_id, s.work_date, s.shift_id));
     (attR.data || []).forEach(a => { if (a.check_in) _addSetPR(a.emp_id, a.work_date, a.shift_id); });
     const dualByEmp = {};
-    Object.keys(_shSetPR).forEach(k => { if (_shSetPR[k].size >= 2) { const i = k.indexOf('|'); const emp = k.slice(0, i), date = k.slice(i + 1); if (_workedDatesPR[emp] && _workedDatesPR[emp].has(date)) { (dualByEmp[emp] = dualByEmp[emp] || []).push({ date, label: [...(_shSetPR[k])].map(id => _shNm[id] || id).join('/') }); } } });
+    Object.keys(_shSetPR).forEach(k => { if (_shSetPR[k].size >= 2) { const i = k.indexOf('|'); const emp = k.slice(0, i), date = k.slice(i + 1); if (_workedDatesPR[emp] && _workedDatesPR[emp].has(date)) {
+      const _h = _dualHrPR[k] || {};
+      (dualByEmp[emp] = dualByEmp[emp] || []).push({ date, label: [...(_shSetPR[k])].map(id => _shNm[id] || id).join('/'),
+        act_hr: _h.act != null ? _h.act : null, sched_hr: _h.need != null ? _h.need : null, suspect: !!_h.suspect });   // ★ แนบชั่วโมงจริงไว้ให้ HR ตรวจ
+    } } });
     Object.values(dualByEmp).forEach(arr => arr.sort((a, b) => a.date < b.date ? -1 : 1));
     const outItems = (finalItems || items).map(it => { const _e = _empInfo[it.emp_id] || {}; return Object.assign({}, it, {
       email: _e.email || it.email || null,
@@ -8272,6 +8375,13 @@
       ytd_tax: 0,
       delivery: (reviewMap[it.emp_id] && reviewMap[it.emp_id].delivery != null) ? Number(reviewMap[it.emp_id].delivery) : null,   // ค่า Delivery (จาก payroll_review) — โมดัลแก้รายคนใช้
       dil_note: dilNoteBy[it.emp_id] || '',   // เหตุผลตัดเบี้ยวินัย (auto) — โชว์ในช่องหมายเหตุ
+      // ★ ธงเตือน: วันที่จัดควบกะแต่ชั่วโมงทำงานจริงไม่ถึงเกณฑ์ — ระบบนับให้ 1 วัน ส่วนเกินเป็น OT · รอ HR ตัดสิน
+      dual_warn: dualWarnBy[it.emp_id] || [],
+      dual_warn_note: (dualWarnBy[it.emp_id] || []).length
+        ? ('จัดควบกะ ' + (dualWarnBy[it.emp_id] || []).length + ' วัน แต่ลงเวลาจริงไม่ถึง 75% ของเวร — ระบบนับให้วันละ 1 วัน ส่วนเกินคิดเป็น OT · '
+           + (dualWarnBy[it.emp_id] || []).map(x => x.date.slice(5) + ' ' + x.shifts + ' เวร ' + x.sched_hr + ' ชม. ทำจริง ' + x.act_hr + ' ชม. (' + x.pct + '%)').join(' · ')
+           + ' — โปรดตรวจว่าควรจ่ายเพิ่มหรือไม่')
+        : '',
     }); });
     // ★ สถานะรอบ สำหรับเตือนบนหน้าจอ
     //   cycle_ended = รอบนี้จบแล้วหรือยัง (ถ้ายัง ตัวเลขเป็นยอดถึงวันนี้เท่านั้น)
@@ -8409,18 +8519,40 @@
     if (!run) return { ok: false, error: 'ยังไม่มีรอบนี้ — กดคำนวณก่อน' };
     if (run.status === 'finalized') return { ok: true, already: true };
     const runMonth = cyc.end.slice(0, 7);
-    const carry = runMonth === bkkToday().slice(0, 7);   // รอบปัจจุบัน = ตกทอดใบเก่าได้ · รอบอนาคต = เฉพาะใบของรอบนั้น
+    const carry = String(cyc.start) <= bkkToday();   // ★ ให้ตรงกับ hrPayrollRun (เดิมเทียบเดือนผิด หลังวันที่ 20 ไม่ตกทอดเลย)
     try {
+      // ★ แก้ 15 ก.ย. 69 — เดิมตี deducted=true จาก query ใหม่ทั้งหมด ไม่ได้ดูว่าสลิปหักไปจริงเท่าไร
+      //   ถ้า ผจก. ใส่ advance_override = 0 (ตกลงเลื่อนไปหักเดือนหน้า) หนี้ก้อนนั้นจะถูกล้างทิ้งฟรี ๆ
+      //   ตอนนี้: ตัดยอดหักจริงจาก payroll_items ของรอบนี้ แล้วหักได้ไม่เกินยอดนั้น
+      let _paidCap = 0;
+      try {
+        const { data: _pi } = await sb().from('payroll_items').select('advance_deduct').eq('run_id', run.id);
+        _paidCap = (_pi || []).reduce((a, x) => a + (Number(x.advance_deduct) || 0), 0);
+      } catch (_e2) { _paidCap = -1; }   // อ่านไม่ได้ → ใช้พฤติกรรมเดิม
       // 1) หักใบที่ถึงกำหนด (ไม่ถูกเลื่อน) — ทำเครื่องหมาย "หักแล้ว"
-      let dueQ = sb().from('advance_requests').select('id')
+      let dueQ = sb().from('advance_requests').select('id,amount,approved_amount')
         .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
       dueQ = carry ? dueQ.lte('cycle_month', runMonth) : dueQ.eq('cycle_month', runMonth);
       const { data: dueRows } = await dueQ;
-      const ids = (dueRows || []).map(r => r.id);
+      let ids = (dueRows || []).map(r => r.id);
+      if (_paidCap >= 0) {
+        // เก็บเฉพาะใบที่ยอดรวมยังไม่เกินที่สลิปหักจริง — ที่เหลือปล่อยค้างไว้หักรอบหน้า
+        let run_sum = 0; const keep = [];
+        for (const r of (dueRows || [])) {
+          const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0;
+          if (run_sum + amt <= _paidCap + 0.5) { run_sum += amt; keep.push(r.id); }
+        }
+        if (keep.length !== ids.length) {
+          try { await logAct('เงินเบิกค้างหักข้ามรอบ', null,
+            'รอบ ' + cyc.start + ' สลิปหักจริง ' + _paidCap + ' บาท — ใบที่ยังไม่ถูกหัก ' + (ids.length - keep.length) + ' ใบ ยกไปรอบถัดไป', 'ระบบเงินเดือน'); } catch (_e3) {}
+        }
+        ids = keep;
+      }
       if (ids.length) await hrAdvanceDeduct({ ids, payroll_ref: run.id, by: 'ระบบเงินเดือน' }, {});
       // 2) ใบที่ยังถูกเลื่อน → ลดตัวนับลง 1 (ปิดรอบนี้ = ผ่านไป 1 รอบ)
+      //    ★ กรองรอบด้วย เดิมลดของทุกใบทั้งบริษัททุกครั้งที่ปิดรอบ (รวมตอนเปิด-ปิดซ้ำ)
       const { data: defRows } = await sb().from('advance_requests').select('id,defer_rounds')
-        .eq('status', 'paid').eq('deducted', false).gt('defer_rounds', 0);
+        .eq('status', 'paid').eq('deducted', false).gt('defer_rounds', 0).lte('cycle_month', runMonth);
       for (const r of (defRows || [])) { await sb().from('advance_requests').update({ defer_rounds: Math.max(0, Number(r.defer_rounds || 0) - 1) }).eq('id', r.id); }
     } catch (_e) { /* ไม่มีระบบเบิก ก็ข้าม */ }
     try {
@@ -8441,7 +8573,11 @@
     } catch (_e) { /* ไม่มีระบบน้ำมัน */ }
     try {
       // ค่าซ่อมบำรุงรถ: อนุมัติแล้ว → เปลี่ยนเป็น "จ่ายแล้ว" ทันที (จ่ายพร้อมเงินเดือน)
-      await sb().from('rider_claims').update({ status: 'paid', paid_at: new Date().toISOString(), paid_by: 'ระบบเงินเดือน', payout_method: 'payroll', payroll_ref: run.id }).eq('status', 'approved');
+      // ★ ตี paid เฉพาะใบที่อนุมัติภายในรอบนี้และยังไม่ผูกรอบไหน (เดิมตีทุกใบ → ใบที่อนุมัติหลังคำนวณถูกปิดทั้งที่ไม่มีในสลิป)
+      await sb().from('rider_claims')
+        .update({ status: 'paid', paid_at: new Date().toISOString(), paid_by: 'ระบบเงินเดือน', payout_method: 'payroll', payroll_ref: run.id })
+        .eq('status', 'approved').is('payroll_ref', null)
+        .gte('reviewed_at', cyc.start + 'T00:00:00+07:00').lte('reviewed_at', cyc.end + 'T23:59:59+07:00');
     } catch (_e) { /* ไม่มีระบบซ่อม */ }
     const { error } = await sb().from('payroll_runs').update({ status: 'finalized', finalized_by: 'สำนักงาน (HR)', finalized_at: new Date().toISOString() }).eq('id', run.id);
     if (error) throw error;

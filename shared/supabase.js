@@ -232,6 +232,7 @@
     }
     const nowIso = new Date().toISOString();
     const nowMs = Date.now();
+    let upd_flag_stale = false;   // ★ แถวค้างข้ามวัน — ไม่คิด OT อัตโนมัติ
     const effShift = row.shift_id || shiftId;
     // ควบกะ: OT คิดจากเวลาเลิก "กะสุดท้าย" ที่จัดเวรไว้วันนั้น (รองรับข้ามคืน) ไม่ใช่กะที่เช็กอิน
     const { data: daySched } = await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', row.work_date);
@@ -253,6 +254,23 @@
       if (lastShift && !lastShift.no_ot && lastEndMs > -Infinity) {
         const diff = (nowMs - lastEndMs) / 3600000 - (await _otFreeHours());
         ot = diff > 0 ? Math.round(diff * 100) / 100 : 0;
+        // ★ แก้ 15 ก.ย. 69 — กัน OT ปลอมจาก "แถวค้างเปิดข้ามวัน"
+        //   เคสจริง: ลืมกดออกเมื่อวาน (auto-close พลาด) วันนี้กดออก → OT พุ่ง 15 ชม.
+        //   ถ้าแถวไม่ใช่ของวันนี้ หรือเลยเวลาเลิกกะเกินความยาวกะ → ไม่คิด OT ให้อัตโนมัติ
+        //   ต้องให้พนักงานยื่น "แก้เวลาออกจริง" แล้วหัวหน้า/HR อนุมัติแทน
+        const _a = String(lastShift.start_time || '').slice(0, 5), _b = String(lastShift.end_time || '').slice(0, 5);
+        let _len = null;
+        if (_a && _b) { const [h1, m1] = _a.split(':').map(Number), [h2, m2] = _b.split(':').map(Number); _len = (h2 * 60 + m2) - (h1 * 60 + m1); if (_len <= 0) _len += 1440; }
+        const _lateBy = (nowMs - lastEndMs) / 60000;                 // เลยเวลาเลิกกะกี่นาที
+        const _stale = (String(row.work_date) !== today) || (_len && _lateBy > _len);
+        if (ot > 0 && _stale) {
+          const _bad = ot; ot = 0;
+          upd_flag_stale = true;
+          try {
+            await sb.from('activity_log').insert({ action: 'ตรวจพบเวลาผิดปกติ', emp_id: empId, actor: empId,
+              detail: 'กดออกงานของวันที่ ' + row.work_date + ' ช้ากว่าเวลาเลิกกะ ' + Math.round(_lateBy) + ' นาที — ระบบไม่คิด OT ' + _bad + ' ชม. ให้อัตโนมัติ โปรดยื่นแก้เวลาออกจริง' });
+          } catch (_e) { /* ข้าม */ }
+        }
       }
       // ออกก่อนเวลา: กดออกก่อนเวลาเลิก "กะสุดท้าย" → เก็บจำนวนนาทีที่ออกก่อน
       if (lastEndMs > -Infinity && nowMs < lastEndMs) earlyOutMin = Math.round((lastEndMs - nowMs) / 60000);
@@ -281,7 +299,7 @@
         } catch (_e) { /* ข้าม */ }
       }
     }
-    const upd = { check_out: nowIso, ot_hours: ot, early_out_min: earlyOutMin, status: 'CLOSED', auto_closed: false, extend_until: null };
+    const upd = { check_out: nowIso, ot_hours: ot, early_out_min: earlyOutMin, status: upd_flag_stale ? 'CLOSED_LATE' : 'CLOSED', auto_closed: false, extend_until: null };
     // รูปถ่ายตอนออกงาน (เซลฟี) — เก็บแยกจากรูปตอนเข้า
     if (photoDataUrl) {
       try { upd.checkout_photo_url = await uploadPhoto('attendance-photos', `${empId}/${row.work_date}_out_${Date.now()}.jpg`, photoDataUrl); } catch (e) { /* ไม่ให้รูปพังการกดออก */ }
@@ -292,11 +310,15 @@
       .update(upd)
       .eq('emp_id', empId).eq('work_date', row.work_date);
     if (error) throw error;
-    return { ot_hours: ot, work_date: row.work_date, crossBranch };
+    return { ot_hours: ot, work_date: row.work_date, crossBranch, stale: upd_flag_stale };
   }
 
   // ---------- ควบกะต่อ: เลื่อนเวลาที่ระบบจะปิดงานอัตโนมัติ ----------
+  // ★ แก้ 15 ก.ย. 69 — clamp เพดานเวลาควบกะ กันปิด auto-close ถาวร
   async function extendShift({ empId, untilIso }) {
+    { const _max = Date.now() + 12 * 3600000;
+      const _t = new Date(untilIso).getTime();
+      if (!isFinite(_t) || _t > _max) untilIso = new Date(_max).toISOString(); }
     const today = bangkokDate();
     const { data: row } = await sb.from('attendance').select('work_date,check_in')
       .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
@@ -683,7 +705,7 @@
   function _computeScore({ cfg, rules, bands, events, att, mySched, worked, onLeave }) {
     bands = bands || [];
     if (!bands.length) return { enabled: false };           // ยังไม่ได้ตั้งระบบคะแนน
-    const start = (cfg && cfg.start_score) || 100;
+    const start = (cfg && cfg.start_score != null) ? Number(cfg.start_score) : 100;   // ★ ใช้ != null กัน 0 กลายเป็น 100
     const byKind = {}; (rules || []).filter(r => r.enabled !== false).forEach(r => { byKind[r.kind] = r; });
     const myAtt = att.filter(a => a.check_in);
     let autoDeduct = 0;
@@ -1223,10 +1245,13 @@
     const emp = await lookupEmployee(p.empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     if (emp.active === false) throw new Error('รหัสพนักงานนี้ถูกปิดใช้งาน');
+    // ★ แก้ 15 ก.ย. 69 — เดิมใช้สาขาประจำ + default_shift ทำให้คนไปช่วยสาขาอื่น
+    //   ส่งผลัดจากสาขา B แต่แถวไปโผล่ที่สาขา A (และ default_shift มักว่าง → shift_id เป็น null)
+    const _hc = await _shiftCtx(emp);
     let photo_url = null;
-    if (p.photo) photo_url = await uploadPhoto('employee-docs', 'handover/' + (emp.branch_id || 'x') + '_' + Date.now() + '.jpg', p.photo);
+    if (p.photo) photo_url = await uploadPhoto('employee-docs', 'handover/' + (_hc.branch || 'x') + '_' + Date.now() + '.jpg', p.photo);
     const row = {
-      branch_id: emp.branch_id || null, shift_id: emp.default_shift || null, work_date: bangkokDate(),
+      branch_id: _hc.branch || emp.branch_id || null, shift_id: _hc.group || emp.default_shift || null, work_date: _hc.workDate,
       from_emp_id: emp.emp_id, from_name: emp.nickname || emp.name,
       status: 'sent', checklist: p.checklist || {},
       done_count: p.done_count || 0, total_count: p.total_count || 0,
@@ -1261,8 +1286,9 @@
   async function reportNoHandover({ empId, note }) {
     const emp = await lookupEmployee(empId);
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const _hc = await _shiftCtx(emp);   // ★ ใช้สาขา/กะที่ทำงานจริง ไม่ใช่สาขาประจำ
     const row = {
-      branch_id: emp.branch_id || null, shift_id: emp.default_shift || null, work_date: bangkokDate(),
+      branch_id: _hc.branch || emp.branch_id || null, shift_id: _hc.group || emp.default_shift || null, work_date: _hc.workDate,
       to_emp_id: emp.emp_id, to_name: emp.nickname || emp.name,
       status: 'no_handover', receiver_note: note || null, received_at: new Date().toISOString(),
     };
@@ -1309,7 +1335,18 @@
     return data || [];
   }
   // ตรวจงาน: ผ่าน (approved) หรือ ตีกลับ (sent_back) — โดยพนักงาน(หัวหน้า)หรือคนรับผลัด
+  // ★ แก้ 15 ก.ย. 69 — เดิมไม่ตรวจสิทธิ์อะไรเลย เปิด console ก็อนุมัติงานตัวเองได้
   async function reviewTask({ id, reviewerId, status, note }) {
+    if (!reviewerId) throw new Error('ต้องระบุรหัสผู้ตรวจ');
+    {
+      const _e = await lookupEmployee(reviewerId); if (!_e) throw new Error('ไม่พบรหัสผู้ตรวจ');
+      const _row = (await sb.from('task_assignments').select('branch_id,work_date,shift_id,emp_id').eq('id', id).maybeSingle()).data;
+      if (!_row) throw new Error('ไม่พบงานนี้');
+      const _lead = (await sb.from('shift_leads').select('emp_id')
+        .eq('work_date', _row.work_date).eq('branch_id', _row.branch_id || '').eq('shift_id', _row.shift_id).maybeSingle()).data;
+      if (!_lead || _lead.emp_id !== _e.emp_id) throw new Error('เฉพาะหัวหน้าผลัดของกะนี้เท่านั้นที่ตรวจได้');
+      if (_row.emp_id === _e.emp_id) throw new Error('ตรวจงานของตัวเองไม่ได้');
+    }
     let reviewer = 'หัวหน้า';
     if (reviewerId) { const e = await lookupEmployee(reviewerId); if (e) reviewer = e.nickname || e.name; }
     const upd = {
@@ -1615,8 +1652,9 @@
     _assertHasShift(shift);
     await _assertShiftStarted(shift, today);
     await _assertPrevShiftDone(branch, shift, today);
-    const base = { emp_id: to.emp_id, emp_name: to.nickname || to.name, status: 'todo', photo_url: null, emp_note: null, submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
     const existing = await _findAsg(branch, today, shift, task_def_id);
+    _assertNotDone(existing);   // ★ งานที่ส่ง/ตรวจผ่านแล้ว เปลี่ยนคนทำไม่ได้ — กันรูปหลักฐานหาย
+    const base = { emp_id: to.emp_id, emp_name: to.nickname || to.name, status: 'todo', photo_url: null, emp_note: null, submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
     if (existing) { const { error } = await sb.from('task_assignments').update(base).eq('id', existing.id); if (error) throw error; }
     else { const { error } = await sb.from('task_assignments').insert(Object.assign({ work_date: today, branch_id: branch || null, shift_id: shift, task_def_id, title: def.title, require_photo: !!def.require_photo }, base)); if (error) throw error; }
     return { ok: true };
@@ -1694,8 +1732,20 @@
       .gte('work_date',_addDays(today,-1)).lt('work_date',today)
       .order('check_in',{ascending:false}).limit(1).maybeSingle()).data;
     if(open && open.work_date){
-      const sh=(await sb.from('shifts').select('main_shift').eq('shift_id',open.shift_id).maybeSingle()).data;
-      return { workDate: open.work_date, group: (sh&&sh.main_shift)||open.shift_id, branch: open.branch_id||emp.branch_id||'' };
+      const sh=(await sb.from('shifts').select('main_shift,start_time,end_time').eq('shift_id',open.shift_id).maybeSingle()).data;
+      // ★ แก้ 15 ก.ย. 69 — ยึด "แถวค้างเปิดของเมื่อวาน" ได้เฉพาะกรณีกะข้ามคืนที่ยังทำงานอยู่จริง
+      //   เดิมยึดทุกกรณี ทำให้คนกะเช้าที่ลืมกดออกเมื่อวาน พอมาทำงานวันนี้
+      //   งานทั้งวัน ใบรับสินค้า และหัวหน้าผลัด ถูกบันทึกเป็นของ "เมื่อวาน" ทั้งหมด
+      let _useOpen = false;
+      if(sh && sh.start_time && sh.end_time){
+        const _m=t=>{ const q=String(t||'').match(/(\d{1,2}):(\d{2})/); return q?(+q[1]*60 + +q[2]):null; };
+        const a=_m(sh.start_time), b=_m(sh.end_time);
+        if(a!=null && b!=null && b<=a){                       // กะข้ามคืนจริง
+          const endMs=new Date(_addDays(open.work_date,1)+'T'+String(sh.end_time).slice(0,5)+':00+07:00').getTime();
+          if(Date.now() < endMs + 3*3600000) _useOpen = true;  // ยังไม่เลยเวลาเลิกกะ + ผ่อนผัน 3 ชม.
+        }
+      }
+      if(_useOpen) return { workDate: open.work_date, group: (sh&&sh.main_shift)||open.shift_id, branch: open.branch_id||emp.branch_id||'' };
     }
     // อิงตารางเวรวันนี้ (รองรับไปทำแทนสาขาอื่น: ใช้สาขา+กะจากตารางเวร ไม่ใช่สาขาประจำ)
     const sc=await _schedOne(emp.emp_id, today);
@@ -1731,7 +1781,10 @@
     if(!(await _guardOn('guard_prev_shift'))) return;
     const prev=_addDays(workDate,-1);
     const rows=(await sb.from('task_assignments').select('status').eq('branch_id',branch||'').eq('shift_id',group).eq('work_date',prev)).data||[];
-    const pending=rows.filter(r=>r.status!=='approved').length;
+    // ★ แก้ 15 ก.ย. 69 — เดิมนับงานที่ยังเป็น todo ด้วย ทำให้กะเดิมของเมื่อวานเหลืองานไม่มีคนทำ
+    //   แล้วล็อกทั้งกะวันนี้ทำงานไม่ได้เลย และในแอปพนักงานไม่มีใครมีสิทธิ์ปิดงานนั้น
+    //   ตอนนี้นับเฉพาะงานที่ "มีคนทำแล้วรอตรวจ" (submitted / sent_back) เท่านั้น
+    const pending=rows.filter(r=>r.status==='submitted'||r.status==='sent_back').length;
     if(pending>0) throw new Error('งานกะนี้ของวันก่อนหน้ายังไม่ผ่านครบ ('+pending+' รายการ) — ต้องทำ/ให้ตรวจให้เสร็จก่อน จึงจะเริ่มกะนี้ของวันนี้ได้');
   }
   // ผลัดหลักก่อนหน้า (วนเฉพาะกะที่เป็นผลัดหลัก main_shift===shift_id เรียงตามเวลาเริ่ม)
@@ -1863,7 +1916,8 @@
           reviewer:'ไม่ต้องตรวจ (ตั้งค่าไว้)', review_note:null, reviewed_at:new Date().toISOString(), needs_mgr: wantMgr }
       : { status:'submitted', emp_note:note||null, submitted_at:new Date().toISOString(),
           reviewer:null, review_note:null, reviewed_at:null, needs_mgr: wantMgr };
-    upd.photos = urls.length?urls:null; upd.photo_url = urls.length?urls[0]:null;
+    // ★ ไม่แนบรูปมา = ไม่แตะรูปเดิม (เดิมเขียน null ทับ ทำให้รูปหลักฐานหายถาวร)
+    if(urls.length){ upd.photos = urls; upd.photo_url = urls[0]; }
     if(isFix){
       // เก็บ "รูปก่อนแก้ไข" เป็นประวัติ (ก่อนเขียนทับด้วยชุดใหม่) — โชว์ในรายงานรับส่งผลัด
       const snap=Array.isArray(row.photos)?row.photos:(row.photo_url?[row.photo_url]:[]);

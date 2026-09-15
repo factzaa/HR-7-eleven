@@ -76,13 +76,15 @@
     var H = window.HR;
     if (!H || H.__hrViewWrapped) return;
     H.__hrViewWrapped = true;
+    VIEW_ORIG = {};
     Object.keys(H).forEach(function (k) {
       if (typeof H[k] !== 'function' || !WRITE_FN.test(k)) return;
       var orig = H[k];
+      VIEW_ORIG[k] = orig;
       H[k] = function () {
         try {
           H.sb.from('activity_log').insert({
-            actor: 'HR (โหมดผู้ตรวจ)', action: 'ทำรายการแทนพนักงาน', emp_id: empId,
+            actor: 'HR (โหมดผู้ตรวจ)', action: 'ทำรายการแทนพนักงาน', emp_id: VIEW_AS || empId,
             detail: k + '() · หน้า ' + location.pathname
           }).then(function () {}, function () {});
         } catch (e) {}
@@ -91,10 +93,22 @@
     });
   }
 
+  var VIEW_ORIG = null;   // ★ เก็บฟังก์ชันเดิมไว้ถอดกลับ
   function enterViewMode(empId, nameTxt) {
     VIEW_AS = empId;
     viewBadge(nameTxt, empId);
     armViewLog(empId);
+  }
+  // ★ แก้ 15 ก.ย. 69 — เดิมโหมดผู้ตรวจไม่มีทางปิด
+  //   กด "เปลี่ยนรหัส" แล้วพนักงานคนถัดไปล็อกอิน ทุก action ยังถูก log เป็นชื่อคนเดิม
+  function exitViewMode() {
+    VIEW_AS = null;
+    var b = document.getElementById('hrViewBadge'); if (b) b.remove();
+    var H = window.HR;
+    if (H && VIEW_ORIG) {
+      Object.keys(VIEW_ORIG).forEach(function (k) { try { H[k] = VIEW_ORIG[k]; } catch (e) {} });
+      VIEW_ORIG = null; H.__hrViewWrapped = false;
+    }
   }
 
   function rpc(name, args) {
@@ -215,7 +229,7 @@
             }
             rpc('staff_pin_login', { p_emp_id: empId, p_pin: v }).then(function (res) {
               done();
-              if (res === 'ok') return close(true);
+              if (res === 'ok') { exitViewMode(); return close(true); }
               if (res === 'no_pin') { mode = 'setup'; return paint(''); }
               fail(res);
             }).catch(function (e) { done(); paint(String(e.message || e)); });
@@ -261,18 +275,45 @@
         else paint('');
       });
     }).catch(function (e) {
-      // ถ้าเรียก RPC ไม่ได้ (ยังไม่ได้รัน SQL) → ไม่ล็อกพนักงานออกจากระบบ
-      try { console.warn('pinGate:', e && e.message); } catch (_e) {}
-      return true;
+      // ★ แก้ 15 ก.ย. 69 — เดิมคืน true (ปล่อยผ่าน) ทุก error
+      //   เน็ตร้านหลุด / Supabase 5xx ก็ปล่อยให้ใครก็ได้เข้าดูข้อมูลเพื่อนได้
+      //   ซึ่งเป็นปัญหาเดิมที่ PIN ถูกสร้างมาแก้พอดี
+      //   ตอนนี้: ปล่อยผ่านเฉพาะกรณี "ยังไม่ได้ติดตั้ง RPC" เท่านั้น นอกนั้นปิด
+      var msg = String((e && (e.message || e.code)) || '');
+      var notInstalled = /(does not exist|could not find|schema cache|PGRST202|42883|404)/i.test(msg);
+      try { console.warn('pinGate:', msg); } catch (_e) {}
+      if (notInstalled) return true;
+      try {
+        ensureDom();
+        var ov2 = document.getElementById('hrPinOv');
+        document.getElementById('hrPinWho').textContent = '';
+        document.getElementById('hrPinTitle').textContent = 'เข้าระบบไม่ได้ตอนนี้';
+        document.getElementById('hrPinSub').textContent = 'ระบบยืนยันตัวตนติดต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่';
+        document.getElementById('hrPin1').style.display = 'none';
+        document.getElementById('hrPin2').style.display = 'none';
+        document.getElementById('hrPinLink').textContent = '';
+        document.getElementById('hrPinErr').textContent = msg.slice(0, 120);
+        var okb = document.getElementById('hrPinOk'); okb.textContent = 'ลองใหม่';
+        ov2.classList.add('on');
+        return new Promise(function (res) {
+          okb.onclick = function () { ov2.classList.remove('on'); location.reload(); };
+          document.getElementById('hrPinCancel').onclick = function () {
+            ov2.classList.remove('on');
+            document.getElementById('hrPin1').style.display = '';
+            res(false);
+          };
+        });
+      } catch (_e2) { return false; }
     });
   }
 
   window.HRSession = {
     getEmp: function () { return ''; },
     setEmp: function () {},
-    clearEmp: function () { try { localStorage.removeItem(KEY); } catch (e) {} },
+    clearEmp: function () { exitViewMode(); try { localStorage.removeItem(KEY); } catch (e) {} },
     prefill: function () { return ''; },
     pinGate: pinGate,
-    viewAs: function () { return VIEW_AS; }
+    viewAs: function () { return VIEW_AS; },
+    exitViewMode: exitViewMode
   };
 })();
