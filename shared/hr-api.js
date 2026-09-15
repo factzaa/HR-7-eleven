@@ -324,6 +324,8 @@
         case 'hr_taskset_create':    return await hrTaskSetCreate(p);
         case 'hr_taskset_delete':    return await hrTaskSetDelete(p);
         case 'hr_taskset_bulk':      return await hrTaskSetBulk(p);
+        case 'hr_taskdef_sample_add': return await hrTaskDefSampleAdd(p);
+        case 'hr_taskdef_sample_del': return await hrTaskDefSampleDel(p);
         case 'hr_task_assign':       return await hrTaskAssign(p.data);
         case 'hr_task_list':         return await hrTaskList(p.date);
         case 'hr_task_review':       return await hrTaskReview(p.id, p.status, p.note, p.markup);
@@ -5480,6 +5482,45 @@
     return { ok: true, room_key };
   }
   // อัปโหลดโปสเตอร์ (PNG data URL) ขึ้น storage → คืน public URL (ใช้ส่ง LINE / แชท)
+  // ===== รูปตัวอย่างการถ่ายภาพของแต่ละงาน (สูงสุด 4 รูป) =====
+  const TASK_SAMPLE_MAX = 4;
+  async function _sampleActor(p) {
+    const a = await _tsActor(p);
+    if (a.role === 'invalid') return { ok:false, error:'PIN ไม่ถูกต้อง' };
+    if (a.role !== 'hr' && a.role !== 'mgr') return { ok:false, error:'ตั้งรูปตัวอย่างได้เฉพาะ HR และผู้จัดการร้าน' };
+    return { ok:true, actor:a };
+  }
+  async function hrTaskDefSampleAdd(p) {
+    const g = await _sampleActor(p); if (!g.ok) return g;
+    const id = Number(p.task_def_id || 0);
+    if (!id) return { ok:false, error:'ไม่พบงานที่จะผูกรูปตัวอย่าง' };
+    const url0 = String(p.data_url || '');
+    if (!url0) return { ok:false, error:'ไม่มีรูป' };
+    const cur = await sb().from('task_defs').select('id,title,sample_photos').eq('id', id).maybeSingle();
+    if (!cur.data) return { ok:false, error:'ไม่พบงานนี้ในแคตตาล็อก' };
+    const list = Array.isArray(cur.data.sample_photos) ? cur.data.sample_photos.slice() : [];
+    if (list.length >= TASK_SAMPLE_MAX) return { ok:false, error:'งานนี้มีรูปตัวอย่างครบ ' + TASK_SAMPLE_MAX + ' รูปแล้ว — ลบรูปเก่าออกก่อน' };
+    let url = url0;
+    if (url0.startsWith('data:')) {
+      url = await window.HR.uploadPhoto('employee-docs', 'task-sample/def' + id + '_' + Date.now() + '.jpg', url0);
+    }
+    if (list.indexOf(url) >= 0) return { ok:false, error:'รูปนี้เป็นตัวอย่างอยู่แล้ว' };
+    list.push(url);
+    const { error } = await sb().from('task_defs').update({ sample_photos: list }).eq('id', id);
+    if (error) throw error;
+    return { ok:true, url, sample_photos: list, title: cur.data.title || '' };
+  }
+  async function hrTaskDefSampleDel(p) {
+    const g = await _sampleActor(p); if (!g.ok) return g;
+    const id = Number(p.task_def_id || 0);
+    if (!id) return { ok:false, error:'ไม่พบงาน' };
+    const cur = await sb().from('task_defs').select('id,sample_photos').eq('id', id).maybeSingle();
+    if (!cur.data) return { ok:false, error:'ไม่พบงานนี้' };
+    const list = (Array.isArray(cur.data.sample_photos) ? cur.data.sample_photos : []).filter(u => u !== String(p.url || ''));
+    const { error } = await sb().from('task_defs').update({ sample_photos: list.length ? list : null }).eq('id', id);
+    if (error) throw error;
+    return { ok:true, sample_photos: list };
+  }
   async function hrPosterUpload(dataUrl) {
     if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return { ok: false, error: 'ไม่มีรูป' };
     const url = await window.HR.uploadPhoto('employee-docs', 'posters/poster_' + Date.now() + '.png', dataUrl);

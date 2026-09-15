@@ -1465,7 +1465,8 @@
       need_review: d.need_review !== false, flex_report: !!d.flex_report,
       link_kind: d.link_kind || '', per_employee: !!d.per_employee, auto_day: d.auto_day || '',
       mgr_owner: !!d.mgr_owner,
-      qss_table: (d.qss_table == null ? null : Number(d.qss_table)) };
+      qss_table: (d.qss_table == null ? null : Number(d.qss_table)),
+      sample_photos: Array.isArray(d.sample_photos) ? d.sample_photos : [] };
   }
 
   // ============================================================

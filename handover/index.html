@@ -167,7 +167,86 @@ function ST(s){return s==='approved'?['ผ่านแล้ว','ok']:s==='subm
 //   เดิม: ถ้าเครื่องถอดรหัสรูปไม่ได้ (HEIC จากไอโฟน / ไฟล์ใหญ่เกิน / แรมไม่พอ) img.onload จะไม่ยิงเลย
 //   → Promise ค้างตลอดกาล → รูปหายเงียบ ๆ โดยไม่มี error (พนักงานคิดว่าแนบแล้ว แต่ในระบบไม่มีรูป)
 //   ใหม่: มี onerror + timeout + fallback ใช้ไฟล์ต้นฉบับ · ถอดรหัสไม่ได้จริง ๆ จะคืน null เพื่อให้ฟ้องได้
-function resizeFile(file){
+// ===== แก้รูปกลับหัว / ตะแคง (15 ก.ย. 69) =====
+// กล้องมือถือไม่ได้หมุนไฟล์จริง แต่เขียน "ทิศที่ต้องหมุน" ไว้ใน EXIF แทน
+// เบราว์เซอร์ในแอป (LINE ฯลฯ) บางตัวไม่อ่าน EXIF → พอเอาไปวาดลง canvas รูปเลยกลับหัว
+// วิธีแก้: อ่าน EXIF เอง แล้วหมุนไฟล์ให้ตั้งตรงก่อน ค่อยส่งเข้าขั้นตอนย่อ/ปั๊มวันเวลา
+function _exifOri(file){
+  return new Promise(function(res){
+    try{
+      if(!file || !/^image\/jpe?g$/i.test(String(file.type||''))) return res(1);
+      var r=new FileReader();
+      r.onerror=function(){ res(1); };
+      r.onload=function(e){
+        try{
+          var v=new DataView(e.target.result), len=v.byteLength, off=2;
+          if(len<4 || v.getUint16(0,false)!==0xFFD8) return res(1);
+          while(off+4<=len){
+            var marker=v.getUint16(off,false); off+=2;
+            if(marker===0xFFE1){
+              if(off+8>len || v.getUint32(off+2,false)!==0x45786966) return res(1);
+              var tiff=off+8;
+              if(tiff+8>len) return res(1);
+              var little=(v.getUint16(tiff,false)===0x4949);
+              var ifd=tiff+v.getUint32(tiff+4,little);
+              if(ifd+2>len) return res(1);
+              var n=v.getUint16(ifd,little);
+              for(var i=0;i<n;i++){
+                var ent=ifd+2+i*12;
+                if(ent+12>len) break;
+                if(v.getUint16(ent,little)===0x0112){
+                  var o=v.getUint16(ent+8,little);
+                  return res((o>=1&&o<=8)?o:1);
+                }
+              }
+              return res(1);
+            }
+            if((marker & 0xFF00)!==0xFF00) return res(1);
+            if(off+2>len) return res(1);
+            off += v.getUint16(off,false);
+          }
+          res(1);
+        }catch(_e){ res(1); }
+      };
+      r.readAsArrayBuffer(file.slice(0, 262144));
+    }catch(_e){ res(1); }
+  });
+}
+function _orientFile(file){
+  var work=(async function(){
+    var ori=await _exifOri(file);
+    if(!(ori>1)) return file;                       // ตั้งตรงอยู่แล้ว
+    if(typeof createImageBitmap!=='function') return file;
+    var bmp;
+    try{ bmp=await createImageBitmap(file,{imageOrientation:'none'}); }
+    catch(_e){ return file; }                       // เบราว์เซอร์เก่า → ปล่อยให้ทางเดิมจัดการ
+    try{
+      var w=bmp.width, h=bmp.height, sw=(ori>=5)?h:w, sh=(ori>=5)?w:h;
+      var c=document.createElement('canvas'); c.width=sw; c.height=sh;
+      var x=c.getContext('2d');
+      if(ori===2) x.transform(-1,0,0,1,w,0);
+      else if(ori===3) x.transform(-1,0,0,-1,w,h);
+      else if(ori===4) x.transform(1,0,0,-1,0,h);
+      else if(ori===5) x.transform(0,1,1,0,0,0);
+      else if(ori===6) x.transform(0,1,-1,0,h,0);
+      else if(ori===7) x.transform(0,-1,-1,0,h,w);
+      else if(ori===8) x.transform(0,-1,1,0,0,w);
+      x.drawImage(bmp,0,0);
+      var blob=await new Promise(function(r){ c.toBlob(r,'image/jpeg',0.92); });
+      return blob || file;
+    }catch(_e){ return file; }
+    finally{ try{ bmp.close && bmp.close(); }catch(_e2){} }
+  })();
+  // กันค้าง: ถ้าหมุนไม่เสร็จใน 10 วิ ใช้ไฟล์เดิมไปก่อน
+  return Promise.race([ work, new Promise(function(r){ setTimeout(function(){ r(file); },10000); }) ])
+    .catch(function(){ return file; });
+}
+async function resizeFile(file){
+  var f=file;
+  try{ f=await _orientFile(file); }catch(_e){ f=file; }
+  return _resizeFileRaw(f||file);
+}
+function _resizeFileRaw(file){
   return new Promise(res=>{
     let done=false;
     const finish=(v)=>{ if(done) return; done=true; res(v); };
@@ -1536,6 +1615,26 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ nav
 </script>
 <script>
 // รายละเอียดปฏิบัติ / เกณฑ์การตรวจสอบ / วิธีถ่ายรูป (พับไว้ กดดูได้)
+// ===== รูปตัวอย่างการถ่ายภาพ (HR/ผจก. เก็บไว้จากงานที่ถ่ายถูกต้อง) =====
+function sampleShotHTML(d){
+  var ls=(d&&Array.isArray(d.sample_photos))?d.sample_photos:[];
+  if(!ls.length) return '';
+  return '<div style="font-weight:700;margin-top:6px">ตัวอย่างรูปที่ถ่ายถูกต้อง</div>'
+   +'<div style="display:flex;gap:6px;overflow-x:auto;padding:5px 0 2px;-webkit-overflow-scrolling:touch">'
+   +ls.map(function(u){ return '<img src="'+esc(u)+'" loading="lazy" onclick="sampleZoom(this.src)" '
+     +'style="width:84px;height:84px;flex:none;object-fit:cover;border-radius:9px;cursor:zoom-in;border:1px solid var(--line)">'; }).join('')
+   +'</div><div class="muted" style="font-size:11.5px">ถ่ายให้ได้มุมและระยะใกล้เคียงรูปตัวอย่าง</div>';
+}
+function sampleZoom(src){
+  var o=document.getElementById('smpZoom');
+  if(!o){ o=document.createElement('div'); o.id='smpZoom';
+    o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:100001;display:none;'
+      +'align-items:center;justify-content:center;padding:14px';
+    o.onclick=function(){ o.style.display='none'; };
+    o.innerHTML='<img id="smpZoomImg" style="max-width:100%;max-height:100%;border-radius:10px">';
+    document.body.appendChild(o); }
+  document.getElementById('smpZoomImg').src=src; o.style.display='flex';
+}
 // ===== ตารางอ้างอิง QSS Standard — ปุ่มกดดูรายการเฉพาะผลัดของงานนั้น =====
 var QSS_TBL={1:{t:'รายการสินค้าที่ต้อง QA',s:'ตารางที่ 1'},
              2:{t:'จุดที่ต้องทำความสะอาด',s:'ตารางที่ 2'},
@@ -1639,6 +1738,7 @@ function taskDetailHTML(d,opts){
    +(d.how_to?'<div style="font-weight:700">วิธีทำ</div><ul style="margin:3px 0 6px;padding-left:18px">'+li(d.how_to)+'</ul>':'')
    +(d.criteria?'<div style="font-weight:700">เกณฑ์การตรวจสอบ</div><ul style="margin:3px 0 6px;padding-left:18px">'+li(d.criteria)+'</ul>':'')
    +(d.photo_hint?'<div style="font-weight:700">วิธีถ่ายรูป</div><div>'+esc(d.photo_hint)+'</div>':'')
+   +sampleShotHTML(d)
    +'</div></div>';
 }
 window.TASK_DET={};

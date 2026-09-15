@@ -10777,7 +10777,7 @@ async function loadMtaskIntask(boxId){
     +'</div>';
   h+=rows.map(t=>{
     const imgs=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-    const thumbs=imgs.length?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'<div class="muted" style="font-size:12px;margin:4px 0">— ไม่มีรูปแนบ —</div>';
+    const thumbs=imgs.length?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">'+imgs.map(u=>sampleThumbHTML(t.task_def_id,u,64)).join('')+'</div>':'<div class="muted" style="font-size:12px;margin:4px 0">— ไม่มีรูปแนบ —</div>';
     // ร่องรอย: ผลัดถัดไปตรวจผ่านไปแล้ว → ถ้า ผจก.ตีกลับ ผู้ตรวจคนนั้นจะเป็นผู้แก้
     let trail;
     if(t.already_checked && t.has_checker_id){
@@ -11513,6 +11513,42 @@ $('po_line').onclick=async()=>{ if(!POSTER.url){ toast('err','ยังไม่
 // ============================================================
 const TS = { rows:[], ov:{}, dates:{}, branches:[], role:'hr', branch:'', month:'', open:{} };
 const TS_DOW = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+// กล่องรูปตัวอย่างการถ่ายภาพในหน้าตั้งค่างาน
+function tsSampleBoxHTML(d){
+  const list=Array.isArray(d.sample_photos)?d.sample_photos:[];
+  const thumbs=list.length
+    ? list.map(function(u,i){ return '<div style="position:relative;flex:none;width:72px;height:72px">'
+        +'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">'
+        +'<button type="button" data-smprm="'+d.id+'" data-smpu="'+esc(u)+'" title="ลบรูปตัวอย่างนี้" '
+        +'style="position:absolute;right:2px;top:2px;width:20px;height:20px;padding:0;border:none;border-radius:6px;'
+        +'background:rgba(15,23,42,.75);color:#fecaca;font-size:13px;line-height:20px;cursor:pointer">&times;</button></div>'; }).join('')
+    : '<div class="muted" style="font-size:12px">ยังไม่มีรูปตัวอย่าง</div>';
+  const full=list.length>=SAMPLE_MAX;
+  return '<div style="margin-bottom:10px;background:var(--bg2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:9px 10px">'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:5px">รูปตัวอย่างการถ่ายภาพ ('+list.length+'/'+SAMPLE_MAX+') — พนักงานจะเห็นในหน้ารับส่งผลัด</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px">'+thumbs+'</div>'
+    +(full?'<div class="muted" style="font-size:11.5px">ครบแล้ว — ลบรูปเดิมออกก่อนถึงจะเพิ่มได้</div>'
+      :('<div style="display:flex;gap:7px;flex-wrap:wrap">'
+        +'<label class="btn btn-sec btn-sm" style="cursor:pointer">เลือกจากอัลบัม'
+        +'<input type="file" accept="image/*" multiple id="ts_smpf_'+d.id+'" style="display:none"></label>'
+        +'<label class="btn btn-sec btn-sm" style="cursor:pointer">ถ่ายรูปใหม่'
+        +'<input type="file" accept="image/*" capture="environment" id="ts_smpc_'+d.id+'" style="display:none"></label>'
+        +'</div>'))
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">ทางลัด: ตอนตรวจงาน กดดาว &#9733; บนรูปที่พนักงานส่งมา จะเก็บเป็นตัวอย่างให้ทันที (ตัดแถบวันเวลาออกให้)</div>'
+    +'</div>';
+}
+async function tsSampleUpload(defId, files){
+  const fs=[...(files||[])]; if(!fs.length) return;
+  const d=TS.rows.filter(x=>x.id===defId)[0]; if(!d) return;
+  for(const f of fs){
+    const cur=Array.isArray(d.sample_photos)?d.sample_photos:[];
+    if(cur.length>=SAMPLE_MAX){ toast('err','ใส่ได้สูงสุด '+SAMPLE_MAX+' รูป'); break; }
+    let dataUrl; try{ dataUrl=await poFileToData(f); }catch(_e){ toast('err','อ่านไฟล์รูปไม่สำเร็จ'); continue; }
+    const r=await post({ action:'hr_taskdef_sample_add', ...authBody(), task_def_id:defId, data_url:dataUrl });
+    if(r&&r.ok) d.sample_photos=r.sample_photos||[]; else { toast('err',(r&&r.error)||'อัปโหลดไม่สำเร็จ'); break; }
+  }
+  toast('ok','บันทึกรูปตัวอย่างแล้ว'); tsRender();
+}
 const TS_QSS=[['','ไม่ใช้'],['1','ตารางที่ 1 · QA สินค้า'],['2','ตารางที่ 2 · ความสะอาดพื้นที่'],['3','ตารางที่ 3 · ความสะอาดอุปกรณ์'],['4','ตารางที่ 4 · การสั่งสินค้า']];
 const TS_STEPS = {1:'เตรียมความพร้อมก่อนรับผลัด',2:'การรับผลัด',3:'ดำเนินการขายและให้บริการ',4:'การจัดการสินค้า',5:'การจัดการคุณภาพสินค้าอาหารและเครื่องดื่ม (QA)',6:'Shift Survey ตรวจสอบเงินสดระหว่างผลัด',7:'การปิดผลัดและส่งผลัด',8:'On-line ข้อมูลการขายและส่งเอกสารสิ้นวัน',9:'การนำเงินฝากธนาคาร'};
 const TS_WHEN  = {1:'ก่อนเวลาเริ่มกะ 30 นาที',2:'นาทีแรกของกะ',3:'ตลอดกะ',4:'ตลอดกะ ตามรอบของแต่ละงาน',5:'ตามรอบของแต่ละผลัด',6:'อย่างน้อย 1 รอบต่อกะ',7:'ท้ายกะ',8:'ผลัดดึก ก่อนสว่าง',9:'ผลัดเช้า / ผู้จัดการ'};
@@ -11867,6 +11903,7 @@ function tsPanel(d){
     h+= ta('ts_how_'+d.id,'วิธีทำ (บรรทัดละข้อ)', d.how_to, 6)
       + ta('ts_cr_'+d.id,'เกณฑ์การตรวจสอบ (บรรทัดละข้อ)', d.criteria, 5)
       + ta('ts_ph_'+d.id,'วิธีถ่ายรูป / หลักฐาน', d.photo_hint, 2)
+      + tsSampleBoxHTML(d)
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
       + '<label style="font-size:12px">รูปขั้นต่ำ</label><input type="number" min="0" max="9" id="ts_mp_'+d.id+'" value="'+(d.min_photos!=null?d.min_photos:(d.require_photo?1:0))+'" style="width:60px;padding:6px;border:1.5px solid var(--line2);border-radius:8px;text-align:center">'
       + '<label style="font-size:12px;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="ts_mgr_'+d.id+'" '+(d.mgr_review?'checked':'')+'> ให้ ผจก.ตรวจ</label>'
@@ -12006,6 +12043,21 @@ function tsWire(){
     if(!r||!r.ok){ toast('err',(r&&r.error)||'ลบไม่สำเร็จ'); return; }
     TS.rows=TS.rows.filter(x=>x.id!==id); delete TS.open[id]; delete TS.ov[id];
     toast('ok','ลบแล้ว'); tsRender();
+  });
+  // รูปตัวอย่าง: เลือกจากอัลบัม / ถ่ายใหม่ / ลบ
+  document.querySelectorAll('[id^="ts_smpf_"],[id^="ts_smpc_"]').forEach(function(inp){
+    inp.onchange=function(e){ const id=Number(String(inp.id).replace(/^ts_smp[fc]_/,''));
+      tsSampleUpload(id, e.target.files); e.target.value=''; };
+  });
+  document.querySelectorAll('[data-smprm]').forEach(function(b){
+    b.onclick=async function(){
+      const id=Number(b.dataset.smprm), u=b.dataset.smpu||'';
+      if(!confirm('ลบรูปตัวอย่างนี้ออกจากงาน?')) return;
+      const r=await post({ action:'hr_taskdef_sample_del', ...authBody(), task_def_id:id, url:u });
+      if(r&&r.ok){ const d=TS.rows.filter(x=>x.id===id)[0]; if(d) d.sample_photos=r.sample_photos||[];
+        toast('ok','ลบรูปตัวอย่างแล้ว'); tsRender(); }
+      else toast('err',(r&&r.error)||'ลบไม่สำเร็จ');
+    };
   });
   document.querySelectorAll('[data-tssave]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.tssave);
@@ -15305,7 +15357,7 @@ async function loadTaskList(){
   const ord={}; (DATA.shifts||[]).forEach((s,i)=>{ ord[s.shift_id]=i; });
   const oneTask=t=>{
     const ph=(Array.isArray(t.photos)&&t.photos.length)?t.photos:(t.photo_url?[t.photo_url]:[]);
-    const imgs=ph.length?'<div style="font-size:11px;color:var(--muted);margin-top:6px"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> รูปที่พนักงานส่ง'+(Array.isArray(t.review_markup)&&t.review_markup.length?' (แก้แล้ว)':'')+'</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>':'';
+    const imgs=ph.length?'<div style="font-size:11px;color:var(--muted);margin-top:6px"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> รูปที่พนักงานส่ง'+(Array.isArray(t.review_markup)&&t.review_markup.length?' (แก้แล้ว)':'')+'</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px;-webkit-overflow-scrolling:touch">'+ph.map(u=>sampleThumbHTML(t.task_def_id,u,68)).join('')+'</div>':'';
     const mk=(Array.isArray(t.review_markup)&&t.review_markup.length)?'<div style="font-size:11px;color:#dc2626;margin-top:6px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่ผู้ตรวจสั่งแก้</div><div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px">'+t.review_markup.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:68px;height:68px;flex:none;object-fit:cover;border-radius:8px;cursor:zoom-in;border:2px solid #ef4444">').join('')+'</div>':'';
     const actions=t.status==='submitted'?' <button class="btn btn-pri btn-sm" data-tap="'+t.id+'">ผ่าน</button> <button class="btn btn-warn btn-sm" data-trb="'+t.id+'">ตีกลับ</button>':'';
     const aiBtn=ph.length?' <button class="btn btn-sec btn-sm" data-tkai="'+t.id+'"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> AI ช่วยดู</button>':'';
@@ -15359,6 +15411,63 @@ async function loadTaskList(){
     b.innerHTML='<svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> AI ช่วยดู';
   });
 }
+// ================= รูปตัวอย่างการถ่ายภาพของแต่ละงาน =================
+// HR/ผจก. เห็นรูปที่พนักงานส่งจริงตอนตรวจงาน กดปุ่มดาวเก็บรูปที่ถ่ายถูกต้องที่สุด
+// ไว้เป็นตัวอย่างให้คนอื่นดูในหน้ารับส่งผลัด (ตัดแถบดำวันเวลา-ชื่อคนถ่ายที่ขอบล่างออกให้)
+const SAMPLE_MAX=4;
+function sampleStarHTML(defId,url,size){
+  if(!defId) return '';
+  const sz=size||64;
+  return '<button type="button" class="smpstar" data-smpdef="'+defId+'" data-smpurl="'+esc(url)+'" '
+    +'title="ใช้รูปนี้เป็นภาพตัวอย่างของงานนี้" '
+    +'style="position:absolute;right:3px;bottom:3px;width:22px;height:22px;padding:0;border:none;border-radius:6px;'
+    +'background:rgba(15,23,42,.72);color:#fde68a;font-size:13px;line-height:22px;cursor:pointer">&#9733;</button>';
+}
+function sampleThumbHTML(defId,url,size,border){
+  const sz=size||64;
+  return '<div style="position:relative;flex:none;width:'+sz+'px;height:'+sz+'px">'
+    +'<img src="'+esc(url)+'" onclick="lightbox(this)" style="width:'+sz+'px;height:'+sz+'px;object-fit:cover;'
+    +'border-radius:8px;cursor:zoom-in;border:'+(border||'1px solid var(--line)')+'">'
+    +sampleStarHTML(defId,url,sz)+'</div>';
+}
+// ตัดแถบดำปั๊มวันเวลาที่ขอบล่าง (สูตรเดียวกับตอนปั๊มในหน้าพนักงาน)
+function sampleCrop(url){
+  return new Promise(res=>{
+    const im=new Image(); im.crossOrigin='anonymous';
+    const to=setTimeout(()=>res(null), 12000);
+    im.onerror=()=>{ clearTimeout(to); res(null); };
+    im.onload=()=>{
+      clearTimeout(to);
+      try{
+        const W=im.naturalWidth||im.width, H=im.naturalHeight||im.height;
+        const fs=Math.max(13,Math.round(W*0.033)), pad=Math.round(W*0.022);
+        let bh=Math.round(fs*2+pad*2.4);
+        if(!(bh>0) || bh>H*0.3) bh=0;                       // กันตัดเกินถ้ารูปไม่มีแถบ
+        const c=document.createElement('canvas'); c.width=W; c.height=H-bh;
+        c.getContext('2d').drawImage(im,0,0,W,H-bh,0,0,W,H-bh);
+        res(c.toDataURL('image/jpeg',0.88));
+      }catch(e){ res(null); }                                // canvas ปนเปื้อน (CORS) → ใช้ URL เดิม
+    };
+    im.src=url;
+  });
+}
+async function sampleAdd(defId,url,btn){
+  if(!defId){ toast('err','งานนี้ไม่ได้ผูกกับแคตตาล็อกงาน ตั้งรูปตัวอย่างไม่ได้'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='…'; }
+  const cropped=await sampleCrop(url);
+  const r=await post({ action:'hr_taskdef_sample_add', ...authBody(), task_def_id:defId, data_url:(cropped||url) });
+  if(btn){ btn.disabled=false; btn.innerHTML='&#9733;'; }
+  if(r&&r.ok){
+    toast('ok','เก็บเป็นภาพตัวอย่างแล้ว'+(r.title?(' — '+r.title):'')+' ('+(r.sample_photos||[]).length+'/'+SAMPLE_MAX+')');
+    const d=(typeof TS!=='undefined'&&TS.rows)?TS.rows.filter(x=>x.id===defId)[0]:null;
+    if(d) d.sample_photos=r.sample_photos||[];
+  } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+}
+document.addEventListener('click', function(ev){
+  const b=ev.target.closest && ev.target.closest('[data-smpdef]'); if(!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  sampleAdd(Number(b.getAttribute('data-smpdef')||0), b.getAttribute('data-smpurl')||'', b);
+});
 async function taskReview(id,status,note,markup){
   const r=await post({ action:'hr_task_review', password:pwd, id, status, note, markup });
   if(r.ok){ toast('ok', status==='approved'?'อนุมัติแล้ว':'ตีกลับแล้ว'); loadTaskList(); } else toast('err', r.error||'ไม่สำเร็จ');
