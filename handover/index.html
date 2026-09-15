@@ -252,7 +252,9 @@ async function wipSave(key,val){ try{ const db=await wipOpen(); await new Promis
 async function wipGet(key){ try{ const db=await wipOpen(); return await new Promise(res=>{ const tx=db.transaction(WIP_ST,'readonly'); const g=tx.objectStore(WIP_ST).get(key); g.onsuccess=()=>res(g.result||null); g.onerror=()=>res(null); }); }catch(e){ return null; } }
 async function wipDel(key){ try{ const db=await wipOpen(); await new Promise(res=>{ const tx=db.transaction(WIP_ST,'readwrite'); tx.objectStore(WIP_ST).delete(key); tx.oncomplete=res; tx.onerror=res; }); }catch(e){} }
 async function wipCleanup(maxAgeMs){ try{ const db=await wipOpen(); const tx=db.transaction(WIP_ST,'readwrite'); const st=tx.objectStore(WIP_ST); st.openCursor().onsuccess=e=>{ const c=e.target.result; if(!c) return; const v=c.value; if(!v||!v.at||(Date.now()-v.at)>maxAgeMs) st.delete(c.key); c.continue(); }; }catch(e){} }
-function taskDraftSave(id){ wipSave('t:'+id,{ photos:TASK_PHOTOS[id]||[], note:($('mn_'+id)||{}).value||'' }); }
+// ★ แก้ 15 ก.ย. 69 — คีย์ร่างต้องมี emp_id ผสม ไม่งั้นรูปของคนก่อนถูก restore ให้คนใหม่ส่งในชื่อตัวเอง
+function _dkey(k){ return ((typeof EMP!=='undefined'&&EMP&&EMP.emp_id)?EMP.emp_id:'x')+':'+k; }
+function taskDraftSave(id){ wipSave('t:'+_dkey(id),{ photos:TASK_PHOTOS[id]||[], note:($('mn_'+id)||{}).value||'' }); }
 // ตัวช่วยกลางสำหรับทุกจุดที่ถ่ายรูปส่ง (งานพิเศษ/เชลฟ์/งานแก้/งาน ผจก.) — arrKey=คีย์ใน TASK_PHOTOS
 function wipPut(storeKey, arrKey, noteId){ wipSave(storeKey, { photos: TASK_PHOTOS[arrKey]||[], note: (noteId?(($(noteId)||{}).value||''):'') }); }
 function wipRestore(storeKey, arrKey, noteId, renderFn, renderArg){ wipGet(storeKey).then(d=>{ if(!d) return; if(Array.isArray(d.photos)&&d.photos.length) TASK_PHOTOS[arrKey]=d.photos.slice(); if(noteId){ const el=$(noteId); if(el && d.note && !el.value) el.value=d.note; } if(renderFn){ try{ renderFn(renderArg); }catch(e){} } }); }
@@ -581,7 +583,10 @@ $('goBtn').onclick=async()=>{
   }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
   $('goBtn').textContent='เริ่ม';
 };
-$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
+$('changeBtn').onclick=()=>{
+  TASK_PHOTOS={}; GD_PHOTOS=[]; GD_EDIT=null; PVTASKS={}; MK=null; LBOARD=null;   // ★ ล้างรูป/ร่างของคนก่อนหน้า
+  try{ HRSession.exitViewMode && HRSession.exitViewMode(); }catch(_e){}
+ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
 
 // ============ เมนู 1: หัวหน้าผลัด ============
 $('bMenu1').onclick=openM1;
@@ -753,13 +758,13 @@ async function openM2(){
       const nInp=$('mn_'+a.id); if(nInp) nInp.oninput=()=>taskDraftSave(a.id);   // เก็บร่างเมื่อพิมพ์หมายเหตุ
       if(a.status==='submitted') renderTaskThumbs(a.id);
       // ★ กู้ร่างที่ค้างไว้ (รูป/หมายเหตุ) ถ้ามี — กันหายเวลาสลับแอป/รีโหลด
-      wipGet('t:'+a.id).then(d=>{ if(!d) return; if(Array.isArray(d.photos)&&d.photos.length) TASK_PHOTOS[a.id]=d.photos.slice(); if(nInp && d.note && !nInp.value) nInp.value=d.note; renderTaskThumbs(a.id); });
+      wipGet('t:'+_dkey(a.id)).then(d=>{ if(!d) return; if(Array.isArray(d.photos)&&d.photos.length) TASK_PHOTOS[a.id]=d.photos.slice(); if(nInp && d.note && !nInp.value) nInp.value=d.note; renderTaskThumbs(a.id); });
     }});
     document.querySelectorAll('[data-sub]').forEach(b=>b.onclick=async()=>{
       const id=Number(b.dataset.sub); const note=($('mn_'+id)||{}).value||'';
-      b.innerHTML='<span class="spin"></span>';
-      try{ const photos = TASK_PHOTOS[id]||[]; await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); await wipDel('t:'+id); toast('ok','ส่งงานแล้ว'); openM2(); }
-      catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงาน'; }
+      if(b.disabled) return; b.disabled=true; b.innerHTML='<span class="spin"></span>';
+      try{ const photos = TASK_PHOTOS[id]||[]; await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); await wipDel('t:'+_dkey(id)); toast('ok','ส่งงานแล้ว'); openM2(); }
+      catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงาน'; b.disabled=false; }
     });
     document.querySelectorAll('[data-pull]').forEach(b=>b.onclick=async()=>{
       try{ await window.HR.pullTask({ empId:EMP.emp_id, task_def_id:Number(b.dataset.pull) }); toast('ok','ดึงงานมาเป็นของคุณแล้ว'); openM2(); }
@@ -830,9 +835,9 @@ function wireSpecial(rows){
   (rows||[]).forEach(a=>{ if(a.status==='todo'||a.status==='sent_back'){ TASK_PHOTOS['sp_'+a.id]=[]; wireSpInput('spfc_'+a.id, a.id); const n=$('spn_'+a.id); if(n) n.oninput=()=>wipPut('sp:'+a.id,'sp_'+a.id,'spn_'+a.id); wipRestore('sp:'+a.id,'sp_'+a.id,'spn_'+a.id,renderSpThumbs,a.id); } });
   document.querySelectorAll('[data-spsub]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.spsub); const note=($('spn_'+id)||{}).value||'';
-    b.innerHTML='<span class="spin"></span>';
+    if(b.disabled) return; b.disabled=true; b.innerHTML='<span class="spin"></span>';
     try{ const photos=TASK_PHOTOS['sp_'+id]||[]; await window.HR.submitSpecialTask({ assignee_id:id, empId:EMP.emp_id, photos, note }); await wipDel('sp:'+id); toast('ok','ส่งงานพิเศษแล้ว'); openM2(); }
-    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงาน'; }
+    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงาน'; b.disabled=false; }
   });
 }
 function updateSpBadge(rows){
@@ -917,9 +922,9 @@ function wireMyShelves(){
     if(!photos.length){ toast('err','ต้องแนบรูปอย่างน้อย 1 รูป'); return; }
     const items=[...document.querySelectorAll('.shvck_'+id)].map(el=>({ label:el.dataset.label, done:el.checked }));
     const note=($('shvn_'+id)||{}).value||'';
-    b.innerHTML='<span class="spin"></span>';
+    if(b.disabled) return; b.disabled=true; b.innerHTML='<span class="spin"></span>';
     try{ await window.HR.submitShelfCheck({ empId:EMP.emp_id, shelf_id:id, items, note, photos }); await wipDel('shv:'+id); toast('ok','ส่งการตรวจเชลฟ์แล้ว'); openM2(); }
-    catch(e){ toast('err', e.message||'ไม่สำเร็จ'); b.textContent='ส่งการตรวจเชลฟ์'; }
+    catch(e){ toast('err', e.message||'ไม่สำเร็จ'); b.textContent='ส่งการตรวจเชลฟ์'; b.disabled=false; }
   });
 }
 
@@ -1007,9 +1012,9 @@ function wireFixTasks(rows){
     if(!photos.length){ toast('err','ต้องมีรูปอย่างน้อย 1 รูป'); return; }
     if(min && photos.length<min){ toast('err','งานนี้ต้องมีรูปอย่างน้อย '+min+' รูป (ตอนนี้ '+photos.length+' รูป)'); return; }
     const note=(document.getElementById('fxn_'+id)||{}).value||'';
-    b.innerHTML='<span class="spin"></span>';
+    if(b.disabled) return; b.disabled=true; b.innerHTML='<span class="spin"></span>';
     try{ await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); await wipDel('fx:'+id); toast('ok','ส่งงานที่แก้แล้ว — รอผู้จัดการตรวจซ้ำ'); openM2(); }
-    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงานที่แก้แล้ว'; }
+    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงานที่แก้แล้ว'; b.disabled=false; }
   });
 }
 let FIX_MIN={};   // จำนวนรูปขั้นต่ำของงานที่ถูกตีกลับ (ต่อใบ)
@@ -1072,9 +1077,9 @@ function wireMgrTasks(rows){
   (rows||[]).forEach(a=>{ TASK_PHOTOS['mgt_'+a.id]=[]; wireMgtInput('mgtfc_'+a.id, a.id); const n=$('mgtn_'+a.id); if(n) n.oninput=()=>wipPut('mgt:'+a.id,'mgt_'+a.id,'mgtn_'+a.id); wipRestore('mgt:'+a.id,'mgt_'+a.id,'mgtn_'+a.id,renderMgtThumbs,a.id); });
   document.querySelectorAll('[data-mgtsub]').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.mgtsub; const note=($('mgtn_'+id)||{}).value||'';
-    b.innerHTML='<span class="spin"></span>';
+    if(b.disabled) return; b.disabled=true; b.innerHTML='<span class="spin"></span>';
     try{ const photos=TASK_PHOTOS['mgt_'+id]||[]; await window.HR.submitMgrTaskByEmp({ task_id:id, empId:EMP.emp_id, photos, note }); await wipDel('mgt:'+id); toast('ok','ส่งให้ผู้จัดการแล้ว'); openM2(); }
-    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งให้ผู้จัดการ'; }
+    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งให้ผู้จัดการ'; b.disabled=false; }
   });
 }
 
@@ -1253,14 +1258,14 @@ function renderGoods(){
   wireGoods();
 }
 function renderGdThumbs(){ const t=$('gd_thumbs'); if(!t) return; t.innerHTML=(GD_PHOTOS||[]).map((u,i)=>'<span style="position:relative;display:inline-block;margin:0 6px 6px 0"><img src="'+esc(u)+'" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"><button type="button" onclick="rmGdPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join(''); }
-function gdDraftSave(){ if(GD_EDIT) return; wipSave('gd:new', { photos: GD_PHOTOS||[] }); }   // เก็บร่างรูปรับสินค้า (เฉพาะใบใหม่)
+function gdDraftSave(){ if(GD_EDIT) return; wipSave('gd:'+_dkey('new'), { photos: GD_PHOTOS||[] }); }   // เก็บร่างรูปรับสินค้า (เฉพาะใบใหม่)
 function rmGdPhoto(i){ GD_PHOTOS.splice(i,1); renderGdThumbs(); gdDraftSave(); }
 function wireGoods(){
   $('gd_release')&&($('gd_release').onclick=async()=>{ if(!confirm('ปล่อยสิทธิ์ผู้คุมผลัด? (คนอื่นจะกดรับแทนได้)')) return; try{ await window.HR.releaseShiftController({empId:EMP.emp_id}); toast('ok','ปล่อยสิทธิ์แล้ว'); }catch(e){ toast('err',e.message||'ไม่สำเร็จ'); } openGoods(); });
   if(!GOODS.warehouses.length) return;
   GD_PHOTOS = (GD_EDIT && Array.isArray(GD_EDIT.in_photos)) ? GD_EDIT.in_photos.slice() : [];
   renderGdThumbs();
-  if(!GD_EDIT){ wipGet('gd:new').then(d=>{ if(d && Array.isArray(d.photos) && d.photos.length){ GD_PHOTOS=d.photos.slice(); renderGdThumbs(); } }); }   // ★ กู้ร่างรูป
+  if(!GD_EDIT){ wipGet('gd:'+_dkey('new')).then(d=>{ if(d && Array.isArray(d.photos) && d.photos.length){ GD_PHOTOS=d.photos.slice(); renderGdThumbs(); } }); }   // ★ กู้ร่างรูป
   const inp=$('gd_fc');
   if(inp) inp.addEventListener('change',async()=>{
     if(!inp.files||!inp.files.length) return;
@@ -1284,7 +1289,7 @@ function wireGoods(){
     // ★ กันเคส "คิดว่าแนบรูปแล้ว แต่จริง ๆ ไม่มีรูป" — ยืนยันก่อนบันทึก
     if(!(GD_PHOTOS||[]).length && !confirm('ยังไม่มีรูปแนบ (รูปลัง/บิล)\nยืนยันบันทึกโดยไม่มีรูป?')) return;
     $('gd_save').innerHTML='<span class="spin"></span>';
-    try{ await window.HR.submitGoodsReceipt({ empId:EMP.emp_id, id:GD_EDIT?GD_EDIT.id:null, warehouse_id:Number(warehouse_id), ref_no, crates_in, crates_return, in_photos:GD_PHOTOS, note }); await wipDel('gd:new'); toast('ok','บันทึกรับสินค้าแล้ว'); GD_EDIT=null; openGoods(); }
+    try{ await window.HR.submitGoodsReceipt({ empId:EMP.emp_id, id:GD_EDIT?GD_EDIT.id:null, warehouse_id:Number(warehouse_id), ref_no, crates_in, crates_return, in_photos:GD_PHOTOS, note }); await wipDel('gd:'+_dkey('new')); toast('ok','บันทึกรับสินค้าแล้ว'); GD_EDIT=null; openGoods(); }
     catch(e){ toast('err',e.message||'ไม่สำเร็จ'); $('gd_save').textContent=GD_EDIT?'อัปเดต':'บันทึก'; }
   };
 }
