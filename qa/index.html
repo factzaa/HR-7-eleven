@@ -161,65 +161,47 @@ async function loadBranches(){ try{ const c=await window.HR.loadConfig(); (c.bra
 function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขาประจำ)'; }
 
 // ===== รูป: ปั๊มวันเวลา + สาขา + ผู้ถ่าย =====
-function resizeFile(file){return new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{
-  const max=1100,sc=Math.min(1,max/Math.max(img.width,img.height));
-  const c=document.createElement('canvas');c.width=img.width*sc;c.height=img.height*sc;
-  const x=c.getContext('2d'); x.drawImage(img,0,0,c.width,c.height);
-  try{
-    const now=new Date();
-    const ts=now.toLocaleString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' น.';
-    const sub=(EMP)?((EMP.nickname||EMP.name||'')+' · '+branchName(EMP.branch_id)):'';
-    const pad=Math.round(c.width*0.022), fs=Math.max(13,Math.round(c.width*0.033));
-    const bh=fs*2+pad*2.4;
-    x.fillStyle='rgba(0,0,0,.5)'; x.fillRect(0,c.height-bh,c.width,bh);
-    x.textBaseline='alphabetic'; x.fillStyle='#fff';
-    x.font='700 '+fs+'px Anuphan,sans-serif'; x.fillText(ts, pad, c.height-fs-pad*0.6);
-    if(sub){ x.font='400 '+Math.round(fs*0.8)+'px Anuphan,sans-serif'; x.fillText(sub, pad, c.height-pad*0.7); }
-  }catch(e){}
-  res(c.toDataURL('image/jpeg',0.85));
-};img.src=ev.target.result;};r.readAsDataURL(file);});}
-function plainResize(file){return new Promise(res=>{const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{const max=1200,sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=img.width*sc;c.height=img.height*sc;c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',0.85));};img.src=ev.target.result;};r.readAsDataURL(file);});}
+// ★ แก้ 15 ก.ย. 69 — ยกเวอร์ชันที่มี onerror/timeout จาก handover มาใช้
+//   เดิมไม่มี onerror เลย รูป HEIC จาก iPhone ทำให้ Promise ค้างตลอดกาล หน้าเงียบ งานไม่ถูกบันทึก
+function resizeFile(file){
+  return new Promise(res=>{
+    let done=false;
+    const finish=(v)=>{ if(done) return; done=true; res(v); };
+    const to=setTimeout(()=>finish(null), 15000);          // กันค้างถาวร
 
-// ===== เข้าสู่ระบบ =====
-$('goBtn').onclick=async()=>{
-  const id=$('empId').value.trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
-  $('goBtn').innerHTML='<span class="spin"></span>';
-  try{
-    const emp=await window.HR.lookupEmployee(id);
-    if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); $('goBtn').textContent='เริ่ม'; return; }
-    if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); $('goBtn').textContent='เริ่ม'; return; }
-    // ★ ประตู PIN ส่วนตัวของพนักงาน (กันคนอื่นใช้รหัสเราเข้ามาดูข้อมูล)
-    if(!(await HRSession.pinGate(emp))){ $('goBtn').textContent='เริ่ม'; return; }
-    EMP=emp;
-    try{ HRSession.setEmp(emp.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
-    $('f_nm').textContent=emp.nickname||emp.name;
-    $('f_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
-    show('step_folders'); loadFolders();
-    if(window.refreshNotifyBtn) window.refreshNotifyBtn();
-  }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
-  $('goBtn').textContent='เริ่ม';
-};
-$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
-
-// ===== รายการโฟลเดอร์ =====
-async function loadFolders(){
-  $('folders_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
-  let r; try{ r=await window.HR.getQaFolders(EMP.emp_id); }catch(e){ $('folders_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
-  if(!r.rows.length){ $('folders_body').innerHTML='<div class="card muted">สาขาของคุณยังไม่มีโฟลเดอร์ QA — กด "+ สร้างโฟลเดอร์ใหม่" ได้เลย</div>'; return; }
-  $('folders_body').innerHTML=r.rows.map(f=>{
-    const s=f.stats||{total:0,on_shelf:0,expiring:0};
-    return '<div class="fcard" data-fid="'+f.id+'">'
-      +'<div style="font-weight:700;font-size:15px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '+esc(f.title)
-      +(f.mine?'<span style="font-size:11px;font-weight:700;background:#dcfce7;color:#166534;border-radius:99px;padding:2px 8px;margin-left:6px">งานของฉัน</span>':'<span style="font-size:11px;background:#eef2ff;color:#3730a3;border-radius:99px;padding:2px 8px;margin-left:6px">ของสาขา</span>')
-      +(s.expiring>0?'<span class="badge">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
-      +(f.target_month?'<div class="muted" style="margin-top:2px">เดือนเป้าหมาย: '+esc(f.target_month)+'</div>':'')
-      +(f.note?'<div class="muted" style="margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(f.note)+'</div>':'')
-      +'<div class="muted" style="margin-top:4px">บันทึกแล้ว '+s.total+' รายการ · ยังอยู่บนเชลฟ์ '+s.on_shelf+'</div>'
-      +'</div>';
-  }).join('');
-  document.querySelectorAll('[data-fid]').forEach(el=>el.onclick=()=>openFolder(r.rows.find(x=>String(x.id)===el.dataset.fid)));
-  // เปิดโฟลเดอร์อัตโนมัติจาก deep-link (?folder=) ครั้งเดียว
-  if(OPEN_FID && !_qaAutoOpened){ const t=r.rows.find(x=>String(x.id)===String(OPEN_FID)); if(t){ _qaAutoOpened=true; openFolder(t); } }
+    const r=new FileReader();
+    r.onerror=()=>{ clearTimeout(to); finish(null); };
+    r.onload=ev=>{
+      const raw=ev.target.result;
+      const img=new Image();
+      // ถอดรหัสรูปไม่ได้ → ใช้ไฟล์ต้นฉบับไปเลย ถ้าเป็น jpeg/png (ถ้าเป็น HEIC จะคืน null ให้ฟ้อง)
+      img.onerror=()=>{ clearTimeout(to); finish(/^data:image\/(jpeg|jpg|png)/i.test(String(raw))?raw:null); };
+      img.onload=()=>{
+        clearTimeout(to);
+        try{
+          const max=1000,sc=Math.min(1,max/Math.max(img.width,img.height));
+          const c=document.createElement('canvas');c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+          const x=c.getContext('2d'); x.drawImage(img,0,0,c.width,c.height);
+          // ปั๊มวันเวลา + สาขา + ผู้ถ่าย ลงบนรูป (กันใช้รูปซ้ำ/รูปเก่า)
+          try{
+            const now=new Date();
+            const ts=now.toLocaleString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' น.';
+            let sub=''; try{ sub=(typeof EMP!=='undefined'&&EMP)?((EMP.nickname||EMP.name||'')+((typeof branchName==='function')?(' · '+branchName(EMP.branch_id)):'')):''; }catch(_e){ sub=''; }
+            const pad=Math.round(c.width*0.022), fs=Math.max(13,Math.round(c.width*0.033));
+            const bh=fs*2+pad*2.4;
+            x.fillStyle='rgba(0,0,0,.5)'; x.fillRect(0,c.height-bh,c.width,bh);
+            x.textBaseline='alphabetic'; x.fillStyle='#fff';
+            x.font='700 '+fs+'px Anuphan,Sarabun,sans-serif'; x.fillText(ts, pad, c.height-fs-pad*0.6);
+            if(sub){ x.font='400 '+Math.round(fs*0.8)+'px Anuphan,Sarabun,sans-serif'; x.fillText(sub, pad, c.height-pad*0.7); }
+          }catch(e){}
+          const out=c.toDataURL('image/jpeg',0.85);         // ★ บังคับเป็น JPEG เสมอ (LINE ไม่รองรับ HEIC/WebP)
+          finish(/^data:image\/jpeg/i.test(out) ? out : (/^data:image\/(jpeg|jpg|png)/i.test(String(raw))?raw:null));
+        }catch(e){ finish(/^data:image\/(jpeg|jpg|png)/i.test(String(raw))?raw:null); }
+      };
+      img.src=raw;
+    };
+    r.readAsDataURL(file);
+  });
 }
 
 // ===== รายการสินค้าในโฟลเดอร์ =====
