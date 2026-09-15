@@ -1023,9 +1023,14 @@ function shvPill(c){
 function renderMyShelvesHTML(shv){
   SHV_DATA=shv;
   const rows=(shv&&shv.rows)||[];
-  if(!rows.length) return '';
   const todo = rows.filter(r=>!r.today_check || r.today_check.status==='sent_back').length;
-  let h='<h3 class="sec"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> เชลฟ์ที่ฉันดูแล (เดือนนี้)'+(todo?(' <span class="pill bad">ยังไม่ตรวจ '+todo+'</span>'):' <span class="pill ok">ตรวจครบแล้ววันนี้</span>')+'</h3>';
+  let h='<h3 class="sec"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> เชลฟ์ที่ฉันดูแล (เดือนนี้)'+(!rows.length ? ' <span class="pill muted2">ยังไม่ได้รับมอบหมาย</span>'
+    : (todo?(' <span class="pill bad">ยังไม่ตรวจ '+todo+'</span>'):' <span class="pill ok">ตรวจครบแล้ววันนี้</span>'))+'</h3>';
+  // ★ บันทึกสินค้าใกล้หมดอายุ — เข้าหน้า QA จากงานดูแลเชลฟ์ (แทนเมนู QA ที่หน้าแรก)
+  h+='<button class="btn btn-sec" id="bQaExp" style="width:100%;margin-bottom:10px;border-color:#fdba74;color:#9a3412;background:#fff7ed">'
+   +'<svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/><path d="M12 13v3M12 18h.01"/></svg> บันทึกสินค้าใกล้หมดอายุ</button>'
+   +'<div class="muted" style="font-size:11.5px;margin:-4px 0 10px">สแกนบาร์โค้ด บันทึกวันหมดอายุ และสถานะสินค้า'+(rows.length?'บนเชลฟ์ที่คุณดูแล':' — เจอสินค้าใกล้หมดอายุที่ไหนก็บันทึกได้')+'</div>';
+  if(!rows.length) return h+'<div class="card muted" style="font-size:12.5px">เดือนนี้คุณยังไม่ได้รับมอบหมายเชลฟ์ — ถ้าต้องการให้มอบหมาย แจ้งผู้จัดการร้าน</div>';
   h+=rows.map(r=>{
     const c=r.today_check;
     const canDo = !c || c.status==='sent_back';
@@ -1078,6 +1083,14 @@ function wireMyShelves(){
     const n=$('shvn_'+r.shelf_id); if(n) n.oninput=()=>wipPut('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id);
     wipRestore('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id,renderShvThumbs,r.shelf_id);
   });
+  // เปิดหน้าบันทึกสินค้าใกล้หมดอายุ (QA) พร้อมพารหัสพนักงานและทางกลับไปด้วย
+  var _qaBtn=$('bQaExp');
+  if(_qaBtn) _qaBtn.onclick=function(){
+    var q='../qa/?emp='+encodeURIComponent(EMP.emp_id)+'&back='+encodeURIComponent(location.href);
+    var one=((SHV_DATA&&SHV_DATA.rows)||[]);
+    if(one.length===1 && one[0].name) q+='&shelf='+encodeURIComponent(one[0].name);
+    location.href=q;
+  };
   document.querySelectorAll('[data-shvsub]').forEach(b=>b.onclick=async()=>{
     const id=Number(b.dataset.shvsub);
     const photos=TASK_PHOTOS['shv_'+id]||[];

@@ -64,7 +64,7 @@
   <div class="body">
 
     <!-- แถบกลับหน้าเชลฟ์ (เมื่อเปิดมาจากงานดูแลเชลฟ์) -->
-    <div id="shelfBar" class="hide" style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+    <div id="shelfBar" style="display:none;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:14px;align-items:center;gap:10px">
       <button id="shelfBack" class="btn btn-sm" style="width:auto;background:#fff;border:1.5px solid #fed7aa;color:#9a3412">‹ กลับหน้าเชลฟ์</button>
       <div id="shelfCtx" style="font-size:12.5px;color:#9a3412;line-height:1.35"></div>
     </div>
@@ -283,6 +283,44 @@ function _resizeFileRaw(file){
   });
 }
 
+// ===== เข้าสู่ระบบ =====
+$('goBtn').onclick=async()=>{
+  const id=$('empId').value.trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  $('goBtn').innerHTML='<span class="spin"></span>';
+  try{
+    const emp=await window.HR.lookupEmployee(id);
+    if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); $('goBtn').textContent='เริ่ม'; return; }
+    if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); $('goBtn').textContent='เริ่ม'; return; }
+    EMP=emp;
+    try{ HRSession.setEmp(emp.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
+    $('f_nm').textContent=emp.nickname||emp.name;
+    $('f_sub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
+    show('step_folders'); loadFolders();
+    if(window.refreshNotifyBtn) window.refreshNotifyBtn();
+  }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
+  $('goBtn').textContent='เริ่ม';
+};
+$('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
+
+// ===== รายการโฟลเดอร์ =====
+async function loadFolders(){
+  $('folders_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
+  let r; try{ r=await window.HR.getQaFolders(EMP.emp_id); }catch(e){ $('folders_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
+  if(!r.rows.length){ $('folders_body').innerHTML='<div class="card muted">ยังไม่มีโฟลเดอร์ที่มอบหมายให้คุณ</div>'; return; }
+  $('folders_body').innerHTML=r.rows.map(f=>{
+    const s=f.stats||{total:0,on_shelf:0,expiring:0};
+    return '<div class="fcard" data-fid="'+f.id+'">'
+      +'<div style="font-weight:700;font-size:15px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '+esc(f.title)+(s.expiring>0?'<span class="badge">ใกล้หมดอายุ '+s.expiring+'</span>':'')+'</div>'
+      +(f.target_month?'<div class="muted" style="margin-top:2px">เดือนเป้าหมาย: '+esc(f.target_month)+'</div>':'')
+      +(f.note?'<div class="muted" style="margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(f.note)+'</div>':'')
+      +'<div class="muted" style="margin-top:4px">บันทึกแล้ว '+s.total+' รายการ · ยังอยู่บนเชลฟ์ '+s.on_shelf+'</div>'
+      +'</div>';
+  }).join('');
+  document.querySelectorAll('[data-fid]').forEach(el=>el.onclick=()=>openFolder(r.rows.find(x=>String(x.id)===el.dataset.fid)));
+  // เปิดโฟลเดอร์อัตโนมัติจาก deep-link (?folder=) ครั้งเดียว
+  if(OPEN_FID && !_qaAutoOpened){ const t=r.rows.find(x=>String(x.id)===String(OPEN_FID)); if(t){ _qaAutoOpened=true; openFolder(t); } }
+}
+
 // ===== รายการสินค้าในโฟลเดอร์ =====
 function daysLeft(dstr){ const d=new Date(dstr+'T00:00:00'); const n=new Date(); n.setHours(0,0,0,0); return Math.round((d-n)/86400000); }
 function statusPill(s){ return s==='sold'?['ขายแล้ว','ok']:s==='removed'?['เก็บออกแล้ว','muted2']:['ยังอยู่บนเชลฟ์','warn']; }
@@ -439,7 +477,7 @@ function lightbox(src){ const o=document.createElement('div'); o.style.cssText='
 
 // ===== แถบกลับหน้าเชลฟ์ + เปิดมาจากงานดูแลเชลฟ์ =====
 if(SHELF_BACK){
-  const bar=$('shelfBar'); bar.classList.remove('hide');
+  const bar=$('shelfBar'); bar.style.display='flex';
   $('shelfCtx').innerHTML=(SHELF_NAME?('เชลฟ์: '+esc(SHELF_NAME)+'<br>'):'')+(SHELF_MODE==='removed'?'บันทึกสินค้าที่ <b>เก็บออก</b>':(SHELF_MODE==='watch'?'บันทึกสินค้า <b>เฝ้าระวัง ~4 เดือน</b>':''));
   $('shelfBack').onclick=()=>{ location.href=SHELF_BACK; };
 }
