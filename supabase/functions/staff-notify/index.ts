@@ -445,6 +445,15 @@ async function scanShiftIncomplete(): Promise<number> {
 //     • ถ้ายังไม่ครบ → ยิงเมื่อพ้น 1 ชม. จากเวลาเข้างานของกะย่อยที่เริ่มช้าที่สุดของวันนั้น
 //   กะที่ไม่สังกัดผลัดหลัก (Delivery, ผจก.) ต่อท้ายการ์ดผลัดแรกของวัน
 // ============================================================
+// ★ 17 ก.ย. 69 — สีการ์ดแยกตาม "ช่วงเวลาของผลัด" ให้จำได้ทันทีว่าใบไหนคือผลัดอะไร
+//   อิงเวลาเริ่มกะจริง ไม่ผูกกับรหัสผลัด (เปลี่ยนชื่อ/เพิ่มผลัดใหม่ก็ยังทำงาน)
+//   สถานะ (ครบ/สาย/ขาด) ไม่ได้อยู่ที่สีหัวการ์ดแล้ว — ไปอยู่ที่ตัวเลข 3 ช่องกับข้อความหัวเรื่องแทน
+function shiftColor(startMin: number | null): string {
+  if (startMin == null) return "#52525b";
+  if (startMin < 11 * 60) return "#ea8c00";       // เช้า — สีอรุณ
+  if (startMin < 18 * 60) return "#0369a1";       // บ่าย — ฟ้ากลางวัน
+  return "#3730a3";                                // ดึก — น้ำเงินเข้ม
+}
 const ATTEND_GRACE = 60;          // นาทีหลังกะย่อยสุดท้ายเริ่ม → ยิงแม้คนยังไม่ครบ
 const ATTEND_STALE = 180;         // เลยกำหนดเกินเท่านี้ ไม่ยิงย้อน — รายงานเข้างานที่ช้า 3 ชม.
                                   // ไม่มีประโยชน์แล้ว เหลือไว้พอกัน cron ล่มสั้น ๆ
@@ -509,12 +518,21 @@ async function scanAttendSummary(): Promise<number> {
       const rv = await reserve(rkey, "");
       if (rv === "dup") continue;
 
+      // ★ แก้ 17 ก.ย. 69 — ป้ายกะย่อยต้องสั้น ไม่งั้นโดนตัดกลางคำ ("Delivery (วิ...")
+      const tagOf = (sid: string) => {
+        if (sid === g) return "";                       // กะหลักของการ์ดนี้ ไม่ต้องติดป้าย
+        const x = shBy[sid] || {};
+        const mm = x.main_shift ? String(x.main_shift).trim() : "";
+        if (!mm) return sid === "D" ? "ไรเดอร์" : (x.code ? String(x.code) : sid);
+        if (mm === sid) return String(x.name || sid);   // กลุ่มยืนเดี่ยว เช่น ผจก.
+        return x.code ? ("กะ " + x.code) : sid;         // กะย่อย → "กะ 8", "กะ 16"
+      };
       const stOf = (r: any) => { const a = attBy[r.emp_id]; if (!a?.check_in) return "none"; return Number(a.late_min || 0) > 0 ? "late" : "ok"; };
       const lateMin = (r: any) => Number(attBy[r.emp_id]?.late_min || 0);
       const okN = list.filter((r) => stOf(r) === "ok").length;
       const lateN = list.filter((r) => stOf(r) === "late").length;
       const noN = list.filter((r) => stOf(r) === "none").length;
-      const color = noN ? "#dc2626" : lateN ? "#d97706" : "#16a34a";
+      const color = shiftColor(hm(mn.start_time));
       const hhmm = (iso: string) => { try { const d2 = new Date(new Date(iso).getTime() + TZ); return String(d2.getUTCHours()).padStart(2, "0") + ":" + String(d2.getUTCMinutes()).padStart(2, "0"); } catch { return "—"; } };
       const tile = (n: number, lb: string, c: string) => ({ type: "box", layout: "vertical", backgroundColor: "#f4f4f5", cornerRadius: "8px", paddingAll: "8px", contents: [
         { type: "text", text: String(n), size: "xl", weight: "bold", align: "center", color: n ? c : "#a1a1aa" },
@@ -523,16 +541,18 @@ async function scanAttendSummary(): Promise<number> {
       const rows: any[] = [{ type: "box", layout: "horizontal", spacing: "sm", contents: [
         tile(okN, "ตรงเวลา", "#16a34a"), tile(lateN, "สาย", "#d97706"), tile(noN, "ไม่มา", "#dc2626")] }];
 
+      // ★ ทุกแถวต้องมีครบ 4 ช่อง flex เท่ากันเสมอ (ช่องว่างใส่ " ")
+      //   ของเดิมใส่ช่องป้ายเฉพาะคนที่มีกะย่อย ทำให้คอลัมน์เวลาของแต่ละแถวเลื่อนไม่ตรงกัน
       const personRow = (r: any) => {
         const a = attBy[r.emp_id]; const st = stOf(r);
-        const tag = r.sid !== g ? (shBy[r.sid]?.name || r.sid) : "";
-        const c: any[] = [{ type: "text", text: nm[r.emp_id] || r.emp_id, size: "sm", flex: 5,
-          weight: st === "ok" ? "regular" : "bold", color: st === "none" ? "#dc2626" : "#18181b" }];
-        if (tag) c.push({ type: "text", text: tag, size: "xxs", color: "#8c8c8c", flex: 4 });
-        c.push({ type: "text", text: a?.check_in ? hhmm(a.check_in) : "—", size: "xs", color: "#8c8c8c", flex: 3, align: "end" });
-        c.push({ type: "text", text: st === "none" ? "ไม่มา" : st === "late" ? ("สาย " + lateMin(r) + "′") : " ",
-          size: "xxs", weight: "bold", flex: 4, align: "end", color: st === "none" ? "#dc2626" : "#d97706" });
-        return { type: "box", layout: "baseline", spacing: "sm", contents: c };
+        return { type: "box", layout: "baseline", spacing: "sm", contents: [
+          { type: "text", text: nm[r.emp_id] || r.emp_id, size: "sm", flex: 6,
+            weight: st === "ok" ? "regular" : "bold", color: st === "none" ? "#dc2626" : "#18181b" },
+          { type: "text", text: tagOf(r.sid) || " ", size: "xxs", color: "#8c8c8c", flex: 3 },
+          { type: "text", text: a?.check_in ? hhmm(a.check_in) : "—", size: "xs", color: "#8c8c8c", flex: 3, align: "end" },
+          { type: "text", text: st === "none" ? "ไม่มา" : st === "late" ? ("สาย " + lateMin(r) + "′") : " ",
+            size: "xxs", weight: "bold", flex: 4, align: "end", color: st === "none" ? "#dc2626" : "#d97706" },
+        ] };
       };
       const rank = (r: any) => stOf(r) === "none" ? 0 : stOf(r) === "late" ? 1 : 2;
       const inMain = list.filter((r) => mainIds.has(r.grp));
@@ -550,14 +570,17 @@ async function scanAttendSummary(): Promise<number> {
         inExtra.sort((x, y) => rank(x) - rank(y) || lateMin(y) - lateMin(x)).forEach((r) => rows.push(personRow(r)));
       }
 
-      const subNames = [...new Set(inMain.filter((r) => r.sid !== g).map((r) => shBy[r.sid]?.name || r.sid))];
+      const subNames = [...new Set(inMain.filter((r) => r.sid !== g).map((r) => tagOf(r.sid)).filter(Boolean))];
       const head = noN ? ("ไม่มา " + noN + (lateN ? " · สาย " + lateN : "")) : lateN ? ("มีสาย " + lateN + " คน") : "เข้างานครบตรงเวลา";
       const flex = { type: "flex", altText: "เข้างานผลัด" + (mn.name || g) + " · " + head, contents: card({
         color, headLabel: "ผลัด" + (mn.name || g) + " · " + head,
         title: "สรุปการเข้างาน",
         sub: (subNames.length ? "รวมกะย่อย " + subNames.join(", ") + " · " : "") + Object.keys(byBr).length + " สาขา · " + fmtThaiDate(day),
         rows,
-        note: allIn ? undefined : { text: "ยิงอัตโนมัติเมื่อพ้น 1 ชม. หลังกะย่อยสุดท้ายเริ่มงาน — ยังมีคนไม่ได้ลงเวลา", color: "#92400e", bg: "#fef3c7" },
+        note: noN
+          ? { text: "ยังไม่ลงเวลา " + noN + " คน: " + list.filter((r) => stOf(r) === "none").map((r) => nm[r.emp_id] || r.emp_id).join(", ")
+                  + "\nยิงอัตโนมัติเมื่อพ้น 1 ชม. หลังกะย่อยสุดท้ายเริ่มงาน", color: "#991b1b", bg: "#fef2f2" }
+          : (allIn ? undefined : { text: "ยิงอัตโนมัติเมื่อพ้น 1 ชม. หลังกะย่อยสุดท้ายเริ่มงาน", color: "#92400e", bg: "#fef3c7" }),
         photos: [], btn: "ดูรายละเอียดการลงเวลา", url: APP_URL + "/hr/",
       }) };
       const ok = await pushLine(gid, [flex]);
