@@ -848,7 +848,15 @@ async function openLeaderPanel(){
     }
     body+=taskDetailHTML(d,{noShelf:true});
     if(!(b.members||[]).length) body+='<div class="muted">ยังไม่มีคนในกะ — เพิ่มคนด้านบนก่อน</div>';
-    else if(!a || a.status!=='closed') body+='<div class="row2"><select id="lg_'+d.id+'">'+((d.mgr_owner&&mgrId)?memOptsMgr:memOpts)+'</select><button class="btn btn-sec btn-sm" style="flex:none" data-give="'+d.id+'">'+(a?'เปลี่ยน':'มอบ')+'</button></div>';
+    // ★ 16 ก.ย. 69 — เลือกชื่อแล้วมอบทันที (เดิมต้องเลือกชื่อแล้วกดปุ่มมอบอีกที — ช้า)
+    else if(!a || a.status!=='closed'){
+      // ต้องไม่มี selected ค้างเลย — ไม่งั้นกดชื่อที่ถูกเลือกค้างไว้จะไม่เกิด change → มอบไม่ได้
+      var _opts = ((d.mgr_owner&&mgrId)?memOptsMgr:memOpts).replace(/ selected/g,'');
+      var _ph = a ? ('ตอนนี้: '+(a.emp_name||a.emp_id||'')+' — แตะเพื่อเปลี่ยนคน')
+                  : '— แตะเพื่อมอบงาน —';
+      body+='<div class="row2"><select id="lg_'+d.id+'" data-giveSel="'+d.id+'" style="flex:1">'
+        +'<option value="" selected>'+esc(_ph)+'</option>'+_opts+'</select></div>';
+    }
     return '<div class="card" style="position:relative">'+_corner+body+'</div>';
   };
   // จัดหมวดตามขั้นตอนการทำงาน + ย่อ/ขยายได้ (ขั้นตอนที่มอบครบแล้วจะพับเก็บให้อัตโนมัติ)
@@ -859,10 +867,19 @@ async function openLeaderPanel(){
         gp[1].map(_defCard).join(''), got>=tot);
     }).join('');
   wireCloseTask();
-  document.querySelectorAll('[data-give]').forEach(btn=>btn.onclick=async()=>{
-    const def=Number(btn.dataset.give), to=($('lg_'+def)||{}).value; if(!to){ toast('err','เลือกคนก่อน'); return; }
-    try{ await window.HR.assignColleague({ byEmpId:EMP.emp_id, toEmpId:to, task_def_id:def, shiftId:b.shift }); toast('ok','แจกงานแล้ว'); openLeaderPanel(); }
-    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+  // ★ เลือกชื่อใน dropdown → มอบงานทันที ไม่ต้องกดปุ่มซ้ำ
+  document.querySelectorAll('[data-giveSel]').forEach(function(sel){
+    sel.onchange=async function(){
+      const def=Number(sel.getAttribute('data-giveSel')), to=sel.value;
+      if(!to) return;                                  // เลือกหัวข้อว่าง = ไม่ทำอะไร
+      const _name=(sel.options[sel.selectedIndex]||{}).textContent||'';
+      sel.disabled=true;                               // กันกดซ้ำระหว่างรอเน็ต
+      try{
+        await window.HR.assignColleague({ byEmpId:EMP.emp_id, toEmpId:to, task_def_id:def, shiftId:b.shift });
+        toast('ok','มอบให้ '+_name+' แล้ว');
+        openLeaderPanel();
+      }catch(e){ sel.disabled=false; toast('err',(e.message||'ไม่สำเร็จ')); openLeaderPanel(); }
+    };
   });
 }
 function populateAddList(){
