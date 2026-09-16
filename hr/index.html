@@ -1705,7 +1705,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <button class="btn btn-sec btn-sm" id="sc_copy">⧉ คัดลอกสัปดาห์ก่อนมาวาง</button>
     </div>
     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px">
-      <label style="font-size:13px; font-weight:600">เลือกดูตามสาขา:</label>
+      <label style="font-size:13px; font-weight:600" id="sc_bflabel">เลือกดูตามสาขา:</label>
       <select id="sc_branchfilter" style="padding:7px 11px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px"></select>
       <span style="flex:1"></span>
       <button class="btn btn-sec btn-sm" id="sc_copytext"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> คัดลอกข้อความ</button>
@@ -1713,6 +1713,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     </div>
     <div style="font-size:12.5px; color:var(--muted); margin-top:8px">พิมพ์โค้ดกะในช่อง (เช่น 1/2/3/D) แล้วกด Enter · ช่องว่าง = วันหยุด · คลิก "ไปแทน" ใต้ช่องเพื่อจัดไปสาขาอื่น <span style="color:#ea580c; font-weight:600">(ช่องสีส้ม)</span> · ดู/แก้โค้ดได้ที่แท็บ "ตั้งค่ากะ"</div>
   </div>
+  <div id="sc_note"></div>
   <div id="sc_summary"></div>
   <div class="card"><div class="tablewrap sc-freeze"><table id="scTable" style="min-width:760px">
     <thead id="scHead"></thead><tbody id="scBody"></tbody>
@@ -12237,8 +12238,9 @@ function applyManagerMode(){
   const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
   const badge=$('mgrBadge');
   if(badge){ badge.textContent='ผจก. · '+(b?b.name:MGR_BRANCH); badge.style.display='inline-block'; }
-  // ซ่อนปุ่มแก้ไขตารางกะ (ผจก.ดูอย่างเดียว) — เหลือปุ่มแชร์รูป/คัดลอกข้อความ
-  ['sc_copy'].forEach(id=>{ const el=$(id); if(el) el.style.display='none'; });
+  // ★ 16 ก.ย. 69 — ผจก. จัดตารางเวรเองได้แล้ว (เดิมดูอย่างเดียว)
+  //   สาขาถูกล็อกไว้ที่สาขาตัวเองอยู่แล้ว จึงซ่อนช่องเลือกสาขาทิ้ง
+  ['sc_branchfilter','sc_bflabel'].forEach(id=>{ const el=$(id); if(el) el.style.display='none'; });
   enforceMgrBranch();
 }
 // ล็อกทุก dropdown ที่เป็น "สาขา" ให้เป็นสาขาของ ผจก. เท่านั้น
@@ -14699,7 +14701,7 @@ let scWeek = mondayOf(isoLocal(new Date()));
 async function loadSchedule(){
   const start=scWeek, end=addDaysStr(scWeek,6);
   $('scEmpty').style.display='none';
-  const r = await post({ action:'hr_sched_week', password:pwd, start, end });
+  const r = await post({ action:'hr_sched_week', ...authBody(), start, end });
   if(!r.ok){ $('scEmpty').style.display='block'; $('scEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
   SC = r;
   // เติมตัวเลือกสาขาครั้งแรก (ไม่ล้างค่าที่เลือกไว้)
@@ -14720,7 +14722,15 @@ function renderSchedule(){
     const dd=new Date(d+'T00:00:00');
     return `<th style="min-width:104px">${TH_DOW_S[dd.getDay()]}<br><span style="font-weight:400;color:var(--muted)">${dd.getDate()}/${dd.getMonth()+1}</span></th>`;
   }).join('')+'</tr>';
+  // ★ 16 ก.ย. 69 — ผจก. จัดตารางเองได้ แต่เฉพาะสาขาตัวเอง และตั้งแต่สัปดาห์ปัจจุบันเป็นต้นไป
+  const SC_MIN  = mondayOf(isoLocal(new Date()));
+  const SC_PAST = MGR_MODE && (scWeek < SC_MIN);
   const bf = MGR_MODE ? MGR_BRANCH : ($('sc_branchfilter') ? $('sc_branchfilter').value : '');
+  const nb=$('sc_note');
+  if(nb) nb.innerHTML = !MGR_MODE ? ''
+    : (SC_PAST
+      ? '<div class="card" style="margin-bottom:10px;padding:9px 11px;background:#f8fafc;border-left:3px solid #94a3b8"><b style="font-size:13px">\u0e2a\u0e31\u0e1b\u0e14\u0e32\u0e2b\u0e4c\u0e17\u0e35\u0e48\u0e1c\u0e48\u0e32\u0e19\u0e21\u0e32\u0e41\u0e25\u0e49\u0e27 \u2014 \u0e14\u0e39\u0e44\u0e14\u0e49\u0e2d\u0e22\u0e48\u0e32\u0e07\u0e40\u0e14\u0e35\u0e22\u0e27</b><div style="font-size:12.5px;color:var(--muted);margin-top:3px">\u0e15\u0e32\u0e23\u0e32\u0e07\u0e40\u0e27\u0e23\u0e22\u0e49\u0e2d\u0e19\u0e2b\u0e25\u0e31\u0e07\u0e1c\u0e39\u0e01\u0e01\u0e31\u0e1a\u0e01\u0e32\u0e23\u0e04\u0e34\u0e14\u0e27\u0e31\u0e19\u0e17\u0e33\u0e07\u0e32\u0e19\u0e41\u0e25\u0e30\u0e40\u0e07\u0e34\u0e19\u0e40\u0e14\u0e37\u0e2d\u0e19\u0e44\u0e1b\u0e41\u0e25\u0e49\u0e27 \u0e16\u0e49\u0e32\u0e15\u0e49\u0e2d\u0e07\u0e41\u0e01\u0e49\u0e08\u0e23\u0e34\u0e07\u0e43\u0e2b\u0e49\u0e41\u0e08\u0e49\u0e07\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19 \u00b7 \u0e01\u0e14 "\u0e2a\u0e31\u0e1b\u0e14\u0e32\u0e2b\u0e4c\u0e19\u0e35\u0e49" \u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e01\u0e25\u0e31\u0e1a\u0e21\u0e32\u0e08\u0e31\u0e14\u0e15\u0e32\u0e23\u0e32\u0e07</div></div>'
+      : '<div class="card" style="margin-bottom:10px;padding:9px 11px;background:#f0fdf4;border-left:3px solid #16a34a"><div style="font-size:12.5px;color:#166534;line-height:1.7">\u0e08\u0e31\u0e14\u0e44\u0e14\u0e49\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e1e\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e1b\u0e23\u0e30\u0e08\u0e33\u0e2a\u0e32\u0e02\u0e32\u0e19\u0e35\u0e49 \u00b7 \u0e40\u0e27\u0e23\u0e17\u0e35\u0e48\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e08\u0e31\u0e14\u0e43\u0e2b\u0e49\u0e44\u0e1b\u0e0a\u0e48\u0e27\u0e22\u0e2a\u0e32\u0e02\u0e32\u0e2d\u0e37\u0e48\u0e19 <span style="color:#ea580c;font-weight:700">(\u0e2a\u0e35\u0e2a\u0e49\u0e21)</span> \u0e41\u0e01\u0e49\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49</div></div>');
   const emps = ((SC&&SC.employees)||[]).filter(e=>!bf || e.branch_id===bf);
   if(!emps.length){ $('scEmpty').style.display='block'; $('scEmpty').textContent= bf?'ไม่มีพนักงานประจำสาขานี้':'ยังไม่มีพนักงาน'; $('scBody').innerHTML=''; if($('sc_summary'))$('sc_summary').innerHTML=''; return; }
   $('scEmpty').style.display='none';
@@ -14733,8 +14743,9 @@ function renderSchedule(){
     const cells = days.map(d=>{
       const arr = SC.schedules[e.emp_id+'|'+d] || [];
       let inner;
-      if(MGR_MODE){
-        // ผจก.: ดูอย่างเดียว แก้ไขไม่ได้
+      const _lockCell = SC_PAST || (MGR_MODE && arr.some(c=>c.is_cover));
+      if(_lockCell){
+        // อ่านอย่างเดียว: สัปดาห์ที่ผ่านมา หรือเวรที่สำนักงานจัดไปช่วยสาขาอื่น
         if(!arr.length) inner = '<span style="color:#dc2626;font-weight:700;font-size:13px">OFF</span>';
         else inner = arr.map(c=>`<div style="font-weight:700;font-size:14px;${c.is_cover?'color:#ea580c':''}">${esc(shiftCodeOf(c.shift_id))}${c.is_cover?('<div style="font-size:10px;color:#ea580c;font-weight:600">→'+esc(c.branch_id)+'</div>'):''}</div>`).join('');
       } else if(!arr.length){
@@ -14748,7 +14759,7 @@ function renderSchedule(){
               <select onchange="scEditShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:54px;font-weight:700;text-align:center">${_optShift(c.shift_id)}</select>
               <span onclick="scDelShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}')" style="cursor:pointer;color:#d1d5db;font-weight:700;font-size:13px;padding:0 1px" title="ลบกะนี้">×</span>
             </div>
-            <select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" title="เลือกสาขาที่ให้ไปทำ (เว้น = สาขาประจำ)" style="width:100%;border:0;background:transparent;font:inherit;font-size:10px;height:15px;margin-top:1px;color:#9aa4b2;cursor:pointer;text-align:center;-webkit-appearance:none;appearance:none">${_optBr(cover?c.branch_id:'')}</select>
+            ${MGR_MODE?'':`<select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" title="เลือกสาขาที่ให้ไปทำ (เว้น = สาขาประจำ)" style="width:100%;border:0;background:transparent;font:inherit;font-size:10px;height:15px;margin-top:1px;color:#9aa4b2;cursor:pointer;text-align:center;-webkit-appearance:none;appearance:none">${_optBr(cover?c.branch_id:'')}</select>`}
           </div>`;
         }).join('');
         // มี 1 กะ → ปุ่ม + เขียวมุมขวาบน สำหรับเพิ่มกะที่ 2 (ควบกะ)
@@ -14786,14 +14797,14 @@ async function scAddShift(emp, date, shiftId){
   if(!shiftId) return;
   // ถ้าทั้งสัปดาห์ยังว่าง → จัด 1 วัน = เติมทั้งสัปดาห์ (แก้รายวันได้ทีหลัง)
   if(scWeekEmpty(emp)){
-    const r=await post({ action:'hr_sched_fill_week', password:pwd, data:{ emp_id:emp, start:scWeek, shift_id:shiftId } });
+    const r=await post({ action:'hr_sched_fill_week', ...authBody(), data:{ emp_id:emp, start:scWeek, shift_id:shiftId } });
     if(!r.ok) toast('err', r.error||'ไม่สำเร็จ'); else toast('ok','จัดกะทั้งสัปดาห์ให้แล้ว — แก้รายวันได้');
   } else {
-    let r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'' } });
+    let r=await post({ action:'hr_sched_save', ...authBody(), data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'' } });
     // ★ กะใหม่เวลาทับกะเดิม = น่าจะจัดผิด · ถามก่อนแล้วค่อยยืนยัน (ควบกะคนละช่วงเวลาไม่ถูกถาม)
     if(!r.ok && r.code==='OVERLAP'){
       if(!confirm(r.error+'\n\nยืนยันจะจัดซ้อนจริงไหม?')){ loadSchedule(); return; }
-      r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'', force:true } });
+      r=await post({ action:'hr_sched_save', ...authBody(), data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:'', note:'', force:true } });
     }
     if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
   }
@@ -14801,17 +14812,20 @@ async function scAddShift(emp, date, shiftId){
 }
 async function scEditShift(emp, date, oldShift, newShift){
   if(newShift===oldShift) return;
-  await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date, shift_id:oldShift });
-  if(newShift){ const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'', force:true } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
+  const _rd=await post({ action:'hr_sched_delete', ...authBody(), emp_id:emp, work_date:date, shift_id:oldShift });
+  if(_rd && _rd.ok===false){ toast('err', _rd.error||'\u0e25\u0e1a\u0e01\u0e30\u0e40\u0e14\u0e34\u0e21\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08'); loadSchedule(); return; }
+  if(newShift){ const r=await post({ action:'hr_sched_save', ...authBody(), data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'', force:true } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
   loadSchedule();
 }
 async function scEditBranch(emp, date, shiftId, branchId){
-  const r=await post({ action:'hr_sched_save', password:pwd, data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:branchId, note:'', force:true } });
+  if(MGR_MODE){ toast('err','การจัดไปทำแทนสาขาอื่นต้องแจ้งสำนักงาน'); return; }
+  const r=await post({ action:'hr_sched_save', ...authBody(), data:{ emp_id:emp, work_date:date, shift_id:shiftId, branch_id:branchId, note:'', force:true } });
   if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ');
   loadSchedule();
 }
 async function scDelShift(emp, date, shiftId){
-  await post({ action:'hr_sched_delete', password:pwd, emp_id:emp, work_date:date, shift_id:shiftId });
+  const r=await post({ action:'hr_sched_delete', ...authBody(), emp_id:emp, work_date:date, shift_id:shiftId });
+  if(r && r.ok===false) toast('err', r.error||'ลบไม่สำเร็จ');
   loadSchedule();
 }
 // ---------- สรุปตาราง → ข้อความ / รูป (สำหรับส่ง Line) ----------
@@ -16543,14 +16557,14 @@ async function loadSubmissions(){
     if(!scEditing) return;
     const data = { emp_id:scEditing.emp_id, work_date:scEditing.work_date, shift_id:$('sc_shift').value, branch_id:$('sc_branch').value, note:$('sc_note').value.trim() };
     $('scSave').innerHTML='<span class="spin"></span>';
-    const r = await post({ action:'hr_sched_save', password:pwd, data });
+    const r = await post({ action:'hr_sched_save', ...authBody(), data });
     $('scSave').textContent='บันทึก';
     if(r.ok){ toast('ok','บันทึกเวรแล้ว'); $('scOverlay').classList.remove('show'); loadSchedule(); }
     else toast('err', r.error||'บันทึกไม่สำเร็จ');
   };
   $('scDelete').onclick = async ()=>{
     if(!scEditing) return;
-    const r = await post({ action:'hr_sched_delete', password:pwd, emp_id:scEditing.emp_id, work_date:scEditing.work_date });
+    const r = await post({ action:'hr_sched_delete', ...authBody(), emp_id:scEditing.emp_id, work_date:scEditing.work_date });
     if(r.ok){ toast('ok','ลบเวรแล้ว (เป็นวันหยุด)'); $('scOverlay').classList.remove('show'); loadSchedule(); }
     else toast('err', r.error||'ลบไม่สำเร็จ');
   };
@@ -16580,9 +16594,10 @@ async function loadSubmissions(){
   $('sc_copy').onclick = async ()=>{
     // ★ ส่งสาขาที่กรองอยู่ไปด้วย — กันลบตารางเวรของสาขาอื่นที่ไม่ได้ดูอยู่
     const _bf = MGR_MODE ? MGR_BRANCH : ($('sc_branchfilter') ? $('sc_branchfilter').value : '');
-    const _scope = _bf ? ('เฉพาะสาขาที่เลือกอยู่') : ('ทุกสาขา');
+    if(MGR_MODE && scWeek < mondayOf(isoLocal(new Date()))){ toast('err','แก้สัปดาห์ที่ผ่านมาแล้วไม่ได้'); return; }
+    const _scope = MGR_MODE ? ('สาขา '+branchName(MGR_BRANCH)+' เท่านั้น') : (_bf ? ('เฉพาะสาขาที่เลือกอยู่') : ('ทุกสาขา'));
     if(!confirm('คัดลอกตารางจากสัปดาห์ก่อนหน้า มาวางทับสัปดาห์นี้?\n\nขอบเขต: '+_scope+'\nเวรเดิมของสัปดาห์นี้ในขอบเขตนั้นจะถูกลบทิ้งก่อน (กู้คืนไม่ได้)')) return;
-    const r = await post({ action:'hr_sched_copy', password:pwd, from_start:addDaysStr(scWeek,-7), to_start:scWeek, branch_id:_bf||null });
+    const r = await post({ action:'hr_sched_copy', ...authBody(), from_start:addDaysStr(scWeek,-7), to_start:scWeek, branch_id:_bf||null });
     if(r.ok){ toast('ok','คัดลอก '+r.copied+' เวร · ลบเดิม '+(r.cleared||0)); loadSchedule(); }
     else toast('err', r.error||'คัดลอกไม่สำเร็จ');
   };
