@@ -214,11 +214,11 @@
         case 'hr_branch_delete':  return await hrBranchDelete(p.branch_id);
         case 'hr_att_list':       return await hrAttList(p);
         case 'hr_att_save':       return await hrAttSave(p.data);
-        case 'hr_sched_week':     return await hrSchedWeek(p.start, p.end);
-        case 'hr_sched_save':     return await hrSchedSave(p.data);
-        case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id);
-        case 'hr_sched_fill_week':return await hrSchedFillWeek(p.data);
-        case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start, p.branch_id);
+        case 'hr_sched_week':     return await hrSchedWeek(p.start, p.end, p);
+        case 'hr_sched_save':     return await hrSchedSave(p.data, p);
+        case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id, p);
+        case 'hr_sched_fill_week':return await hrSchedFillWeek(p.data, p);
+        case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start, p.branch_id, p);
         case 'hr_coverage':       return await hrCoverage(p.filter);
         case 'hr_shift_list':     return await hrShiftList();
         case 'hr_shift_save':     return await hrShiftSave(p.data);
@@ -2488,7 +2488,55 @@
     await logAct('แก้ไขลงเวลา', d.emp_id, d.work_date + (d.check_in ? (' เข้า ' + d.check_in) : '') + (d.check_out ? (' ออก ' + d.check_out) : ''));
     return { ok: true };
   }
-  async function hrSchedWeek(start, end) {
+  // ---------- สิทธิ์จัดตารางเวร (★ 16 ก.ย. 69) ----------
+  //   HR   : จัดได้ทุกสาขา ทุกสัปดาห์ รวมจัดไปแทนสาขาอื่น
+  //   ผจก. : เฉพาะพนักงานประจำสาขาตัวเอง · ห้ามจัดข้ามสาขา · ตั้งแต่สัปดาห์ปัจจุบันเป็นต้นไป
+  async function _scActor(auth) {
+    auth = auth || {};
+    if (!auth.mgr_emp) return { role: 'hr', branch_id: null, emp_id: null, name: 'สำนักงาน (HR)' };
+    const { data } = await sb().rpc('mgr_login', { p_emp_id: String(auth.mgr_emp), p_pin: String(auth.mgr_pin || '') });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !row.branch_id) return { role: 'invalid', branch_id: null, emp_id: null, name: '' };
+    return { role: 'mgr', branch_id: String(row.branch_id), emp_id: String(auth.mgr_emp),
+             name: 'ผจก. ' + (row.nickname || row.name || auth.mgr_emp) };
+  }
+  // วันจันทร์ของสัปดาห์ปัจจุบัน (เวลาไทย)
+  function _scThisMonday() {
+    const now = new Date(Date.now() + 7 * 3600 * 1000);
+    const t = now.toISOString().slice(0, 10);
+    const dow = new Date(t + 'T00:00:00').getDay();        // 0=อาทิตย์
+    return addDays(t, dow === 0 ? -6 : (1 - dow));
+  }
+  // พนักงานคนนี้อยู่สาขาของ ผจก. หรือเปล่า
+  async function _scAssertOwnEmp(actor, empId) {
+    const { data } = await sb().from('employees').select('branch_id,name,nickname').eq('emp_id', empId).maybeSingle();
+    if (!data) return 'ไม่พบพนักงานนี้';
+    if (String(data.branch_id || '') !== actor.branch_id) return 'พนักงานคนนี้ไม่ได้ประจำสาขาคุณ — จัดตารางให้ไม่ได้';
+    return null;
+  }
+  // เวรที่สำนักงานจัดให้ "ไปช่วยสาขาอื่น" — ผจก. แตะไม่ได้ กันลบแผนของสำนักงานทิ้ง
+  async function _scHasCover(empId, workDate, shiftId) {
+    let q = sb().from('schedules').select('shift_id,is_cover,branch_id').eq('emp_id', empId).eq('work_date', workDate);
+    if (shiftId) q = q.eq('shift_id', shiftId);
+    const { data } = await q;
+    return (data || []).some(r => r.is_cover);
+  }
+  // ตรวจชุดเดียว: สิทธิ์ + สาขา + ช่วงเวลา
+  async function _scGate(auth, { empId, workDate, branchId } = {}) {
+    const actor = await _scActor(auth);
+    if (actor.role === 'invalid') return { err: 'PIN ไม่ถูกต้อง' };
+    if (actor.role === 'hr') return { actor };
+    if (workDate && String(workDate) < _scThisMonday())
+      return { err: 'แก้ตารางย้อนหลังไม่ได้ — แก้ได้ตั้งแต่สัปดาห์ปัจจุบันเป็นต้นไป (ถ้าต้องแก้จริง แจ้งสำนักงาน)' };
+    if (branchId && String(branchId) !== actor.branch_id)
+      return { err: 'จัดกะข้ามสาขาไม่ได้ — การไปทำแทนสาขาอื่นต้องแจ้งสำนักงาน' };
+    if (empId) { const e = await _scAssertOwnEmp(actor, empId); if (e) return { err: e }; }
+    return { actor };
+  }
+
+  async function hrSchedWeek(start, end, auth) {
+    const actor = await _scActor(auth);
+    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
     const [empsR, schR, brR, shR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,phone,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).or('start_date.is.null,start_date.lte.' + end).order('emp_id'),
       sb().from('schedules').select('*').gte('work_date', start).lte('work_date', end),
@@ -2500,16 +2548,28 @@
     // index ตารางเวร: key = emp_id|work_date → array ของกะ (รองรับควบกะหลายกะ/วัน)
     const cells = {};
     (schR.data || []).forEach(s => { const k = s.emp_id + '|' + s.work_date; (cells[k] = cells[k] || []).push(s); });
+    // ★ ผจก. เห็นเฉพาะพนักงานประจำสาขาตัวเอง (กรองที่ server ไม่ใช่แค่ที่หน้าเว็บ)
+    let emps = empsR.data || [];
+    if (actor.role === 'mgr') emps = emps.filter(e => String(e.branch_id || '') === actor.branch_id);
     return {
       ok: true,
-      employees: empsR.data || [],
+      actor_role: actor.role,
+      actor_branch: actor.branch_id,
+      week_min: _scThisMonday(),
+      employees: emps,
       schedules: cells,
       branches: brR.data || [],
       shifts: shR.data || [],
     };
   }
-  async function hrSchedSave(d) {
+  async function hrSchedSave(d, auth) {
     if (!d.emp_id || !d.work_date) return { ok: false, error: 'ต้องระบุพนักงานและวันที่' };
+    const g = await _scGate(auth, { empId: d.emp_id, workDate: d.work_date, branchId: d.branch_id });
+    if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') {
+      if (await _scHasCover(d.emp_id, d.work_date, d.shift_id)) return { ok: false, error: '\u0e40\u0e27\u0e23\u0e19\u0e35\u0e49\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e08\u0e31\u0e14\u0e43\u0e2b\u0e49\u0e44\u0e1b\u0e0a\u0e48\u0e27\u0e22\u0e2a\u0e32\u0e02\u0e32\u0e2d\u0e37\u0e48\u0e19 \u2014 \u0e41\u0e01\u0e49\u0e44\u0e14\u0e49\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19' };
+      d = Object.assign({}, d, { branch_id: null, actor: g.actor.name });
+    }
     // หาสาขาประจำ เพื่อ auto-set is_cover เมื่อสาขาในตาราง ≠ สาขาประจำ
     const { data: emp } = await sb().from('employees').select('branch_id').eq('emp_id', d.emp_id).maybeSingle();
     const home = emp ? emp.branch_id : null;
@@ -2579,7 +2639,11 @@
       return null;
     } catch (e) { return null; }
   }
-  async function hrSchedDelete(empId, workDate, shiftId) {
+  async function hrSchedDelete(empId, workDate, shiftId, auth) {
+    const g = await _scGate(auth, { empId, workDate });
+    if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr' && await _scHasCover(empId, workDate, shiftId))
+      return { ok: false, error: '\u0e40\u0e27\u0e23\u0e19\u0e35\u0e49\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e08\u0e31\u0e14\u0e43\u0e2b\u0e49\u0e44\u0e1b\u0e0a\u0e48\u0e27\u0e22\u0e2a\u0e32\u0e02\u0e32\u0e2d\u0e37\u0e48\u0e19 \u2014 \u0e41\u0e01\u0e49\u0e44\u0e14\u0e49\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19' };
     let q = sb().from('schedules').delete().eq('emp_id', empId).eq('work_date', workDate);
     if (shiftId) q = q.eq('shift_id', shiftId);   // ลบเฉพาะกะที่ระบุ (ควบกะ) · ไม่ระบุ = ลบทุกกะของวันนั้น
     const { error } = await q;
@@ -2587,8 +2651,12 @@
     return { ok: true };
   }
   // จัด 1 วัน → เติมกะเดียวกันทั้งสัปดาห์ (เฉพาะวันที่ยังว่าง) แล้วแก้ทีหลังได้
-  async function hrSchedFillWeek(d) {
+  async function hrSchedFillWeek(d, auth) {
     if (!d || !d.emp_id || !d.start || !d.shift_id) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    const g = await _scGate(auth, { empId: d.emp_id, workDate: d.start });
+    if (g.err) return { ok: false, error: g.err };
+    const isMgr = (g.actor.role === 'mgr');
+    if (isMgr) d = Object.assign({}, d, { actor: g.actor.name });
     const { data: emp } = await sb().from('employees').select('branch_id').eq('emp_id', d.emp_id).maybeSingle();
     const home = emp ? emp.branch_id : null;
     // ★ แก้ 15 ก.ย. 69 — เดิมไม่เช็กเวลาทับเลย (ต่างจาก hrSchedSave ที่เช็ก)
@@ -2599,6 +2667,8 @@
       const wd = addDays(d.start, i);
       const ovl = await _schedOverlap(d.emp_id, wd, d.shift_id);
       if (ovl) { skipped.push({ work_date: wd, reason: ovl }); continue; }
+      // ★ ผจก. เติมทั้งสัปดาห์ — ข้ามวันที่สำนักงานจัดให้ไปช่วยสาขาอื่นไว้
+      if (isMgr && await _scHasCover(d.emp_id, wd, null)) { skipped.push({ work_date: wd, reason: 'ไปช่วยสาขาอื่น (สำนักงานจัด)' }); continue; }
       rows.push({ emp_id: d.emp_id, work_date: wd, shift_id: d.shift_id, branch_id: home, is_cover: false, note: null });
     }
     if (rows.length) {
@@ -2612,7 +2682,11 @@
   // คัดลอกตารางทั้งสัปดาห์ (7 วันจาก from_start) ไปยังสัปดาห์ใหม่ (to_start)
   // "วางทับ" จริง: ล้างกะของสัปดาห์ปลายทางก่อน แล้วค่อยคัดลอกมาใส่
   // (เดิม upsert เฉยๆ ไม่ล้างก่อน → ถ้าปลายทางมีกะคนละกะอยู่แล้ว จะกลายเป็น "ควบกะ" ซ้อนโดยไม่ตั้งใจ)
-  async function hrSchedCopy(fromStart, toStart, branchId) {
+  async function hrSchedCopy(fromStart, toStart, branchId, auth) {
+    const g = await _scGate(auth, { workDate: toStart });
+    if (g.err) return { ok: false, error: g.err };
+    // ★ ผจก. บังคับขอบเขตเป็นสาขาตัวเองเสมอ — กันกดปุ่มเดียวแล้วล้างตารางสาขาอื่น
+    if (g.actor.role === 'mgr') branchId = g.actor.branch_id;
     // ★ แก้ 15 ก.ย. 69 — เดิมไม่กรองสาขา ทำให้กด "คัดลอกสัปดาห์" ตอนกรองสาขาเดียว
     //   ไปลบตารางเวรของ "ทั้ง 3 สาขา" ในสัปดาห์ปลายทาง กู้คืนไม่ได้
     const fromEnd = addDays(fromStart, 6);
