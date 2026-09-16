@@ -237,28 +237,49 @@
     if (!all.length) return [];
     const whoOf = r => String(r.fix_emp || r.emp_id || '');
     const ids = [...new Set(all.map(whoOf).filter(Boolean))];
-    const [esR, schR, shR] = await Promise.all([
+    const [esR, schR, shR, lvR, atR] = await Promise.all([
       ids.length ? sb.from('employees').select('emp_id,name,nickname').in('emp_id', ids) : Promise.resolve({ data: [] }),
       ids.length ? sb.from('schedules').select('emp_id,shift_id').eq('work_date', workDate).in('emp_id', ids) : Promise.resolve({ data: [] }),
       sb.from('shifts').select('shift_id,main_shift'),
+      // ★ 16 ก.ย. 69 — ใบลาที่อนุมัติแล้ว (ตารางเวรไม่ได้ถูกลบ คนลาจึงยังมีแถวกะอยู่)
+      ids.length ? sb.from('leaves').select('emp_id,start_date,end_date,status')
+                     .in('emp_id', ids).lte('start_date', workDate).gte('end_date', workDate)
+                 : Promise.resolve({ data: [] }),
+      // ★ มาสแกนหน้าเข้างานจริงหรือยัง — ยังไม่มา = ยังแก้งานไม่ได้ จึงยังไม่ควรล็อกเพื่อน
+      ids.length ? sb.from('attendance').select('emp_id,check_in').eq('work_date', workDate).in('emp_id', ids)
+                 : Promise.resolve({ data: [] }),
     ]);
     const nameOf = {}; (esR.data || []).forEach(e => { nameOf[e.emp_id] = e.nickname || e.name; });
     const grpOf = {}; (shR.data || []).forEach(x => { grpOf[x.shift_id] = x.main_shift || x.shift_id; });
     // ★ อิงตารางเวรจริง — คนที่ต้องแก้ "วันหยุด" จะไม่ไปล็อกผลัดของคนอื่น
     const onDuty = {};
     (schR.data || []).forEach(x => { (onDuty[x.emp_id] = onDuty[x.emp_id] || new Set()).add(grpOf[x.shift_id] || x.shift_id); });
+    const onLeave = {};
+    (lvR.data || []).forEach(x => { if (/approve|อนุมัติ/i.test(String(x.status || ''))) onLeave[x.emp_id] = true; });
+    const cameIn = {};
+    (atR.data || []).forEach(x => { if (x.check_in) cameIn[x.emp_id] = true; });
     const out = [];
     all.forEach(r => {
       const who = whoOf(r);
       const duty = onDuty[who] || null;
-      const worksThisShift = !!(duty && duty.has(group));         // วันนี้เข้าผลัดนี้จริง → ล็อกได้
+      const scheduledHere = !!(duty && duty.has(group));          // ตารางเวรวันนี้อยู่ผลัดนี้
+      const leave = !!onLeave[who];                               // ลาอนุมัติแล้ว
+      const arrived = !!cameIn[who];                              // สแกนหน้าเข้างานแล้ววันนี้
+      // ★ 16 ก.ย. 69 — ล็อกเฉพาะตอนที่ "คนที่ต้องแก้เข้ามาทำงานจริงแล้ว" เท่านั้น
+      //   วันหยุด / ลาอนุมัติ / ยังไม่ถึงเวลาเข้าเวร → แค่แจ้งให้รู้ ไม่ล็อกเพื่อนร่วมผลัด
+      const blocking = scheduledHere && !leave && arrived;
       const ownShift = String(r.fix_shift_id || r.shift_id || '') === String(group);
-      if (!worksThisShift && !ownShift) return;                   // ไม่เกี่ยวกับผลัดนี้เลย
+      if (!blocking && !ownShift) return;                         // ไม่เกี่ยวกับผลัดนี้เลย
       out.push({ id:r.id, title:r.title || '', work_date:r.work_date, shift_id:r.shift_id,
         who_id: who, who_name: nameOf[who] || r.emp_name || who || '—',
         note: r.review_note || '',
-        on_duty: !!duty,                                          // วันนี้มีเวรมั้ย
-        blocking: worksThisShift });                              // ล็อกผลัดนี้หรือแค่รอ
+        on_duty: scheduledHere && !leave,
+        arrived: arrived,
+        why: blocking ? '' : (leave ? 'ลาอนุมัติแล้ว'
+                            : !duty ? 'วันนี้วันหยุด'
+                            : !scheduledHere ? 'วันนี้เข้าผลัดอื่น'
+                            : 'ยังไม่เข้างาน'),
+        blocking: blocking });
     });
     return out;
   }
@@ -2228,7 +2249,13 @@
   async function submitTaskMulti({ id, empId, photos, note }){
     const row=(await sb.from('task_assignments').select('*').eq('id',id).maybeSingle()).data; if(!row) throw new Error('ไม่พบงานนี้');
     // งานที่ ผจก.ตีกลับให้ "ผู้ตรวจของผลัดถัดไป" แก้ → คนแก้ไม่ได้อยู่กะเดียวกับงานเดิม จึงไม่ต้องเช็กว่ากะเริ่มหรือยัง
-    const isFix = !!(row.fix_emp && !row.fix_done_at && row.status==='sent_back');
+    // ★ 16 ก.ย. 69 — แยก 2 เรื่องออกจากกัน
+    //   isFix     = กำลังส่งงานที่ถูกตีกลับ (ใครตีก็ตาม) → ต้องส่งได้เสมอ ไม่งั้นปลดล็อกไม่ได้
+    //               (เดิมเช็ก fix_emp ด้วย — งานที่ HR ตีกลับไม่มี fix_emp จึงโดนกำแพงตัวเอง)
+    //   isMgrFix  = ผจก./HR เป็นคนตีกลับ → แก้แล้วต้องเข้าคิวให้ ผจก. ตรวจซ้ำ
+    //               (งานที่ผลัดถัดไปตีกลับเอง ส่งใหม่แล้วไปตามคิวปกติ ไม่ต้องดันเข้า ผจก.)
+    const isFix = !!(!row.fix_done_at && row.status==='sent_back');
+    const isMgrFix = isFix && !!(row.fix_emp || row.fix_assigned_at || row.mgr_result==='sent_back');
     const _subEmp = empId ? await lookupEmployee(empId) : null;
     // ★ งานที่กำลัง "แก้" ต้องส่งได้เสมอ ไม่งั้นจะปลดล็อกไม่ได้เลย
     if(!isFix){
@@ -2270,8 +2297,10 @@
       if(snap.length){ const hist=Array.isArray(row.prev_photos)?row.prev_photos.slice():[]; hist.push({ at: row.submitted_at||null, reviewer: row.reviewer||null, review_note: row.review_note||null, photos: snap }); upd.prev_photos=hist.slice(-5); }
       // ส่งงานที่แก้แล้ว → ปิดงานแก้ + ล้างผลตรวจของ ผจก. เพื่อให้ ผจก.ตรวจซ้ำอีกรอบ
       upd.fix_done_at=new Date().toISOString();
-      upd.mgr_checked_at=null; upd.mgr_checked_by=null; upd.mgr_result=null;
-      upd.needs_mgr=true;
+      if(isMgrFix){
+        upd.mgr_checked_at=null; upd.mgr_checked_by=null; upd.mgr_result=null;
+        upd.needs_mgr=true;
+      }
     }
     const {error}=await sb.from('task_assignments').update(upd).eq('id',id); if(error) throw error;
     try{
@@ -2333,8 +2362,11 @@
   // ---------- งานที่ ผจก.ตีกลับมาให้ "ฉัน" แก้ (อาจเป็นงานที่ฉันเป็นคนตรวจผ่าน ไม่ใช่คนส่ง) ----------
   async function getMyFixTasks(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    // ★ 16 ก.ย. 69 — งานเก่าที่ HR ตีกลับก่อนแก้บั๊ก จะไม่มี fix_emp
+    //   ต้องเหมาเอา "คนส่งงานเดิม" มาเป็นคนแก้ ไม่งั้นกล่องงานแก้จะว่าง และผลัดจะปลดล็อกไม่ได้
     const { data } = await sb.from('task_assignments').select('*')
-      .eq('fix_emp', emp.emp_id).eq('status','sent_back').is('fix_done_at', null)
+      .or('fix_emp.eq.' + emp.emp_id + ',and(fix_emp.is.null,emp_id.eq.' + emp.emp_id + ')')
+      .eq('status','sent_back').is('fix_done_at', null)
       .order('work_date',{ascending:false}).limit(50);
     const rows=data||[];
     const shIds=[...new Set(rows.map(r=>r.shift_id).concat(rows.map(r=>r.fix_shift_id)).filter(Boolean))];

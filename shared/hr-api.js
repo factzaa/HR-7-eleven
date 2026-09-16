@@ -5079,16 +5079,26 @@
     return { ok: true, date: d, rows, counts };
   }
   async function hrTaskReview(id, status, note, markup) {
-    const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count,needs_mgr').eq('id', id).maybeSingle();
+    const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count,needs_mgr,shift_id,checked_by_emp,checked_by_name,checked_by_shift').eq('id', id).maybeSingle();
     const nowIso = new Date().toISOString();
     const upd = { status: status === 'approved' ? 'approved' : 'sent_back', reviewer: 'ผู้จัดการ', review_note: note || null, reviewed_at: nowIso };
     if (status !== 'approved') upd.sent_back_count = ((t && t.sent_back_count) || 0) + 1;
+    // ★ 16 ก.ย. 69 — ตีกลับเมื่อไรก็ต้องระบุตัวคนที่ต้องแก้เสมอ
+    //   เดิมตั้งเฉพาะงานที่ติ๊ก "ผจก.ตรวจ" → งานอื่น fix_emp เป็น null
+    //   ทำให้กล่อง "งานที่ต้องแก้" ของพนักงานว่าง — พนักงานหาปุ่มแก้ไม่เจอ แต่ผลัดกลับถูกล็อก
+    if (status !== 'approved' && t) {
+      const _toChecker = !!t.checked_by_emp && t.checked_by_emp !== t.emp_id;
+      upd.fix_emp = _toChecker ? t.checked_by_emp : t.emp_id;
+      upd.fix_emp_name = _toChecker ? (t.checked_by_name || '') : null;
+      upd.fix_shift_id = _toChecker ? (t.checked_by_shift || null) : (t.shift_id || null);
+      upd.fix_assigned_at = nowIso;
+      upd.fix_done_at = null;
+    }
     // HR/สำนักงานตรวจงานที่ติ๊ก "ผจก.ตรวจ" → ถือว่าปิดการตรวจแล้ว ไม่ให้ค้างในคิว ผจก. ตลอดไป
     if (t && t.needs_mgr === true) {
       upd.mgr_checked_at = nowIso;
       upd.mgr_checked_by = 'สำนักงาน (HR)';
       upd.mgr_result = (status === 'approved') ? 'approved' : 'sent_back';
-      if (status !== 'approved') { upd.fix_emp = t.emp_id; upd.fix_assigned_at = nowIso; upd.fix_done_at = null; }
     }
     // รูปที่ผู้ตรวจวาดชี้จุด (data URL) → อัปโหลดเก็บเป็น review_markup
     if (status !== 'approved' && Array.isArray(markup) && markup.length) {
