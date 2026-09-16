@@ -58,12 +58,16 @@ type Agg = {
   target_total: number; customers: number;
   allcafe: number; delivery: number;
   shifts: number; reported: boolean;
+  shiftRows: number; hasClosing: boolean; complete: boolean; gotShifts: string[];   // ★ ยอดครบทุกผลัดหรือยัง
 };
 function newAgg(id: string, name: string): Agg {
-  return { branch_id: id, name, total: 0, product: 0, card: 0, target_total: 0, customers: 0, allcafe: 0, delivery: 0, shifts: 0, reported: false };
+  return { branch_id: id, name, total: 0, product: 0, card: 0, target_total: 0, customers: 0, allcafe: 0, delivery: 0, shifts: 0, reported: false, shiftRows: 0, hasClosing: false, complete: false, gotShifts: [] };
 }
 // แถว "ปิดยอด/สิ้นวัน" = ยอดรวมทั้งวัน (= เช้า+บ่าย+ดึก) — ห้ามเอาไปบวกกับรายผลัดอีก จะนับซ้ำ 2 เท่า
 function isClosingShift(s: any): boolean { return /สิ้นวัน|สิ้นสุด|ปิดยอด|ทั้งวัน|รวมวัน|รวมทั้งวัน/.test(String(s || "")); }
+// ชื่อผลัดมาตรฐาน — ตรงกับ shiftOrder ในหน้า hr/index.html · ใช้บอกว่าขาดผลัดไหน
+const SHIFT_NAMES = ["เช้า", "บ่าย", "ดึก"];
+const SHIFTS_PER_DAY = SHIFT_NAMES.length;
 // เลือกแถวที่ใช้ต่อ (สาขา,วัน): ถ้ามีแถวปิดยอด → ใช้แถวปิดยอดอย่างเดียว · ไม่มี → ใช้รายผลัดรวมกัน
 function dayUseRows(list: any[]): any[] { const c = list.filter(r => isClosingShift(r.shift)); return c.length ? c : list; }
 function aggregate(rows: any[], branches: any[]): Agg[] {
@@ -95,12 +99,22 @@ function aggregate(rows: any[], branches: any[]): Agg[] {
     a.allcafe   += sum(shifts, "allcafe_baht")  || Number(head?.allcafe_baht || 0);
     a.delivery  += sum(shifts, "delivery_baht") || Number(head?.delivery_baht || 0);
     a.shifts += (head ? closing.length : shifts.length); a.reported = true;
+    // ★ 7 ก.ย. 2569 — ยอดครบทุกผลัดหรือยัง
+    //   มีแถว "สิ้นวัน" = ปิดยอดของวันแล้ว · ถ้าไม่มี ต้องได้ครบ 3 ผลัด (เช้า/บ่าย/ดึก)
+    //   ผลัดดึกส่งยอดตอนเช้าอีกวัน ถ้าเรียกดูก่อนหน้านั้น ยอดจะขาดไปทั้งผลัด
+    //   แล้วอ่านเหมือนยอดตกฮวบ ทั้งที่แค่ยังส่งไม่ครบ
+    if (head) a.hasClosing = true;
+    a.shiftRows += shifts.length;
+    shifts.forEach((r: any) => { const nm = String(r.shift || "").trim(); if (nm && !a.gotShifts.includes(nm)) a.gotShifts.push(nm); });
+    a.complete = a.hasClosing || a.shiftRows >= SHIFTS_PER_DAY;
     let dayTarget = head ? Number(head.target_total || 0) : sum(shifts, "target_total");
     if (dayTarget <= 0) dayTarget = Math.max(0, ...list.map((r: any) => Number(r.target_total || 0)));
     a.target_total += dayTarget;
   }
   return Object.values(by).sort((x, y) => y.total - x.total);
 }
+// ผลัดที่ยังไม่ส่งยอด — ถ้ามีแถว "สิ้นวัน" แล้วถือว่าปิดยอดครบ ไม่ต้องไล่
+function missShifts(a: Agg): string[] { return a.hasClosing ? [] : SHIFT_NAMES.filter((n) => !a.gotShifts.includes(n)); }
 // %บรรลุเป้า (ทศนิยม 1) · null ถ้าไม่มีเป้า
 function achievePct(a: Agg): number | null { return a.target_total > 0 ? Math.round(a.total / a.target_total * 1000) / 10 : null; }
 // ยอดต่อหัวเฉลี่ย (ทศนิยม 2)
@@ -154,6 +168,82 @@ const COACH_STYLE = `แนวการเขียน (สำคัญมาก
 จากนั้นหัวข้อ "สิ่งที่ควรทำ:" แล้วลิสต์เป็นข้อ 2-4 ข้อ เจาะจงสาขาและการกระทำที่ทำได้ทันที (ใส่ตัวอย่างประโยคเสนอขายได้ เช่น "รับขนมปังเพิ่มไหมคะ")
 ลงท้ายสุภาพด้วย "ค่ะ" ตอบเป็นข้อความล้วน (ใช้ตัวเลขข้อ 1. 2. 3. ได้)`;
 
+// ---------- โปรโมชั่นที่ใช้ได้จริงตอนนี้ (จากตาราง promo_sheets/promo_items) ----------
+//  เดิมบทวิเคราะห์อ้างโปรฯ จาก nida_knowledge ซึ่งเป็นข้อความที่คนพิมพ์เอง — เก่าง่ายและไม่มีตัวเลขให้เชียร์
+//  ตอนนี้มีตารางโปรฯ ที่อ่านจากใบจริงแล้ว จึงป้อนของจริงเข้าไปแทน และให้ตารางชนะข้อความเสมอ
+function promoLine(r: any): string {
+  const t = String(r.promo_type || "stamp");
+  const nm = String(r.product || "") + (r.size ? (" " + r.size) : "");
+  if (t === "discount" || t === "bundle") {
+    if (r.price_before != null && r.price_after != null) {
+      return nm + " ปกติ " + r.price_before + " เหลือ " + r.price_after + " บาท (ประหยัด " + (Math.round((Number(r.price_before) - Number(r.price_after)) * 100) / 100) + " บาท)";
+    }
+    return nm + (r.price_after != null ? (" ราคาโปรฯ " + r.price_after + " บาท") : "");
+  }
+  if (t === "stamp") {
+    const got: string[] = [];
+    if (r.stamp_pieces != null) got.push(r.stamp_pieces + " ดวง");
+    if (r.stamp_baht != null) got.push("มูลค่า " + r.stamp_baht + " บาท");
+    if (r.mstamp != null) got.push("สมาชิกรับ M-Stamp " + r.mstamp);
+    return nm + (r.price_after != null ? (" จ่าย " + r.price_after + " บาท") : "") + (got.length ? (" ได้แสตมป์ " + got.join(" / ")) : "");
+  }
+  if (t === "freebie") {
+    const fr = (r.extra && r.extra["ของแถม"]) ? String(r.extra["ของแถม"]) : "";
+    return nm + (r.price_after != null ? (" ซื้อครบ " + r.price_after + " บาท") : "") + (fr ? (" แถม " + fr) : "");
+  }
+  if (t === "redeem") return nm + " ใช้แสตมป์ " + (r.stamp_baht != null ? (r.stamp_baht + " บาท") : (r.stamp_pieces + " ดวง")) + (r.price_after ? (" + จ่ายเพิ่ม " + r.price_after + " บาท") : "");
+  return nm;
+}
+const PTYPE_TH: Record<string, string> = { stamp: "ซื้อแล้วรับแสตมป์", discount: "ลดราคา", bundle: "ซื้อคู่/เซ็ต", freebie: "ซื้อครบแถมฟรี", redeem: "แลกด้วยแสตมป์/คะแนน", custom: "กติกาเฉพาะ" };
+
+async function loadPromos(top = 3): Promise<{ text: string; sheets: string[]; top: string[]; ending: string[] }> {
+  const today = bkkDate(0);
+  const out: string[] = [], sheets: string[] = [], topLines: string[] = [], endingLines: string[] = [];
+  try {
+    const [{ data: sh }, { data: it }] = await Promise.all([
+      sb.from("promo_sheets").select("title,promo_type,period_start,period_end,reviewed,active").eq("active", true).limit(60),
+      sb.from("promo_items_v").select("*").eq("sheet_active", true).limit(600),
+    ]);
+    const live = (sh || []).filter((x: any) => (!x.period_start || String(x.period_start) <= today) && (!x.period_end || String(x.period_end) >= today));
+    if (!live.length) return { text: "", sheets: [], top: [], ending: [] };
+
+    const dleft = (d: any) => Math.round((Date.parse(String(d) + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86400000);
+    const seen = new Set<string>();
+    out.push("[โปรโมชั่นที่ใช้ได้จริงตอนนี้ — อ่านมาจากใบโปรฯ ในระบบ ไม่ใช่ข้อความที่คนพิมพ์]");
+    for (const x of live) {
+      const t = String(x.title); if (seen.has(t)) continue; seen.add(t);
+      const dl = x.period_end ? dleft(x.period_end) : null;
+      const tail = dl != null ? (" · เหลืออีก " + dl + " วัน" + (dl <= 7 ? " ⚠ ใกล้หมด" : "")) : "";
+      out.push("• " + t + " [" + (PTYPE_TH[String(x.promo_type)] || String(x.promo_type)) + "]" + tail + (x.reviewed ? "" : " (ยังไม่ตรวจแก้)"));
+      sheets.push(t);
+      if (dl != null && dl >= 0 && dl <= 7) endingLines.push(t + " — เหลืออีก " + dl + " วัน");
+    }
+
+    const items = ((it || []) as any[]).filter((r: any) => r["สถานะ"] === "ใช้อยู่");
+    const saveOf = (r: any) => (r.price_before != null && r.price_after != null) ? (Number(r.price_before) - Number(r.price_after)) : null;
+    const grab = (label: string, list: any[]) => {
+      const l = list.slice(0, top); if (!l.length) return;
+      out.push(label + ":");
+      l.forEach((r: any) => { const s2 = "  - " + promoLine(r) + " (ใบ " + r.sheet_title + ")"; out.push(s2); topLines.push(promoLine(r)); });
+    };
+    grab("ลดแรงที่สุด", items.filter((r: any) => saveOf(r) != null).sort((x: any, y: any) => (saveOf(y) as number) - (saveOf(x) as number)));
+    grab("ได้แสตมป์มูลค่าสูงสุด", items.filter((r: any) => String(r.promo_type) === "stamp" && r.stamp_baht != null).sort((x: any, y: any) => Number(y.stamp_baht) - Number(x.stamp_baht)));
+    grab("คุ้มที่สุดต่อเงิน 1 บาท", items.filter((r: any) => String(r.promo_type) === "stamp" && r.stamp_baht != null && Number(r.price_after) > 0).sort((x: any, y: any) => (Number(y.stamp_baht) / Number(y.price_after)) - (Number(x.stamp_baht) / Number(x.price_after))));
+    grab("ซื้อครบแถมฟรี", items.filter((r: any) => String(r.promo_type) === "freebie" || (r.extra && r.extra["ของแถม"])));
+    grab("ซื้อคู่/เซ็ต", items.filter((r: any) => String(r.promo_type) === "bundle"));
+    out.push("(รายการโปรฯ ที่ใช้ได้ตอนนี้ทั้งหมด " + items.length + " รายการ จาก " + live.length + " ใบ)");
+  } catch (_e) { return { text: "", sheets: [], top: [], ending: [] }; }
+  return { text: out.join("\n").slice(0, 5000), sheets: [...new Set(sheets)], top: topLines.slice(0, 6), ending: endingLines };
+}
+
+const PROMO_RULES = `กติกาเรื่องโปรโมชั่น (สำคัญที่สุด ห้ามพลาด):
+- ถ้าจะพูดถึงสินค้า ราคา หรือโปรโมชั่น ต้องหยิบจากบล็อก [โปรโมชั่นที่ใช้ได้จริงตอนนี้] เท่านั้น ห้ามแต่งเอง ห้ามเดาราคา ห้ามคิดส่วนลดเอง
+- ถ้าคลังความรู้กับบล็อกโปรโมชั่นขัดกัน ให้ยึดบล็อกโปรโมชั่น (มาจากใบโปรฯ จริงที่คนตรวจแล้ว)
+- แยกให้ชัด: "ราคาที่จ่าย" คือเงินที่ลูกค้าจ่าย ส่วน "ได้แสตมป์" คือของที่ได้กลับมา ห้ามเรียกสลับกัน
+- โปรฯ ที่เหลือน้อยกว่า 7 วัน ให้ยกขึ้นเป็นข้อแรกและบอกว่าเหลืออีกกี่วัน
+- ทุกข้อต้องผูกกับ "สาขาไหน" และ "ตัวเลขอะไรที่ชี้ว่าต้องทำ" พร้อมประโยคที่พนักงานพูดกับลูกค้าได้จริง
+- ยอดขายในระบบละเอียดแค่ระดับสาขา/วัน ไม่มียอดรายสินค้า ห้ามพูดว่าสินค้าตัวไหนขายดีหรือขายไม่ดี`;
+
 async function analyze(day: string, today: Agg[], prev: Agg[]): Promise<string> {
   if (!GKEY) return "";
   const prevMap: Record<string, Agg> = {}; prev.forEach(p => prevMap[p.branch_id] = p);
@@ -190,7 +280,10 @@ ${lines}
 ${insight.map(s => "- " + s).join("\n")}
 
 ${COACH_STYLE}`;
-  return await askGemini(prompt, 1024);
+  // ★ ป้อนโปรฯ ที่ใช้ได้จริงวันนี้เข้าไปด้วย — บทวิเคราะห์จะได้เชียร์ของที่มีอยู่จริง ไม่ใช่พูดลอย ๆ ว่า "เสนอขายเพิ่ม"
+  const pm = await loadPromos(2);
+  const prompt2 = pm.text ? (prompt + "\n\n" + pm.text + "\n\n" + PROMO_RULES) : prompt;
+  return await askGemini(prompt2, 1024);
 }
 
 
@@ -279,31 +372,286 @@ async function dailySeries(branches: any[], endDay: string, days = 7) {
   return { dates, byBranch, total };
 }
 
+// ============================================================
+// ★ 17 ก.ย. 69 — ชุดข้อมูลใหม่สำหรับการ์ดใบ 1 และบทวิเคราะห์ท้าย carousel
+//   ใบ 1  : เฉลี่ยต่อวันรายสาขา เทียบ "เดือนต่อเดือน" (ไม่ใช้ค่าเฉลี่ย 3 เดือนรวม
+//           เพราะเฉลี่ยรวมจะกลบเดือนที่ตก ทำให้ยอดดูสูงเกินจริง)
+//   ใบท้าย: บทวิเคราะห์ + ข้อสังเกตความผิดปกติของ "ข้อมูล" เพื่อให้ตามไปตรวจได้
+//   นับเฉพาะวันที่ยอดครบ (มีแถวสิ้นวัน หรือครบ 3 ผลัด) — วันที่ข้อมูลขาดถูกข้าม
+// ============================================================
+type MonStat = { key: string; label: string; days: number; avg: number; cust: number; ph: number };
+
+// ย้อนหลัง N เดือนปฏิทิน (รวมเดือนปัจจุบัน) — เฉลี่ยต่อวันของแต่ละสาขา
+async function monthAvgSeries(branches: any[], endDay: string, nMonths = 4) {
+  const end = new Date(endDay + "T00:00:00Z");
+  const firstMon = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - (nMonths - 1), 1));
+  const start = firstMon.toISOString().slice(0, 10);
+  const { data } = await sb.from("sales_daily").select(SALES_COLS).gte("sale_date", start).lte("sale_date", endDay);
+  const rows = data || [];
+  // จัดกลุ่มเป็นรายวัน แล้วใช้ aggregate() ตัวเดิม (มีตรรกะกันนับซ้ำแถวสิ้นวันอยู่แล้ว)
+  const days = [...new Set(rows.map((r: any) => String(r.sale_date)))].sort();
+  const acc: Record<string, Record<string, { sum: number; cust: number; n: number }>> = {};
+  for (const d of days) {
+    const aggs = aggregate(rows.filter((r: any) => String(r.sale_date) === d), branches);
+    const mk = d.slice(0, 7);
+    for (const a of aggs) {
+      if (!a.reported || !a.complete) continue;           // ★ ข้ามวันที่ข้อมูลไม่ครบ
+      const m = (acc[a.branch_id] = acc[a.branch_id] || {});
+      const c = (m[mk] = m[mk] || { sum: 0, cust: 0, n: 0 });
+      c.sum += a.total; c.cust += a.customers; c.n++;
+    }
+  }
+  const keys: string[] = [];
+  for (let i = nMonths - 1; i >= 0; i--) {
+    const dd = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - i, 1));
+    keys.push(dd.toISOString().slice(0, 7));
+  }
+  const out: Record<string, MonStat[]> = {};
+  for (const b of (branches || [])) {
+    out[b.branch_id] = keys.map((k) => {
+      const c = acc[b.branch_id]?.[k];
+      const avg = c && c.n ? c.sum / c.n : 0;
+      const cu  = c && c.n ? c.cust / c.n : 0;
+      return { key: k, label: String(TH_MON[Number(k.slice(5, 7)) - 1] || "").replace(/\.$/, ""), days: c?.n || 0, avg, cust: cu, ph: cu > 0 ? avg / cu : 0 };
+    });
+  }
+  return out;
+}
+
+// แถวเดือน + % เทียบเดือนก่อนหน้า
+function monRows(list: MonStat[]) {
+  const mx = Math.max(1, ...list.map((m) => m.avg));
+  return list.map((m, i) => {
+    const prev = i > 0 ? list[i - 1].avg : 0;
+    const dp = prev > 0 && m.avg > 0 ? (m.avg / prev - 1) * 100 : null;
+    const now = i === list.length - 1;
+    const w = Math.max(3, Math.round((m.avg / mx) * 100));
+    return { type: "box", layout: "baseline", spacing: "sm", margin: "xs", contents: [
+      { type: "text", text: m.label, size: "xxs", color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular", flex: 3 },
+      { type: "text", text: m.avg > 0 ? th(m.avg) : "—", size: "xxs", color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular", align: "end", flex: 5 },
+      { type: "text", text: dp == null ? "—" : (dp >= 0 ? "+" : "−") + Math.abs(dp).toFixed(1) + "%",
+        size: "xxs", weight: "bold", align: "end", flex: 5,
+        color: dp == null ? C_GREY : dp >= 0 ? C_GREEN : C_RED },
+    ] };
+  });
+}
+
+// สรุปสถิติ 7 วันของสาขาหนึ่ง (ใช้กับการ์ดรายสาขา)
+function w7stat(ser7: number[]) {
+  const v = (ser7 || []).filter((x) => x > 0);
+  if (!v.length) return null;
+  const avg = v.reduce((s2, x) => s2 + x, 0) / v.length;
+  return { avg, max: Math.max(...v), min: Math.min(...v), n: v.length };
+}
+function w7rows(ser7: number[], dates: string[], today: number) {
+  const st = w7stat(ser7); if (!st) return [];
+  const iMax = ser7.indexOf(st.max);
+  const dv = st.avg > 0 ? (today / st.avg - 1) * 100 : null;
+  const isLow = today > 0 && today <= st.min;
+  const out: any[] = [
+    sepLine(),
+    kvRow("เฉลี่ย 7 วัน", "฿" + th(st.avg)),
+    kvRow("วันนี้เทียบเฉลี่ย", dv == null ? "—" : (dv >= 0 ? "+" : "−") + Math.abs(dv).toFixed(1) + "%",
+      dv == null ? C_GREY : dv >= -3 ? C_GREEN : dv >= -10 ? C_AMBER : C_RED),
+    kvRow("สูงสุดสัปดาห์", iMax >= 0 ? dowLabel(dates[iMax]) + " · ฿" + th(st.max) : "—"),
+  ];
+  if (isLow) out.push(kvRow("สถานะ", "ต่ำสุดของสัปดาห์", C_RED));
+  return out;
+}
+
+// ============================================================
+// ★ 17 ก.ย. 69 — บทวิเคราะห์ + ข้อสังเกตความผิดปกติ (ใบสุดท้ายของ carousel)
+//   คำนวณจากตัวเลขตรง ๆ ไม่ผ่าน AI — ผลจึงคงที่ ตรวจย้อนได้ ไม่มีการเดา
+//   "ข้อสังเกต" แยกเป็น 2 ชนิด: ผิดปกติเชิงธุรกิจ  กับ  ข้อมูลน่าจะกรอกผิด
+// ============================================================
+function insightBubble(day: string, aggs: Agg[], ser: any, mon?: Record<string, MonStat[]>) {
+  const rep2 = aggs.filter((a) => a.reported && a.complete);
+  const body: any[] = [];
+  const findings: string[] = [];   // ข้อสังเกตเชิงธุรกิจ
+  const dataFlags: string[] = [];  // ข้อมูลน่าจะผิด — ให้ไปตรวจ
+
+  // ---- 1) ทิศทางเทียบเดือนก่อน ----
+  if (mon) {
+    const ups: string[] = [], dns: string[] = [];
+    for (const a of aggs) {
+      const L = mon[a.branch_id] || []; if (L.length < 2) continue;
+      const c = L[L.length - 1], pv = L[L.length - 2];
+      if (!(c.avg > 0 && pv.avg > 0)) continue;
+      const dp = (c.avg / pv.avg - 1) * 100;
+      (dp >= 0 ? ups : dns).push(bareName(a.name) + " " + (dp >= 0 ? "+" : "−") + Math.abs(dp).toFixed(1) + "%");
+    }
+    if (ups.length || dns.length) {
+      body.push({ type: "text", text: "เทียบเดือนก่อน", size: "xs", weight: "bold", color: "#18181b" });
+      if (ups.length) body.push({ type: "text", text: "▲ ดีขึ้น: " + ups.join(" · "), size: "xxs", color: C_GREEN, wrap: true, margin: "xs" });
+      if (dns.length) body.push({ type: "text", text: "▼ ลดลง: " + dns.join(" · "), size: "xxs", color: C_RED, wrap: true, margin: "xs" });
+    }
+    // ยอดต่อหัวเปลี่ยนแรง = สัญญาณการขายพ่วง (หรือกรอกลูกค้าผิด)
+    for (const a of aggs) {
+      const L = mon[a.branch_id] || []; if (L.length < 2) continue;
+      const c = L[L.length - 1], pv = L[L.length - 2];
+      if (!(c.ph > 0 && pv.ph > 0)) continue;
+      const dp = (c.ph / pv.ph - 1) * 100;
+      if (dp <= -8) findings.push(bareName(a.name) + " ยอดต่อหัวลด " + Math.abs(dp).toFixed(0) + "% (฿" + pv.ph.toFixed(2) + " → ฿" + c.ph.toFixed(2) + ") — ดูการเสนอขายพ่วง");
+      else if (dp >= 10) findings.push(bareName(a.name) + " ยอดต่อหัวเพิ่ม " + dp.toFixed(0) + "% — หาว่าทำอะไรได้ผล แล้วขยายไปสาขาอื่น");
+    }
+  }
+
+  // ---- 2) วันล่าสุดเทียบ 7 วัน ----
+  const lows: string[] = [], drops: string[] = [];
+  for (const a of rep2) {
+    const s7 = (ser.byBranch[a.branch_id] || []).map((x: number) => Math.round(x));
+    const st = w7stat(s7); if (!st || st.n < 3) continue;
+    const dv = (a.total / st.avg - 1) * 100;
+    if (a.total <= st.min) lows.push(bareName(a.name));
+    if (dv <= -10) drops.push(bareName(a.name) + " " + dv.toFixed(0) + "%");
+  }
+  if (lows.length || drops.length) {
+    body.push(sepLine());
+    body.push({ type: "text", text: "ยอดวันล่าสุด", size: "xs", weight: "bold", color: "#18181b", margin: "md" });
+    if (drops.length) body.push({ type: "text", text: "ต่ำกว่าเฉลี่ย 7 วันมาก: " + drops.join(" · "), size: "xxs", color: C_RED, wrap: true, margin: "xs" });
+    if (lows.length) body.push({ type: "text", text: "ต่ำสุดของสัปดาห์: " + lows.join(" · "), size: "xxs", color: C_AMBER, wrap: true, margin: "xs" });
+  }
+  // ตกพร้อมกันทุกสาขา = ปัจจัยภายนอก ไม่ใช่ปัญหาของร้านใดร้านหนึ่ง
+  if (rep2.length >= 2 && lows.length === rep2.length) {
+    findings.push("ทุกสาขาต่ำสุดของสัปดาห์พร้อมกัน — น่าจะเป็นปัจจัยภายนอก (อากาศ/วันหยุด/กำลังซื้อ) มากกว่าปัญหาของร้านใดร้านหนึ่ง");
+  }
+  // สาขาที่ควรโฟกัส = ตกแรงสุด
+  let focus: { nm: string; dv: number; cust: string } | null = null;
+  for (const a of rep2) {
+    const s7 = (ser.byBranch[a.branch_id] || []).map((x: number) => Math.round(x));
+    const st = w7stat(s7); if (!st || st.n < 3) continue;
+    const dv = (a.total / st.avg - 1) * 100;
+    if (!focus || dv < focus.dv) focus = { nm: bareName(a.name), dv, cust: th(a.customers) };
+  }
+  if (focus && focus.dv <= -5) {
+    findings.push("โฟกัสวันนี้: " + focus.nm + " (ต่ำกว่าเฉลี่ย 7 วัน " + focus.dv.toFixed(0) + "% · ลูกค้า " + focus.cust + " คน)");
+  }
+
+  // ---- 3) ข้อสังเกตว่า "ข้อมูลน่าจะกรอกผิด" ----
+  for (const a of rep2) {
+    // ยอดต่อหัวหลุดกรอบสมเหตุผล → มักเกิดจากกรอกจำนวนลูกค้าเกิน/ขาดหลัก
+    const ph = perHead(a);
+    if (a.customers > 0 && (ph < 25 || ph > 250)) {
+      dataFlags.push(bareName(a.name) + ": ยอดต่อหัว ฿" + ph.toFixed(2) + " (ลูกค้า " + th(a.customers) + " คน) — ตรวจช่องจำนวนลูกค้า");
+    }
+    // เป้าหลุดกรอบ → % บรรลุเป้าจะเพี้ยนทั้งการ์ด
+    if (a.target_total > 0 && a.total > 0) {
+      const r = a.target_total / a.total;
+      if (r < 0.2) dataFlags.push(bareName(a.name) + ": เป้าวันนี้ ฿" + th(a.target_total) + " ต่ำผิดปกติเทียบยอดจริง ฿" + th(a.total) + " — ตรวจการตั้งเป้า");
+      else if (r > 1.6) dataFlags.push(bareName(a.name) + ": เป้าวันนี้ ฿" + th(a.target_total) + " สูงผิดปกติเทียบยอดจริง ฿" + th(a.total) + " — ตรวจการตั้งเป้า");
+    }
+  }
+
+  if (findings.length) {
+    body.push(sepLine());
+    body.push({ type: "text", text: "วิเคราะห์", size: "xs", weight: "bold", color: "#18181b", margin: "md" });
+    findings.slice(0, 4).forEach((f) => body.push({ type: "text", text: "• " + f, size: "xxs", color: "#3f3f46", wrap: true, margin: "xs" }));
+  }
+  if (dataFlags.length) {
+    body.push({ type: "box", layout: "vertical", margin: "md", backgroundColor: "#fff7ed", cornerRadius: "8px", paddingAll: "10px",
+      contents: [{ type: "text", text: "ข้อมูลน่าจะกรอกผิด — ตรวจก่อนเชื่อตัวเลข", size: "xs", weight: "bold", color: "#9a3412", wrap: true },
+        ...dataFlags.slice(0, 4).map((f) => ({ type: "text", text: "• " + f, size: "xxs", color: "#9a3412", wrap: true, margin: "xs" }))] });
+  }
+  if (!body.length) return null;
+
+  return {
+    type: "bubble",
+    header: capHead(dataFlags.length ? C_AMBER : C_GREY, "วิเคราะห์ & ข้อสังเกต", null),
+    body: { type: "box", layout: "vertical", contents: [
+      { type: "text", text: "อ้างอิงยอดวันที่ " + fmtThaiDate(day), size: "xs", color: "#8c8c8c" },
+      ...body,
+    ] },
+    footer: { type: "box", layout: "vertical", contents: [{ type: "button", style: "primary", color: dataFlags.length ? C_AMBER : C_GREY, action: { type: "uri", label: "เปิดแดชบอร์ดยอดขาย", uri: APP_URL + "/hr/" } }] },
+  };
+}
+
 // ---------- carousel รายวัน ----------
-function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, ser: any) {
+function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, ser: any, mon?: Record<string, MonStat[]>) {
   const rep = aggs.filter((a) => a.reported);
   const grand = rep.reduce((s2, a) => s2 + a.total, 0);
   const tgt = rep.reduce((s2, a) => s2 + a.target_total, 0);
   const prevGrand = Object.values(prevMap).reduce((s2, a) => s2 + a.total, 0);
   const gp = tgt > 0 ? grand / tgt * 100 : null;
   const cust = rep.reduce((s2, a) => s2 + a.customers, 0);
+  // ★ ยอดครบทุกผลัดหรือยัง — ถ้ายังไม่ครบ ห้ามโชว์ % เป้า และห้ามเทียบกับวันก่อน
+  const doneCnt = aggs.filter((a) => a.complete).length;
+  const full = rep.length === aggs.length && doneCnt === aggs.length;
+  // ป้ายเตือนบอกให้ครบว่า ขาดของวันไหน · ร้านไหน · ผลัดไหน
+  const dLabel = fmtThaiDate(day);
+  const lackOf = (a: Agg) => {
+    if (!a.reported) return bareName(a.name) + " (ยังไม่ส่งยอดเลย)";
+    const m = missShifts(a);
+    return m.length ? bareName(a.name) + " (ผลัด" + m.join(", ") + ")" : "";
+  };
+  const lackAll = aggs.map(lackOf).filter(Boolean).join(" · ");
+  const noteAll = { text: "ยอดของวันที่ " + dLabel + " ยังไม่ครบทุกผลัด\nยังขาด: " + lackAll + "\nผลัดดึกจะส่งยอดตอนเช้าอีกวัน ตัวเลขนี้จึงยังไม่ใช่ยอดจริงของวัน และยังเทียบกับวันก่อนหน้าไม่ได้", color: "#92400e", bg: "#fef3c7" };
+  const noteOne = (a: Agg) => ({ text: "ยอดของวันที่ " + dLabel + " ยังไม่ครบ — ยังขาดผลัด " + missShifts(a).join(", ") + "\nผลัดดึกจะส่งยอดตอนเช้าอีกวัน ตัวเลขนี้จึงยังไม่ใช่ยอดจริงของวัน", color: "#92400e", bg: "#fef3c7" });
   const bubbles: any[] = [];
 
+  // ---------- ใบ 1: เฉลี่ยต่อวันรายสาขา เทียบเดือนต่อเดือน ----------
+  if (mon) {
+    const mb: any[] = [];
+    let upN = 0, dnN = 0, thinMonth = false;
+    for (const a of aggs) {
+      const list = mon[a.branch_id] || [];
+      if (!list.length) continue;
+      const cur = list[list.length - 1], prv = list[list.length - 2];
+      const dp = prv && prv.avg > 0 && cur.avg > 0 ? (cur.avg / prv.avg - 1) * 100 : null;
+      if (dp != null) { if (dp >= 0) upN++; else dnN++; }
+      if (cur.days > 0 && cur.days < 7) thinMonth = true;
+      mb.push(sepLine());
+      mb.push({ type: "box", layout: "baseline", spacing: "sm", contents: [
+        { type: "text", text: bareName(a.name), size: "sm", weight: "bold", flex: 7, wrap: false },
+        { type: "text", text: cur.avg > 0 ? "฿" + th(cur.avg) : "—", size: "sm", weight: "bold", align: "end", flex: 5 },
+        { type: "text", text: dp == null ? "" : (dp >= 0 ? "▲ +" : "▼ −") + Math.abs(dp).toFixed(1) + "%",
+          size: "xxs", weight: "bold", align: "end", flex: 4, color: dp == null ? C_GREY : dp >= 0 ? C_GREEN : C_RED },
+      ] });
+      mb.push(...monRows(list));
+      if (cur.cust > 0) {
+        const phPrev = prv && prv.ph > 0 ? prv.ph : 0;
+        mb.push({ type: "text", margin: "xs", size: "xxs", color: "#8c8c8c", wrap: true,
+          text: "ลูกค้า " + th(cur.cust) + "/วัน · ต่อหัว ฿" + cur.ph.toFixed(2) + (phPrev ? ("  (" + prv.label + " " + phPrev.toFixed(2) + ")") : "") });
+      }
+    }
+    const headTxt = upN && !dnN ? "ดีขึ้นทุกสาขา" : dnN && !upN ? "ชะลอตัวทุกสาขา" : upN > dnN ? "ส่วนใหญ่ดีขึ้น" : upN < dnN ? "ส่วนใหญ่ชะลอตัว" : "ทรงตัว";
+    const curLbl = mon[aggs[0]?.branch_id]?.slice(-1)[0], prvLbl = mon[aggs[0]?.branch_id]?.slice(-2)[0];
+    bubbles.push(salesBubble({
+      color: upN >= dnN ? C_GREEN : C_RED,
+      headLabel: "เฉลี่ยต่อวันรายสาขา · " + headTxt,
+      headPct: null,
+      cap: (curLbl ? curLbl.label : "") + " เทียบ " + (prvLbl ? prvLbl.label : "เดือนก่อน") +
+           (curLbl ? "  ·  เก็บแล้ว " + curLbl.days + " วัน" : ""),
+      big: "",
+      body: [{ type: "text", size: "xxs", color: "#8c8c8c", wrap: true,
+               text: "นับเฉพาะวันที่ยอดครบทุกผลัด · วันที่ข้อมูลขาดถูกข้าม" }, ...mb],
+      note: thinMonth ? { text: "เดือนนี้เพิ่งเก็บได้ไม่กี่วัน ค่าเฉลี่ยยังแกว่งง่าย ดูเป็นแนวโน้มคร่าว ๆ ก่อน", color: "#92400e", bg: "#fef3c7" } : undefined,
+      btn: "เปิดแดชบอร์ดยอดขาย", url: APP_URL + "/hr/",
+    }));
+  }
+
+  // ---------- ใบภาพรวมยอดวันล่าสุด (ของเดิม) ----------
   bubbles.push(salesBubble({
-    color: pctColor(gp),
-    headLabel: "ภาพรวมทุกสาขา · " + (gp == null ? "ยังไม่ตั้งเป้า" : gp >= 100 ? "เกินเป้า" : "ต่ำกว่าเป้า"),
-    headPct: gp, headPctText: gp == null ? undefined : gp.toFixed(1) + "% ของเป้าหมาย",
-    cap: "ยอดขายรวมเมื่อวาน · " + fmtThaiDate(day),
+    color: full ? pctColor(gp) : C_AMBER,
+    headLabel: "ภาพรวมทุกสาขา · " + (!full ? "ยอดยังไม่ครบทุกผลัด" : gp == null ? "ยังไม่ตั้งเป้า" : gp >= 100 ? "เกินเป้า" : "ต่ำกว่าเป้า"),
+    headPct: full ? gp : null, headPctText: gp == null ? undefined : gp.toFixed(1) + "% ของเป้าหมาย",
+    cap: (full ? "ยอดขายรวมเมื่อวาน · " : "ยอดขายเท่าที่ส่งแล้ว · ") + fmtThaiDate(day),
     big: "฿" + th(grand),
-    delta: deltaOf(grand, prevGrand),
+    delta: full ? deltaOf(grand, prevGrand) : undefined,
     body: [
       sepLine(),
-      ...aggs.map((a) => { const p = achievePct(a); return kvRow(bareName(a.name), a.reported ? "฿" + th(a.total) + "  " + (p == null ? "—" : p.toFixed(0) + "%") : "ยังไม่ส่งยอด", a.reported ? pctColor(p) : C_GREY); }),
+      ...aggs.map((a) => {
+        const p = achievePct(a), ms = missShifts(a);
+        if (!a.reported) return kvRow(bareName(a.name), "ยังไม่ส่งยอด", C_GREY);
+        if (ms.length) return kvRow(bareName(a.name), "฿" + th(a.total) + "  ขาด" + ms.join(","), C_AMBER);
+        return kvRow(bareName(a.name), "฿" + th(a.total) + "  " + (p == null ? "—" : p.toFixed(0) + "%"), pctColor(p));
+      }),
       sepLine(),
       kvRow("ลูกค้ารวม", th(cust) + " คน"),
       kvRow("ยอดต่อหัว", cust > 0 ? "฿" + (grand / cust).toFixed(2) : "—"),
       kvRow("ส่งยอดแล้ว", rep.length + " / " + aggs.length + " สาขา", rep.length === aggs.length ? C_GREEN : C_AMBER),
+      kvRow("ยอดครบทุกผลัด", doneCnt + " / " + aggs.length + " สาขา", full ? C_GREEN : C_AMBER),
     ],
+    note: full ? undefined : noteAll,
     btn: "เปิดแดชบอร์ดยอดขาย", url: APP_URL + "/hr/",
   }));
 
@@ -322,25 +670,34 @@ function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, s
     const ser7 = (ser.byBranch[a.branch_id] || []).map((x: number) => Math.round(x));
     const hi = ser7.length ? ser7.indexOf(Math.max(...ser7)) : -1;
     bubbles.push(salesBubble({
-      color: pctColor(p),
-      headLabel: bareName(a.name) + " · " + (p == null ? "ยังไม่ตั้งเป้า" : p >= 100 ? "เกินเป้า" : "ต่ำกว่าเป้า"),
-      headPct: p, headPctText: p == null ? undefined : p.toFixed(1) + "% ของเป้า ฿" + th(a.target_total),
-      cap: "ยอดขายรวม", big: "฿" + th(a.total),
-      delta: deltaOf(a.total, prevMap[a.branch_id]?.total || 0),
+      color: a.complete ? pctColor(p) : C_AMBER,
+      headLabel: bareName(a.name) + " · " + (!a.complete ? "ยอดยังไม่ครบทุกผลัด" : p == null ? "ยังไม่ตั้งเป้า" : p >= 100 ? "เกินเป้า" : "ต่ำกว่าเป้า"),
+      headPct: a.complete ? p : null, headPctText: p == null ? undefined : p.toFixed(1) + "% ของเป้า ฿" + th(a.target_total),
+      cap: a.complete ? "ยอดขายรวม" : "ยอดขายเท่าที่ส่งแล้ว", big: "฿" + th(a.total),
+      delta: a.complete ? deltaOf(a.total, prevMap[a.branch_id]?.total || 0) : undefined,
       body: [
         sepLine(), capText("ย้อนหลัง 7 วัน"),
         ...barChart(ser7, ser.dates.map(dowLabel), hi, pctColor(p), p != null && p < 95 ? "#fecaca" : "#bbf7d0"),
+        // ★ 17 ก.ย. 69 — ตัวเลขประกอบกราฟ 7 วัน (เดิมมีแต่แท่ง อ่านค่าไม่ได้)
+        ...w7rows(ser7, ser.dates, a.total),
         sepLine(),
         kvRow("ลูกค้า", th(a.customers) + " คน"),
         kvRow("ยอดต่อหัว", "฿" + perHead(a).toFixed(2)),
         kvRow("ยอดบัตร", "฿" + th(a.card)),
         kvRow("All Cafe", "฿" + th(a.allcafe)),
         kvRow("Delivery", "฿" + th(a.delivery)),
+        ...(a.complete ? [] : [
+          kvRow("ส่งยอดแล้ว", a.shiftRows + " / " + SHIFTS_PER_DAY + " ผลัด", C_AMBER),
+          kvRow("ขาดผลัด", missShifts(a).join(", ") || "—", C_AMBER),
+        ]),
       ],
+      note: a.complete ? undefined : noteOne(a),
       btn: "ดูรายละเอียดสาขา", url: APP_URL + "/hr/",
     }));
   }
-  return { type: "flex", altText: "ยอดขาย " + fmtThaiDate(day) + " รวม ฿" + th(grand) + (gp != null ? " (" + gp.toFixed(0) + "% ของเป้า)" : ""), contents: { type: "carousel", contents: bubbles.slice(0, 12) } };
+  const ab = insightBubble(day, aggs, ser, mon);   // ★ ใบวิเคราะห์ท้ายสุด
+  if (ab) bubbles.push(ab);
+  return { type: "flex", altText: "ยอดขาย " + fmtThaiDate(day) + (full ? " รวม ฿" + th(grand) + (gp != null ? " (" + gp.toFixed(0) + "% ของเป้า)" : "") : " ฿" + th(grand) + " (ยอดยังไม่ครบทุกผลัด)"), contents: { type: "carousel", contents: bubbles.slice(0, 12) } };
 }
 
 // ---------- carousel รายสัปดาห์ ----------
@@ -399,10 +756,22 @@ function weekCarousel(label: string, aggs: Agg[], prevMap: Record<string, Agg>, 
 }
 
 // ---------- การ์ดบทวิเคราะห์ (ไม่มีปุ่ม) ----------
-function analysisBubble(label: string, textBody: string, sources: string[], warn: string) {
+function analysisBubble(label: string, textBody: string, sources: string[], warn: string, promoTop: string[] = [], promoEnding: string[] = []) {
   const paras = String(textBody || "").split(/\n+/).map((t) => t.trim()).filter(Boolean).slice(0, 12);
   const b: any[] = paras.map((t, i) => ({ type: "text", text: t, wrap: true, size: "sm", color: "#27272a", margin: i ? "md" : "none" }));
   if (warn) b.push({ type: "box", layout: "vertical", margin: "md", backgroundColor: "#fef2f2", cornerRadius: "8px", paddingAll: "10px", contents: [{ type: "text", text: warn, wrap: true, size: "xs", color: "#991b1b" }] });
+  if (promoEnding.length) {
+    b.push({ type: "box", layout: "vertical", margin: "lg", backgroundColor: "#fff7ed", cornerRadius: "8px", paddingAll: "10px", spacing: "xs", contents: [
+      { type: "text", text: "⏳ โปรฯ ใกล้หมด — เร่งเชียร์", size: "xs", weight: "bold", color: "#9a3412" },
+      ...promoEnding.slice(0, 4).map((t) => ({ type: "text", text: "• " + t, wrap: true, size: "xxs", color: "#9a3412" })),
+    ] });
+  }
+  if (promoTop.length) {
+    b.push({ type: "box", layout: "vertical", margin: "md", backgroundColor: "#f0fdfa", cornerRadius: "8px", paddingAll: "10px", spacing: "xs", contents: [
+      { type: "text", text: "🎯 ของคุ้มที่สุดในรอบ — พูดกับลูกค้าได้เลย", size: "xs", weight: "bold", color: "#0f766e" },
+      ...promoTop.slice(0, 5).map((t) => ({ type: "text", text: "• " + t, wrap: true, size: "xxs", color: "#115e59" })),
+    ] });
+  }
   if (sources.length) {
     b.push({ type: "separator", margin: "lg" });
     b.push({ type: "text", text: "อ้างอิงจากคลังความรู้", size: "xxs", color: "#71717a", weight: "bold", margin: "md" });
@@ -439,17 +808,22 @@ async function loadKnowledge(weak: string[]): Promise<{ text: string; sources: s
   const sources: string[] = [];
   try {
     // 1) โปรโมชั่น / นโยบาย / มาตรฐาน — ใส่เต็ม (จำนวนน้อย แต่เป็นของที่ใช้จริงตอนนี้)
-    const { data: core } = await sb.from("nida_knowledge").select("category,title,content")
+    const { data: core } = await sb.from("nida_knowledge").select("category,title,content,valid_from,valid_to")
       .eq("active", true).in("category", ["note", "policy", "standard"])
       .order("updated_at", { ascending: false }).limit(20);
     const today = bkkDate(0);
     let budget = 9000;
     for (const r of (core || [])) {
       const body = String((r as any).content || "").replace(/\s+/g, " ").trim();
-      const exp = latestDateIn(String((r as any).title || "") + " " + body.slice(0, 400));
-      // ★ เอกสารโปรฯ ที่เลยวันหมดแล้ว ไม่เอามาแนะนำ — กันนิดาอ้างโปรฯ ที่จบไปแล้ว
+      // ★ 7 ก.ย. 2569 — ใช้คอลัมน์ valid_from/valid_to จริง แทนการเดาวันจากข้อความ (regex เดาผิดได้ง่าย)
+      //   ถ้าแถวไหนยังไม่ได้ใส่วันที่ ค่อยถอยไปเดาแบบเดิมเป็นตาข่ายรอง
+      const vf = (r as any).valid_from ? String((r as any).valid_from) : null;
+      const vt = (r as any).valid_to ? String((r as any).valid_to) : null;
+      const exp = vt || (vf ? null : latestDateIn(String((r as any).title || "") + " " + body.slice(0, 400)));
+      if (vf && vf > today) continue;                       // ยังไม่ถึงวันเริ่มใช้ — ข้ามไปก่อน ไม่ต้องเตือน
       if (exp && exp < today) { if (!warn) warn = "⚠️ เอกสาร “" + (r as any).title + "” หมดอายุแล้ว (ถึง " + exp + ") รบกวนอัปเดตคลังความรู้ของนิดาด้วยค่ะ"; continue; }
-      const line = "• [" + (r as any).category + "] " + (r as any).title + ": " + body + "\n";
+      const per = vt ? " (ใช้ถึง " + vt + ")" : "";
+      const line = "• [" + (r as any).category + "] " + (r as any).title + per + ": " + body + "\n";
       if (budget - line.length < 0) break;
       out += line; budget -= line.length; sources.push(String((r as any).title));
     }
@@ -457,10 +831,14 @@ async function loadKnowledge(weak: string[]): Promise<{ text: string; sources: s
     if (weak.length) {
       const ors: string[] = [];
       weak.forEach((w) => { ors.push("title.ilike.%" + w + "%", "content.ilike.%" + w + "%", "tags.ilike.%" + w + "%"); });
-      const { data: tr } = await sb.from("nida_knowledge").select("title,content")
-        .eq("active", true).in("category", ["training", "manual"]).or(ors.join(",")).limit(6);
+      const { data: tr } = await sb.from("nida_knowledge").select("title,content,valid_from,valid_to")
+        .eq("active", true).in("category", ["training", "manual"]).or(ors.join(",")).limit(8);
       let b2 = 5000;
       for (const r of (tr || [])) {
+        const _vf = (r as any).valid_from ? String((r as any).valid_from) : null;
+        const _vt = (r as any).valid_to ? String((r as any).valid_to) : null;
+        if (_vf && _vf > today) continue;                   // ยังไม่เริ่มใช้
+        if (_vt && _vt < today) continue;                   // หมดอายุแล้ว
         const line = "• [คู่มือ] " + (r as any).title + ": " + String((r as any).content || "").replace(/\s+/g, " ").trim().slice(0, 1100) + "\n";
         if (b2 - line.length < 0) break;
         out += line; b2 -= line.length; sources.push(String((r as any).title));
@@ -583,32 +961,29 @@ ${COACH_STYLE}`;
   // ★ รายสัปดาห์: ป้อน "คลังความรู้ของนิดา" เข้าไปด้วย แล้วบังคับให้อ้างของจริง
   //   โปรโมชั่น/นโยบาย/มาตรฐาน ใส่เต็ม · คู่มือสอนงานเลือกเฉพาะที่ตรงกับจุดอ่อนที่ตัวเลขชี้
   const kb = kind === "weekly" ? await loadKnowledge(weakPoints(aggs)) : { text: "", sources: [], warn: "" };
-  const prompt2 = kb.text
-    ? prompt + `
-
-[คลังความรู้ของร้าน — โปรโมชั่นที่กำลังจัด · มาตรฐานบริการ · คู่มือ]
-${kb.text}
-กติกาเพิ่มเติม (สำคัญมาก):
-- ถ้าจะพูดถึงสินค้า ราคา โปรโมชั่น หรือขั้นตอนการทำงาน ต้องหยิบจากคลังความรู้ข้างบนเท่านั้น ห้ามแต่งขึ้นเอง ห้ามเดาราคา
-- ระบุชื่อสินค้าและราคาให้ชัด เช่น "เอ็ม 150 รับ 2 ขวด 22 บาท" พร้อมประโยคที่พนักงานพูดกับลูกค้าได้จริง
-- ผูกทุกข้อกับ "สาขาไหน" และ "ตัวเลขอะไรที่ชี้ว่าต้องทำ"
-- ถ้าโปรโมชั่นใกล้หมด ให้ยกขึ้นเป็นข้อแรกและบอกว่าเหลืออีกกี่วัน`
-    : prompt;
+  // ★ 7 ก.ย. 2569 — บทวิเคราะห์รายสัปดาห์ต้องอ้าง "โปรฯ ปัจจุบันทั้งหมด" จากตารางโปรฯ
+  //   ของเดิมอ้างจากข้อความในคลังความรู้อย่างเดียว ซึ่งเก่าง่ายและไม่มีตัวเลขให้เชียร์
+  const pm = kind === "weekly" ? await loadPromos(3) : { text: "", sheets: [], top: [], ending: [] };
+  const ref = [
+    kb.text ? "[คลังความรู้ของร้าน — มาตรฐานบริการ · คู่มือ · นโยบาย]\n" + kb.text : "",
+    pm.text,
+  ].filter(Boolean).join("\n\n");
+  const prompt2 = ref ? (prompt + "\n\n" + ref + "\n\n" + PROMO_RULES) : prompt;
   const note = await askGemini(prompt2, 1400);
-  if (dry) return json({ ok: true, dry: true, kind, label, overview, analysis: note, kb_sources: kb.sources, kb_warn: kb.warn });
+  if (dry) return json({ ok: true, dry: true, kind, label, overview, analysis: note, kb_sources: kb.sources, kb_warn: kb.warn, promo_sheets: pm.sheets, promo_ending: pm.ending, promo_block: pm.text });
   const gid = await mgrGroupId();
   if (!gid) return json({ ok: true, sent: 0, note: "ยังไม่พบกลุ่ม ผจก.", preview: overview });
   const messages: unknown[] = [];
   if (kind === "weekly") {
     const ser = await dailySeries(branches || [], r.end, 7);
     messages.push(weekCarousel(label, aggs, prevMap, ser));
-    if (note || kb.warn) messages.push({ type: "flex", altText: "บทวิเคราะห์รายสัปดาห์ " + label, contents: analysisBubble(label, note, kb.sources, kb.warn) });
+    if (note || kb.warn || pm.top.length) messages.push({ type: "flex", altText: "บทวิเคราะห์รายสัปดาห์ " + label, contents: analysisBubble(label, note, kb.sources, kb.warn, pm.top, pm.ending) });
   } else {
     messages.push({ type: "text", text: overview });
     if (note) messages.push({ type: "text", text: `📊 บทวิเคราะห์รายเดือน (${label})\n\n${note}` });
   }
   const ok = await pushLine(gid, messages);
-  return json({ ok, sent: ok ? messages.length : 0, kind, label, kb_used: kb.sources.length });
+  return json({ ok, sent: ok ? messages.length : 0, kind, label, kb_used: kb.sources.length, promo_used: pm.sheets.length, promo_ending: pm.ending.length });
 }
 
 // ---------- แจ้งเตือนผิดปกติ (ยอดตก / ยังไม่ส่ง) ----------
@@ -692,15 +1067,21 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const body = await req.json().catch(() => ({}));
-    const mode = String(body?.mode || "daily");
-    const dry = body?.dry === true || body?.dry === "1";   // ทดสอบ: คำนวณ+วิเคราะห์แต่ไม่ส่งเข้ากลุ่ม
+    // ★ 7 ก.ย. 2569 — อ่านพารามิเตอร์จาก URL ได้ด้วย (เดิมอ่านจาก body อย่างเดียว)
+    //   เคยยิงทดสอบด้วย GET ...?dry=1 แล้ว dry ไม่ทำงาน กลายเป็นส่งเข้าไลน์จริงโดยไม่ตั้งใจ
+    const q = new URL(req.url).searchParams;
+    const pick = (k: string): any => (body && body[k] !== undefined) ? body[k] : (q.get(k) ?? undefined);
+    const mode = String(pick("mode") ?? pick("kind") ?? "daily");
+    const dryV = pick("dry");
+    const dry = dryV === true || dryV === "1" || dryV === "true";   // ทดสอบ: คำนวณ+วิเคราะห์แต่ไม่ส่งเข้ากลุ่ม
+    const qDate = String(pick("date") ?? "");
 
     if (mode === "weekly" || mode === "monthly") return await runPeriod(mode, bkkDate(0), dry);
-    if (mode === "anomaly") return await runAnomaly(String(body?.check || "both"), (body?.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) ? body.date : bkkDate(-1));
+    if (mode === "anomaly") return await runAnomaly(String(pick("check") ?? "both"), /^\d{4}-\d{2}-\d{2}$/.test(qDate) ? qDate : bkkDate(-1));
     if (mode === "qssi") return await runQssi(bkkDate(0), dry);
 
     // ---- daily (ค่าเริ่มต้น) ----
-    const day  = (body?.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) ? body.date : bkkDate(-1); // เมื่อวาน (ไทย)
+    const day  = /^\d{4}-\d{2}-\d{2}$/.test(qDate) ? qDate : bkkDate(-1); // เมื่อวาน (ไทย)
     const prevDay = addDaysStr(day, -1);
     const [{ data: branches }, { data: rowsToday }, { data: rowsPrev }] = await Promise.all([
       sb.from("branches").select("branch_id,name").order("branch_id"),
@@ -715,13 +1096,16 @@ Deno.serve(async (req) => {
     //   ดูวันเดียวยังไม่เห็นแนวโน้ม วิเคราะห์ทุกวันเลยกลายเป็นคำแนะนำกว้าง ๆ ซ้ำ ๆ
     const prevMap: Record<string, Agg> = {}; prevAggs.forEach(p => prevMap[p.branch_id] = p);
     const ser = await dailySeries(branches || [], day, 7);
+    // ★ 17 ก.ย. 69 — สถิติรายเดือน 4 เดือนล่าสุด สำหรับการ์ดใบแรก (เทียบเดือนต่อเดือน)
+    let mon: Record<string, MonStat[]> | undefined;
+    try { mon = await monthAvgSeries(branches || [], day, 4); } catch (e) { console.warn("monthAvgSeries", e); }
     const overview = buildOverviewText(day, aggs);            // เก็บไว้เป็น preview ตอน dry เท่านั้น
-    const flex = dailyCarousel(day, aggs, prevMap, ser);
+    const flex = dailyCarousel(day, aggs, prevMap, ser, mon);
     if (dry) return json({ ok: true, dry: true, day, overview, flex });
     const gid = await mgrGroupId();
     if (!gid) return json({ ok: true, sent: 0, day, note: "ยังไม่พบกลุ่ม ผจก. (ตั้ง app_settings.mgr_group_id หรือกลุ่มที่ label มีคำว่า 'ผจก.')", preview: overview });
     const ok = await pushLine(gid, [flex]);
-    return json({ ok, sent: ok ? 1 : 0, day, branches: aggs.length, reported: aggs.filter(a => a.reported).length });
+    return json({ ok, sent: ok ? 1 : 0, day, branches: aggs.length, reported: aggs.filter(a => a.reported).length, complete: aggs.filter(a => a.complete).length });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }
