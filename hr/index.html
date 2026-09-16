@@ -3142,6 +3142,11 @@ function shiftName(id){ const s = DATA.shifts.find(x=>x.shift_id===id); return s
 function branchName(id){ const b = DATA.branches.find(x=>x.branch_id===id); return b?b.name:(id||'—'); }
 function grpOf(shiftId){ const s=(DATA.shifts||[]).find(x=>x.shift_id===shiftId); return (s&&s.main_shift)||shiftId; }
 // แปลง OT (ชั่วโมงทศนิยม) → "X ชม Y นาที" ให้อ่านง่าย
+// ★ 16 ก.ย. 69 — ย้าย fmtDT มาเป็นตัวช่วยส่วนกลาง
+//   เดิมประกาศเป็น const อยู่ข้างใน loadTaskList() เท่านั้น
+//   แต่ loadExitOverrides() กับ loadClosedTasks() ก็เรียกใช้ → ReferenceError
+//   ผล: กล่อง "ส่งผลัด & สิทธิออกงานฉุกเฉิน" วาดไม่ออกเลย ปุ่มอนุมัติจึงไม่มีอยู่จริง
+function fmtDT(t){ if(!t) return '—'; try{ return new Date(t).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'})+' น.'; }catch(e){ return '—'; } }
 function fmtOT(h){ h=Number(h)||0; if(h<=0) return '—'; const m=Math.round(h*60); const hh=Math.floor(m/60), mm=m%60; return hh?((hh+' ชม'+(mm?' '+mm+' นาที':''))):(mm+' นาที'); }
 function groupShifts(){ return (DATA.shifts||[]).filter(s=> (s.main_shift&&s.main_shift===s.shift_id) || !s.main_shift ); }
 function pickInitial(s){ s=String(s||'').trim(); return s ? s.charAt(0).toUpperCase() : '?'; }
