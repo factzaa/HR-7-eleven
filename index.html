@@ -207,6 +207,27 @@ function updateRule(){
   $('lvRule').innerHTML = parts.length ? '<span style="color:#6b7280">เงื่อนไข: '+parts.join(' · ')+'</span>' : '';
   $('lvDocWrap').style.display = r.require_doc ? 'block' : 'none';
 }
+// ============================================================
+// ★ 16 ก.ย. 69 — ประตู PIN หน้าขอลา / เบิกล่วงหน้า
+//   เดิม: พิมพ์รหัสพนักงานคนไหนก็เห็นประวัติการลา เหตุผล โควตา วงเงินเบิก คะแนนวินัย ของคนนั้นได้ทันที
+//   ใหม่: ต้องใส่ PIN ส่วนตัวก่อน (ตัวเดียวกับหน้าลงเวลา) · ผ่านแล้วจำไว้จนกว่าจะเปลี่ยนรหัส
+// ============================================================
+var PIN_PASSED = {};          // emp_id -> true เมื่อผ่าน PIN แล้วในการเปิดหน้าครั้งนี้
+var PIN_RUNNING = false;
+async function pinAllow(id){
+  id = String(id||'').trim();
+  if(!id) return false;
+  if(PIN_PASSED[id]) return true;
+  if(PIN_RUNNING) return false;                     // กันเปิดซ้อนหลายชั้น
+  if(!window.HRSession || !HRSession.pinGate) return true;   // ไม่มีระบบ PIN → ไม่ขวางทางคนทำงาน
+  PIN_RUNNING = true;
+  var ok = false;
+  try{ ok = await HRSession.pinGate(id); }catch(e){ ok = false; }
+  PIN_RUNNING = false;
+  if(ok) PIN_PASSED[id] = true;
+  return ok;
+}
+
 let LDOC=null;
 $('lvDoc').addEventListener('change', e=>{
   const f=e.target.files[0]; if(!f){ LDOC=null; return; }
@@ -215,11 +236,13 @@ $('lvDoc').addEventListener('change', e=>{
 $('leaveBtn').onclick=async()=>{ if(!$('lvStart').value)$('lvStart').value=HR.bangkokDate(); if(!$('lvEnd').value)$('lvEnd').value=HR.bangkokDate(); try{ if(!$('lvEmp').value && window.HRSession){ const s=HRSession.getEmp(); if(s) $('lvEmp').value=s; } }catch(e){} ovl.classList.add('show'); await ensureRules(); myLeaves(); };
 $('lvClose').onclick=()=>ovl.classList.remove('show');
 ovl.addEventListener('click',e=>{ if(e.target===ovl) ovl.classList.remove('show'); });
-$('lvEmp').addEventListener('change', myLeaves);
+$('lvEmp').addEventListener('change', myLeaves);   // myLeaves มีด่าน PIN อยู่ข้างในแล้ว
 $('lvType').addEventListener('change', updateRule);
 function lvEsc(s){ return String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
 async function myLeaves(){
   const id=$('lvEmp').value.trim(); if(!id){ $('lvMine').innerHTML=''; LUSAGE={}; updateRule(); return; }
+  // ★ ด่าน PIN — ไม่ผ่านห้ามเห็นข้อมูลคนอื่น
+  if(!(await pinAllow(id))){ $('lvEmp').value=''; $('lvMine').innerHTML=''; LUSAGE={}; updateRule(); return; }
   try{ if(window.HRSession) HRSession.setEmp(id); }catch(e){}   // จำรหัสข้ามหน้า
   try{ LUSAGE = await HR.getLeaveUsage(id); }catch(e){ LUSAGE={}; }
   updateRule();
@@ -566,6 +589,8 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     const id=$('advEmp').value.trim();
     $('advForm').style.display='none'; $('advMine').innerHTML='';
     if(!id){ $('advQuota').innerHTML=''; return; }
+    // ★ ด่าน PIN — วงเงินเบิก/คะแนนวินัย เป็นข้อมูลส่วนตัว ห้ามคนอื่นเปิดดู
+    if(!(await pinAllow(id))){ $('advEmp').value=''; $('advQuota').innerHTML=''; return; }
     try{ if(window.HRSession) HRSession.setEmp(id); }catch(e){}
     $('advQuota').innerHTML='<div style="color:#6b7280;font-size:13px">กำลังคำนวณวงเงิน…</div>';
     let q;
