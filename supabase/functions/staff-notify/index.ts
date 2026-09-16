@@ -446,7 +446,8 @@ async function scanShiftIncomplete(): Promise<number> {
 //   กะที่ไม่สังกัดผลัดหลัก (Delivery, ผจก.) ต่อท้ายการ์ดผลัดแรกของวัน
 // ============================================================
 const ATTEND_GRACE = 60;          // นาทีหลังกะย่อยสุดท้ายเริ่ม → ยิงแม้คนยังไม่ครบ
-const ATTEND_STALE = 360;         // เลยกำหนดเกินเท่านี้ ไม่ยิงย้อน (กันยิงข้อมูลเก่า)
+const ATTEND_STALE = 180;         // เลยกำหนดเกินเท่านี้ ไม่ยิงย้อน — รายงานเข้างานที่ช้า 3 ชม.
+                                  // ไม่มีประโยชน์แล้ว เหลือไว้พอกัน cron ล่มสั้น ๆ
 
 async function scanAttendSummary(): Promise<number> {
   const gid = await mgrGroupId();
@@ -499,8 +500,10 @@ async function scanAttendSummary(): Promise<number> {
       if (lastStart < 0) continue;
       const allIn = list.every((r) => !!attBy[r.emp_id]?.check_in);
       const deadline = lastStart + ATTEND_GRACE;
+      // ★ แก้ 17 ก.ย. 69 — ด่านกันข้อมูลเก่าต้องทำงาน "เสมอ" ไม่ใช่เฉพาะตอนมีคนขาด
+      //   ของเดิมเขียน (!allIn && เก่าเกิน) ทำให้ผลัดเมื่อวานที่ทุกคนเข้าครบรอดด่านไปยิงซ้ำ
+      if ((nowRel - deadline) > ATTEND_STALE) continue;       // เลยเวลามานานแล้ว ไม่ต้องยิงย้อน
       if (!allIn && nowRel < deadline) continue;              // ยังไม่ครบ และยังไม่ถึงเส้นตาย
-      if (!allIn && (nowRel - deadline) > ATTEND_STALE) continue;
 
       const rkey = "attend:" + g + ":" + day;
       const rv = await reserve(rkey, "");
