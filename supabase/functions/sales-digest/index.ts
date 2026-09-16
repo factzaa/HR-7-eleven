@@ -379,7 +379,12 @@ async function dailySeries(branches: any[], endDay: string, days = 7) {
 //   ใบท้าย: บทวิเคราะห์ + ข้อสังเกตความผิดปกติของ "ข้อมูล" เพื่อให้ตามไปตรวจได้
 //   นับเฉพาะวันที่ยอดครบ (มีแถวสิ้นวัน หรือครบ 3 ผลัด) — วันที่ข้อมูลขาดถูกข้าม
 // ============================================================
-type MonStat = { key: string; label: string; days: number; avg: number; cust: number; ph: number };
+type MonStat = { key: string; label: string; days: number; avg: number; cust: number; ph: number; skipped: number };
+// ★ 17 ก.ย. 69 — กรอบยอดต่อหัวที่สมเหตุผล · นอกกรอบ = กรอกจำนวนลูกค้าเกิน/ขาดหลัก
+//   เคสจริง 6 ก.ย. ตลาดหล่มสัก กรอก 6,426 คน (ปกติ ~640) ทำให้ต่อหัวเหลือ ฿6.85
+//   ถ้าไม่กัน ค่าเฉลี่ยทั้งเดือนเพี้ยน แล้วการ์ดจะสรุปผิดว่า "ยอดต่อหัวลด ให้ไปดูการขายพ่วง"
+const PH_MIN = 25, PH_MAX = 250;
+const phSane = (total: number, cust: number) => cust > 0 && (total / cust) >= PH_MIN && (total / cust) <= PH_MAX;
 
 // ย้อนหลัง N เดือนปฏิทิน (รวมเดือนปัจจุบัน) — เฉลี่ยต่อวันของแต่ละสาขา
 async function monthAvgSeries(branches: any[], endDay: string, nMonths = 4) {
@@ -390,15 +395,17 @@ async function monthAvgSeries(branches: any[], endDay: string, nMonths = 4) {
   const rows = data || [];
   // จัดกลุ่มเป็นรายวัน แล้วใช้ aggregate() ตัวเดิม (มีตรรกะกันนับซ้ำแถวสิ้นวันอยู่แล้ว)
   const days = [...new Set(rows.map((r: any) => String(r.sale_date)))].sort();
-  const acc: Record<string, Record<string, { sum: number; cust: number; n: number }>> = {};
+  const acc: Record<string, Record<string, { sum: number; cust: number; n: number; cn: number; skip: number }>> = {};
   for (const d of days) {
     const aggs = aggregate(rows.filter((r: any) => String(r.sale_date) === d), branches);
     const mk = d.slice(0, 7);
     for (const a of aggs) {
       if (!a.reported || !a.complete) continue;           // ★ ข้ามวันที่ข้อมูลไม่ครบ
       const m = (acc[a.branch_id] = acc[a.branch_id] || {});
-      const c = (m[mk] = m[mk] || { sum: 0, cust: 0, n: 0 });
-      c.sum += a.total; c.cust += a.customers; c.n++;
+      const c = (m[mk] = m[mk] || { sum: 0, cust: 0, n: 0, cn: 0, skip: 0 });
+      c.sum += a.total; c.n++;
+      // ★ นับจำนวนลูกค้าเฉพาะวันที่ยอดต่อหัวอยู่ในกรอบสมเหตุผล — กันวันที่กรอกผิดดึงค่าเฉลี่ยเพี้ยน
+      if (phSane(a.total, a.customers)) { c.cust += a.customers; c.cn++; } else if (a.customers > 0) c.skip++;
     }
   }
   const keys: string[] = [];
@@ -411,8 +418,8 @@ async function monthAvgSeries(branches: any[], endDay: string, nMonths = 4) {
     out[b.branch_id] = keys.map((k) => {
       const c = acc[b.branch_id]?.[k];
       const avg = c && c.n ? c.sum / c.n : 0;
-      const cu  = c && c.n ? c.cust / c.n : 0;
-      return { key: k, label: String(TH_MON[Number(k.slice(5, 7)) - 1] || "").replace(/\.$/, ""), days: c?.n || 0, avg, cust: cu, ph: cu > 0 ? avg / cu : 0 };
+      const cu  = c && c.cn ? c.cust / c.cn : 0;     // ★ หารด้วยจำนวน "วันที่ข้อมูลลูกค้าใช้ได้" เท่านั้น
+      return { key: k, label: String(TH_MON[Number(k.slice(5, 7)) - 1] || "").replace(/\.$/, ""), days: c?.n || 0, avg, cust: cu, ph: cu > 0 ? avg / cu : 0, skipped: c?.skip || 0 };
     });
   }
   return out;
@@ -490,6 +497,10 @@ function insightBubble(day: string, aggs: Agg[], ser: any, mon?: Record<string, 
       const L = mon[a.branch_id] || []; if (L.length < 2) continue;
       const c = L[L.length - 1], pv = L[L.length - 2];
       if (!(c.ph > 0 && pv.ph > 0)) continue;
+      if (c.skipped > 0 || pv.skipped > 0) {        // ★ ข้อมูลลูกค้าเดือนนั้นมีวันที่กรอกผิด — ไม่สรุปเชิงธุรกิจ
+        dataFlags.push(bareName(a.name) + ": มีวันที่กรอกจำนวนลูกค้าผิด (" + (c.skipped + pv.skipped) + " วัน) — ยอดต่อหัวรายเดือนยังเชื่อไม่ได้เต็มที่");
+        continue;
+      }
       const dp = (c.ph / pv.ph - 1) * 100;
       if (dp <= -8) findings.push(bareName(a.name) + " ยอดต่อหัวลด " + Math.abs(dp).toFixed(0) + "% (฿" + pv.ph.toFixed(2) + " → ฿" + c.ph.toFixed(2) + ") — ดูการเสนอขายพ่วง");
       else if (dp >= 10) findings.push(bareName(a.name) + " ยอดต่อหัวเพิ่ม " + dp.toFixed(0) + "% — หาว่าทำอะไรได้ผล แล้วขยายไปสาขาอื่น");
@@ -591,7 +602,7 @@ function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, s
   // ---------- ใบ 1: เฉลี่ยต่อวันรายสาขา เทียบเดือนต่อเดือน ----------
   if (mon) {
     const mb: any[] = [];
-    let upN = 0, dnN = 0, thinMonth = false;
+    let upN = 0, dnN = 0, thinMonth = false; const badDays: string[] = [];
     for (const a of aggs) {
       const list = mon[a.branch_id] || [];
       if (!list.length) continue;
@@ -599,6 +610,7 @@ function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, s
       const dp = prv && prv.avg > 0 && cur.avg > 0 ? (cur.avg / prv.avg - 1) * 100 : null;
       if (dp != null) { if (dp >= 0) upN++; else dnN++; }
       if (cur.days > 0 && cur.days < 7) thinMonth = true;
+      if (cur.skipped > 0) badDays.push(bareName(a.name) + " " + cur.skipped + " วัน");
       mb.push(sepLine());
       mb.push({ type: "box", layout: "baseline", spacing: "sm", contents: [
         { type: "text", text: bareName(a.name), size: "sm", weight: "bold", flex: 7, wrap: false },
@@ -624,7 +636,9 @@ function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, s
       big: "",
       body: [{ type: "text", size: "xxs", color: "#8c8c8c", wrap: true,
                text: "นับเฉพาะวันที่ยอดครบทุกผลัด · วันที่ข้อมูลขาดถูกข้าม" }, ...mb],
-      note: thinMonth ? { text: "เดือนนี้เพิ่งเก็บได้ไม่กี่วัน ค่าเฉลี่ยยังแกว่งง่าย ดูเป็นแนวโน้มคร่าว ๆ ก่อน", color: "#92400e", bg: "#fef3c7" } : undefined,
+      note: badDays.length
+        ? { text: "ตัดวันที่จำนวนลูกค้ากรอกผิดออกจากค่าเฉลี่ยแล้ว: " + badDays.join(" · ") + " — ยอดขายยังนับครบ ตัดเฉพาะตัวเลขลูกค้า/ต่อหัว", color: "#9a3412", bg: "#fff7ed" }
+        : thinMonth ? { text: "เดือนนี้เพิ่งเก็บได้ไม่กี่วัน ค่าเฉลี่ยยังแกว่งง่าย ดูเป็นแนวโน้มคร่าว ๆ ก่อน", color: "#92400e", bg: "#fef3c7" } : undefined,
       btn: "เปิดแดชบอร์ดยอดขาย", url: APP_URL + "/hr/",
     }));
   }
