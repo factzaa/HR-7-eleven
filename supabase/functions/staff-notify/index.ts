@@ -450,9 +450,9 @@ async function scanShiftIncomplete(): Promise<number> {
 //   สถานะ (ครบ/สาย/ขาด) ไม่ได้อยู่ที่สีหัวการ์ดแล้ว — ไปอยู่ที่ตัวเลข 3 ช่องกับข้อความหัวเรื่องแทน
 function shiftColor(startMin: number | null): string {
   if (startMin == null) return "#52525b";
-  if (startMin < 11 * 60) return "#ea8c00";       // เช้า — สีอรุณ
-  if (startMin < 18 * 60) return "#0369a1";       // บ่าย — ฟ้ากลางวัน
-  return "#3730a3";                                // ดึก — น้ำเงินเข้ม
+  if (startMin < 11 * 60) return "#0369a1";       // เช้า — ฟ้า
+  if (startMin < 18 * 60) return "#ea8c00";       // บ่าย — ส้ม
+  return "#6d28d9";                                // ดึก — ม่วง
 }
 const ATTEND_GRACE = 60;          // นาทีหลังกะย่อยสุดท้ายเริ่ม → ยิงแม้คนยังไม่ครบ
 const ATTEND_STALE = 180;         // เลยกำหนดเกินเท่านี้ ไม่ยิงย้อน — รายงานเข้างานที่ช้า 3 ชม.
@@ -546,8 +546,10 @@ async function scanAttendSummary(): Promise<number> {
       const personRow = (r: any) => {
         const a = attBy[r.emp_id]; const st = stOf(r);
         return { type: "box", layout: "baseline", spacing: "sm", contents: [
+          // ★ 17 ก.ย. 69 — ชื่อทุกคนน้ำหนักเท่ากัน ไม่ตัวหนาเฉพาะบางคน อ่านเป็นคอลัมน์เดียวกัน
+          //   สถานะสาย/ขาด บอกด้วยสีตัวอักษร + ช่องขวาสุดแทน
           { type: "text", text: nm[r.emp_id] || r.emp_id, size: "sm", flex: 6,
-            weight: st === "ok" ? "regular" : "bold", color: st === "none" ? "#dc2626" : "#18181b" },
+            weight: "regular", color: st === "none" ? "#dc2626" : "#18181b" },
           { type: "text", text: tagOf(r.sid) || " ", size: "xxs", color: "#8c8c8c", flex: 3 },
           { type: "text", text: a?.check_in ? hhmm(a.check_in) : "—", size: "xs", color: "#8c8c8c", flex: 3, align: "end" },
           { type: "text", text: st === "none" ? "ไม่มา" : st === "late" ? ("สาย " + lateMin(r) + "′") : " ",
