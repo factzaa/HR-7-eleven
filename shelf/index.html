@@ -249,6 +249,26 @@ function _resizeFileRaw(file){
     r.readAsDataURL(file);
   });
 }
+// ============================================================
+// ★ 16 ก.ย. 69 — กู้คืน doLogin()
+//   ฟังก์ชันนี้หายไปตอนแทรกโค้ดหมุนรูปอัตโนมัติ (EXIF) เมื่อ 15 ก.ย.
+//   แต่ยังมีการเรียกอยู่ 3 จุด → กดปุ่ม "เริ่ม" แล้วไม่มีอะไรเกิดขึ้นเลย
+// ============================================================
+async function doLogin(id){
+  id=String(id||'').trim(); if(!id){ toast('err','\u0e01\u0e23\u0e2d\u0e01\u0e23\u0e2b\u0e31\u0e2a\u0e1e\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19'); return; }
+  $('goBtn').innerHTML='<span class="spin"></span>';
+  try{
+    const emp=await window.HR.lookupEmployee(id);
+    if(!emp){ toast('err','\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e23\u0e2b\u0e31\u0e2a\u0e1e\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e19\u0e35\u0e49'); $('goBtn').textContent='\u0e40\u0e23\u0e34\u0e48\u0e21'; return; }
+    if(emp.active===false){ toast('err','\u0e23\u0e2b\u0e31\u0e2a\u0e19\u0e35\u0e49\u0e16\u0e39\u0e01\u0e1b\u0e34\u0e14\u0e43\u0e0a\u0e49\u0e07\u0e32\u0e19'); $('goBtn').textContent='\u0e40\u0e23\u0e34\u0e48\u0e21'; return; }
+    EMP=emp;
+    try{ HRSession.setEmp(emp.emp_id); }catch(_e){}
+    $('s_nm').textContent=emp.nickname||emp.name;
+    $('s_sub').textContent='\u0e23\u0e2b\u0e31\u0e2a '+emp.emp_id+' \u00b7 '+branchName(emp.branch_id);
+    show('step_shelves'); loadShelves();
+  }catch(e){ toast('err','\u0e40\u0e01\u0e34\u0e14\u0e02\u0e49\u0e2d\u0e1c\u0e34\u0e14\u0e1e\u0e25\u0e32\u0e14'); }
+  $('goBtn').textContent='\u0e40\u0e23\u0e34\u0e48\u0e21';
+}
 $('goBtn').onclick=()=>doLogin($('empId').value);
 $('empId').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin($('empId').value); });
 $('changeBtn').onclick=()=>{ EMP=null; $('empId').value=''; try{HRSession.clearEmp();}catch(_e){} show('step_id'); };
