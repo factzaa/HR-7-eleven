@@ -1161,11 +1161,13 @@ function overdueBannerHTML(o){
   if(w.length){
     var wWho={}; w.forEach(function(r){ (wWho[r.who_name]=wWho[r.who_name]||[]).push(r); });
     h+='<div class="card" style="background:#fff7ed;border-color:#fed7aa">'
-      +'<div style="font-weight:700;color:#9a3412;font-size:13.5px">งานตีกลับที่ยังค้าง — รอคนที่ต้องแก้เข้าเวร</div>'
+      +'<div style="font-weight:700;color:#9a3412;font-size:13.5px">งานตีกลับที่ยังค้าง — รอคนที่ต้องแก้เข้างาน</div>'
       +'<div style="font-size:12.5px;color:#9a3412;line-height:1.7;margin-top:3px">'
-        +Object.keys(wWho).map(function(n){ return esc(n)+' ค้าง '+wWho[n].length+' งาน <span class="muted">(วันนี้ไม่มีเวร)</span>'; }).join('<br>')
+        +Object.keys(wWho).map(function(n){
+          var why=(wWho[n][0]&&wWho[n][0].why)||'ยังไม่เข้างาน';
+          return esc(n)+' ค้าง '+wWho[n].length+' งาน <span class="muted">('+esc(why)+')</span>'; }).join('<br>')
       +'</div>'
-      +'<div class="muted" style="font-size:11.5px;margin-top:4px">วันนี้ยังทำงานได้ตามปกติ — ระบบจะล็อกเฉพาะวันที่คนนั้นเข้าเวร</div></div>';
+      +'<div class="muted" style="font-size:11.5px;margin-top:4px">วันนี้ยังทำงานได้ตามปกติ — ระบบจะล็อกเฉพาะตอนที่คนนั้นสแกนหน้าเข้างานแล้ว</div></div>';
   }
   return h;
 }
