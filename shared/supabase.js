@@ -458,8 +458,13 @@
         try{ if (!ov.used_at) await sb.from('checkout_overrides').update({ used_at: new Date().toISOString() }).eq('id', ov.id); }catch(_e){}
         return null;                                            // ผจก. อนุมัติออกงานฉุกเฉินไว้แล้ว
       }
-      const { data: sh } = await sb.from('shifts').select('shift_id,name,main_shift,report_shift').eq('shift_id', sid).maybeSingle();
-      if (sh && sh.report_shift === false) return null;         // กะที่ไม่เข้ารายงาน (เช่น กะ ผจก.) ไม่ล็อก
+      // ★ 16 ก.ย. 69 — เดิมใช้ report_shift ตัดสิน ซึ่งผิดหนัก
+      //   report_shift คือธง "ส่งแจ้งเตือนเข้ากลุ่มไลน์" ซึ่งปิดไว้กับกะย่อยทุกตัว
+      //   (M8/M9/M10/M16/N17/D) ทำให้คนกะย่อยสแกนออกได้ทั้งที่ผลัดยังไม่ส่ง
+      //   ใหม่: ใช้ checkout_lock ตั้งจากเมนู "ตั้งค่ากะ" โดยตรง (ดีฟอลต์ = ล็อก)
+      //   และนับการส่งผลัดตาม "ผลัดหลัก" (main_shift) เสมอ
+      const { data: sh } = await sb.from('shifts').select('*').eq('shift_id', sid).maybeSingle();
+      if (sh && sh.checkout_lock === false) return null;        // กะที่ตั้งไว้ว่าไม่ต้องรอส่งผลัด (เช่น Delivery, กะ ผจก.)
       const grp = (sh && (sh.main_shift || sh.shift_id)) || sid;
       const { data: sub } = await sb.from('shift_submits').select('id')
         .eq('work_date', wd).eq('branch_id', row.branch_id || '').eq('shift_id', grp).maybeSingle();

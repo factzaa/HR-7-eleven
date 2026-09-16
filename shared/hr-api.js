@@ -2771,7 +2771,9 @@
       mgr_review: (d.mgr_review === undefined) ? undefined : !!d.mgr_review,   // กะนี้อยู่ในเวลา ผจก. → ให้ ผจก.ตรวจงานในกะได้
       night_allowance: (d.night_allowance === undefined) ? undefined : !!d.night_allowance,   // กะนี้จ่ายค่ากะดึก (ติ๊กเฉพาะกะดึกจริง)
       report_shift: (d.report_shift === undefined) ? undefined : !!d.report_shift,   // ★ ส่งแจ้งเตือน/รายงานผลัดนี้เข้ากลุ่มไลน์ (ติ๊กเฉพาะผลัดหลัก เช้า/บ่าย/ดึก)
+      checkout_lock: (d.checkout_lock === undefined) ? undefined : !!d.checkout_lock,   // ★ กะนี้ต้องรอหัวหน้าผลัดส่งผลัดก่อนจึงสแกนออกงานได้
     };
+    if (row.checkout_lock === undefined) delete row.checkout_lock;
     if (row.no_ot === undefined) delete row.no_ot;
     if (row.main_shift === undefined) delete row.main_shift;
     if (row.day_value === undefined) delete row.day_value;
