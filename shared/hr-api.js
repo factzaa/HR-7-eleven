@@ -1724,7 +1724,12 @@
     Object.keys(schByEmp).forEach(emp => {
       if (!inBranch(emp)) return;
       const m = ensureM(emp);
-      const dates = Object.keys(schByEmp[emp]);
+      // ★ 17 ก.ย. 69 — ไม่นับเวรที่อยู่ "นอกช่วงการเป็นพนักงาน" (ก่อนวันเริ่มงาน / หลังวันสิ้นสุด)
+      //   เคสจริง: ไอติม เริ่มงาน 07/09 แต่มีเวรค้างของ 06/09 อยู่ 1 แถว → ขึ้นขาดงาน 1 วัน
+      //   ทั้งที่วันนั้นยังไม่ได้เป็นพนักงาน · ของเดิมกันเฉพาะฝั่ง end_date ฝั่งต้นไม่ได้กัน
+      const _e = empById[emp] || {};
+      const inEmploy = d => (!_e.start_date || d >= _e.start_date) && (!_e.end_date || d <= _e.end_date);
+      const dates = Object.keys(schByEmp[emp]).filter(inEmploy);
       const worked = workedByEmp[emp] || new Set();
       let sc = 0, ab = 0;
       dates.forEach(d => { const dv = dvOf(schByEmp[emp][d]); sc += dv; if (d < today && !worked.has(d) && !onLeave(emp, d)) ab += dv; });
@@ -1839,7 +1844,11 @@
       const basis = 'roster';
       const mySchedMap = schByEmp[e.emp_id] || {};
       // ★ ไม่นับ "ขาด/วันควรทำ" หลังวันสิ้นสุดการทำงาน (end_date) — พนักงานลาออกแล้วไม่ควรโดนขาด/หักคะแนน แม้มีเวรจัดล่วงหน้าค้างอยู่
-      const pastSched = Object.keys(mySchedMap).filter(d => d < today && (!e.end_date || d <= e.end_date));
+      // ★ 17 ก.ย. 69 — กันฝั่งต้นด้วย: ไม่นับเวรที่อยู่ "ก่อนวันเริ่มงาน" (start_date)
+      //   เคสจริง: ไอติม เริ่มงาน 07/09 แต่มีเวรค้างของ 06/09 → ขึ้นขาดงาน 1 วันทั้งที่ยังไม่ได้เป็นพนักงาน
+      const pastSched = Object.keys(mySchedMap).filter(d => d < today
+        && (!e.start_date || d >= e.start_date)
+        && (!e.end_date || d <= e.end_date));
       const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(mySchedMap[d]), 0) * 10) / 10;
       let absent = 0;
       pastSched.forEach(d => { if (!workedSet.has(d) && !onLeave(d)) absent += dvOf(mySchedMap[d]); });
@@ -3398,7 +3407,7 @@
       sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb().from('score_rules').select('*').order('sort'),
       sb().from('score_bands').select('*').order('sort'),
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,end_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,start_date,end_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -3449,7 +3458,10 @@
       const ra = ruleByKind['auto_absent_no_notify'];
       const mySchedMap = schByEmp[e.emp_id] || {};
       const workedSet = new Set(myAtt.map(a => a.work_date));
-      const absDays = Object.keys(mySchedMap).filter(d => d < today && !workedSet.has(d) && !onLeave(d));
+      // ★ 17 ก.ย. 69 — ไม่หักคะแนน "ขาดงาน" จากเวรที่อยู่นอกช่วงการเป็นพนักงาน
+      //   ตรงนี้กระทบเงิน (เบี้ยขยัน/โบนัส) ต้องกันทั้งก่อนวันเริ่มงานและหลังวันสิ้นสุด
+      const absDays = Object.keys(mySchedMap).filter(d => d < today && !workedSet.has(d) && !onLeave(d)
+        && (!e.start_date || d >= e.start_date) && (!e.end_date || d <= e.end_date));
       const absWeighted = Math.round(absDays.reduce((s, d) => s + dvOf(mySchedMap[d]), 0) * 10) / 10;
       if (ra && absWeighted > 0) {
         const sum = Math.round(ra.points * absWeighted);
