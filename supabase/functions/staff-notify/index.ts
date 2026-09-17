@@ -425,11 +425,17 @@ async function sendSchedChange(b: any): Promise<number> {
     : minAhead < 24 ? (Math.floor(minAhead) + " ชม. " + Math.round((minAhead % 1) * 60) + " นาที")
     : (Math.round(minAhead / 24) + " วัน");
 
-  const note = removed > 0
-    ? { text: "ปลดคนออกจากเวร " + removed + " รายการ — ตรวจว่าแจ้งพนักงานแล้วหรือยัง และผลัดยังมีคนพอ", color: "#991b1b", bg: "#fef2f2" }
+  // ★ เหตุผลที่ ผจก. กรอกตอนเปลี่ยนแปลง (มีเฉพาะการเปลี่ยนครั้งที่ 2 เป็นต้นไปของสัปดาห์)
+  const reason = String(b.reason || "").trim();
+  const base = removed > 0
+    ? "ปลดคนออกจากเวร " + removed + " รายการ — ตรวจว่าแจ้งพนักงานแล้วหรือยัง และผลัดยังมีคนพอ"
     : (isFinite(minAhead) && minAhead < 12)
-      ? { text: "แก้ก่อนเข้าเวรไม่ถึง 12 ชม. — พนักงานอาจยังไม่รู้ตัว ควรแจ้งให้ชัด", color: "#991b1b", bg: "#fef2f2" }
-      : { text: "แก้ล่วงหน้า " + aheadTxt + " — พนักงานที่ถูกเปลี่ยนกะควรได้รับแจ้งก่อนเข้าเวร", color: "#1e40af", bg: "#eff6ff" };
+      ? "แก้ก่อนเข้าเวรไม่ถึง 12 ชม. — พนักงานอาจยังไม่รู้ตัว ควรแจ้งให้ชัด"
+      : "แก้ล่วงหน้า " + aheadTxt + " — พนักงานที่ถูกเปลี่ยนกะควรได้รับแจ้งก่อนเข้าเวร";
+  const hot = removed > 0 || (isFinite(minAhead) && minAhead < 12);
+  const note = reason
+    ? { text: "เหตุผลที่ ผจก. ระบุ:\n" + reason + "\n\n" + base, color: hot ? "#991b1b" : "#1e40af", bg: hot ? "#fef2f2" : "#eff6ff" }
+    : { text: base, color: hot ? "#991b1b" : "#1e40af", bg: hot ? "#fef2f2" : "#eff6ff" };
 
   const flex = { type: "flex", altText: "ตารางเวรถูกแก้ " + items.length + " รายการ (" + brLabel(bn[bid] || bid) + ") โดย " + actor, contents: card({
     color,
@@ -443,6 +449,7 @@ async function sendSchedChange(b: any): Promise<number> {
       row2("คนที่ถูกแก้", people + " คน"),
       row2("ช่วงวันที่กระทบ", spanTxt),
       row2("เหลือเวลาก่อนเข้าเวร", aheadTxt, (isFinite(minAhead) && minAhead < 12) ? "#dc2626" : "#111111"),
+      row2("ระบุเหตุผล", reason ? "มี" : "ไม่ต้องระบุ (ครั้งแรกของสัปดาห์)", reason ? "#15803d" : "#8c8c8c"),
     ],
     note, photos: [], btn: "เปิดตารางเวรสาขานี้", url: APP_URL + "/hr/" }) };
   const ok = await pushLine(gid, [flex]);
