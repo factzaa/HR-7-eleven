@@ -880,12 +880,23 @@ async function openLeaderPanel(){
       };
     });
   };
-  const _lgSyncCounts=()=>{
+  // ★ มอบครบทั้งหมวด → พับหมวดนั้นเก็บให้เอง (เพราะมอบงานกันเป็นหมวด พับแล้วหมวดถัดไปเลื่อนขึ้นมาพอดี)
+  //   พับเฉพาะ "จังหวะที่เพิ่งครบ" เท่านั้น — หมวดที่พับอยู่แล้วหรือยังไม่ครบ ไม่ไปยุ่ง
+  const _lgSyncCounts=(focusStep)=>{
     groupSteps(b.defs, function(d){ return (d.step!=null?Number(d.step):0); }).forEach(function(gp){
-      var sec=document.querySelector('.stepsec[data-sk="lg:'+gp[0]+'"]'); if(!sec) return;
-      var c=sec.querySelector('.stephead .c'); if(!c) return;
+      var key='lg:'+gp[0];
+      var sec=document.querySelector('.stepsec[data-sk="'+key+'"]'); if(!sec) return;
+      var c=sec.querySelector('.stephead .c');
       var tot=gp[1].length, got=gp[1].filter(function(x){ return !!x.assignment; }).length;
-      c.textContent='มอบแล้ว '+got+'/'+tot;
+      if(c) c.textContent='มอบแล้ว '+got+'/'+tot;
+      if(tot && got>=tot && !sec.classList.contains('col')){
+        sec.classList.add('col');
+        HO_COL[key]=true; _hoColSave();     // จำไว้ให้ตรงกับตอนโหลดใหม่
+        // เลื่อนหัวหมวดที่เพิ่งพับมาไว้บนจอ — หมวดถัดไปจะอยู่ใต้มันพอดี ไม่ต้องไถหา
+        if(focusStep!=null && Number(focusStep)===Number(gp[0])){
+          try{ sec.scrollIntoView({block:'start',behavior:'smooth'}); }catch(e){}
+        }
+      }
     });
   };
   const _lgPatch=(defId,asg)=>{
@@ -897,7 +908,7 @@ async function openLeaderPanel(){
       var tmp=document.createElement('div'); tmp.innerHTML=_defCard(d);
       var fresh=tmp.firstElementChild; if(!fresh) return false;
       node.parentNode.replaceChild(fresh,node);
-      _lgSyncCounts(); wireCloseTask(); _lgWireGive();
+      _lgSyncCounts(d.step!=null?Number(d.step):0); wireCloseTask(); _lgWireGive();
       return true;
     }catch(e){ return false; }
   };
