@@ -220,6 +220,7 @@
         case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id, p);
         case 'hr_sched_fill_week':return await hrSchedFillWeek(p.data, p);
         case 'hr_sched_copy':     return await hrSchedCopy(p.from_start, p.to_start, p.branch_id, p);
+        case 'hr_sched_chg_count': return await hrSchedChgCount(p);
         case 'hr_coverage':       return await hrCoverage(p.filter);
         case 'hr_shift_list':     return await hrShiftList();
         case 'hr_shift_save':     return await hrShiftSave(p.data);
@@ -2566,7 +2567,7 @@
   // ★ 17 ก.ย. 69 — ยิงการ์ด "ตารางเวรถูกแก้ไข" เข้ากลุ่ม ผจก. ทันทีที่ ผจก. แก้
   //   ยิงแบบไม่รอผล — แจ้งเตือนล้มเหลวต้องไม่ทำให้การบันทึกกะล้มตามไปด้วย
   //   ยิงเฉพาะตอน actor เป็น ผจก. เท่านั้น สำนักงานแก้เองไม่ต้องแจ้ง (เป็นคนดูอยู่แล้ว)
-  function _schedNotify(actor, branchId, items) {
+  function _schedNotify(actor, branchId, items, reason) {
     try {
       if (!actor || actor.role !== 'mgr') return;
       const list = (items || []).filter(x => x && x.emp_id && x.work_date);
@@ -2575,7 +2576,7 @@
       if (!base) return;
       fetch(base + '/functions/v1/staff-notify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'sched_change', branch_id: branchId || actor.branch_id || '', actor: actor.name || 'ผจก.', items: list }),
+        body: JSON.stringify({ kind: 'sched_change', branch_id: branchId || actor.branch_id || '', actor: actor.name || 'ผจก.', reason: String(reason || ''), items: list }),
       }).catch(() => { /* เงียบไว้ */ });
     } catch (e) { /* ไม่ให้กระทบงานหลัก */ }
   }
@@ -2656,12 +2657,19 @@
     }
     // ★ 17 ก.ย. 69 — อ่านกะเดิมไว้ก่อนเขียนทับ เพื่อทำช่อง "จาก → เป็น" ทั้งใน log และการ์ดแจ้งเตือน
     //   ของเดิม log เก็บแค่ค่าใหม่ ตรวจย้อนไม่ได้ว่าเปลี่ยนมาจากอะไร
-    const _prev = await _schedCurrent(d.emp_id, d.work_date);
+    //   d.was = กะเดิมก่อนถูกลบทิ้งในขั้นตอน "เปลี่ยนกะ" (ลบ+ลงใหม่) ฝั่งหน้าเว็บส่งมาให้ ไม่งั้นอ่านได้เป็นค่าว่าง
+    const _prev = (await _schedCurrent(d.emp_id, d.work_date)) || String(d.was || '');
     const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
     // log ทุกการบันทึกกะ เพื่อให้ตามรอยได้ว่าใคร/เมื่อไร เพิ่ม-เปลี่ยนกะ (กันเคส "กะเพิ่มเอง")
-    await logAct('บันทึกกะ', d.emp_id, d.work_date + ' · ' + (_prev || 'หยุด') + ' → ' + (d.shift_id || 'หยุด') + (is_cover ? (' · ไปแทนสาขา ' + branch_id) : '') + (d.note ? (' · ' + d.note) : ''), d.actor || 'HR');
-    _schedNotify(g.actor, branch_id, [{ emp_id: d.emp_id, work_date: d.work_date, from: _prev, to: d.shift_id || '' }]);
+    // ★ แยก "ลงเวรครั้งแรก" (บันทึกกะ) ออกจาก "เปลี่ยนแปลง" (เปลี่ยนกะ) — ใช้นับเกณฑ์ป๊อปอัปเหตุผล
+    const _isChange = !!_prev;
+    const _rsn = String(d.reason || '').trim();
+    await logAct(_isChange ? 'เปลี่ยนกะ' : 'บันทึกกะ', d.emp_id,
+      d.work_date + ' · ' + (_prev || 'หยุด') + ' → ' + (d.shift_id || 'หยุด')
+      + (is_cover ? (' · ไปแทนสาขา ' + branch_id) : '') + (d.note ? (' · ' + d.note) : '')
+      + (_rsn ? (' · เหตุผล: ' + _rsn) : ''), d.actor || 'HR');
+    _schedNotify(g.actor, branch_id, [{ emp_id: d.emp_id, work_date: d.work_date, from: _prev, to: d.shift_id || '' }], _rsn);
     // ---- ซิงค์กะให้ "แถวลงเวลา" ตามตารางเวรที่เพิ่งจัด ----
     // แก้ปัญหา: HR เปลี่ยนกะหลังพนักงานเช็กอินแล้ว → attendance.shift_id ยังค้างกะเดิม
     // ทำให้รายงาน(กรองกะ)/แจ้งเตือน "เลยเวลาเลิกกะ" เพี้ยน
@@ -2722,9 +2730,14 @@
     const { error } = await q;
     if (error) throw error;
     const _left = await _schedCurrent(empId, workDate);
-    await logAct('ลบกะ', empId, workDate + ' · ' + (_prev || 'หยุด') + ' → ' + (_left || 'ถูกปลดออก'), (g.actor && g.actor.name) || 'HR');
-    _schedNotify(g.actor, (g.actor && g.actor.branch_id) || null,
-      [{ emp_id: empId, work_date: workDate, from: _prev, to: _left ? _left : null }]);
+    const _rsn = String((auth && auth.reason) || '').trim();
+    await logAct('ลบกะ', empId, workDate + ' · ' + (_prev || 'หยุด') + ' → ' + (_left || 'ถูกปลดออก')
+      + (_rsn ? (' · เหตุผล: ' + _rsn) : ''), (g.actor && g.actor.name) || 'HR');
+    // silent = ขั้นตอนลบของ "เปลี่ยนกะ" (ลบ+ลงใหม่) — ให้ยิงการ์ดครั้งเดียวตอนลงกะใหม่ ไม่ยิงซ้ำ 2 ใบ
+    if (!(auth && auth.silent)) {
+      _schedNotify(g.actor, (g.actor && g.actor.branch_id) || null,
+        [{ emp_id: empId, work_date: workDate, from: _prev, to: _left ? _left : null }], _rsn);
+    }
     return { ok: true };
   }
   // จัด 1 วัน → เติมกะเดียวกันทั้งสัปดาห์ (เฉพาะวันที่ยังว่าง) แล้วแก้ทีหลังได้
@@ -2794,6 +2807,21 @@
     await logAct('คัดลอกตารางเวร (วางทับ)', null, 'จาก ' + fromStart + ' → ' + toStart + ' · ล้างเดิม ' + clearedCount + ' เวร · คัดลอก ' + rows.length + ' เวร', (g.actor && g.actor.name) || 'HR');
     _schedNotify(g.actor, branchId, rows.map(r => ({ emp_id: r.emp_id, work_date: r.work_date, from: '', to: r.shift_id })));
     return { ok: true, copied: rows.length, cleared: clearedCount };
+  }
+
+  // ★ 17 ก.ย. 69 — นับ "การเปลี่ยนแปลงตารางเวร" ของ ผจก. คนนี้ในสัปดาห์ปัจจุบัน
+  //   ใช้ตัดสินว่าต้องให้กรอกเหตุผลไหม (เกณฑ์: มากกว่า 1 ครั้ง/สัปดาห์ → ครั้งที่ 2 เป็นต้นไปต้องกรอก)
+  //   นับเฉพาะ 'เปลี่ยนกะ' กับ 'ลบกะ' — ไม่นับ 'บันทึกกะ' ซึ่งคือการลงเวรครั้งแรกในช่องว่าง
+  async function hrSchedChgCount(auth) {
+    const actor = await _scActor(auth);
+    if (actor.role !== 'mgr') return { ok: true, count: 0, actor: actor.name };
+    try {
+      const { data } = await sb().from('activity_log').select('id')
+        .in('action', ['เปลี่ยนกะ', 'ลบกะ'])
+        .eq('actor', actor.name)
+        .gte('at', _scThisMonday() + 'T00:00:00+07:00');
+      return { ok: true, count: (data || []).length, actor: actor.name };
+    } catch (e) { return { ok: true, count: 0, actor: actor.name }; }
   }
 
   // ---------- COVERAGE (รายงานการไปทำแทนสาขา) ----------
