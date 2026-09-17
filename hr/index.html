@@ -15777,27 +15777,120 @@ function ensureLightbox(){
   if(document.getElementById('lightbox')) return;
   const o=document.createElement('div'); o.id='lightbox';
   o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;display:none;align-items:center;justify-content:center;touch-action:pan-y';
+  const bbtn='background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:38px;height:38px;font-size:20px;line-height:1;cursor:pointer';
   o.innerHTML='<button id="lbClose" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:50%;width:40px;height:40px;font-size:22px;cursor:pointer">×</button>'
     +'<button id="lbPrev" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">‹</button>'
-    +'<img id="lightboxImg" style="max-width:92%;max-height:88%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">'
+    +'<img id="lightboxImg" style="max-width:92%;max-height:88%;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5);transform-origin:center center;will-change:transform;user-select:none;-webkit-user-drag:none">'
     +'<button id="lbNext" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:50%;width:48px;height:48px;font-size:28px;cursor:pointer">›</button>'
-    +'<div id="lbCount" style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:5px 14px;border-radius:999px;font-size:13px"></div>';
+    // ★ 17 ก.ย. 69 — แถบซูม: กดปุ่ม / ดับเบิลแตะ / จีบนิ้ว / ล้อเมาส์ · ซูมแล้วลากดูได้
+    +'<div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px">'
+      +'<button id="lbOut" title="ย่อ" style="'+bbtn+'">−</button>'
+      +'<button id="lbFit" title="ดูเต็มรูป" style="background:rgba(0,0,0,.55);color:#fff;border:0;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:700;cursor:pointer;min-width:66px">100%</button>'
+      +'<button id="lbIn" title="ขยาย" style="'+bbtn+'">+</button>'
+      +'<div id="lbCount" style="background:rgba(0,0,0,.55);color:#fff;padding:6px 14px;border-radius:999px;font-size:13px"></div>'
+    +'</div>';
   document.body.appendChild(o);
-  o.addEventListener('click',e=>{ if(e.target===o) o.style.display='none'; });
-  document.getElementById('lbClose').onclick=()=>{ o.style.display='none'; };
+  const img=document.getElementById('lightboxImg');
+  const closeLB=()=>{ o.style.display='none'; lbZoomReset(); };
+  o.addEventListener('click',e=>{ if(e.target===o && !LBZ.moved) closeLB(); });
+  document.getElementById('lbClose').onclick=closeLB;
   document.getElementById('lbPrev').onclick=e=>{ e.stopPropagation(); lbStep(-1); };
   document.getElementById('lbNext').onclick=e=>{ e.stopPropagation(); lbStep(1); };
-  document.addEventListener('keydown',e=>{ if(o.style.display!=='flex') return; if(e.key==='ArrowLeft') lbStep(-1); else if(e.key==='ArrowRight') lbStep(1); else if(e.key==='Escape') o.style.display='none'; });
-  let sx=0; o.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX; },{passive:true});
-  o.addEventListener('touchend',e=>{ const dx=e.changedTouches[0].clientX-sx; if(Math.abs(dx)>40) lbStep(dx<0?1:-1); });
+  document.getElementById('lbIn').onclick=e=>{ e.stopPropagation(); lbZoomAt(Math.min(6,LBZ.s*1.5), innerWidth/2, innerHeight/2); };
+  document.getElementById('lbOut').onclick=e=>{ e.stopPropagation(); const ns=Math.max(1,LBZ.s/1.5); if(ns<=1.001) lbZoomReset(); else lbZoomAt(ns, innerWidth/2, innerHeight/2); };
+  document.getElementById('lbFit').onclick=e=>{ e.stopPropagation(); if(LBZ.s>1.001) lbZoomReset(); else lbZoomAt(2.5, innerWidth/2, innerHeight/2); };
+  document.addEventListener('keydown',e=>{ if(o.style.display!=='flex') return;
+    if(e.key==='ArrowLeft'&&LBZ.s<=1.01) lbStep(-1);
+    else if(e.key==='ArrowRight'&&LBZ.s<=1.01) lbStep(1);
+    else if(e.key==='Escape') closeLB();
+    else if(e.key==='+'||e.key==='=') lbZoomAt(Math.min(6,LBZ.s*1.5), innerWidth/2, innerHeight/2);
+    else if(e.key==='-') { const ns=Math.max(1,LBZ.s/1.5); if(ns<=1.001) lbZoomReset(); else lbZoomAt(ns, innerWidth/2, innerHeight/2); }
+    else if(e.key==='0') lbZoomReset();
+  });
+  // ----- ล้อเมาส์ = ซูมเข้าจุดที่ชี้ -----
+  o.addEventListener('wheel',e=>{ e.preventDefault();
+    const ns=Math.max(1,Math.min(6, LBZ.s*(e.deltaY<0?1.18:1/1.18)));
+    if(ns<=1.001) lbZoomReset(); else lbZoomAt(ns, e.clientX, e.clientY);
+  },{passive:false});
+  // ----- ดับเบิลคลิก = สลับ 100% ↔ 250% -----
+  img.addEventListener('dblclick',e=>{ e.preventDefault();
+    if(LBZ.s>1.001) lbZoomReset(); else lbZoomAt(2.5, e.clientX, e.clientY);
+  });
+  // ----- ลากด้วยเมาส์ตอนซูมอยู่ -----
+  let md=false, mx=0, my=0, bx=0, by=0;
+  img.addEventListener('mousedown',e=>{ if(LBZ.s<=1.01) return; e.preventDefault(); md=true; LBZ.moved=false; mx=e.clientX; my=e.clientY; bx=LBZ.x; by=LBZ.y; img.style.cursor='grabbing'; });
+  window.addEventListener('mousemove',e=>{ if(!md) return; LBZ.x=bx+(e.clientX-mx); LBZ.y=by+(e.clientY-my); LBZ.moved=true; lbClamp(); lbApply(); });
+  window.addEventListener('mouseup',()=>{ if(md){ md=false; lbApply(); setTimeout(()=>{ LBZ.moved=false; },50); } });
+  // ----- นิ้ว: 1 นิ้ว = ปัดเปลี่ยนรูป (ตอนไม่ซูม) / ลากดู (ตอนซูม) · 2 นิ้ว = จีบซูม -----
+  let T={sx:0,sy:0,x0:0,y0:0,d0:0,s0:1,cx:0,cy:0,n:0,tap:0};
+  o.addEventListener('touchstart',e=>{
+    T.n=e.touches.length; LBZ.moved=false;
+    if(T.n===1){ T.sx=e.touches[0].clientX; T.sy=e.touches[0].clientY; T.x0=LBZ.x; T.y0=LBZ.y; }
+    else if(T.n===2){ const a=e.touches[0], b=e.touches[1];
+      T.d0=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)||1; T.s0=LBZ.s;
+      T.cx=(a.clientX+b.clientX)/2; T.cy=(a.clientY+b.clientY)/2; }
+  },{passive:false});
+  o.addEventListener('touchmove',e=>{
+    if(e.touches.length===2){ e.preventDefault();
+      const a=e.touches[0], b=e.touches[1];
+      const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      lbZoomAt(Math.max(1,Math.min(6, T.s0*d/T.d0)), T.cx, T.cy); LBZ.moved=true;
+    } else if(e.touches.length===1 && LBZ.s>1.01){ e.preventDefault();
+      LBZ.x=T.x0+(e.touches[0].clientX-T.sx); LBZ.y=T.y0+(e.touches[0].clientY-T.sy);
+      LBZ.moved=true; lbClamp(); lbApply();
+    }
+  },{passive:false});
+  o.addEventListener('touchend',e=>{
+    const t=e.changedTouches[0];
+    if(T.n===1 && !LBZ.moved && t){
+      const now=Date.now();
+      if(now-T.tap<300){ T.tap=0; if(LBZ.s>1.001) lbZoomReset(); else lbZoomAt(2.5, t.clientX, t.clientY); return; }
+      T.tap=now;
+    }
+    if(LBZ.s<=1.01 && T.n===1 && t){
+      const dx=t.clientX-T.sx, dy=t.clientY-T.sy;
+      if(Math.abs(dx)>40 && Math.abs(dx)>Math.abs(dy)) lbStep(dx<0?1:-1);
+    }
+    setTimeout(()=>{ LBZ.moved=false; },50);
+  });
+}
+// ----- สถานะการซูมของ lightbox -----
+let LBZ={s:1,x:0,y:0,moved:false};
+function lbApply(){
+  const im=document.getElementById('lightboxImg'); if(!im) return;
+  im.style.transform='translate('+LBZ.x+'px,'+LBZ.y+'px) scale('+LBZ.s+')';
+  im.style.cursor=LBZ.s>1.01?'grab':'zoom-in';
+  const o=document.getElementById('lightbox'); if(o) o.style.touchAction='none';
+  const f=document.getElementById('lbFit'); if(f) f.textContent=Math.round(LBZ.s*100)+'%';
+  // ซูมอยู่ให้ซ่อนลูกศรเปลี่ยนรูป ไม่งั้นกดโดนตอนลากดู
+  const multi=LB.imgs.length>1 && LBZ.s<=1.01;
+  const p=document.getElementById('lbPrev'), n=document.getElementById('lbNext');
+  if(p) p.style.display=multi?'':'none';
+  if(n) n.style.display=multi?'':'none';
+}
+function lbClamp(){
+  const im=document.getElementById('lightboxImg'); if(!im) return;
+  const mx=Math.max(0,(im.offsetWidth*LBZ.s-window.innerWidth)/2);
+  const my=Math.max(0,(im.offsetHeight*LBZ.s-window.innerHeight)/2);
+  LBZ.x=Math.max(-mx,Math.min(mx,LBZ.x));
+  LBZ.y=Math.max(-my,Math.min(my,LBZ.y));
+}
+function lbZoomReset(){ LBZ.s=1; LBZ.x=0; LBZ.y=0; lbApply(); }
+// ซูมโดยยึดจุดที่นิ้ว/เมาส์ชี้ให้อยู่กับที่ (ไม่ใช่ซูมเข้ากลางรูปเสมอ)
+function lbZoomAt(ns,cx,cy){
+  const im=document.getElementById('lightboxImg'); if(!im) return;
+  const r=im.getBoundingClientRect();
+  const ox=r.left+r.width/2, oy=r.top+r.height/2, k=ns/LBZ.s;
+  LBZ.x+= (1-k)*(cx-ox); LBZ.y+= (1-k)*(cy-oy); LBZ.s=ns;
+  lbClamp(); lbApply();
 }
 function lbStep(d){ if(!LB.imgs.length) return; LB.idx=(LB.idx+d+LB.imgs.length)%LB.imgs.length; showLB(); }
 function showLB(){
   document.getElementById('lightboxImg').src=LB.imgs[LB.idx];
+  lbZoomReset();                                  // เปลี่ยนรูปแล้วกลับไปเต็มรูปก่อนเสมอ
+  const c=document.getElementById('lbCount');
   const multi=LB.imgs.length>1;
-  document.getElementById('lbPrev').style.display=multi?'':'none';
-  document.getElementById('lbNext').style.display=multi?'':'none';
-  const c=document.getElementById('lbCount'); c.style.display=multi?'':'none'; c.textContent=(LB.idx+1)+' / '+LB.imgs.length;
+  c.style.display=multi?'':'none'; c.textContent=(LB.idx+1)+' / '+LB.imgs.length;
 }
 function lightbox(imgEl){
   ensureLightbox();
