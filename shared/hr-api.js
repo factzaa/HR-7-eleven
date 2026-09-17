@@ -5139,13 +5139,23 @@
   }
   async function hrTaskList(date) {
     const d = date || bkkToday();
-    const [tR, brR] = await Promise.all([
+    // ★ 17 ก.ย. 69 — ติด step (ขั้นตอนการทำงาน) มากับแถวด้วย
+    //   task_assignments ไม่มีคอลัมน์ step — มันอยู่ที่ task_defs ฝั่ง HR เลยจัดหมวดไม่ได้
+    //   ดึง task_defs มาแมปด้วย task_def_id แล้วยัด step/seq ลงในแถว
+    const [tR, brR, dfR] = await Promise.all([
       sb().from('task_assignments').select('*').eq('work_date', d).order('status').order('emp_name'),
       sb().from('branches').select('branch_id,name'),
+      sb().from('task_defs').select('id,step,sort'),
     ]);
     if (tR.error) throw tR.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
-    const rows = (tR.data || []).map(t => ({ ...t, branch_name: brName[t.branch_id] || t.branch_id || '—' }));
+    const defStep = {}; (dfR.data || []).forEach(x => { defStep[x.id] = x; });
+    const rows = (tR.data || []).map(t => {
+      const df = defStep[t.task_def_id] || {};
+      return { ...t, branch_name: brName[t.branch_id] || t.branch_id || '—',
+               step: df.step != null ? Number(df.step) : 0,
+               def_sort: df.sort != null ? Number(df.sort) : 9999 };
+    });
     const counts = {
       submitted: rows.filter(r => r.status === 'submitted').length,
       sent_back: rows.filter(r => r.status === 'sent_back').length,
