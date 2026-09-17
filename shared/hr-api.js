@@ -8394,6 +8394,10 @@
       wage: Object.assign({ daily_rate: 0, monthly_rate: 0 }, c.wage || {}),
       ot: Object.assign({ mode: 'flat', flat_rate: 60, default_multiplier: 1.5, base_hours_per_day: 8 }, c.ot || {}),
       sso: Object.assign({ enabled: true, rate: 5, cap: 750, wage_min: 1650, wage_max: 15000 }, c.sso || {}),
+      // ★ 17 ก.ย. 69 — กองทุนสงเคราะห์ลูกจ้าง (ตาม พ.ร.บ.คุ้มครองแรงงาน)
+      //   ตั้งค่าได้เหมือนประกันสังคม · ดีฟอลต์ "ปิด" เพราะยังไม่แน่ชัดว่าเริ่มบังคับใช้เมื่อไร
+      //   ฝั่งลูกจ้างหัก 0.25% · (นายจ้างสมทบอีกส่วนหนึ่ง ไม่แสดงบนสลิปพนักงาน)
+      welfare: Object.assign({ enabled: false, rate: 0.25, cap: 0, wage_min: 0, wage_max: 0 }, c.welfare || {}),
       diligence: Object.assign({ require_no_absent: true, allow_late_count: 0 }, c.diligence || {}),
       shift_allowance: Object.assign({ enabled: true, controller_rate: 15, staff_rate: 10 }, c.shift_allowance || {}),
       rounding: Object.assign({ net_round_to: 1 }, c.rounding || {}),
@@ -8406,7 +8410,7 @@
   async function hrPayrollConfigSave(d) {
     d = d || {};
     const ups = [];
-    ['wage', 'ot', 'sso', 'diligence', 'shift_allowance', 'rounding', 'company', 'payday', 'mail'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
+    ['wage', 'ot', 'sso', 'welfare', 'diligence', 'shift_allowance', 'rounding', 'company', 'payday', 'mail'].forEach(k => { if (d[k]) ups.push({ key: k, value: d[k], updated_at: new Date().toISOString() }); });
     if (!ups.length) return { ok: false, error: 'ไม่มีค่าให้บันทึก' };
     const { error } = await sb().from('payroll_config').upsert(ups, { onConflict: 'key' });
     if (error) throw error;
@@ -8426,7 +8430,7 @@
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname || '', branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '', email: e.email || '',
         wage_type: p.wage_type || 'daily', base_rate: p.base_rate != null ? Number(p.base_rate) : 0, ot_rate: p.ot_rate != null ? Number(p.ot_rate) : null,
-        position_allowance: Number(p.position_allowance || 0), diligence_amount: Number(p.diligence_amount || 0), sso_enabled: p.sso_enabled !== false,
+        position_allowance: Number(p.position_allowance || 0), diligence_amount: Number(p.diligence_amount || 0), sso_enabled: p.sso_enabled !== false, welfare_enabled: p.welfare_enabled !== false,
         has_profile: !!pm[e.emp_id],
       };
     });
@@ -8440,7 +8444,7 @@
       emp_id: d.emp_id, wage_type: (d.wage_type === 'monthly' ? 'monthly' : 'daily'), base_rate: num(d.base_rate, 0),
       ot_rate: (d.ot_rate === '' || d.ot_rate == null) ? null : Number(d.ot_rate),
       position_allowance: num(d.position_allowance, 0), diligence_amount: num(d.diligence_amount, 0),
-      sso_enabled: d.sso_enabled !== false, updated_at: new Date().toISOString(),
+      sso_enabled: d.sso_enabled !== false, welfare_enabled: d.welfare_enabled !== false, updated_at: new Date().toISOString(),
     };
     const { error } = await sb().from('payroll_profiles').upsert(row, { onConflict: 'emp_id' });
     if (error) throw error;
@@ -8482,14 +8486,26 @@
       const wage = Math.max(Number(cfg.sso.wage_min || 0), Math.min(Number(cfg.sso.wage_max || 1e12), base_pay));
       sso = Math.min(Number(cfg.sso.cap || 1e12), _pr2(wage * Number(cfg.sso.rate || 5) / 100));
     }
+    // ★ 17 ก.ย. 69 — กองทุนสงเคราะห์ลูกจ้าง — คิดแบบเดียวกับประกันสังคม
+    //   เพดาน/ฐานต่ำสุด-สูงสุด = 0 หมายถึง "ไม่จำกัด" (กฎยังไม่นิ่ง จึงเปิดให้ตั้งเองทั้งหมด)
+    let welfare = 0;
+    const wc = cfg.welfare || {};
+    if (prof.welfare_enabled !== false && wc.enabled === true && base_pay > 0) {
+      const lo = Number(wc.wage_min || 0), hi = Number(wc.wage_max || 0);
+      let wbase = base_pay;
+      if (lo > 0) wbase = Math.max(lo, wbase);
+      if (hi > 0) wbase = Math.min(hi, wbase);
+      welfare = _pr2(wbase * Number(wc.rate || 0) / 100);
+      if (Number(wc.cap || 0) > 0) welfare = Math.min(Number(wc.cap), welfare);
+    }
     const dedSum = (deductions || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
-    const total_deduct = _pr2(sso + Number(advanceAmt || 0) + dedSum);
+    const total_deduct = _pr2(sso + welfare + Number(advanceAmt || 0) + dedSum);
     const rt = Number((cfg.rounding && cfg.rounding.net_round_to) || 1) || 1;
     const net = Math.round((gross - total_deduct) / rt) * rt;
     return {
       base_pay: _pr2(base_pay), days_worked: daysWorked, ot_hours: otHours, ot_pay,
       position_allowance: _pr2(position_allowance), diligence: _pr2(diligence), bonus: _pr2(bonus),
-      gross, sso: _pr2(sso), advance_deduct: _pr2(Number(advanceAmt || 0)), total_deduct, net,
+      gross, sso: _pr2(sso), welfare: _pr2(welfare), advance_deduct: _pr2(Number(advanceAmt || 0)), total_deduct, net,
     };
   }
   async function hrPayrollRun(p) {
@@ -8663,7 +8679,7 @@
     for (const e of (empR.data || [])) {
       const ex = exM[e.emp_id] || {};
       if (finalized && exM[e.emp_id]) { items.push(ex); continue; }   // ปิดรอบแล้ว = คืนยอดที่ตรึงไว้
-      const prof = profM[e.emp_id] || { wage_type: 'daily', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, ot_rate: null };
+      const prof = profM[e.emp_id] || { wage_type: 'daily', base_rate: 0, position_allowance: 0, diligence_amount: 0, sso_enabled: true, welfare_enabled: true, ot_rate: null };
       const s = scMap[e.emp_id] || {};
       const rv = reviewMap[e.emp_id] || {};
       // ★ วันที่มี check-in = อย่างน้อย 1 วัน (กันกะที่ day_value=0 เช่น M8 ทำให้วันหาย · ให้ตรงกับหน้าตรวจ/วินัยที่ใช้ `|| 1`)
@@ -8711,7 +8727,7 @@
         days_override: daysOv,
         base_pay: comp.base_pay, days_worked: comp.days_worked, ot_hours: comp.ot_hours, ot_pay: comp.ot_pay,
         position_allowance: comp.position_allowance, diligence: comp.diligence, bonus: comp.bonus,
-        additions, gross: comp.gross, sso: comp.sso, advance_deduct: comp.advance_deduct, deductions,
+        additions, gross: comp.gross, sso: comp.sso, welfare: comp.welfare, advance_deduct: comp.advance_deduct, deductions,
         total_deduct: comp.total_deduct, net: comp.net,
         bank_name: e.bank_name || null, bank_account: e.bank_account || null, email: e.email || null,
         note: ex.note || null, updated_at: new Date().toISOString(),
@@ -8730,14 +8746,14 @@
     const { data: finalItems } = await sb().from('payroll_items').select('*').eq('run_id', run.id).order('emp_id');
     // ---- YTD: ยอดสะสมทั้งปี (จากรอบที่ปิดแล้วในปีปฏิทินเดียวกัน) ----
     const year = String(cyc.end).slice(0, 4);
-    const ytdEarn = {}, ytdSso = {};
+    const ytdEarn = {}, ytdSso = {}, ytdWel = {};
     try {
       const { data: finRuns } = await sb().from('payroll_runs').select('id')
         .eq('status', 'finalized').gte('period_start', year + '-01-01').lte('period_start', year + '-12-31');
       const finIds = (finRuns || []).map(r => r.id);
       if (finIds.length) {
-        const { data: finIt } = await sb().from('payroll_items').select('emp_id,gross,sso').in('run_id', finIds);
-        (finIt || []).forEach(x => { ytdEarn[x.emp_id] = (ytdEarn[x.emp_id] || 0) + Number(x.gross || 0); ytdSso[x.emp_id] = (ytdSso[x.emp_id] || 0) + Number(x.sso || 0); });
+        const { data: finIt } = await sb().from('payroll_items').select('emp_id,gross,sso,welfare').in('run_id', finIds);
+        (finIt || []).forEach(x => { ytdEarn[x.emp_id] = (ytdEarn[x.emp_id] || 0) + Number(x.gross || 0); ytdSso[x.emp_id] = (ytdSso[x.emp_id] || 0) + Number(x.sso || 0); ytdWel[x.emp_id] = (ytdWel[x.emp_id] || 0) + Number(x.welfare || 0); });
       }
     } catch (_e) { /* ไม่มีรอบเก่า ก็ข้าม */ }
     const addCur = finalized ? 0 : 1;   // รอบนี้ยังไม่ปิด → บวกยอดรอบนี้เข้าไปด้วย (ถ้าปิดแล้ว อยู่ในผลรวมข้างบนแล้ว)
@@ -8766,6 +8782,7 @@
       dual_dates: dualByEmp[it.emp_id] || [],
       ytd_earnings: _pr2((ytdEarn[it.emp_id] || 0) + addCur * Number(it.gross || 0)),
       ytd_sso: _pr2((ytdSso[it.emp_id] || 0) + addCur * Number(it.sso || 0)),
+      ytd_welfare: _pr2((ytdWel[it.emp_id] || 0) + addCur * Number(it.welfare || 0)),
       ytd_tax: 0,
       delivery: (reviewMap[it.emp_id] && reviewMap[it.emp_id].delivery != null) ? Number(reviewMap[it.emp_id].delivery) : null,   // ค่า Delivery (จาก payroll_review) — โมดัลแก้รายคนใช้
       dil_note: dilNoteBy[it.emp_id] || '',   // เหตุผลตัดเบี้ยวินัย (auto) — โชว์ในช่องหมายเหตุ
@@ -8821,12 +8838,12 @@
 
     // ★ แก้ "วันทำงาน" รายคน (override) — กรณีเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ
     //   ว่าง/null = ใช้ตามลงเวลา (คงฐานเดิม) · กรอกตัวเลข = คิดฐานใหม่ = วัน × อัตรา (เฉพาะรายวัน) และคิด ปกส.ใหม่
-    let base_pay = Number(it.base_pay), days_worked = Number(it.days_worked), sso = Number(it.sso);
+    let base_pay = Number(it.base_pay), days_worked = Number(it.days_worked), sso = Number(it.sso), welfare = Number(it.welfare || 0);
     let days_override = it.days_override != null ? Number(it.days_override) : null;
     if (d.days_override !== undefined) {
       days_override = (d.days_override === '' || d.days_override == null) ? null : Number(d.days_override);
       if (days_override != null && (it.wage_type || 'daily') === 'daily') {
-        const { data: prof } = await sb().from('payroll_profiles').select('base_rate,sso_enabled').eq('emp_id', it.emp_id).maybeSingle();
+        const { data: prof } = await sb().from('payroll_profiles').select('base_rate,sso_enabled,welfare_enabled').eq('emp_id', it.emp_id).maybeSingle();
         const globalDaily = Number((cfg.wage && cfg.wage.daily_rate) || 0);
         const rate = (prof && prof.base_rate != null && Number(prof.base_rate) > 0) ? Number(prof.base_rate) : globalDaily;
         days_worked = days_override;
@@ -8837,19 +8854,30 @@
           const w = Math.max(Number(cfg.sso.wage_min || 0), Math.min(Number(cfg.sso.wage_max || 1e12), base_pay));
           sso = Math.min(Number(cfg.sso.cap || 1e12), _pr2(w * Number(cfg.sso.rate || 5) / 100));
         }
+        // ★ 17 ก.ย. 69 — คิดกองทุนสงเคราะห์ลูกจ้างใหม่จากฐานใหม่ด้วย (เดิมค้างค่าเก่าไว้)
+        welfare = 0;
+        const wc2 = cfg.welfare || {};
+        if ((!prof || prof.welfare_enabled !== false) && wc2.enabled === true && base_pay > 0) {
+          const lo2 = Number(wc2.wage_min || 0), hi2 = Number(wc2.wage_max || 0);
+          let wb = base_pay;
+          if (lo2 > 0) wb = Math.max(lo2, wb);
+          if (hi2 > 0) wb = Math.min(hi2, wb);
+          welfare = _pr2(wb * Number(wc2.rate || 0) / 100);
+          if (Number(wc2.cap || 0) > 0) welfare = Math.min(Number(wc2.cap), welfare);
+        }
       } else if (days_override != null) {
         days_worked = days_override;   // รายเดือน: บันทึกวันไว้ให้ตรง แต่ฐานคงเดิม
       }
     }
 
     const gross = _pr2(base_pay + Number(it.ot_pay) + Number(it.position_allowance) + Number(it.diligence) + Number(it.bonus) + addSum);
-    const total_deduct = _pr2(sso + Number(it.advance_deduct) + dedSum);
+    const total_deduct = _pr2(sso + welfare + Number(it.advance_deduct) + dedSum);
     const rt = Number((cfg.rounding && cfg.rounding.net_round_to) || 1) || 1;
     const net = Math.round((gross - total_deduct) / rt) * rt;
-    const upd = { additions, deductions, base_pay, days_worked, days_override, sso, gross, total_deduct, net, note: d.note != null ? d.note : it.note, edited_by: 'สำนักงาน (HR)', updated_at: new Date().toISOString() };
+    const upd = { additions, deductions, base_pay, days_worked, days_override, sso, welfare, gross, total_deduct, net, note: d.note != null ? d.note : it.note, edited_by: 'สำนักงาน (HR)', updated_at: new Date().toISOString() };
     const { error } = await sb().from('payroll_items').update(upd).eq('id', d.id);
     if (error) throw error;
-    return { ok: true, base_pay, days_worked, sso, gross, total_deduct, net };
+    return { ok: true, base_pay, days_worked, sso, welfare, gross, total_deduct, net };
   }
   // ---- Backfill ลงเวลาย้อนหลัง (กรณีเพิ่งเริ่มใช้ระบบ) ----
   //   นับ "มาปกติ" late_min=0 status=CLOSED source=backfill · ไม่ทับแถวจริง (ignoreDuplicates)
