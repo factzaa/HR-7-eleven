@@ -358,6 +358,97 @@ async function scanQaRemoved(): Promise<number> {
   return sent;
 }
 
+// ===== kind:sched_change — ตารางเวรถูกแก้โดย ผจก. → ยิงเข้ากลุ่ม ผจก. ทันที =====
+// ★ 17 ก.ย. 69 — ไว้ให้สำนักงานตรวจย้อนได้ว่าใครแก้เวรของใคร เป็นอะไร เมื่อไร
+//   ยิงทันทีต่อการแก้ 1 ครั้ง (ตามที่สั่ง) · คำสั่งเหมา เช่น จัดทั้งสัปดาห์/คัดลอก จะมาเป็นหลายรายการในใบเดียว
+//   ยิงเฉพาะที่ ผจก. แก้ — สำนักงานแก้เองไม่ต้องแจ้ง (ฝั่ง hr-api เป็นคนกรองให้ก่อนเรียกมา)
+type SchedItem = { emp_id?: string; work_date?: string; from?: string | null; to?: string | null };
+async function sendSchedChange(b: any): Promise<number> {
+  const gid = await mgrGroupId();
+  if (!gid) return 0;
+  const items: SchedItem[] = Array.isArray(b.items) ? b.items.slice(0, 60) : [];
+  if (!items.length) return 0;
+  const bid = String(b.branch_id || "");
+  const actor = String(b.actor || "ผจก.").trim();
+
+  // ชื่อเล่นพนักงาน + ชื่อกะ — ดึงจากฐานข้อมูล ไม่ให้ฝั่งเรียกส่งชื่อมาเอง (กันข้อมูลไม่ตรงกัน)
+  const ids = [...new Set(items.map((x) => String(x.emp_id || "")).filter(Boolean))];
+  const nm: Record<string, string> = {};
+  if (ids.length) {
+    const { data } = await sb.from("employees").select("emp_id,name,nickname").in("emp_id", ids);
+    (data || []).forEach((e: any) => { nm[e.emp_id] = e.nickname || e.name || e.emp_id; });
+  }
+  const { data: shs } = await sb.from("shifts").select("shift_id,name,code,start_time");
+  const shName: Record<string, string> = {}; const shStart: Record<string, string> = {};
+  (shs || []).forEach((s: any) => { shName[s.shift_id] = s.name || s.shift_id; shStart[s.shift_id] = String(s.start_time || ""); });
+  const lbl = (v: string | null | undefined) => {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return "หยุด";
+    return s.split("+").map((x) => shName[x.trim()] || x.trim()).join(" + ");
+  };
+  const bn = await branchNames();
+
+  // เหลือเวลาอีกกี่ชั่วโมงก่อนเข้าเวรของรายการที่ใกล้ที่สุด — ใช้ตัดสินว่าเป็นการแก้กระชั้นชิดไหม
+  const nowMs = Date.now() + TZ;
+  let minAhead = Infinity;
+  for (const it of items) {
+    const d = String(it.work_date || ""); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    const sid = String(it.to || it.from || "");
+    const hm = (shStart[sid] || "06:00").slice(0, 5).split(":");
+    const start = Date.parse(d + "T00:00:00Z") + ((parseInt(hm[0]) || 0) * 60 + (parseInt(hm[1]) || 0)) * 60000;
+    const ahead = (start - nowMs) / 3600000;
+    if (ahead < minAhead) minAhead = ahead;
+  }
+  const removed = items.filter((x) => x.to == null).length;
+  const urgent = removed > 0 || (isFinite(minAhead) && minAhead < 12);
+  const color = urgent ? "#dc2626" : "#185FA5";
+
+  const dow = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+  const dLbl = (d: string) => { try { const x = new Date(d + "T00:00:00Z"); return dow[x.getUTCDay()] + " " + x.getUTCDate(); } catch { return d; } };
+  // แถว: วัน | ชื่อ | จาก → เป็น  (ทุกแถวมี 3 ช่อง flex เท่ากันเสมอ ไม่งั้นคอลัมน์เลื่อน)
+  const chRow = (it: SchedItem) => {
+    const gone = it.to == null;
+    const to = gone ? "ถูกปลดออก" : lbl(it.to);
+    return { type: "box", layout: "baseline", spacing: "sm", margin: "xs", contents: [
+      { type: "text", text: dLbl(String(it.work_date || "")), size: "xxs", color: "#8c8c8c", flex: 3 },
+      { type: "text", text: nm[String(it.emp_id || "")] || String(it.emp_id || "—"), size: "xs", weight: "bold", flex: 5 },
+      { type: "text", text: lbl(it.from) + " → " + to, size: "xxs", weight: "bold", align: "end", flex: 9,
+        color: gone ? "#dc2626" : "#18181b" },
+    ] };
+  };
+  const dates = [...new Set(items.map((x) => String(x.work_date || "")).filter(Boolean))].sort();
+  const people = [...new Set(items.map((x) => String(x.emp_id || "")).filter(Boolean))].length;
+  const spanTxt = dates.length === 1 ? fmtThaiDate(dates[0])
+    : (fmtThaiDate(dates[0]) + " – " + fmtThaiDate(dates[dates.length - 1]));
+  const aheadTxt = !isFinite(minAhead) ? "—"
+    : minAhead < 0 ? "ย้อนหลัง (ผ่านไปแล้ว)"
+    : minAhead < 24 ? (Math.floor(minAhead) + " ชม. " + Math.round((minAhead % 1) * 60) + " นาที")
+    : (Math.round(minAhead / 24) + " วัน");
+
+  const note = removed > 0
+    ? { text: "ปลดคนออกจากเวร " + removed + " รายการ — ตรวจว่าแจ้งพนักงานแล้วหรือยัง และผลัดยังมีคนพอ", color: "#991b1b", bg: "#fef2f2" }
+    : (isFinite(minAhead) && minAhead < 12)
+      ? { text: "แก้ก่อนเข้าเวรไม่ถึง 12 ชม. — พนักงานอาจยังไม่รู้ตัว ควรแจ้งให้ชัด", color: "#991b1b", bg: "#fef2f2" }
+      : { text: "แก้ล่วงหน้า " + aheadTxt + " — พนักงานที่ถูกเปลี่ยนกะควรได้รับแจ้งก่อนเข้าเวร", color: "#1e40af", bg: "#eff6ff" };
+
+  const flex = { type: "flex", altText: "ตารางเวรถูกแก้ " + items.length + " รายการ (" + brLabel(bn[bid] || bid) + ") โดย " + actor, contents: card({
+    color,
+    headLabel: (urgent ? "⚠️ แก้เวรต้องตรวจ · " : "ตารางเวรถูกแก้ไข · ") + brLabel(bn[bid] || bid),
+    title: "🗓️ " + items.length + " รายการ",
+    sub: "โดย " + actor + " · " + spanTxt,
+    rows: [
+      ...items.slice(0, 10).map(chRow),
+      ...(items.length > 10 ? [{ type: "text", text: "… และอีก " + (items.length - 10) + " รายการ — เปิดแอปดูทั้งหมด", size: "xxs", color: "#8c8c8c", margin: "sm" }] : []),
+      { type: "separator", margin: "md" },
+      row2("คนที่ถูกแก้", people + " คน"),
+      row2("ช่วงวันที่กระทบ", spanTxt),
+      row2("เหลือเวลาก่อนเข้าเวร", aheadTxt, (isFinite(minAhead) && minAhead < 12) ? "#dc2626" : "#111111"),
+    ],
+    note, photos: [], btn: "เปิดตารางเวรสาขานี้", url: APP_URL + "/hr/" }) };
+  const ok = await pushLine(gid, [flex]);
+  return ok ? 1 : 0;
+}
+
 // ===== scan:shift_open — สรุปเปิดกะ (หลังเวลาเข้ากะ 30 นาที) รวมใบเดียวต่อสาขา/ผลัด เข้ากลุ่ม ผจก. =====
 // ★ 17 ก.ย. 69 — เอา scanShiftOpen() ออก (แจ้งเตือนเปิดกะแบบเดิม)
 //   เดิมยิงแยก "สาขา × ผลัด" = สูงสุด 9 ข้อความ/วัน และกรองเฉพาะผลัดหลัก
@@ -994,6 +1085,8 @@ Deno.serve(async (req) => {
     if (b.scan === "qa_due")   return json({ ok: true, scan: "qa_due",   sent: await scanQaDue() });
     if (b.scan === "shift_incomplete") return json({ ok: true, scan: "shift_incomplete", sent: await scanShiftIncomplete() });
     if (b.scan === "qa_removed") return json({ ok: true, scan: "qa_removed", sent: await scanQaRemoved() });
+    // ★ ตารางเวรถูกแก้โดย ผจก. → ยิงทันที (ไม่ผ่าน cron)
+    if (b.kind === "sched_change") return json({ ok: true, kind: "sched_change", sent: await sendSchedChange(b) });
     if (b.scan === "shift_open" || b.scan === "attend_summary") return json({ ok: true, scan: "attend_summary", sent: await scanAttendSummary() });
     if (b.scan === "shift_close") return json({ ok: true, scan: "shift_close", sent: await scanShiftClose() });
     if (b.scan === "qssi_due")  return json({ ok: true, scan: "qssi_due",  sent: await scanQssiDue() });
