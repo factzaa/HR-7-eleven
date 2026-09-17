@@ -337,6 +337,40 @@ function kvRow(label: string, value: string, color = "#111111") {
 }
 function capText(t: string) { return { type: "text", text: t, size: "xs", color: "#8c8c8c", margin: "md" }; }
 function sepLine() { return { type: "separator", margin: "md" }; }
+function noteBox(text: string, color: string, bg: string) {
+  return { type: "box", layout: "vertical", margin: "md", backgroundColor: bg, cornerRadius: "8px", paddingAll: "10px",
+    contents: [{ type: "text", text, wrap: true, size: "xs", color }] };
+}
+// ★ 17 ก.ย. 69 — แถบเทียบแนวนอน ตามแบบที่ตกลงกันไว้ (ของเดิมทำเป็นกราฟแท่งแนวตั้ง ผิดแบบ)
+//   1 แถว = 1 วัน : ป้ายวัน · ตัวเลข · รางแถบเติมตามสัดส่วนของวันสูงสุด
+//   แถวล่าสุด = ตัวหนา + แถบใช้สีสถานะของการ์ด · แถวก่อนหน้าเป็นสีเทา
+//   หมายเหตุ: ต้องใช้ layout "horizontal" ไม่ใช่ "baseline" — baseline ใส่กล่องซ้อนไม่ได้ LINE จะตีกลับ
+const BAR_TRACK = "#f2f4f7", BAR_DIM = "#c3c9d0";
+function barCell(pct: number, color: string, flex = 7) {
+  const w = Math.max(0, Math.min(100, Math.round(pct)));
+  return { type: "box", layout: "horizontal", flex, height: "7px", backgroundColor: BAR_TRACK, cornerRadius: "3px",
+    contents: w > 0
+      ? [{ type: "box", layout: "vertical", width: w + "%", backgroundColor: color, cornerRadius: "3px", contents: [{ type: "filler" }] }, { type: "filler" }]
+      : [{ type: "filler" }] };
+}
+function hBarRows(vals: number[], labels: string[], hiColor: string) {
+  const mx = Math.max(1, ...vals);
+  const last = vals.length - 1;
+  return vals.map((v, i) => {
+    const now = i === last;
+    return { type: "box", layout: "horizontal", spacing: "sm", margin: "xs", alignItems: "center", contents: [
+      { type: "text", text: labels[i] || " ", size: "xxs", flex: 3, gravity: "center",
+        color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular" },
+      { type: "text", text: v > 0 ? th(v) : "—", size: "xxs", flex: 5, align: "end", gravity: "center",
+        color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular" },
+      barCell(v > 0 ? Math.max(3, (v / mx) * 100) : 0, now ? hiColor : BAR_DIM, 7),
+    ] };
+  });
+}
+const TH_DOW_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const dayNum = (d: string) => { try { return String(new Date(d + "T00:00:00Z").getUTCDate()); } catch { return ""; } };
+const dowDay = (d: string) => (dowLabel(d) || "") + " " + dayNum(d);
+const dowFull = (d: string) => { try { return TH_DOW_FULL[new Date(d + "T00:00:00Z").getUTCDay()] || ""; } catch { return ""; } };
 // กราฟแท่ง — กล่องแนวตั้งความสูงเป็น px (วิธีมาตรฐานของ Flex ไม่ต้องใช้รูป)
 function barChart(vals: number[], labels: string[], hiIdx = -1, color = C_GREEN, dim = "#bbf7d0") {
   const max = Math.max(1, ...vals);
@@ -450,12 +484,13 @@ function monRows(list: MonStat[]) {
     const prev = i > 0 ? list[i - 1].avg : 0;
     const dp = prev > 0 && m.avg > 0 ? (m.avg / prev - 1) * 100 : null;
     const now = i === list.length - 1;
-    const w = Math.max(3, Math.round((m.avg / mx) * 100));
-    return { type: "box", layout: "baseline", spacing: "sm", margin: "xs", contents: [
-      { type: "text", text: m.label, size: "xxs", color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular", flex: 3 },
-      { type: "text", text: m.avg > 0 ? th(m.avg) : "—", size: "xxs", color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular", align: "end", flex: 5 },
+    // ★ 17 ก.ย. 69 — คืนรางแถบแนวนอนตามแบบที่ตกลงกันไว้ (ก่อนหน้านี้หายไป เหลือแต่ตัวเลข)
+    return { type: "box", layout: "horizontal", spacing: "sm", margin: "xs", alignItems: "center", contents: [
+      { type: "text", text: m.label, size: "xxs", gravity: "center", color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular", flex: 3 },
+      { type: "text", text: m.avg > 0 ? th(m.avg) : "—", size: "xxs", gravity: "center", color: now ? "#18181b" : "#8c8c8c", weight: now ? "bold" : "regular", align: "end", flex: 5 },
+      barCell(m.avg > 0 ? Math.max(3, (m.avg / mx) * 100) : 0, now ? C_GREEN : BAR_DIM, 6),
       { type: "text", text: dp == null ? "—" : (dp >= 0 ? "+" : "−") + Math.abs(dp).toFixed(1) + "%",
-        size: "xxs", weight: "bold", align: "end", flex: 5,
+        size: "xxs", weight: "bold", align: "end", gravity: "center", flex: 5,
         color: dp == null ? C_GREY : dp >= 0 ? C_GREEN : C_RED },
     ] };
   });
@@ -661,31 +696,10 @@ function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, s
     }));
   }
 
-  // ---------- ใบภาพรวมยอดวันล่าสุด (ของเดิม) ----------
-  bubbles.push(salesBubble({
-    color: full ? pctColor(gp) : C_AMBER,
-    headLabel: "ภาพรวมทุกสาขา · " + (!full ? "ยอดยังไม่ครบทุกผลัด" : gp == null ? "ยังไม่ตั้งเป้า" : gp >= 100 ? "เกินเป้า" : "ต่ำกว่าเป้า"),
-    headPct: full ? gp : null, headPctText: gp == null ? undefined : gp.toFixed(1) + "% ของเป้าหมาย",
-    cap: (full ? "ยอดขายรวมเมื่อวาน · " : "ยอดขายเท่าที่ส่งแล้ว · ") + fmtThaiDate(day),
-    big: "฿" + th(grand),
-    delta: full ? deltaOf(grand, prevGrand) : undefined,
-    body: [
-      sepLine(),
-      ...aggs.map((a) => {
-        const p = achievePct(a), ms = missShifts(a);
-        if (!a.reported) return kvRow(bareName(a.name), "ยังไม่ส่งยอด", C_GREY);
-        if (ms.length) return kvRow(bareName(a.name), "฿" + th(a.total) + "  ขาด" + ms.join(","), C_AMBER);
-        return kvRow(bareName(a.name), "฿" + th(a.total) + "  " + (p == null ? "—" : p.toFixed(0) + "%"), pctColor(p));
-      }),
-      sepLine(),
-      kvRow("ลูกค้ารวม", th(cust) + " คน"),
-      kvRow("ยอดต่อหัว", cust > 0 ? "฿" + (grand / cust).toFixed(2) : "—"),
-      kvRow("ส่งยอดแล้ว", rep.length + " / " + aggs.length + " สาขา", rep.length === aggs.length ? C_GREEN : C_AMBER),
-      kvRow("ยอดครบทุกผลัด", doneCnt + " / " + aggs.length + " สาขา", full ? C_GREEN : C_AMBER),
-    ],
-    note: full ? undefined : noteAll,
-    btn: "เปิดแดชบอร์ดยอดขาย", url: APP_URL + "/hr/",
-  }));
+  // ---------- ★ 17 ก.ย. 69 — เอา "ใบภาพรวมทุกสาขา (ยอดรวม)" ออกตามแบบที่ตกลงกันไว้ ----------
+  //   ชุดที่ตกลงกันคือ ใบ 1 = เฉลี่ยต่อวันรายสาขา (แทนใบยอดรวมเดิม) → ใบ 2-4 = รายสาขา
+  //   ใบยอดรวมค้างอยู่เพราะตอนเพิ่มใบใหม่ผมเพิ่มต่อท้ายแทนที่จะแทนที่ของเดิม
+  //   ตัวเลขรวม/ส่งยอดแล้ว/ยอดครบทุกผลัด ย้ายไปอยู่บนใบ 1 และใบวิเคราะห์แล้ว
 
   for (const a of aggs) {
     const p = achievePct(a);
@@ -699,32 +713,59 @@ function dailyCarousel(day: string, aggs: Agg[], prevMap: Record<string, Agg>, s
       }));
       continue;
     }
+    // ★ 17 ก.ย. 69 — สร้างใหม่ตามแบบที่ตกลงกันไว้ (flex-set.html ใบ 2-4)
+    //   เดิมใช้กราฟแท่งแนวตั้ง — แบบจริงคือ 7 แถวแนวนอน วันละแถว มีรางแถบเทียบกัน
     const ser7 = (ser.byBranch[a.branch_id] || []).map((x: number) => Math.round(x));
-    const hi = ser7.length ? ser7.indexOf(Math.max(...ser7)) : -1;
+    const st7 = w7stat(ser7);
+    const iMax = st7 ? ser7.indexOf(st7.max) : -1;
+    const isLow = !!(st7 && a.total > 0 && a.total <= st7.min);
+    // ตกติดกัน 2 วัน (วันล่าสุด < เมื่อวาน < วันก่อนหน้า)
+    const n7 = ser7.length;
+    const drop2 = n7 >= 3 && ser7[n7 - 1] > 0 && ser7[n7 - 2] > 0 && ser7[n7 - 3] > 0 &&
+                  ser7[n7 - 1] < ser7[n7 - 2] && ser7[n7 - 2] < ser7[n7 - 3];
+    const statusColor = a.complete ? pctColor(p) : C_AMBER;
+    const headState = !a.complete ? "ยอดยังไม่ครบทุกผลัด"
+      : isLow ? "ต่ำสุดในรอบสัปดาห์"
+      : p == null ? "ยังไม่ตั้งเป้า" : p >= 100 ? "เกินเป้า" : "ต่ำกว่าเป้า";
+    const dv = st7 && st7.avg > 0 ? (a.total / st7.avg - 1) * 100 : null;
+    // เป้าตั้งสูงผิดปกติเทียบยอดจริงเฉลี่ย 7 วัน — ให้ไปตรวจว่าตั้งเป้าถูกไหม
+    const tgtOver = (st7 && st7.avg > 0 && a.target_total > 0) ? (a.target_total / st7.avg - 1) * 100 : null;
+    const branchNotes: any[] = [];
+    if (a.complete && (drop2 || isLow)) {
+      const bits: string[] = [];
+      if (drop2) bits.push("ตกต่อเนื่อง 2 วัน");
+      if (isLow) bits.push("เป็นวันต่ำสุดของสัปดาห์");
+      const pv = prevMap[a.branch_id];
+      const cu = (pv && pv.customers > 0 && a.customers > 0) ? " · ลูกค้าจาก " + th(pv.customers) + " เหลือ " + th(a.customers) + " คน" : "";
+      branchNotes.push(noteBox(bits.join(" และ ") + cu, "#991b1b", "#fef2f2"));
+    }
+    if (tgtOver != null && tgtOver >= 30) {
+      branchNotes.push(noteBox("เป้าวันนี้ตั้งไว้ ฿" + th(a.target_total) + " สูงกว่ายอดจริงเฉลี่ย 7 วัน ~" + Math.round(tgtOver) + "% — ตรวจว่าตั้งเป้าถูกไหม", "#92400e", "#fef3c7"));
+    }
+    if (!a.complete) branchNotes.push(noteBox(noteOne(a).text, noteOne(a).color, noteOne(a).bg));
     bubbles.push(salesBubble({
-      color: a.complete ? pctColor(p) : C_AMBER,
-      headLabel: bareName(a.name) + " · " + (!a.complete ? "ยอดยังไม่ครบทุกผลัด" : p == null ? "ยังไม่ตั้งเป้า" : p >= 100 ? "เกินเป้า" : "ต่ำกว่าเป้า"),
+      color: statusColor,
+      headLabel: bareName(a.name) + " · " + headState,
       headPct: a.complete ? p : null, headPctText: p == null ? undefined : p.toFixed(1) + "% ของเป้า ฿" + th(a.target_total),
-      cap: a.complete ? "ยอดขายรวม" : "ยอดขายเท่าที่ส่งแล้ว", big: "฿" + th(a.total),
-      delta: a.complete ? deltaOf(a.total, prevMap[a.branch_id]?.total || 0) : undefined,
+      cap: (a.complete ? "ยอดวันล่าสุด · " : "ยอดเท่าที่ส่งแล้ว · ") + dowFull(day) + " " + fmtThaiDate(day),
+      big: "฿" + th(a.total),
+      delta: a.complete ? (() => { const d2 = deltaOf(a.total, prevMap[a.branch_id]?.total || 0); return d2 ? { text: d2.text + " จากเมื่อวาน", color: d2.color } : undefined; })() : undefined,
       body: [
-        sepLine(), capText("ย้อนหลัง 7 วัน"),
-        ...barChart(ser7, ser.dates.map(dowLabel), hi, pctColor(p), p != null && p < 95 ? "#fecaca" : "#bbf7d0"),
-        // ★ 17 ก.ย. 69 — ตัวเลขประกอบกราฟ 7 วัน (เดิมมีแต่แท่ง อ่านค่าไม่ได้)
-        ...w7rows(ser7, ser.dates, a.total),
+        sepLine(), capText("7 วันหลังสุด"),
+        ...hBarRows(ser7, ser.dates.map(dowDay), statusColor),
         sepLine(),
-        kvRow("ลูกค้า", th(a.customers) + " คน"),
-        kvRow("ยอดต่อหัว", "฿" + perHead(a).toFixed(2)),
-        kvRow("ยอดบัตร", "฿" + th(a.card)),
-        kvRow("All Cafe", "฿" + th(a.allcafe)),
-        kvRow("Delivery", "฿" + th(a.delivery)),
+        kvRow("เฉลี่ย 7 วัน", st7 ? "฿" + th(st7.avg) : "—"),
+        kvRow("วันนี้เทียบเฉลี่ย", dv == null ? "—" : (dv >= 0 ? "+" : "−") + Math.abs(dv).toFixed(1) + "%",
+          dv == null ? C_GREY : dv >= -3 ? C_GREEN : dv >= -10 ? C_AMBER : C_RED),
+        kvRow("สูงสุดสัปดาห์", iMax >= 0 && st7 ? dowDay(ser.dates[iMax]) + " · ฿" + th(st7.max) : "—"),
+        kvRow("ลูกค้า / ต่อหัว", th(a.customers) + " คน · ฿" + perHead(a).toFixed(2)),
         ...(a.complete ? [] : [
           kvRow("ส่งยอดแล้ว", a.shiftRows + " / " + SHIFTS_PER_DAY + " ผลัด", C_AMBER),
           kvRow("ขาดผลัด", missShifts(a).join(", ") || "—", C_AMBER),
         ]),
+        ...branchNotes,
       ],
-      note: a.complete ? undefined : noteOne(a),
-      btn: "ดูรายละเอียดสาขา", url: APP_URL + "/hr/",
+      btn: "ดูรายละเอียดสาขานี้", url: APP_URL + "/hr/",
     }));
   }
   const ab = insightBubble(day, aggs, ser, mon);   // ★ ใบวิเคราะห์ท้ายสุด
