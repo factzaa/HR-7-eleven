@@ -243,10 +243,12 @@ function _orientFile(file){
   return Promise.race([ work, new Promise(function(r){ setTimeout(function(){ r(file); },10000); }) ])
     .catch(function(){ return file; });
 }
+// ★ 17 ก.ย. 69 — กลับไปใช้แบบเดิม ไม่หมุนรูปเองตาม EXIF
+//   เบราว์เซอร์สมัยใหม่หมุนรูปตาม EXIF ให้เองอยู่แล้วตอนสร้างภาพ
+//   พอเราหมุนซ้ำเอง รูปเลยหมุนสองรอบ — ออกมาเอียง/กลับด้านแทบทุกรูป
+//   คง _exifOri/_orientFile ไว้เฉย ๆ เผื่อเครื่องเก่าที่ไม่หมุนให้ จะได้เปิดกลับได้ทันที
 async function resizeFile(file){
-  var f=file;
-  try{ f=await _orientFile(file); }catch(_e){ f=file; }
-  return _resizeFileRaw(f||file);
+  return _resizeFileRaw(file);
 }
 function _resizeFileRaw(file){
   return new Promise(res=>{
