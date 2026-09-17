@@ -14843,6 +14843,54 @@ function renderSchedule(){
     }
   }
 }
+// ★ 17 ก.ย. 69 — ด่านกรอกเหตุผลก่อน "เปลี่ยนแปลง" ตารางเวร (โหมด ผจก. เท่านั้น)
+//   กติกาที่เจ้าของสั่ง: เปลี่ยนแปลงมากกว่า 1 ครั้งต่อสัปดาห์ → ครั้งที่ 2 เป็นต้นไปต้องกรอกเหตุผล
+//   นิยาม "เปลี่ยนแปลง" = แก้เวรที่ "มีกะอยู่แล้ว" หรือลบเวรทิ้ง
+//   การลงเวรครั้งแรกในช่องว่าง (หยุด → กะ) ไม่นับ เพราะเป็นการ "จัดตาราง" ไม่ใช่การ "เปลี่ยนแปลง"
+//   ถ้าไม่แยกตรงนี้ ป๊อปอัปจะเด้งตั้งแต่ช่องที่สองของการจัดตารางปกติ แล้วจะกลายเป็นเสียงรบกวน
+let SC_CHG = null;                       // จำนวนครั้งที่ ผจก. คนนี้เปลี่ยนแปลงไปแล้วในสัปดาห์นี้
+async function scChgCount(force){
+  if(!MGR_MODE) return 0;
+  if(SC_CHG!=null && !force) return SC_CHG;
+  try{ const r=await post({ action:'hr_sched_chg_count', ...authBody() }); SC_CHG = (r&&r.ok)?Number(r.count||0):0; }
+  catch(e){ SC_CHG = 0; }
+  return SC_CHG;
+}
+// คืน string เหตุผล ถ้าผ่าน · คืน null ถ้ายกเลิก · คืน '' ถ้าไม่ต้องกรอก
+function scAskReason(who, what){
+  return new Promise(res=>{
+    openModal('<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ต้องระบุเหตุผลการเปลี่ยนแปลง',
+      '<div style="font-size:13px;line-height:1.85;color:var(--txt);margin-bottom:12px">'
+      +'<b>สัปดาห์นี้คุณเปลี่ยนแปลงตารางเวรมาแล้ว '+SC_CHG+' ครั้ง</b><br>'
+      +'การเปลี่ยนตารางเวรบ่อยครั้ง โดยเฉพาะการเพิ่มวันทำงานหรือย้ายไปกะที่ได้ค่าตอบแทนสูงกว่าให้คนเดิม '
+      +'อาจถูกตรวจสอบว่าเป็นการเอื้อประโยชน์แก่พนักงานโดยมิชอบ ซึ่งผิดระเบียบและมีผลทางวินัย'
+      +'</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">รายการที่กำลังจะเปลี่ยน: <b style="color:var(--txt)">'+esc(who)+' · '+esc(what)+'</b></div>'
+      +'<div class="field" style="margin-bottom:10px"><label style="font-size:13px">เหตุผลในการเปลี่ยนแปลง <span style="color:#dc2626">*</span></label>'
+      +'<textarea id="sc_rsn" rows="3" placeholder="เช่น พนักงานแจ้งลากะทันหัน จึงสลับคนมาแทน" '
+      +'style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-top:4px;resize:vertical"></textarea>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">อย่างน้อย 10 ตัวอักษร · เหตุผลนี้จะถูกบันทึกไว้เป็นหลักฐานและแจ้งเข้ากลุ่ม ผจก. พร้อมการเปลี่ยนแปลง</div></div>'
+      +'<div style="display:flex;gap:8px"><button class="btn btn-sec" id="sc_rsn_no" style="flex:1;padding:11px">ยกเลิก</button>'
+      +'<button class="btn btn-pri" id="sc_rsn_ok" style="flex:2;padding:11px">ยืนยันและบันทึกเหตุผล</button></div>');
+    let done=false;
+    const fin=v=>{ if(done) return; done=true; closeModal(); res(v); };
+    $('sc_rsn_no').onclick=()=>fin(null);
+    $('sc_rsn_ok').onclick=()=>{
+      const v=($('sc_rsn').value||'').trim();
+      if(v.length<10){ toast('err','เหตุผลสั้นเกินไป ต้องอย่างน้อย 10 ตัวอักษร'); return; }
+      fin(v);
+    };
+    setTimeout(()=>{ const el=$('sc_rsn'); if(el) el.focus(); },80);
+  });
+}
+// ด่านหลัก — เรียกก่อนทุกการ "เปลี่ยนแปลง" · คืน null = ผู้ใช้ยกเลิก
+async function scGateReason(isChange, who, what){
+  if(!MGR_MODE || !isChange) return '';
+  const n = await scChgCount();
+  if(n < 1) return '';                   // ครั้งแรกของสัปดาห์ ยังไม่ต้องกรอก
+  return await scAskReason(who, what);
+}
+function scWhoName(emp){ const e=(DATA.rows||[]).find(x=>String(x.emp_id)===String(emp)); return e?(e.nickname||e.name||emp):emp; }
 function scWeekEmpty(emp){ for(let i=0;i<7;i++){ const a=SC.schedules[emp+'|'+addDaysStr(scWeek,i)]; if(a&&a.length) return false; } return true; }
 async function scAddShift(emp, date, shiftId){
   if(!shiftId) return;
@@ -14863,9 +14911,12 @@ async function scAddShift(emp, date, shiftId){
 }
 async function scEditShift(emp, date, oldShift, newShift){
   if(newShift===oldShift) return;
-  const _rd=await post({ action:'hr_sched_delete', ...authBody(), emp_id:emp, work_date:date, shift_id:oldShift });
+  const _rsn = await scGateReason(!!oldShift, scWhoName(emp), date + ' · เปลี่ยนกะ');
+  if(_rsn===null) { loadSchedule(); return; }
+  const _rd=await post({ action:'hr_sched_delete', ...authBody(), reason:_rsn, silent:true, emp_id:emp, work_date:date, shift_id:oldShift });
   if(_rd && _rd.ok===false){ toast('err', _rd.error||'\u0e25\u0e1a\u0e01\u0e30\u0e40\u0e14\u0e34\u0e21\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08'); loadSchedule(); return; }
-  if(newShift){ const r=await post({ action:'hr_sched_save', ...authBody(), data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'', force:true } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
+  if(newShift){ const r=await post({ action:'hr_sched_save', ...authBody(), data:{ emp_id:emp, work_date:date, shift_id:newShift, branch_id:'', note:'', force:true, reason:_rsn, was:oldShift } }); if(!r.ok) toast('err', r.error||'บันทึกไม่สำเร็จ'); }
+  if(_rsn) SC_CHG = (SC_CHG||0)+1;
   loadSchedule();
 }
 async function scEditBranch(emp, date, shiftId, branchId){
@@ -14875,8 +14926,11 @@ async function scEditBranch(emp, date, shiftId, branchId){
   loadSchedule();
 }
 async function scDelShift(emp, date, shiftId){
-  const r=await post({ action:'hr_sched_delete', ...authBody(), emp_id:emp, work_date:date, shift_id:shiftId });
+  const _rsn = await scGateReason(true, scWhoName(emp), date + ' · ลบเวร');
+  if(_rsn===null) return;
+  const r=await post({ action:'hr_sched_delete', ...authBody(), reason:_rsn, emp_id:emp, work_date:date, shift_id:shiftId });
   if(r && r.ok===false) toast('err', r.error||'ลบไม่สำเร็จ');
+  else if(_rsn) SC_CHG=(SC_CHG||0)+1;
   loadSchedule();
 }
 // ---------- สรุปตาราง → ข้อความ / รูป (สำหรับส่ง Line) ----------
@@ -16792,17 +16846,22 @@ async function loadSubmissions(){
   $('sc_branch').addEventListener('change', scCoverHint);
   $('scSave').onclick = async ()=>{
     if(!scEditing) return;
-    const data = { emp_id:scEditing.emp_id, work_date:scEditing.work_date, shift_id:$('sc_shift').value, branch_id:$('sc_branch').value, note:$('sc_note').value.trim() };
+    const _had = !!(scEditing.shift_id || (SC.schedules[scEditing.emp_id+'|'+scEditing.work_date]||[]).length);
+    const _rsn = await scGateReason(_had, scWhoName(scEditing.emp_id), scEditing.work_date + ' · แก้เวร');
+    if(_rsn===null) return;
+    const data = { emp_id:scEditing.emp_id, work_date:scEditing.work_date, shift_id:$('sc_shift').value, branch_id:$('sc_branch').value, note:$('sc_note').value.trim(), reason:_rsn };
     $('scSave').innerHTML='<span class="spin"></span>';
     const r = await post({ action:'hr_sched_save', ...authBody(), data });
     $('scSave').textContent='บันทึก';
-    if(r.ok){ toast('ok','บันทึกเวรแล้ว'); $('scOverlay').classList.remove('show'); loadSchedule(); }
+    if(r.ok){ if(_rsn) SC_CHG=(SC_CHG||0)+1; toast('ok','บันทึกเวรแล้ว'); $('scOverlay').classList.remove('show'); loadSchedule(); }
     else toast('err', r.error||'บันทึกไม่สำเร็จ');
   };
   $('scDelete').onclick = async ()=>{
     if(!scEditing) return;
-    const r = await post({ action:'hr_sched_delete', ...authBody(), emp_id:scEditing.emp_id, work_date:scEditing.work_date });
-    if(r.ok){ toast('ok','ลบเวรแล้ว (เป็นวันหยุด)'); $('scOverlay').classList.remove('show'); loadSchedule(); }
+    const _rsn = await scGateReason(true, scWhoName(scEditing.emp_id), scEditing.work_date + ' · ลบเวร');
+    if(_rsn===null) return;
+    const r = await post({ action:'hr_sched_delete', ...authBody(), reason:_rsn, emp_id:scEditing.emp_id, work_date:scEditing.work_date });
+    if(r.ok){ if(_rsn) SC_CHG=(SC_CHG||0)+1; toast('ok','ลบเวรแล้ว (เป็นวันหยุด)'); $('scOverlay').classList.remove('show'); loadSchedule(); }
     else toast('err', r.error||'ลบไม่สำเร็จ');
   };
 
