@@ -5142,14 +5142,18 @@
     // ★ 17 ก.ย. 69 — ติด step (ขั้นตอนการทำงาน) มากับแถวด้วย
     //   task_assignments ไม่มีคอลัมน์ step — มันอยู่ที่ task_defs ฝั่ง HR เลยจัดหมวดไม่ได้
     //   ดึง task_defs มาแมปด้วย task_def_id แล้วยัด step/seq ลงในแถว
-    const [tR, brR, dfR] = await Promise.all([
+    const [tR, brR, dfR, ovR, dtR] = await Promise.all([
       sb().from('task_assignments').select('*').eq('work_date', d).order('status').order('emp_name'),
-      sb().from('branches').select('branch_id,name'),
-      sb().from('task_defs').select('id,step,sort'),
+      sb().from('branches').select('branch_id,name,task_v2'),
+      sb().from('task_defs').select('*').order('sort'),
+      sb().from('task_def_branches').select('*'),
+      sb().from('task_def_dates').select('*').eq('work_date', d),
     ]);
     if (tR.error) throw tR.error;
-    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
-    const defStep = {}; (dfR.data || []).forEach(x => { defStep[x.id] = x; });
+    const brName = {}, brV2 = {};
+    (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; brV2[b.branch_id] = !!b.task_v2; });
+    const defs = dfR.data || [];
+    const defStep = {}; defs.forEach(x => { defStep[x.id] = x; });
     const rows = (tR.data || []).map(t => {
       const df = defStep[t.task_def_id] || {};
       return { ...t, branch_name: brName[t.branch_id] || t.branch_id || '—',
@@ -5162,7 +5166,59 @@
       todo: rows.filter(r => r.status === 'todo').length,
       approved: rows.filter(r => r.status === 'approved').length,
     };
-    return { ok: true, date: d, rows, counts };
+
+    // ★ 17 ก.ย. 69 — หา "งานที่ควรมีของกะนี้ แต่ยังไม่ถูกมอบให้ใครเลย"
+    //   เดิม HR เห็นเฉพาะงานที่มีแถวใน task_assignments คือที่มอบแล้วเท่านั้น
+    //   งานที่ตั้งไว้แต่ไม่เคยมอบ = ไม่มีแถว = หายไปเงียบ ๆ ธง "ทำครบ" เลยหลอกตาได้
+    //   ใช้กติกาชุดเดียวกับฝั่งพนักงาน (_taskDefsFor ใน shared/supabase.js): งานเฉพาะสาขา ·
+    //   ตารางเฉพาะวัน · รายวัน/รายสัปดาห์/รายเดือน · กะที่งานนั้นสังกัด
+    //   ยกเว้น per_employee และ auto_day='random_scheduled' — จำนวนที่ควรมีขึ้นกับจำนวนคน/การสุ่ม
+    //   ยังไม่รู้ล่วงหน้า ถ้านับจะฟ้องผิด
+    const unassigned = [];
+    try {
+      const ovBy = {}; (ovR.data || []).forEach(o => { (ovBy[o.branch_id] = ovBy[o.branch_id] || {})[o.task_def_id] = o; });
+      const dtBy = {}; (dtR.data || []).forEach(x => { (dtBy[x.branch_id] = dtBy[x.branch_id] || {})[x.task_def_id] = x; });
+      const dd = new Date(d + 'T00:00:00');
+      const dayNum = dd.getDate(), dow = dd.getDay();
+      const lastDay = new Date(dd.getFullYear(), dd.getMonth() + 1, 0).getDate();
+      const pick = (o, x, k) => (o && o[k] != null) ? o[k] : x[k];
+      const applies = (branch, group, x) => {
+        const o = (ovBy[branch] || {})[x.id] || null;
+        if (!brV2[branch]) return x.active !== false && (!x.shift_id || x.shift_id === group);
+        const act = (o && o.active != null) ? !!o.active : (x.active !== false);
+        if (!act) return false;
+        const shifts = pick(o, x, 'shift_ids');
+        if (Array.isArray(shifts) && shifts.length) { if (shifts.indexOf(group) < 0) return false; }
+        else if (x.shift_id && x.shift_id !== group) return false;
+        const ex = (dtBy[branch] || {})[x.id];
+        if (ex) return ex.mode !== 'skip';
+        const f = String(x.freq || 'daily');
+        if (f === 'weekly') { const w = pick(o, x, 'days_of_week') || []; return w.length ? w.indexOf(dow) >= 0 : false; }
+        if (f === 'monthly') { const m = pick(o, x, 'day_of_month') || []; return m.length ? (m.indexOf(dayNum) >= 0 || (m.indexOf(0) >= 0 && dayNum === lastDay)) : false; }
+        return true;
+      };
+      // ดูเฉพาะกะที่ "เปิดอยู่จริง" ของวันนั้น (มีงานบนกระดานแล้วอย่างน้อย 1 ชิ้น)
+      // กะที่ยังไม่เริ่มไม่ควรขึ้นว่าค้าง จะกลายเป็นเสียงรบกวน
+      const pairs = {}; rows.forEach(r => {
+        const b = r.branch_id || '', g = String(r.shift_id || '');
+        if (!b || !g) return;
+        const k = b + '|' + g;
+        (pairs[k] = pairs[k] || { branch: b, group: g, have: new Set() }).have.add(r.task_def_id);
+      });
+      Object.keys(pairs).forEach(k => {
+        const p = pairs[k];
+        defs.forEach(x => {
+          if (p.have.has(x.id)) return;
+          if (x.per_employee || x.auto_day === 'random_scheduled') return;
+          if (!applies(p.branch, p.group, x)) return;
+          unassigned.push({ branch_id: p.branch, shift_id: p.group, task_def_id: x.id,
+            title: x.title || '', step: x.step != null ? Number(x.step) : 0,
+            def_sort: x.sort != null ? Number(x.sort) : 9999 });
+        });
+      });
+    } catch (e) { /* คำนวณไม่ได้ก็ไม่ควรทำให้หน้าตรวจล่ม — แค่ไม่มีธง "ยังไม่มอบ" */ }
+
+    return { ok: true, date: d, rows, counts, unassigned };
   }
   async function hrTaskReview(id, status, note, markup) {
     const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count,needs_mgr,shift_id,checked_by_emp,checked_by_name,checked_by_shift').eq('id', id).maybeSingle();
