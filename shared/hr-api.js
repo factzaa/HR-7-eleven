@@ -2563,6 +2563,30 @@
     const { data } = await q;
     return (data || []).some(r => r.is_cover);
   }
+  // ★ 17 ก.ย. 69 — ยิงการ์ด "ตารางเวรถูกแก้ไข" เข้ากลุ่ม ผจก. ทันทีที่ ผจก. แก้
+  //   ยิงแบบไม่รอผล — แจ้งเตือนล้มเหลวต้องไม่ทำให้การบันทึกกะล้มตามไปด้วย
+  //   ยิงเฉพาะตอน actor เป็น ผจก. เท่านั้น สำนักงานแก้เองไม่ต้องแจ้ง (เป็นคนดูอยู่แล้ว)
+  function _schedNotify(actor, branchId, items) {
+    try {
+      if (!actor || actor.role !== 'mgr') return;
+      const list = (items || []).filter(x => x && x.emp_id && x.work_date);
+      if (!list.length) return;
+      const base = String((window.SUPABASE_CONFIG || {}).url || '').replace(/\/$/, '');
+      if (!base) return;
+      fetch(base + '/functions/v1/staff-notify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'sched_change', branch_id: branchId || actor.branch_id || '', actor: actor.name || 'ผจก.', items: list }),
+      }).catch(() => { /* เงียบไว้ */ });
+    } catch (e) { /* ไม่ให้กระทบงานหลัก */ }
+  }
+  // กะเดิมของคน+วันนั้น (ไว้ทำช่อง "จาก →") · ควบกะคืนเป็น "M+A"
+  async function _schedCurrent(empId, workDate) {
+    try {
+      const { data } = await sb().from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', workDate);
+      const ids = (data || []).map(r => r.shift_id).filter(Boolean);
+      return ids.length ? ids.join('+') : '';
+    } catch (e) { return ''; }
+  }
   // ตรวจชุดเดียว: สิทธิ์ + สาขา + ช่วงเวลา
   async function _scGate(auth, { empId, workDate, branchId } = {}) {
     const actor = await _scActor(auth);
@@ -2630,10 +2654,14 @@
       const ovl = await _schedOverlap(d.emp_id, d.work_date, d.shift_id);
       if (ovl) return { ok: false, code: 'OVERLAP', error: ovl };
     }
+    // ★ 17 ก.ย. 69 — อ่านกะเดิมไว้ก่อนเขียนทับ เพื่อทำช่อง "จาก → เป็น" ทั้งใน log และการ์ดแจ้งเตือน
+    //   ของเดิม log เก็บแค่ค่าใหม่ ตรวจย้อนไม่ได้ว่าเปลี่ยนมาจากอะไร
+    const _prev = await _schedCurrent(d.emp_id, d.work_date);
     const { error } = await sb().from('schedules').upsert(row, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
     // log ทุกการบันทึกกะ เพื่อให้ตามรอยได้ว่าใคร/เมื่อไร เพิ่ม-เปลี่ยนกะ (กันเคส "กะเพิ่มเอง")
-    await logAct('บันทึกกะ', d.emp_id, d.work_date + ' · ' + (d.shift_id || 'หยุด') + (is_cover ? (' · ไปแทนสาขา ' + branch_id) : '') + (d.note ? (' · ' + d.note) : ''), d.actor || 'HR');
+    await logAct('บันทึกกะ', d.emp_id, d.work_date + ' · ' + (_prev || 'หยุด') + ' → ' + (d.shift_id || 'หยุด') + (is_cover ? (' · ไปแทนสาขา ' + branch_id) : '') + (d.note ? (' · ' + d.note) : ''), d.actor || 'HR');
+    _schedNotify(g.actor, branch_id, [{ emp_id: d.emp_id, work_date: d.work_date, from: _prev, to: d.shift_id || '' }]);
     // ---- ซิงค์กะให้ "แถวลงเวลา" ตามตารางเวรที่เพิ่งจัด ----
     // แก้ปัญหา: HR เปลี่ยนกะหลังพนักงานเช็กอินแล้ว → attendance.shift_id ยังค้างกะเดิม
     // ทำให้รายงาน(กรองกะ)/แจ้งเตือน "เลยเวลาเลิกกะ" เพี้ยน
@@ -2686,10 +2714,17 @@
     if (g.err) return { ok: false, error: g.err };
     if (g.actor.role === 'mgr' && await _scHasCover(empId, workDate, shiftId))
       return { ok: false, error: '\u0e40\u0e27\u0e23\u0e19\u0e35\u0e49\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e08\u0e31\u0e14\u0e43\u0e2b\u0e49\u0e44\u0e1b\u0e0a\u0e48\u0e27\u0e22\u0e2a\u0e32\u0e02\u0e32\u0e2d\u0e37\u0e48\u0e19 \u2014 \u0e41\u0e01\u0e49\u0e44\u0e14\u0e49\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e2a\u0e33\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19' };
+    // ★ 17 ก.ย. 69 — เดิม "ลบกะ" ไม่ถูกบันทึก log เลย การปลดคนออกจากเวรจึงตรวจย้อนไม่ได้
+    //   ซึ่งเป็นเคสที่ควรตรวจมากที่สุด · อ่านกะเดิมไว้ก่อนลบ แล้ว log + แจ้งเตือน
+    const _prev = await _schedCurrent(empId, workDate);
     let q = sb().from('schedules').delete().eq('emp_id', empId).eq('work_date', workDate);
     if (shiftId) q = q.eq('shift_id', shiftId);   // ลบเฉพาะกะที่ระบุ (ควบกะ) · ไม่ระบุ = ลบทุกกะของวันนั้น
     const { error } = await q;
     if (error) throw error;
+    const _left = await _schedCurrent(empId, workDate);
+    await logAct('ลบกะ', empId, workDate + ' · ' + (_prev || 'หยุด') + ' → ' + (_left || 'ถูกปลดออก'), (g.actor && g.actor.name) || 'HR');
+    _schedNotify(g.actor, (g.actor && g.actor.branch_id) || null,
+      [{ emp_id: empId, work_date: workDate, from: _prev, to: _left ? _left : null }]);
     return { ok: true };
   }
   // จัด 1 วัน → เติมกะเดียวกันทั้งสัปดาห์ (เฉพาะวันที่ยังว่าง) แล้วแก้ทีหลังได้
@@ -2719,6 +2754,8 @@
     }
     await logAct('จัดกะทั้งสัปดาห์', d.emp_id, 'สัปดาห์ ' + d.start + ' · กะ ' + d.shift_id
       + ' · ลง ' + rows.length + ' วัน' + (skipped.length ? (' · ข้ามเพราะเวลาทับ ' + skipped.length + ' วัน') : ''), d.actor || 'HR');
+    // คำสั่งเหมา = หลายวันในครั้งเดียว → ส่งเป็นใบเดียว แต่ละวันเป็น 1 แถวในการ์ด
+    _schedNotify(g.actor, home, rows.map(r => ({ emp_id: r.emp_id, work_date: r.work_date, from: '', to: r.shift_id })));
     return { ok: true, count: rows.length, skipped };
   }
   // คัดลอกตารางทั้งสัปดาห์ (7 วันจาก from_start) ไปยังสัปดาห์ใหม่ (to_start)
@@ -2754,7 +2791,8 @@
     }
     const { error: e2 } = await sb().from('schedules').upsert(rows, { onConflict: 'emp_id,work_date,shift_id' });
     if (e2) throw e2;
-    await logAct('คัดลอกตารางเวร (วางทับ)', null, 'จาก ' + fromStart + ' → ' + toStart + ' · ล้างเดิม ' + clearedCount + ' เวร · คัดลอก ' + rows.length + ' เวร');
+    await logAct('คัดลอกตารางเวร (วางทับ)', null, 'จาก ' + fromStart + ' → ' + toStart + ' · ล้างเดิม ' + clearedCount + ' เวร · คัดลอก ' + rows.length + ' เวร', (g.actor && g.actor.name) || 'HR');
+    _schedNotify(g.actor, branchId, rows.map(r => ({ emp_id: r.emp_id, work_date: r.work_date, from: '', to: r.shift_id })));
     return { ok: true, copied: rows.length, cleared: clearedCount };
   }
 
