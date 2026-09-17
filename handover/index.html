@@ -857,7 +857,49 @@ async function openLeaderPanel(){
       body+='<div class="row2"><select id="lg_'+d.id+'" data-giveSel="'+d.id+'" style="flex:1">'
         +'<option value="" selected>'+esc(_ph)+'</option>'+_opts+'</select></div>';
     }
-    return '<div class="card" style="position:relative">'+_corner+body+'</div>';
+    return '<div class="card" data-defcard="'+d.id+'" style="position:relative">'+_corner+body+'</div>';
+  };
+  // ★ 17 ก.ย. 69 — มอบงานแล้วอัปเดต "เฉพาะการ์ดใบนั้น" ไม่วาดกระดานใหม่ทั้งหน้า
+  //   ของเดิมเรียก openLeaderPanel() ทุกครั้งที่มอบ 1 งาน → l_board.innerHTML ถูกเขียนทับหมด
+  //   หน้าเด้งกลับบนสุด + ขั้นตอนที่มอบครบจะพับเก็บอัตโนมัติ ทำให้งานถัดไปเลื่อนหนีทุกครั้ง
+  //   ต้องไถหาใหม่ทุกงาน (ผลัดหนึ่งมี 20-40 งาน = ไถ 20-40 รอบ)
+  const _lgWireGive=()=>{
+    document.querySelectorAll('[data-giveSel]').forEach(function(sel){
+      if(sel._wired) return; sel._wired=true;
+      sel.onchange=async function(){
+        const def=Number(sel.getAttribute('data-giveSel')), to=sel.value;
+        if(!to) return;                                  // เลือกหัวข้อว่าง = ไม่ทำอะไร
+        const _name=(sel.options[sel.selectedIndex]||{}).textContent||'';
+        sel.disabled=true;                               // กันกดซ้ำระหว่างรอเน็ต
+        try{
+          await window.HR.assignColleague({ byEmpId:EMP.emp_id, toEmpId:to, task_def_id:def, shiftId:b.shift });
+          toast('ok','มอบให้ '+_name+' แล้ว');
+          // ปะการ์ดใบเดียว — ตำแหน่งที่ไถค้างไว้ไม่ขยับ งานถัดไปอยู่ที่เดิม
+          if(!_lgPatch(def,{ emp_id:to, emp_name:_name, status:'todo' })) openLeaderPanel();
+        }catch(e){ sel.disabled=false; toast('err',(e.message||'ไม่สำเร็จ')); openLeaderPanel(); }
+      };
+    });
+  };
+  const _lgSyncCounts=()=>{
+    groupSteps(b.defs, function(d){ return (d.step!=null?Number(d.step):0); }).forEach(function(gp){
+      var sec=document.querySelector('.stepsec[data-sk="lg:'+gp[0]+'"]'); if(!sec) return;
+      var c=sec.querySelector('.stephead .c'); if(!c) return;
+      var tot=gp[1].length, got=gp[1].filter(function(x){ return !!x.assignment; }).length;
+      c.textContent='มอบแล้ว '+got+'/'+tot;
+    });
+  };
+  const _lgPatch=(defId,asg)=>{
+    try{
+      var d=(b.defs||[]).filter(function(x){ return Number(x.id)===Number(defId); })[0];
+      var node=document.querySelector('[data-defcard="'+defId+'"]');
+      if(!d||!node||!node.parentNode) return false;
+      d.assignment=Object.assign({}, d.assignment||{}, asg);
+      var tmp=document.createElement('div'); tmp.innerHTML=_defCard(d);
+      var fresh=tmp.firstElementChild; if(!fresh) return false;
+      node.parentNode.replaceChild(fresh,node);
+      _lgSyncCounts(); wireCloseTask(); _lgWireGive();
+      return true;
+    }catch(e){ return false; }
   };
   // จัดหมวดตามขั้นตอนการทำงาน + ย่อ/ขยายได้ (ขั้นตอนที่มอบครบแล้วจะพับเก็บให้อัตโนมัติ)
   $('l_board').innerHTML=groupSteps(b.defs, function(d){ return (d.step!=null?Number(d.step):0); })
@@ -868,19 +910,7 @@ async function openLeaderPanel(){
     }).join('');
   wireCloseTask();
   // ★ เลือกชื่อใน dropdown → มอบงานทันที ไม่ต้องกดปุ่มซ้ำ
-  document.querySelectorAll('[data-giveSel]').forEach(function(sel){
-    sel.onchange=async function(){
-      const def=Number(sel.getAttribute('data-giveSel')), to=sel.value;
-      if(!to) return;                                  // เลือกหัวข้อว่าง = ไม่ทำอะไร
-      const _name=(sel.options[sel.selectedIndex]||{}).textContent||'';
-      sel.disabled=true;                               // กันกดซ้ำระหว่างรอเน็ต
-      try{
-        await window.HR.assignColleague({ byEmpId:EMP.emp_id, toEmpId:to, task_def_id:def, shiftId:b.shift });
-        toast('ok','มอบให้ '+_name+' แล้ว');
-        openLeaderPanel();
-      }catch(e){ sel.disabled=false; toast('err',(e.message||'ไม่สำเร็จ')); openLeaderPanel(); }
-    };
-  });
+  _lgWireGive();
 }
 function populateAddList(){
   const b=LBOARD||{}; const inShift=new Set((b.members||[]).map(m=>m.emp_id));
