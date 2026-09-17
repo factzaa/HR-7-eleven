@@ -26,13 +26,31 @@ function bkkDate(offsetDays = 0): string {
   now.setUTCDate(now.getUTCDate() + offsetDays);
   return now.toISOString().slice(0, 10);
 }
+// ★ 17 ก.ย. 69 — ตาข่ายกัน "ข้อความว่าง" ทำทั้งใบตกทั้งชุด
+//   LINE ปฏิเสธทั้ง request (400) ถ้ามี text ใด text:"" แม้แต่ช่องเดียว
+//   ผลคือรายงานยอดขายไม่เข้าไลน์เลยแบบเงียบ ๆ (17 ก.ย. เจอจริง — ใบแรก big:"" )
+//   ตัดโหนดว่างทิ้งก่อนส่ง แล้วค่อยส่ง ดีกว่าปล่อยให้ทั้งชุดหาย
+function stripEmptyText(n: any): any {
+  if (Array.isArray(n)) {
+    const out = n.map(stripEmptyText).filter((x: any) => x !== null);
+    return out;
+  }
+  if (!n || typeof n !== "object") return n;
+  if (n.type === "text" && (typeof n.text !== "string" || n.text.length === 0)) return null;
+  const o: any = {};
+  for (const k of Object.keys(n)) o[k] = stripEmptyText(n[k]);
+  // กล่องที่ลูกหายหมดต้องมี filler ไม่งั้น LINE ตีกลับ contents ว่าง
+  if (o.type === "box" && Array.isArray(o.contents) && o.contents.length === 0) o.contents = [{ type: "filler" }];
+  return o;
+}
 async function pushLine(to: string, messages: unknown[]): Promise<boolean> {
   if (!LINE_TOKEN || !to) return false;
   try {
+    const safe = stripEmptyText(messages);
     const res = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + LINE_TOKEN },
-      body: JSON.stringify({ to, messages }),
+      body: JSON.stringify({ to, messages: safe }),
     });
     if (!res.ok) { console.warn("LINE push failed", res.status, await res.text().catch(() => "")); return false; }
     return true;
@@ -335,10 +353,10 @@ function barChart(vals: number[], labels: string[], hiIdx = -1, color = C_GREEN,
   ];
 }
 function salesBubble(o: { color: string; headLabel: string; headPct: number | null; headPctText?: string; cap: string; big: string; delta?: { text: string; color: string }; body: any[]; note?: { text: string; color: string; bg: string }; btn: string; url: string }) {
-  const b: any[] = [
-    { type: "text", text: o.cap, size: "xs", color: "#8c8c8c" },
-    { type: "text", text: o.big, size: "xxl", weight: "bold", color: "#18181b" },
-  ];
+  // ★ ใบที่ไม่มีตัวเลขก้อนใหญ่ (เช่นใบเฉลี่ยรายสาขา) ส่ง big:"" มา — ต้องไม่ใส่โหนดว่างลงไป
+  const b: any[] = [];
+  if (o.cap) b.push({ type: "text", text: o.cap, size: "xs", color: "#8c8c8c", wrap: true });
+  if (o.big) b.push({ type: "text", text: o.big, size: "xxl", weight: "bold", color: "#18181b" });
   if (o.delta) b.push({ type: "text", text: o.delta.text, size: "sm", weight: "bold", color: o.delta.color, margin: "sm" });
   b.push(...o.body);
   if (o.note) b.push({ type: "box", layout: "vertical", margin: "md", backgroundColor: o.note.bg, cornerRadius: "8px", paddingAll: "10px", contents: [{ type: "text", text: o.note.text, wrap: true, size: "xs", color: o.note.color }] });
