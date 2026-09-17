@@ -161,6 +161,7 @@
         case 'hr_emp_transfer':   return await hrEmpTransfer(p.data);
         case 'hr_emp_delete':     return await hrEmpDelete(p.emp_id);
         case 'hr_change_emp_id':  return await hrChangeEmpId(p.old_id, p.new_id);
+        case 'hr_mgr_change_emp_id': return await hrMgrChangeEmpId(p.old_id, p.new_id, p.auth);
         case 'hr_report':         return await hrReport(p.filter);
         case 'hr_discipline':     return await hrDiscipline(p.cycle, p.range);
         case 'hr_disc_waive':     return await hrDiscWaive(p);
@@ -1582,6 +1583,38 @@
     const { data, error } = await sb().rpc('change_emp_id', { p_old: String(oldId).trim(), p_new: String(newId).trim() });
     if (error) return { ok: false, error: error.message || 'เปลี่ยนรหัสไม่สำเร็จ (รัน change_emp_id.sql แล้วหรือยัง?)' };
     if (data && data.ok) await logAct('เปลี่ยนรหัสพนักงาน ' + oldId + ' → ' + newId, newId);
+    return data || { ok: false, error: 'ไม่มีผลลัพธ์' };
+  }
+
+  // ★ 17 ก.ย. 69 — ผจก. เปลี่ยน "รหัสพนักงาน" ของคนในสาขาตัวเองได้เอง
+  //   ที่มา: พนักงานใหม่ถูกลงทะเบียนด้วยรหัสชั่วคราว (เช่น 00000xx) ก่อนรหัสจริงจะออก
+  //          พอรหัสจริงออกต้องรอสำนักงานเปลี่ยนให้ทุกครั้ง ทำให้ค้างเป็นวัน ๆ
+  //   กติกา — ตรวจที่ API ทุกข้อ ไม่เชื่อหน้าเว็บ (ซ่อนปุ่มอย่างเดียวไม่ใช่การป้องกัน):
+  //     1) ต้องเป็น ผจก. ที่ PIN ถูกต้อง (ตรวจผ่าน rpc mgr_login เหมือนเมนูจัดตาราง)
+  //     2) พนักงานคนนั้นต้องประจำสาขาของ ผจก.
+  //     3) รหัสใหม่ต้องเป็นตัวเลข 7 หลัก และขึ้นต้นด้วยเลขสาขาตัวเอง — กันเปลี่ยนไปเป็นรหัสสาขาอื่น
+  //        (= ย้ายสาขาแบบเลี่ยงระบบ) การย้ายสาขาจริงยังเป็นของสำนักงานเท่านั้น
+  //     4) รหัสใหม่ต้องยังไม่มีใครใช้
+  //   หมายเหตุตรง ๆ: ไฟล์นี้รันในเบราว์เซอร์ คนที่เปิด DevTools เป็นยังเรียก action ตรงได้
+  //   ด่านนี้กัน "การใช้งานผิดพลาดผ่านหน้าจอ" ได้จริง แต่ไม่ใช่การป้องกันระดับเซิร์ฟเวอร์
+  async function hrMgrChangeEmpId(oldId, newId, auth) {
+    const actor = await _scActor(auth);
+    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    const o = String(oldId || '').trim(), n = String(newId || '').trim();
+    if (!o || !n) return { ok: false, error: 'ต้องระบุรหัสเดิมและรหัสใหม่' };
+    if (o === n) return { ok: false, error: 'รหัสใหม่ซ้ำกับรหัสเดิม' };
+    if (actor.role === 'mgr') {
+      const bad = await _scAssertOwnEmp(actor, o);
+      if (bad) return { ok: false, error: 'พนักงานคนนี้ไม่ได้ประจำสาขาคุณ — เปลี่ยนรหัสให้ไม่ได้' };
+      if (!/^\d{7}$/.test(n)) return { ok: false, error: 'รหัสใหม่ต้องเป็นตัวเลข 7 หลัก' };
+      if (n.slice(0, String(actor.branch_id).length) !== String(actor.branch_id))
+        return { ok: false, error: 'รหัสใหม่ต้องขึ้นต้นด้วยเลขสาขา ' + actor.branch_id + ' — ถ้าต้องย้ายสาขา ให้แจ้งสำนักงาน' };
+    }
+    const { data: dup } = await sb().from('employees').select('emp_id,name').eq('emp_id', n).maybeSingle();
+    if (dup) return { ok: false, error: 'รหัส ' + n + ' มีคนใช้อยู่แล้ว (' + (dup.name || '') + ')' };
+    const { data, error } = await sb().rpc('change_emp_id', { p_old: o, p_new: n });
+    if (error) return { ok: false, error: error.message || 'เปลี่ยนรหัสไม่สำเร็จ (รัน change_emp_id.sql แล้วหรือยัง?)' };
+    if (data && data.ok) await logAct('เปลี่ยนรหัสพนักงาน ' + o + ' → ' + n, n, 'โดย ' + actor.name, actor.name);
     return data || { ok: false, error: 'ไม่มีผลลัพธ์' };
   }
 
