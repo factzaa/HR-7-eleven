@@ -15498,6 +15498,21 @@ async function loadTaskList(){
   //   ขั้นตอนที่ตรวจผ่านหมดแล้วจะพับเก็บให้ · ขั้นตอนที่มีงานรอตรวจ/ตีกลับจะกางไว้เสมอ
   const tkSortIn=(a,b)=>((a.def_sort==null?9999:a.def_sort)-(b.def_sort==null?9999:b.def_sort))
     || String(a.title||'').localeCompare(String(b.title||''),'th');
+  // ★ 17 ก.ย. 69 — ธงบอกสถานะของหมวด: ทำครบหรือยัง ขาดกี่งาน
+  //   "ขาด" = ยังไม่ทำ (todo) · "รอแก้" = ตีกลับแล้วยังไม่ส่งกลับมา · งานที่ปิดเพราะทำไม่ได้ ไม่นับว่าขาด
+  //   ฐานที่นับ = งานที่อยู่บนกระดานของกะนั้น (งานที่มอบแล้ว)
+  const tkFlag=(items)=>{
+    const st=(x)=>String(x.status||'todo');
+    const nTodo=items.filter(x=>st(x)==='todo').length;
+    const nBack=items.filter(x=>st(x)==='sent_back').length;
+    const pill=(txt,bg,bd,fg)=>'<span style="flex:none;display:inline-flex;align-items:center;gap:4px;'
+      +'padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;'
+      +'background:'+bg+';border:1px solid '+bd+';color:'+fg+'">'
+      +'<svg class="ei" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M5 21V4M5 4h11l-1.6 3.2L16 10.5H5"/></svg>'+txt+'</span>';
+    if(nTodo>0)  return pill('ขาด '+nTodo+' งาน', '#fef2f2', '#fecaca', '#b91c1c');
+    if(nBack>0)  return pill('รอแก้ '+nBack+' งาน', '#fffbeb', '#fde68a', '#92400e');
+    return pill('ทำครบ', '#ecfdf5', '#a7f3d0', '#047857');
+  };
   const tkStepBlocks=(list)=>{
     const g={}; list.forEach(t=>{ const k=Number(t.step||0); (g[k]=g[k]||[]).push(t); });
     const keys=Object.keys(g).map(Number).sort((a,b)=>(a===0?99:a)-(b===0?99:b));
@@ -15513,11 +15528,11 @@ async function loadTaskList(){
       const badge='<span style="flex:none;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;'
         +'background:'+(k?'#0f172a':'#94a3b8')+';color:#fff;font-size:11px;font-weight:700">'+(k||'•')+'</span>';
       const tally='<span style="flex:none;font-size:11.5px;color:var(--muted);font-weight:400">'
-        +items.length+' งาน'+(nSub?' · รอตรวจ '+nSub:'')+(nBack?' · ตีกลับ '+nBack:'')+'</span>';
+        +items.length+' งาน'+(nSub?' · รอตรวจ '+nSub:'')+'</span>';
       return '<div style="margin:10px 0 2px">'
-        +'<div data-tkstep="'+esc(key)+'" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;'
+        +'<div data-tkstep="'+esc(key)+'" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;flex-wrap:wrap;'
           +'padding:7px 10px;background:#f1f5f9;border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:600">'
-          +badge+'<span style="flex:1;min-width:0">'+esc(name)+'</span>'+tally
+          +badge+'<span style="flex:1;min-width:110px">'+esc(name)+'</span>'+tkFlag(items)+tally
           +'<svg class="ei tkcv" viewBox="0 0 24 24" style="flex:none;transition:transform .15s'+(col?';transform:rotate(-90deg)':'')+'"><path d="M6 9l6 6 6-6"/></svg>'
         +'</div>'
         +'<div data-tkstepbody="1"'+(col?' style="display:none"':'')+'>'+items.map(oneTask).join('')+'</div>'
@@ -15532,8 +15547,11 @@ async function loadTaskList(){
       const cc={ approved:g2.filter(x=>x.status==='approved').length, submitted:g2.filter(x=>x.status==='submitted').length, sent_back:g2.filter(x=>x.status==='sent_back').length, todo:g2.filter(x=>x.status==='todo').length };
       const pct=g2.length?Math.round(cc.approved/g2.length*100):0;
       const shName=k==='_'?'ไม่ระบุกะ':(shiftName(k)||k);
-      const head='<div class="card-h" style="flex-wrap:wrap;gap:6px"><h3><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> กะ '+esc(shName)+'</h3>'
-        +'<span style="font-size:12px;color:var(--muted)">ทั้งหมด '+g2.length+' · <svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน '+cc.approved+' ('+pct+'%)'
+      const head='<div class="card-h" style="flex-wrap:wrap;gap:6px">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<h3><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> กะ '+esc(shName)+'</h3>'
+        +tkFlag(g2)+'</div>'
+        +'<span style="font-size:12px;color:var(--muted)">ทั้งหมด '+g2.length+' ·<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน '+cc.approved+' ('+pct+'%)'
         +(cc.submitted?' · <svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3c0 4 5 5 5 9s-5 5-5 9M17 3c0 4-5 5-5 9s5 5 5 9"/></svg> รอตรวจ '+cc.submitted:'')+(cc.sent_back?' · ⤴ ตีกลับ '+cc.sent_back:'')+(cc.todo?' · <svg class="ei" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg> ยังไม่ทำ '+cc.todo:'')+'</span></div>';
       return '<div class="card" style="margin-bottom:14px">'+head+'<div class="card-b" style="padding-top:0">'+tkStepBlocks(g2)+'</div></div>';
     }).join('');
