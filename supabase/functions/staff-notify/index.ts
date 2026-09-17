@@ -304,10 +304,14 @@ async function branchNames(): Promise<Record<string, string>> {
   return m;
 }
 
-// ===== scan:qa_removed — เก็บสินค้าหมดอายุลงจากเชลฟ์ → รวมเป็นใบเดียวต่อสาขา เข้ากลุ่ม ผจก. =====
+// ===== scan:qa_removed — เก็บสินค้าหมดอายุลงจากเชลฟ์ → รวมเป็นใบเดียวต่อสาขา เข้ากลุ่มพนักงานสาขา =====
+// ★ 17 ก.ย. 69 — เปลี่ยนปลายทางจาก "กลุ่ม ผจก." เป็น "กลุ่มพนักงานของสาขานั้น"
+//   ของเดิมส่งเข้ากลุ่ม ผจก. อย่างเดียว คนที่ทำงานจริงจึงไม่เห็นว่าระบบรับเรื่องแล้ว
+//   สาขาไหนยังไม่ได้ผูก LINE Group ID ให้ตกไปที่กลุ่ม ผจก. แทน จะได้ไม่หายเงียบ
 async function scanQaRemoved(): Promise<number> {
-  const gid = await mgrGroupId();
-  if (!gid) return 0;
+  const groups = await branchGroups();
+  const mgid = await mgrGroupId();
+  const cfg = await loadCfg();
   // ย้อนหลัง 90 นาที เผื่อ cron หลุดรอบ · กันซ้ำรายชิ้นด้วย qarm:<id> จึงไม่มีทางส่งซ้ำ
   const since = new Date(Date.now() - 90 * 60000).toISOString();
   const { data: items } = await sb.from("qa_items")
@@ -326,6 +330,11 @@ async function scanQaRemoved(): Promise<number> {
   let sent = 0;
   for (const bid of Object.keys(perBranch)) {
     const list = perBranch[bid]; if (!list.length) continue;
+    // ปลายทาง: กลุ่มพนักงานของสาขานั้น → ไม่มีค่อยตกไปกลุ่ม ผจก.
+    const gid = (groups[bid] && groups[bid].gid) || mgid;
+    if (!gid) continue;
+    // เคารพสวิตช์ปิดแจ้งเตือนรายสาขาเหมือน scan อื่น ๆ (ไม่มีแถว = เปิด)
+    if (!cfgOf(cfg, bid).enabled) continue;
     const who = [...new Set(list.map((x) => String(x.it.action_name || "").trim()).filter(Boolean))];
     const qty = list.reduce((n, x) => n + (Number(x.it.qty) || 1), 0);
     const photos = await usablePhotos(list.flatMap((x) => Array.isArray(x.it.photos) ? x.it.photos : []));
