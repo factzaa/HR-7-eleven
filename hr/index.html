@@ -5431,6 +5431,7 @@ function renderPayrollItems(){
       +_plrow('เพิ่มอื่น', nz(addSum))
       +_plrow('รวมรับ', '<span style="color:#166534">'+plB(it.gross)+'</span>', 'border-top:1px solid var(--line);font-weight:700')
       +_plrow('ประกันสังคม', nz(it.sso,'color:#b91c1c'))
+      +_plrow('กองทุนสงเคราะห์', nz(it.welfare,'color:#b91c1c'))
       +_plrow('หักเบิกล่วงหน้า', nz(it.advance_deduct,'color:#b91c1c'))
       +_plrow('หักอื่น', nz(dedSum,'color:#b91c1c'))
       +_plrow('รวมหัก', '<span style="color:#b91c1c">'+plB(it.total_deduct)+'</span>', 'font-weight:700')
@@ -5651,6 +5652,7 @@ function renderPayrollProfiles(){
       +'<label>เบี้ยตำแหน่ง '+inp('pf-pos',p.position_allowance,80)+'</label>'
       +'<label>เบี้ยขยัน '+inp('pf-dil',p.diligence_amount,70)+'</label>'
       +'<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" class="pf-sso"'+(p.sso_enabled!==false?' checked':'')+'>ประกันสังคม</label>'
+      +'<label style="display:flex;align-items:center;gap:4px" title="หักกองทุนสงเคราะห์ลูกจ้างสำหรับคนนี้ (ต้องเปิดใช้งานที่ค่าตั้งค่ากลางด้วย)"><input type="checkbox" class="pf-wel"'+(p.welfare_enabled!==false?' checked':'')+'>กองทุนสงเคราะห์</label>'
     +'</div></div>';
   $('pl_pf_body').innerHTML=rows.map(row).join('');
   $('pl_pf_body').querySelectorAll('.pl-pf-save').forEach(b=>b.onclick=async()=>{
@@ -5659,7 +5661,8 @@ function renderPayrollProfiles(){
     const r=await post({ action:'hr_payroll_profile_save', password:pwd, data:{
       emp_id, wage_type:c.querySelector('.pf-type').value, base_rate:c.querySelector('.pf-base').value,
       ot_rate:c.querySelector('.pf-ot').value, position_allowance:c.querySelector('.pf-pos').value,
-      diligence_amount:c.querySelector('.pf-dil').value, sso_enabled:c.querySelector('.pf-sso').checked } });
+      diligence_amount:c.querySelector('.pf-dil').value, sso_enabled:c.querySelector('.pf-sso').checked,
+      welfare_enabled:!!(c.querySelector('.pf-wel')&&c.querySelector('.pf-wel').checked) } });
     b.textContent='บันทึก';
     if(r&&r.ok){ toast('ok','บันทึกค่าจ้าง '+emp_id); const idx=(PAY_PROFILES||[]).findIndex(x=>x.emp_id===emp_id); if(idx>=0){ Object.assign(PAY_PROFILES[idx],{ wage_type:c.querySelector('.pf-type').value, base_rate:Number(c.querySelector('.pf-base').value)||0 }); } }
     else toast('err',(r&&r.error)||'ไม่สำเร็จ');
@@ -5701,6 +5704,20 @@ async function loadPayrollConfig(){
       +'<div style="font-size:11.5px;color:var(--muted)"><svg class="ei" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10c-.7.7-1 1.5-1 2.5H9c0-1-.3-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg> OT รวม = ชั่วโมง OT × อัตรานี้ · ถ้าตั้ง "อัตรา OT" รายคนในหน้าตั้งค่าจ้าง จะใช้ของรายคนก่อน</div></div>'
     +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">ประกันสังคม</div>'
       +N('cfs_rate','อัตรา % ',r.sso.rate)+N('cfs_cap','เพดานหัก (บาท)',r.sso.cap)+N('cfs_min','ฐานต่ำสุด',r.sso.wage_min)+N('cfs_max','ฐานสูงสุด',r.sso.wage_max)+'</div>'
+    /* ★ 17 ก.ย. 69 — กองทุนสงเคราะห์ลูกจ้าง · ตั้งค่าได้เหมือน ปกส. + เปิด/ปิดได้ (ยังไม่แน่ชัดว่าเริ่มเมื่อไร) */
+    +'<div class="card" style="padding:14px;margin-bottom:12px;border:1.5px solid '+((r.welfare&&r.welfare.enabled)?'#a7f3d0':'var(--line)')+';background:'+((r.welfare&&r.welfare.enabled)?'#f0fdf4':'#fff')+'">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'
+        +'<div style="font-weight:700;flex:1;min-width:150px">กองทุนสงเคราะห์ลูกจ้าง</div>'
+        +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:'+((r.welfare&&r.welfare.enabled)?'#047857':'#64748b')+'">'
+        +'<input type="checkbox" id="cfg_wel_on"'+((r.welfare&&r.welfare.enabled)?' checked':'')+'>เปิดใช้งาน</label></div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:9px">ปิดอยู่ = ไม่หัก และไม่ขึ้นบนสลิปเลย · เปิดเมื่อถึงวันที่เริ่มบังคับใช้จริง แล้วรันรอบเงินเดือนใหม่ '
+        +'· ส่วนนี้คือ<b>ฝั่งลูกจ้าง</b>เท่านั้น เงินสมทบฝั่งนายจ้างไม่แสดงบนสลิปพนักงาน</div>'
+      +N('cfg_wel_rate','อัตรา % (ค่าตั้งต้น 0.25)',(r.welfare&&r.welfare.rate)!=null?r.welfare.rate:0.25)
+      +N('cfg_wel_cap','เพดานหัก (บาท) — 0 = ไม่จำกัด',(r.welfare&&r.welfare.cap)||0)
+      +N('cfg_wel_min','ฐานต่ำสุด — 0 = ไม่กำหนด',(r.welfare&&r.welfare.wage_min)||0)
+      +N('cfg_wel_max','ฐานสูงสุด — 0 = ไม่กำหนด',(r.welfare&&r.welfare.wage_max)||0)
+      +'<div style="font-size:11.5px;color:#92400e;background:#fffbeb;border-radius:8px;padding:8px 10px;margin-top:4px">'
+      +'อัตราตามกฎหมายอาจเปลี่ยนเป็นขั้นบันไดในภายหลัง — ตรวจอัตราให้ตรงประกาศก่อนเปิดใช้</div></div>'
     +'<div class="card" style="padding:14px;margin-bottom:12px"><div style="font-weight:700;margin-bottom:8px">เบี้ยขยัน · ปัดเศษ</div>'
       +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:9px"><input type="checkbox" id="cfd_noab"'+(r.diligence.require_no_absent?' checked':'')+'>จ่ายเบี้ยขยันเมื่อ "ไม่ขาดงาน"</label>'
       +N('cfd_late','สายได้ไม่เกิน (ครั้ง) ยังได้เบี้ยขยัน',r.diligence.allow_late_count)+N('cfr_round','ปัดเศษเงินสุทธิ (บาท)',r.rounding.net_round_to)+'</div>'
@@ -5730,6 +5747,7 @@ async function savePayrollConfig(){
     wage:{ daily_rate:n('cfw_daily'), monthly_rate:n('cfw_monthly') },
     ot:{ mode:$('cfo_mode').value, flat_rate:n('cfo_flat'), default_multiplier:n('cfo_mult'), base_hours_per_day:n('cfo_bh') },
     sso:{ enabled:(PAY_CFG&&PAY_CFG.sso&&PAY_CFG.sso.enabled)!==false, rate:n('cfs_rate'), cap:n('cfs_cap'), wage_min:n('cfs_min'), wage_max:n('cfs_max') },
+    welfare:{ enabled:!!($('cfg_wel_on')&&$('cfg_wel_on').checked), rate:n('cfg_wel_rate'), cap:n('cfg_wel_cap'), wage_min:n('cfg_wel_min'), wage_max:n('cfg_wel_max') },
     diligence:{ require_no_absent:$('cfd_noab').checked, allow_late_count:n('cfd_late') },
     shift_allowance:{ enabled:(PAY_CFG&&PAY_CFG.shift_allowance&&PAY_CFG.shift_allowance.enabled)!==false, controller_rate:n('cfsa_ctrl'), staff_rate:n('cfsa_staff') },
     rounding:{ net_round_to:n('cfr_round') },
@@ -5782,10 +5800,11 @@ function plSlipInner(it, meta){
   (it.additions||[]).forEach(a=>{ if(N(a.amount)!==0) earn.push([String(a.label||'เงินเพิ่ม'),'',a.amount,0,'sub']); });
   const ded=[];
   if(N(it.sso)>0)             ded.push(['ประกันสังคม','Social Security Fund',it.sso]);
+  if(N(it.welfare)>0)         ded.push(['กองทุนสงเคราะห์ลูกจ้าง','Employee Welfare Fund',it.welfare]);
   if(N(it.advance_deduct)>0)  ded.push(['หักเบิกล่วงหน้า','Advance repayment',it.advance_deduct]);
   (it.deductions||[]).forEach(d=>{ if(N(d.amount)!==0) ded.push([String(d.label||'หักอื่นๆ'),'',d.amount,0,'sub']); });
   if(!ded.length) ded.push(['ไม่มีรายการหัก','No deductions',0]);
-  const ytd=[['เงินได้สะสม','YTD earnings',it.ytd_earnings,0],['ภาษีหัก ณ ที่จ่ายสะสม','YTD Withholding tax',it.ytd_tax||0,0],['เงินประกันสังคมสะสม','Accumulated SSF',it.ytd_sso,0],['รวมเงินได้','Total earnings',it.gross,1],['รวมรายการหัก','Total deductions',it.total_deduct,1],['เงินได้สุทธิ','Net pay',it.net,2]];
+  const ytd=[['เงินได้สะสม','YTD earnings',it.ytd_earnings,0],['ภาษีหัก ณ ที่จ่ายสะสม','YTD Withholding tax',it.ytd_tax||0,0],['เงินประกันสังคมสะสม','Accumulated SSF',it.ytd_sso,0]].concat(N(it.ytd_welfare)>0?[['กองทุนสงเคราะห์ลูกจ้างสะสม','Accumulated EWF',it.ytd_welfare,0]]:[]).concat([['รวมเงินได้','Total earnings',it.gross,1],['รวมรายการหัก','Total deductions',it.total_deduct,1],['เงินได้สุทธิ','Net pay',it.net,2]]);
   const cell=(r)=>'<div class="ps-row'+(r[4]==='sub'?' ps-sub':'')+'"><div class="ps-lbl"><div class="ps-th">'+esc(r[0])+'</div>'+(r[1]?('<div class="ps-en">'+esc(r[1])+'</div>'):'')+'</div><div class="ps-amt'+(r[3]===1?' ps-strong':(r[3]===2?' ps-net':''))+'">'+B(r[2])+'</div></div>';
   // Remark: เงินเบิกล่วงหน้า (อัตโนมัติ) + หมายเหตุที่ HR พิมพ์เอง
   const remarks=[]; if(it.note) remarks.push(it.note);
