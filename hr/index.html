@@ -4668,6 +4668,7 @@ async function openDiscTimeline(empId){
   openModal('ไทม์ไลน์เคสวินัย', '<div class="empty">กำลังโหลด…</div>');
   const r=await post({ action:'hr_disc_timeline', password:pwd, ...authBody(), emp_id:empId });
   if(!r.ok){ openModal('ไทม์ไลน์เคสวินัย','<div class="empty">'+esc(r.error||'')+'</div>'); return; }
+  window.DTL_LAST = r;   // ★ เก็บไว้ให้หน้าเซ็นหยิบรายละเอียดไปแสดงในฟอร์ม ไม่ต้องยิง API ซ้ำ
   const fmt=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
   const c=r.counts||{};
   const ladder=[['verbal','ตักเตือนวาจา'],['written','ลายลักษณ์อักษร'],['warning','ใบเตือน']]
@@ -4692,13 +4693,122 @@ async function openDiscTimeline(empId){
           }</div>
           ${['verbal','written','warning'].includes(i.type)?`<div style="margin-top:6px">${
             i.doc_at
-              ? `<span class="pill ok"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><path d="M20 6L9 17l-5-5"/></svg> เอกสารสมบูรณ์ · ${fmt(i.doc_at)}${i.doc_by?(' · โดย '+esc(i.doc_by)):''}</span>${i.doc_url?` <a href="${esc(i.doc_url)}" target="_blank" style="font-size:12px">ดูเอกสาร</a>`:''}`
-              : `<button class="btn btn-warn btn-sm" onclick="discDocComplete('${esc(String(i.id))}','${esc(empId)}')"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> แนบเอกสารสมบูรณ์ (บังคับ)</button><div style="font-size:11.5px;color:var(--orange);margin-top:3px">— ยังไม่เริ่มนับความผิดครั้งถัดไป จนกว่า HR จะปิดเอกสาร</div>`
+              ? `<span class="pill ok"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><path d="M20 6L9 17l-5-5"/></svg> เอกสารสมบูรณ์ · ${fmt(i.doc_at)}${i.doc_by?(' · โดย '+esc(i.doc_by)):''}</span>${i.doc_url?` <a href="${esc(i.doc_url)}" target="_blank" style="font-size:12px">ดูเอกสาร</a>`:''}${
+                  i.ack_signature ? `<div style="margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;display:inline-block;background:#fff">
+                      <div style="font-size:11px;color:var(--muted);margin-bottom:3px">ลายมือชื่อพนักงาน</div>
+                      <img src="${esc(i.ack_signature)}" style="max-width:220px;max-height:80px;display:block;cursor:zoom-in" onclick="window.open(this.src,'_blank')">
+                      <div style="font-size:12px;font-weight:700;text-align:center;margin-top:3px">${esc(i.ack_typed_name||'')}</div>
+                      ${i.ack_agree===false
+                        ? `<div style="font-size:11.5px;color:#b91c1c;font-weight:700;margin-top:4px">⚠ รับทราบแต่ไม่เห็นด้วย</div><div style="font-size:12px;color:#991b1b;margin-top:2px;max-width:260px;white-space:pre-wrap">${esc(i.ack_disagree_reason||'')}</div>`
+                        : `<div style="font-size:11.5px;color:#15803d;font-weight:700;margin-top:4px">✓ รับทราบและเห็นด้วย</div>`}
+                    </div>` : ''}`
+              : `<button class="btn btn-pri btn-sm" onclick="discSignOpen('${esc(String(i.id))}','${esc(empId)}')"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 6l2-2 2 2-2 2"/></svg> ให้พนักงานเซ็นบนจอ</button> <button class="btn btn-sec btn-sm" onclick="discDocComplete('${esc(String(i.id))}','${esc(empId)}')"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> แนบรูปเอกสารกระดาษ</button><div style="font-size:11.5px;color:var(--orange);margin-top:3px">— ยังไม่เริ่มนับความผิดครั้งถัดไป จนกว่า HR จะปิดเอกสาร</div>`
           }</div>`:''}
         </div></div>`).join('');
   openModal('ไทม์ไลน์เคสวินัย · '+esc((r.emp&&r.emp.name)||empId),
     `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${ladder}</div>${body}`);
 }
+// ======================================================================
+// ★ 21 ก.ย. 69 — เซ็นรับทราบบนจอ (HR เปิดให้พนักงานเซ็นตรงหน้า)
+//   แทนขั้นตอนเดิม: พิมพ์เอกสาร → เซ็นกระดาษ → ถ่ายรูป → อัปโหลด
+//   ปุ่มแนบรูปเอกสารกระดาษยังอยู่ — สาขาไหนอยากทำแบบเดิมก็ยังทำได้
+//   ฝั่งพนักงาน (แอปรับส่งผลัด) ไม่มีหน้าจอเซ็น — กดรับทราบแบบเดิม
+// ======================================================================
+let DSIG_ID=null, DSIG_EMP=null, DSIG_DIRTY=false;
+
+function discSignOpen(id, empId){
+  DSIG_ID=id; DSIG_EMP=empId; DSIG_DIRTY=false;
+  const r=(window.DTL_LAST&&window.DTL_LAST.items||[]).find(x=>String(x.id)===String(id))||{};
+  const who=(window.DTL_LAST&&window.DTL_LAST.emp)||{};
+  const nm=who.name||empId;
+  openModal('<svg class="ei" viewBox="0 0 24 24"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 6l2-2 2 2-2 2"/></svg> เซ็นรับทราบ · '+esc(r.label||'การดำเนินการทางวินัย'),
+    '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;margin-bottom:12px;font-size:12.5px;color:#92400e;line-height:1.6">'
+      +'<b>ส่งเครื่องให้พนักงานอ่านและเซ็นตรงนี้</b><br>การเซ็นคือการ "รับทราบ" เท่านั้น ไม่ใช่การยอมรับว่ากระทำผิด'
+    +'</div>'
+    +'<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">'
+      +'<div style="font-size:12px;color:var(--muted);font-weight:700">พนักงาน</div>'
+      +'<div style="font-size:15px;font-weight:700;margin-bottom:8px">'+esc(nm)+' <span class="mono muted" style="font-size:12px">'+esc(empId)+'</span></div>'
+      +'<div style="font-size:12px;color:var(--muted);font-weight:700">สาเหตุ</div>'
+      +'<div style="font-size:14.5px;line-height:1.6;font-weight:600;white-space:pre-wrap">'+esc(r.reason||'—')+'</div>'
+      +(r.detail?('<div style="font-size:13px;color:var(--muted);margin-top:6px;white-space:pre-wrap">'+esc(r.detail)+'</div>'):'')
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)">'
+        +[ (r.score!=null?('คะแนน '+r.score):''),
+           (r.late_count!=null?('สาย '+r.late_count+' ครั้ง'):''),
+           (r.absent_count!=null?('ขาด '+r.absent_count+' วัน'):''),
+           (r.at?('ดำเนินการ '+fmt(r.at)):'') ].filter(Boolean).join(' · ')
+      +'</div>'
+    +'</div>'
+    +'<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">'
+      +'<div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:8px">ความเห็นของพนักงาน</div>'
+      +'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;margin-bottom:7px"><input type="radio" name="dsgA" id="dsg_y" checked style="width:auto;margin-top:3px"><span style="font-size:14px;line-height:1.5"><b>รับทราบและเห็นด้วย</b></span></label>'
+      +'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer"><input type="radio" name="dsgA" id="dsg_n" style="width:auto;margin-top:3px"><span style="font-size:14px;line-height:1.5"><b>รับทราบ แต่ไม่เห็นด้วย</b><br><span style="font-size:12px;color:var(--muted)">เซ็นรับว่าได้รับเอกสาร โดยขอโต้แย้งข้อเท็จจริง</span></span></label>'
+      +'<textarea id="dsg_reason" rows="2" placeholder="เหตุผลที่ไม่เห็นด้วย (จำเป็น)" style="display:none;width:100%;padding:9px;border:1.5px solid #fca5a5;border-radius:9px;font:inherit;font-size:14px;margin-top:9px;background:#fef2f2;box-sizing:border-box"></textarea>'
+    +'</div>'
+    +'<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">'
+        +'<div style="font-size:12px;color:var(--muted);font-weight:700">ลงลายมือชื่อ <span style="color:var(--red)">*</span></div>'
+        +'<button type="button" class="btn btn-sec btn-sm" id="dsg_clear">ล้าง</button>'
+      +'</div>'
+      +'<canvas id="dsg_cv" style="width:100%;height:180px;border:1.5px dashed var(--line2);border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>'
+      +'<div id="dsg_hint" style="text-align:center;font-size:12px;color:var(--muted);margin-top:-100px;margin-bottom:88px;pointer-events:none">เซ็นชื่อในกรอบนี้</div>'
+      +'<input type="text" id="dsg_name" value="'+esc(nm)+'" placeholder="ชื่อ-นามสกุลตัวบรรจงกำกับ" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;margin-top:10px;text-align:center;box-sizing:border-box">'
+    +'</div>'
+    +'<div id="dsg_err" style="display:none;color:var(--red);font-size:13.5px;font-weight:600;margin-bottom:10px"></div>'
+    +'<button class="btn btn-pri" id="dsg_save" style="width:100%;padding:12px">✓ บันทึกลายเซ็น และปิดเอกสาร</button>');
+
+  const n=$('dsg_n'), y=$('dsg_y'), rz=$('dsg_reason');
+  const sync=()=>{ rz.style.display=n.checked?'block':'none'; if(!n.checked) rz.value=''; };
+  n.onchange=sync; y.onchange=sync;
+  $('dsg_clear').onclick=dsgClear;
+  dsgInit();
+  setTimeout(()=>{ const cv=$('dsg_cv'); if(cv&&cv._fit) cv._fit(); },60);
+  $('dsg_save').onclick=dsgSave;
+}
+
+function dsgInit(){
+  const cv=$('dsg_cv'); if(!cv||cv._wired) return; cv._wired=true;
+  const ctx=cv.getContext('2d');
+  const fit=()=>{ const r=cv.getBoundingClientRect(); const dpr=window.devicePixelRatio||1; if(!r.width) return;
+    cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0f172a'; };
+  cv._fit=fit; fit();
+  let drawing=false;
+  const pos=e=>{ const r=cv.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; };
+  cv.addEventListener('pointerdown',e=>{ drawing=true; cv.setPointerCapture(e.pointerId);
+    const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x+0.01,p.y+0.01); ctx.stroke();
+    DSIG_DIRTY=true; const h=$('dsg_hint'); if(h) h.style.visibility='hidden'; e.preventDefault(); });
+  cv.addEventListener('pointermove',e=>{ if(!drawing) return; const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); e.preventDefault(); });
+  const up=e=>{ if(!drawing) return; drawing=false; try{ cv.releasePointerCapture(e.pointerId); }catch(_e){} };
+  cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up); cv.addEventListener('pointerleave',up);
+}
+function dsgClear(){ const cv=$('dsg_cv'); if(!cv) return; const c=cv.getContext('2d');
+  c.save(); c.setTransform(1,0,0,1,0,0); c.clearRect(0,0,cv.width,cv.height); c.restore();
+  DSIG_DIRTY=false; const h=$('dsg_hint'); if(h) h.style.visibility='visible'; }
+// คืนรูปพื้นขาว — PNG โปร่งใสเวลาเอาไปวางบนเอกสารสีขาวจะมองไม่เห็น
+function dsgData(){ const cv=$('dsg_cv'); if(!cv||!DSIG_DIRTY) return null;
+  const out=document.createElement('canvas'); out.width=cv.width; out.height=cv.height;
+  const o=out.getContext('2d'); o.fillStyle='#ffffff'; o.fillRect(0,0,out.width,out.height); o.drawImage(cv,0,0);
+  return out.toDataURL('image/png'); }
+
+async function dsgSave(){
+  const err=$('dsg_err'), btn=$('dsg_save');
+  const fail=t=>{ err.textContent=t; err.style.display='block'; btn.disabled=false; btn.textContent='✓ บันทึกลายเซ็น และปิดเอกสาร'; };
+  const sig=dsgData(); if(!sig) return fail('ยังไม่ได้เซ็นชื่อในกรอบ');
+  const typed=($('dsg_name').value||'').trim(); if(!typed) return fail('ต้องพิมพ์ชื่อ-นามสกุลกำกับ');
+  const agree=!$('dsg_n').checked;
+  const reason=($('dsg_reason').value||'').trim();
+  if(!agree && !reason) return fail('กรณีไม่เห็นด้วย ต้องระบุเหตุผล');
+  if(!confirm('ยืนยันบันทึกลายเซ็นของ '+typed+' ?\nระบบจะถือว่าเอกสารสมบูรณ์ และเริ่มนับความผิดครั้งถัดไป')) return;
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_disc_sign', password:pwd, ...authBody(),
+    data:{ id:DSIG_ID, signature:sig, typed_name:typed, agree:agree, disagree_reason:reason, by:'สำนักงาน (HR)' } });
+  if(!r||!r.ok) return fail((r&&r.error)||'บันทึกไม่สำเร็จ');
+  closeModal();
+  toast('ok', agree?'บันทึกลายเซ็นและปิดเอกสารแล้ว':'บันทึกแล้ว · พนักงานโต้แย้ง — ควรตรวจสอบ');
+  openDiscTimeline(DSIG_EMP);
+  if(typeof loadDiscipline==='function') loadDiscipline();
+}
+
 async function discDocComplete(id, empId){
   const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
   inp.onchange=async ()=>{
