@@ -4512,7 +4512,9 @@ function renderDiscipline(){
 
   const SEV={ verbal:['#fef9c3','#a16207'], written:['#ffedd5','#c2410c'], warning:['#fee2e2','#dc2626'] };   // ไล่สีตามความรุนแรง
   const actPill = x=>{
-    if(x.waived) return `<span class="pill" style="background:#ede9fe;color:#6d28d9;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> อนุโลมรอบนี้</span>${x.waive_reason?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(x.waive_reason)}</div>`:''}`;
+    // ★ 21 ก.ย. 69 — อนุโลมแล้ว การ์ดขึ้น "ปกติ" สีเขียว (band_label ถูก override มาจาก hr-api)
+    //   แต่ยังบอกไว้ด้วยว่าเดิมตกแบนด์ไหน — อนุโลมคือ "ไม่เอาผิด" ไม่ใช่ "ลบประวัติ"
+    if(x.waived) return `<span class="pill" style="background:#ede9fe;color:#6d28d9;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> อนุโลมรอบนี้</span>${x.waive_reason?`<div style="font-size:11px;color:var(--muted);margin-top:2px">เหตุผล: ${esc(x.waive_reason)}${x.waive_by?(' · โดย '+esc(x.waive_by)):''}</div>`:''}${x.band_label_raw?`<div style="font-size:11px;color:var(--muted);margin-top:2px">ถ้าไม่อนุโลมจะอยู่ขั้น <b style="color:${esc(x.band_color_raw||'#475569')}">${esc(x.band_label_raw)}</b> · คะแนนไม่ได้คืนให้</div>`:''}`;
     const tc = x.term_case;
     const wt = Number(x.warning_total)||0;
     const suffix = (wt>0 && !tc) ? (' · ใบเตือน '+wt+'/3') : '';
