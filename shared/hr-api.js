@@ -1565,16 +1565,32 @@
     const oldId = String(d.old_id || '').trim();
     const newId = String(d.new_id || '').trim();
     const branch = String(d.branch_id || '').trim();
-    if (!oldId || !newId) return { ok: false, error: 'ระบุรหัสเก่าและรหัสใหม่' };
-    if (oldId === newId) return { ok: false, error: 'รหัสเก่ากับรหัสใหม่เหมือนกัน' };
-    if (!/^[a-zA-Z0-9_-]+$/.test(newId)) return { ok: false, error: 'รหัสใหม่ต้องเป็นตัวอักษร/ตัวเลขเท่านั้น' };
-    const { data: dup } = await sb().from('employees').select('emp_id').eq('emp_id', newId).maybeSingle();
-    if (dup) return { ok: false, error: 'รหัสใหม่ ' + newId + ' มีพนักงานอื่นใช้อยู่แล้ว' };
-    const { data, error } = await sb().rpc('transfer_emp', { p_old: oldId, p_new: newId, p_branch: branch || null });
-    if (error) return { ok: false, error: 'เรียกฟังก์ชันไม่สำเร็จ — ยังไม่ได้ติดตั้ง transfer_emp.sql? (' + String(error.message || error) + ')' };
+    if (!oldId) return { ok: false, error: 'ระบุรหัสเดิม' };
+    // ★ 21 ก.ย. 69 — รองรับ "ย้ายสาขาอย่างเดียว คงรหัสเดิม"
+    //   เดิมบังคับต้องมีรหัสใหม่เสมอ และตีกลับทันทีถ้ารหัสเก่า = ใหม่
+    //   → พนักงานรหัส 0000xxx (ไม่ได้อิงเลขสาขา) จึงย้ายสาขาไม่ได้เลย ต้องตั้งรหัสใหม่ทิ้ง ๆ ขว้าง ๆ
+    const sameId = (!newId || newId === oldId);
+    if (sameId && !branch) return { ok: false, error: 'ย้ายสาขาอย่างเดียวต้องเลือกสาขาใหม่' };
+    if (!sameId) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(newId)) return { ok: false, error: 'รหัสใหม่ต้องเป็นตัวอักษร/ตัวเลขเท่านั้น' };
+      const { data: dup } = await sb().from('employees').select('emp_id').eq('emp_id', newId).maybeSingle();
+      if (dup) return { ok: false, error: 'รหัสใหม่ ' + newId + ' มีพนักงานอื่นใช้อยู่แล้ว' };
+    }
+    const { data, error } = await sb().rpc('transfer_emp', { p_old: oldId, p_new: sameId ? oldId : newId, p_branch: branch || null });
+    // ★ ข้อความ error เดิมเดาว่า "ยังไม่ได้ติดตั้ง transfer_emp.sql" เสมอ ทั้งที่ติดตั้งแล้ว
+    //   เคสจริงคือ FK ของตารางลูกไม่ได้เป็น ON UPDATE CASCADE → แก้ด้วย fix-transfer-emp-2569-09-21.sql
+    if (error) {
+      const m = String(error.message || error);
+      return { ok: false, error: /foreign key/i.test(m)
+        ? ('ย้ายไม่สำเร็จ — ยังไม่ได้รัน supabase/fix-transfer-emp-2569-09-21.sql (ตารางลูกยังไม่ได้ตั้ง ON UPDATE CASCADE) · ' + m)
+        : ('เรียกฟังก์ชันไม่สำเร็จ — ติดตั้ง transfer_emp.sql แล้วหรือยัง? (' + m + ')') };
+    }
     if (typeof data === 'string' && data.indexOf('ERROR') === 0) return { ok: false, error: data.replace(/^ERROR:\s*/, '') };
-    await logAct('ย้ายรหัสพนักงาน ' + oldId + ' → ' + newId + (branch ? (' · สาขา ' + branch) : ''), newId, String(data || ''));
-    return { ok: true, message: String(data || 'ย้ายเรียบร้อย') };
+    const finalId = sameId ? oldId : newId;
+    await logAct(sameId
+      ? ('ย้ายสาขาพนักงาน ' + oldId + ' → สาขา ' + branch + ' (คงรหัสเดิม)')
+      : ('ย้ายรหัสพนักงาน ' + oldId + ' → ' + newId + (branch ? (' · สาขา ' + branch) : '')), finalId, String(data || ''));
+    return { ok: true, message: String(data || 'ย้ายเรียบร้อย'), emp_id: finalId, same_id: sameId };
   }
 
   // ---------- TOGGLE ACTIVE ----------
