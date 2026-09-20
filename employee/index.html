@@ -687,14 +687,6 @@ async function submit(action){
         if(reason===null || !reason.trim()){ showToast('err','ต้องระบุเหตุผลการกดออกข้ามสาขา'); return; }
         co = await HR.checkOut({ empId:empMatch.emp_id, shiftId, checkoutBranchId:curBranch, reason:reason.trim(), photoDataUrl: outPhoto });
       }
-      // ★ 15 ก.ย. 69 — หัวหน้าผลัดยังไม่กดส่งผลัด → ยังออกงานไม่ได้
-      if(co && co.blockedShift){
-        showToast('err','ยังออกงานไม่ได้ — หัวหน้าผลัดยังไม่ได้กด "ส่งผลัด"'
-          +(co.lead_name?('\nหัวหน้าผลัด: '+co.lead_name):'\nกะนี้ยังไม่มีใครรับเป็นหัวหน้าผลัด')
-          +'\n\nให้หัวหน้าผลัดเข้าหน้ารับส่งผลัดแล้วกดส่งผลัดก่อน'
-          +'\nถ้าจำเป็นต้องออกก่อนจริง ให้ผู้จัดการร้านอนุมัติสิทธิออกงานฉุกเฉินให้');
-        return;
-      }
       if(co && co.none){ showToast('err','ไม่พบการเข้างานที่ค้างอยู่ — อาจเช็กเอาต์ไปแล้ว'); }
       else if(co && co.needReason){ showToast('err','ต้องระบุเหตุผลก่อนกดออก'); }
       else await showAckPopup('checkout', { name:empMatch.name, time:timeStr, cross:!!(co&&co.crossBranch), branch_name:gps.branch?gps.branch.name:'' });
@@ -1337,23 +1329,24 @@ function renderAck(action, info, s){
     + ackRow('มาสาย', st.late_count+' ครั้ง · '+st.late_total+' นาที', st.late_count>0?'var(--red)':'var(--green)')
     + ackRow('ขาดงาน', st.absent+' วัน', st.absent>0?'var(--red)':'var(--green)')
     + '</div>';
-  html += '<div style="background:'+d.color+'14;border:1.5px solid '+d.color+';border-radius:11px;padding:10px 12px">'
-    + '<div style="font-weight:700;color:'+d.color+'">ระดับวินัย: '+escH(d.name)+'</div>';
-  if(d.next && (d.next.need_late!=null || d.next.need_absent!=null)){
-    const parts=[];
-    if(d.next.need_late!=null) parts.push('สายอีก '+d.next.need_late+' ครั้ง');
-    if(d.next.need_absent!=null) parts.push('ขาดอีก '+d.next.need_absent+' วัน');
-    html += '<div style="font-size:12.5px;margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> '+parts.join(' หรือ ')+' → '+escH(d.next.name)+'</div>';
-  } else { html += '<div style="font-size:12.5px;margin-top:3px">'+escH(d.message)+'</div>'; }
-  html += '</div>';
+  // ★ 21 ก.ย. 69 — กล่อง "ระดับวินัย" ขึ้นเฉพาะเมื่อ HR กดออกเอกสารแล้วเท่านั้น
+  //   เดิมคำนวณจากจำนวนครั้งที่สาย/ขาด พนักงานจึงเห็นคำว่าโดนตักเตือนทั้งที่ HR ยังไม่ได้ทำอะไร
+  if(d && d.issued){
+    html += '<div style="background:'+d.color+'14;border:1.5px solid '+d.color+';border-radius:11px;padding:10px 12px">'
+      + '<div style="font-weight:700;color:'+d.color+'">ระดับวินัย: '+escH(d.name)+'</div>'
+      + '<div style="font-size:12.5px;margin-top:3px">'+escH(d.message)+'</div>'
+      + '</div>';
+  }
   if(sc && sc.enabled){
     html += '<div style="background:'+sc.band_color+'14;border:1.5px solid '+sc.band_color+';border-radius:11px;padding:10px 12px">'
       + '<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:700;color:'+sc.band_color+'">คะแนนเดือนนี้</span><span style="font-size:22px;font-weight:800;color:'+sc.band_color+'">'+sc.score+'<span style="font-size:12px;color:var(--muted)">/'+sc.start+'</span></span></div>'
-      + (sc.band_label?'<div style="font-size:12.5px;margin-top:2px">ผล: '+escH(sc.band_label)+(sc.bonus?' · โบนัส '+sc.bonus+' บาท':'')+'</div>':'');
-    if(sc.to_warn){
-      if(sc.to_warn.already) html += '<div style="font-size:12.5px;color:var(--red);margin-top:3px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> คะแนนเข้าโซน '+escH(sc.to_warn.warn_name)+'</div>';
-      else html += '<div style="font-size:12.5px;margin-top:3px">เหลืออีก '+sc.to_warn.gap+' คะแนนจะถึงโซน '+escH(sc.to_warn.warn_name)+'</div>';
+      + (sc.band_label?'<div style="font-size:12.5px;margin-top:2px">ผล: '+escH(sc.band_label)+(sc.bonus?' · เบี้ยวินัย '+sc.bonus+' บาท':'')+'</div>':'');
+    // คะแนนใช้ตัดสิน "เบี้ยวินัย" อย่างเดียว — ไม่ใช่ตัวออกใบเตือน
+    if(sc.to_bonus){
+      if(sc.to_bonus.already) html += '<div style="font-size:12.5px;color:var(--green);margin-top:3px">✓ คะแนนถึงเกณฑ์รับเบี้ยวินัย '+sc.to_bonus.amount+' บาทแล้ว</div>';
+      else html += '<div style="font-size:12.5px;margin-top:3px">อีก '+sc.to_bonus.gap+' คะแนน (ถึง '+sc.to_bonus.at_least+') จะได้เบี้ยวินัย '+sc.to_bonus.amount+' บาท</div>';
     }
+    html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">คะแนนวินัยใช้คิดเบี้ยวินัยเท่านั้น ไม่ใช่การออกใบเตือน</div>';
     html += '</div>';
   }
   return html;
@@ -1361,7 +1354,7 @@ function renderAck(action, info, s){
 function ackSummary(action, info, s){
   let p=(action==='checkin'?'เข้างาน':'ออกงาน')+' '+info.time;
   if(action==='checkin') p+= info.late_min>0?(' (สาย '+info.late_min+' น.)'):' (ตรงเวลา)';
-  if(s){ p+=' · รอบนี้สาย '+s.stats.late_count+' ครั้ง ขาด '+s.stats.absent+' วัน'; if(s.discipline) p+=' · วินัย: '+s.discipline.name; if(s.score&&s.score.enabled) p+=' · คะแนน '+s.score.score; }
+  if(s){ p+=' · รอบนี้สาย '+s.stats.late_count+' ครั้ง ขาด '+s.stats.absent+' วัน'; if(s.discipline&&s.discipline.issued) p+=' · วินัย: '+s.discipline.name; if(s.score&&s.score.enabled) p+=' · คะแนน '+s.score.score; }
   return p;
 }
 $('ackBtn').onclick = async ()=>{
@@ -1527,17 +1520,19 @@ function renderSelf(s, sc){
      <div style="font-size:11px;color:var(--muted);margin-top:3px">แถบเต็ม = คะแนนดีเยี่ยม · ลดลงเมื่อถูกตัดคะแนน (มาสาย/ขาดงาน)</div>
    </div>`;
      }
-     const arr=[100,80,60,40,20]; const pct=arr[lv.level]!=null?arr[lv.level]:100; return `
-   <div style="margin-top:10px">
-     <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span style="color:var(--muted)">คะแนนวินัย</span><span style="font-weight:700;color:${lv.color}">${pct}/100</span></div>
-     <div style="height:13px;background:#eceef1;border-radius:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${lv.color};border-radius:8px;transition:width .5s"></div></div>
-     <div style="font-size:11px;color:var(--muted);margin-top:3px">แถบเต็ม = วินัยดีเยี่ยม · ลดลงเมื่อมาสาย/ขาดงานสะสม</div>
-   </div>`; })()}
+     return '';   // ★ ยังไม่ได้ตั้งระบบคะแนน — ไม่ต้องเดาคะแนนจากจำนวนครั้งที่สาย/ขาด
+   })()}
+   ${lv.issued ? `
    <div style="background:${lv.color}14;border:1.5px solid ${lv.color};border-radius:13px;padding:12px 14px;margin-top:8px">
      <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:${lv.color};display:inline-block"></span>
        <span style="font-weight:700;color:${lv.color}">ระดับวินัย: ${escH(lv.name)}</span></div>
      <div style="font-size:13px;color:var(--txt);margin-top:6px">${escH(lv.message)}</div>
-   </div>`;
+   </div>` : `
+   <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:13px;padding:12px 14px;margin-top:8px">
+     <div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block"></span>
+       <span style="font-weight:700;color:#15803d">ไม่มีการดำเนินการทางวินัย</span></div>
+     <div style="font-size:13px;color:var(--txt);margin-top:6px">ยังไม่มีเอกสารตักเตือน/ใบเตือนที่ HR ออกให้คุณ · ตัวเลขสาย-ขาดด้านบนเป็นสถิติของรอบนี้ ไม่ใช่การลงโทษ</div>
+   </div>`}`;
 }
 </script>
 <script>
