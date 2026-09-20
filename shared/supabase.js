@@ -672,7 +672,8 @@
     const late_count = late.length;
     const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
     const absent = mySched.filter(d => !worked.has(d) && !onLeave(d)).length;
-    const level = _disciplineLevel(late_count, absent);
+    // ★ สถานะวินัย = เฉพาะเอกสารที่ HR ออกแล้ว (ไม่เดาจากจำนวนครั้งที่สาย/ขาดอีกต่อไป)
+    const level = await _discIssuedFor(empId);
     return {
       emp: empR.data, cycle: cyc,
       today: {
@@ -696,7 +697,7 @@
       sb.from('attendance').select('work_date,check_in,late_min,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('start_date,end_date,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
-      sb.from('discipline_rules').select('*'),
+      _discIssuedFor(empId),          // ★ แทน discipline_rules — สถานะมาจากเอกสารที่ HR ออกจริงเท่านั้น
       sb.from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb.from('score_rules').select('*'),
       sb.from('score_bands').select('*'),
@@ -717,7 +718,7 @@
     const todayRow = att.find(a => a.work_date === today);
     const todayStatus = { checked_in: !!(todayRow && todayRow.check_in), check_in_time: (todayRow && todayRow.check_in) ? _fmtTime(todayRow.check_in) : null, late_min: todayRow ? (todayRow.late_min || 0) : 0 };
 
-    const discipline = _disciplineFromRules(drR.data, late_count, absent);
+    const discipline = drR;          // ★ ผลจาก _discIssuedFor — ไม่มีเอกสาร = ปกติ
     const score = _computeScore({ cfg: scfgR.data, rules: srR.data, bands: sbR.data, events: seR.data, att, mySched, worked, onLeave });
 
     return { emp: empR.data, cycle: cyc, today: todayStatus, stats: { late_count, late_total, absent, leave_days }, discipline, score };
@@ -931,38 +932,72 @@
     return n;
   }
   function _fmtTime(ts) { try { return new Date(ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }); } catch (e) { return ''; } }
-  function _disciplineLevel(lateCount, absent) {
-    if (lateCount >= 10 || absent >= 3) return { level: 4, name: 'ใบเตือนระดับ 2', color: '#b91c1c', message: '⚠️ เข้าข่ายใบเตือนระดับสูง กรุณาปรับปรุงการมาทำงานโดยด่วน' };
-    if (lateCount >= 7  || absent >= 2) return { level: 3, name: 'ใบเตือนระดับ 1', color: '#ea580c', message: '⚠️ คุณเข้าข่ายได้รับใบเตือน โปรดระวังการมาสาย/ขาดงาน' };
-    if (lateCount >= 5  || absent >= 1) return { level: 2, name: 'ตักเตือนลายลักษณ์อักษร', color: '#d97706', message: 'โปรดระวัง หากสะสมเพิ่มอาจเข้าข่ายใบเตือน' };
-    if (lateCount >= 3)                 return { level: 1, name: 'ตักเตือนด้วยวาจา', color: '#ca8a04', message: 'เริ่มมาสายบ่อย ควรปรับปรุงให้ตรงเวลา' };
-    return { level: 0, name: 'ดีเยี่ยม', color: '#16a34a', message: 'รักษาวินัยได้ดีมาก ขอให้รักษามาตรฐานนี้ไว้ 👍' };
-  }
-
-  // ระดับวินัยจากเกณฑ์ที่ HR ตั้งไว้ (ตาราง discipline_rules) + ระยะถึงระดับถัดไป
-  function _disciplineFromRules(rulesRaw, lateCount, absent) {
-    const rules = (rulesRaw || []).filter(r => r.enabled !== false).sort((a, b) => a.level - b.level);
-    if (!rules.length) { const d = _disciplineLevel(lateCount, absent); return { level: d.level, name: d.name, color: d.color, message: d.message, next: null }; }
-    const meets = r => ((r.late_min != null && lateCount >= r.late_min) || (r.absent_min != null && absent >= r.absent_min));
-    let cur = null;
-    rules.forEach(r => { if (meets(r)) cur = r; });
-    const curLevel = cur ? cur.level : 0;
-    const next = rules.find(r => r.level > curLevel && !meets(r)) || rules.find(r => r.level > curLevel) || null;
-    let nextInfo = null;
-    if (next) {
-      nextInfo = {
-        name: next.level_name,
-        need_late: (next.late_min != null) ? Math.max(0, next.late_min - lateCount) : null,
-        need_absent: (next.absent_min != null) ? Math.max(0, next.absent_min - absent) : null,
+  // ★ 21 ก.ย. 69 — สถานะวินัยที่ "พนักงานเห็น" = เฉพาะเอกสารที่ HR กดออกแล้วเท่านั้น
+  //   ของเดิมมี 2 ตัว (_disciplineLevel นับครั้งแบบฮาร์ดโค้ด · _disciplineFromRules อ่าน discipline_rules)
+  //   ทั้งคู่คำนวณจากจำนวนครั้งที่สาย/ขาด แล้วขึ้นคำว่า "ตักเตือนลายลักษณ์อักษร" ให้พนักงานอ่านทันที
+  //   ทั้งที่ HR ยังไม่ได้ดำเนินการอะไรเลย — สายแค่ 2 นาทีก็ขึ้น ไม่เป็นธรรมกับพนักงาน
+  //   ตอนนี้: ไม่มีเอกสาร = "ปกติ" · บันไดวินัย (วาจา → ลายลักษณ์อักษร → ใบเตือน) ยังเหมือนเดิมทุกอย่าง
+  const _DISC_STEP = {
+    verbal:  { level: 1, name: 'ตักเตือนด้วยวาจา',           color: '#ca8a04' },
+    written: { level: 2, name: 'ตักเตือนเป็นลายลักษณ์อักษร', color: '#d97706' },
+    warning: { level: 3, name: 'ใบเตือน',                    color: '#ea580c' },
+  };
+  function _disciplineIssued(actionsRaw, liveWarn) {
+    const live = (actionsRaw || [])
+      .filter(a => a && a.status !== 'cancelled')
+      .filter(a => !a.warning_id || !liveWarn || liveWarn.has(String(a.warning_id)))
+      .filter(a => _DISC_STEP[a.action_type]);
+    if (!live.length) {
+      return {
+        level: 0, name: 'ปกติ', color: '#16a34a', issued: false, count: 0, last_at: null,
+        message: 'ไม่มีการดำเนินการทางวินัยในระบบ — รักษามาตรฐานนี้ไว้',
+        next: null,
       };
     }
+    const warnCount = live.filter(a => a.action_type === 'warning').length;
+    let top = live.reduce((m, a) => Math.max(m, _DISC_STEP[a.action_type].level), 0);
+    const last = live.slice().sort((a, b) => (String(a.performed_at || '') < String(b.performed_at || '') ? 1 : -1))[0];
+    let name, color;
+    if (top >= 3) {
+      name = 'ใบเตือน' + (warnCount > 1 ? (' ครั้งที่ ' + warnCount) : '');
+      color = warnCount > 1 ? '#b91c1c' : '#ea580c';
+      if (warnCount > 1) top = 4;
+    } else {
+      const st = _DISC_STEP[top === 2 ? 'written' : 'verbal'];
+      name = st.name; color = st.color;
+    }
     return {
-      level: curLevel,
-      name: cur ? cur.level_name : 'ปกติ',
-      color: cur ? cur.level_color : '#16a34a',
-      message: cur ? ('เข้าข่าย "' + cur.level_name + '" แล้ว โปรดปรับปรุงด่วน') : 'ยังไม่เข้าข่ายใบเตือน รักษาวินัยให้ดีต่อไป',
-      next: nextInfo,
+      level: top, name, color, issued: true, count: live.length,
+      last_at: last ? last.performed_at : null,
+      message: 'HR ออกเอกสารการดำเนินการทางวินัยแล้ว ' + live.length + ' รายการ — เปิดดูและกดรับทราบได้ในแอปรับส่งผลัด',
+      next: null,
     };
+  }
+  // ช่วงสะสมบันไดวินัย (ค่าเดียวกับ myDisciplineLadder) — ใช้กรองเอกสารที่ยังอยู่ในหน้าต่าง
+  async function _discWindowStart() {
+    let winMonths = 6;
+    try {
+      const { data: st } = await sb.from('app_settings').select('value').eq('key', 'disc_window_months').maybeSingle();
+      if (st && st.value) { const n = parseInt(st.value); if (n > 0) winMonths = n; }
+    } catch (_e) { }
+    const d = new Date(); d.setMonth(d.getMonth() - winMonths);
+    return d.toISOString().slice(0, 10);
+  }
+  // ดึงเอกสารวินัยของพนักงาน + คัดใบเตือนที่ถูกลบ/ยกเลิกออก
+  async function _discIssuedFor(empId) {
+    try {
+      const ws = await _discWindowStart();
+      const [aR, wR] = await Promise.all([
+        sb.from('disc_actions').select('action_type,status,warning_id,performed_at')
+          .eq('emp_id', String(empId)).gte('performed_at', ws),
+        sb.from('warnings').select('warning_id,status').eq('emp_id', String(empId)),
+      ]);
+      const liveWarn = new Set((wR.data || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
+      return _disciplineIssued(aR.data, liveWarn);
+    } catch (e) {
+      console.error('disc issued', e);
+      return _disciplineIssued([], null);
+    }
   }
 
   // คะแนนวินัยเดือนนี้ (จำลองสูตรเดียวกับฝั่ง HR hrScoreGet) + ระยะถึงโซนใบเตือน
@@ -981,16 +1016,22 @@
     let score = start + autoDeduct + manualDeduct; if (score < 0) score = 0;
     const sorted = bands.slice().sort((a, b) => b.min_score - a.min_score);
     const band = sorted.find(b => score >= b.min_score && score <= b.max_score) || null;
-    // โซนใบเตือนที่ใกล้สุดซึ่งอยู่ "ใต้" คะแนนปัจจุบัน
-    const warnBelow = sorted.filter(b => b.warn_level != null && score > b.max_score).sort((a, b) => b.max_score - a.max_score)[0];
-    let to_warn = null;
-    if (band && band.warn_level != null) to_warn = { already: true, warn_name: band.warn_name || band.label };
-    else if (warnBelow) to_warn = { gap: score - warnBelow.max_score, warn_name: warnBelow.warn_name || warnBelow.label, at_or_below: warnBelow.max_score };
+    // ★ 21 ก.ย. 69 — คะแนนวินัย = ตัวตัดสิน "เบี้ยวินัย" อย่างเดียว
+    //   เดิมบอกพนักงานว่า "เหลืออีก N คะแนนจะถึงโซนใบเตือน" — คนละเรื่องกับการออกใบเตือนจริง
+    //   (ใบเตือนตัดสินจากสายครบ 260 นาที/รอบ หรือขาดงาน และต้องให้ HR กดออกเอกสารเท่านั้น)
+    //   ตอนนี้จึงบอกเป็น "อีกกี่คะแนนถึงจะได้เบี้ยวินัยขั้นถัดไป" แทน
+    const bonusOf = b => Number((b && b.bonus_amount) || 0);
+    const bonusAbove = sorted.filter(b => bonusOf(b) > bonusOf(band) && b.min_score > score)
+      .sort((a, b) => a.min_score - b.min_score)[0];
+    let to_bonus = null;
+    if (band && bonusOf(band) > 0) to_bonus = { already: true, amount: bonusOf(band), label: band.label };
+    else if (bonusAbove) to_bonus = { gap: bonusAbove.min_score - score, amount: bonusOf(bonusAbove), label: bonusAbove.label, at_least: bonusAbove.min_score };
     return {
       enabled: true, start, score,
       band_label: band ? band.label : '', band_color: band ? band.color : '#475569',
       bonus: band && band.bonus_amount ? band.bonus_amount : 0,
-      to_warn,
+      to_bonus,
+      to_warn: null,      // เลิกใช้ — คงคีย์ไว้กันหน้าจอรุ่นเก่าที่ยังอ่านคีย์นี้อยู่พัง
     };
   }
   // OT = ชั่วโมงหลังเลิกกะ หักชั่วโมงที่ยังไม่คิด (freeHours) — เริ่มคิด OT ที่ชั่วโมงที่ (freeHours+1)

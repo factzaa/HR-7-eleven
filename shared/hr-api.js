@@ -6175,14 +6175,12 @@
     let leave_days = 0;
     leaves.forEach(l => { const s = l.start_date < start ? start : l.start_date; const e = (l.end_date || l.start_date) > end ? end : (l.end_date || l.start_date); if (s <= e) leave_days += Math.round((new Date(e + 'T00:00:00') - new Date(s + 'T00:00:00')) / 86400000) + 1; });
 
-    // ★ ระดับวินัย = ตัดสินจาก "คะแนน" อย่างเดียว (ให้ตรงกับหน้าวินัย/หน้าคะแนน)
+    // ★ 21 ก.ย. 69 — ระดับวินัยในเอกสารนี้ = เฉพาะที่ HR ออกเอกสารไปแล้วเท่านั้น
+    //   เดิมใช้แบนด์คะแนน → รายงานที่พิมพ์ส่งให้พนักงานขึ้นว่า "ตักเตือนด้วยวาจา" ทั้งที่ไม่เคยออกใบจริง
+    //   คะแนน/แบนด์ ยังแสดงในช่อง score ต่างหาก แต่เป็นเรื่อง "เบี้ยวินัย" คนละส่วนกัน
     const scAll = await hrScoreGet(p.cycle === 'previous' ? 'previous' : 'current', (p.cycle === 'current' || p.cycle === 'previous') ? null : { start, end });
     const me = (scAll.employees || []).find(x => String(x.emp_id) === String(p.emp_id)) || {};
-    const lv = {
-      level: me.warn_level != null ? me.warn_level : (me.action_type === 'verbal' ? 1 : (me.action_type === 'written' ? 2 : 0)),
-      level_name: me.band_label || 'ปกติ',
-      level_color: me.band_color || '#16a34a',
-    };
+    let lv = { level: 0, level_name: 'ไม่มีการดำเนินการทางวินัย', level_color: '#16a34a', issued: false };
     // ประวัติการดำเนินการทางวินัย (ตักเตือนวาจา / ลายลักษณ์อักษร / ใบเตือน) — หลักฐานประกอบเอกสาร
     const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
     // ★ ใบเตือนที่ถูก "ลบ" หรือ "ยกเลิก" ต้องไม่ค้างอยู่ในประวัติ
@@ -6197,6 +6195,20 @@
         reason: a.reason, detail: a.detail, by: a.performed_by, role: a.performed_role,
         warning_id: a.warning_id, ack_at: a.ack_at, need_ack: a.need_ack, in_range: (String(a.performed_at || '').slice(0, 10) >= start && String(a.performed_at || '').slice(0, 10) <= end),
       }));
+    // ★ ระดับวินัย = ขั้นสูงสุดที่ HR ออกเอกสารจริง (บันไดวินัยเดิม วาจา → ลายลักษณ์อักษร → ใบเตือน)
+    {
+      const _STEP_LV = { verbal: 1, written: 2, warning: 3 };
+      const _live = disc_history.filter(h => _STEP_LV[h.type]);
+      if (_live.length) {
+        const _warnN = _live.filter(h => h.type === 'warning').length;
+        let _top = _live.reduce((m, h) => Math.max(m, _STEP_LV[h.type]), 0);
+        let _nm, _cl;
+        if (_top >= 3) { _nm = 'ใบเตือน' + (_warnN > 1 ? (' ครั้งที่ ' + _warnN) : ''); _cl = _warnN > 1 ? '#b91c1c' : '#ea580c'; if (_warnN > 1) _top = 4; }
+        else if (_top === 2) { _nm = 'ตักเตือนเป็นลายลักษณ์อักษร'; _cl = '#d97706'; }
+        else { _nm = 'ตักเตือนด้วยวาจา'; _cl = '#ca8a04'; }
+        lv = { level: _top, level_name: _nm, level_color: _cl, issued: true };
+      }
+    }
     // งานที่ได้รับมอบหมาย (task_assignments)
     const tasks = taR.data || [];
     const tCount = st => tasks.filter(t => t.status === st).length;
@@ -6310,11 +6322,13 @@
         band_label: me.band_label || '',
         band_color: me.band_color || '#475569',
         bonus: me.bonus || 0,
+        // ★ ป้ายแจ้งเตือน HR เท่านั้น — ไม่ใช่คำสั่งให้ระบบออกใบ และไม่พิมพ์ในเอกสารที่ให้พนักงาน
         action_needed: me.action_type || null,
-        action_needed_label: me.action_type ? ACT_LABEL[me.action_type] : '',
+        action_needed_label: me.action_type ? ('HR ควรพิจารณา: ' + (ACT_LABEL[me.action_type] || '')) : '',
+        action_needed_internal: true,
         items: me.items || [],
       },
-      discipline: { level: lv.level, level_name: lv.level_name, level_color: lv.level_color },
+      discipline: { level: lv.level, level_name: lv.level_name, level_color: lv.level_color, issued: !!lv.issued },
       disc_history,
       tasks: { total: t_total, approved: t_approved, submitted: t_submitted, todo: t_todo, sent_back: t_sentback, sent_back_total, pass_rate },
       special: { total: sp_total, approved: sp_approved, submitted: sp_submitted, open: sp_open },
