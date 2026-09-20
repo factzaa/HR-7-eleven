@@ -14809,6 +14809,13 @@ function renderSchedule(){
   const _optOff = '<option value="">OFF</option>'+(DATA.shifts||[]).map(s=>`<option value="${esc(s.shift_id)}" title="${esc(s.name)}">${esc(s.code||s.shift_id)}</option>`).join('');
   const _optBr = (val)=>'<option value="" title="สาขาประจำ">ประจำ</option>'+((SC.branches||[]).map(b=>`<option value="${esc(b.branch_id)}"${b.branch_id===val?' selected':''} title="${esc(b.name)}">${esc(b.branch_id)}</option>`).join(''));
   const _selCss='height:26px;border:1.5px solid var(--line2);border-radius:6px;font:inherit;font-size:12.5px;background:var(--card)';
+  // ★ 20 ก.ย. 69 — ป้าย "เฉพาะกิจ"
+  //   เวรแถวนี้เกิดจากหัวหน้าผลัดกดปุ่ม "เพิ่มคนเข้ากะ" ในแอปรับส่งผลัด
+  //   ไม่ใช่เวรที่ ผจก./สำนักงานจัด — เดิมแยกด้วยตาไม่ออก จึงดูเหมือนระบบจัดกะให้เอง
+  const SC_ADHOC_NOTE = 'เพิ่มเข้ากะเฉพาะกิจ';
+  const _adhocTag = c => (c && c.note === SC_ADHOC_NOTE)
+    ? '<div title="หัวหน้าผลัดกดเพิ่มจากแอปรับส่งผลัด — ไม่ใช่เวรที่ ผจก./สำนักงานจัด · ถ้าไม่มีการลงเวลา ระบบจะไม่นับเป็นขาดงาน" style="font-size:9.5px;line-height:1.35;color:#92400e;background:#fef3c7;border-radius:4px;padding:0 3px;margin-top:1px;font-weight:700;white-space:nowrap">เฉพาะกิจ</div>'
+    : '';
   $('scBody').innerHTML = emps.map(e=>{
     const cells = days.map(d=>{
       const arr = SC.schedules[e.emp_id+'|'+d] || [];
@@ -14817,18 +14824,20 @@ function renderSchedule(){
       if(_lockCell){
         // อ่านอย่างเดียว: สัปดาห์ที่ผ่านมา หรือเวรที่สำนักงานจัดไปช่วยสาขาอื่น
         if(!arr.length) inner = '<span style="color:#dc2626;font-weight:700;font-size:13px">OFF</span>';
-        else inner = arr.map(c=>`<div style="font-weight:700;font-size:14px;${c.is_cover?'color:#ea580c':''}">${esc(shiftCodeOf(c.shift_id))}${c.is_cover?('<div style="font-size:10px;color:#ea580c;font-weight:600">→'+esc(c.branch_id)+'</div>'):''}</div>`).join('');
+        else inner = arr.map(c=>`<div style="font-weight:700;font-size:14px;${c.is_cover?'color:#ea580c':''}">${esc(shiftCodeOf(c.shift_id))}${c.is_cover?('<div style="font-size:10px;color:#ea580c;font-weight:600">→'+esc(c.branch_id)+'</div>'):''}${_adhocTag(c)}</div>`).join('');
       } else if(!arr.length){
         // ยังไม่มีกะ → แสดง "OFF" (ยังกดเลือกกะเพื่อจัดเวรได้)
         inner = `<select onchange="if(this.value)scAddShift('${esc(e.emp_id)}','${d}',this.value)" title="OFF — เลือกกะเพื่อจัดเวร" style="${_selCss};width:54px;font-weight:700;text-align:center;color:#dc2626">${_optOff}</select>`;
       } else {
         inner = arr.map(c=>{
           const cover = !!c.is_cover;
-          return `<div style="margin-bottom:3px;${cover?'background:#fff7ed;border-radius:6px;padding-bottom:1px':''}">
+          const adhoc = c.note === SC_ADHOC_NOTE;
+          return `<div style="margin-bottom:3px;${cover?'background:#fff7ed;border-radius:6px;padding-bottom:1px':(adhoc?'background:#fffbeb;border-radius:6px;padding-bottom:1px':'')}">
             <div style="display:flex;gap:1px;align-items:center;justify-content:center">
               <select onchange="scEditShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" style="${_selCss};width:54px;font-weight:700;text-align:center">${_optShift(c.shift_id)}</select>
               <span onclick="scDelShift('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}')" style="cursor:pointer;color:#d1d5db;font-weight:700;font-size:13px;padding:0 1px" title="ลบกะนี้">×</span>
             </div>
+            ${_adhocTag(c)}
             ${MGR_MODE?'':`<select onchange="scEditBranch('${esc(e.emp_id)}','${d}','${esc(c.shift_id)}',this.value)" title="เลือกสาขาที่ให้ไปทำ (เว้น = สาขาประจำ)" style="width:100%;border:0;background:transparent;font:inherit;font-size:10px;height:15px;margin-top:1px;color:#9aa4b2;cursor:pointer;text-align:center;-webkit-appearance:none;appearance:none">${_optBr(cover?c.branch_id:'')}</select>`}
           </div>`;
         }).join('');
