@@ -1769,10 +1769,13 @@
       const gSpan=_span(shById[group]); if(!gSpan) return [];
       const ids=[...new Set((scs||[]).map(r=>r.emp_id))];
       if(!ids.length) return [];
-      const {data:emps}=await sb.from('employees').select('emp_id,name,nickname,is_manager')
+      const {data:emps}=await sb.from('employees').select('emp_id,name,nickname,is_manager,start_date,end_date')
         .in('emp_id', ids).eq('active',true).eq('is_manager',true);
       if(!emps||!emps.length) return [];
-      const isMgr={}; emps.forEach(e=>{ isMgr[e.emp_id]=e; });
+      // ★ 20 ก.ย. 69 — ตัด ผจก. ที่พ้นสภาพแล้วออกด้วย (active อย่างเดียวไม่พอ — หลายคนลาออกแล้วแต่ active ยัง true)
+      const isMgr={}; emps.filter(e => (!e.start_date || String(e.start_date) <= workDate)
+                                    && (!e.end_date   || String(e.end_date)   >= workDate))
+                          .forEach(e=>{ isMgr[e.emp_id]=e; });
       const out=[], seen={};
       (scs||[]).forEach(r=>{
         const e=isMgr[r.emp_id]; if(!e || seen[r.emp_id]) return;
@@ -1832,15 +1835,29 @@
       _taskDefsFor(branch, today, group),
       sb.from('task_assignments').select('*').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', group),
       sb.from('schedules').select('emp_id,shift_id').eq('branch_id', branch || '').eq('work_date', today),
-      sb.from('employees').select('emp_id,name,nickname,branch_id').eq('active', true),   // ทั้งหมด → resolve ชื่อคนทำแทนจากสาขาอื่นได้
+      // ★ 20 ก.ย. 69 — ดึง start_date/end_date มาด้วย เพื่อคัดคนที่พ้นสภาพแล้วออกจากหน้ามอบงาน
+      //   ของเดิมกรองแค่ active = true ซึ่งไม่พอ: พนักงานที่ลาออกไปแล้วหลายคนยังมี active = true อยู่
+      //   (HR ใส่ end_date ให้ แต่ไม่ได้ปิดสวิตช์ active) → ชื่อยังโผล่ในดรอปดาวน์ "เพิ่มคนเข้ากะ" + "มอบงาน"
+      //   เคสจริง: ฟาง (0657377) ลาออก 06/09 · สาขา 06573 มีแบบนี้ 5 คน (ฟาง ใบปอ บี เฟรช เมย์)
+      //   และเป็นคนกลุ่มเดียวกับที่โดนกดเพิ่มเข้ากะ 19/09 แล้วขึ้นขาดงานปลอม
+      sb.from('employees').select('emp_id,name,nickname,branch_id,start_date,end_date').eq('active', true),   // ทั้งหมด → resolve ชื่อคนทำแทนจากสาขาอื่นได้
       sb.from('shifts').select('shift_id,name,main_shift').order('start_time'),
       sb.from('branches').select('branch_id,name'),
     ]);
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    // ★ "ยังเป็นพนักงานอยู่ ณ วันทำงานของกะนี้" — เทียบกับ work_date ของกะ ไม่ใช่วันนี้
+    //   (กะดึกข้ามคืน work_date เป็นเมื่อวาน ถ้าเทียบกับวันนี้คนที่ลาออกพอดีจะหลุดกลางกะ)
+    const _inEmploy = e => (!e.start_date || String(e.start_date) <= today)
+                        && (!e.end_date   || String(e.end_date)   >= today);
+    const empsActive = (empsR.data || []).filter(_inEmploy);
+    // nameOf ใช้ได้ 2 ทาง: (1) กรองคนในกะ (2) resolve ชื่อของคนที่เคยถูกมอบงานไว้
+    //   → ชื่อต้อง resolve ได้ทุกคนแม้พ้นสภาพแล้ว ไม่งั้นงานเก่าจะขึ้นเป็นรหัสแทนชื่อ
     const nameOf = {}; (empsR.data || []).forEach(e => { nameOf[e.emp_id] = e.nickname || e.name; });
+    // ส่วนรายชื่อที่ "เลือกได้" ต้องเหลือเฉพาะคนที่ยังเป็นพนักงาน
+    const pickable = {}; empsActive.forEach(e => { pickable[e.emp_id] = true; });
     const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
-    // คนในกะ = จากตารางเวร แต่ตัดคนที่ปิดใช้งานออก (nameOf มีเฉพาะ active) — กันคนที่ลาออก/ปิดใช้งานโผล่ในรายชื่อ+ดรอปดาวน์มอบงาน
-    const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group && nameOf[r.emp_id]).map(r => r.emp_id))];
+    // คนในกะ = จากตารางเวร แต่ตัดคนที่พ้นสภาพแล้วออก (ปิดใช้งาน หรือเลยวันสิ้นสุดการทำงานไปแล้ว)
+    const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group && pickable[r.emp_id]).map(r => r.emp_id))];
     const defs = (defsR || []).filter(d => !d.auto_day);   // งานที่สุ่มวันรายคน = พนักงานดึงเองในเมนูของตัวเอง
     // ★ ผจก. — เข้าร่วมผลัดที่เวลาทับกัน + งานที่ติ๊ก "ผจก.รับผิดชอบ" มอบให้อัตโนมัติ
     const mgrs = await _mgrOnDuty(branch, today, group);
@@ -1855,8 +1872,9 @@
       members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id }))       // คนในกะวันนี้ (จากตารางเวรจริง)
         .concat(mgrs.filter(m => !memberIds.includes(m.emp_id)).map(m => ({ emp_id: m.emp_id, name: m.name + ' · ผจก.', is_mgr: true }))),
       managers: mgrs,
-      colleagues: (empsR.data || []).filter(e => (e.branch_id || '') === (branch || '')).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })), // ทุกคนในสาขา (ไว้เพิ่มเข้ากะ)
-      all_staff: (empsR.data || []).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '', same_branch: (e.branch_id || '') === (branch || '') })), // ทุกคนทุกสาขา (ไว้เพิ่มคนข้ามสาขามาช่วย)
+      // ★ รายชื่อที่เลือกได้ — เฉพาะคนที่ยังเป็นพนักงาน ณ วันทำงานของกะนี้
+      colleagues: empsActive.filter(e => (e.branch_id || '') === (branch || '')).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name })), // ทุกคนในสาขา (ไว้เพิ่มเข้ากะ/มอบงานนอกกะ)
+      all_staff: empsActive.map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '', same_branch: (e.branch_id || '') === (branch || '') })), // ทุกคนทุกสาขา (ไว้เพิ่มคนข้ามสาขามาช่วย)
       scheduled: memberIds.includes(emp.emp_id),
       defs: defs.map(d => Object.assign(_defBrief(d), { assignment: byDef[d.id] || null })),
     };
