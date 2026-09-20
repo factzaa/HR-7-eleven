@@ -1887,11 +1887,25 @@
     if (!e) throw new Error('ไม่พบรหัสพนักงานที่จะเพิ่ม');
     const today = workDate || bangkokDate();   // อิงวันทำงานของกะ (รองรับกะข้ามคืน)
     const br = branchId || e.branch_id || null;
-    const { error } = await sb.from('schedules').upsert({ emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br, is_cover: false, note: 'เพิ่มเข้ากะเฉพาะกิจ' }, { onConflict: 'emp_id,work_date,shift_id' });
+    // ★ 20 ก.ย. 69 — แยก 2 เคสที่เดิมปนกันอยู่ในแถวเดียว
+    //   1) เพิ่มคนในสาขาเดียวกัน = "เฉพาะกิจ" — อาจแค่ฝากงาน ไม่ได้มาทำงานจริง
+    //      → ถ้าไม่มีการลงเวลา ฝั่ง hr-api จะไม่นับเป็นขาดงาน (กันเคส 19/09/69 ที่ขึ้นขาดงานปลอม 7 คน)
+    //   2) เพิ่มคนข้ามสาขา = "ไปช่วยสาขาอื่น" — เขามาทำงานจริงเต็มกะ
+    //      → ต้องนับเป็นวันทำงานตามปกติ ห้ามไปโดนกฎข้อ 1 ไม่งั้นคนมาช่วยจริงแต่ลืมสแกนจะหายไปจากระบบ
+    //      → และต้องตั้ง is_cover = true ให้ตรงกับที่หน้าจัดตาราง HR (hrSchedSave) คำนวณไว้
+    //        ไม่งั้น: ตารางไม่ขึ้นสัญลักษณ์ "→สาขา" · ผจก. แก้/ลบแถวข้ามสาขาได้ (ต้องล็อกให้สำนักงาน)
+    //        · รายงาน "ไปช่วยสาขาอื่น" (days_cover) นับขาด
+    const home = e.branch_id || null;
+    const isCover = !!(br && home && br !== home);
+    const { error } = await sb.from('schedules').upsert({
+      emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br,
+      is_cover: isCover,
+      note: isCover ? 'ไปช่วยสาขาอื่น' : 'เพิ่มเข้ากะเฉพาะกิจ',
+    }, { onConflict: 'emp_id,work_date,shift_id' });
     if (error) throw error;
     // บันทึก log — ให้รู้ว่ากะที่ "โผล่เพิ่มเอง" จริง ๆ มาจากหัวหน้าผลัดกดเพิ่มคนเข้ากะ
-    try { await sb.from('activity_log').insert({ action: 'เพิ่มคนเข้ากะ (เฉพาะกิจ)', emp_id: e.emp_id, detail: 'เพิ่ม ' + (e.nickname || e.name) + ' เข้ากะ ' + (shiftId || '-') + ' วันที่ ' + today + ' สาขา ' + (br || '-'), actor: byName || (byEmpId ? ('รหัส ' + byEmpId) : 'หัวหน้าผลัด/แอปพนักงาน') }); } catch (_) {}
-    return { ok: true, name: e.nickname || e.name };
+    try { await sb.from('activity_log').insert({ action: isCover ? 'เพิ่มคนข้ามสาขาเข้ากะ' : 'เพิ่มคนเข้ากะ (เฉพาะกิจ)', emp_id: e.emp_id, detail: 'เพิ่ม ' + (e.nickname || e.name) + ' เข้ากะ ' + (shiftId || '-') + ' วันที่ ' + today + ' สาขา ' + (br || '-') + (isCover ? (' · ไปช่วยจากสาขาประจำ ' + home) : ''), actor: byName || (byEmpId ? ('รหัส ' + byEmpId) : 'หัวหน้าผลัด/แอปพนักงาน') }); } catch (_) {}
+    return { ok: true, name: e.nickname || e.name, is_cover: isCover };
   }
   // หางาน assignment เดิมของ (สาขา+วัน+กะ+งาน)
   async function _findAsg(branch, today, shift, defId) {
