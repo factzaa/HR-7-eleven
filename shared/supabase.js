@@ -1897,11 +1897,31 @@
     //        · รายงาน "ไปช่วยสาขาอื่น" (days_cover) นับขาด
     const home = e.branch_id || null;
     const isCover = !!(br && home && br !== home);
-    const { error } = await sb.from('schedules').upsert({
+
+    // ★ 20 ก.ย. 69 — ห้ามเขียนทับแถวเวรที่ HR/ผจก. จัดไว้แล้ว
+    //   ของเดิมใช้ upsert onConflict (emp_id, work_date, shift_id) เฉย ๆ
+    //   ถ้าคนนั้น "ถูกจัดเวรกะนี้วันนี้อยู่แล้ว" มันจะไม่ insert ใหม่ แต่ไป UPDATE ทับแถวเดิม
+    //   → note ของ HR ถูกเขียนเป็น 'เพิ่มเข้ากะเฉพาะกิจ' · is_cover ถูกรีเซ็ต
+    //   → เวรจริงกลายเป็นเวรเฉพาะกิจ ถ้าวันนั้นเขาไม่มาทำงาน "การขาดงานจริงจะถูกซ่อน"
+    //     (กฎไม่นับขาดงาน + SQL เก็บกวาด ต่างก็ดูที่ note ตัวนี้)
+    //   พบแถวที่โดนทับไปแล้ว 5 แถว (นุ่มนิ่ม 19/08 · หมู 06/08 · เฟรช 11/07 · เจน, โอ๋เอ๋ 02/07)
+    //   — ทั้งหมดมาทำงานจริง ตัวเลขจึงยังไม่เสียหาย แต่กลไกนี้ต้องปิด
+    //   ใหม่: มีแถวอยู่แล้ว = เขาถูกจัดเวรแล้ว ไม่ต้อง "เพิ่ม" อะไรทั้งนั้น → ปล่อยแถวเดิมไว้เหมือนเดิม
+    //   หมายเหตุ: PostgREST ใช้ .eq(col, null) เทียบค่า null ไม่ได้ ต้องใช้ .is(col, null)
+    let _q = sb.from('schedules').select('id,note,is_cover,branch_id')
+      .eq('emp_id', e.emp_id).eq('work_date', today);
+    _q = shiftId ? _q.eq('shift_id', shiftId) : _q.is('shift_id', null);
+    const { data: exist, error: qErr } = await _q.limit(1);
+    if (qErr) throw qErr;
+    if (exist && exist.length) {
+      return { ok: true, name: e.nickname || e.name, is_cover: !!exist[0].is_cover, already: true };
+    }
+
+    const { error } = await sb.from('schedules').insert({
       emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br,
       is_cover: isCover,
       note: isCover ? 'ไปช่วยสาขาอื่น' : 'เพิ่มเข้ากะเฉพาะกิจ',
-    }, { onConflict: 'emp_id,work_date,shift_id' });
+    });
     if (error) throw error;
     // บันทึก log — ให้รู้ว่ากะที่ "โผล่เพิ่มเอง" จริง ๆ มาจากหัวหน้าผลัดกดเพิ่มคนเข้ากะ
     try { await sb.from('activity_log').insert({ action: isCover ? 'เพิ่มคนข้ามสาขาเข้ากะ' : 'เพิ่มคนเข้ากะ (เฉพาะกิจ)', emp_id: e.emp_id, detail: 'เพิ่ม ' + (e.nickname || e.name) + ' เข้ากะ ' + (shiftId || '-') + ' วันที่ ' + today + ' สาขา ' + (br || '-') + (isCover ? (' · ไปช่วยจากสาขาประจำ ' + home) : ''), actor: byName || (byEmpId ? ('รหัส ' + byEmpId) : 'หัวหน้าผลัด/แอปพนักงาน') }); } catch (_) {}
