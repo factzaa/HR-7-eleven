@@ -2052,12 +2052,13 @@
         score: s.score != null ? s.score : null,
         start_score: s.start != null ? s.start : null,
         total_deduct: s.total_deduct != null ? s.total_deduct : null,
-        band_label: s.band_label || '',
-        band_color: s.band_color || '#475569',
+        // ★ อนุโลมแล้ว → แสดงเป็น "ปกติ" สีเขียว (แถบจริงเก็บไว้ที่ band_label_raw)
+        band_label: _waiver ? 'ปกติ · อนุโลมรอบนี้' : (s.band_label || ''),
+        band_color: _waiver ? '#16a34a' : (s.band_color || '#475569'),
         bonus: s.bonus || 0,
-        level: s.warn_level != null ? s.warn_level : (need === 'verbal' ? 1 : (need === 'written' ? 2 : (need === 'warning' ? 3 : 0))),
-        level_name: s.warn_name || (need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need]) : (s.band_label || 'ปกติ')),
-        level_color: s.band_color || '#16a34a',
+        level: _waiver ? 0 : (s.warn_level != null ? s.warn_level : (need === 'verbal' ? 1 : (need === 'written' ? 2 : (need === 'warning' ? 3 : 0)))),
+        level_name: _waiver ? 'ปกติ · อนุโลมรอบนี้' : (s.warn_name || (need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need]) : (s.band_label || 'ปกติ'))),
+        level_color: _waiver ? '#16a34a' : (s.band_color || '#16a34a'),
         action_needed: need,
         action_needed_label: need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need]) : '',
         breach_this_cycle: breach,                              // รอบนี้คะแนนตกถึงเกณฑ์ทำผิดหรือไม่
@@ -2104,6 +2105,15 @@
         waived: !!_waiver,                                      // ★ อนุโลมรอบนี้
         waive_reason: _waiver ? _waiver.reason : '',
         waive_by: _waiver ? _waiver.by : '',
+        // ★ 21 ก.ย. 69 — อนุโลมแล้วต้องหลุดสถานะจริง ไม่ใช่แค่ติดป้ายเพิ่ม
+        //   เดิม: waived ทำแค่ need = null (ไม่เร่งให้ดำเนินการ)
+        //   แต่ band_label/band_color ยังเป็นแถบสีส้ม "ตักเตือนด้วยวาจา" เหมือนเดิม
+        //   การ์ดจึงขึ้น [ตักเตือนด้วยวาจา] คู่กับ [อนุโลมรอบนี้] พร้อมกัน — ขัดกันเอง อ่านแล้วสับสน
+        //   ใหม่: สถานะที่แสดงเป็น "ปกติ" · เก็บแถบเดิมไว้ใน band_*_raw ให้ HR ยังตรวจย้อนหลังได้
+        //   คะแนนไม่แก้ — อนุโลมคือ "ไม่เอาผิด" ไม่ใช่ "ลบประวัติ"
+        band_label_raw: s.band_label || '',
+        band_color_raw: s.band_color || '',
+        level_name_raw: s.warn_name || (s.band_label || ''),
       };
     }).sort((a, b) => (a.score == null ? 999 : a.score) - (b.score == null ? 999 : b.score));
 
