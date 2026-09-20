@@ -1096,7 +1096,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <option value="previous">รอบที่แล้ว</option>
     </select>
     <button class="btn btn-pri btn-sm" id="sc_addEvent">+ ตัดคะแนน</button>
-    <button class="btn btn-danger btn-sm" id="sc_issue">ออกใบเตือนตามคะแนน</button>
+    <button class="btn btn-danger btn-sm" id="sc_issue" title="HR เป็นคนกดออกเอง — ระบบไม่ออกใบเตือนให้อัตโนมัติ">ออกใบเตือนตามคะแนน (HR กดเอง)</button>
     <button class="btn btn-sec" id="sc_refresh">รีเฟรช</button>
   </div>
   <div id="sc_legend" style="display:flex; flex-wrap:wrap; gap:8px; margin:0 4px 14px"></div>
@@ -2602,7 +2602,29 @@ function mrNav(d){
   </table></div><div class="empty" id="shEmpty" style="display:none">ยังไม่มีกะ</div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">
     <b>โค้ดคีย์</b> = อักษร/เลขย่อที่ใช้พิมพ์ในแท็บ "ตารางงาน" เพื่อจัดเวรเร็วๆ (เช่น 1=เช้า, 2=บ่าย, 3=ดึก, D=Delivery) ·
-    <b>เข้า/ออก</b> ใช้คำนวณการมาสายและ OT
+    <b>เข้า/ออก</b> ใช้คำนวณการมาสายและ OT ·
+    <b>ผ่อนผัน (นาที)</b> = เข้างานช้าไม่เกินนี้ไม่นับเป็นสาย · <u>เกินแล้วนาทีที่เกินจะถูกนับสะสมเข้าเกณฑ์ตักเตือนด้านล่าง</u>
+  </div>
+
+  <!-- ★ 21 ก.ย. 69 — เกณฑ์ตักเตือนย้ายมาอยู่ติดกับ "ผ่อนผัน" ของกะ เพราะเป็นตัวเดียวกันที่กำหนดว่านาทีสายเริ่มนับเมื่อไหร่ -->
+  <div class="toolbar" style="margin-top:22px"><h3 style="flex:1; font-size:15px; font-weight:600">เกณฑ์ตักเตือน <span style="font-weight:400;color:var(--muted);font-size:12.5px">(สายรวม / ขาดงาน)</span></h3><button class="btn btn-pri btn-sm" id="discRule_save">บันทึกเกณฑ์</button></div>
+  <div class="card" style="padding:16px">
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div class="field" style="max-width:320px"><label>สายรวมทั้งรอบถึงกี่นาที จึงเข้าเกณฑ์ตักเตือน</label><input id="discLateTotal" type="number" min="1" value="260"></div>
+      <div class="field" style="max-width:320px"><label>ขาดงานกี่วัน จึงเข้าเกณฑ์ตักเตือน <span style="color:var(--muted);font-weight:400">(0 = ไม่ใช้เกณฑ์ขาดงาน)</span></label><input id="discAbsentMin" type="number" min="0" value="1"></div>
+    </div>
+    <div style="margin-top:12px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:11px;padding:11px 13px;font-size:12.5px;color:#78350f;line-height:1.75">
+      <b>ทำไมต้องดูคู่กับ “ผ่อนผัน” ของแต่ละกะ</b> — นาทีสายเริ่มนับหลังหมดเวลาผ่อนผัน ถ้าตั้งผ่อนผันไว้ 15 นาที คนที่มาช้า 20 นาทีจะถูกนับ 5 นาที
+      ดังนั้นถ้าปรับผ่อนผันในตารางข้างบน ความเร็วที่พนักงานจะสะสมถึง <b id="discHintMin">260</b> นาทีก็เปลี่ยนตามไปด้วย · แก้ที่เดียวไม่พอ ต้องดูทั้งสองที่ให้สอดคล้องกัน<br>
+      <div id="discGraceList" style="margin-top:6px"></div>
+    </div>
+    <div style="margin-top:10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:11px;padding:11px 13px;font-size:12.5px;color:#1e3a8a;line-height:1.75">
+      <b>เกณฑ์นี้ทำอะไร / ไม่ทำอะไร</b><br>
+      ✓ ขึ้นป้าย “เข้าเกณฑ์ตักเตือน” ในหน้า <b>วินัย/ใบเตือน</b> ให้ HR เห็นว่าควรพิจารณาใคร<br>
+      ✗ <b>ไม่</b> ออกใบเตือนให้พนักงานอัตโนมัติ · ✗ <b>ไม่</b> แสดงให้พนักงานเห็น — พนักงานจะเห็นสถานะของตัวเองต่อเมื่อ HR กดออกเอกสารแล้วเท่านั้น<br>
+      ✗ <b>ไม่</b> เกี่ยวกับเบี้ยวินัย — เบี้ยวินัยตัดสินที่หัวข้อ <b>“ช่วงคะแนน → เบี้ยวินัย”</b> ด้านล่างของหน้านี้ (คนละชุดกัน)<br>
+      บันไดวินัย (วาจา → ลายลักษณ์อักษร → ใบเตือน 1/2/3 → เคสพิจารณา) ยังทำงานเหมือนเดิมทุกอย่าง
+    </div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -2673,10 +2695,14 @@ function mrNav(d){
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px">เช่น ลากิจ ต้องลาล่วงหน้า ≥ 2 วัน · ลาป่วย แนบใบรับรองแพทย์ ลาย้อนหลังได้</div>
 
   <div style="margin-top:24px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:12px 14px">
-    <div style="font-weight:800;font-size:14px;color:#1e40af;margin-bottom:4px">ℹ ระดับวินัยตัดสินจาก "คะแนน" อย่างเดียว</div>
-    <div style="font-size:12.5px;color:#1e3a8a;line-height:1.65">
-      เดิมระบบมีเกณฑ์ 2 ชุดซ้อนกัน (นับครั้ง กับ คะแนน) ทำให้หน้าวินัยกับหน้าคะแนนขัดกันเอง — ตอนนี้เหลือชุดเดียวคือ <b>คะแนนวินัย</b>
-      ตั้งค่าได้ที่หัวข้อ <b>“คะแนนวินัย: กฎการหักคะแนน”</b> และ <b>“ช่วงคะแนน → ผลและการดำเนินการ”</b> ด้านล่างนี้
+    <div style="font-weight:800;font-size:14px;color:#1e40af;margin-bottom:4px">ℹ เกณฑ์ 2 ชุด แยกหน้าที่กันชัดเจน (ปรับ 21 ก.ย. 69)</div>
+    <div style="font-size:12.5px;color:#1e3a8a;line-height:1.75">
+      <b>1) เกณฑ์ตักเตือน</b> — ตัดสินว่าใคร “เข้าเกณฑ์ตักเตือน” · ใช้ <b>สายรวมครบ 260 นาทีใน 1 รอบ</b> หรือ <b>ขาดงาน</b> เท่านั้น
+      ตั้งค่าที่หัวข้อ <b>“เกณฑ์ตักเตือน (สายรวม/ขาดงาน)”</b> ด้านบนสุดของหน้านี้ (ถัดจากตาราง “ตั้งค่ากะเข้างาน”) — เพราะ “ผ่อนผัน (นาที)” ของแต่ละกะเป็นตัวกำหนดว่านาทีสายจะเริ่มนับเมื่อไหร่<br>
+      <b>2) คะแนนวินัย + ช่วงคะแนน</b> — ตัดสิน <b>เบี้ยวินัย (โบนัส)</b> อย่างเดียว ไม่ได้ออกใบเตือนให้ใคร
+      ตั้งค่าที่ <b>“กฎการตัดคะแนน”</b> และ <b>“ช่วงคะแนน → เบี้ยวินัย”</b> ด้านล่างนี้<br>
+      <span style="color:#b45309;font-weight:700">ทั้ง 2 ชุดเป็นแค่สัญญาณเตือน HR</span> — ระบบไม่ออกใบเตือนให้พนักงานเองทั้งคู่ · พนักงานจะเห็นสถานะวินัยของตัวเอง
+      <b>ต่อเมื่อ HR กดออกเอกสารในหน้า “วินัย/ใบเตือน” แล้วเท่านั้น</b> · บันไดวินัย (วาจา → ลายลักษณ์อักษร → ใบเตือน) ยังทำงานเหมือนเดิม
     </div>
   </div>
 
@@ -2730,12 +2756,17 @@ function mrNav(d){
   </table></div></div>
   <div style="font-size:12.5px; color:var(--muted); margin-top:10px"><b>auto</b> = ระบบหักให้เองจากข้อมูลลงเวลา/ตารางเวร · <b>manual</b> = HR กดเพิ่มในแท็บคะแนนวินัย · คะแนนเป็นค่าลบ เช่น -3</div>
 
-  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">ช่วงคะแนน → ผล + การดำเนินการ</h3><button class="btn btn-pri btn-sm" id="scBands_save">บันทึกเกณฑ์</button></div>
+  <div class="toolbar" style="margin-top:24px"><h3 style="flex:1; font-size:15px; font-weight:600">ช่วงคะแนน → เบี้ยวินัย <span style="font-weight:400;color:var(--muted);font-size:12.5px">(ไม่ใช่เกณฑ์ออกใบเตือน)</span></h3><button class="btn btn-pri btn-sm" id="scBands_save">บันทึกเกณฑ์</button></div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>คะแนน (ต่ำ–สูง)</th><th>ผลที่ได้</th><th>โบนัส (บาท)</th><th>ต้องดำเนินการ<br><span style="font-weight:400;color:var(--muted)">ขั้นวินัย</span></th><th>ออกใบเตือนระดับ<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่ออก</span></th></tr></thead>
+    <thead><tr><th>คะแนน (ต่ำ–สูง)</th><th>ป้ายผล<br><span style="font-weight:400;color:var(--muted)">แสดงในหน้าคะแนน</span></th><th>เบี้ยวินัย (บาท)</th><th>แจ้งเตือน HR<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่เตือน · ไม่ออกใบให้</span></th><th>ระดับใบเตือนที่แนะนำ<br><span style="font-weight:400;color:var(--muted)">ว่าง=ไม่แนะนำ</span></th></tr></thead>
     <tbody id="scBandsRows"></tbody>
   </table></div></div>
-  <div style="font-size:12.5px; color:var(--muted); margin-top:10px">โบนัส "ความรับผิดชอบ" แสดงผล/คำนวณสิทธิให้ (ระบบไม่จ่ายเงินจริง) · ระดับใบเตือน 3=ครั้งที่ 1, 4=ครั้งที่ 2 (ใช้กับปุ่ม "ออกใบเตือนตามคะแนน")</div>
+  <div style="font-size:12.5px; color:var(--muted); margin-top:10px;line-height:1.7">
+    <b>เบี้ยวินัย</b> = ตัวเลขที่เข้ารอบเงินเดือนจริง (หน้าตรวจเงินเดือนดึงค่านี้ไปใช้) ·
+    <b>แจ้งเตือน HR / ระดับใบเตือนที่แนะนำ</b> = ป้ายบอกให้ HR พิจารณาเท่านั้น <u>ระบบไม่ออกใบเตือนให้พนักงานอัตโนมัติ และพนักงานไม่เห็นช่องนี้</u><br>
+    คนที่ “เข้าเกณฑ์ตักเตือน” จริง ๆ มาจากหัวข้อ <b>“เกณฑ์ตักเตือน (สายรวม/ขาดงาน)”</b> ด้านบนสุดของหน้านี้ ไม่ใช่จากคะแนนตรงนี้ ·
+    ระดับใบเตือน 3=ครั้งที่ 1, 4=ครั้งที่ 2 (ใช้เฉพาะกับปุ่ม “ออกใบเตือนตามคะแนน” ที่ HR ต้องกดเอง)
+  </div>
 
   <div class="card" style="margin-top:14px;padding:12px 14px;border:1.5px solid #ddd6fe;background:#faf5ff">
     <div style="font-weight:700;color:#1e2430;margin-bottom:6px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v18M6 7h12M12 5l-4 1M12 5l4 1"/><path d="M6 7l-2.5 5a2.5 2.5 0 0 0 5 0zM18 7l-2.5 5a2.5 2.5 0 0 0 5 0z"/><path d="M8 21h8"/></svg> วินัยสะสม (Progressive Discipline)</div>
@@ -13148,7 +13179,7 @@ function renderEmpSum(r){
   if(sc.score!=null){
     h+='<div class="es-grid" style="margin-top:8px">'
       +esStat('คะแนนวินัย', sc.score+'<span style="font-size:13px;font-weight:500;color:#64748b">/'+(sc.start||100)+'</span>', 'หักรวม '+(sc.total_deduct||0))
-      +esStat('ผลช่วงคะแนน', '<span style="font-size:15px;color:'+sc.band_color+'">'+esc(sc.band_label||'-')+'</span>', sc.bonus?('โบนัส ฿'+sc.bonus):'')
+      +esStat('ช่วงคะแนน (เบี้ยวินัย)', '<span style="font-size:15px;color:'+sc.band_color+'">'+esc(sc.band_label||'-')+'</span>', sc.bonus?('เบี้ยวินัย ฿'+sc.bonus):'ไม่ได้เบี้ยรอบนี้')
       +'</div>';
     if((sc.items||[]).length){
       h+='<div class="es-detail" style="margin-top:6px"><b>ที่มาของคะแนนที่ถูกหัก:</b> '
@@ -13156,7 +13187,7 @@ function renderEmpSum(r){
     }
   }
   h+='<div class="es-level" style="border-color:'+d.level_color+';color:'+d.level_color+'">ระดับวินัยปัจจุบัน: <b>'+esc(d.level_name)+'</b>'
-    +(sc.action_needed_label?(' · ต้องดำเนินการ: <b>'+esc(sc.action_needed_label)+'</b>'):'')+'</div>';
+    +(sc.action_needed_label?(' · <b>'+esc(sc.action_needed_label)+'</b> <span style="color:#94a3b8">(ป้ายภายใน ไม่อยู่ในเอกสารของพนักงาน)</span>'):'')+'</div>';
 
   // ประวัติการดำเนินการทางวินัย (หลักฐานประกอบการพิจารณา)
   const dh=(r.disc_history||[]);
@@ -13318,14 +13349,14 @@ function buildEmpSumDoc(r, genTxt){
     ])+'</table>';
 
   // ---- ส่วนที่ 2: คะแนนวินัย ----
-  h+='<div class="es-dsec">ส่วนที่ 2 — คะแนนวินัยและระดับผลการประเมิน</div>';
+  h+='<div class="es-dsec">ส่วนที่ 2 — คะแนนวินัยและสิทธิ์เบี้ยวินัย</div>';
   h+='<table class="es-dt">'
     +'<tr><td class="k">คะแนนตั้งต้น</td><td class="n">'+n(sc.start)+'</td>'
       +'<td class="k">คะแนนที่ถูกหักรวม</td><td class="n">'+n(sc.total_deduct)+'</td></tr>'
     +'<tr><td class="k">คะแนนคงเหลือ</td><td class="n" style="font-weight:700;font-size:14px">'+n(sc.score)+' / '+n(sc.start)+'</td>'
       +'<td class="k">ผลตามช่วงคะแนน</td><td class="n" style="font-weight:700">'+esc(sc.band_label||'—')+'</td></tr>'
-    +'<tr><td class="k">โบนัสความรับผิดชอบ</td><td class="n">'+(sc.bonus?('฿'+sc.bonus):'—')+'</td>'
-      +'<td class="k">การดำเนินการที่ต้องทำ</td><td class="n" style="font-weight:700">'+esc(sc.action_needed_label||'— ไม่มี —')+'</td></tr>'
+    +'<tr><td class="k">เบี้ยวินัยที่ได้รอบนี้</td><td class="n">'+(sc.bonus?('฿'+sc.bonus):'—')+'</td>'
+      +'<td class="k">สถานะทางวินัย</td><td class="n" style="font-weight:700;color:'+(d.issued?'#b45309':'#15803d')+'">'+esc(d.issued?(d.level_name||''):'ไม่มีเอกสารตักเตือน/ใบเตือน')+'</td></tr>'
     +'</table>';
   if((sc.items||[]).length){
     h+='<table class="es-dt"><tr><th style="width:60%">รายการที่มีผลต่อคะแนน</th><th>จำนวน</th><th>คะแนน</th></tr>'
@@ -15241,6 +15272,7 @@ async function loadShifts(){
   const r = await post({ action:'hr_shift_list', password:pwd });
   if(!r.ok){ $('shEmpty').style.display='block'; $('shEmpty').textContent=r.error||'โหลดไม่สำเร็จ'; return; }
   SH=r;
+  loadDiscRuleSettings();   // ★ เกณฑ์ตักเตือนอยู่หัวข้อถัดจากตารางนี้ · ต้องมี SH ก่อนจึงโชว์ "ผ่อนผัน" ได้
   if(!r.rows.length){ $('shEmpty').style.display='block'; $('shEmpty').textContent='ยังไม่มีกะ'; return; }
   $('shRows').innerHTML = r.rows.map(s=>`
     <tr>
@@ -15282,6 +15314,44 @@ function shOpen(shift){
   $('shOverlay').classList.add('show');
 }
 function shEdit(id){ const s=(SH&&SH.rows||[]).find(x=>x.shift_id===id); if(s) shOpen(s); }
+
+// ========== เกณฑ์ตักเตือน (สายรวม/ขาดงาน) — อยู่คู่กับ "ผ่อนผัน" ของกะ ==========
+// ★ 21 ก.ย. 69 — ตักเตือนด้วยวาจาเลิกผูกกับคะแนนวินัยแล้ว ใช้ "สายรวมครบ N นาทีใน 1 รอบ" หรือ "ขาดงาน" แทน
+//   คะแนนวินัย/ช่วงคะแนน เหลือหน้าที่เดียวคือตัดสินเบี้ยวินัย
+async function loadDiscRuleSettings(){
+  if(!$('discLateTotal')) return;
+  try{
+    const r = await post({ action:'hr_settings_get', ...authBody() });
+    const s = (r && r.settings) || {};
+    $('discLateTotal').value  = (s.disc_late_min_total!=null && s.disc_late_min_total!=='') ? s.disc_late_min_total : 260;
+    $('discAbsentMin').value  = (s.disc_absent_min!=null && s.disc_absent_min!=='') ? s.disc_absent_min : 1;
+  }catch(e){ $('discLateTotal').value=260; $('discAbsentMin').value=1; }
+  renderDiscGraceHint();
+}
+// รายการ "ผ่อนผัน" ของแต่ละกะ — ให้เห็นในหน้าเดียวกันว่าค่าไหนคุมการสะสมนาทีสาย
+function renderDiscGraceHint(){
+  if(!$('discGraceList')) return;
+  const n = Number($('discLateTotal') ? $('discLateTotal').value : 260) || 260;
+  if($('discHintMin')) $('discHintMin').textContent = n;
+  const rows = (SH && SH.rows) || (DATA && DATA.shifts) || [];
+  if(!rows.length){ $('discGraceList').innerHTML=''; return; }
+  $('discGraceList').innerHTML = '<b>ผ่อนผันที่ตั้งไว้ตอนนี้:</b> '
+    + rows.map(s=>'<span class="pill" style="background:#fef3c7;color:#92400e;font-weight:600">'+esc(s.name||s.shift_id)+' '+(s.grace_min!=null?s.grace_min:'—')+' น.</span>').join(' ');
+}
+async function saveDiscRuleSettings(){
+  const lt = Math.max(1, Number($('discLateTotal').value)||260);
+  const am = Math.max(0, Number($('discAbsentMin').value)||0);
+  $('discRule_save').disabled = true;
+  const rs = await Promise.all([
+    post({ action:'hr_settings_save', password:pwd, key:'disc_late_min_total', value:String(lt) }),
+    post({ action:'hr_settings_save', password:pwd, key:'disc_absent_min',    value:String(am) }),
+  ]);
+  $('discRule_save').disabled = false;
+  if(rs.every(r=>r.ok)){ toast('ok','บันทึกเกณฑ์ตักเตือนแล้ว — สายรวม '+lt+' นาที · ขาด '+(am>0?(am+' วัน'):'ไม่ใช้')); renderDiscGraceHint(); }
+  else toast('err','บันทึกไม่สำเร็จ');
+}
+$('discRule_save') && ($('discRule_save').onclick = saveDiscRuleSettings);
+$('discLateTotal') && $('discLateTotal').addEventListener('input', renderDiscGraceHint);
 async function shDelete(id){
   if(!confirm('ลบกะ '+id+' ?')) return;
   const r = await post({ action:'hr_shift_delete', password:pwd, shift_id:id });
@@ -15526,7 +15596,7 @@ async function loadScoreSettings(silent){
   SCORE_SETTINGS=r;
   if($('scCfg_start')) $('scCfg_start').value=r.start_score;
   renderScoreRulesRows();
-  const ACT_OPTS=[['','— ไม่ต้องทำอะไร —'],['verbal','<svg class="ei" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4z"/></svg> ตักเตือนด้วยวาจา'],['written','<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> ตักเตือนลายลักษณ์อักษร'],['warning','<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> ออกใบเตือน']];
+  const ACT_OPTS=[['','— ไม่ต้องเตือน —'],['verbal','<svg class="ei" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4z"/></svg> เตือน HR: ควรพิจารณาตักเตือนด้วยวาจา'],['written','<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> เตือน HR: ควรพิจารณาตักเตือนลายลักษณ์อักษร'],['warning','<svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> เตือน HR: ควรพิจารณาออกใบเตือน']];
   if($('scBandsRows')) $('scBandsRows').innerHTML=(r.bands||[]).map((b,i)=>`<tr>
     <td><input type="number" value="${b.min_score}" id="scb_min_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"> – <input type="number" value="${b.max_score}" id="scb_max_${i}" style="width:54px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
     <td><input type="text" value="${esc(b.label)}" id="scb_l_${i}" style="width:200px;padding:6px;border:1.5px solid var(--line2);border-radius:7px"></td>
@@ -15623,7 +15693,7 @@ $('sc_refresh').onclick = loadScore;
 $('sc_cycle').addEventListener('change', loadScore);
 $('sc_addEvent').onclick = openScoreEvent;
 $('sc_issue').onclick = async()=>{
-  if(!confirm('ออกใบเตือนอัตโนมัติให้พนักงานที่คะแนนตกถึงเกณฑ์ (รอบนี้)?\nระบบจะข้ามคนที่ออกใบเตือนระดับเดียวกันในรอบนี้แล้ว')) return;
+  if(!confirm('ออกใบเตือนให้พนักงานที่คะแนนตกถึงช่วงที่ตั้ง \"ระดับใบเตือนที่แนะนำ\" ไว้ (รอบนี้)?\n\n• นี่คือการออกเอกสารจริง พนักงานจะเห็นสถานะตัวเองทันที และต้องกดรับทราบ\n• ระบบไม่ออกให้เอง — ออกเมื่อ HR กดปุ่มนี้เท่านั้น\n• คนละเกณฑ์กับ \"เข้าเกณฑ์ตักเตือน\" (สายรวม/ขาดงาน) ในหน้าวินัย\n• ระบบจะข้ามคนที่ออกใบเตือนระดับเดียวกันในรอบนี้แล้ว')) return;
   const r=await post({ action:'hr_score_issue_warnings', password:pwd, cycle:$('sc_cycle').value });
   if(r.ok){ toast('ok','ออกใบเตือน '+r.issued+' ใบ (เข้าเกณฑ์ '+r.total+' คน)'); loadScore(); }
   else toast('err', r.error||'ไม่สำเร็จ');
