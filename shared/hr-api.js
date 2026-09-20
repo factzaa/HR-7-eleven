@@ -1963,6 +1963,15 @@
     //   เดิม breach เป็นแค่ธง ใช่/ไม่ใช่ ไม่ได้ดูว่าตกแบนด์ไหน คนที่เคยโดนวาจาแล้วพอสายเล็ก ๆ จนตกแบนด์ "วาจา"
     //   ระบบจะดันไป "ลายลักษณ์อักษร" ทันที — ความผิดเบากว่าแต่ขั้นหนักกว่า
     //   ทางแก้: เพดาน = ขั้นของแบนด์รอบนี้ · แต่ "ทำผิดซ้ำ" ยกเพดานได้ (ทำขั้นเดิมครบ N ครั้งใน window → เลื่อนขึ้น 1 ขั้น)
+    // ★ 21 ก.ย. 69 — เกณฑ์ตักเตือนแยกออกจากคะแนนวินัยแล้ว
+    //   เดิม: ใช้แบนด์คะแนน (100 − 5/ครั้งที่สาย) → สาย 6 ครั้งครั้งละ 2 นาที ก็โดนตักเตือน
+    //   ข้อมูลจริงรอบ 21/08–20/09: เกณฑ์เดิมตีธง 21 จาก 36 คน (58%) — ไม่ใช่ระบบวินัย แต่เป็นเสียงรบกวน
+    //   และกลับหัวกลับหาง: เฟิร์น สาย 21 ครั้ง รวม 163 นาที → ใบเตือนระดับ 2
+    //                          ข้าวตัง สาย 6 ครั้ง รวม 315 นาที → แค่ตักเตือนวาจา
+    //   ใหม่: นับ "นาทีสายรวมต่อเดือน" — สายนานแค่ไหนนับเท่านั้น ไม่ลงโทษการสายนิดหน่อยบ่อยครั้ง
+    //   คะแนนวินัยยังคิดเหมือนเดิมทุกอย่าง แต่ใช้ตัดสิน "เบี้ยวินัย/โบนัส" อย่างเดียว ไม่เกี่ยวกับขั้นตักเตือน
+    const lateMinTotal = await getSettingNum('disc_late_min_total', 260);   // นาทีสายรวมต่อรอบ → ตักเตือนด้วยวาจา
+    const absentMinD  = await getSettingNum('disc_absent_min', 1);          // ขาดกี่วัน → ตักเตือนด้วยวาจา
     const capOn = (await getSettingNum('disc_cap_enabled', 1)) !== 0;
     const capN  = Math.max(1, await getSettingNum('disc_cap_repeat_n', 2));
     const _wStart = new Date(bkkToday() + 'T00:00:00'); _wStart.setMonth(_wStart.getMonth() - (winMonths > 0 ? winMonths : 6));
@@ -2000,7 +2009,9 @@
       // ★ บันไดวินัย "สะสม" (rolling window · ไม่รีเซ็ตรายรอบ):
       //   แบนด์คะแนนรอบนี้ = ตัวจับว่า "รอบนี้ทำผิดถึงเกณฑ์" (breach) · ประวัติสะสมใน window = ขั้นที่เคยทำ
       //   ขั้นต่อไป = ขั้นเหนือจากที่เคยทำ (วาจา→ลายลักษณ์→ใบเตือน 1→2→3) · เตือนเฉพาะรอบที่ breach เท่านั้น
-      const breach = !!s.action_type;                           // คะแนนรอบนี้ตกถึงเกณฑ์ต้องดำเนินการ (แบนด์ใดก็ตามที่มี action)
+      const _hitLate = (e.late_total || 0) >= lateMinTotal;
+      const _hitAbsent = (e.absent || 0) >= absentMinD;
+      const breach = _hitLate || _hitAbsent;                           // คะแนนรอบนี้ตกถึงเกณฑ์ต้องดำเนินการ (แบนด์ใดก็ตามที่มี action)
       const winMine = winMap[e.emp_id] || [];
       const verbalDone = winMine.some(a => a.action_type === 'verbal');
       const writtenDone = winMine.some(a => a.action_type === 'written');
@@ -2012,8 +2023,9 @@
       const _STEPS = ['verbal', 'written', 'warning'];
       const _rawNext = cumNext;
       let capIdx = -1, capRaised = 0;
-      if (capOn && s.action_type) {
-        capIdx = _STEPS.indexOf(s.action_type);
+      // ★ เกณฑ์ใหม่มีขั้นเดียวคือ "วาจา" — ขั้นสูงกว่ามาจาก "ทำผิดซ้ำ" เท่านั้น (ยกเพดานข้างล่าง)
+      if (capOn && breach) {
+        capIdx = _STEPS.indexOf('verbal');
         if (capIdx >= 0) {
           const _cnt = t => winMine.filter(a => a.action_type === t).length;
           while (capIdx < _STEPS.length - 1 && _cnt(_STEPS[capIdx]) >= capN) { capIdx++; capRaised++; }
@@ -2052,13 +2064,25 @@
         score: s.score != null ? s.score : null,
         start_score: s.start != null ? s.start : null,
         total_deduct: s.total_deduct != null ? s.total_deduct : null,
-        // ★ อนุโลมแล้ว → แสดงเป็น "ปกติ" สีเขียว (แถบจริงเก็บไว้ที่ band_label_raw)
-        band_label: _waiver ? 'ปกติ · อนุโลมรอบนี้' : (s.band_label || ''),
-        band_color: _waiver ? '#16a34a' : (s.band_color || '#475569'),
+        // ★ 21 ก.ย. 69 — แถบใหญ่บนการ์ด = "สถานะวินัย" ไม่ใช่แบนด์คะแนนอีกต่อไป
+        //   คะแนนย้ายไปอยู่ช่อง bonus_band_* — ใช้ตัดสินเบี้ยวินัย/โบนัสเท่านั้น
+        band_label: _waiver ? 'ปกติ · อนุโลมรอบนี้' : (breach ? 'เข้าเกณฑ์ตักเตือน' : 'ปกติ'),
+        band_color: _waiver ? '#16a34a' : (breach ? '#d97706' : '#16a34a'),
+        // แถบคะแนนเดิม — ตอนนี้แปลว่า "ได้เบี้ยวินัยหรือไม่" เท่านั้น
+        bonus_band_label: s.band_label || '',
+        bonus_band_color: s.band_color || '#475569',
+        // เหตุที่เข้าเกณฑ์ — บอกให้ชัดว่าติดเพราะอะไร ไม่ต้องเดา
+        breach_late: _hitLate, breach_absent: _hitAbsent,
+        breach_why: [ _hitLate ? ('สายรวม ' + (e.late_total||0) + ' นาที (เกณฑ์ ' + lateMinTotal + ')') : '',
+                      _hitAbsent ? ('ขาดงาน ' + (e.absent||0) + ' วัน (เกณฑ์ ' + absentMinD + ')') : '' ].filter(Boolean).join(' · '),
+        rule_late_min_total: lateMinTotal, rule_absent_min: absentMinD,
         bonus: s.bonus || 0,
-        level: _waiver ? 0 : (s.warn_level != null ? s.warn_level : (need === 'verbal' ? 1 : (need === 'written' ? 2 : (need === 'warning' ? 3 : 0)))),
-        level_name: _waiver ? 'ปกติ · อนุโลมรอบนี้' : (s.warn_name || (need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need]) : (s.band_label || 'ปกติ'))),
-        level_color: _waiver ? '#16a34a' : (s.band_color || '#16a34a'),
+        // ★ ระดับมาจากบันไดสะสมล้วน ๆ — ไม่อ่านจากแบนด์คะแนนอีกแล้ว
+        level: _waiver ? 0 : (need === 'verbal' ? 1 : (need === 'written' ? 2 : (need === 'warning' ? 3 : 0))),
+        level_name: _waiver ? 'ปกติ · อนุโลมรอบนี้'
+                  : (need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need])
+                          : (breach ? 'เข้าเกณฑ์ตักเตือน' : 'ปกติ')),
+        level_color: _waiver ? '#16a34a' : (breach ? '#d97706' : '#16a34a'),
         action_needed: need,
         action_needed_label: need ? (need === 'warning' ? ('ออกใบเตือน (ใบที่ ' + (warningCount + 1) + ')') : ACT_LABEL[need]) : '',
         breach_this_cycle: breach,                              // รอบนี้คะแนนตกถึงเกณฑ์ทำผิดหรือไม่
