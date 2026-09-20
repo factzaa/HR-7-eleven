@@ -429,87 +429,12 @@ function ensureDiscOverlay(){
     +'</div>'
     +'<div id="discBy" style="font-size:12px;color:#94a3b8;margin-bottom:12px"></div>'
     +'<textarea id="discNote" rows="2" placeholder="ความเห็นของคุณ (ไม่บังคับ)" style="width:100%;padding:9px 11px;border:1.5px solid var(--line,#e2e8f0);border-radius:9px;font:inherit;font-size:14px;resize:vertical;margin-bottom:10px"></textarea>'
-    // ★ 21 ก.ย. 69 — ช่องแสดงความเห็น เห็นด้วย/ไม่เห็นด้วย
-    //   ตามกฎหมายแรงงาน พนักงานมีสิทธิโต้แย้ง — การเซ็น คือ "รับทราบ" ไม่ใช่ "ยอมรับผิด"
-    +'<div style="border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:12px;margin-bottom:12px">'
-      +'<div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:8px">ความเห็นต่อการดำเนินการนี้</div>'
-      +'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;margin-bottom:7px">'
-        +'<input type="radio" name="discAgree" id="discAgreeY" value="1" checked style="width:auto;margin-top:3px">'
-        +'<span style="font-size:14px;line-height:1.5"><b>รับทราบและเห็นด้วย</b><br><span style="font-size:12px;color:#64748b">ยอมรับข้อเท็จจริงและจะปรับปรุง</span></span></label>'
-      +'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">'
-        +'<input type="radio" name="discAgree" id="discAgreeN" value="0" style="width:auto;margin-top:3px">'
-        +'<span style="font-size:14px;line-height:1.5"><b>รับทราบ แต่ไม่เห็นด้วย</b><br><span style="font-size:12px;color:#64748b">เซ็นรับว่าได้รับเอกสาร โดยขอโต้แย้งข้อเท็จจริง — เรื่องจะถูกส่งให้ HR ตรวจสอบ</span></span></label>'
-      +'<textarea id="discDisagree" rows="2" placeholder="เหตุผลที่ไม่เห็นด้วย (จำเป็น)" style="display:none;width:100%;padding:9px 11px;border:1.5px solid #fca5a5;border-radius:9px;font:inherit;font-size:14px;resize:vertical;margin-top:9px;background:#fef2f2"></textarea>'
-    +'</div>'
-    // ★ ลายเซ็นวาดบนจอ + พิมพ์ชื่อกำกับ (ผู้ใช้เลือก "มีทั้งสองอย่าง")
-    +'<div style="border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:12px;margin-bottom:12px">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">'
-        +'<div style="font-size:12px;color:#64748b;font-weight:700">ลงลายมือชื่อ <span style="color:#dc2626">*</span></div>'
-        +'<button type="button" id="discSigClear" style="border:1px solid var(--line,#e2e8f0);background:#fff;border-radius:8px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;color:#475569">ล้าง</button>'
-      +'</div>'
-      +'<canvas id="discSig" style="width:100%;height:170px;border:1.5px dashed #cbd5e1;border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>'
-      +'<div id="discSigHint" style="text-align:center;font-size:12px;color:#94a3b8;margin-top:-96px;margin-bottom:84px;pointer-events:none">เซ็นชื่อด้วยนิ้วในกรอบนี้</div>'
-      +'<input type="text" id="discTypedName" placeholder="พิมพ์ชื่อ-นามสกุลตัวบรรจงกำกับ" style="width:100%;padding:9px 11px;border:1.5px solid var(--line,#e2e8f0);border-radius:9px;font:inherit;font-size:14px;margin-top:10px;text-align:center">'
-    +'</div>'
     +'<div id="discErr" style="display:none;color:#dc2626;font-size:13.5px;font-weight:600;margin-bottom:10px"></div>'
-    +'<button id="discAckBtn" style="width:100%;padding:14px;border:0;border-radius:12px;background:#0f172a;color:#fff;font-size:16px;font-weight:800;cursor:pointer">✓ ยืนยันการเซ็นรับทราบ</button>'
-    +'<div style="text-align:center;font-size:11.5px;color:#94a3b8;margin-top:10px;line-height:1.6">ระบบบันทึกลายเซ็น วันเวลา และอุปกรณ์ที่เซ็นไว้เป็นหลักฐาน<br>การเซ็นนี้คือการ "รับทราบ" เท่านั้น ไม่ใช่การยอมรับว่ากระทำผิด</div>'
+    +'<button id="discAckBtn" style="width:100%;padding:14px;border:0;border-radius:12px;background:#0f172a;color:#fff;font-size:16px;font-weight:800;cursor:pointer">✓ ข้าพเจ้ารับทราบแล้ว</button>'
+    +'<div style="text-align:center;font-size:11.5px;color:#94a3b8;margin-top:10px">ระบบจะบันทึกวันเวลาและอุปกรณ์ที่กดรับทราบไว้เป็นหลักฐาน</div>'
     +'</div>';
   document.body.appendChild(o);
   document.getElementById('discAckBtn').onclick=discDoAck;
-  // ★ ช่องเหตุผลโผล่เฉพาะตอนติ้ก "ไม่เห็นด้วย"
-  const _ay=document.getElementById('discAgreeY'), _an=document.getElementById('discAgreeN'), _dz=document.getElementById('discDisagree');
-  const _syncAgree=()=>{ _dz.style.display = _an.checked ? 'block' : 'none'; if(!_an.checked) _dz.value=''; };
-  _ay.onchange=_syncAgree; _an.onchange=_syncAgree;
-  document.getElementById('discSigClear').onclick=()=>discSigClear();
-  discSigInit();
-}
-
-// ===== ลายเซ็นบนจอ =====
-// วาดด้วย pointer event ตัวเดียว — รองรับทั้งนิ้ว ปากกา และเมาส์
-// touch-action:none ใน style กันหน้าจอเลื่อนขณะเซ็น
-let DISC_SIG_DIRTY=false;
-function discSigInit(){
-  const cv=document.getElementById('discSig'); if(!cv||cv._wired) return; cv._wired=true;
-  const ctx=cv.getContext('2d');
-  const fit=()=>{
-    const r=cv.getBoundingClientRect(); const dpr=window.devicePixelRatio||1;
-    if(!r.width) return;
-    cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0f172a';
-  };
-  cv._fit=fit; fit();
-  window.addEventListener('resize',()=>{ if(DISC_SIG_DIRTY) return; fit(); });
-  let drawing=false;
-  const pos=e=>{ const r=cv.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; };
-  cv.addEventListener('pointerdown',e=>{
-    drawing=true; cv.setPointerCapture(e.pointerId);
-    const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y);
-    // แตะจุดเดียวก็ต้องติดหมึก
-    ctx.lineTo(p.x+0.01,p.y+0.01); ctx.stroke();
-    DISC_SIG_DIRTY=true;
-    const h=document.getElementById('discSigHint'); if(h) h.style.visibility='hidden';
-    e.preventDefault();
-  });
-  cv.addEventListener('pointermove',e=>{ if(!drawing) return; const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); e.preventDefault(); });
-  const up=e=>{ if(!drawing) return; drawing=false; try{ cv.releasePointerCapture(e.pointerId); }catch(_e){} };
-  cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up); cv.addEventListener('pointerleave',up);
-}
-function discSigClear(){
-  const cv=document.getElementById('discSig'); if(!cv) return;
-  const ctx=cv.getContext('2d'); ctx.save(); ctx.setTransform(1,0,0,1,0,0);
-  ctx.clearRect(0,0,cv.width,cv.height); ctx.restore();
-  DISC_SIG_DIRTY=false;
-  const h=document.getElementById('discSigHint'); if(h) h.style.visibility='visible';
-}
-// คืนรูปพื้นขาว (PNG โปร่งใสแล้วเอาไปวางบนเอกสารสีขาวจะมองไม่เห็น)
-function discSigData(){
-  const cv=document.getElementById('discSig'); if(!cv||!DISC_SIG_DIRTY) return null;
-  const out=document.createElement('canvas'); out.width=cv.width; out.height=cv.height;
-  const o=out.getContext('2d'); o.fillStyle='#ffffff'; o.fillRect(0,0,out.width,out.height);
-  o.drawImage(cv,0,0);
-  return out.toDataURL('image/png');
 }
 
 function discRender(){
@@ -551,39 +476,22 @@ function discRender(){
   document.getElementById('discBy').textContent = 'โดย '+(a.performed_by||who)+' · '+fmt(a.performed_at);
   document.getElementById('discNote').value='';
   document.getElementById('discErr').style.display='none';
-  // ★ 21 ก.ย. 69 — ล้างช่องเซ็นทุกครั้งที่ขึ้นใบใหม่ — กันลายเซ็นของใบก่อนติดมาใบถัดไป
-  const _ay=document.getElementById('discAgreeY'); if(_ay) _ay.checked=true;
-  const _an=document.getElementById('discAgreeN'); if(_an) _an.checked=false;
-  const _dz=document.getElementById('discDisagree'); if(_dz){ _dz.value=''; _dz.style.display='none'; }
-  const _tn=document.getElementById('discTypedName'); if(_tn) _tn.value=(EMP && (EMP.name||''))||'';
-  discSigClear();
   const btn=document.getElementById('discAckBtn');
-  btn.disabled=false; btn.textContent='✓ ยืนยันการเซ็นรับทราบ';
+  btn.disabled=false; btn.textContent='✓ ข้าพเจ้ารับทราบแล้ว';
   const o=document.getElementById('discOverlay');
   o.style.display='flex'; o.scrollTop=0;
-  // canvas ต้องวัดขนาดหลังกล่องแสดงแล้ว ไม่งั้น getBoundingClientRect คืน 0
-  setTimeout(()=>{ const cv=document.getElementById('discSig'); if(cv&&cv._fit) cv._fit(); },60);
 }
 
 async function discDoAck(){
   const a=DISC_QUEUE[DISC_IDX]; if(!a) return;
   const btn=document.getElementById('discAckBtn'), err=document.getElementById('discErr');
-  // ★ 21 ก.ย. 69 — ตรวจก่อนส่ง จะได้บอกทันที ไม่ต้องรอเน็ต
-  const _agreeN=document.getElementById('discAgreeN');
-  const _agree=!(_agreeN && _agreeN.checked);
-  const _dis=(document.getElementById('discDisagree')||{}).value||'';
-  const _typed=((document.getElementById('discTypedName')||{}).value||'').trim();
-  const _sig=discSigData();
-  const _fail=t=>{ err.textContent=t; err.style.display='block'; btn.disabled=false; btn.textContent='✓ ยืนยันการเซ็นรับทราบ'; };
-  if(!_sig){ _fail('กรุณาเซ็นชื่อในกรอบก่อนกดยืนยัน'); return; }
-  if(!_typed){ _fail('กรุณาพิมพ์ชื่อ-นามสกุลกำกับใต้ลายเซ็น'); return; }
-  if(!_agree && !_dis.trim()){ _fail('ติ้ก "ไม่เห็นด้วย" ต้องระบุเหตุผล'); return; }
   btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
-  const r=await window.HR.ackDiscAction(a.id, EMP.emp_id, {
-    note: document.getElementById('discNote').value.trim(),
-    signature: _sig, typed_name: _typed, agree: _agree, disagree_reason: _dis.trim(),
-  });
-  if(!r.ok){ _fail(r.error||'บันทึกไม่สำเร็จ'); return; }
+  const r=await window.HR.ackDiscAction(a.id, EMP.emp_id, document.getElementById('discNote').value.trim());
+  if(!r.ok){
+    err.textContent=r.error||'บันทึกไม่สำเร็จ'; err.style.display='block';
+    btn.disabled=false; btn.textContent='✓ ข้าพเจ้ารับทราบแล้ว';
+    return;
+  }
   DISC_IDX++;
   if(DISC_IDX>=DISC_QUEUE.length){
     document.getElementById('discOverlay').style.display='none';
