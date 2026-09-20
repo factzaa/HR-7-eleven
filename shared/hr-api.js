@@ -2239,9 +2239,14 @@
     if (!agree && !disagreeReason) return { ok: false, error: 'กรณีไม่เห็นด้วย ต้องระบุเหตุผล' };
 
     const { data: row } = await sb().from('disc_actions')
-      .select('id,emp_id,emp_name,action_type,level_name,ack_at,status').eq('id', d.id).maybeSingle();
+      .select('id,emp_id,emp_name,action_type,level_name,need_ack,ack_at,status').eq('id', d.id).maybeSingle();
     if (!row) return { ok: false, error: 'ไม่พบรายการนี้' };
     if (row.status === 'cancelled') return { ok: false, error: 'รายการนี้ถูกยกเลิกไปแล้ว' };
+    // ★ 21 ก.ย. 69 — บังคับลำดับขั้น: ② พนักงานกดรับทราบในแอป ต้องเสร็จก่อน ③ HR พูดคุย+ให้เซ็น
+    //   กันข้ามขั้น (เช่นเปิดหน้านี้ตรง ๆ จาก console) ไม่ใช่แค่ซ่อนปุ่มที่หน้าจอ
+    if (row.need_ack && !row.ack_at) {
+      return { ok: false, error: 'ยังข้ามขั้นไม่ได้ — พนักงานต้องกดรับทราบในแอปรับส่งผลัดก่อน (ขั้นที่ 2)' };
+    }
 
     const urls = await _uploadMany('disc-sign', [d.signature]);
     const sigUrl = urls && urls[0];
