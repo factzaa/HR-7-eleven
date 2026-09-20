@@ -73,6 +73,38 @@
     { level: 4, level_name: 'ใบเตือนระดับ 2',          level_color: '#b91c1c', late_min: 10, absent_min: 3,    enabled: true },
   ];
 
+  // ============================================================
+  // ★ 20 ก.ย. 69 — เวร "เฉพาะกิจ" ที่ไม่มีคนมาลงเวลา ต้องไม่นับเป็นขาดงาน
+  // ------------------------------------------------------------
+  // ปุ่ม "เพิ่มคนเข้ากะ (เฉพาะกิจ)" ในแอปรับส่งผลัด (shared/supabase.js → addShiftMember)
+  // มีไว้ให้หัวหน้าผลัดเพิ่ม "คนที่มาทำงานจริงแต่ยังไม่มีเวรในระบบ" เข้ามาเพื่อมอบงานได้
+  // แต่มันไปสร้างแถว schedules จริง ระบบจึงอ่านว่า "วันนี้ต้องมาทำงาน" ใครไม่มา = ขาดงาน
+  //
+  // เคสจริง 19/09/2569 สาขา 06573:
+  //   ผจก. กดเพิ่มพนักงาน 15 คนเข้ากะ M รวดเดียวตอน 09:21–09:22 (activity_log ยืนยัน)
+  //   → 7 คนที่ไม่ได้มาทำงานวันนั้นขึ้น "ขาดงาน 1 วัน" ทันที
+  //   → เอ็ม (0657383) เพิ่งออกกะดึกเวลา 09:00 โดนเพิ่มเข้ากะเช้า (06:30) ตอน 09:21
+  //     คะแนน 100 − 30 = 70 → ตกช่วง 61–70 = "ตักเตือนด้วยวาจา" ทั้งที่ไม่เคยขาดงาน
+  //   → เป็นที่มาของ "พนักงานมีกะ 2 กะในวันเดียว" ทั้งที่ไม่มีใครจัดเวรให้ (11 จาก 16 เคสในระบบ)
+  //
+  // กติกา: แถวเฉพาะกิจที่ "ไม่มีการลงเวลาในวันนั้น" = ไม่ใช่เวรที่ HR/ผจก. จัด
+  //        → ไม่นับทั้ง "วันที่ควรมาทำงาน" และ "ขาดงาน"
+  //        ถ้ามาลงเวลาจริง = เป็นวันทำงานปกติ นับตามเดิมทุกอย่าง
+  // เวรที่ HR/ผจก. จัดจากหน้าตารางงาน (note ว่าง) ไม่กระทบ — ขาดก็ยังนับขาดเหมือนเดิม
+  // ============================================================
+  const ADHOC_SCHED_NOTE = 'เพิ่มเข้ากะเฉพาะกิจ';
+  // คีย์ "emp|date" ของวันที่มีการลงเวลาจริง
+  function workedKeySet(attRows) {
+    const s = new Set();
+    (attRows || []).forEach(a => { if (a.check_in) s.add(String(a.emp_id) + '|' + a.work_date); });
+    return s;
+  }
+  // กรองแถวเวรเฉพาะกิจที่ไม่มีคนมาลงเวลาออก (ใช้กับผลลัพธ์ select ที่มีคอลัมน์ note)
+  function dropPhantomAdhoc(schRows, workedKeys) {
+    return (schRows || []).filter(s => !(s && s.note === ADHOC_SCHED_NOTE
+      && !workedKeys.has(String(s.emp_id) + '|' + s.work_date)));
+  }
+
   async function loadDisciplineRules() {
     try {
       const r = await sb().from('discipline_rules').select('*').order('level');
@@ -1630,13 +1662,13 @@
     if (f.shift_id) q = q.eq('shift_id', f.shift_id);
     const today = bkkToday();
     // ตารางเวร + ใบลา ในช่วง (ใช้คำนวณ "ขาดงาน" และ "ลา" สำหรับ payroll)
-    let sq = sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', f.start).lte('work_date', f.end);
+    let sq = sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', f.start).lte('work_date', f.end);   // ★ ดึง note มาด้วย ไว้กรองเวรเฉพาะกิจ
     if (f.emp_id) sq = sq.eq('emp_id', f.emp_id);
     if (f.shift_id) sq = sq.eq('shift_id', f.shift_id);   // ★ กรองกะด้วย ไม่งั้นขาด/ลา จะนับมาจากกะอื่น
     let lq = sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', f.end).gte('end_date', f.start);
     if (f.emp_id) lq = lq.eq('emp_id', f.emp_id);
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงานให้ถูก แม้ไปทำแทนสาขาอื่น
-    let wq = sb().from('attendance').select('emp_id,work_date').not('check_in', 'is', null).gte('work_date', f.start).lte('work_date', f.end);
+    let wq = sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', f.start).lte('work_date', f.end);
     if (f.emp_id) wq = wq.eq('emp_id', f.emp_id);
     const [{ data, error }, brR, schR, lvR, empR, wR, shR2, hdR] = await Promise.all([
       q,
@@ -1754,7 +1786,9 @@
     const inBranch = emp => !f.branch_id || (empById[emp] || {}).branch_id === f.branch_id;
     // ตารางเวร -> วันที่จัดเวร + ขาดงาน (วันที่จัดเวร ผ่านไปแล้ว ไม่มา ไม่ลา)
     const schByEmp = {};
-    (schR.data || []).forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
+    // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออกก่อน (ดูคำอธิบายหัวไฟล์)
+    dropPhantomAdhoc(schR.data, workedKeySet(wR.data))
+      .forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
     Object.keys(schByEmp).forEach(emp => {
       if (!inBranch(emp)) return;
       const m = ensureM(emp);
@@ -1841,7 +1875,7 @@
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
-      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('shifts').select('shift_id,day_value'),
     ]);
     if (empsR.error) throw empsR.error;
@@ -1854,7 +1888,9 @@
     const otWhole = await getSettingBool('ot_whole_day');
     // ตารางเวรต่อพนักงาน (map วันที่ → กะ ไว้ถ่วงน้ำหนักครึ่งวัน)
     const schByEmp = {};
-    (schR.data || []).forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
+    // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออกก่อน (ดูคำอธิบายหัวไฟล์)
+    dropPhantomAdhoc(schR.data, workedKeySet(att))
+      .forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
 
     const employees = (empsR.data || []).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id);
@@ -3508,7 +3544,7 @@
       sb().from('score_bands').select('*').order('sort'),
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,start_date,end_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
       sb().from('attendance').select('emp_id,work_date,check_in,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
-      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
       sb().from('shifts').select('shift_id,day_value'),
@@ -3526,12 +3562,15 @@
     const schByEmp = {};
     // ★ แก้ 15 ก.ย. 69 — แถวตารางเวรที่ shift_id ว่าง = "วันหยุด" ต้องไม่นับเป็นวันที่ควรมาทำงาน
     //   (hrDiscipline กรองถูกอยู่แล้ว แต่ hrScoreGet ไม่กรอง → ขาดงานปลอม ตัดเบี้ยขยัน+โบนัส)
-    (schR.data || []).forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
+    // ★ 20 ก.ย. 69 — และตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออกด้วย (ดูคำอธิบายหัวไฟล์)
+    //   ตรงนี้กระทบคะแนน → ระดับวินัย → เบี้ยขยัน/โบนัส โดยตรง
+    const _schOkSC = dropPhantomAdhoc(schR.data, workedKeySet(att));
+    _schOkSC.forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
     const bandFor = (sc) => bands.find(b => sc >= b.min_score && sc <= b.max_score) || null;
     // ★ เกณฑ์วันทำงานขั้นต่ำต่อรอบ — ไม่ถึง = หักคะแนน (ที่นี่) + ตัดเบี้ยวินัย (หน้าเงินเดือน) · 0 = ปิด
     const minWD = await getSettingNum('min_work_days', 0);
     const minWDpen = await getSettingNum('min_work_days_penalty', 0);
-    const schSum = {}; (schR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; schSum[k] = (schSum[k] || 0) + dvOf(s.shift_id); } });   // ผลรวม day_value ตารางเวร (เครดิตควบ)
+    const schSum = {}; _schOkSC.forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; schSum[k] = (schSum[k] || 0) + dvOf(s.shift_id); } });   // ผลรวม day_value ตารางเวร (เครดิตควบ) — ★ ไม่รวมเวรเฉพาะกิจที่ไม่มีคนมา
 
     const employees = (empsR.data || []).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id && a.check_in);
@@ -4229,14 +4268,16 @@
     const back = cyc.start;
     const endEff = cyc.end < today ? cyc.end : today;
     const [schR, attR, lvR] = await Promise.all([
-      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', back).lte('work_date', endEff),
+      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', back).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', back).lte('work_date', endEff),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').gte('end_date', back),
     ]);
     const workedBy = {}; (attR.data || []).forEach(a => { (workedBy[a.emp_id] || (workedBy[a.emp_id] = new Set())).add(a.work_date); });
     const lvBy = {}; (lvR.data || []).forEach(l => { (lvBy[l.emp_id] || (lvBy[l.emp_id] = [])).push(l); });
     const onLv = (emp, d) => (lvBy[emp] || []).some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
-    const schBy = {}; (schR.data || []).forEach(s => { if (s.shift_id) (schBy[s.emp_id] || (schBy[s.emp_id] = [])).push(s.work_date); });
+    // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออก ไม่งั้นทำให้ "ขาดติดต่อกัน" ยาวเกินจริง
+    //   ตรงนี้ป้อนเข้าเกณฑ์ "เคสพิจารณาเลิกจ้าง" — ห้ามให้เวรผีดันคนขึ้นบัญชี
+    const schBy = {}; dropPhantomAdhoc(schR.data, workedKeySet(attR.data)).forEach(s => { if (s.shift_id) (schBy[s.emp_id] || (schBy[s.emp_id] = [])).push(s.work_date); });
     const streakOf = (emp) => {
       const dates = (schBy[emp] || []).filter(d => d < today).sort();
       const worked = workedBy[emp] || new Set();
@@ -5946,7 +5987,7 @@
       sb().from('branches').select('branch_id,name'),
       sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
       sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min,extend_until').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
-      sb().from('schedules').select('work_date,shift_id').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
+      sb().from('schedules').select('work_date,shift_id,note').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('leaves').select('start_date,end_date,type,status').eq('emp_id', p.emp_id).eq('status', 'approved').lte('start_date', end).gte('end_date', start),
       // งานในกะของตัวเอง
       sb().from('task_assignments').select('id,work_date,shift_id,title,status,sent_back_count,review_note,reviewer,submitted_at,needs_mgr,checked_by_name,mgr_result,fix_emp,fix_done_at').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', end),
@@ -5990,7 +6031,12 @@
     const early_out_count = earlyRows.length;
     const early_out_hours = Math.round((earlyRows.reduce((s, a) => s + (a.early_out_min || 0), 0) / 60) * 10) / 10;
 
-    const schMap = {}; (schR.data || []).forEach(s => { if (s.shift_id) schMap[s.work_date] = s.shift_id; });
+    // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออก (ดูคำอธิบายหัวไฟล์)
+    const schMap = {}; (schR.data || []).forEach(s => {
+      if (!s.shift_id) return;
+      if (s.note === ADHOC_SCHED_NOTE && !workedSet.has(s.work_date)) return;
+      schMap[s.work_date] = s.shift_id;
+    });
     const pastSched = Object.keys(schMap).filter(d => d < today);
     // ★ ใช้ฐานเดียวกับหน้าวินัยเป๊ะ ๆ: มาทำงาน = ทุกวันที่มี check_in (รวมวันที่ไม่ได้จัดเวร เช่น ไปช่วยสาขาอื่น)
     const attDV = {}; att.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });   // ควบกะ: บวกทุกกะในวัน
@@ -6185,7 +6231,7 @@
     const qEmpBase = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift').eq('active', true);
     const qEmp = branch ? qEmpBase.eq('branch_id', branch) : qEmpBase;
     const qAtt = sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,branch_id,shift_id,day_value').gte('work_date', start).lte('work_date', endEff);
-    const qSch = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id').gte('work_date', start).lte('work_date', endEff);
+    const qSch = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', start).lte('work_date', endEff);   // ★ note ไว้กรองเวรเฉพาะกิจ
     const qTask = sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id').gte('work_date', start).lte('work_date', end);
     const qShelf = sb().from('shelf_checks').select('emp_id,check_date,branch_id').gte('check_date', start).lte('check_date', end);
     const qHand = sb().from('handovers').select('from_emp_id,work_date,status,branch_id').gte('work_date', start).lte('work_date', end);
@@ -6207,7 +6253,8 @@
     const dvMap = {}; (shR.data || []).forEach(s => { dvMap[s.shift_id] = s.day_value != null ? Number(s.day_value) : 1; });
     const dvOf = sid => (dvMap[sid] != null ? dvMap[sid] : 1);
     const scMap = {}; ((scR && scR.employees) || []).forEach(s => { scMap[s.emp_id] = s; });
-    const att = attR.data || [], sch = schR.data || [], leaves = lvR.data || [];
+    // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออก (ดูคำอธิบายหัวไฟล์)
+    const att = attR.data || [], sch = dropPhantomAdhoc(schR.data, workedKeySet(attR.data)), leaves = lvR.data || [];
     const tasks = taskR.data || [], shelfChk = shelfR.data || [], handovers = handR.data || [], qaItems = qaR.data || [];
     const otWhole = await getSettingBool('ot_whole_day');
 
@@ -8531,7 +8578,7 @@
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
       sb().from('payroll_installment_charges').select('*').lte('period_start', cyc.start),
-      sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),   // ตารางเวร — ใช้เครดิตควบกะที่สแกนไม่ครบ
+      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ตารางเวร — ใช้เครดิตควบกะที่สแกนไม่ครบ · ★ note ไว้กรองเวรเฉพาะกิจ
     ]);
     const profM = {}; (profR.data || []).forEach(x => { profM[x.emp_id] = x; });
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
@@ -8562,7 +8609,10 @@
     // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงาน แต่ลงเวลาน้อยกว่าตาราง → ใช้ยอดตามตารางเวร (ให้ตรงกับหน้ารายงาน · ควบ=2)
     const empById = {}; (empR.data || []).forEach(e => { empById[e.emp_id] = e; });   // แผนที่พนักงาน (ใช้กันควบให้ ผจก.)
     const _schDVsumPR = {}, _schCntPR = {};
-    (schPR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schDVsumPR[k] = (_schDVsumPR[k] || 0) + (dvMap[s.shift_id] != null ? dvMap[s.shift_id] : 1); (_schCntPR[k] = _schCntPR[k] || new Set()).add(s.shift_id); } });
+    // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออกก่อนคิดเครดิตควบกะ
+    //   ตรงนี้กระทบ "เงิน" โดยตรง: ถ้าปล่อยไว้ เวรผีจะทำให้วันนั้นกลายเป็น "ควบกะ" แล้วจ่าย 2 วัน
+    const _schOkPR = dropPhantomAdhoc(schPR.data, workedKeySet(attR.data));
+    _schOkPR.forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schDVsumPR[k] = (_schDVsumPR[k] || 0) + (dvMap[s.shift_id] != null ? dvMap[s.shift_id] : 1); (_schCntPR[k] = _schCntPR[k] || new Set()).add(s.shift_id); } });
 
     // ★ แก้ 15 ก.ย. 69 — กติกาเครดิตควบกะต้องมี "ชั่วโมงทำงานจริง" รองรับ
     //   เดิม: จัดเวร 2 กะ + สแกนไม่ครบ → เครดิต 2 วันทันที โดยไม่ดูว่าทำงานจริงกี่ชั่วโมง
@@ -8576,7 +8626,7 @@
     const _shHrPR = {};   // ความยาวกะเป็นชั่วโมง
     (shR.data || []).forEach(x => { const a = _hmPR(x.start_time), b = _hmPR(x.end_time); if (a != null && b != null) _shHrPR[x.shift_id] = ((b <= a ? b + 1440 : b) - a) / 60; });
     const _schHrPR = {};  // ชั่วโมงเวรรวมต่อวัน
-    (schPR.data || []).forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schHrPR[k] = (_schHrPR[k] || 0) + (_shHrPR[s.shift_id] || 0); } });
+    _schOkPR.forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schHrPR[k] = (_schHrPR[k] || 0) + (_shHrPR[s.shift_id] || 0); } });   // ★ ไม่รวมเวรเฉพาะกิจที่ไม่มีคนมา
     const _actHrPR = {};  // ชั่วโมงทำงานจริงต่อวัน (จากเวลาเข้า-ออก)
     (attR.data || []).forEach(a => {
       if (!a.check_in || !a.check_out) return;
@@ -8765,7 +8815,7 @@
     const _workedDatesPR = {}; (attR.data || []).forEach(a => { if (a.check_in) { (_workedDatesPR[a.emp_id] = _workedDatesPR[a.emp_id] || new Set()).add(a.work_date); } });
     const _shSetPR = {};
     const _addSetPR = (emp, date, sid) => { if (!sid) return; const k = emp + '|' + date; (_shSetPR[k] = _shSetPR[k] || new Set()).add(sid); };
-    (schPR.data || []).forEach(s => _addSetPR(s.emp_id, s.work_date, s.shift_id));
+    _schOkPR.forEach(s => _addSetPR(s.emp_id, s.work_date, s.shift_id));   // ★ ไม่รวมเวรเฉพาะกิจที่ไม่มีคนมา (ไม่งั้นนับเป็นควบกะปลอม)
     (attR.data || []).forEach(a => { if (a.check_in) _addSetPR(a.emp_id, a.work_date, a.shift_id); });
     const dualByEmp = {};
     Object.keys(_shSetPR).forEach(k => { if (_shSetPR[k].size >= 2) { const i = k.indexOf('|'); const emp = k.slice(0, i), date = k.slice(i + 1); if (_workedDatesPR[emp] && _workedDatesPR[emp].has(date)) {
@@ -8889,10 +8939,13 @@
     const existSet = new Set((exist || []).map(r => r.emp_id + '|' + r.work_date));
     let candidates = [];
     if (mode === 'schedule') {
-      let q = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id').gte('work_date', d.start).lte('work_date', d.end);
+      let q = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', d.start).lte('work_date', d.end);
       if (d.branch) q = q.eq('branch_id', d.branch);
       const { data: sch } = await q;
-      candidates = (sch || []).map(s => ({ emp_id: s.emp_id, work_date: s.work_date, shift_id: s.shift_id, branch_id: s.branch_id }));
+      // ★ 20 ก.ย. 69 — ไม่เติมเวลาย้อนหลังให้ "เวรเพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีการลงเวลา
+      //   เวรพวกนี้เกิดจากหัวหน้าผลัดกดเพิ่มคนเพื่อมอบงาน ไม่ใช่เวรที่ HR จัด → ไม่ควรสร้างใบลงเวลาปลอม
+      candidates = (sch || []).filter(s => s.note !== ADHOC_SCHED_NOTE || existSet.has(s.emp_id + '|' + s.work_date))
+        .map(s => ({ emp_id: s.emp_id, work_date: s.work_date, shift_id: s.shift_id, branch_id: s.branch_id }));
     } else {
       const emps = Array.isArray(d.emps) ? d.emps : [];
       const dates = Array.isArray(d.dates) ? d.dates.filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)) : [];
