@@ -781,48 +781,17 @@
     } catch (e) { console.error('pending disc acks', e); return []; }
   }
 
-  // พนักงานกดรับทราบ — เก็บเวลา + อุปกรณ์ + ลายเซ็นบนจอเป็นหลักฐาน
-  // ★ 21 ก.ย. 69 — เพิ่มลายเซ็นบนจอ + ชื่อกำกับ + ช่องโต้แย้ง
-  //   อาร์กิวเมนต์ที่ 3 รองรับทั้งแบบเก่า (string = note) และแบบใหม่ (object)
-  //   ★ เซ็นแล้วปิดเอกสารให้เลย (doc_at/doc_by)
-  //     เดิม doc_at ว่างทั้ง 27 รายการ → hrDiscipline Rule A ตีเป็น observing='await_doc'
-  //     พนักงาน 12 คน / 25 รายการ ค้างถาวร บันไดวินัยไม่เคยขยับเลย
-  async function ackDiscAction(id, empId, payload) {
+  // พนักงานกดรับทราบ — เก็บเวลา + อุปกรณ์เป็นหลักฐาน
+  async function ackDiscAction(id, empId, note) {
     try {
-      const p = (payload && typeof payload === 'object') ? payload : { note: String(payload || '') };
-      const note = String(p.note || '').slice(0, 500);
-      const agree = (p.agree === false) ? false : true;
-      const disagreeReason = String(p.disagree_reason || '').trim().slice(0, 500);
-      const typedName = String(p.typed_name || '').trim().slice(0, 120);
-      if (!agree && !disagreeReason) return { ok: false, error: 'ติ๊ก "ไม่เห็นด้วย" ต้องระบุเหตุผล' };
-      if (!typedName) return { ok: false, error: 'กรุณาพิมพ์ชื่อ-นามสกุลกำกับใต้ลายเซ็น' };
-      if (!p.signature) return { ok: false, error: 'กรุณาเซ็นชื่อในกรอบก่อนกดยืนยัน' };
-
       const now = new Date().toISOString();
       const { data: row } = await sb.from('disc_actions').select('id,warning_id,emp_id').eq('id', id).maybeSingle();
       if (!row) return { ok: false, error: 'ไม่พบรายการนี้' };
       if (String(row.emp_id) !== String(empId)) return { ok: false, error: 'รายการนี้ไม่ใช่ของคุณ' };
 
-      // อัปโหลดลายเซ็นขึ้น storage แทนเก็บ data URL ยาว ๆ ไว้ในแถว
-      let sigUrl = null;
-      try {
-        sigUrl = await uploadPhoto('employee-docs',
-          'disc-sign/' + String(empId) + '_' + String(id) + '_' + Date.now() + '.png', p.signature);
-      } catch (e) {
-        return { ok: false, error: 'อัปโหลดลายเซ็นไม่สำเร็จ — ลองใหม่อีกครั้ง' };
-      }
-
       const { error } = await sb.from('disc_actions').update({
-        ack_at: now, ack_note: note, status: 'acknowledged',
-        ack_device: (navigator.userAgent || '').slice(0, 120),
-        ack_signature: sigUrl,
-        ack_typed_name: typedName,
-        ack_agree: agree,
-        ack_disagree_reason: agree ? null : disagreeReason,
-        // ★ เซ็นครบ = เอกสารสมบูรณ์ → ปลดล็อกบันไดวินัยให้เดินต่อ
-        doc_at: now,
-        doc_by: 'พนักงานเซ็นรับทราบบนแอป',
-        doc_url: sigUrl,
+        ack_at: now, ack_note: (note || '').slice(0, 500), status: 'acknowledged',
+        ack_device: (navigator.userAgent || '').slice(0, 120)
       }).eq('id', id);
       if (error) throw error;
 
@@ -834,8 +803,8 @@
         } catch (_e) { /* ข้าม */ }
       }
       // หลักฐานเพิ่มเติมใน activity_log
-      try { await sb.from('activity_log').insert({ action: agree ? 'รับทราบการดำเนินการทางวินัย (เซ็นแล้ว)' : 'รับทราบแต่ไม่เห็นด้วย (เซ็นแล้ว)', emp_id: String(empId), detail: ((agree ? '' : 'เหตุผลที่ไม่เห็นด้วย: ' + disagreeReason + ' · ') + note).slice(0, 200), actor: typedName || String(empId) }); } catch (_e) { }
-      return { ok: true, agree, signature: sigUrl };
+      try { await sb.from('activity_log').insert({ action: 'รับทราบการดำเนินการทางวินัย', emp_id: String(empId), detail: (note || '').slice(0, 200), actor: String(empId) }); } catch (_e) { }
+      return { ok: true };
     } catch (e) { console.error('ack disc', e); return { ok: false, error: 'บันทึกไม่สำเร็จ' }; }
   }
 

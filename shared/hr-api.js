@@ -274,6 +274,7 @@
         case 'hr_disc_rules_save':return await hrDiscRulesSave(p.data);
         case 'hr_disc_action_add':return await hrDiscActionAdd(p.data);
         case 'hr_disc_doc_complete': return await hrDiscDocComplete(p.data);
+        case 'hr_disc_sign':      return await hrDiscSign(p.data);
         case 'hr_disc_timeline':  return await hrDiscTimeline(p.emp_id);
         case 'hr_disc_pending':   return await hrDiscPending(p.cycle, p.branch);
         case 'hr_score_get':         return await hrScoreGet(p.cycle, p.range);
@@ -2207,6 +2208,62 @@
     if (error) return { ok: false, error: error.message };
     return { ok: true, doc_url };
   }
+
+  // ★ 21 ก.ย. 69 — เซ็นรับทราบบนจอ (HR เป็นคนเปิดหน้าให้พนักงานเซ็นตรงหน้า)
+  //   แทนขั้นตอนเดิมที่ต้องพิมพ์เอกสาร → ให้เซ็นกระดาษ → ถ่ายรูป → อัปโหลด
+  //   ผลลัพธ์เหมือนกันทุกอย่าง: ได้ doc_url + doc_at → hrDiscipline Rule A ปลดล็อกบันไดวินัยให้เดินต่อ
+  //
+  //   หมายเหตุสำคัญ: ฟังก์ชันนี้อยู่ฝั่ง HR เท่านั้น (เรียกผ่าน dispatch + รหัสผ่าน HR)
+  //   ฝั่งพนักงาน (แอปรับส่งผลัด) ไม่มีหน้าจอเซ็น — พนักงานยังกดรับทราบแบบเดิม
+  //
+  //   ack_at จะถูกเซ็ตให้ด้วยถ้ายังว่าง เพราะการเซ็นต่อหน้า HR = รับทราบแล้วจริง
+  //   ไม่ต้องให้พนักงานไปกดรับทราบซ้ำในแอปอีก
+  async function hrDiscSign(d) {
+    d = d || {};
+    if (d.id == null) return { ok: false, error: 'ไม่ระบุรายการ' };
+    if (!d.signature) return { ok: false, error: 'ยังไม่ได้เซ็นชื่อ' };
+    const typedName = String(d.typed_name || '').trim().slice(0, 120);
+    if (!typedName) return { ok: false, error: 'ต้องพิมพ์ชื่อ-นามสกุลกำกับใต้ลายเซ็น' };
+    const agree = (d.agree === false) ? false : true;
+    const disagreeReason = String(d.disagree_reason || '').trim().slice(0, 500);
+    if (!agree && !disagreeReason) return { ok: false, error: 'กรณีไม่เห็นด้วย ต้องระบุเหตุผล' };
+
+    const { data: row } = await sb().from('disc_actions')
+      .select('id,emp_id,emp_name,action_type,level_name,ack_at,status').eq('id', d.id).maybeSingle();
+    if (!row) return { ok: false, error: 'ไม่พบรายการนี้' };
+    if (row.status === 'cancelled') return { ok: false, error: 'รายการนี้ถูกยกเลิกไปแล้ว' };
+
+    const urls = await _uploadMany('disc-sign', [d.signature]);
+    const sigUrl = urls && urls[0];
+    if (!sigUrl) return { ok: false, error: 'อัปโหลดลายเซ็นไม่สำเร็จ' };
+
+    const now = new Date().toISOString();
+    const upd = {
+      ack_signature: sigUrl,
+      ack_typed_name: typedName,
+      ack_agree: agree,
+      ack_disagree_reason: agree ? null : disagreeReason,
+      doc_url: sigUrl,
+      doc_at: now,
+      doc_by: (d.by || 'สำนักงาน (HR)') + ' · เซ็นบนจอ',
+    };
+    // ยังไม่เคยกดรับทราบในแอป → ถือว่าการเซ็นต่อหน้า HR คือการรับทราบ
+    if (!row.ack_at) {
+      upd.ack_at = now;
+      upd.status = 'acknowledged';
+      upd.ack_device = 'เซ็นบนจอที่หน้าวินัย (HR)';
+      if (d.note) upd.ack_note = String(d.note).slice(0, 500);
+    }
+    const { error } = await sb().from('disc_actions').update(upd).eq('id', d.id);
+    if (error) {
+      return { ok: false, error: /ack_signature|ack_agree|ack_typed_name|ack_disagree/.test(String(error.message || ''))
+        ? 'ยังไม่ได้รัน supabase/disc-signature-2569-09-21.sql (ไม่มีคอลัมน์ลายเซ็น)'
+        : error.message };
+    }
+    await logAct((agree ? 'เซ็นรับทราบ' : 'เซ็นรับทราบแต่ไม่เห็นด้วย') + ' · ' + (row.level_name || row.action_type),
+      row.emp_id, typedName + (agree ? '' : ' · เหตุผล: ' + disagreeReason));
+    return { ok: true, signature: sigUrl, agree, acked: !row.ack_at };
+  }
   async function hrDiscTimeline(empId) {
     if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
     const [{ data: emp }, { data: acts }, { data: wrs }] = await Promise.all([
@@ -2229,6 +2286,9 @@
       warning_id: a.warning_id, need_ack: a.need_ack, ack_at: a.ack_at, ack_note: a.ack_note,
       status: a.status, photos: a.photos || [],
       doc_url: a.doc_url || null, doc_at: a.doc_at || null, doc_by: a.doc_by || null,
+      // ★ 21 ก.ย. 69 — ลายเซ็นที่เซ็นบนจอ · ใช้ || null เผื่อดีพลอยที่ยังไม่ได้รัน SQL เพิ่มคอลัมน์
+      ack_signature: a.ack_signature || null, ack_typed_name: a.ack_typed_name || null,
+      ack_agree: (a.ack_agree === undefined ? null : a.ack_agree), ack_disagree_reason: a.ack_disagree_reason || null,
     }));
     // ใบเตือนเก่าที่ยังไม่มีแถวใน disc_actions (ออกก่อนมีระบบนี้)
     (wrs || []).forEach(w => {
