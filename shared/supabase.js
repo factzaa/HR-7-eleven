@@ -2178,19 +2178,59 @@
         (extra||[]).forEach(a=>{ if(!seen[a.id]){ seen[a.id]=1; mine.push(a); } });
       }catch(e){}
     }
+    // ★ 20 ก.ย. 69 — งานที่ถูกมอบข้ามกะ (หัวหน้าผลัดมอบให้คนที่ไม่ได้อยู่ในกะ)
+    //   เดิม: หน้านี้ดึงงานเฉพาะ สาขา+กะ+วัน ของตัวเอง → งานที่อยู่ใต้กะอื่นจะมองไม่เห็น
+    //   จึงต้องไปกด "เพิ่มเข้ากะ" สร้างแถวตารางเวรจริง → กลายเป็น "ขาดงานปลอม" ถ้าเขาไม่มา
+    //   ใหม่: ดึงงานที่มอบให้เรา "ทุกสาขาทุกกะ" มารวมด้วย → มอบงานข้ามกะได้โดยไม่ต้องแตะตารางเวรเลย
+    //   งานยังอยู่ใต้กะเจ้าของงานเหมือนเดิม — หัวหน้าผลัดกะนั้นยังตรวจ และการนับ "งานในกะครบ" ไม่เพี้ยน
+    const _dayKeys = [...new Set([today, bangkokDate()].filter(Boolean))];
+    let crossShift = [];
+    try{
+      const { data: xs } = await sb.from('task_assignments').select('*')
+        .eq('emp_id', emp.emp_id).in('work_date', _dayKeys);
+      const _seenId = {}; mine.forEach(a=>{ _seenId[a.id]=1; });
+      (xs||[]).forEach(a=>{
+        if(_seenId[a.id]) return;
+        _seenId[a.id]=1;
+        // ติดธงไว้ว่าเป็นงานข้ามกะ/ข้ามสาขา — หน้าจอเอาไปขึ้นป้ายบอกคนทำ
+        a._x_shift = (String(a.shift_id||'') !== String(shift||'')) || (String(a.branch_id||'') !== String(branch||''));
+        crossShift.push(a); mine.push(a);
+      });
+      // ป้ายกำกับให้คนทำรู้ว่างานนี้มาจากกะ/สาขาไหน — จะได้ไม่งงว่าทำไมงานนอกกะโผล่มา
+      const _xs = crossShift.filter(a=>a._x_shift);
+      if(_xs.length){
+        const _sids=[...new Set(_xs.map(a=>a.shift_id).filter(Boolean))];
+        const _bids=[...new Set(_xs.map(a=>a.branch_id).filter(Boolean))];
+        const [_shN,_brN] = await Promise.all([
+          _sids.length? sb.from('shifts').select('shift_id,name').in('shift_id',_sids) : Promise.resolve({data:[]}),
+          _bids.length? sb.from('branches').select('branch_id,name').in('branch_id',_bids) : Promise.resolve({data:[]}),
+        ]);
+        const _sm={}; ((_shN&&_shN.data)||[]).forEach(x=>{ _sm[x.shift_id]=x.name||x.shift_id; });
+        const _bm={}; ((_brN&&_brN.data)||[]).forEach(x=>{ _bm[x.branch_id]=x.name||x.branch_id; });
+        _xs.forEach(a=>{
+          const p=[];
+          if(String(a.shift_id||'') !== String(shift||'')) p.push('\u0e01\u0e30'+(_sm[a.shift_id]||a.shift_id||'-'));
+          if(String(a.branch_id||'') !== String(branch||'')) p.push('\u0e2a\u0e32\u0e02\u0e32 '+(_bm[a.branch_id]||a.branch_id||'-'));
+          a._x_label = p.join(' \u00b7 ');
+        });
+      }
+    }catch(e){}
+
     let details=defs.map(_defBrief);
-    if(emp.is_manager){
+    {
       const known={}; details.forEach(d=>{ known[d.id]=1; });
-      mgrExtraDefs.forEach(d=>{ if(!known[d.id]){ known[d.id]=1; details.push(_defBrief(d)); } });
+      if(emp.is_manager) mgrExtraDefs.forEach(d=>{ if(!known[d.id]){ known[d.id]=1; details.push(_defBrief(d)); } });
+      // ★ เติมรายละเอียดงานที่ไม่ได้อยู่ในชุดงานของกะตัวเอง (งาน ผจก. + งานข้ามกะ) — ไม่งั้นการ์ดจะว่าง
       const need=[...new Set(mine.map(a=>a.task_def_id).filter(id=>id&&!known[id]))];
       if(need.length){
         try{ const {data:ex}=await sb.from('task_defs').select('*').in('id',need);
-          (ex||[]).forEach(d=>details.push(_defBrief(d))); }catch(e){}
+          (ex||[]).forEach(d=>{ known[d.id]=1; details.push(_defBrief(d)); }); }catch(e){}
       }
     }
     return { emp, shift, shift_name: shR.data?shR.data.name:shift,
       leader: leadR.data?{ emp_id:leadR.data.emp_id, name:leadR.data.emp_name }:null,
       mine, team: asg,
+      cross_shift: crossShift,   // ★ งานที่มอบข้ามกะ/ข้ามสาขามาให้
       details,
       my_shelves: myShelves, auto_picks: _af.picks,
       unassigned: defs.filter(d=>!byDef[d.id]).map(_defBrief) };
