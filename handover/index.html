@@ -816,10 +816,22 @@ async function openLeaderPanel(){
   let b; try{ b=await window.HR.getShiftBoard(EMP.emp_id, null); LBOARD=b; window.CUR_SHIFT=b.shift||''; }catch(e){ $('l_board').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
   const inShift=new Set((b.members||[]).map(m=>m.emp_id));
   populateAddList();
-  const memOpts=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'">'+esc(m.name)+'</option>').join('');
+  // ★ 20 ก.ย. 69 — มอบงานให้คน "นอกกะ" ได้เลย โดยไม่ต้องเพิ่มเข้ากะก่อน
+  //   เดิม: ดรอปดาวน์มีแต่คนในกะ → จะมอบคนนอกกะต้องกด "เพิ่มเข้ากะ" ก่อน
+  //         ซึ่งไปสร้างแถวตารางเวรจริง → ถ้าเขาไม่มาลงเวลา กลายเป็น "ขาดงาน" ปลอม (เคส 19/09/69)
+  //   ใหม่: มอบตรง ๆ ได้เลย ไม่แตะตารางเวร · งานยังอยู่ใต้กะนี้ หัวหน้าผลัดกะนี้เป็นคนตรวจเหมือนเดิม
+  //   ปุ่ม "เพิ่มเข้ากะ" ยังเก็บไว้ — ใช้เมื่อคนมาทำงานจริงแต่ ผจก. ยังไม่ได้จัดเวรให้
+  const _optOf=m=>'<option value="'+esc(m.emp_id)+'">'+esc(m.name)+'</option>';
+  const _outList=(b.colleagues||[]).filter(c=>!inShift.has(c.emp_id));
+  const _outOpts=_outList.length
+    ? '<optgroup label="\u0e19\u0e2d\u0e01\u0e01\u0e30 \u2014 \u0e21\u0e2d\u0e1a\u0e44\u0e14\u0e49\u0e40\u0e25\u0e22 \u0e44\u0e21\u0e48\u0e01\u0e23\u0e30\u0e17\u0e1a\u0e15\u0e32\u0e23\u0e32\u0e07\u0e40\u0e27\u0e23">'+_outList.map(_optOf).join('')+'</optgroup>'
+    : '';
+  const _inOpts=(b.members||[]).map(_optOf).join('');
+  const memOpts=(_inOpts?('<optgroup label="\u0e04\u0e19\u0e43\u0e19\u0e01\u0e30\u0e19\u0e35\u0e49">'+_inOpts+'</optgroup>'):'')+_outOpts;
   // ★ งานของ ผจก. — เลือกชื่อ ผจก. ไว้ให้ก่อนในดรอปดาวน์
   const mgrId=((b.managers||[])[0]||{}).emp_id||'';
-  const memOptsMgr=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'"'+(m.emp_id===mgrId?' selected':'')+'>'+esc(m.name)+'</option>').join('');
+  const _inOptsMgr=(b.members||[]).map(m=>'<option value="'+esc(m.emp_id)+'"'+(m.emp_id===mgrId?' selected':'')+'>'+esc(m.name)+'</option>').join('');
+  const memOptsMgr=(_inOptsMgr?('<optgroup label="\u0e04\u0e19\u0e43\u0e19\u0e01\u0e30\u0e19\u0e35\u0e49">'+_inOptsMgr+'</optgroup>'):'')+_outOpts;
   if(!b.defs.length){ $('l_board').innerHTML='<div class="card muted">กะนี้ยังไม่มีรายการงาน (ผู้จัดการตั้งที่ "ตั้งค่ากะ")</div>'; return; }
   const _defCard=(d)=>{
     const a=d.assignment;
@@ -996,7 +1008,11 @@ async function openM2(){
     if(a.status==='submitted') s=['รอผลัดถัดไปตรวจ','warn'];
     else if(a.status==='approved' && a.needs_mgr===true && !a.mgr_checked_at) s=['ผ่านผลัดถัดไป · รอ ผจก.','ok'];
     const min=(r.unassigned.find(x=>x.id===a.task_def_id)||{}).min_photos; // อาจ undefined → ใช้ require_photo
-    let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
+    // ★ 20 ก.ย. 69 — งานที่มอบข้ามกะ/ข้ามสาขา — บอกให้ชัดว่ามาจากไหน จะได้ไม่งง
+    const _xb = (a._x_shift && a._x_label)
+      ? '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:5px 8px;margin-bottom:6px;font-size:12px;color:#1d4ed8;line-height:1.5"><b>\u0e07\u0e32\u0e19\u0e02\u0e49\u0e32\u0e21\u0e01\u0e30</b> \u00b7 '+esc(a._x_label)+' \u2014 \u0e2b\u0e31\u0e27\u0e2b\u0e19\u0e49\u0e32\u0e1c\u0e25\u0e31\u0e14\u0e01\u0e30\u0e19\u0e31\u0e49\u0e19\u0e21\u0e2d\u0e1a\u0e43\u0e2b\u0e49\u0e04\u0e38\u0e13 \u0e17\u0e33\u0e40\u0e2a\u0e23\u0e47\u0e08\u0e41\u0e25\u0e49\u0e27\u0e2a\u0e48\u0e07\u0e44\u0e14\u0e49\u0e40\u0e25\u0e22</div>'
+      : '';
+    let c='<div class="card"'+((a._x_shift&&a._x_label)?' style="border-left:3px solid #3b82f6"':'')+'><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>'+_xb;
     c+=taskDetailHTML(window.TASK_DET[a.task_def_id]);
     if(a.status==='closed') c+='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:12.5px;line-height:1.6"><b>ปิดงาน — ทำไม่ได้</b><div style="margin-top:2px">'+esc(a.closed_reason||'')+'</div><div class="muted" style="font-size:11.5px;margin-top:3px">ปิดโดย '+esc(a.closed_by_name||'')+'</div></div>';
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
