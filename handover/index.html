@@ -951,7 +951,9 @@ $('l_addbtn').onclick=async()=>{
   const br=(LBOARD&&LBOARD.branch)||EMP.branch_id;   // เพิ่มเข้ากะที่สาขา "ที่กำลังทำงานจริง" (คนข้ามสาขาจะถูกจัดเวรที่สาขานี้)
   try{ const _r=await window.HR.addShiftMember({ branchId:br, shiftId:(LBOARD&&LBOARD.shift)||null, empId:emp, workDate:(LBOARD&&LBOARD.work_date)||null, byEmpId:EMP.emp_id, byName:(EMP.nickname||EMP.name) });
     // ★ 20 ก.ย. 69 — ข้ามสาขา = มาทำงานจริง นับเป็นวันทำงานเต็ม — บอกให้หัวหน้าผลัดรู้ว่าไม่เหมือนการฝากงานเฉพาะกิจ
-    toast('ok', (_r&&_r.is_cover) ? 'เพิ่มเข้ากะแล้ว — บันทึกเป็น "ไปช่วยสาขาอื่น" นับเป็นวันทำงานเต็มวัน' : 'เพิ่มเข้ากะแล้ว');
+    // ★ already = เขาถูกจัดเวรกะนี้ไว้อยู่แล้ว — ระบบไม่แตะแถวเดิม (กันเขียนทับเวรที่ HR จัด)
+    toast('ok', (_r&&_r.already) ? 'คนนี้อยู่ในกะนี้อยู่แล้ว — ไม่ต้องเพิ่มซ้ำ'
+      : ((_r&&_r.is_cover) ? 'เพิ่มเข้ากะแล้ว — บันทึกเป็น "ไปช่วยสาขาอื่น" นับเป็นวันทำงานเต็มวัน' : 'เพิ่มเข้ากะแล้ว'));
     openLeaderPanel(); }
   catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
 };
