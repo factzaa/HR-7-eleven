@@ -2619,17 +2619,30 @@
   // ★ 17 ก.ย. 69 — ยิงการ์ด "ตารางเวรถูกแก้ไข" เข้ากลุ่ม ผจก. ทันทีที่ ผจก. แก้
   //   ยิงแบบไม่รอผล — แจ้งเตือนล้มเหลวต้องไม่ทำให้การบันทึกกะล้มตามไปด้วย
   //   ยิงเฉพาะตอน actor เป็น ผจก. เท่านั้น สำนักงานแก้เองไม่ต้องแจ้ง (เป็นคนดูอยู่แล้ว)
+  // ★ 21 ก.ย. 69 — เปลี่ยนจาก "ยิง LINE ทันทีทุกครั้งที่กดบันทึก 1 ช่อง" เป็น "เขียนลงคิว"
+  //   ของเดิม: บันทึก 1 ช่อง = 1 ข้อความ LINE · ไม่รวบ ไม่กันซ้ำ
+  //   สถิติจริง 60 วัน — การแก้ตารางเวรเฉลี่ยต่อวัน: อาทิตย์ 145 · เสาร์ 74 · พฤหัส 35 · ที่เหลือ 4-18
+  //   20/09/69 (อาทิตย์) วันเดียว 303 ครั้ง → ~158 ข้อความ LINE เปลืองโควตามาก
+  //   ใหม่: เขียนลง sched_change_queue → cron ทุก 15 นาทีรวบส่งใบเดียวต่อสาขา
+  //         (เร็วกว่าเดิมด้วย เพราะไม่ต้องรอ network ตอนกดบันทึก)
+  //   ต้องรัน supabase/sched-digest-2569-09-21.sql ก่อน ไม่งั้นเขียนคิวไม่ได้ (แต่ไม่กระทบการบันทึกเวร)
   function _schedNotify(actor, branchId, items, reason) {
     try {
       if (!actor || actor.role !== 'mgr') return;
       const list = (items || []).filter(x => x && x.emp_id && x.work_date);
       if (!list.length) return;
-      const base = String((window.SUPABASE_CONFIG || {}).url || '').replace(/\/$/, '');
-      if (!base) return;
-      fetch(base + '/functions/v1/staff-notify', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'sched_change', branch_id: branchId || actor.branch_id || '', actor: actor.name || 'ผจก.', reason: String(reason || ''), items: list }),
-      }).catch(() => { /* เงียบไว้ */ });
+      const bid = branchId || actor.branch_id || '';
+      const who = actor.name || 'ผจก.';
+      const rsn = String(reason || '').trim() || null;
+      const rows = list.map(x => ({
+        branch_id: bid, actor: who, emp_id: String(x.emp_id), work_date: x.work_date,
+        from_shift: (x.from == null || x.from === '') ? null : String(x.from),
+        to_shift: (x.to == null || x.to === '') ? null : String(x.to),
+        removed: (x.to == null),           // to = null คือถูกปลดออกจากเวร (ต่างจาก '' ที่แปลว่าวันหยุด)
+        reason: rsn,
+      }));
+      // fire-and-forget — ห้ามให้การเขียนคิวพังการบันทึกตารางเวร
+      sb().from('sched_change_queue').insert(rows).then(null, () => {}).catch(() => {});
     } catch (e) { /* ไม่ให้กระทบงานหลัก */ }
   }
   // กะเดิมของคน+วันนั้น (ไว้ทำช่อง "จาก →") · ควบกะคืนเป็น "M+A"
