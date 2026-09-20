@@ -364,18 +364,74 @@ async function openFolder(f){
   });
 }
 // ★ เก็บออกต้องมีรูปหลักฐาน — เปิดกล้อง/เลือกรูปก่อน แล้วค่อยบันทึก (ยกเลิกได้ ไม่มีอะไรเปลี่ยน)
-function rmPhotoFlow(item_id){
+// ★ 20 ก.ย. 69 — แก้ "กล้องไม่เปิด" ตอนกดเก็บออกในเมนู QA
+//   ต้นเหตุ 2 อย่างที่ทับกันอยู่ในช่องรับไฟล์ตัวนี้ (เป็นที่เดียวในระบบที่สร้างด้วย JS):
+//     1) ตั้ง multiple ไว้พร้อมกับ capture — เบราว์เซอร์จะ "ไม่สนใจ capture" ทันทีที่มี multiple
+//        เพราะโหมดถ่ายภาพคืนได้ครั้งละ 1 ไฟล์ → เด้งเป็นหน้าเลือกไฟล์แทนกล้องทุกครั้ง
+//     2) เซ็ต capture เป็น property (inp.capture=...) บางเบราว์เซอร์ไม่สะท้อนเป็น attribute
+//        ปุ่มถ่ายรูปที่อื่นในระบบประกาศเป็น attribute ใน HTML จึงใช้ได้ปกติ ต่างกันตรงนี้
+//   แก้: ตัด multiple + ใช้ setAttribute · ถ่ายหลายรูปได้ด้วยแผงยืนยันที่กด "ถ่ายเพิ่ม" เอง
+//        (ห้ามสั่ง click เองหลัง confirm เพราะหลุด user gesture มือถือจะบล็อกไม่เปิดกล้อง)
+function _rmInput(){
   let inp=document.getElementById('rm_photo');
-  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment'; inp.multiple=true; inp.id='rm_photo'; inp.style.display='none'; document.body.appendChild(inp); }
+  if(!inp){ inp=document.createElement('input'); inp.id='rm_photo'; inp.style.display='none'; document.body.appendChild(inp); }
+  inp.type='file';
+  inp.setAttribute('accept','image/*');
+  inp.setAttribute('capture','environment');
+  inp.removeAttribute('multiple'); inp.multiple=false;
   inp.value='';
+  return inp;
+}
+function _rmPanel(){
+  let el=document.getElementById('rm_panel');
+  if(el) return el;
+  el=document.createElement('div'); el.id='rm_panel';
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:flex-end;justify-content:center';
+  el.innerHTML='<div style="background:#fff;width:100%;max-width:480px;border-radius:16px 16px 0 0;padding:16px 16px 20px">'
+    +'<div style="font-weight:700;font-size:15px;margin-bottom:3px">รูปหลักฐานการเก็บออก</div>'
+    +'<div id="rm_cnt" style="font-size:12.5px;color:var(--muted);margin-bottom:10px"></div>'
+    +'<div id="rm_thumbs" style="display:flex;gap:7px;overflow-x:auto;padding-bottom:10px"></div>'
+    +'<div style="display:flex;gap:8px">'
+      +'<button type="button" id="rm_more" class="btn btn-sec" style="flex:1;padding:12px">📷 ถ่ายเพิ่ม</button>'
+      +'<button type="button" id="rm_save" class="btn" style="flex:1;padding:12px;background:var(--green);color:#fff;border:0;border-radius:10px;font:inherit;font-weight:700">บันทึกเก็บออก</button>'
+    +'</div>'
+    +'<button type="button" id="rm_cancel" style="width:100%;margin-top:8px;padding:10px;background:none;border:0;color:var(--muted);font:inherit;font-size:13px;cursor:pointer">ยกเลิก</button>'
+  +'</div>';
+  document.body.appendChild(el);
+  return el;
+}
+function rmPhotoFlow(item_id){
+  const inp=_rmInput(), panel=_rmPanel();
+  const shots=[];
+  const paint=()=>{
+    document.getElementById('rm_cnt').textContent='ถ่ายแล้ว '+shots.length+' รูป · ต้องมีอย่างน้อย 1 รูป';
+    document.getElementById('rm_thumbs').innerHTML=shots.map((u,i)=>
+      '<span style="position:relative;flex:none"><img src="'+u+'" style="height:74px;border-radius:8px">'
+      +'<button type="button" data-rmdel="'+i+'" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join('')
+      ||'<div style="font-size:12.5px;color:var(--muted)">ยังไม่มีรูป</div>';
+    document.getElementById('rm_save').disabled=!shots.length;
+    document.getElementById('rm_save').style.opacity=shots.length?'1':'.5';
+    panel.querySelectorAll('[data-rmdel]').forEach(b=>b.onclick=()=>{ shots.splice(Number(b.dataset.rmdel),1); paint(); });
+  };
+  const close=()=>{ panel.style.display='none'; inp.onchange=null; };
   inp.onchange=async()=>{
-    const files=Array.from(inp.files||[]); if(!files.length) return;
-    toast('ok','กำลังอัปโหลดรูป…');
+    const f=(inp.files||[])[0]; inp.value='';
+    if(f){
+      const u=await resizeFile(f);
+      if(u) shots.push(u); else toast('err','อ่านรูปไม่ได้ ลองถ่ายใหม่อีกครั้ง');
+    }
+    panel.style.display='flex'; paint();
+  };
+  document.getElementById('rm_more').onclick=()=>{ inp.click(); };      // คลิกจริงจากผู้ใช้ → กล้องเปิดได้
+  document.getElementById('rm_cancel').onclick=close;
+  document.getElementById('rm_save').onclick=async()=>{
+    if(!shots.length){ toast('err','ต้องมีรูปหลักฐานอย่างน้อย 1 รูป'); return; }
+    const b=document.getElementById('rm_save'); b.disabled=true; b.textContent='กำลังบันทึก…';
     try{
-      const photos=[]; for(const f of files) photos.push(await resizeFile(f));
-      await window.HR.qaUpdateItemStatus({ item_id, empId:EMP.emp_id, status:'removed', photos });
-      toast('ok','บันทึกเก็บออกแล้ว'); openFolder(CUR_FOLDER);
+      await window.HR.qaUpdateItemStatus({ item_id, empId:EMP.emp_id, status:'removed', photos:shots });
+      close(); toast('ok','บันทึกเก็บออกแล้ว ('+shots.length+' รูป)'); openFolder(CUR_FOLDER);
     }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
+    b.disabled=false; b.textContent='บันทึกเก็บออก';
   };
   toast('ok','ถ่ายรูปหลักฐานก่อนเก็บออก');
   inp.click();
