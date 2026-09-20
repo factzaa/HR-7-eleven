@@ -4688,24 +4688,55 @@ async function openDiscTimeline(empId){
             ${fmt(i.at)} · โดย ${esc(i.by||(i.role==='mgr'?'ผู้จัดการ':'สำนักงาน'))}
             ${i.score!=null?` · คะแนน ${i.score}`:''}${i.late_count!=null?` · สาย ${i.late_count} ครั้ง`:''}${i.absent_count!=null?` · ขาด ${i.absent_count} วัน`:''}
           </div>
-          <div style="margin-top:5px">${
-            !i.need_ack ? '<span class="pill muted">ไม่ต้องรับทราบ</span>'
-            : (i.ack_at ? `<span class="pill ok">✓ พนักงานรับทราบแล้ว · ${fmt(i.ack_at)}</span>${i.ack_note?`<div style="font-size:12px;color:var(--muted);margin-top:3px">ความเห็นพนักงาน: ${esc(i.ack_note)}</div>`:''}`
-                        : '<span class="pill bad">รอพนักงานกดรับทราบ</span>')
+          <div style="margin-top:8px">${
+            // ★ 21 ก.ย. 69 — แสดงเป็น "ขั้นตอน" แทนป้ายกระจัดกระจาย
+            //   ① ออกใบเตือน → ② พนักงานกดรับทราบในแอป → ③ HR พูดคุย + เซ็น → ปิดงาน
+            //   ขั้น ③ ล็อกไว้จนกว่า ② จะเสร็จ — จะได้ไม่ข้ามขั้นตอน
+            (()=>{
+              const isLadder = ['verbal','written','warning'].includes(i.type);
+              const st=(n,label,state,detail,extra)=>{
+                const C={done:['#dcfce7','#166534','\u2713'],wait:['#fef3c7','#92400e','\u25cb'],lock:['#f1f5f9','#94a3b8','\ud83d\udd12'],na:['#f1f5f9','#94a3b8','\u2014']}[state];
+                return `<div style="display:flex;gap:9px;align-items:flex-start;padding:6px 0">
+                  <span style="flex:none;width:22px;height:22px;border-radius:50%;background:${C[0]};color:${C[1]};font-size:12px;font-weight:800;display:grid;place-items:center">${n}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:13px;font-weight:700;color:${state==='lock'||state==='na'?'#94a3b8':'#0f172a'}">${label} <span style="font-weight:800;color:${C[1]}">${C[2]}</span></div>
+                    ${detail?`<div style="font-size:11.5px;color:var(--muted);margin-top:1px">${detail}</div>`:''}
+                    ${extra||''}
+                  </div></div>`;
+              };
+              // ① ออกใบเตือน/บันทึกดำเนินการ — มีแถวนี้อยู่คือเสร็จแล้ว
+              let out = st(1,'ออกเอกสาร / บันทึกดำเนินการ','done', fmt(i.at)+' · โดย '+esc(i.by||'สำนักงาน'));
+              // ② พนักงานกดรับทราบในแอป
+              if(!i.need_ack) out += st(2,'พนักงานกดรับทราบในแอป','na','รายการนี้ไม่ต้องให้พนักงานรับทราบ');
+              else if(i.ack_at) out += st(2,'พนักงานกดรับทราบในแอป','done', fmt(i.ack_at), i.ack_note?`<div style="font-size:12px;color:var(--muted);margin-top:2px">ความเห็นพนักงาน: ${esc(i.ack_note)}</div>`:'');
+              else out += st(2,'พนักงานกดรับทราบในแอป','wait','จะเด้งบังคับให้กดตอนเปิดหน้ารับส่งผลัด');
+              // ③ HR พูดคุย + เซ็น → ปิดงาน (เฉพาะขั้นวินัย)
+              if(isLadder){
+                if(i.doc_at){
+                  const sig = i.ack_signature ? `<div style="margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;display:inline-block;background:#fff">
+                        <div style="font-size:11px;color:var(--muted);margin-bottom:3px">ลายมือชื่อพนักงาน</div>
+                        <img src="${esc(i.ack_signature)}" style="max-width:210px;max-height:76px;display:block;cursor:zoom-in" onclick="window.open(this.src,'_blank')">
+                        <div style="font-size:12px;font-weight:700;text-align:center;margin-top:3px">${esc(i.ack_typed_name||'')}</div>
+                        ${i.ack_agree===false
+                          ? `<div style="font-size:11.5px;color:#b91c1c;font-weight:700;margin-top:4px">⚠ รับทราบแต่ไม่เห็นด้วย</div><div style="font-size:12px;color:#991b1b;margin-top:2px;max-width:250px;white-space:pre-wrap">${esc(i.ack_disagree_reason||'')}</div>`
+                          : `<div style="font-size:11.5px;color:#15803d;font-weight:700;margin-top:4px">✓ รับทราบและเห็นด้วย</div>`}
+                      </div>`
+                    : (i.doc_url?`<div style="margin-top:4px"><a href="${esc(i.doc_url)}" target="_blank" style="font-size:12px">ดูเอกสารที่แนบ</a></div>`:'');
+                  out += st(3,'HR พูดคุย + เซ็นรับทราบ · ปิดงานแล้ว','done', fmt(i.doc_at)+(i.doc_by?(' · '+esc(i.doc_by)):''), sig);
+                } else if(!i.ack_at && i.need_ack){
+                  out += st(3,'HR พูดคุย + เซ็นรับทราบ','lock','รอขั้น ② เสร็จก่อน — พนักงานต้องกดรับทราบในแอปก่อน');
+                } else {
+                  out += st(3,'HR พูดคุย + เซ็นรับทราบ','wait','เปิดเอกสาร อ่านให้พนักงานฟัง แล้วส่งเครื่องให้เซ็น',
+                    `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+                       <button class="btn btn-pri btn-sm" onclick="discSignOpen('${esc(String(i.id))}','${esc(empId)}')"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 6l2-2 2 2-2 2"/></svg> เปิดเอกสาร + ให้เซ็น</button>
+                       <button class="btn btn-sec btn-sm" onclick="discDocComplete('${esc(String(i.id))}','${esc(empId)}')">แนบรูปเอกสารกระดาษแทน</button>
+                     </div>
+                     <div style="font-size:11.5px;color:var(--orange);margin-top:4px">— ยังไม่เริ่มนับความผิดครั้งถัดไป จนกว่าจะปิดงานขั้นนี้</div>`);
+                }
+              }
+              return `<div style="background:#f8fafc;border:1px solid var(--line);border-radius:11px;padding:7px 11px">${out}</div>`;
+            })()
           }</div>
-          ${['verbal','written','warning'].includes(i.type)?`<div style="margin-top:6px">${
-            i.doc_at
-              ? `<span class="pill ok"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><path d="M20 6L9 17l-5-5"/></svg> เอกสารสมบูรณ์ · ${fmt(i.doc_at)}${i.doc_by?(' · โดย '+esc(i.doc_by)):''}</span>${i.doc_url?` <a href="${esc(i.doc_url)}" target="_blank" style="font-size:12px">ดูเอกสาร</a>`:''}${
-                  i.ack_signature ? `<div style="margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;display:inline-block;background:#fff">
-                      <div style="font-size:11px;color:var(--muted);margin-bottom:3px">ลายมือชื่อพนักงาน</div>
-                      <img src="${esc(i.ack_signature)}" style="max-width:220px;max-height:80px;display:block;cursor:zoom-in" onclick="window.open(this.src,'_blank')">
-                      <div style="font-size:12px;font-weight:700;text-align:center;margin-top:3px">${esc(i.ack_typed_name||'')}</div>
-                      ${i.ack_agree===false
-                        ? `<div style="font-size:11.5px;color:#b91c1c;font-weight:700;margin-top:4px">⚠ รับทราบแต่ไม่เห็นด้วย</div><div style="font-size:12px;color:#991b1b;margin-top:2px;max-width:260px;white-space:pre-wrap">${esc(i.ack_disagree_reason||'')}</div>`
-                        : `<div style="font-size:11.5px;color:#15803d;font-weight:700;margin-top:4px">✓ รับทราบและเห็นด้วย</div>`}
-                    </div>` : ''}`
-              : `<button class="btn btn-pri btn-sm" onclick="discSignOpen('${esc(String(i.id))}','${esc(empId)}')"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 6l2-2 2 2-2 2"/></svg> ให้พนักงานเซ็นบนจอ</button> <button class="btn btn-sec btn-sm" onclick="discDocComplete('${esc(String(i.id))}','${esc(empId)}')"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg> แนบรูปเอกสารกระดาษ</button><div style="font-size:11.5px;color:var(--orange);margin-top:3px">— ยังไม่เริ่มนับความผิดครั้งถัดไป จนกว่า HR จะปิดเอกสาร</div>`
-          }</div>`:''}
         </div></div>`).join('');
   openModal('ไทม์ไลน์เคสวินัย · '+esc((r.emp&&r.emp.name)||empId),
     `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${ladder}</div>${body}`);
@@ -4723,21 +4754,35 @@ function discSignOpen(id, empId){
   const r=(window.DTL_LAST&&window.DTL_LAST.items||[]).find(x=>String(x.id)===String(id))||{};
   const who=(window.DTL_LAST&&window.DTL_LAST.emp)||{};
   const nm=who.name||empId;
-  openModal('<svg class="ei" viewBox="0 0 24 24"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 6l2-2 2 2-2 2"/></svg> เซ็นรับทราบ · '+esc(r.label||'การดำเนินการทางวินัย'),
-    '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;margin-bottom:12px;font-size:12.5px;color:#92400e;line-height:1.6">'
-      +'<b>ส่งเครื่องให้พนักงานอ่านและเซ็นตรงนี้</b><br>การเซ็นคือการ "รับทราบ" เท่านั้น ไม่ใช่การยอมรับว่ากระทำผิด'
+  // ★ 21 ก.ย. 69 — fmt เป็น const ภายในฟังก์ชันอื่นทุกตัว ไม่มีตัวกลาง
+  //   ของเดิมเรียก fmt() ตรงนี้ → ReferenceError → กดปุ่มแล้วเงียบ ไม่มีอะไรเกิดขึ้น
+  const f=w=>{ try{ return new Date(w).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
+  const today=(()=>{ try{ return new Date().toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return ''; } })();
+  const stat=[ (r.score!=null?('คะแนนวินัย '+r.score):''),
+               (r.late_count!=null?('มาสาย '+r.late_count+' ครั้ง'+(r.late_total?(' รวม '+r.late_total+' นาที'):'')):''),
+               (r.absent_count!=null?('ขาดงาน '+r.absent_count+' วัน'):'') ].filter(Boolean).join(' · ');
+
+  openModal('<svg class="ei" viewBox="0 0 24 24"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 6l2-2 2 2-2 2"/></svg> ขั้นที่ 3 · พูดคุยและเซ็นรับทราบ',
+    // ---------- เอกสารที่ระบบสร้างให้ HR อ่านให้พนักงานฟัง ----------
+     '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;margin-bottom:12px;font-size:12.5px;color:#92400e;line-height:1.6">'
+      +'<b>อ่านเอกสารข้างล่างให้พนักงานฟัง แล้วส่งเครื่องให้เซ็น</b><br>'
+      +'พนักงานกดรับทราบในแอปไปแล้วเมื่อ '+esc(f(r.ack_at))+' — ขั้นนี้คือการพูดคุยตัวต่อตัวและลงลายมือชื่อ'
     +'</div>'
-    +'<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">'
-      +'<div style="font-size:12px;color:var(--muted);font-weight:700">พนักงาน</div>'
-      +'<div style="font-size:15px;font-weight:700;margin-bottom:8px">'+esc(nm)+' <span class="mono muted" style="font-size:12px">'+esc(empId)+'</span></div>'
-      +'<div style="font-size:12px;color:var(--muted);font-weight:700">สาเหตุ</div>'
-      +'<div style="font-size:14.5px;line-height:1.6;font-weight:600;white-space:pre-wrap">'+esc(r.reason||'—')+'</div>'
-      +(r.detail?('<div style="font-size:13px;color:var(--muted);margin-top:6px;white-space:pre-wrap">'+esc(r.detail)+'</div>'):'')
-      +'<div style="font-size:12.5px;color:var(--muted);margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)">'
-        +[ (r.score!=null?('คะแนน '+r.score):''),
-           (r.late_count!=null?('สาย '+r.late_count+' ครั้ง'):''),
-           (r.absent_count!=null?('ขาด '+r.absent_count+' วัน'):''),
-           (r.at?('ดำเนินการ '+fmt(r.at)):'') ].filter(Boolean).join(' · ')
+    +'<div id="dsg_doc" style="border:1.5px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;background:#fff">'
+      +'<div style="text-align:center;font-weight:800;font-size:16px;margin-bottom:2px">บันทึกการ'+esc(r.label||'ดำเนินการทางวินัย')+'</div>'
+      +'<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:12px">วันที่ '+esc(today)+'</div>'
+      +'<table style="width:100%;font-size:13.5px;line-height:1.75;border-collapse:collapse">'
+        +'<tr><td style="width:120px;color:var(--muted);vertical-align:top">ชื่อพนักงาน</td><td style="font-weight:700">'+esc(nm)+' <span class="mono" style="color:var(--muted);font-weight:400">'+esc(empId)+'</span></td></tr>'
+        +(who.branch_id?('<tr><td style="color:var(--muted);vertical-align:top">สาขา</td><td>'+esc(typeof branchName==='function'?branchName(who.branch_id):who.branch_id)+'</td></tr>'):'')
+        +'<tr><td style="color:var(--muted);vertical-align:top">ประเภท</td><td style="font-weight:700">'+esc(r.label||'')+'</td></tr>'
+        +'<tr><td style="color:var(--muted);vertical-align:top">สาเหตุ</td><td style="font-weight:600;white-space:pre-wrap">'+esc(r.reason||'—')+'</td></tr>'
+        +(r.detail?('<tr><td style="color:var(--muted);vertical-align:top">รายละเอียด</td><td style="white-space:pre-wrap">'+esc(r.detail)+'</td></tr>'):'')
+        +(stat?('<tr><td style="color:var(--muted);vertical-align:top">ข้อมูลประกอบ</td><td>'+esc(stat)+'</td></tr>'):'')
+        +'<tr><td style="color:var(--muted);vertical-align:top">ผู้ดำเนินการ</td><td>'+esc(r.by||'สำนักงาน')+' · '+esc(f(r.at))+'</td></tr>'
+        +'<tr><td style="color:var(--muted);vertical-align:top">รับทราบในแอป</td><td>'+esc(f(r.ack_at))+'</td></tr>'
+      +'</table>'
+      +'<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:12.5px;line-height:1.7;color:#334155">'
+        +'ข้าพเจ้าได้รับทราบข้อเท็จจริงตามเอกสารฉบับนี้ และได้รับการชี้แจงจากผู้บังคับบัญชาแล้ว'
       +'</div>'
     +'</div>'
     +'<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">'
@@ -4748,7 +4793,7 @@ function discSignOpen(id, empId){
     +'</div>'
     +'<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">'
-        +'<div style="font-size:12px;color:var(--muted);font-weight:700">ลงลายมือชื่อ <span style="color:var(--red)">*</span></div>'
+        +'<div style="font-size:12px;color:var(--muted);font-weight:700">ลงลายมือชื่อพนักงาน <span style="color:var(--red)">*</span></div>'
         +'<button type="button" class="btn btn-sec btn-sm" id="dsg_clear">ล้าง</button>'
       +'</div>'
       +'<canvas id="dsg_cv" style="width:100%;height:180px;border:1.5px dashed var(--line2);border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>'
@@ -4756,7 +4801,8 @@ function discSignOpen(id, empId){
       +'<input type="text" id="dsg_name" value="'+esc(nm)+'" placeholder="ชื่อ-นามสกุลตัวบรรจงกำกับ" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;margin-top:10px;text-align:center;box-sizing:border-box">'
     +'</div>'
     +'<div id="dsg_err" style="display:none;color:var(--red);font-size:13.5px;font-weight:600;margin-bottom:10px"></div>'
-    +'<button class="btn btn-pri" id="dsg_save" style="width:100%;padding:12px">✓ บันทึกลายเซ็น และปิดเอกสาร</button>');
+    +'<button class="btn btn-pri" id="dsg_save" style="width:100%;padding:12px">✓ อนุมัติและปิดงาน</button>'
+    +'<div style="text-align:center;font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6">การเซ็นคือการ "รับทราบ" เท่านั้น ไม่ใช่การยอมรับว่ากระทำผิด</div>');
 
   const n=$('dsg_n'), y=$('dsg_y'), rz=$('dsg_reason');
   const sync=()=>{ rz.style.display=n.checked?'block':'none'; if(!n.checked) rz.value=''; };
