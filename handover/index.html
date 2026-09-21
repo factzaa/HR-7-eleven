@@ -1784,18 +1784,40 @@ async function refreshCoCard(){
     $('hoCorrBtn').onclick=()=>openCorrForm(row);
     return;
   }
+  // ★ 21 ก.ย. 69 — ขอควบกะแล้ว → โชว์สถานะ (รอ HR / อนุมัติแล้ว)
+  if(!row.check_out && s.dual && (s.dual.status==='pending' || s.dual.status==='approved')){
+    const nm=esc(s.dual.extra_shift);
+    box.innerHTML = s.dual.status==='approved'
+      ? '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px;font-size:13px;color:#065f46"><div style="font-weight:700">HR อนุมัติควบกะ '+nm+' แล้ว</div><div style="margin-top:2px">นับเป็นวันทำงานควบ · อย่าลืมกดออกงานเมื่อจบกะที่ควบ</div></div>'
+      : '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px;font-size:13px;color:#1e3a8a"><div style="font-weight:700">ขอควบกะ '+nm+' แล้ว — รอ HR อนุมัติ</div><div style="margin-top:2px;line-height:1.6">ระหว่างรออนุมัติคิดเป็น OT · HR อนุมัติแล้วจึงนับเป็นวันทำงานควบ</div></div>';
+    return;
+  }
   if(!row.check_out){
     const eff=coEffEnd(row, s.shift);
     if(eff && Date.now() >= eff.getTime()+CO_GRACE_MIN*60000){
       const endTxt=s.shift?s.shift.end_time.slice(0,5):'';
       box.innerHTML='<div style="background:#fff4e0;border:1px solid #f3d38a;border-radius:12px;padding:12px;font-size:13px;color:#a06515">'
         +'<div style="font-weight:600"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg> อย่าลืมกดออกงาน</div>'
-        +'<div style="margin-top:2px">กะเลิก '+esc(endTxt)+' แล้ว — ถ้าเลิกแล้วไปกด "ออกงาน" ที่หน้าลงเวลา หรือถ้ายังทำต่อ (ควบกะ) เลือกด้านล่าง</div>'
+        +'<div style="margin-top:2px">กะเลิก '+esc(endTxt)+' แล้ว — ถ้าเลิกแล้วไปกด "ออกงาน" ที่หน้าลงเวลา หรือถ้ายังทำต่อ เลือกด้านล่าง</div>'
         +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
-        +'<button class="btn btn-sec btn-sm" data-ext="2">ควบกะต่อ +2 ชม.</button>'
+        +'<button class="btn btn-sec btn-sm" data-ext="2">อยู่ต่อ (OT) +2 ชม.</button>'
         +'<button class="btn btn-sec btn-sm" data-ext="4">+4 ชม.</button>'
         +'<button class="btn btn-sec btn-sm" data-ext="12">จนกว่าจะกดออกเอง</button>'
-        +'</div></div>';
+        +'</div>'
+        +((s.dual_candidates||[]).length
+          ? '<div style="border-top:1px dashed #f3d38a;margin-top:9px;padding-top:9px"><div style="font-weight:600">ทำต่อทั้งกะ (ควบกะ) — ส่งให้ HR อนุมัติ</div>'
+            +'<div style="font-size:11.5px;margin-top:2px">HR อนุมัติแล้วจึงนับเป็นวันทำงานควบ · ระหว่างรอคิดเป็น OT</div>'
+            +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">'
+            +(s.dual_candidates||[]).map(c=>'<button class="btn btn-pri btn-sm" data-dual="'+esc(c.shift_id)+'">ควบกะ '+esc(c.name||c.shift_id)+' '+esc(c.start_time)+'–'+esc(c.end_time)+'</button>').join('')
+            +'</div>'+(s.dual&&s.dual.status==='rejected'?'<div style="font-size:11.5px;margin-top:5px;color:#b91c1c">คำขอก่อนหน้าไม่ได้รับอนุมัติ'+(s.dual.decide_note?(' · '+esc(s.dual.decide_note)):'')+'</div>':'')+'</div>'
+          : '')
+        +'</div>';
+      box.querySelectorAll('[data-dual]').forEach(b=>b.onclick=async()=>{
+        if(!confirm('ขอควบกะ '+b.textContent.replace('ควบกะ ','')+' ?\nส่งให้ HR อนุมัติ — ระหว่างรอคิดเป็น OT')) return;
+        b.disabled=true;
+        try{ const r=await window.HR.requestDualShift({ empId:EMP.emp_id, extraShift:b.dataset.dual }); toast('ok','ส่งคำขอควบกะ '+(r.extra_name||r.extra_shift)+' แล้ว — รอ HR อนุมัติ'); refreshCoCard(); }
+        catch(e){ b.disabled=false; toast('err', e.message||'ไม่สำเร็จ'); }
+      });
       box.querySelectorAll('[data-ext]').forEach(b=>b.onclick=async()=>{
         const hrs=Number(b.dataset.ext); const until=new Date(Date.now()+hrs*3600000).toISOString();
         try{ await window.HR.extendShift({ empId:EMP.emp_id, untilIso:until }); toast('ok','บันทึกควบกะต่อแล้ว — อย่าลืมกดออกงานเมื่อเลิกจริง'); refreshCoCard(); }
