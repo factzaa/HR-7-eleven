@@ -1108,6 +1108,7 @@
       const at = attDV[d], sd = sDV[d] || 0, cnt = sCnt[d] ? sCnt[d].size : 0;
       let v = at;
       if (!isMgr && cnt >= 2 && sd > at) { const ah = actHr[d], nh = sHr[d] || 0; if (!(ah != null && nh > 0 && ah < nh * _DUAL_MIN_RATIO)) v = sd; }
+      if (!v) v = 1;   // วันที่มี check-in = อย่างน้อย 1 วัน — ตรงกับเงินเดือน HR
       total += v;
     });
     return Math.round(total * 10) / 10;
@@ -3581,7 +3582,10 @@
       sb.from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้ตัดเวรเฉพาะกิจ
       sb.from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('payroll_review').select('*').eq('period_start', cyc.start),
-      sb.from('advance_requests').select('emp_id,amount,approved_amount,defer_rounds').eq('status', 'paid').eq('deducted', false),
+      // ★ 21 ก.ย. 69 — กรองรอบหักแบบเดียวกับเงินเดือน HR: รอบที่เริ่มแล้ว = ตกทอดใบเก่า (≤ เดือนสิ้นรอบ) · รอบอนาคต = เฉพาะเดือนนั้น
+      (String(cyc.start) <= today
+        ? sb.from('advance_requests').select('emp_id,amount,approved_amount,defer_rounds').eq('status', 'paid').eq('deducted', false).lte('cycle_month', cyc.end.slice(0, 7))
+        : sb.from('advance_requests').select('emp_id,amount,approved_amount,defer_rounds').eq('status', 'paid').eq('deducted', false).eq('cycle_month', cyc.end.slice(0, 7))),
       Promise.resolve(null),   // (เดิม discipline_rules — เลิกใช้แล้ว)
       sb.from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb.from('score_rules').select('*'),
@@ -3614,7 +3618,7 @@
     const leadMap = {}; (ctrlR.data || []).forEach(c => { leadMap[(c.branch_id || '') + '|' + c.work_date + '|' + (grpOf[c.shift_id] || c.shift_id)] = c.emp_id; });
     const shiftAllowBy = {};
     if (saCfg.enabled !== false) (attR.data || []).forEach(a => {
-      if (a.check_in && nightSet.has(a.shift_id)) {
+      if (a.check_in && a.status !== 'TRAINING' && nightSet.has(a.shift_id)) {   // ★ วันอบรมไม่จ่ายเบี้ยกะดึก (เหมือนเงินเดือน HR)
         const grp = grpOf[a.shift_id] || a.shift_id;
         const isCtrl = leadMap[(a.branch_id || '') + '|' + a.work_date + '|' + grp] === a.emp_id;
         shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
@@ -3635,6 +3639,16 @@
     (seR.data || []).forEach(e => (evBy[e.emp_id] || (evBy[e.emp_id] = [])).push(e));
     const advBy = {}; (advR.data || []).forEach(r => { if (r.defer_rounds && Number(r.defer_rounds) > 0) return; const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advBy[r.emp_id] = (advBy[r.emp_id] || 0) + amt; });
     const rvM = {}; (rvR.data || []).forEach(r => rvM[r.emp_id] = r);
+    // ★ 21 ก.ย. 69 — ค่าที่ HR แก้ทีหลังในหน้าเงินเดือน (payroll_items) — โชว์ให้ ผจก. เห็นว่ายอดสุดท้ายต่างจากที่สรุป
+    const hrM = {}; let runStatus = null;
+    try {
+      const { data: run } = await sb.from('payroll_runs').select('id,status').eq('period_start', cyc.start).maybeSingle();
+      if (run) {
+        runStatus = run.status;
+        const { data: its } = await sb.from('payroll_items').select('*').eq('run_id', run.id);
+        (its || []).forEach(x => { hrM[x.emp_id] = x; });
+      }
+    } catch (_e) { /* ยังไม่มีรอบเงินเดือน */ }
     const rows = (empR.data || []).filter(e => e.active !== false || e.end_date || (attBy[e.emp_id] || []).some(a => a.check_in)).map(e => {
       const att = attBy[e.emp_id] || [];
       const worked = new Set(att.filter(a => a.check_in).map(a => a.work_date));
@@ -3645,7 +3659,7 @@
       const _isMgr = e.is_manager === true;
       // วันทำงาน — กติกาเดียวกับเงินเดือน HR (≥2 กะ · ชั่วโมงจริง ≥75% · ผจก.ไม่นับควบ · ไม่รวมเวรเฉพาะกิจผี)
       const attDays = _workDaysFor(att, _schOkByEmpR[e.emp_id], _dvR, _hrMapR, _isMgr);
-      const attOT = Math.round(att.reduce((s, a) => { let hh = Number(a.ot_hours) || 0; if (otWhole) hh = Math.floor(hh); return s + hh; }, 0) * 10) / 10;
+      const attOT = Math.round(att.reduce((s, a) => { let hh = Number(a.ot_hours) || 0; if (otWhole) hh = Math.floor(hh + 1e-9); return s + hh; }, 0) * 10) / 10;
       const late_count = att.filter(a => a.check_in && a.late_min > 0).length;
       // ขาดงาน — ถ่วงครึ่งวัน · ตัดเวรนอกช่วงเป็นพนักงาน (เหมือนหน้าวินัย/คะแนน)
       const schedMap = _schedMapFor(_schOkByEmpR[e.emp_id], e, today);
@@ -3659,7 +3673,8 @@
         ? (bandBonus > 0)
         : ((dilCfg.enabled === false) ? null : ((!dilCfg.require_no_absent || absent === 0) && (late_count <= Number(dilCfg.allow_late_count || 0))));
       // ★ เกณฑ์วันทำงานขั้นต่ำ: ใช้วันที่ HR ปรับ (days_override) ถ้ามี ไม่งั้นตามลงเวลา
-      const daysEff = (rv.days_override != null) ? Number(rv.days_override) : attDays;
+      const _hrIt = hrM[e.emp_id] || {};   // HR แก้ทีหลัง > ผจก. > ลงเวลา (ลำดับเดียวกับเงินเดือน HR)
+      const daysEff = (_hrIt.days_override != null) ? Number(_hrIt.days_override) : ((rv.days_override != null) ? Number(rv.days_override) : attDays);
       const below_min = minWorkDays > 0 && daysEff < minWorkDays;
       if (below_min && dil_ok !== null) dil_ok = false;   // วันไม่ถึงเกณฑ์ = ตัดเบี้ยวินัยด้วย
       // เหตุผลที่ตัดเบี้ยวินัย (auto) — โชว์ในช่องหมายเหตุหน้าตรวจ
@@ -3679,6 +3694,10 @@
         auto_shift_allowance: shiftAllowBy[e.emp_id] || 0, shift_allowance_override: rv.shift_allowance_override,
         installments: instByEmp[e.emp_id] || null,
         days_override: rv.days_override, ot_override: rv.ot_override, advance_override: rv.advance_override,
+        hr_days: hrM[e.emp_id] && hrM[e.emp_id].days_override != null ? Number(hrM[e.emp_id].days_override) : null,
+        hr_ot: hrM[e.emp_id] && hrM[e.emp_id].ot_override != null ? Number(hrM[e.emp_id].ot_override) : null,
+        pay_days: hrM[e.emp_id] ? Number(hrM[e.emp_id].days_worked) : null, pay_ot: hrM[e.emp_id] ? Number(hrM[e.emp_id].ot_hours) : null,
+        run_status: runStatus,
         add_special: rv.add_special, delivery: rv.delivery, ded_damaged: rv.ded_damaged, ded_other: rv.ded_other, ded_other_note: rv.ded_other_note, note: rv.note,
       };
     });

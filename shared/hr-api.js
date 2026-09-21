@@ -153,6 +153,7 @@
         const ah = actHr[d], nh = sHr[d] || 0;
         if (!(ah != null && nh > 0 && ah < nh * DUAL_MIN_RATIO)) v = sd;
       }
+      if (!v) v = 1;   // ★ วันที่มี check-in = อย่างน้อย 1 วัน (กะ day_value=0) — ตรงกับเงินเดือน HR (y || 1)
       byDate[d] = v; total += v;
     });
     return { total: Math.round(total * 10) / 10, byDate, attByDate: attDV };
@@ -9075,6 +9076,8 @@
     const exM = {}; (existing || []).forEach(x => { exM[x.emp_id] = x; });
     const items = [];
     const dilNoteBy = {};   // เหตุผลที่ตัดเบี้ยวินัย (auto) ต่อพนักงาน
+    const srcBy = {};       // ★ ที่มาของวัน/OT ต่อคน (ลงเวลา / ผจก. / HR) — โชว์ในโมดัล HR
+    const _hasOtCol = !(existing || []).length || Object.prototype.hasOwnProperty.call(existing[0], 'ot_override');
     for (const e of (empR.data || [])) {
       const ex = exM[e.emp_id] || {};
       if (finalized && exM[e.emp_id]) { items.push(ex); continue; }   // ปิดรอบแล้ว = คืนยอดที่ตรึงไว้
@@ -9084,10 +9087,25 @@
       // ★ วันที่มี check-in = อย่างน้อย 1 วัน (กันกะที่ day_value=0 เช่น M8 ทำให้วันหาย · ให้ตรงกับหน้าตรวจ/วินัยที่ใช้ `|| 1`)
       const attDays = Math.round(Object.values(workedDV[e.emp_id] || {}).reduce((x, y) => x + (y || 1), 0) * 10) / 10;
       const attOT = Math.round((otByEmp[e.emp_id] || 0) * 10) / 10;
-      // ★ ลำดับความสำคัญ: หน้าตรวจ (payroll_review) > แก้รายคนเดิม (item) > ตามลงเวลา
-      const daysOv = (rv.days_override != null) ? Number(rv.days_override) : ((ex.days_override != null) ? Number(ex.days_override) : null);
+      // ★ 21 ก.ย. 69 — ลำดับความสำคัญ: HR แก้ทีหลัง (item) > ผจก. สรุปในหน้าตรวจ (payroll_review) > ตามลงเวลา
+      //   เดิม: หน้าตรวจ > item และทุกครั้งที่คำนวณจะเขียนค่าของ ผจก. ทับช่อง days_override ของ HR
+      //   → HR แก้วันแล้วกดรีเฟรช ค่าเด้งกลับเป็นของ ผจก. · และแก้ OT ไม่ได้เลย
+      //   ตอนนี้: payroll_items.days_override / ot_override = "ค่าที่ HR แก้เอง" เท่านั้น (ไม่คัดลอกค่า ผจก. มาใส่อีก)
+      //           ว่าง = ใช้ตาม ผจก. · ผจก. ไม่ได้แก้ = ตามลงเวลา
+      const hrDays = (ex.days_override != null) ? Number(ex.days_override) : null;
+      const hrOT = (ex.ot_override != null) ? Number(ex.ot_override) : null;
+      const rvDays = (rv.days_override != null) ? Number(rv.days_override) : null;
+      const rvOT = (rv.ot_override != null) ? Number(rv.ot_override) : null;
+      const daysOv = hrDays != null ? hrDays : rvDays;
       const days_worked = daysOv != null ? daysOv : attDays;
-      const ot_hours = (rv.ot_override != null) ? Number(rv.ot_override) : attOT;
+      const ot_hours = hrOT != null ? hrOT : (rvOT != null ? rvOT : attOT);
+      srcBy[e.emp_id] = {
+        att_days: attDays, att_ot: attOT, rv_days: rvDays, rv_ot: rvOT, hr_days: hrDays, hr_ot: hrOT,
+        days_src: hrDays != null ? 'hr' : (rvDays != null ? 'mgr' : 'att'),
+        ot_src: hrOT != null ? 'hr' : (rvOT != null ? 'mgr' : 'att'),
+        rv_by: rv.updated_by || null, rv_at: rv.updated_at || null, rv_note: rv.note || null,
+        rv_after_hr: !!(ex.hr_edit_at && rv.updated_at && String(rv.updated_at) > String(ex.hr_edit_at) && (hrDays != null || hrOT != null)),
+      };
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
@@ -9123,7 +9141,7 @@
       items.push({
         run_id: run.id, emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || '',
         wage_type: prof.wage_type || 'monthly',
-        days_override: daysOv,
+        days_override: hrDays,   // ★ เก็บเฉพาะค่าที่ HR แก้เอง (ไม่คัดลอกค่า ผจก.)
         base_pay: comp.base_pay, days_worked: comp.days_worked, ot_hours: comp.ot_hours, ot_pay: comp.ot_pay,
         position_allowance: comp.position_allowance, diligence: comp.diligence, bonus: comp.bonus,
         additions, gross: comp.gross, sso: comp.sso, welfare: comp.welfare, advance_deduct: comp.advance_deduct, deductions,
@@ -9131,9 +9149,14 @@
         bank_name: e.bank_name || null, bank_account: e.bank_account || null, email: e.email || null,
         note: ex.note || null, updated_at: new Date().toISOString(),
       });
+      if (_hasOtCol) items[items.length - 1].ot_override = hrOT;
     }
     if (!finalized && items.length) {
-      const { error } = await sb().from('payroll_items').upsert(items, { onConflict: 'run_id,emp_id' });
+      let { error } = await sb().from('payroll_items').upsert(items, { onConflict: 'run_id,emp_id' });
+      if (error && /ot_override/.test(String(error.message || ''))) {   // ยังไม่ได้รัน SQL เพิ่มคอลัมน์ → บันทึกแบบเดิม
+        items.forEach(x => { delete x.ot_override; });
+        ({ error } = await sb().from('payroll_items').upsert(items, { onConflict: 'run_id,emp_id' }));
+      }
       if (error) throw error;
       // ★ ลบ "แถวผี": รายการเก่าของคนที่ไม่อยู่ในรอบนี้แล้ว (เช่น เปลี่ยน emp_id ตอนย้ายสาขา) — กันค่าเก่าค้างมาโชว์
       try {
@@ -9185,6 +9208,8 @@
       ytd_tax: 0,
       delivery: (reviewMap[it.emp_id] && reviewMap[it.emp_id].delivery != null) ? Number(reviewMap[it.emp_id].delivery) : null,   // ค่า Delivery (จาก payroll_review) — โมดัลแก้รายคนใช้
       dil_note: dilNoteBy[it.emp_id] || '',   // เหตุผลตัดเบี้ยวินัย (auto) — โชว์ในช่องหมายเหตุ
+      src: srcBy[it.emp_id] || null,          // ★ ที่มาของวัน/OT: att_days/rv_days/hr_days · days_src = att|mgr|hr
+      ot_col: _hasOtCol,
       // ★ ธงเตือน: วันที่จัดควบกะแต่ชั่วโมงทำงานจริงไม่ถึงเกณฑ์ — ระบบนับให้ 1 วัน ส่วนเกินเป็น OT · รอ HR ตัดสิน
       dual_warn: dualWarnBy[it.emp_id] || [],
       dual_warn_note: (dualWarnBy[it.emp_id] || []).length
@@ -9238,6 +9263,15 @@
     // ★ แก้ "วันทำงาน" รายคน (override) — กรณีเพิ่งเริ่มใช้ระบบ ข้อมูลลงเวลายังไม่ครบ
     //   ว่าง/null = ใช้ตามลงเวลา (คงฐานเดิม) · กรอกตัวเลข = คิดฐานใหม่ = วัน × อัตรา (เฉพาะรายวัน) และคิด ปกส.ใหม่
     let base_pay = Number(it.base_pay), days_worked = Number(it.days_worked), sso = Number(it.sso), welfare = Number(it.welfare || 0);
+    // ★ 21 ก.ย. 69 — HR แก้ OT เองได้ (ทับค่าที่ ผจก. สรุป) · ว่าง = ใช้ตาม ผจก./ลงเวลา · ต้องรัน SQL เพิ่มคอลัมน์ก่อน
+    let otUpd = null;
+    if (d.ot_override !== undefined) {
+      const ov = (d.ot_override === '' || d.ot_override == null) ? null : Number(d.ot_override);
+      if (ov != null && (isNaN(ov) || ov < 0)) return { ok: false, error: 'ชั่วโมง OT ไม่ถูกต้อง' };
+      if (!Object.prototype.hasOwnProperty.call(it, 'ot_override')) {
+        if (ov != null) return { ok: false, error: 'ยังแก้ OT ไม่ได้ — ต้องรัน SQL payroll-hr-override-2569-09-21.sql ก่อน' };
+      } else otUpd = { ot_override: ov };
+    }
     let days_override = it.days_override != null ? Number(it.days_override) : null;
     if (d.days_override !== undefined) {
       days_override = (d.days_override === '' || d.days_override == null) ? null : Number(d.days_override);
@@ -9274,6 +9308,11 @@
     const rt = Number((cfg.rounding && cfg.rounding.net_round_to) || 1) || 1;
     const net = Math.round((gross - total_deduct) / rt) * rt;
     const upd = { additions, deductions, base_pay, days_worked, days_override, sso, welfare, gross, total_deduct, net, note: d.note != null ? d.note : it.note, edited_by: 'สำนักงาน (HR)', updated_at: new Date().toISOString() };
+    if (otUpd) Object.assign(upd, otUpd);
+    // เวลาที่ HR แก้วัน/OT ล่าสุด — ใช้เตือนถ้า ผจก. ไปแก้หน้าตรวจทีหลัง
+    const _hrChanged = (d.days_override !== undefined && days_override !== (it.days_override != null ? Number(it.days_override) : null))
+      || (otUpd && otUpd.ot_override !== (it.ot_override != null ? Number(it.ot_override) : null));
+    if (_hrChanged && Object.prototype.hasOwnProperty.call(it, 'hr_edit_at')) upd.hr_edit_at = new Date().toISOString();
     const { error } = await sb().from('payroll_items').update(upd).eq('id', d.id);
     if (error) throw error;
     return { ok: true, base_pay, days_worked, sso, welfare, gross, total_deduct, net };
