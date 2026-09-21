@@ -1302,6 +1302,7 @@ function renderMyShelvesHTML(shv){
         +(r.checklist||[]).map((it,i)=>'<label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px;font-size:13.5px">'
           +'<input type="checkbox" class="shvck_'+r.shelf_id+'" data-label="'+esc(it)+'" style="margin-top:3px">'+esc(it)+'</label>').join('')
         +'<label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:6px;display:inline-block"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูปหลักฐาน<input type="file" accept="image/*" capture="environment" multiple id="shvfc_'+r.shelf_id+'" style="display:none"></label>'
+        +' <label class="btn btn-sec" style="font-size:13px;cursor:pointer;margin-top:6px;display:inline-block"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg> เลือกหลายรูป<input type="file" accept="image/*" multiple id="shvfg_'+r.shelf_id+'" style="display:none"></label>'
         +'<div class="thumbs" id="shvt_'+r.shelf_id+'" style="margin:6px 0 4px"></div>'
         +'<div class="muted" style="font-size:12px;margin:2px 0 3px">บันทึกวันนี้ * (ทำถึงไหน / เหลืออะไร)</div>'
         +'<input type="text" id="shvn_'+r.shelf_id+'" placeholder="เช่น ทำ 635–636 เสร็จ เหลือ 637–638" style="margin-bottom:8px">'
@@ -1323,7 +1324,8 @@ function wireMyShelves(){
     const c=r.today_check;
     if(c && c.status!=='sent_back') return;
     TASK_PHOTOS['shv_'+r.shelf_id]=[];
-    const inp=$('shvfc_'+r.shelf_id);
+    // ★ 22 ก.ย. 69 — แนบได้หลายรูป: ปุ่มถ่ายรูป (กล้อง) + ปุ่มเลือกหลายรูปจากคลังภาพ
+    ['shvfc_','shvfg_'].forEach(pre=>{ const inp=$(pre+r.shelf_id);
     if(inp) inp.addEventListener('change', async()=>{
       if(!inp.files||!inp.files.length) return;
       const picked=inp.files.length;
@@ -1332,7 +1334,7 @@ function wireMyShelves(){
       inp.value=''; renderShvThumbs(r.shelf_id);
       wipPut('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id);   // ★ เก็บร่าง
       if(a.length) toast('ok','แนบรูปแล้ว '+a.length+'/'+picked+' รูป');
-    });
+    }); });
     const n=$('shvn_'+r.shelf_id); if(n) n.oninput=()=>wipPut('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id);
     wipRestore('shv:'+r.shelf_id,'shv_'+r.shelf_id,'shvn_'+r.shelf_id,renderShvThumbs,r.shelf_id);
   });
