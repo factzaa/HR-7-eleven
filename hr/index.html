@@ -4550,7 +4550,14 @@ function renderDiscipline(){
     const tc = x.term_case;
     const wt = Number(x.warning_total)||0;
     const suffix = (wt>0 && !tc) ? (' · ใบเตือน '+wt+'/3') : '';
-    if(x.action_status==='await_doc') return `<span class="pill" style="background:#fff7ed;color:#9a3412;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> รอ HR ทำเอกสารให้สมบูรณ์</span>`;
+    // ★ 21 ก.ย. 69 — ขั้น ②/③ โชว์บนการ์ดตรง ๆ · ถึงขั้น ③ มีปุ่ม "เปิดเอกสาร + ให้เซ็น" เลย (เดิมซ่อนในไทม์ไลน์ หาไม่เจอ)
+    if(x.action_status==='await_doc'){
+      if(x.last_action_need_ack && !x.last_action_ack_at)
+        return `<span class="pill" style="background:#fef3c7;color:#a16207;font-weight:700" title="พนักงานจะเจอหน้าต่างให้กดรับทราบตอนเปิดแอปรับส่งผลัด"><svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> ขั้น 2/3 · รอพนักงานกดรับทราบในแอป</span>`;
+      return (x.last_action_id!=null && !MGR_MODE)
+        ? `<button class="btn btn-pri btn-sm" data-dsign="${esc(String(x.last_action_id))}" data-dsemp="${esc(x.emp_id)}" title="ขั้น 3/3 · เปิดเอกสาร อ่านให้พนักงานฟัง แล้วให้เซ็นบนจอ → ปิดงาน"><svg class="ei" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 6l2-2 2 2-2 2"/></svg> ขั้น 3/3 · ให้เซ็นรับทราบ</button>`
+        : `<span class="pill" style="background:#fff7ed;color:#9a3412;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> ขั้น 3/3 · รอ HR ให้พนักงานเซ็น</span>`;
+    }
     if(x.action_status==='observing') return `<span class="pill" style="background:#eff6ff;color:#1d4ed8;font-weight:700"><svg class="pline" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg> อยู่ระหว่างสังเกต${x.obs_since?(' · หลัง '+beDate(x.obs_since)):''}</span>`;
     // ★ ผ่านมติเคสพิจารณาแล้ว → ไม่ต้องเร่งออกใบเตือนอีก แสดงมติแทน
     if(x.action_status==='case_closed' && tc){
@@ -4606,6 +4613,7 @@ function renderDiscipline(){
   document.querySelectorAll('[data-warn]').forEach(b=>b.onclick=()=>openIssueWarning(b.dataset.warn));
   document.querySelectorAll('[data-dact]').forEach(b=>b.onclick=()=>openDiscAction(b.dataset.dact));
   document.querySelectorAll('[data-dtl]').forEach(b=>b.onclick=()=>openDiscTimeline(b.dataset.dtl));
+  document.querySelectorAll('[data-dsign]').forEach(b=>b.onclick=()=>discSignFromCard(b.dataset.dsign, b.dataset.dsemp));
   document.querySelectorAll('[data-waive]').forEach(b=>b.onclick=()=>discWaive(b.dataset.waive));
   document.querySelectorAll('[data-unwaive]').forEach(b=>b.onclick=()=>discUnwaive(b.dataset.unwaive));
 }
@@ -4665,10 +4673,16 @@ function openDiscAction(empId){
       <textarea id="da_reason" rows="2" placeholder="เช่น มาสายเกินกำหนด 3 ครั้งในรอบนี้ / ไม่ส่งมอบผลัด" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea></div>
     <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">รายละเอียด / ข้อตกลงที่คุยกัน (ไม่บังคับ)</label>
       <textarea id="da_detail" rows="2" placeholder="เช่น พนักงานรับปากว่าจะมาก่อนเวลา 15 นาที" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea></div>
-    <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">หลักฐาน (รูปเอกสาร/ใบเซ็นรับทราบ) — <b style="color:#b91c1c">บังคับ</b>สำหรับตักเตือนวาจา/ลายลักษณ์อักษร</label><br>
+    <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">รูปประกอบ (ไม่บังคับ)</label><br>
       <label style="display:inline-block;padding:8px 13px;border:1.5px solid var(--line2);border-radius:9px;cursor:pointer;font-size:13px;margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> แนบรูปหลักฐาน<input type="file" accept="image/*" multiple id="da_file" style="display:none"></label>
       <div id="da_thumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div></div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">พนักงานจะต้องกดรับทราบในหน้ารับส่งผลัด (ยกเว้นประเภท "บันทึกเพิ่มเติม") ระบบเก็บวันเวลาและอุปกรณ์ไว้เป็นหลักฐาน · <b>บังคับตามลำดับ:</b> วาจา → ลายลักษณ์อักษร → ใบเตือน</div>
+    <div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.75">
+      <div style="font-weight:700;margin-bottom:2px">ขั้นตอน (ไม่ต้องพิมพ์กระดาษ ไม่ต้องแนบรูป)</div>
+      <div><b style="color:#15803d">① บันทึกตอนนี้</b> — ระบบแจ้งพนักงาน</div>
+      <div><b>② พนักงานกดรับทราบ</b> ในแอปรับส่งผลัด (เด้งบังคับตอนเปิดแอป)</div>
+      <div><b>③ HR เปิดเอกสาร อ่านให้ฟัง แล้วให้พนักงานเซ็นบนจอ</b> — ปุ่ม "ขั้น 3/3 · ให้เซ็นรับทราบ" จะขึ้นบนการ์ดของพนักงานคนนี้เมื่อผ่านขั้น ② · เซ็นแล้วปิดงานอัตโนมัติ</div>
+      <div style="color:var(--muted);margin-top:3px">ประเภท "บันทึกเพิ่มเติม" ไม่ต้องรับทราบ/เซ็น · <b>บังคับตามลำดับ:</b> วาจา → ลายลักษณ์อักษร → ใบเตือน</div>
+    </div>
     <button class="btn btn-pri" id="da_save" style="width:100%;padding:12px">บันทึกการดำเนินการ</button>`;
   openModal('บันทึกการดำเนินการทางวินัย', html);
   if($('da_file')) $('da_file').addEventListener('change', async e=>{
@@ -4680,7 +4694,6 @@ function openDiscAction(empId){
   $('da_save').onclick=async()=>{
     const type=$('da_type').value, reason=$('da_reason').value.trim();
     if(!reason){ toast('err','ต้องระบุสาเหตุ'); return; }
-    if((type==='verbal'||type==='written') && !DA_PHOTOS.length){ toast('err','ต้องแนบหลักฐานสำหรับการตักเตือน'); return; }
     $('da_save').disabled=true; $('da_save').textContent='กำลังบันทึก…';
     const r=await post({ action:'hr_disc_action_add', password:pwd, ...authBody(), data:{
       emp_id:x.emp_id, action_type:type, reason, detail:$('da_detail').value.trim(),
@@ -4691,7 +4704,7 @@ function openDiscAction(empId){
       performed_by: MGR_MODE ? ('ผู้จัดการสาขา '+(MGR_BRANCH||'')) : 'สำนักงาน (HR)',
       performed_role: MGR_MODE ? 'mgr' : 'hr',
     }});
-    if(r.ok){ toast('ok','บันทึกแล้ว'+(type!=='note'?' — รอพนักงานกดรับทราบ':'')); closeModal(); loadDiscipline(); }
+    if(r.ok){ toast('ok','บันทึกแล้ว (ขั้น 1/3)'+(type!=='note'?' — รอพนักงานกดรับทราบในแอป แล้วปุ่มให้เซ็นจะขึ้นบนการ์ด':'')); closeModal(); loadDiscipline(); }
     else { toast('err', r.error||'ไม่สำเร็จ'); $('da_save').disabled=false; $('da_save').textContent='บันทึกการดำเนินการ'; }
   };
 }
@@ -4781,6 +4794,14 @@ async function openDiscTimeline(empId){
 // ======================================================================
 let DSIG_ID=null, DSIG_EMP=null, DSIG_DIRTY=false;
 
+// ★ เปิดหน้าเซ็นจากการ์ดโดยตรง — ต้องโหลดไทม์ไลน์ก่อน เพราะเอกสารดึงรายละเอียดจาก DTL_LAST
+async function discSignFromCard(id, empId){
+  openModal('ขั้นที่ 3 · พูดคุยและเซ็นรับทราบ', '<div class="empty">กำลังเตรียมเอกสาร…</div>');
+  const r=await post({ action:'hr_disc_timeline', password:pwd, ...authBody(), emp_id:empId });
+  if(!r||!r.ok){ openModal('ขั้นที่ 3 · พูดคุยและเซ็นรับทราบ','<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'); return; }
+  window.DTL_LAST=r;
+  discSignOpen(id, empId);
+}
 function discSignOpen(id, empId){
   DSIG_ID=id; DSIG_EMP=empId; DSIG_DIRTY=false;
   const r=(window.DTL_LAST&&window.DTL_LAST.items||[]).find(x=>String(x.id)===String(id))||{};
@@ -4977,7 +4998,7 @@ function openIssueWarning(empId){
     ? (base + ' · คะแนนวินัยคงเหลือ '+x.score+'/'+(x.start_score||100)+' ซึ่งเข้าข่าย "'+(x.band_label||'')+'" ตามระเบียบบริษัท')
     : '';
   $('w_reason').placeholder = 'ระบุเหตุแห่งการออกใบเตือน (บังคับ) เช่น ละทิ้งหน้าที่ระหว่างกะเมื่อวันที่ ...';
-  // ★ บันไดวินัย + ช่องแนบหลักฐาน (บังคับ) — ออกใบเตือนต้องผ่านวาจา+ลายลักษณ์อักษรมาก่อน
+  // ★ บันไดวินัย — ออกใบเตือนต้องผ่านวาจา+ลายลักษณ์อักษรมาก่อน · รูปประกอบไม่บังคับ (หลักฐานรับทราบ = ลายเซ็นขั้น ③)
   W_PHOTOS=[];
   if($('w_stepbox')) $('w_stepbox').remove();
   const lad=(x.ladder||[]);
@@ -4986,7 +5007,8 @@ function openIssueWarning(empId){
   $('w_reason').insertAdjacentHTML('afterend',
     '<div id="w_stepbox" style="margin-top:10px">'+ladHtml
     +(miss.length?('<div style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ต้องทำขั้นก่อนหน้าให้ครบก่อน: <b>'+esc(miss.join(' → '))+'</b> (พร้อมหลักฐาน) จึงจะออกใบเตือนได้</div>'):'')
-    +'<label style="font-size:12px;color:#b91c1c;font-weight:700">หลักฐาน (เอกสารใบเตือน/ใบเซ็นรับทราบ) — บังคับ</label><br>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.6">หลังออกใบเตือน: ② พนักงานกดรับทราบในแอป → ③ ปุ่ม "ขั้น 3/3 · ให้เซ็นรับทราบ" จะขึ้นบนการ์ด — เซ็นบนจอแทนใบเซ็นกระดาษ</div>'
+    +'<label style="font-size:12px;color:var(--muted);font-weight:700">รูปประกอบ (ไม่บังคับ)</label><br>'
     +'<label style="display:inline-block;padding:8px 13px;border:1.5px solid var(--line2);border-radius:9px;cursor:pointer;font-size:13px;margin-top:4px"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> แนบรูปหลักฐาน<input type="file" accept="image/*" multiple id="w_file" style="display:none"></label>'
     +'<div id="w_thumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div></div>');
   $('w_file').addEventListener('change', async e=>{
@@ -5004,7 +5026,6 @@ $('issueCancel').onclick = ()=>$('issueOverlay').classList.remove('show');
 $('issueSave').onclick = async ()=>{
   const x = $('w_pkg').ctx;
   if(!$('w_reason').value.trim()){ toast('err','ต้องระบุเหตุผลในการออกใบเตือน'); return; }
-  if(!W_PHOTOS.length){ toast('err','ต้องแนบหลักฐานก่อนออกใบเตือน'); return; }
   $('issueSave').innerHTML='<span class="spin"></span>';
   const r = await post({ action:'hr_warning_issue', password:pwd, data:{
     emp_id: $('w_emp_id').value, level: $('w_level').value, level_name: $('w_level_name').value,
@@ -13065,7 +13086,7 @@ async function asstIssueDiscipline(idx, p){
   const a=p.args||{};
   let evidence=[];   // หลักฐาน = รูปที่ผู้ใช้แนบมาในข้อความล่าสุดก่อนหน้า
   for(let i=idx;i>=0;i--){ const mm=ASST_MSGS[i]; if(mm && mm.role==='user' && Array.isArray(mm.images) && mm.images.length){ evidence=mm.images.slice(); break; } }
-  if(!evidence.length){ ASST_MSGS.push({role:'assistant',text:'ยังบันทึกไม่ได้ค่ะ — ต้องแนบรูป "เอกสาร/ใบเซ็นรับทราบ" เป็นหลักฐานก่อน (กดปุ่มกล้องแนบรูป แล้วสั่งอีกครั้ง)'}); asstRender(); return; }
+  // ★ 21 ก.ย. 69 — ไม่บังคับรูปแล้ว: หลักฐานรับทราบ = ลายเซ็นบนจอในขั้น ③ (รูปที่แนบมาในแชทยังส่งไปประกอบได้)
   const type = String(a.action_type)==='written' ? 'written' : 'verbal';
   const level = type==='written' ? 2 : 1;
   const level_name = type==='written' ? 'ตักเตือนลายลักษณ์อักษร' : 'ตักเตือนด้วยวาจา';
