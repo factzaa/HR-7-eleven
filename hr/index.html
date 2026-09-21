@@ -14729,6 +14729,7 @@ function shpDoneRow(c, kind){
         +(c.reviewed_at?(' · ตรวจเมื่อ '+fmt(c.reviewed_at)):'')+' · เช็กลิสต์ '+c.done+'/'+c.total+'</div>'
       +(c.note?('<div style="margin-top:5px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:6px;padding:5px 9px;font-size:12.5px;color:var(--txt)">📝 '+esc(c.note)+'</div>'):'<div style="font-size:11.5px;color:#9ca3af;margin-top:3px">— ไม่มีหมายเหตุ —</div>')
       +(kind==='no'&&c.review_note?('<div style="font-size:12px;color:#b91c1c;margin-top:3px">⤴ '+esc(c.review_note)+'</div>'):'')
+      +((c.photos&&c.photos.length>1)?('<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">'+c.photos.slice(1).map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" loading="lazy" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:zoom-in">').join('')+'</div>'):'')
     +'</div>'
     +'<span class="pill" style="background:'+(kind==='ok'?'#dcfce7':'#fee2e2')+';color:'+col+';font-weight:700;flex:none">'+(kind==='ok'?'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน':'⤴ ตีกลับ')+'</span>'
     +'</div>';
@@ -14783,8 +14784,10 @@ function renderShelfRecent(){
       const tl=list.map((c,i)=>{ const s2=stl(c.status); return '<div style="position:relative;padding:3px 0 9px"><span style="position:absolute;left:-18px;top:7px;width:10px;height:10px;border-radius:50%;background:'+(i===list.length-1?'#f59e0b':'#16a34a')+'"></span>'
         +'<div style="font-size:11.5px;color:var(--muted)">'+beDate(c.check_date)+' · '+esc(c.emp_name)+' · เช็กลิสต์ '+c.done+'/'+c.total+' · <b style="color:'+s2[1]+'">'+s2[0]+'</b></div>'
         +'<div style="font-size:13px">'+(c.note?esc(c.note):'<span style="color:#9ca3af">— ไม่มีหมายเหตุ —</span>')+'</div>'
-        +(c.status==='sent_back'&&c.review_note?'<div style="font-size:12px;color:#b91c1c">⤴ '+esc(c.review_note)+'</div>':'')+'</div>'; }).join('');
-      return '<details class="card" style="margin-bottom:8px"'+((idx===0||SHR.shelf)?' open':'')+'>'
+        +(c.status==='sent_back'&&c.review_note?'<div style="font-size:12px;color:#b91c1c">⤴ '+esc(c.review_note)+'</div>':'')
+        +((c.photos&&c.photos.length)?('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">'+c.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')+'</div>'):'')
+        +'</div>'; }).join('');
+      return '<details style="margin-bottom:8px;background:var(--card);border:1px solid var(--line);border-radius:14px"'+((idx===0||SHR.shelf)?' open':'')+'>'
         +'<summary style="cursor:pointer;list-style:none;padding:12px 14px"><b style="font-size:14px">'+esc(shelves[k]||('#'+k))+'</b> <span class="muted" style="font-size:12.5px">· '+esc(people)+'</span>'
         +'<div class="muted" style="font-size:12px;margin-top:2px">ทำแล้ว '+list.length+' ครั้งใน '+SHR.days+' วัน · ล่าสุด '+beDate(last.check_date)+' · ผ่าน '+nOk+' · ตีกลับ '+nNo+'</div></summary>'
         +'<div style="padding:0 14px 12px"><div style="border-left:2px solid #d1fae5;padding-left:12px;margin-left:4px">'+tl+'</div>'
