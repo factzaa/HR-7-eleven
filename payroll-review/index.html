@@ -97,12 +97,12 @@
 </div>
 
 <div id="shiftOv" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
-  <div style="background:var(--card);border-radius:16px;max-width:520px;width:100%;padding:18px">
+  <div style="background:var(--card);border-radius:16px;max-width:680px;width:100%;padding:18px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h2 id="shTitle" style="flex:1;font-size:17px;margin:0">ตารางกะรายวัน</h2>
       <button id="shX" style="background:transparent;border:0;font-size:24px;cursor:pointer;color:var(--muted)">×</button></div>
     <div id="shSub" class="sub" style="margin-bottom:10px"></div>
     <div id="shBody"><div style="color:var(--muted);text-align:center;padding:16px">กำลังโหลด…</div></div>
-    <div style="font-size:11.5px;color:var(--muted);margin-top:10px">แก้ได้เฉพาะวันที่ระบบเติมย้อนหลัง — วันที่พนักงานสแกนจริงจะไม่ถูกแตะ · แก้แล้วกด "รีเฟรช" หน้าหลักเพื่ออัปเดตจำนวนวัน</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:10px">ทำเป็นมา/ขาด แก้ได้เฉพาะวันที่ระบบเติมย้อนหลัง (วันที่สแกนจริงไม่ถูกแตะ) · <b>OT แก้ได้ทุกวันที่มาทำงาน</b> — กรอกแล้วกด ✓ ระบบบันทึกที่ใบลงเวลาวันนั้น และคำนวณ OT รวมใหม่ (ค่าเดิมเก็บไว้ในหมายเหตุวัน)</div>
   </div>
 </div>
 
@@ -311,29 +311,75 @@ async function openShift(empId){
   $('shiftOv').style.display='flex';
   await loadShift();
 }
+const shT=iso=>{ if(!iso) return ''; try{ return new Date(iso).toLocaleTimeString('th-TH',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return ''; } };
+const shD=iso=>{ try{ return new Date(iso).toLocaleDateString('en-CA',{timeZone:'Asia/Bangkok'}); }catch(e){ return ''; } };
 async function loadShift(){
   try{
     const d=await HR.reviewShiftDetail(SH_EMP, $('which').value);
-    $('shSub').textContent='รอบ '+d.period_start+' ถึง '+d.period_end;
+    const r=(DATA.rows||[]).find(x=>x.emp_id===SH_EMP)||{};
+    $('shSub').innerHTML='รอบ '+esc(d.period_start)+' ถึง '+esc(d.period_end)
+      +' · <b style="color:#111827">OT รวมตามรายวัน '+d.ot_total+' ชม.</b>'+(d.ot_whole?' <span style="font-size:11px">(ปัดลงเป็นชั่วโมงเต็มรายวัน)</span>':'')
+      +(r.ot_override!=null&&r.ot_override!==''?'<div style="margin-top:5px;font-size:11.5px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:4px 8px">⚠ ช่อง OT หน้าหลักกรอกไว้ '+esc(r.ot_override)+' ชม. — เงินเดือนใช้ค่านั้น · ถ้าจะใช้ยอดรายวันนี้ให้ลบช่อง OT ให้ว่างแล้วกดบันทึก</div>':'');
     if(!d.rows.length){ $('shBody').innerHTML='<div style="color:var(--muted);text-align:center;padding:16px">— ไม่มีข้อมูลวัน/เวรในรอบนี้ —</div>'; return; }
-    let h='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
+    let h='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="font-size:11px;color:var(--muted);text-align:left"><th style="padding:4px 6px">วัน / กะ</th><th style="padding:4px 6px">สถานะ · เวลาเข้า–ออก</th><th style="padding:4px 6px;text-align:center">OT (ชม.)</th><th></th></tr></thead><tbody>';
     d.rows.forEach(x=>{
       const st=SH_ST[x.status]||SH_ST.none;
-      const editable=(x.status==='absent'||x.status==='scheduled'||(x.has_att&&x.source==='backfill'));
+      const worked=(x.status==='present'||x.status==='late');
+      const real=worked && x.source!=='backfill';
+      // เวลาเข้า–ออก (+1 = ออกวันถัดไป)
+      let tm='';
+      if(real){
+        const ci=shT(x.check_in), co=x.check_out?shT(x.check_out):'';
+        const nx=(x.check_out && shD(x.check_out)>x.work_date)?'<sup style="color:#7c3aed">+1</sup>':'';
+        tm='<div style="font-size:12px;margin-top:3px;white-space:nowrap"><span class="mono">'+esc(ci)+' – '+(co?esc(co)+nx:'<span style="color:#dc2626">ยังไม่ออก</span>')+'</span>'
+          +(x.act_hr!=null?' <span style="color:var(--muted)">('+x.act_hr+' ชม.)</span>':'')+'</div>';
+      }
+      let chips='';
+      if(x.late_min) chips+=' <span style="font-size:11px;color:#b45309">สาย '+x.late_min+' น.</span>';
+      if(x.early_out_min) chips+=' <span style="font-size:11px;color:#b45309">ออกก่อน '+x.early_out_min+' น.</span>';
+      if(x.source==='backfill') chips+=' <span style="font-size:10.5px;color:var(--muted)">(เติมย้อนหลัง)</span>';
+      if(x.dual){
+        const ok=x.dual.credited;
+        const tip=ok?('นับ '+x.dual.shifts.length+' กะ'):(x.dual.is_mgr?'ผจก. ไม่นับควบ':(worked?('ทำจริงไม่ถึง 75% ของเวร '+x.dual.need_hr+' ชม. → นับ 1 วัน ส่วนเกินเป็น OT'):'ไม่ได้มาทำงาน'));
+        chips+='<div style="margin-top:3px"><span class="chip" style="font-size:10.5px;background:'+(ok?'#ede9fe':'#fef3c7')+';color:'+(ok?'#6d28d9':'#92400e')+'" title="'+esc(tip)+'">ควบ '+esc(x.dual.shifts.join('+'))+(ok?' ✓':' · '+esc(tip))+'</span></div>';
+      }
+      if(x.dual_req) chips+='<div style="margin-top:3px"><span class="chip" style="font-size:10.5px;background:'+(x.dual_req.status==='pending'?'#fef3c7':'#dcfce7')+';color:'+(x.dual_req.status==='pending'?'#92400e':'#166534')+'">ขอควบ '+esc(x.dual_req.extra||'')+' · '+(x.dual_req.status==='pending'?'รอ HR อนุมัติ':'HR อนุมัติแล้ว')+'</span></div>';
+      if(x.day_value!=null && x.day_value!==1 && !x.dual) chips+=' <span style="font-size:10.5px;color:var(--muted)">นับ '+x.day_value+' วัน</span>';
+      const otCell = worked
+        ? '<div style="display:flex;gap:4px;align-items:center;justify-content:center"><input class="sh-ot" data-d="'+x.work_date+'" data-old="'+x.ot_hours+'" type="number" step="0.25" min="0" max="16" value="'+(Number(x.ot_hours)>0?x.ot_hours:'')+'" placeholder="0" style="width:64px;padding:5px;border:1.5px solid '+(Number(x.ot_hours)>0?'#a78bfa':'var(--line)')+';border-radius:7px;font:inherit;text-align:center'+(Number(x.ot_hours)>0?';font-weight:700':'')+'">'
+          +'<button class="btn sm sh-ots" data-d="'+x.work_date+'" style="display:none;padding:4px 8px" title="บันทึก OT วันนี้">✓</button></div>'
+          +(/แก้ OT/.test(x.day_note||'')?'<div style="font-size:10px;color:#7c3aed;text-align:center;margin-top:2px" title="'+esc(x.day_note)+'">แก้แล้ว</div>':'')
+        : '<span style="color:#cbd5e1">—</span>';
       h+='<tr style="border-top:1px solid var(--line)'+(x.is_holiday?';background:#fef2f2':'')+'">'
-        +'<td style="padding:7px 6px;white-space:nowrap'+(x.is_holiday?';border-left:3px solid #dc2626':'')+'">'+esc(x.work_date)+(x.is_holiday?'<div style="margin-top:2px"><span style="display:inline-flex;align-items:center;gap:3px;background:#fee2e2;color:#b91c1c;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:6px"><svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round"><path d="M5 21V4M5 4h11l-2 3 2 3H5"/></svg> วันหยุดบริษัท'+(x.holiday_name?(': '+esc(x.holiday_name)):'')+'</span></div>':'')+'<div style="font-size:11px;color:var(--muted)">'+esc(x.shift_name||'')+'</div></td>'
-        +'<td style="padding:7px 6px"><span class="chip" style="background:'+st.c+'22;color:'+st.c+'">'+st.t+'</span>'
-          +(x.late_min?(' <span style="font-size:11px;color:#b45309">สาย '+x.late_min+' น.</span>'):'')
-          +(x.source==='backfill'?' <span style="font-size:10.5px;color:var(--muted)">(เติมย้อนหลัง)</span>':'')+'</td>'
-        +'<td style="padding:7px 6px;text-align:right;white-space:nowrap">';
-      if(x.status==='present'||x.status==='late'){ if(x.source==='backfill') h+='<button class="btn sec sm" data-mk="absent" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นขาด</button>'; else h+='<span style="font-size:11px;color:var(--muted)">สแกนจริง</span>'; }
+        +'<td style="padding:7px 6px;white-space:nowrap;vertical-align:top'+(x.is_holiday?';border-left:3px solid #dc2626':'')+'">'+esc(x.work_date)+(x.is_holiday?'<div style="margin-top:2px"><span style="display:inline-flex;align-items:center;gap:3px;background:#fee2e2;color:#b91c1c;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:6px"><svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round"><path d="M5 21V4M5 4h11l-2 3 2 3H5"/></svg> วันหยุดบริษัท'+(x.holiday_name?(': '+esc(x.holiday_name)):'')+'</span></div>':'')+'<div style="font-size:11px;color:var(--muted);white-space:normal">'+esc(x.shift_name||'')+'</div></td>'
+        +'<td style="padding:7px 6px;vertical-align:top"><span class="chip" style="background:'+st.c+'22;color:'+st.c+'">'+st.t+'</span>'+chips+tm+'</td>'
+        +'<td style="padding:7px 6px;vertical-align:top">'+otCell+'</td>'
+        +'<td style="padding:7px 6px;text-align:right;white-space:nowrap;vertical-align:top">';
+      if(worked){ if(x.source==='backfill') h+='<button class="btn sec sm" data-mk="absent" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นขาด</button>'; else h+='<span style="font-size:11px;color:var(--muted)">สแกนจริง</span>'; }
       else { h+='<button class="btn sm" data-mk="present" data-d="'+x.work_date+'" data-sh="'+esc(x.shift_id||'')+'">ทำเป็นมา</button>'; }
       h+='</td></tr>';
     });
-    h+='</tbody></table>';
+    h+='</tbody></table></div>';
     $('shBody').innerHTML=h;
     $('shBody').querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>markDay(b.dataset.mk, b.dataset.d, b.dataset.sh, b));
+    $('shBody').querySelectorAll('.sh-ot').forEach(inp=>{
+      const btn=inp.parentNode.querySelector('.sh-ots');
+      const dirty=()=>{ const v=inp.value.trim()===''?0:Number(inp.value); btn.style.display=(v!==Number(inp.dataset.old))?'inline-flex':'none'; };
+      inp.oninput=dirty;
+      inp.onkeydown=e=>{ if(e.key==='Enter' && btn.style.display!=='none') btn.click(); };
+      btn.onclick=()=>saveDayOT(inp, btn);
+    });
   }catch(e){ $('shBody').innerHTML='<div style="color:#b91c1c;text-align:center;padding:16px">'+esc(e.message||'โหลดไม่สำเร็จ')+'</div>'; }
+}
+async function saveDayOT(inp, btn){
+  btn.disabled=true; btn.textContent='…';
+  try{
+    const res=await HR.reviewSetDayOT({ emp_id:SH_EMP, work_date:inp.dataset.d, ot_hours:inp.value.trim(), by:'ผจก.ตรวจ' });
+    SH_CHANGED=true;
+    toast(res.unchanged?'ไม่มีการเปลี่ยนแปลง':('แก้ OT '+inp.dataset.d+' เป็น '+res.ot_hours+' ชม. แล้ว · คำนวณ OT รวมใหม่'));
+    await loadShift();
+    load();   // รีเฟรชตารางหลักให้ "OT ลงเวลา" รวมใหม่ทันที
+  }catch(e){ toast(e.message||'ไม่สำเร็จ',true); btn.disabled=false; btn.textContent='✓'; }
 }
 async function markDay(action, work_date, shift_id, btn){
   btn.disabled=true; btn.textContent='…';
