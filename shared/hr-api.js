@@ -522,6 +522,8 @@
         case 'hr_shelf_check_review':return await hrShelfCheckReview(p.id, p.status, p.note, p.markup);
         case 'hr_checkout_corr_list':   return await hrCheckoutCorrList();
         case 'hr_checkout_corr_review': return await hrCheckoutCorrReview(p.id, p.status, p.note, p);
+        case 'hr_dual_list':           return await hrDualList(p);
+        case 'hr_dual_decide':         return await hrDualDecide(p);
         case 'hr_mark_duty':            return await hrMarkDuty(p.data);
         case 'hr_duty_list':            return await hrDutyList(p.branch);
         case 'hr_duty_delete':          return await hrDutyDelete(p.emp_id, p.work_date);
@@ -7773,6 +7775,7 @@
       const fuel = await C(sb().from('rider_fuel_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
       const repair = await C(sb().from('rider_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
       out.rider = fuel + repair;
+      out.attnedit = await C(sb().from('dual_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'));   // ★ คำขอควบกะรอ HR
     }
     return { ok: true, counts: out };
   }
@@ -8310,6 +8313,115 @@
       await logAct('ปฏิเสธแก้ไขเวลาออก', c.emp_id, (c.emp_name || c.emp_id) + ' · ' + c.work_date + (note ? (' · ' + note) : ''));
     }
     return { ok: true };
+  }
+
+  // ============================================================
+  // ★ 21 ก.ย. 69 — คำขอ "ควบกะ" ที่พนักงานกดเอง → HR อนุมัติ
+  // ------------------------------------------------------------
+  // รอ HR = ยังไม่นับควบ (ไม่มีเวรกะที่สองในตาราง → workDaysFor นับ 1 วัน + OT)
+  // อนุมัติ = เพิ่มเวรกะที่สองลง schedules → ทุกหน้านับควบเองตามกติกาเดิม (≥2 กะ + ชั่วโมงจริง ≥75%)
+  //          + คิด OT ใหม่จากเวลาเลิก "กะที่สอง" (ไม่งั้นได้ทั้ง 2 วัน + OT ของกะที่สองซ้ำ)
+  // ยกเลิกอนุมัติ = ลบเวรที่ระบบเพิ่มเอง + คืน OT เดิม
+  // อนุมัติได้เฉพาะ HR (ผจก.สาขาดูได้ แต่กดไม่ได้)
+  // ============================================================
+  function _shiftEndMs(workDate, sh) {
+    if (!sh || !sh.end_time) return null;
+    const st = String(sh.start_time || '').slice(0, 5), en = String(sh.end_time).slice(0, 5);
+    const d = (st && en <= st) ? addDays(workDate, 1) : workDate;
+    return new Date(d + 'T' + en + ':00+07:00').getTime();
+  }
+  async function hrDualList(p) {
+    p = p || {};
+    let q = sb().from('dual_requests').select('*').order('requested_at', { ascending: false }).limit(200);
+    if (p.status) q = q.eq('status', p.status);
+    const [rR, brR, shR] = await Promise.all([q, sb().from('branches').select('branch_id,name'), sb().from('shifts').select('shift_id,name,start_time,end_time,day_value,no_ot')]);
+    if (rR.error) return { ok: false, error: 'ยังไม่ได้รัน supabase/dual-requests-2569-09-21.sql' };
+    const rows = rR.data || [];
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const shBy = {}; (shR.data || []).forEach(x => { shBy[x.shift_id] = x; });
+    const hrMap = shiftHoursMap(shR.data);
+    // แถวลงเวลาของวันที่ขอ (โชว์เวลาเข้า-ออกจริง ชั่วโมงจริง และผลลัพธ์ถ้าอนุมัติ)
+    const keys = [...new Set(rows.map(r => r.emp_id))];
+    const dates = [...new Set(rows.map(r => r.work_date))];
+    let att = [];
+    if (keys.length) { const { data } = await sb().from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,status,shift_id').in('emp_id', keys).in('work_date', dates); att = data || []; }
+    const attBy = {}; att.forEach(a => { attBy[a.emp_id + '|' + a.work_date] = a; });
+    const free = await _otFree();
+    const out = rows.map(r => {
+      const a = attBy[r.emp_id + '|' + r.work_date] || null;
+      const actHr = (a && a.check_in && a.check_out) ? Math.round((new Date(a.check_out) - new Date(a.check_in)) / 360000) / 10 : null;
+      const needHr = (hrMap[r.base_shift] || 0) + (hrMap[r.extra_shift] || 0);
+      const ex = shBy[r.extra_shift] || {};
+      const endMs = _shiftEndMs(r.work_date, ex);
+      let ot_if = null;
+      if (a && a.check_out && endMs) { const d = (new Date(a.check_out).getTime() - endMs) / 3600000 - free; ot_if = ex.no_ot ? 0 : Math.max(0, Math.round(d * 100) / 100); }
+      return {
+        ...r, branch_name: brName[r.branch_id] || r.branch_id || '—',
+        base_name: (shBy[r.base_shift] || {}).name || r.base_shift || '—', extra_name: ex.name || r.extra_shift,
+        base_time: shBy[r.base_shift] ? (String(shBy[r.base_shift].start_time).slice(0, 5) + '–' + String(shBy[r.base_shift].end_time).slice(0, 5)) : '',
+        extra_time: ex.start_time ? (String(ex.start_time).slice(0, 5) + '–' + String(ex.end_time).slice(0, 5)) : '',
+        check_in: a ? a.check_in : null, check_out: a ? a.check_out : null, ot_now: a ? Number(a.ot_hours || 0) : null,
+        act_hr: actHr, need_hr: Math.round(needHr * 10) / 10,
+        hours_ok: (actHr == null || needHr <= 0) ? null : (actHr >= needHr * DUAL_MIN_RATIO),
+        ot_if_approved: ot_if,
+      };
+    });
+    return { ok: true, rows: out, pending: out.filter(r => r.status === 'pending').length, min_ratio: DUAL_MIN_RATIO };
+  }
+  async function hrDualDecide(p) {
+    const id = Number(p && p.id), decision = String((p && p.decision) || '');
+    if (!id) return { ok: false, error: 'ไม่ระบุคำขอ' };
+    const me = await _termActor(p);
+    if (me.role !== 'hr') return { ok: false, error: 'อนุมัติควบกะได้เฉพาะ HR' };
+    const { data: r } = await sb().from('dual_requests').select('*').eq('id', id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบคำขอ' };
+    const now = new Date().toISOString();
+    const note = (p.note || '').trim() || null;
+    const { data: att } = await sb().from('attendance').select('check_in,check_out,ot_hours,status').eq('emp_id', r.emp_id).eq('work_date', r.work_date).maybeSingle();
+
+    if (decision === 'approve') {
+      if (r.status !== 'pending') return { ok: false, error: 'คำขอนี้ถูกตัดสินไปแล้ว (' + r.status + ')' };
+      // 1) เพิ่มเวรกะที่สอง (ถ้ามีอยู่แล้วก็ผูกไว้เฉย ๆ ไม่สร้างซ้ำ และตอนยกเลิกจะไม่ลบ)
+      let schId = null, created = false;
+      const { data: ex } = await sb().from('schedules').select('id').eq('emp_id', r.emp_id).eq('work_date', r.work_date).eq('shift_id', r.extra_shift).maybeSingle();
+      if (ex) schId = ex.id;
+      else {
+        const { data: ins, error: e1 } = await sb().from('schedules').insert({ emp_id: r.emp_id, work_date: r.work_date, shift_id: r.extra_shift, branch_id: r.branch_id || null, note: 'ควบกะ (HR อนุมัติ)' }).select('id').maybeSingle();
+        if (e1) return { ok: false, error: 'เพิ่มเวรกะที่สองไม่สำเร็จ: ' + e1.message };
+        schId = ins && ins.id; created = true;
+      }
+      // 2) คิด OT ใหม่จากเวลาเลิกกะที่สอง (เฉพาะกรณีกดออกไปแล้ว — ถ้ายังไม่ออก ตอนกดออกระบบจะคิดจากกะสุดท้ายในตารางเอง)
+      let otBefore = null, otAfter = null;
+      if (att && att.check_out) {
+        const { data: sh } = await sb().from('shifts').select('start_time,end_time,no_ot').eq('shift_id', r.extra_shift).maybeSingle();
+        const endMs = _shiftEndMs(r.work_date, sh);
+        otBefore = Number(att.ot_hours || 0);
+        if (endMs) {
+          const d = (new Date(att.check_out).getTime() - endMs) / 3600000 - (await _otFree());
+          otAfter = (sh && sh.no_ot) ? 0 : Math.min(16, Math.max(0, Math.round(d * 100) / 100));
+          await sb().from('attendance').update({ ot_hours: otAfter, status: 'CLOSED' }).eq('emp_id', r.emp_id).eq('work_date', r.work_date);
+        }
+      }
+      await sb().from('dual_requests').update({ status: 'approved', decided_by: me.name, decided_at: now, decide_note: note, schedule_id: schId, schedule_created: created, ot_before: otBefore, ot_after: otAfter }).eq('id', id);
+      await logAct('อนุมัติควบกะ', r.emp_id, (r.emp_name || r.emp_id) + ' · ' + r.work_date + ' · ' + (r.base_shift || '-') + ' + ' + r.extra_shift + (otAfter != null ? (' · OT ' + otBefore + ' → ' + otAfter + ' ชม.') : ''));
+      return { ok: true, ot_before: otBefore, ot_after: otAfter };
+    }
+    if (decision === 'reject') {
+      if (r.status !== 'pending') return { ok: false, error: 'คำขอนี้ถูกตัดสินไปแล้ว (' + r.status + ')' };
+      await sb().from('dual_requests').update({ status: 'rejected', decided_by: me.name, decided_at: now, decide_note: note }).eq('id', id);
+      // ไม่อนุมัติ = เป็น OT ตามเดิม · ถ้าแถวติด "ปิดช้า" จากการควบข้ามคืน ให้คิด OT จากกะเดิมให้ถูก
+      await logAct('ไม่อนุมัติควบกะ', r.emp_id, (r.emp_name || r.emp_id) + ' · ' + r.work_date + ' · ' + r.extra_shift + (note ? (' · ' + note) : ''));
+      return { ok: true };
+    }
+    if (decision === 'revoke') {
+      if (r.status !== 'approved') return { ok: false, error: 'ยกเลิกได้เฉพาะคำขอที่อนุมัติแล้ว' };
+      if (r.schedule_created && r.schedule_id) await sb().from('schedules').delete().eq('id', r.schedule_id).eq('note', 'ควบกะ (HR อนุมัติ)');
+      if (r.ot_before != null) await sb().from('attendance').update({ ot_hours: Number(r.ot_before) }).eq('emp_id', r.emp_id).eq('work_date', r.work_date);
+      await sb().from('dual_requests').update({ status: 'revoked', decided_by: me.name, decided_at: now, decide_note: note || 'ยกเลิกการอนุมัติ' }).eq('id', id);
+      await logAct('ยกเลิกอนุมัติควบกะ', r.emp_id, (r.emp_name || r.emp_id) + ' · ' + r.work_date + ' · ' + r.extra_shift);
+      return { ok: true };
+    }
+    return { ok: false, error: 'คำสั่งไม่ถูกต้อง' };
   }
 
   // ---------- วันอบรม / ปฏิบัติงานนอกสถานที่ (นับเป็นวันทำงาน ไม่ต้องสแกน) ----------

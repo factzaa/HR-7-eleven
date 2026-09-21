@@ -480,7 +480,7 @@
     const today = bangkokDate();
     // หาแถวที่ "ยังเปิดอยู่ล่าสุด" (เช็กอินแล้ว ยังไม่เช็กเอาต์) ภายใน 2 วัน — รองรับกะข้ามคืน (เข้าเมื่อวาน ออกวันนี้)
     let { data: row } = await sb.from('attendance')
-      .select('work_date,check_in,shift_id,branch_id')
+      .select('work_date,check_in,shift_id,branch_id,extend_until')
       .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
       .gte('work_date', _addDays(today, -2))
       .order('check_in', { ascending: false }).limit(1).maybeSingle();
@@ -526,7 +526,12 @@
         let _len = null;
         if (_a && _b) { const [h1, m1] = _a.split(':').map(Number), [h2, m2] = _b.split(':').map(Number); _len = (h2 * 60 + m2) - (h1 * 60 + m1); if (_len <= 0) _len += 1440; }
         const _lateBy = (nowMs - lastEndMs) / 60000;                 // เลยเวลาเลิกกะกี่นาที
-        const _stale = (String(row.work_date) !== today) || (_len && _lateBy > _len);
+        // ★ 21 ก.ย. 69 — คนที่กด "ควบกะต่อ/ขอควบกะ" ไว้ ไม่ใช่คนลืมกดออก → ไม่ติด "ปิดช้า"
+        //   เดิมควบข้ามคืน (บ่าย→ดึก) กดออกเช้าวันรุ่งขึ้น = คนละวันกับแถว → OT ถูกตัดเป็น 0 ทั้งที่ทำงานจริง
+        //   ผ่อนให้เฉพาะเมื่อกดออกไม่เกินเวลาที่กดควบไว้ + 2 ชม.
+        const _extMs = row.extend_until ? new Date(row.extend_until).getTime() : null;
+        const _inExt = !!(_extMs && isFinite(_extMs) && nowMs <= _extMs + 2 * 3600000);
+        const _stale = !_inExt && ((String(row.work_date) !== today) || (_len && _lateBy > _len));
         if (ot > 0 && _stale) {
           const _bad = ot; ot = 0;
           upd_flag_stale = true;
@@ -604,7 +609,70 @@
     if (!row) return { none: true };
     let shift = null;
     if (row.shift_id) { const { data: sh } = await sb.from('shifts').select('shift_id,name,start_time,end_time').eq('shift_id', row.shift_id).maybeSingle(); shift = sh || null; }
-    return { row, shift };
+    // ★ 21 ก.ย. 69 — คำขอควบกะของแถวนี้ (ถ้ามี) + กะที่ควบต่อได้
+    let dual = null, dual_candidates = [];
+    try {
+      const { data: dr } = await sb.from('dual_requests').select('id,extra_shift,status,decide_note,requested_at')
+        .eq('emp_id', empId).eq('work_date', row.work_date).order('requested_at', { ascending: false }).limit(1).maybeSingle();
+      dual = dr || null;
+      if (!row.check_out) dual_candidates = await _dualCandidates(empId, row, shift);
+    } catch (_e) { /* ยังไม่ได้รัน dual-requests SQL */ }
+    return { row, shift, dual, dual_candidates };
+  }
+
+  // กะที่ "ต่อจากกะนี้ได้จริง" · ไม่ซ้ำกับเวรที่มีอยู่แล้ว
+  function _shMin(t) { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; }
+  async function _dualCandidates(empId, row, shift) {
+    if (!shift || !shift.end_time) return [];
+    const [{ data: shs }, { data: have }] = await Promise.all([
+      sb.from('shifts').select('shift_id,name,start_time,end_time,day_value').order('start_time'),
+      sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', row.work_date),
+    ]);
+    const haveSet = new Set((have || []).map(x => x.shift_id).filter(Boolean)); haveSet.add(row.shift_id);
+    const cs = _shMin(shift.start_time), ceRaw = _shMin(shift.end_time);
+    const curEnd = (ceRaw != null && cs != null && ceRaw <= cs) ? ceRaw + 1440 : ceRaw;   // นาทีนับจาก 00:00 ของ work_date
+    return (shs || []).filter(x => {
+      if (haveSet.has(x.shift_id)) return false;
+      const s = _shMin(x.start_time), eRaw = _shMin(x.end_time); if (s == null || eRaw == null) return false;
+      const e = eRaw <= s ? eRaw + 1440 : eRaw;
+      // เริ่มในช่วง 4 ชม. ก่อน ถึง 2 ชม. หลังเลิกกะนี้ (กันกะที่ซ้อนทับเกือบทั้งกะ) และเลิกหลังกะนี้ ≥ 1 ชม.
+      return s >= curEnd - 240 && s <= curEnd + 120 && e >= curEnd + 60;
+    }).map(x => ({ shift_id: x.shift_id, name: x.name, start_time: String(x.start_time).slice(0, 5), end_time: String(x.end_time).slice(0, 5) }));
+  }
+
+  // ---------- ขอควบกะ (รอ HR อนุมัติ) ----------
+  // ★ 21 ก.ย. 69 — ระหว่างรออนุมัติ = ยังไม่นับควบ (คิดเป็น OT) · HR อนุมัติแล้วจึงเพิ่มเวรกะที่สอง → นับควบตามกติกาเดิม
+  async function requestDualShift({ empId, extraShift }) {
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const today = bangkokDate();
+    const { data: row } = await sb.from('attendance').select('work_date,check_in,check_out,shift_id,branch_id')
+      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+    if (!row) throw new Error('ต้องลงเวลาเข้างานอยู่ก่อนจึงขอควบกะได้');
+    let shift = null;
+    if (row.shift_id) { const { data: sh } = await sb.from('shifts').select('shift_id,name,start_time,end_time').eq('shift_id', row.shift_id).maybeSingle(); shift = sh || null; }
+    const cands = await _dualCandidates(empId, row, shift);
+    const pick = cands.find(c => c.shift_id === extraShift);
+    if (!pick) throw new Error('กะนี้ต่อจากกะที่ทำอยู่ไม่ได้ หรือมีเวรกะนี้อยู่แล้ว');
+    const { data: act } = await sb.from('dual_requests').select('id,status').eq('emp_id', empId).eq('work_date', row.work_date).in('status', ['pending', 'approved']).limit(1).maybeSingle();
+    if (act && act.status === 'approved') throw new Error('วันนี้ HR อนุมัติควบกะไปแล้ว');
+    if (act) {
+      const { error } = await sb.from('dual_requests').update({ extra_shift: extraShift, requested_at: new Date().toISOString() }).eq('id', act.id);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('dual_requests').insert({
+        emp_id: emp.emp_id, emp_name: emp.nickname || emp.name, branch_id: row.branch_id || emp.branch_id || null,
+        work_date: row.work_date, base_shift: row.shift_id || null, extra_shift: extraShift, status: 'pending', requested_by: emp.emp_id,
+      });
+      if (error) throw error;
+    }
+    // เลื่อนเวลาปิดงานอัตโนมัติไปถึงเลิกกะที่ขอควบ + 1 ชม. (extendShift clamp ไม่เกิน 12 ชม. จากตอนนี้)
+    const s = _shMin(pick.start_time), eRaw = _shMin(pick.end_time);
+    const endMin = (eRaw <= s ? eRaw + 1440 : eRaw) + 60;
+    const base = new Date(row.work_date + 'T00:00:00+07:00').getTime();
+    await extendShift({ empId, untilIso: new Date(base + endMin * 60000).toISOString() });
+    try { await sb.from('activity_log').insert({ action: 'ขอควบกะ (รอ HR อนุมัติ)', emp_id: emp.emp_id, actor: emp.emp_id, detail: row.work_date + ' · ' + (row.shift_id || '-') + ' + ' + extraShift }); } catch (_e) { }
+    return { ok: true, work_date: row.work_date, extra_shift: extraShift, extra_name: pick.name };
   }
 
   // ---------- ยื่นแก้ไขเวลาออกจริง (กรณีระบบปิดให้/ลืมกด) ----------
@@ -3821,6 +3889,6 @@
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
-    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
