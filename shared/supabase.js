@@ -3227,7 +3227,7 @@
     if (item.require_reason && !String(reason || '').trim()) throw new Error('กรุณาระบุอาการ/เหตุผลการเบิก');
     if (item.require_before_photo && !(photos && photos.before)) throw new Error('กรุณาแนบรูปก่อนซ่อม/เลขไมล์ก่อน');
 
-    const odoCur = odo_current != null && odo_current !== '' ? Number(odo_current) : null;
+    const odoCur = odo_current != null && odo_current !== '' && isFinite(Number(odo_current)) ? Math.floor(Number(odo_current)) : null;   // ★ odo_current เป็น int — ตัดทศนิยมหน้าปัด
     const e = await riderEligibility({ empId, vehicle, item, odoCurrent: odoCur });
 
     // อัปโหลดรูป
@@ -3386,14 +3386,22 @@
       claim_no, emp_id: emp.emp_id, emp_name: emp.name, nickname: emp.nickname || null,
       branch_id: emp.branch_id || null, branch_name: (br && br.name) || null,
       vehicle_id: vehicle_id || null, vehicle_plate: vehicle ? vehicle.plate : null,
-      amount: amt, odometer: odometer != null && odometer !== '' ? Number(odometer) : null,
+      // ★ 21 ก.ย. 69 — หน้าปัดมอเตอร์ไซค์มีหลักทศนิยม (66085.1) แต่คอลัมน์ odometer เป็น integer
+      //   เดิมส่งทศนิยมไปตรง ๆ → Postgres ปฏิเสธ 400 ทุกครั้ง (นุ่มนิ่ม กด 8 ครั้งเช้า 21/09 ไม่ผ่านสักครั้ง)
+      //   ตัดทศนิยมทิ้ง — เหมือนหน้าบันทึกเลขไมล์ที่ใช้ parseInt อยู่แล้ว
+      amount: amt, odometer: odometer != null && odometer !== '' && isFinite(Number(odometer)) ? Math.floor(Number(odometer)) : null,
       liters: liters != null && liters !== '' ? Number(liters) : null,
       shop_name: shop_name || null, gps_lat: lat != null ? lat : null, gps_lng: lng != null ? lng : null,
       receipt_url, note: (note || '').trim() || null, cycle_month: month, status: 'submitted', device: 'employee',
       payout_due_date: new Date(bkkNow.getTime() + 86400000).toISOString().slice(0, 10),   // รับเงินวันถัดไป
     };
     const { data: ins, error } = await sb.from('rider_fuel_claims').insert(row).select('id').maybeSingle();
-    if (error) throw error;
+    if (error) {
+      // แปลเป็นภาษาคน — เดิมพนักงานเห็น "invalid input syntax for type integer" แล้วไม่รู้ว่าต้องแก้อะไร
+      if (error.code === '22P02') throw new Error('ตัวเลขไม่ถูกรูปแบบ — กรอกเลขไมล์และยอดเป็นเลขเต็ม (ไม่ต้องใส่จุดทศนิยม)');
+      if (error.code === '23505') throw new Error('เลขที่คำขอชนกัน (มีคนส่งพร้อมกัน) — กดส่งอีกครั้ง');
+      throw new Error('ส่งคำขอไม่สำเร็จ: ' + (error.message || error.code || ''));
+    }
     return { ok: true, claim_no, id: ins && ins.id };
   }
   async function riderFuelMyList(empId) {
