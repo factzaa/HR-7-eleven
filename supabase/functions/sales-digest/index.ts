@@ -1048,13 +1048,16 @@ ${COACH_STYLE}`;
   if (!gid) return json({ ok: true, sent: 0, note: "ยังไม่พบกลุ่ม ผจก.", preview: overview });
   const messages: unknown[] = [];
   if (kind === "weekly") {
-    const ser = await dailySeries(branches || [], r.end, 7);
-    messages.push(weekCarousel(label, aggs, prevMap, ser));
+    // ★ 22 ก.ย. 69 — เลิกส่งการ์ดยอดขายรายสัปดาห์ (carousel ตัวเลข) · ส่งเฉพาะ "บทวิเคราะห์รายสัปดาห์"
+    //   เปิดกลับ: WEEKLY_CARDS = true
+    const WEEKLY_CARDS = false;
+    if (WEEKLY_CARDS) { const ser = await dailySeries(branches || [], r.end, 7); messages.push(weekCarousel(label, aggs, prevMap, ser)); }
     if (note || kb.warn || pm.top.length) messages.push({ type: "flex", altText: "บทวิเคราะห์รายสัปดาห์ " + label, contents: analysisBubble(label, note, kb.sources, kb.warn, pm.top, pm.ending) });
   } else {
     messages.push({ type: "text", text: overview });
     if (note) messages.push({ type: "text", text: `📊 บทวิเคราะห์รายเดือน (${label})\n\n${note}` });
   }
+  if (!messages.length) return json({ ok: true, sent: 0, kind, label, note: "ไม่มีบทวิเคราะห์ให้ส่ง" });
   const ok = await pushLine(gid, messages);
   return json({ ok, sent: ok ? messages.length : 0, kind, label, kb_used: kb.sources.length, promo_used: pm.sheets.length, promo_ending: pm.ending.length });
 }
