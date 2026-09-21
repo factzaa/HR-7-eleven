@@ -113,6 +113,7 @@
         </div>
         <label>วันหมดอายุ *</label>
         <input id="ai_expiry" type="date" style="margin-bottom:10px">
+        <div id="ai_dup" style="display:none;margin:-4px 0 10px"></div>
         <label>โซน / ชั้นวาง</label>
         <input id="ai_zone" type="text" placeholder="เช่น ตู้แช่ A / ชั้น 2" style="margin-bottom:10px">
 
@@ -456,6 +457,7 @@ function openAdd(){
   ADD_PHOTOS=[];
   $('ai_barcode').value=''; $('ai_name').value=''; $('ai_size').value=''; $('ai_qty').value='1'; $('ai_expiry').value=''; $('ai_zone').value='';
   $('ai_found').textContent='';
+  $('ai_dup').style.display='none'; $('ai_dup').innerHTML='';
   // เติมบริบทเชลฟ์ให้อัตโนมัติ
   if(SHELF_NAME) $('ai_zone').value=SHELF_NAME;
   const sub=$('add_sub'); const btn=$('ai_save');
@@ -509,9 +511,43 @@ function onBarcode(code){
   code=String(code||'').trim(); if(!code) return;
   closeScanner();
   $('ai_barcode').value=code;
-  lookupBarcode(code);
+  lookupBarcode(code).then(()=>qaDupLive());
   toast('ok','อ่านบาร์โค้ด: '+code);
 }
+
+// ===== กันบันทึกซ้ำ (สินค้าเดียวกัน + วันหมดอายุเดียวกัน) =====
+function qaDupLine(d){
+  const sp=statusPill(d.status);
+  const when=d.created_at?new Date(d.created_at).toLocaleString('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  return '<div style="padding:6px 0;border-top:1px dashed #fcd34d;font-size:13px"><b>'+esc(d.name||'')+'</b>'+(d.size?(' · '+esc(d.size)):'')+' · '+esc(d.qty||1)+' ชิ้น'
+    +'<div style="color:#92400e;font-size:12px">บันทึกโดย '+esc(d.emp_name||'-')+(when?(' · '+esc(when)):'')+(d.zone?(' · '+esc(d.zone)):'')+' · <span class="pill '+sp[1]+'" style="font-size:11px">'+sp[0]+'</span></div></div>';
+}
+function qaDupAsk(dups){
+  return new Promise(res=>{
+    const o=document.createElement('div');
+    o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:130;display:flex;align-items:center;justify-content:center;padding:16px';
+    o.innerHTML='<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:16px 16px 14px">'
+      +'<div style="font-weight:800;font-size:16px;color:#b45309;margin-bottom:4px">⚠ สินค้านี้บันทึกไปแล้ว</div>'
+      +'<div style="font-size:13px;color:#57534e;margin-bottom:8px">สินค้าตัวเดียวกัน วันหมดอายุเดียวกัน มีในระบบแล้ว '+dups.length+' รายการ</div>'
+      +'<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:2px 10px 6px;max-height:40vh;overflow:auto">'+dups.slice(0,10).map(qaDupLine).join('')+'</div>'
+      +'<div style="font-size:12px;color:#78716c;margin:8px 0 10px">ถ้าเป็นล็อตเดียวกัน ไม่ต้องบันทึกซ้ำ · ถ้ามีเพิ่มจริง (คนละชั้น/คนละล็อต) กด "บันทึกซ้ำ"</div>'
+      +'<div style="display:flex;gap:8px"><button class="btn btn-sec" data-a="0" style="flex:1">ยกเลิก</button><button class="btn" data-a="1" style="flex:1;background:#d97706;color:#fff">บันทึกซ้ำ</button></div></div>';
+    o.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{ o.remove(); res(b.dataset.a==='1'); });
+    document.body.appendChild(o);
+  });
+}
+// เตือนล่วงหน้าทันทีที่กรอกบาร์โค้ด/ชื่อ + วันหมดอายุครบ
+let _qaDupT=null;
+async function qaDupLive(){
+  const box=$('ai_dup'); const exp=$('ai_expiry').value; const bc=$('ai_barcode').value.trim(); const nm=$('ai_name').value.trim();
+  if(!exp || (!bc && !nm) || !EMP){ box.style.display='none'; box.innerHTML=''; return; }
+  try{
+    const dups=await window.HR.qaFindDuplicate({ branch_id:EMP.branch_id, barcode:bc, name:nm, size:$('ai_size').value, expiry_date:exp });
+    if(dups.length){ box.innerHTML='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:7px 10px"><div style="font-weight:700;color:#b45309;font-size:13px">⚠ สินค้านี้ (วันหมดอายุเดียวกัน) บันทึกไปแล้ว '+dups.length+' รายการ</div>'+dups.slice(0,3).map(qaDupLine).join('')+'</div>'; box.style.display='block'; }
+    else { box.style.display='none'; box.innerHTML=''; }
+  }catch(e){}
+}
+['ai_expiry','ai_barcode','ai_name','ai_size'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',()=>{ clearTimeout(_qaDupT); _qaDupT=setTimeout(qaDupLive,250); }); });
 
 // ===== บันทึกสินค้า =====
 $('ai_save').onclick=async()=>{
@@ -523,7 +559,16 @@ $('ai_save').onclick=async()=>{
   const label=SHELF_MODE==='removed'?'บันทึกเก็บออก':(SHELF_MODE==='watch'?'บันทึกเฝ้าระวัง':'บันทึกสินค้า');
   const btn=$('ai_save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังบันทึก…';
   try{
-    await window.HR.qaAddItem({ folder_id:CUR_FOLDER.id, empId:EMP.emp_id, barcode:$('ai_barcode').value, name, size:$('ai_size').value, qty:$('ai_qty').value, expiry_date:expiry, zone:$('ai_zone').value, photos:ADD_PHOTOS, status:st });
+    const payload={ folder_id:CUR_FOLDER.id, empId:EMP.emp_id, barcode:$('ai_barcode').value, name, size:$('ai_size').value, qty:$('ai_qty').value, expiry_date:expiry, zone:$('ai_zone').value, photos:ADD_PHOTOS, status:st };
+    try{ await window.HR.qaAddItem(payload); }
+    catch(e){
+      if(e && e.code==='QA_DUP'){
+        // ★ บันทึกซ้ำ: สินค้าตัวเดียวกัน + วันหมดอายุเดียวกัน มีคนบันทึกไว้แล้ว → ถามก่อน
+        const go=await qaDupAsk(e.dups||[]);
+        if(!go){ toast('ok','ยกเลิก — ไม่บันทึกซ้ำ'); btn.disabled=false; btn.textContent=label; return; }
+        payload.allow_dup=true; await window.HR.qaAddItem(payload);
+      } else throw e;
+    }
     toast('ok',st==='removed'?'บันทึกเก็บออกแล้ว':'บันทึกสินค้าแล้ว');
     openFolder(CUR_FOLDER);
   }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); btn.disabled=false; btn.textContent=label; return; }
