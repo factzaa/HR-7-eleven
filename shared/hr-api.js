@@ -328,7 +328,7 @@
         case 'hr_disc_rules_save':return await hrDiscRulesSave(p.data);
         case 'hr_disc_action_add':return await hrDiscActionAdd(p.data);
         case 'hr_disc_doc_complete': return await hrDiscDocComplete(p.data);
-        case 'hr_disc_sign':      return await hrDiscSign(p.data);
+        case 'hr_disc_sign':      return await hrDiscSign(p.data, p);
         case 'hr_disc_timeline':  return await hrDiscTimeline(p.emp_id);
         case 'hr_disc_pending':   return await hrDiscPending(p.cycle, p.branch);
         case 'hr_score_get':         return await hrScoreGet(p.cycle, p.range);
@@ -2325,8 +2325,12 @@
   //
   //   ack_at จะถูกเซ็ตให้ด้วยถ้ายังว่าง เพราะการเซ็นต่อหน้า HR = รับทราบแล้วจริง
   //   ไม่ต้องให้พนักงานไปกดรับทราบซ้ำในแอปอีก
-  async function hrDiscSign(d) {
+  async function hrDiscSign(d, auth) {
     d = d || {};
+    // ★ 21 ก.ย. 69 — ผจก.สาขาให้พนักงานเซ็นได้ (อยู่หน้างานกับพนักงาน) แต่เฉพาะพนักงานสาขาตัวเอง
+    //   ชื่อผู้ดำเนินการมาจากการล็อกอินจริง ไม่เชื่อค่าที่หน้าจอส่งมา
+    const me = await _scActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ ผจก. ไม่ถูกต้อง — ล็อกอินใหม่' };
     if (d.id == null) return { ok: false, error: 'ไม่ระบุรายการ' };
     if (!d.signature) return { ok: false, error: 'ยังไม่ได้เซ็นชื่อ' };
     const typedName = String(d.typed_name || '').trim().slice(0, 120);
@@ -2339,6 +2343,10 @@
       .select('id,emp_id,emp_name,action_type,level_name,need_ack,ack_at,status').eq('id', d.id).maybeSingle();
     if (!row) return { ok: false, error: 'ไม่พบรายการนี้' };
     if (row.status === 'cancelled') return { ok: false, error: 'รายการนี้ถูกยกเลิกไปแล้ว' };
+    if (me.role === 'mgr') {
+      const { data: em } = await sb().from('employees').select('branch_id').eq('emp_id', row.emp_id).maybeSingle();
+      if (!em || String(em.branch_id || '') !== String(me.branch_id)) return { ok: false, error: 'ให้เซ็นได้เฉพาะพนักงานสาขาตัวเอง' };
+    }
     // ★ 21 ก.ย. 69 — บังคับลำดับขั้น: ② พนักงานกดรับทราบในแอป ต้องเสร็จก่อน ③ HR พูดคุย+ให้เซ็น
     //   กันข้ามขั้น (เช่นเปิดหน้านี้ตรง ๆ จาก console) ไม่ใช่แค่ซ่อนปุ่มที่หน้าจอ
     if (row.need_ack && !row.ack_at) {
@@ -2357,13 +2365,13 @@
       ack_disagree_reason: agree ? null : disagreeReason,
       doc_url: sigUrl,
       doc_at: now,
-      doc_by: (d.by || 'สำนักงาน (HR)') + ' · เซ็นบนจอ',
+      doc_by: me.name + ' · เซ็นบนจอ',
     };
     // ยังไม่เคยกดรับทราบในแอป → ถือว่าการเซ็นต่อหน้า HR คือการรับทราบ
     if (!row.ack_at) {
       upd.ack_at = now;
       upd.status = 'acknowledged';
-      upd.ack_device = 'เซ็นบนจอที่หน้าวินัย (HR)';
+      upd.ack_device = 'เซ็นบนจอที่หน้าวินัย (' + me.name + ')';
       if (d.note) upd.ack_note = String(d.note).slice(0, 500);
     }
     const { error } = await sb().from('disc_actions').update(upd).eq('id', d.id);
