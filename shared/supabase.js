@@ -3145,12 +3145,33 @@
     const { data } = await sb.from('qa_products').select('name,size').eq('barcode', String(barcode).trim()).maybeSingle();
     return data||null;
   }
-  async function qaAddItem({ folder_id, empId, barcode, name, size, qty, expiry_date, zone, photos, status }){
+  // ★ 21 ก.ย. 69 — หาสินค้าที่บันทึกไว้แล้ว "ตัวเดียวกัน + วันหมดอายุเดียวกัน" ในสาขาเดียวกัน
+  //   ตัวเดียวกัน = บาร์โค้ดตรงกัน (ถ้ามีทั้งคู่) · ไม่มีบาร์โค้ด = ชื่อ (+ขนาด) ตรงกันแบบไม่สนตัวพิมพ์/ช่องว่าง
+  const _qaNorm=v=>String(v||'').toLowerCase().replace(/\s+/g,'');
+  async function qaFindDuplicate({ branch_id, barcode, name, size, expiry_date }){
+    if(!expiry_date) return [];
+    let q=sb.from('qa_items').select('id,folder_id,barcode,name,size,qty,expiry_date,status,emp_name,created_at,zone').eq('expiry_date', expiry_date);
+    if(branch_id) q=q.eq('branch_id', branch_id);
+    const { data }=await q.limit(200);
+    const bc=String(barcode||'').trim(), nm=_qaNorm(name), sz=_qaNorm(size);
+    return (data||[]).filter(r=>{
+      const rb=String(r.barcode||'').trim();
+      if(bc && rb) return bc===rb;
+      if(!nm || _qaNorm(r.name)!==nm) return false;
+      return !sz || !r.size || _qaNorm(r.size)===sz;
+    });
+  }
+  async function qaAddItem({ folder_id, empId, barcode, name, size, qty, expiry_date, zone, photos, status, allow_dup }){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     if(!name||!String(name).trim()) throw new Error('กรอกชื่อสินค้า');
     if(!expiry_date) throw new Error('เลือกวันหมดอายุ');
     const st=['on_shelf','sold','removed'].includes(status)?status:'on_shelf';
     if(st==='removed'&&!(photos&&photos.length)) throw new Error('การเก็บออกต้องแนบรูปหลักฐานอย่างน้อย 1 รูป');
+    // ★ กันบันทึกซ้ำ — เช็กก่อนอัปโหลดรูป · ผู้ใช้ยืนยัน "บันทึกซ้ำ" ได้ (allow_dup)
+    if(!allow_dup){
+      let dups=[]; try{ dups=await qaFindDuplicate({ branch_id:emp.branch_id, barcode, name, size, expiry_date }); }catch(_e){ dups=[]; }
+      if(dups.length){ const err=new Error('สินค้านี้ (วันหมดอายุเดียวกัน) บันทึกไปแล้ว'); err.code='QA_DUP'; err.dups=dups; throw err; }
+    }
     const urls=[];
     for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','qa/'+(emp.branch_id||'x')+'_'+folder_id+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
     const bc=(barcode||'').trim()||null;
@@ -3961,6 +3982,6 @@
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
-    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
