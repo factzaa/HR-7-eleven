@@ -95,8 +95,9 @@
       <label style="margin-top:6px">บันทึกวันนี้ * (ทำถึงไหน / เหลืออะไร)</label>
       <textarea id="c_note" placeholder="เช่น ทำ 635–636 เสร็จ เหลือ 637–638 · พบสินค้าใกล้หมดอายุ 3 รายการ"></textarea>
 
-      <label style="margin-top:12px">รูปถ่ายหลักฐาน * (ถ่ายได้หลายรูป)</label>
+      <label style="margin-top:12px">รูปถ่ายหลักฐาน * (ถ่ายเพิ่ม หรือเลือกหลายรูปพร้อมกันได้)</label>
       <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block;width:auto"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="c_photo" style="display:none"></label>
+      <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block;width:auto"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg> เลือกหลายรูป<input type="file" accept="image/*" multiple id="c_photo2" style="display:none"></label>
       <div class="thumbs" id="c_thumbs" style="margin:8px 0"></div>
 
       <div style="height:4px"></div>
@@ -362,7 +363,7 @@ $('c_back').onclick=()=>{ show('step_shelves'); loadShelves(); };
 
 function renderThumbs(){ $('c_thumbs').innerHTML=PHOTOS.map((u,i)=>'<span style="position:relative;display:inline-block"><img src="'+u+'" style="height:66px;border-radius:8px"><button type="button" onclick="rmPhoto('+i+')" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer">×</button></span>').join(''); }
 function rmPhoto(i){ PHOTOS.splice(i,1); renderThumbs(); }
-$('c_photo').addEventListener('change',async()=>{ const f=$('c_photo'); if(!f.files||!f.files.length) return; for(const file of f.files){ PHOTOS.push(await resizeFile(file)); } f.value=''; renderThumbs(); });
+['c_photo','c_photo2'].forEach(id=>{ const f=$(id); if(f) f.addEventListener('change',async()=>{ if(!f.files||!f.files.length) return; for(const file of f.files){ PHOTOS.push(await resizeFile(file)); } f.value=''; renderThumbs(); }); });   // ★ ถ่ายรูป + เลือกหลายรูป
 
 $('c_save').onclick=async()=>{
   if(!PHOTOS.length){ toast('err','กรุณาถ่ายรูปหลักฐานอย่างน้อย 1 รูป'); return; }
