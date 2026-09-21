@@ -2524,6 +2524,7 @@ function mrNav(d){
 </div>
 
 <div id="view_attnedit" class="container" style="display:none">
+  <div id="dualPanel"></div>
   <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h3 style="flex:1;font-size:15px;font-weight:600;min-width:130px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> ปรับปรุงเวลา</h3>
     <input id="ae_q" type="text" placeholder="ค้นหาชื่อ/รหัสพนักงาน" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:150px">
@@ -9654,7 +9655,59 @@ function loadAttnEdit(){
     $('ae_go').onclick=aeLoad;
     if($('ae_q')) $('ae_q').addEventListener('input',()=>aeRender($('ae_mode').value));
   }
+  loadDualReq();   // ★ คำขอควบกะรอ HR อนุมัติ (อยู่บนสุดของหน้านี้)
   aeLoad();
+}
+
+// ========== ★ 21 ก.ย. 69 — คำขอควบกะ (พนักงานกดเอง) รอ HR อนุมัติ ==========
+//   ยังไม่อนุมัติ = ไม่นับควบ (คิดเป็น OT) · อนุมัติ = เพิ่มเวรกะที่สองให้ แล้วทุกหน้านับควบตามกติกาเดิม
+let DUAL_SHOW_HIST=false;
+function dualDT(iso){ if(!iso) return '—'; try{ return new Date(iso).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return String(iso); } }
+async function loadDualReq(){
+  const box=$('dualPanel'); if(!box) return;
+  let r; try{ r=await post({ action:'hr_dual_list', password:pwd, ...authBody() }); }catch(e){ box.innerHTML=''; return; }
+  if(!r||!r.ok){ box.innerHTML = (r&&r.error&&/dual-requests/.test(r.error)) ? '<div class="card" style="padding:12px 14px;margin-bottom:12px;color:#b45309;font-size:13px">⚠ ระบบขอควบกะยังไม่พร้อม — ต้องรัน <b>supabase/dual-requests-2569-09-21.sql</b> ก่อน</div>' : ''; return; }
+  const pend=r.rows.filter(x=>x.status==='pending');
+  const hist=r.rows.filter(x=>x.status!=='pending').slice(0,30);
+  _setNavBadge($('tab_attnedit'), pend.length);
+  const canAct=!MGR_MODE;
+  const pct=Math.round((r.min_ratio||0.75)*100);
+  const card=c=>{
+    const hrsTxt = c.act_hr==null ? (c.check_out?'—':'ยังไม่กดออก') : (c.act_hr+' / '+c.need_hr+' ชม.');
+    const hrsWarn = c.hours_ok===false ? '<div style="font-size:12px;color:#b45309;margin-top:3px">⚠ ทำงานจริงไม่ถึง '+pct+'% ของ 2 กะ — อนุมัติแล้วระบบเงินเดือนจะยังไม่นับควบ (ขึ้นธงให้ตรวจ) · เวลาที่เกินยังเป็น OT</div>' : '';
+    const otTxt = c.check_out ? ('OT ตอนนี้ <b>'+(c.ot_now||0)+'</b> ชม. → ถ้าอนุมัติ <b>'+(c.ot_if_approved==null?'—':c.ot_if_approved)+'</b> ชม. <span style="color:var(--muted)">(คิดใหม่จากเวลาเลิกกะที่สอง)</span>') : '<span style="color:var(--muted)">ยังทำงานอยู่ — OT จะคิดตอนกดออก</span>';
+    return '<div style="border-top:1px solid var(--line);padding:10px 0">'
+      +'<div style="font-size:14px;font-weight:600">'+esc(c.emp_name||c.emp_id)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(c.emp_id)+' · '+esc(c.branch_name)+' · '+esc((d=>{ const p=String(d||'').split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+(Number(p[0])+543)):String(d||''); })(c.work_date))+'</span></div>'
+      +'<div style="font-size:13px;margin-top:3px">'+esc(c.base_name)+' <span style="color:var(--muted)">'+esc(c.base_time)+'</span> <b style="color:#1d4ed8">+ ควบ '+esc(c.extra_name)+'</b> <span style="color:var(--muted)">'+esc(c.extra_time)+'</span></div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">เข้า '+dualDT(c.check_in)+' · ออก '+dualDT(c.check_out)+' · ชั่วโมงจริง/2 กะ: <b style="color:#1e2430">'+hrsTxt+'</b> · ขอเมื่อ '+dualDT(c.requested_at)+'</div>'
+      +'<div style="font-size:12.5px;margin-top:2px">'+otTxt+'</div>'+hrsWarn
+      +(canAct?'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-pri btn-sm" data-dap="'+c.id+'">อนุมัติควบกะ</button><button class="btn btn-sec btn-sm" data-drj="'+c.id+'">ไม่อนุมัติ (เป็น OT)</button></div>':'<div style="font-size:12px;color:var(--muted);margin-top:6px">รอ HR อนุมัติ</div>')
+      +'</div>';
+  };
+  const stPill=st=> st==='approved'?'<span class="pill" style="background:#dcfce7;color:#15803d">อนุมัติ</span>':st==='rejected'?'<span class="pill" style="background:#fee2e2;color:#b91c1c">ไม่อนุมัติ</span>':'<span class="pill" style="background:#eef0ec;color:var(--muted)">ยกเลิก</span>';
+  let h='';
+  if(pend.length){
+    h+='<div class="card" style="margin-bottom:14px;padding:14px 16px;border:1.5px solid #bfdbfe">'
+      +'<div style="font-weight:700;font-size:14.5px;color:#1e3a8a">คำขอควบกะ รอ HR อนุมัติ <span class="navbadge" style="margin-left:4px">'+pend.length+'</span></div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.6">พนักงานกดขอควบกะเองในแอป (ไม่ได้จัดเวรไว้) · <b>ยังไม่อนุมัติ = ไม่นับควบ</b> คิดเป็น OT · อนุมัติแล้วระบบจะเพิ่มเวรกะที่สองให้ และนับเป็นวันทำงานควบในทุกหน้า</div>'
+      +pend.map(card).join('')+'</div>';
+  }
+  if(hist.length){
+    h+='<div style="margin:-6px 0 12px"><a href="javascript:void(0)" id="dualHistTg" style="font-size:12.5px;color:#1d4ed8">'+(DUAL_SHOW_HIST?'▾ ซ่อน':'▸ ดู')+'ประวัติคำขอควบกะ ('+hist.length+')</a></div>';
+    if(DUAL_SHOW_HIST){
+      h+='<div class="card" style="margin-bottom:14px"><div class="tablewrap"><table><thead><tr><th>วันที่</th><th>พนักงาน</th><th>ควบ</th><th>ผล</th><th>OT</th><th>โดย</th><th></th></tr></thead><tbody>'
+        +hist.map(c=>'<tr><td class="mono">'+esc(String(c.work_date))+'</td><td>'+esc(c.emp_name||c.emp_id)+'</td><td>'+esc(c.base_shift||'-')+' + '+esc(c.extra_shift)+'</td><td>'+stPill(c.status)+(c.decide_note?'<div style="font-size:11px;color:var(--muted)">'+esc(c.decide_note)+'</div>':'')+'</td>'
+          +'<td class="mono">'+(c.ot_after!=null?(c.ot_before+' → '+c.ot_after):'—')+'</td><td style="font-size:12px">'+esc(c.decided_by||'')+'</td>'
+          +'<td>'+(canAct&&c.status==='approved'?'<button class="btn btn-sec btn-sm" data-drv="'+c.id+'">ยกเลิกอนุมัติ</button>':'')+'</td></tr>').join('')
+        +'</tbody></table></div></div>';
+    }
+  }
+  box.innerHTML=h;
+  const go=async(id,decision,note,msg)=>{ const r2=await post({ action:'hr_dual_decide', password:pwd, ...authBody(), id, decision, note }); if(r2&&r2.ok){ toast('ok', msg + (r2.ot_after!=null?(' · OT '+r2.ot_before+' → '+r2.ot_after+' ชม.'):'')); loadDualReq(); refreshNavBadges(); } else toast('err',(r2&&r2.error)||'ไม่สำเร็จ'); };
+  box.querySelectorAll('[data-dap]').forEach(b=>b.onclick=()=>{ if(confirm('อนุมัติควบกะรายการนี้?\nระบบจะเพิ่มเวรกะที่สองให้ และคิด OT ใหม่จากเวลาเลิกกะที่สอง')) go(Number(b.dataset.dap),'approve','','อนุมัติควบกะแล้ว'); });
+  box.querySelectorAll('[data-drj]').forEach(b=>b.onclick=()=>{ const n=prompt('เหตุผลที่ไม่อนุมัติ (พนักงานจะเห็น · ไม่ใส่ก็ได้):'); if(n===null) return; go(Number(b.dataset.drj),'reject',n,'ไม่อนุมัติแล้ว — คิดเป็น OT ตามเดิม'); });
+  box.querySelectorAll('[data-drv]').forEach(b=>b.onclick=()=>{ if(confirm('ยกเลิกการอนุมัติควบกะ?\nระบบจะลบเวรกะที่สองที่เพิ่มให้ และคืน OT เดิม')) go(Number(b.dataset.drv),'revoke','','ยกเลิกอนุมัติแล้ว'); });
+  const tg=$('dualHistTg'); if(tg) tg.onclick=()=>{ DUAL_SHOW_HIST=!DUAL_SHOW_HIST; loadDualReq(); };
 }
 async function aeLoad(){
   const box=$('ae_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -12445,7 +12498,7 @@ async function refreshNavBadges(){
   if(typeof pwd==='undefined' || !pwd) return;
   let r; try{ r=await post({ action:'hr_nav_badges', password:pwd, branch:(typeof MGR_MODE!=='undefined'&&MGR_MODE)?MGR_BRANCH:null }); }catch(e){ return; }
   if(!r||!r.ok) return; const c=r.counts||{};
-  ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });
+  ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider','attnedit'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });   // ★ attnedit = คำขอควบกะรอ HR
   document.querySelectorAll('.navgrp').forEach(grp=>{ const tabs=(grp.dataset.tabs||'').split(',').filter(Boolean); const sum=tabs.reduce((s,t)=>s+(Number(c[t])||0),0); _setNavBadge(grp.querySelector('.navgrp-btn'), sum); });
 }
 setInterval(()=>{ const t=document.getElementById('topact'); if(t && t.style.display!=='none') refreshNavBadges(); }, 60000);
