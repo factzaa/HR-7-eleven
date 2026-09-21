@@ -11238,7 +11238,7 @@ async function loadMtaskIntask(boxId){
   let h='<div class="card" style="padding:12px;border-left:4px solid #f59e0b">'
     +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
     +'<h3 style="font-size:15px;font-weight:700;flex:1"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> รอตรวจจากงานในกะ ('+rows.length+')'
-      +'<span class="muted" style="font-weight:500;font-size:12.5px"> · ยังไม่ถูกตรวจ '+nWait+' · ตรวจผ่านแล้วรอ ผจก.ตรวจซ้ำ '+nRe+'</span></h3>'
+      +'<span class="muted" style="font-weight:500;font-size:12.5px"> · ยังไม่ถูกตรวจ '+nWait+' · ตรวจผ่านแล้วรอ ผจก.ตรวจซ้ำ '+nRe+(meta.carried?(' · <b style="color:#b91c1c">ค้างจากวันก่อน '+meta.carried+'</b>'):'')+'</span></h3>'
     +'<input type="date" id="itk_date_'+boxId+'" value="'+esc(day)+'" style="padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:13px">'
     +(isToday?'<span class="pill ok" style="font-size:11.5px">วันนี้</span>':'<button class="btn btn-sec btn-sm" id="itk_today_'+boxId+'">กลับมาวันนี้</button>')
     +'</div>';
@@ -11259,6 +11259,7 @@ async function loadMtaskIntask(boxId){
     } else {
       trail='<div class="muted" style="font-size:12px;margin:4px 0">ผลัดถัดไปยังไม่ได้ตรวจ · ถ้าตีกลับ ผู้ส่งเป็นผู้แก้</div>';
     }
+    const carryTag = t.carried ? ' <span class="pill" style="background:#fee2e2;color:#b91c1c;font-size:11px">ค้างตรวจ · ของ '+esc(beDate(t.work_date))+'</span>' : '';
     const nightTag = t.from_prev_day ? ' <span class="pill" style="background:#e0e7ff;color:#3730a3;font-size:11px"><svg class="ei" viewBox="0 0 24 24"><path d="M20 14A8 8 0 1 1 10 4a6 6 0 0 0 10 10z"/></svg> กะข้ามคืน · ของ '+esc(beDate(t.work_date))+'</span>' : '';
     const stTag = t.resubmitted
       ? ' <span class="pill" style="background:#ede9fe;color:#5b21b6;font-size:11px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 7a4 4 0 0 1 5 5l-8 8-3-3 8-8a4 4 0 0 1-2-2z"/></svg> แก้แล้ว ส่งกลับมาตรวจซ้ำ'+(t.fixed_by_name?(' · โดย '+esc(t.fixed_by_name)):'')+'</span>'
@@ -11266,7 +11267,7 @@ async function loadMtaskIntask(boxId){
         ? ' <span class="pill ok" style="font-size:11px">ตรวจผ่านแล้ว · รอ ผจก.ตรวจซ้ำ</span>'
         : ' <span class="pill warn" style="font-size:11px">รอตรวจ</span>');
     return '<div style="border-top:1px dashed var(--line);padding:8px 0">'
-      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+stTag+nightTag+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_name||'-')+' · '+esc(beDate(t.work_date))+'</span></div>'
+      +'<div style="font-weight:600;font-size:14px">'+esc(t.title)+stTag+carryTag+nightTag+' <span class="muted" style="font-size:12px">· '+esc(t.emp_name||t.emp_id)+' · '+esc(t.branch_name)+' · กะ '+esc(t.shift_name||'-')+' · '+esc(beDate(t.work_date))+'</span></div>'
       +trail
       +(t.emp_note?'<div class="muted" style="font-size:12.5px;margin-top:2px"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M14 3v5h5"/><path d="M20 14l-5 5-3 .6.6-3z"/></svg> '+esc(t.emp_note)+'</div>':'')
       +thumbs
