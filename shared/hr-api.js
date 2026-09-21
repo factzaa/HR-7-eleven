@@ -5635,8 +5635,13 @@
     //    → ดึงของเมื่อวานมาด้วย แล้วเก็บไว้เฉพาะแถวที่เป็น "กะข้ามคืน" (เหมือนลอจิกหน้ารับส่งผลัด)
     const day = date || bkkToday();
     const prevDay = addDays(day, -1);
-    let q = sb().from('task_assignments').select('*').in('work_date', [day, prevDay])
-      .in('status', ['submitted', 'approved']).order('work_date', { ascending: false }).order('shift_id').limit(500);
+    // ★ 21 ก.ย. 69 — งานที่ ผจก. ยังไม่ได้ตรวจของ 3 วันก่อนหน้า "ยกมา" ในคิวของวันที่ดูอยู่ด้วย
+    //   เดิม: วันถัดไปเห็นเฉพาะกะข้ามคืนของเมื่อวาน → งานกะบ่าย (12:30–22:30) ที่ส่ง/ผลัดถัดไปตรวจหลัง ผจก. เลิกงาน
+    //         หลุดจากคิววันรุ่งขึ้น ผจก. ตรวจครบตามที่เห็น แต่พอย้อนดูวันก่อนยังค้าง "รอตรวจ"
+    const CARRY_DAYS = 3;
+    const carryFrom = addDays(day, -CARRY_DAYS);
+    let q = sb().from('task_assignments').select('*').gte('work_date', carryFrom).lte('work_date', day)
+      .in('status', ['submitted', 'approved']).is('mgr_checked_at', null).order('work_date', { ascending: false }).order('shift_id').limit(1000);   // ★ เอาเฉพาะที่ ผจก.ยังไม่ตรวจ (คิวยกมาหลายวันจะไม่ชนเพดาน)
     if (branch) q = q.eq('branch_id', branch);
 
     // งานที่ ผจก.ตีกลับ แล้วพนักงานเพิ่งส่งกลับมา "ข้ามวัน" (work_date เป็นของวันเก่า)
@@ -5677,7 +5682,8 @@
       const isResubmit = !!t.fix_done_at && t.status === 'submitted';   // แก้แล้วส่งกลับ → เข้าคิวเสมอ ไม่ผูกกับวันที่
       if (!isResubmit) {
         // ของเมื่อวาน: เก็บไว้เฉพาะกะข้ามคืน (กะดึกที่คาบเกี่ยวมาถึงวันที่ดูอยู่)
-        if (String(t.work_date) !== day && !shOvernight[t.shift_id]) return false;
+        // ของวันก่อน (ภายใน CARRY_DAYS): ยังไม่ได้ตรวจ → ยกมาเสมอ (ไม่ใช่แค่กะข้ามคืน)
+        if (String(t.work_date) > day || String(t.work_date) < carryFrom) return false;
       }
       return t.needs_mgr === true || (!!defMgr[t.task_def_id] && (defOwn[t.task_def_id] || !shOff[t.shift_id]));
     });
@@ -5713,7 +5719,8 @@
       emp_name: empName[t.emp_id] || t.emp_id,
       shift_name: shName[t.shift_id] || t.shift_id || '',
       overnight: !!shOvernight[t.shift_id],
-      from_prev_day: String(t.work_date) !== day,      // กะดึกของเมื่อวานที่คาบเกี่ยวมาถึงวันนี้
+      from_prev_day: String(t.work_date) !== day && !!shOvernight[t.shift_id] && String(t.work_date) === prevDay,      // กะดึกของเมื่อวานที่คาบเกี่ยวมาถึงวันนี้
+      carried: String(t.work_date) < day && !(shOvernight[t.shift_id] && String(t.work_date) === prevDay),   // ★ ค้างตรวจจากวันก่อน
       // ร่องรอย: ผลัดถัดไป/HR ตรวจผ่านไปแล้วหรือยัง
       //   · งานที่ approved แล้ว = มีคนตรวจผ่านไปแล้วแน่นอน (แม้ยังไม่มีร่องรอย checked_* เพราะตรวจก่อนอัปเดตระบบ)
       already_checked: !!t.checked_at || t.status === 'approved',
@@ -5730,6 +5737,7 @@
       meta: {
         submitted_total: all.length,
         matched: rows.length,
+        carried: rows.filter(r => r.carried).length, carry_days: CARRY_DAYS,
         defs_flagged: Object.values(defMgr).filter(Boolean).length,
         shifts_off: Object.keys(shOff).filter(k => shOff[k]),
       },
@@ -7758,7 +7766,8 @@
       try {
         const yd = addDays(today, -1);
         const cols = 'id,work_date,shift_id,task_def_id,needs_mgr,mgr_checked_at,fix_done_at';
-        let tq = sb().from('task_assignments').select(cols).in('work_date', [today, yd]).eq('status', 'submitted').limit(500);
+        const carryFrom = addDays(today, -3);   // ★ ให้ตรงกับคิว (ยกงานที่ยังไม่ตรวจของ 3 วันก่อนมาด้วย · ทั้งรอตรวจและผลัดถัดไปผ่านแล้วรอ ผจก.)
+        let tq = sb().from('task_assignments').select(cols).gte('work_date', carryFrom).lte('work_date', today).in('status', ['submitted', 'approved']).is('mgr_checked_at', null).limit(1000);
         let tq2 = sb().from('task_assignments').select(cols).eq('status', 'submitted').not('fix_done_at', 'is', null).is('mgr_checked_at', null).limit(100);
         if (branch) { tq = tq.eq('branch_id', branch); tq2 = tq2.eq('branch_id', branch); }
         const [tR, t2R, dfR, shR] = await Promise.all([
@@ -7779,7 +7788,7 @@
         return Object.values(byId).filter(t => {
           if (t.mgr_checked_at) return false;
           const isResubmit = !!t.fix_done_at;
-          if (!isResubmit && String(t.work_date) !== today && !shOvn[t.shift_id]) return false;
+          if (!isResubmit && (String(t.work_date) > today || String(t.work_date) < carryFrom)) return false;
           return t.needs_mgr === true || (!!defMgr[t.task_def_id] && (defOwn[t.task_def_id] || !shOff[t.shift_id]));
         }).length;
       } catch (_e) { return 0; }
