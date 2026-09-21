@@ -15538,7 +15538,7 @@ async function loadScore(){
     <tbody>${scEmps.map(e=>`<tr>
       <td><div class="name-cell">${e.photo_url?`<div class="thumb"><img src="${esc(e.photo_url)}"></div>`:`<div class="thumb">${esc(pickInitial(e.nickname||e.emp_name))}</div>`}<div class="ntext"><span class="nm">${esc(e.nickname||e.emp_name)}</span><span class="nick">${esc(e.emp_id)}</span></div></div></td>
       <td><span style="font-weight:800;font-size:17px;color:${esc(e.band_color)}">${e.score}</span><span style="color:var(--muted)">/${e.start}</span></td>
-      <td><span class="pill" style="background:${esc(e.band_color)};color:#fff;font-weight:600">${esc(e.band_label||'—')}</span>${e.warn_level!=null?' <svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>':''}</td>
+      <td><span class="pill" style="background:${esc(e.band_color)};color:#fff;font-weight:600">${esc(e.band_label||'—')}</span>${e.warn_level!=null?' <span title="ช่วงคะแนนนี้ตั้งให้แจ้งเตือน HR พิจารณา — ระบบไม่ได้ออกใบเตือน และพนักงานไม่เห็น" style="cursor:help;color:#b45309"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> HR พิจารณา</span>':''}</td>
       <td>${scTermCell(e)}</td>
       <td class="mono">${e.bonus?('฿'+Number(e.bonus).toLocaleString()):'—'}</td>
       <td class="mono">${e.total_deduct?('<span style="color:var(--red)">'+e.total_deduct+'</span>'):'0'}</td>
