@@ -3343,7 +3343,9 @@ function makeChatFabDraggable(fab){
   fab.addEventListener('click',e=>{ if(moved){ e.preventDefault(); e.stopPropagation(); return; } chatOpen(); });
   window.addEventListener('resize',()=>{ const r=fab.getBoundingClientRect(); if(fab.style.left) applyPos(r.left,r.top); });
 }
-function chatInit(){ chatEnsureDom(); $('chatFab').style.display='block'; chatSubscribe(); chatRefreshBadge(); }
+// ★ 22 ก.ย. 69 — ปิดห้องแชท HR ↔ ผจก. (ไม่ได้ใช้แล้ว) · ไม่สร้างปุ่ม ไม่ subscribe ไม่นับ badge · เปิดกลับ: CHAT_ENABLED=true
+const CHAT_ENABLED=false;
+function chatInit(){ if(!CHAT_ENABLED){ const f=document.getElementById('chatFab'); if(f) f.style.display='none'; return; } chatEnsureDom(); $('chatFab').style.display='block'; chatSubscribe(); chatRefreshBadge(); }
 function chatSubscribe(){
   const sb=chatSb(); if(!sb||CHAT.ch) return;
   try{ const opts={ event:'INSERT', schema:'public', table:'mgr_chat' }; if(MGR_MODE) opts.filter='branch_id=eq.'+MGR_BRANCH;
