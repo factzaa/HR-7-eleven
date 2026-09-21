@@ -9688,9 +9688,7 @@ function loadAttnEdit(){
   if($('ae_go') && !$('ae_go').dataset.wired){ $('ae_go').dataset.wired='1';
     const brs=(DATA.branches||[]).map(b=>[b.branch_id,b.name||b.branch_id]);
     fillSelect($('ae_branch'), brs, 'ทุกสาขา');
-    // ★ 21 ก.ย. 69 — รวมคนที่ปิดใช้งานแล้ว (ต่อท้าย) — ลาออกกลางรอบยังต้องแก้เวลาย้อนหลังก่อนปิดเงินเดือน
-    const _aeAct=(DATA.rows||[]).filter(e=>e.active!==false), _aeOff=(DATA.rows||[]).filter(e=>e.active===false);
-    fillSelect($('ae_emp'), _aeAct.map(e=>[e.emp_id, e.emp_id+' · '+e.name]).concat(_aeOff.map(e=>[e.emp_id, e.emp_id+' · '+e.name+' (ปิดใช้งาน'+(e.end_date?(' · ออก '+String(e.end_date).slice(8,10)+'/'+String(e.end_date).slice(5,7)):'')+')'])), '— เลือกพนักงาน —');
+    fillSelect($('ae_emp'), (DATA.rows||[]).filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
     const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date(Date.now()+7*3600000).toISOString().slice(0,10);
     $('ae_date').value=today; $('ae_start').value=today; $('ae_end').value=today;
     $('ae_mode').onchange=()=>{ const r=$('ae_mode').value==='range'; $('ae_daily').style.display=r?'none':'flex'; $('ae_range').style.display=r?'flex':'none'; };
