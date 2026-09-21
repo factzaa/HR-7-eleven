@@ -14721,41 +14721,95 @@ let SHP_ROWS=[], SHP_ALL=null;
 function shpDoneRow(c, kind){
   const col = kind==='ok' ? '#16a34a' : '#dc2626';
   const fmt=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}); }catch(e){ return ''; } };
-  return '<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px dashed var(--line)">'
+  return '<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line)">'
     +(c.photos&&c.photos.length ? '<img src="'+esc(c.photos[0])+'" onclick="lightbox(this)" style="width:46px;height:46px;object-fit:cover;border-radius:8px;cursor:zoom-in;flex:none">' : '<div style="width:46px;height:46px;border-radius:8px;background:#f1f5f9;flex:none"></div>')
     +'<div style="flex:1;min-width:0">'
       +'<div style="font-size:13.5px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '+esc(c.shelf_name)+(c.shelf_code?(' ['+esc(c.shelf_code)+']'):'')+'</div>'
       +'<div style="font-size:11.5px;color:var(--muted)">'+esc(c.emp_name)+' · '+esc(c.branch_name)+' · '+beDate(c.check_date)
-        +(c.reviewed_at?(' · ตรวจเมื่อ '+fmt(c.reviewed_at)):'')+'</div>'
-      +(kind==='no'&&c.review_note?('<div style="font-size:12px;color:#b91c1c">⤴ '+esc(c.review_note)+'</div>'):'')
+        +(c.reviewed_at?(' · ตรวจเมื่อ '+fmt(c.reviewed_at)):'')+' · เช็กลิสต์ '+c.done+'/'+c.total+'</div>'
+      +(c.note?('<div style="margin-top:5px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:6px;padding:5px 9px;font-size:12.5px;color:var(--txt)">📝 '+esc(c.note)+'</div>'):'<div style="font-size:11.5px;color:#9ca3af;margin-top:3px">— ไม่มีหมายเหตุ —</div>')
+      +(kind==='no'&&c.review_note?('<div style="font-size:12px;color:#b91c1c;margin-top:3px">⤴ '+esc(c.review_note)+'</div>'):'')
     +'</div>'
     +'<span class="pill" style="background:'+(kind==='ok'?'#dcfce7':'#fee2e2')+';color:'+col+';font-weight:700;flex:none">'+(kind==='ok'?'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ผ่าน':'⤴ ตีกลับ')+'</span>'
-    +'<span class="mono" style="font-size:12px;color:var(--muted);flex:none">'+c.done+'/'+c.total+'</span>'
     +'</div>';
 }
 // กล่องพับได้ (ประวัติที่ตรวจแล้ว)
-function shpFoldBox(title, color, rows, kind){
+function shpFoldBox(title, color, rows, kind, open){
   if(!rows || !rows.length) return '';
-  return '<details style="margin-top:12px">'
+  return '<details'+(open?' open':'')+' style="margin-top:12px">'
     +'<summary style="cursor:pointer;font-weight:700;font-size:14px;padding:10px 12px;background:#f8fafc;border:1.5px solid var(--line2);border-left:5px solid '+color+';border-radius:12px;list-style:none">'
       +title+' <span class="pill" style="background:#e2e8f0;color:#475569">'+rows.length+'</span></summary>'
     +'<div class="card" style="margin-top:8px"><div class="card-b">'+rows.map(c=>shpDoneRow(c,kind)).join('')+'</div></div>'
     +'</details>';
 }
+// ★ 22 ก.ย. 69 — แผง "ตรวจผ่านแล้ว": ตัวกรองเชลฟ์/พนักงาน/ช่วงวัน + มุมมองรายการ / ความคืบหน้ารายเชลฟ์ (พับได้)
+let SHR={ shelf:'', emp:'', view:'list', days:14 };
+function renderShelfRecent(){
+  const rc=$('shp_recent'); if(!rc) return;
+  const r=SHP_ALL||{}; const all=[].concat(r.approved||[], r.sent_back||[], r.rows||[]);
+  const shelves={}, emps={};
+  all.forEach(c=>{ shelves[c.shelf_id]=c.shelf_name+(c.shelf_code?(' ['+c.shelf_code+']'):''); emps[c.emp_id]=c.emp_name; });
+  const opt=(v,t,sel)=>'<option value="'+esc(v)+'"'+(String(sel)===String(v)?' selected':'')+'>'+esc(t)+'</option>';
+  const sOpts=opt('','เชลฟ์: ทุกเชลฟ์',SHR.shelf)+Object.keys(shelves).sort((a,b)=>shelves[a].localeCompare(shelves[b],'th')).map(k=>opt(k,shelves[k],SHR.shelf)).join('');
+  const eOpts=opt('','พนักงาน: ทุกคน',SHR.emp)+Object.keys(emps).sort((a,b)=>emps[a].localeCompare(emps[b],'th')).map(k=>opt(k,emps[k],SHR.emp)).join('');
+  const dOpts=[14,30,60].map(d=>opt(d,d+' วันล่าสุด',SHR.days)).join('');
+  const selSt='padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px';
+  const segB=(v,t)=>'<button type="button" data-shrv="'+v+'" style="border:0;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;'+(SHR.view===v?'background:#15803d;color:#fff':'background:transparent;color:var(--txt)')+'">'+t+'</button>';
+  let h='<div class="card" style="margin-bottom:10px"><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    +'<b style="font-size:13px">กรอง</b>'
+    +'<select id="shr_shelf" style="'+selSt+'">'+sOpts+'</select>'
+    +'<select id="shr_emp" style="'+selSt+'">'+eOpts+'</select>'
+    +'<select id="shr_days" style="'+selSt+'">'+dOpts+'</select>'
+    +'<span style="margin-left:auto;display:inline-flex;border:1.5px solid var(--line2);border-radius:9px;overflow:hidden">'+segB('list','รายการ')+segB('progress','ความคืบหน้ารายเชลฟ์')+'</span>'
+    +'</div></div>';
+  const pass=c=>(!SHR.shelf||String(c.shelf_id)===String(SHR.shelf))&&(!SHR.emp||String(c.emp_id)===String(SHR.emp));
+  const approved=(r.approved||[]).filter(pass), sentBack=(r.sent_back||[]).filter(pass);
+  if(SHR.view==='list'){
+    const body=shpFoldBox('<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจผ่านแล้ว ('+SHR.days+' วันล่าสุด)', '#16a34a', approved, 'ok', true)
+      + shpFoldBox('⤴ ตีกลับ — รอพนักงานแก้', '#dc2626', sentBack, 'no', false);
+    h+=body||'<div class="empty">ไม่มีรายการตามตัวกรองนี้</div>';
+  } else {
+    const rows=all.filter(pass); const g={};
+    rows.forEach(c=>{ (g[c.shelf_id]=g[c.shelf_id]||[]).push(c); });
+    const keys=Object.keys(g).sort((a,b)=>{ const la=g[a].reduce((m,c)=>c.check_date>m?c.check_date:m,''), lb=g[b].reduce((m,c)=>c.check_date>m?c.check_date:m,''); return lb.localeCompare(la); });
+    if(!keys.length) h+='<div class="empty">ไม่มีรายการตามตัวกรองนี้</div>';
+    const today=(typeof bkkTodayStr==='function')?bkkTodayStr():new Date().toISOString().slice(0,10);
+    const stl=st=>st==='approved'?['ผ่าน','#16a34a']:(st==='sent_back'?['ตีกลับ','#dc2626']:['รอตรวจ','#d97706']);
+    h+=keys.map((k,idx)=>{
+      const list=g[k].slice().sort((a,b)=>a.check_date.localeCompare(b.check_date)); const last=list[list.length-1];
+      const people=[...new Set(list.map(c=>c.emp_name))].join(', ');
+      const nOk=list.filter(c=>c.status==='approved').length, nNo=list.filter(c=>c.status==='sent_back').length;
+      const gap=Math.round((new Date(today+'T00:00:00')-new Date(last.check_date+'T00:00:00'))/86400000);
+      const tl=list.map((c,i)=>{ const s2=stl(c.status); return '<div style="position:relative;padding:3px 0 9px"><span style="position:absolute;left:-18px;top:7px;width:10px;height:10px;border-radius:50%;background:'+(i===list.length-1?'#f59e0b':'#16a34a')+'"></span>'
+        +'<div style="font-size:11.5px;color:var(--muted)">'+beDate(c.check_date)+' · '+esc(c.emp_name)+' · เช็กลิสต์ '+c.done+'/'+c.total+' · <b style="color:'+s2[1]+'">'+s2[0]+'</b></div>'
+        +'<div style="font-size:13px">'+(c.note?esc(c.note):'<span style="color:#9ca3af">— ไม่มีหมายเหตุ —</span>')+'</div>'
+        +(c.status==='sent_back'&&c.review_note?'<div style="font-size:12px;color:#b91c1c">⤴ '+esc(c.review_note)+'</div>':'')+'</div>'; }).join('');
+      return '<details class="card" style="margin-bottom:8px"'+((idx===0||SHR.shelf)?' open':'')+'>'
+        +'<summary style="cursor:pointer;list-style:none;padding:12px 14px"><b style="font-size:14px">'+esc(shelves[k]||('#'+k))+'</b> <span class="muted" style="font-size:12.5px">· '+esc(people)+'</span>'
+        +'<div class="muted" style="font-size:12px;margin-top:2px">ทำแล้ว '+list.length+' ครั้งใน '+SHR.days+' วัน · ล่าสุด '+beDate(last.check_date)+' · ผ่าน '+nOk+' · ตีกลับ '+nNo+'</div></summary>'
+        +'<div style="padding:0 14px 12px"><div style="border-left:2px solid #d1fae5;padding-left:12px;margin-left:4px">'+tl+'</div>'
+        +'<div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 10px;font-size:12.5px;margin-top:4px">➜ บันทึกล่าสุด ('+beDate(last.check_date)+'): <b>'+(last.note?esc(last.note):'— ไม่มีหมายเหตุ —')+'</b>'+(gap>1?(' · ไม่มีการทำต่อมา '+gap+' วัน'):'')+'</div></div>'
+        +'</details>';
+    }).join('');
+  }
+  rc.innerHTML=h;
+  const sf=$('shr_shelf'); if(sf) sf.onchange=()=>{ SHR.shelf=sf.value; renderShelfRecent(); };
+  const ef=$('shr_emp'); if(ef) ef.onchange=()=>{ SHR.emp=ef.value; renderShelfRecent(); };
+  const df=$('shr_days'); if(df) df.onchange=()=>{ SHR.days=Number(df.value)||14; loadShelfPending(); };
+  rc.querySelectorAll('[data-shrv]').forEach(b=>b.onclick=()=>{ SHR.view=b.dataset.shrv; renderShelfRecent(); });
+}
 async function loadShelfPending(){
   const box=$('shp_body'); if(!box) return;
   box.innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_shelf_pending', ...authBody(), branch: (MGR_MODE?'':($('shp_branch')?$('shp_branch').value:'')) });
+  const r=await post({ action:'hr_shelf_pending', ...authBody(), branch: (MGR_MODE?'':($('shp_branch')?$('shp_branch').value:'')), days: SHR.days });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   SHP_ALL=r; SHP_ROWS=r.rows||[];
   const approved=r.approved||[], sentBack=r.sent_back||[];
-  const history = shpFoldBox('<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจผ่านแล้ว (14 วันล่าสุด)', '#16a34a', approved, 'ok')
-                + shpFoldBox('⤴ ตีกลับ — รอพนักงานแก้', '#dc2626', sentBack, 'no');
 
   const cnt=$('shp_count');
   if(cnt){ if(SHP_ROWS.length){ cnt.style.display=''; cnt.textContent=SHP_ROWS.length+' รายการ'; } else cnt.style.display='none'; }
   // ประวัติ "ตรวจผ่านแล้ว/ตีกลับ" ย้ายไปแผงย่อยของตัวเอง
-  const rc=$('shp_recent'); if(rc) rc.innerHTML=history || '<div class="empty">ยังไม่มีประวัติใน 14 วันล่าสุด</div>';
+  renderShelfRecent();
   const sbp=$('shsub_pend'); if(sbp){ if(SHP_ROWS.length){ sbp.style.display=''; sbp.textContent=SHP_ROWS.length; } else sbp.style.display='none'; }
   if(!SHP_ROWS.length){
     box.innerHTML='<div class="card"><div class="card-b"><div class="empty"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจครบแล้ว ไม่มีรายการค้าง'
