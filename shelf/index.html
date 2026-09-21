@@ -88,11 +88,12 @@
         <div class="muted" id="c_detail" style="white-space:pre-wrap"></div>
       </div>
 
+      <div id="c_hist"></div>
       <h3 class="sec">เช็กลิสต์การดูแลวันนี้</h3>
       <div class="card" style="padding:4px 14px" id="c_checks"></div>
 
-      <label style="margin-top:6px">หมายเหตุ (ถ้ามี)</label>
-      <textarea id="c_note" placeholder="เช่น พบสินค้าใกล้หมดอายุ 3 รายการ"></textarea>
+      <label style="margin-top:6px">บันทึกวันนี้ * (ทำถึงไหน / เหลืออะไร)</label>
+      <textarea id="c_note" placeholder="เช่น ทำ 635–636 เสร็จ เหลือ 637–638 · พบสินค้าใกล้หมดอายุ 3 รายการ"></textarea>
 
       <label style="margin-top:12px">รูปถ่ายหลักฐาน * (ถ่ายได้หลายรูป)</label>
       <label class="btn btn-sec btn-sm" style="cursor:pointer;display:inline-block;width:auto"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input type="file" accept="image/*" capture="environment" id="c_photo" style="display:none"></label>
@@ -300,6 +301,25 @@ async function loadShelves(){
   document.querySelectorAll('[data-sid]').forEach(el=>el.onclick=()=>openShelf(r.rows.find(x=>String(x.shelf_id)===el.dataset.sid)));
 }
 
+
+// ★ 22 ก.ย. 69 — บันทึกครั้งก่อนของเชลฟ์นี้ (ของทุกคน) — ให้ทำต่อจากที่ค้างได้ถูก
+function shelfHistHtml(hist){
+  hist=Array.isArray(hist)?hist:[]; if(!hist.length) return '';
+  const esc2=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const dd=d=>{ try{ return new Date(d+'T00:00:00').toLocaleDateString('th-TH',{day:'numeric',month:'short'}); }catch(e){ return d; } };
+  const stl=s=>s==='approved'?['ผ่าน','#dcfce7','#166534']:(s==='sent_back'?['ตีกลับ','#fee2e2','#b91c1c']:['รอตรวจ','#fef3c7','#92400e']);
+  const last=hist[hist.length-1];
+  return '<details open style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:8px 12px;margin:6px 0 10px">'
+    +'<summary style="cursor:pointer;font-weight:600;font-size:13.5px;list-style:none">🗂 บันทึกครั้งก่อน <span style="background:#e2e8f0;border-radius:999px;padding:0 7px;font-size:11.5px">'+hist.length+'</span> <span style="float:right;font-weight:400;font-size:11.5px;color:#6b7280">แตะเพื่อพับ/เปิด</span></summary>'
+    +'<div style="border-left:2px solid #d1fae5;padding-left:12px;margin-top:8px">'
+    +hist.map((h,i)=>{ const s=stl(h.status); return '<div style="position:relative;padding:3px 0 8px"><span style="position:absolute;left:-18px;top:7px;width:10px;height:10px;border-radius:50%;background:'+(i===hist.length-1?'#f59e0b':'#16a34a')+'"></span>'
+      +'<div style="font-size:11.5px;color:#6b7280">'+esc2(dd(h.check_date))+' · '+esc2(h.emp_name)+' · เช็กลิสต์ '+h.done+'/'+h.total+' <span style="background:'+s[1]+';color:'+s[2]+';border-radius:6px;padding:0 6px;font-weight:600;font-size:10.5px">'+s[0]+'</span></div>'
+      +'<div style="font-size:13px">'+(h.note?esc2(h.note):'<span style="color:#9ca3af">— ไม่มีบันทึก —</span>')+'</div>'
+      +(h.status==='sent_back'&&h.review_note?'<div style="font-size:12px;color:#b91c1c">⤴ ผู้ตรวจ: '+esc2(h.review_note)+'</div>':'')+'</div>'; }).join('')
+    +'</div>'
+    +(last&&last.note?'<div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 10px;font-size:12.5px">➜ ครั้งล่าสุด '+esc2(last.emp_name)+' เขียนไว้ว่า: <b>'+esc2(last.note)+'</b></div>':'')
+    +'</details>';
+}
 // ===== เช็กลิสต์รายวัน =====
 const DEF_CL=['ทำความสะอาดเชลฟ์เรียบร้อย','จัดเรียงสินค้าหน้าตรง เต็มชั้น','FIFO — สินค้าตรงป้ายราคา','ตรวจวันหมดอายุครบทุกแถว'];
 function openShelf(s){
@@ -313,6 +333,7 @@ function openShelf(s){
   $('c_sub').textContent=(s.shelf_code?('['+s.shelf_code+'] · '):'')+'สาขา '+branchName(s.branch_id);
   $('c_detail_card').style.display=s.detail?'':'none'; $('c_detail').textContent=s.detail||'';
   renderSbBanner(tc);
+  if($('c_hist')) $('c_hist').innerHTML=shelfHistHtml(s.history);
   renderChecks(); renderThumbs();
   show('step_check');
 }
@@ -345,6 +366,7 @@ $('c_photo').addEventListener('change',async()=>{ const f=$('c_photo'); if(!f.fi
 
 $('c_save').onclick=async()=>{
   if(!PHOTOS.length){ toast('err','กรุณาถ่ายรูปหลักฐานอย่างน้อย 1 รูป'); return; }
+  if(($('c_note').value||'').trim().length<5){ toast('err','กรุณาเขียนบันทึกว่าทำถึงไหน / เหลืออะไร'); $('c_note').focus(); return; }
   const btn=$('c_save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังบันทึก…';
   try{
     await window.HR.submitShelfCheck({ empId:EMP.emp_id, shelf_id:CUR.shelf_id, items:STATE, note:$('c_note').value, photos:PHOTOS });
