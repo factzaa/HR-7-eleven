@@ -218,7 +218,9 @@ Deno.serve(async () => {
     } catch (_e) { /* ตารางงานประจำวันยังไม่มี */ }
 
     // ===== นิดาตามงานอัตโนมัติ → โพสต์เข้าห้องแชทของสาขา (กันซ้ำ: เรื่องละครั้ง/สาขา/วัน) =====
-    try {
+    // ★ 22 ก.ย. 69 — ปิดแล้ว (เลิกใช้ห้องแชท HR ↔ ผจก.) · เปิดกลับได้โดยเปลี่ยนเป็น true
+    const NIDA_CHAT_ENABLED = false;
+    if (NIDA_CHAT_ENABLED) try {
       const NIDA = "นิดา · ผู้ช่วยฝ่ายบริหาร / HR";
       const chatMsgs: { key: string; branch: string; text: string }[] = [];
 
