@@ -721,6 +721,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <div id="mt_closed" style="margin-bottom:14px"></div>
     <div id="mt_intask" style="margin-bottom:14px"></div>
     <div id="mt_fixing" style="margin-bottom:14px"></div>
+    <div id="mt_closed_done" style="margin-bottom:14px"></div>
   </div>
 
   <div class="shpan" id="mt_daily" style="display:none"></div>
@@ -11101,6 +11102,9 @@ async function loadClosedTasks(){
   if(!r||!r.ok){ box.innerHTML='<div class="card"><div class="card-b muted">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div></div>'; return; }
   const rows=(r.rows||[]);
   const wait=rows.filter(x=>!x.closed_ack_at), seen=rows.filter(x=>x.closed_ack_at);
+  // ★ 21 ก.ย. 69 — ด้านบนแสดงเฉพาะ "รอรับทราบ" · ที่รับทราบแล้วย้ายไปท้ายหน้า (พับไว้) ให้เห็นงานรอตรวจอื่นง่ายขึ้น
+  const doneBox=$('mt_closed_done');
+  if(doneBox) doneBox.innerHTML='';
   if(!rows.length){ box.innerHTML=''; return; }
   const one=(t,ack)=>'<div style="border-top:1px dashed var(--line);padding:9px 0">'
     +'<div style="font-weight:600;font-size:14px">'+esc(t.title||'')
@@ -11110,12 +11114,14 @@ async function loadClosedTasks(){
       +(ack?(' · รับทราบโดย '+esc(t.closed_ack_name||'')+' '+fmtDT(t.closed_ack_at)):'')+'</div>'
     +(ack?'':'<div style="margin-top:6px"><button class="btn btn-pri btn-sm" data-cack="'+t.id+'">รับทราบ</button></div>')
     +'</div>';
-  box.innerHTML='<div class="card" style="border-left:3px solid #b45309">'
-    +'<div class="card-h"><h3>งานที่ปิดเพราะทำไม่ได้'+(wait.length?(' <span class="pill" style="background:#fef3c7;color:#92400e">รอรับทราบ '+wait.length+'</span>'):'')+'</h3></div>'
-    +'<div class="card-b" style="padding-top:0">'
-    +(wait.length?wait.map(t=>one(t,false)).join(''):'<div class="muted" style="font-size:12.5px;padding:8px 0">รับทราบครบแล้ว</div>')
-    +(seen.length?('<div class="muted" style="font-size:11.5px;margin-top:10px">รับทราบแล้ว '+seen.length+' รายการ (7 วันล่าสุด)</div>'+seen.slice(0,10).map(t=>one(t,true)).join('')):'')
-    +'</div></div>';
+  box.innerHTML = wait.length ? ('<div class="card" style="border-left:3px solid #b45309">'
+    +'<div class="card-h"><h3>งานที่ปิดเพราะทำไม่ได้ <span class="pill" style="background:#fef3c7;color:#92400e">รอรับทราบ '+wait.length+'</span></h3></div>'
+    +'<div class="card-b" style="padding-top:0">'+wait.map(t=>one(t,false)).join('')+'</div></div>') : '';
+  if(doneBox && seen.length){
+    doneBox.innerHTML='<details class="card" style="border-left:3px solid #cbd5e1">'
+      +'<summary style="cursor:pointer;padding:12px 14px;font-weight:600;font-size:14px;color:var(--muted)">งานที่ปิดเพราะทำไม่ได้ · รับทราบแล้ว '+seen.length+' รายการ (7 วันล่าสุด) <span style="font-weight:400;font-size:12px">— กดเพื่อดู</span></summary>'
+      +'<div class="card-b" style="padding-top:0">'+seen.slice(0,20).map(t=>one(t,true)).join('')+'</div></details>';
+  }
   box.querySelectorAll('[data-cack]').forEach(b=>b.onclick=async()=>{
     const note=prompt('รับทราบงานที่ปิดนี้\n\nบันทึกเพิ่มเติม (ไม่ใส่ก็ได้) เช่น สั่งช่างแล้ว / ให้ทำพรุ่งนี้:');
     if(note===null) return;
