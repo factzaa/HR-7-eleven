@@ -14575,7 +14575,16 @@ async function qaSubmitItem(){
   if(status==='removed' && !files.length){ toast('err','การเก็บออกต้องแนบรูปอย่างน้อย 1 รูป'); btn.disabled=false; btn.textContent=old; return; }
   try{
     const photos=[]; for(const f of files){ photos.push(await qaFileToB64(f)); }
-    await window.HR.qaAddItem({ folder_id:QA_CUR.folderId, empId, barcode:$('qai_barcode').value.trim(), name, size:$('qai_size').value.trim(), qty:$('qai_qty').value, expiry_date:expiry, zone:$('qai_zone').value.trim(), photos, status });
+    const payload={ folder_id:QA_CUR.folderId, empId, barcode:$('qai_barcode').value.trim(), name, size:$('qai_size').value.trim(), qty:$('qai_qty').value, expiry_date:expiry, zone:$('qai_zone').value.trim(), photos, status };
+    try{ await window.HR.qaAddItem(payload); }
+    catch(e){
+      if(e && e.code==='QA_DUP'){
+        // ★ สินค้าตัวเดียวกัน + วันหมดอายุเดียวกัน บันทึกไว้แล้วในสาขานี้ → ถามก่อนบันทึกซ้ำ
+        const ds=(e.dups||[]).slice(0,5).map(d=>'• '+(d.name||'')+(d.size?(' '+d.size):'')+' · '+(d.qty||1)+' ชิ้น · โดย '+(d.emp_name||'-')+' · '+(d.status==='sold'?'ขายแล้ว':d.status==='removed'?'เก็บออกแล้ว':'อยู่บนเชลฟ์')).join('\n');
+        if(!confirm('สินค้านี้ (วันหมดอายุเดียวกัน) บันทึกไปแล้ว '+(e.dups||[]).length+' รายการ\n\n'+ds+'\n\nต้องการบันทึกซ้ำหรือไม่?')){ toast('ok','ยกเลิก — ไม่บันทึกซ้ำ'); btn.disabled=false; btn.textContent=old; return; }
+        payload.allow_dup=true; await window.HR.qaAddItem(payload);
+      } else throw e;
+    }
     toast('ok','บันทึกสินค้าแล้ว');
     qaViewItems(QA_CUR.folderId); loadQaFolders();
   }catch(e){ toast('err', e.message||'บันทึกไม่สำเร็จ'); btn.disabled=false; btn.textContent=old; }
