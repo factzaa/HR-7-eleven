@@ -3851,39 +3851,88 @@
   async function reviewShiftDetail(empId, which) {
     const cyc = reviewCycleRange(which);
     const today = bangkokDate();
-    const [attR, schR, lvR, shR, holR] = await Promise.all([
-      sb.from('attendance').select('work_date,check_in,late_min,ot_hours,shift_id,source,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
-      sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
+    // ★ 21 ก.ย. 69 — เพิ่มเวลาเข้า-ออก · ควบกะ · OT รายวัน (แก้ OT รายวันได้ → ยอด OT รวมคำนวณใหม่)
+    const [attR, schR, lvR, shR, holR, drR] = await Promise.all([
+      sb.from('attendance').select('id,work_date,check_in,check_out,late_min,early_out_min,ot_hours,shift_id,source,status,day_value,day_note').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
+      sb.from('schedules').select('work_date,shift_id,note').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end),
       sb.from('leaves').select('start_date,end_date,type,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
-      sb.from('shifts').select('shift_id,name'),
+      sb.from('shifts').select('shift_id,name,start_time,end_time,day_value'),
       sb.from('holidays').select('date,name').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
+      sb.from('dual_requests').select('work_date,extra_shift,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end).in('status', ['pending', 'approved']),
     ]);
+    const { data: empRow } = await sb.from('employees').select('is_manager').eq('emp_id', empId).maybeSingle();
+    const isMgr = !!(empRow && empRow.is_manager === true);
+    const _st = await _loadSettings(); const otWhole = (_st['ot_whole_day'] === '1' || _st['ot_whole_day'] === 'true');
     const holiName = {}; (holR.data || []).forEach(h => holiName[h.date] = h.name || 'วันหยุดบริษัท');
     const shN = {}; (shR.data || []).forEach(s => shN[s.shift_id] = s.name);
+    const hrMap = _shiftHoursMap(shR.data), dvOf = _dvFn(shR.data);
     const attM = {}; (attR.data || []).forEach(a => attM[a.work_date] = a);
-    const schM = {}; (schR.data || []).forEach(s => schM[s.work_date] = s);
+    const schOk = _dropPhantom(schR.data, attR.data, empId);
+    const schList = {}; schOk.forEach(s => { if (!s.shift_id) return; const l = schList[s.work_date] || (schList[s.work_date] = []); if (!l.includes(s.shift_id)) l.push(s.shift_id); });
+    const drM = {}; (drR && drR.data || []).forEach(r => drM[r.work_date] = r);
     const lv = lvR.data || [];
     const onLeave = d => lv.find(l => d >= l.start_date && d <= (l.end_date || l.start_date));
     // ★ ทุกวันในรอบ (ถึงวันนี้) เพื่อจัดกะย้อนหลังได้ครบ ไม่จำกัดแค่วันที่มีเวร
     const endEff = cyc.end < today ? cyc.end : today;
     const dates = []; let _d = new Date(cyc.start + 'T00:00:00'), _e = new Date(endEff + 'T00:00:00');
     while (_d <= _e) { dates.push(_d.getFullYear() + '-' + String(_d.getMonth() + 1).padStart(2, '0') + '-' + String(_d.getDate()).padStart(2, '0')); _d.setDate(_d.getDate() + 1); }
+    let otTotal = 0;
     const rows = dates.map(d => {
-      const a = attM[d], s = schM[d], l = onLeave(d);
+      const a = attM[d], l = onLeave(d), sl = schList[d] || [];
       let status = 'none';
       if (a && a.check_in) status = (a.late_min > 0) ? 'late' : 'present';
       else if (l) status = 'leave';
-      else if (s && d < today) status = 'absent';
-      else if (s) status = 'scheduled';
+      else if (sl.length && d < today) status = 'absent';
+      else if (sl.length) status = 'scheduled';
+      const sid = (a && a.shift_id) || sl[0] || null;
+      // ชั่วโมงทำจริง (ไม่นับแถวเติมย้อนหลังที่เวลาเข้า=ออก)
+      let act_hr = null;
+      if (a && a.check_in && a.check_out) { const h = (new Date(a.check_out) - new Date(a.check_in)) / 3600000; if (h > 0 && h < 26) act_hr = Math.round(h * 10) / 10; }
+      // ควบกะ — กติกาเดียวกับวันทำงาน/เงินเดือน: จัด ≥2 กะ + ทำจริง ≥75% ของเวร · ผจก.ไม่นับควบ
+      let dual = null;
+      if (sl.length >= 2) {
+        const need = Math.round(sl.reduce((x, id) => x + (hrMap[id] || 0), 0) * 10) / 10;
+        const worked = !!(a && a.check_in);
+        const credited = worked && !isMgr && !(act_hr != null && need > 0 && act_hr < need * _DUAL_MIN_RATIO);
+        dual = { shifts: sl.map(id => shN[id] || id), need_hr: need, credited, is_mgr: isMgr };
+      }
+      const dr = drM[d] || null;
+      let ot = a && a.check_in ? (Number(a.ot_hours) || 0) : 0;
+      const otCounted = otWhole ? Math.floor(ot + 1e-9) : ot;
+      otTotal += otCounted;
+      const dv = a && a.check_in ? (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)) : null;
       return {
-        work_date: d, shift_id: (a && a.shift_id) || (s && s.shift_id) || null,
-        shift_name: shN[(a && a.shift_id) || (s && s.shift_id)] || '',
-        status, has_att: !!a, late_min: a ? (a.late_min || 0) : 0, ot_hours: a ? (a.ot_hours || 0) : 0,
+        work_date: d, shift_id: sid,
+        shift_name: sl.length >= 2 ? sl.map(id => shN[id] || id).join(' + ') : (shN[sid] || ''),
+        status, has_att: !!a, att_id: a ? a.id : null, late_min: a ? (a.late_min || 0) : 0, early_out_min: a ? (a.early_out_min || 0) : 0,
+        check_in: a ? a.check_in : null, check_out: a ? a.check_out : null, act_hr,
+        ot_hours: ot, ot_counted: otCounted, day_value: dv, day_note: a ? (a.day_note || '') : '',
+        dual, dual_req: dr ? { status: dr.status, extra: shN[dr.extra_shift] || dr.extra_shift } : null,
         source: a ? a.source : null, leave_type: l ? (l.type || 'ลา') : null,
         is_holiday: !!holiName[d], holiday_name: holiName[d] || '',
       };
     });
-    return { period_start: cyc.start, period_end: cyc.end, rows };
+    return { period_start: cyc.start, period_end: cyc.end, rows, ot_total: Math.round(otTotal * 10) / 10, ot_whole: otWhole, is_mgr: isMgr };
+  }
+  // ★ 21 ก.ย. 69 — ผจก. แก้ OT รายวัน (แก้ที่ใบลงเวลาวันนั้น → ยอด OT รวมทุกหน้าคำนวณใหม่เอง)
+  //   เก็บค่าเดิมไว้ในหมายเหตุวัน + activity_log · แก้ได้เฉพาะวันที่มาทำงาน (มี check-in)
+  async function reviewSetDayOT({ emp_id, work_date, ot_hours, by }) {
+    if (!emp_id || !work_date) throw new Error('ข้อมูลไม่ครบ');
+    const v = (ot_hours === '' || ot_hours == null) ? 0 : Number(ot_hours);
+    if (isNaN(v) || v < 0 || v > 16) throw new Error('ชั่วโมง OT ต้องอยู่ระหว่าง 0–16');
+    const nv = Math.round(v * 100) / 100;
+    const { data: a } = await sb.from('attendance').select('id,check_in,ot_hours,day_note').eq('emp_id', emp_id).eq('work_date', work_date).maybeSingle();
+    if (!a || !a.check_in) throw new Error('วันนี้ไม่มีการลงเวลา — แก้ OT ไม่ได้');
+    const old = Number(a.ot_hours) || 0;
+    if (old === nv) return { ok: true, unchanged: true };
+    const who = by || 'ผจก.ตรวจ';
+    const stamp = who + ' แก้ OT ' + old + '→' + nv + ' ชม.';
+    const base = String(a.day_note || '').replace(/\s*·?\s*ผจก\.ตรวจ แก้ OT [^·]*$/, '').trim();   // แก้ซ้ำ = แทนบรรทัดเดิม
+    const note = base ? (base + ' · ' + stamp) : stamp;
+    const { error } = await sb.from('attendance').update({ ot_hours: nv, day_note: note.slice(0, 500) }).eq('id', a.id);
+    if (error) throw error;
+    try { await sb.from('activity_log').insert({ action: 'แก้ OT รายวัน (หน้าตรวจเงินเดือน)', emp_id, actor: who, detail: work_date + ' · OT ' + old + ' → ' + nv + ' ชม.' }); } catch (_e) {}
+    return { ok: true, old, ot_hours: nv };
   }
   // แก้สถานะรายวัน: present = สร้าง/คงแถวลงเวลา (มาปกติ) · absent = ลบแถว backfill (คืนสภาพขาด)
   async function reviewMarkDay({ emp_id, work_date, action, shift_id, branch_id, by }) {
@@ -3909,7 +3958,7 @@
 
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
-    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, installmentList, installmentCreate, installmentCancel, installmentDiscount,
+    reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
