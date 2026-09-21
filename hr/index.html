@@ -6015,6 +6015,13 @@ function plSlipMeta(){
     const iso=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); payDate=beDate(iso(pay)); }
   return { co, period, payDate, year };
 }
+// ★ 21 ก.ย. 69 — หัวสลิปแยกห้างตามสาขา (รหัสสาขา 5 หลักแรก) · สาขาอื่น = ชื่อบริษัทในตั้งค่า
+const PL_SLIP_CO_BY_BRANCH={ '10775':'หจก.เอ็มพี ออลล์', '06573':'หจก.เอ็มพี ออลล์', '08747':'หจก.บีพี ออลล์' };
+function plSlipCompany(it, co){
+  const b=String((it&&it.branch_id)||'').trim();
+  const hit=PL_SLIP_CO_BY_BRANCH[b]||PL_SLIP_CO_BY_BRANCH[b.slice(0,5)]||PL_SLIP_CO_BY_BRANCH[(b.match(/\d{5}/)||[''])[0]];
+  return hit||((co&&co.name)||'บริษัท');
+}
 // markup 1 สลิป
 function plSlipInner(it, meta){
   meta=meta||{}; const co=meta.co||{}; const B=v=>plB(Number(v||0));
@@ -6060,7 +6067,7 @@ function plSlipInner(it, meta){
   // Remark: เงินเบิกล่วงหน้า (อัตโนมัติ) + หมายเหตุที่ HR พิมพ์เอง
   const remarks=[]; if(it.note) remarks.push(it.note);
   return '<div class="ps-slip">'
-    +'<div class="ps-head"><div class="ps-co">'+esc(co.name||'บริษัท')+'</div><div class="ps-title">สลิปเงินเดือน<br><span>Pay Slip</span></div></div>'
+    +'<div class="ps-head"><div class="ps-co">'+esc(plSlipCompany(it, co))+'</div><div class="ps-title">สลิปเงินเดือน<br><span>Pay Slip</span></div></div>'
     +'<div class="ps-info"><div class="ps-info-c">'
       +'<div class="ps-f"><div class="ps-k">ชื่อ–นามสกุล(รหัส)<div class="ps-en">Emp. name (Code)</div></div><div class="ps-v">'+esc(it.emp_name||'')+' ('+esc(it.emp_id)+')</div></div>'
       +'<div class="ps-f"><div class="ps-k">ตำแหน่ง<div class="ps-en">Position</div></div><div class="ps-v">'+esc((it.branch_name||'')+(it.branch_name?'/':'')+wageLabel)+'</div></div>'
