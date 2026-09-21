@@ -12721,7 +12721,8 @@ const ASST_CHIPS=["ใครใกล้โดนใบเตือน","ใค�
 function initAssistant(){
   const chips=$('asst_chips'); if(!chips) return;
   if(!chips.dataset.f){ chips.dataset.f='1';
-    chips.innerHTML=ASST_CHIPS.map(c=>'<button class="btn btn-sec btn-sm" data-chip="'+esc(c)+'">'+esc(c)+'</button>').join('');
+    const _chips=(typeof MGR_MODE!=='undefined'&&MGR_MODE)?['ใครใกล้โดนใบเตือน','ใครมาสายมากสุดรอบนี้','ใบลารออนุมัติ','งานค้างข้ามวัน','สินค้าใกล้หมดอายุ 7 วัน','ขอใบลาเปล่า']:ASST_CHIPS;
+    chips.innerHTML=_chips.map(c=>'<button class="btn btn-sec btn-sm" data-chip="'+esc(c)+'">'+esc(c)+'</button>').join('');
     chips.querySelectorAll('[data-chip]').forEach(b=>b.onclick=()=>{ $('asst_in').value=b.dataset.chip; $('asst_in').focus(); });
     $('asst_send').onclick=asstSend;
     $('asst_in').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); asstSend(); } });
@@ -13047,8 +13048,10 @@ function fallbackCopy(t,cb){ try{ const ta=document.createElement('textarea'); t
 // ===== หน้าโฮม + ประวัติ (แชท/เอกสาร) เก็บใน localStorage =====
 let ASST_SID=null; let HIST_TAB=1;
 const HIST_CHATS='nida_hist_chats', HIST_DOCS='nida_hist_docs';
-function histGet(k){ try{ return JSON.parse(localStorage.getItem(k)||'[]'); }catch(e){ return []; } }
-function histSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v.slice(0,80))); }catch(e){} }
+// ★ แยกประวัติแชทของ ผจก. (ต่อคน) ออกจากของ HR — เครื่องเดียวกันจะไม่เห็นแชทของกันและกัน
+function _histKey(k){ try{ return (typeof MGR_MODE!=='undefined'&&MGR_MODE) ? (k+'_mgr_'+(MGR_EMP||'')) : k; }catch(_e){ return k; } }
+function histGet(k){ try{ return JSON.parse(localStorage.getItem(_histKey(k))||'[]'); }catch(e){ return []; } }
+function histSet(k,v){ try{ localStorage.setItem(_histKey(k),JSON.stringify(v.slice(0,80))); }catch(e){} }
 function histSaveCurrent(){ try{
   const users=ASST_MSGS.filter(m=>m.role==='user'&&m.text); if(!users.length) return;
   if(!ASST_SID) ASST_SID=Date.now();
@@ -13081,19 +13084,28 @@ function histRenderList(){
   }
 }
 function histLoadChat(id){ const c=histGet(HIST_CHATS).find(x=>x.id===id); if(!c) return; ASST_MSGS=(c.msgs||[]).slice(); ASST_SID=c.id; asstHistOpen(false); asstRender(); }
-const ASST_HOME_CARDS=[
+window.ASST_HOME_CARDS_HR=[
   {ic:'a',t:'ใครมาสายวันนี้',s:'สรุปการเข้างานล่าสุด',q:'ใครมาสายบ้างวันนี้'},
   {ic:'c',t:'สรุปวินัยสาขา',s:'ใครใกล้โดนใบเตือน',q:'ใครใกล้โดนใบเตือนบ้างรอบนี้'},
   {ic:'b',t:'เอกสาร',s:'ดาวน์โหลดเป็น PDF',q:'ขอเอกสารของ '},
   {ic:'d',t:'ประวัติย้อนหลัง',s:'แชท & เอกสารที่ขอ',q:'__HIST__'}
 ];
+const ASST_HOME_CARDS_MGR=[
+  {ic:'a',t:'ใครมาสายวันนี้',s:'การเข้างานสาขาเรา',q:'วันนี้สาขาเราใครมาสายบ้าง'},
+  {ic:'c',t:'งานค้าง/รอตรวจ',s:'งานในกะที่ยังไม่เสร็จ',q:'วันนี้สาขาเรามีงานค้างหรืองานรอตรวจอะไรบ้าง'},
+  {ic:'b',t:'แบบฟอร์มเปล่า',s:'ใบลา ใบเตือน ใบเบิก ฯลฯ',q:'ขอแบบฟอร์มเปล่า '},
+  {ic:'d',t:'ประวัติย้อนหลัง',s:'แชท & เอกสารที่ขอ',q:'__HIST__'}
+];
 function asstRenderHome(){
   const el=$('asst_home'); if(!el) return;
+  const ASST_HOME_CARDS=(typeof MGR_MODE!=='undefined'&&MGR_MODE)?ASST_HOME_CARDS_MGR:window.ASST_HOME_CARDS_HR;
   const cg={a:'linear-gradient(135deg,#4a5162,#2b3242)',b:'linear-gradient(135deg,#8fbbf6,#5f8fe8)',c:'linear-gradient(135deg,#f6b79c,#ef8f74)',d:'linear-gradient(135deg,#9aa0ae,#6b7280)'};
   const ic={a:'<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>',b:'<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>',c:'<svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',d:'<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg>'};
-  el.innerHTML='<img class="bo" src="../icons/nida-orb.webp" alt=""><h2>สวัสดี <span>คุณผู้จัดการ</span></h2><div class="sub">สั่งงานด้วยภาษาธรรมชาติได้เลย — ถามข้อมูล วิเคราะห์ ร่างเอกสาร ออกใบเตือน หรือพูดคุยด้วยเสียง</div><div class="hcards">'+ASST_HOME_CARDS.map((c,i)=>'<div class="hc" data-q="'+i+'"><div class="ci" style="background:'+cg[c.ic]+'">'+ic[c.ic]+'</div><b>'+esc(c.t)+'</b><small>'+esc(c.s)+'</small></div>').join('')+'</div>';
+  el.innerHTML='<img class="bo" src="../icons/nida-orb.webp" alt=""><h2>สวัสดี <span>คุณผู้จัดการ</span></h2><div class="sub">'+((typeof MGR_MODE!=='undefined'&&MGR_MODE)?'ถามข้อมูลสาขาของคุณ งานค้าง การเข้างาน วินัย ขั้นตอนการทำงาน หรือขอแบบฟอร์มเปล่าได้เลย (ดูอย่างเดียว · ไม่รวมเรื่องเงินเดือน)':'สั่งงานด้วยภาษาธรรมชาติได้เลย — ถามข้อมูล วิเคราะห์ ร่างเอกสาร ออกใบเตือน หรือพูดคุยด้วยเสียง')+'</div><div class="hcards">'+ASST_HOME_CARDS.map((c,i)=>'<div class="hc" data-q="'+i+'"><div class="ci" style="background:'+cg[c.ic]+'">'+ic[c.ic]+'</div><b>'+esc(c.t)+'</b><small>'+esc(c.s)+'</small></div>').join('')+'</div>';
   el.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{ const c=ASST_HOME_CARDS[+b.dataset.q]; if(c.q==='__HIST__'){ asstHistOpen(true); return; } const inp=$('asst_in'); if(inp){ inp.value=c.q; inp.focus(); } });
 }
+// ★ ผจก. ส่งรหัส ผจก.+PIN (edge ตรวจด้วย mgr_login + จำกัดเครื่องมือ) · HR ส่งรหัส HR
+function asstAuth(){ return (typeof MGR_MODE!=='undefined'&&MGR_MODE) ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
 function asstApiBase(){ return {base:(window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.url||'').replace(/\/$/,''),key:window.SUPABASE_CONFIG&&window.SUPABASE_CONFIG.anonKey||''}; }
 
 // ★ ปุ่มทดสอบส่ง SMS (หน้าตั้งค่ากะ) — ยิงเข้า edge function เดียวกับที่ใช้ส่งนัดสัมภาษณ์
@@ -13234,7 +13246,7 @@ async function asstSend(){
   const {base,key}=asstApiBase();
   try{
     const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…').map(m=>{ const o={role:m.role,text:m.text}; if(m.role==='user'&&m.images&&m.images.length) o.images=m.images; return o; });
-    const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:send})});
+    const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify(Object.assign(asstAuth(),{messages:send}))});
     const j=await r.json(); ASST_MSGS.pop();
     const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.pendingAction) msg.pending=j.pendingAction; if(j&&j.cards) msg.cards=j.cards;
     ASST_MSGS.push(msg);
@@ -13252,7 +13264,7 @@ async function asstAsk(text){
   const {base,key}=asstApiBase();
   try{
     const send=ASST_MSGS.filter(m=>m.text!=='กำลังคิด…').map(m=>({role:m.role,text:m.text}));
-    const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify({password:pwd,messages:send})});
+    const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify(Object.assign(asstAuth(),{messages:send}))});
     const j=await r.json(); ASST_MSGS.pop();
     const msg={role:'assistant',text:(j&&(j.reply||j.error))||'ไม่สำเร็จ'}; if(j&&j.cards) msg.cards=j.cards;
     ASST_MSGS.push(msg); try{ histSaveCurrent(); }catch(_e){}
@@ -17439,7 +17451,7 @@ body.mgr-mode #chatFab{bottom:22px;}   /* โหมด ผจก. ไม่ม�
 body:has(.overlay.show) #chatFab, body:has(.overlay.show) #asstFab{display:none !important;}
 #asstFab{position:fixed;right:22px;bottom:22px;width:86px;height:86px;z-index:60;cursor:pointer;border:0;background:none;padding:0;display:none;filter:drop-shadow(0 12px 24px rgba(96,72,190,.32)) drop-shadow(0 4px 9px rgba(0,0,0,.16));animation:asstBob 2.6s ease-in-out infinite;touch-action:none;-webkit-tap-highlight-color:transparent}
 body.is-logged #asstFab{display:block}
-body.mgr-mode #asstFab, body.mgr-mode #asstPop{display:none !important}
+body.mgr-mode #asst_voice{display:none !important}   /* ★ 22 ก.ย. 69 — ผจก. ใช้นิดาแบบพิมพ์ได้ (สิทธิ์จำกัด) · ยังไม่เปิดเสียง */
 body.mgr-mode #adv_keybtn{display:none !important}   /* คีย์เบิกให้พนักงาน = เฉพาะ HR */
 body.mgr-mode #v_transferBtn{display:none !important} /* ย้ายรหัส/สาขา = เฉพาะ HR */
 /* ★ 17 ก.ย. 69 — แท็บพนักงานสำหรับ ผจก.: ดูได้ทั้งหมด แก้ได้เฉพาะ "รหัสพนักงาน" */
