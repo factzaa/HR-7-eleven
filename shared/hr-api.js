@@ -2046,7 +2046,7 @@
     const [{ data: actsRaw }, { data: wAll }, { data: winActsRaw }] = await Promise.all([
       sb().from('disc_actions').select('*').eq('cycle_start', cyc.start),
       sb().from('warnings').select('warning_id,status'),
-      sb().from('disc_actions').select('emp_id,action_type,status,performed_at,warning_id,ack_at,doc_at').gte('performed_at', winStart),
+      sb().from('disc_actions').select('id,emp_id,action_type,status,performed_at,warning_id,need_ack,ack_at,doc_at').gte('performed_at', winStart),
     ]);
     const liveWarn = new Set((wAll || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
     const _live = a => a.status !== 'cancelled' && (!a.warning_id || liveWarn.has(String(a.warning_id)));
@@ -2174,6 +2174,10 @@
         observing: observing, obs_state: obsState, obs_since: obsSince,
         last_action_type: lastLadder ? lastLadder.action_type : null,
         last_action_doc_at: lastLadder ? (lastLadder.doc_at || null) : null,
+        // ★ 21 ก.ย. 69 — ไว้ทำปุ่ม "เปิดเอกสาร + ให้เซ็น" บนการ์ดโดยตรง (เดิมซ่อนอยู่ในไทม์ไลน์ หาไม่เจอ)
+        last_action_id: lastLadder ? lastLadder.id : null,
+        last_action_need_ack: lastLadder ? !!lastLadder.need_ack : false,
+        last_action_ack_at: lastLadder ? (lastLadder.ack_at || null) : null,
         term_case: tc ? {
           id: tc.id, case_no: tc.case_no, status: tc.status,
           decision: tc.decision || null,
@@ -2244,10 +2248,11 @@
     // ★ บังคับ "บันไดวินัย" ตามลำดับ + มีหลักฐานทุกขั้น (verbal → written → warning)
     //   coaching/note = บันทึกทั่วไป ไม่บังคับลำดับ
     const STEP_RANK = { verbal: 1, written: 2, warning: 3 };
+    // ★ 21 ก.ย. 69 — เลิกบังคับแนบรูปหลักฐานตอนบันทึก
+    //   หลักฐานตามขั้นตอนใหม่ = ① บันทึก → ② พนักงานกดรับทราบในแอป → ③ HR ให้เซ็นบนจอในเอกสารที่ระบบสร้าง (hrDiscSign)
+    //   ลายเซ็นในขั้น ③ คือหลักฐานรับทราบ — บังคับรูปตอนบันทึกทำให้ต้องพิมพ์กระดาษมาเซ็นก่อน ขัดกับขั้นตอนที่ออกแบบ
+    //   รูปประกอบ (ถ้ามี) ยังแนบได้เหมือนเดิม
     if (STEP_RANK[type]) {
-      if (!Array.isArray(d.photos) || !d.photos.length) {
-        return { ok: false, error: 'ต้องแนบหลักฐาน (รูปเอกสาร/ใบเซ็นรับทราบ) สำหรับขั้น "' + ACT_LABEL[type] + '" ทุกครั้ง' };
-      }
       if (STEP_RANK[type] > 1) {
         // ★ เช็กขั้นก่อนหน้าจาก "ช่วงสะสม (window)" ไม่ใช่รายรอบ — วาจา/ลายลักษณ์จากเดือนก่อนนับต่อได้
         const _wm = await getSettingNum('disc_window_months', 6);
@@ -2452,7 +2457,7 @@
     if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
     if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุสาเหตุ' };
     // ★ บังคับบันไดวินัย: ออกใบเตือนได้ต่อเมื่อ "ตักเตือนวาจา + ลายลักษณ์อักษร" ทำครบ+มีหลักฐานแล้ว
-    if (!Array.isArray(d.photos) || !d.photos.length) return { ok: false, error: 'ต้องแนบหลักฐาน (เอกสารใบเตือน/ใบเซ็นรับทราบ) ก่อนออกใบเตือน' };
+    // ★ 21 ก.ย. 69 — เลิกบังคับแนบรูป: หลักฐานรับทราบ = ลายเซ็นบนจอในขั้น ③ (เหมือนการตักเตือน) · รูปประกอบยังแนบได้
     // ★ เช็กขั้นก่อนหน้าจาก "ช่วงสะสม (window)" ไม่ใช่รายรอบ
     const _wmW = await getSettingNum('disc_window_months', 6);
     const _wsW = new Date(bkkToday() + 'T00:00:00'); _wsW.setMonth(_wsW.getMonth() - (_wmW > 0 ? _wmW : 6));
