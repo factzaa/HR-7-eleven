@@ -105,6 +105,60 @@
       && !workedKeys.has(String(s.emp_id) + '|' + s.work_date)));
   }
 
+  // ============================================================
+  // ★ 21 ก.ย. 69 — "วันทำงาน" กติกาเดียวทุกหน้า
+  // ------------------------------------------------------------
+  // เดิมมี 4 สูตร (หน้าวินัย · หน้าคะแนน · เงินเดือนเจ้าของ · เงินเดือน HR) ได้ตัวเลขไม่เท่ากัน
+  // เคสจริงรอบ 21/08–20/09: ข้าวตัง หน้าคะแนน 26.0 แต่หน้าเงินเดือน 25.5 — คร่อมเกณฑ์ 26 วันพอดี
+  //   (25/08 จัดกะ A กะเดียว HR ปรับแถวลงเวลาเป็นครึ่งวัน → หน้าคะแนนเอาตารางเวร 1 วันมาทับ)
+  // กติกา (ยึดเงินเดือน HR ซึ่งเป็นตัวจ่ายเงินจริง):
+  //   วันทำงานของแต่ละวัน = ผลรวม day_value ของแถวที่สแกนเข้า
+  //   เติมเป็นค่าตามตารางเวร "เฉพาะวันควบกะ" เมื่อครบทุกข้อ
+  //     จัดเวร ≥ 2 กะ · ตาราง > ที่สแกน · ไม่ใช่ ผจก. · ชั่วโมงจริง ≥ 75% ของเวรที่จัด (ถ้ารู้ชั่วโมง)
+  //   ต้องกรองเวรเฉพาะกิจที่ไม่มีคนมา (dropPhantomAdhoc) ก่อนส่งเข้ามา
+  // ============================================================
+  const DUAL_MIN_RATIO = 0.75;
+  function _hmToMin(t) { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1] * 60 + +m[2]) : null; }
+  function shiftHoursMap(shRows) {
+    const o = {};
+    (shRows || []).forEach(x => { const a = _hmToMin(x.start_time), b = _hmToMin(x.end_time); if (a != null && b != null) o[x.shift_id] = ((b <= a ? b + 1440 : b) - a) / 60; });
+    return o;
+  }
+  // วันทำงานของพนักงาน 1 คน → { total, byDate }
+  //   att   : แถวลงเวลาของคนนั้น (check_in, shift_id, day_value · มี check_out จะเช็กชั่วโมงได้)
+  //   schOk : แถวตารางเวรของคนนั้น ที่กรองเฉพาะกิจแล้ว
+  function workDaysFor(att, schOk, dvOf, hrMap, isMgr) {
+    const attDV = {}, actHr = {};
+    (att || []).forEach(a => {
+      if (!a.check_in) return;
+      attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id));
+      if (a.check_out) {
+        const h = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000;
+        if (h > 0 && h < 26) actHr[a.work_date] = Math.max(actHr[a.work_date] || 0, h);
+      }
+    });
+    const sDV = {}, sCnt = {}, sHr = {};
+    (schOk || []).forEach(s => {
+      if (!s.shift_id) return;
+      const d = s.work_date;
+      sDV[d] = (sDV[d] || 0) + dvOf(s.shift_id);
+      (sCnt[d] = sCnt[d] || new Set()).add(s.shift_id);
+      sHr[d] = (sHr[d] || 0) + ((hrMap && hrMap[s.shift_id]) || 0);
+    });
+    const byDate = {}; let total = 0;
+    Object.keys(attDV).forEach(d => {
+      const at = attDV[d], sd = sDV[d] || 0, cnt = sCnt[d] ? sCnt[d].size : 0;
+      let v = at;
+      if (!isMgr && cnt >= 2 && sd > at) {
+        const ah = actHr[d], nh = sHr[d] || 0;
+        if (!(ah != null && nh > 0 && ah < nh * DUAL_MIN_RATIO)) v = sd;
+      }
+      byDate[d] = v; total += v;
+    });
+    return { total: Math.round(total * 10) / 10, byDate, attByDate: attDV };
+  }
+  function groupByEmp(rows) { const g = {}; (rows || []).forEach(r => { (g[r.emp_id] || (g[r.emp_id] = [])).push(r); }); return g; }
+
   async function loadDisciplineRules() {
     try {
       const r = await sb().from('discipline_rules').select('*').order('level');
@@ -1693,7 +1747,7 @@
       sq, lq,
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,is_manager,weekly_off,start_date,end_date'),
       wq,
-      sb().from('shifts').select('shift_id,day_value,name'),
+      sb().from('shifts').select('shift_id,day_value,name,start_time,end_time'),
       sb().from('holidays').select('date,name').eq('active', true).gte('date', f.start).lte('date', f.end),   // วันหยุดบริษัทในช่วง
     ]);
     if (error) throw error;
@@ -1790,10 +1844,18 @@
       if (Number(r.ot_hours) > 0) { m.ot += otAdj(r.ot_hours, otWhole); m.ot_days++; }
     });
     // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงานจริง แต่ลงเวลาน้อยกว่าตาราง → เติมให้ครบตามควบ (เช่น สแกนครั้งเดียว = 1 → เติมเป็น 2)
-    _dualSet.forEach(k => {
-      const sched = _schDVsum[k] || 0, att = _attDVsum[k] || 0;
-      if (att > 0 && sched > att) { const i = k.indexOf('|'); const emp = k.slice(0, i); const m = map[emp]; if (m && !(empById[emp] || {}).is_manager) { m.days += (sched - att); m.days_home += (sched - att); } }
-    });
+    // ★ 21 ก.ย. 69 — ใช้กติกาเดียวกับเงินเดือน (workDaysFor): ตัดเวรเฉพาะกิจที่ไม่มีคนมา + ต้องจัด ≥2 กะ + ชั่วโมงจริง ≥75%
+    //   เดิมใช้ตารางเวรดิบ (รวมเวรเฉพาะกิจ) และไม่เช็กชั่วโมง → รายงานลงเวลาได้วันมากกว่าเงินเดือน
+    {
+      const _schOkA = groupByEmp(dropPhantomAdhoc(schR.data, workedKeySet(data)));
+      const _attA = groupByEmp((data || []).filter(r => r.check_in));
+      const _hrMapA = shiftHoursMap(shR2.data);
+      Object.keys(_attA).forEach(emp => {
+        const m = map[emp]; if (!m) return;
+        const w = workDaysFor(_attA[emp], _schOkA[emp], dvOf, _hrMapA, !!(empById[emp] || {}).is_manager);
+        Object.keys(w.byDate).forEach(d => { const extra = w.byDate[d] - (w.attByDate[d] || 0); if (extra > 0) { m.days += extra; m.days_home += extra; } });
+      });
+    }
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงาน
     const workedByEmp = {};
     (wR.data || []).forEach(r => { (workedByEmp[r.emp_id] || (workedByEmp[r.emp_id] = new Set())).add(r.work_date); });
@@ -1888,12 +1950,12 @@
     let waiverBy = {};
     try { const { data: wv } = await sb().from('discipline_waivers').select('emp_id,reason,waived_by').eq('cycle_start', cyc.start); (wv || []).forEach(w => { waiverBy[w.emp_id] = { reason: w.reason || '', by: w.waived_by || '' }; }); } catch (_e) { /* ยังไม่ได้รัน discipline_waivers.sql */ }
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
-      sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
+      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
-      sb().from('shifts').select('shift_id,day_value'),
+      sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
     ]);
     if (empsR.error) throw empsR.error;
     const holidaySet = new Set((holR.data || []).map(h => h.date));
@@ -1906,13 +1968,15 @@
     // ตารางเวรต่อพนักงาน (map วันที่ → กะ ไว้ถ่วงน้ำหนักครึ่งวัน)
     const schByEmp = {};
     // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออกก่อน (ดูคำอธิบายหัวไฟล์)
-    dropPhantomAdhoc(schR.data, workedKeySet(att))
-      .forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
+    const _schOkD = dropPhantomAdhoc(schR.data, workedKeySet(att));
+    _schOkD.forEach(s => { if (s.shift_id) { (schByEmp[s.emp_id] || (schByEmp[s.emp_id] = {}))[s.work_date] = s.shift_id; } });
+    const _schOkByEmpD = groupByEmp(_schOkD), _hrMapD = shiftHoursMap(shDVR.data);
 
     const employees = (empsR.data || []).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id);
       const workedSet = new Set(myAtt.filter(a => a.check_in).map(a => a.work_date));
-      const late = myAtt.filter(a => a.late_min > 0);
+      // ★ 21 ก.ย. 69 — นับสายเฉพาะแถวที่สแกนเข้าจริง (ให้ตรงกับหน้าคะแนน/เงินเดือน)
+      const late = myAtt.filter(a => a.check_in && a.late_min > 0);
       const late_count = late.length;
       const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
       const ot_hours = Math.round(myAtt.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
@@ -1922,7 +1986,8 @@
       // ถ่วงน้ำหนักวันด้วย day_value (ครึ่งวัน=0.5) — มีผลกับ "วันทำงาน/ขาด/วินัย"
       // ลำดับ: ค่าที่ปรับรายวันในแถวลงเวลา (เช่น ลาฉุกเฉินครึ่งวัน) → ค่าจากกะ → 1
       const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });   // ควบกะ: บวกทุกกะในวัน
-      const days_worked = Math.round([...workedSet].reduce((s, d) => s + (attDV[d] || 1), 0) * 10) / 10;
+      // ★ 21 ก.ย. 69 — วันทำงานกติกาเดียวกับเงินเดือน (รวมเครดิตควบกะ) · เดิมหน้าวินัยไม่ให้เครดิตควบเลย น้อยกว่าหน้าอื่น 1 วัน
+      const days_worked = workDaysFor(myAtt, _schOkByEmpD[e.emp_id], dvOf, _hrMapD, !!e.is_manager).total;
       // ออกก่อนเวลา (เกินผ่อนผัน) — เก็บจำนวนครั้ง + รวมนาที
       const earlyRows = myAtt.filter(a => a.early_out_min != null && a.early_out_min > earlyGrace);
       const early_out_count = earlyRows.length;
@@ -2009,8 +2074,9 @@
       // ★ บันไดวินัย "สะสม" (rolling window · ไม่รีเซ็ตรายรอบ):
       //   แบนด์คะแนนรอบนี้ = ตัวจับว่า "รอบนี้ทำผิดถึงเกณฑ์" (breach) · ประวัติสะสมใน window = ขั้นที่เคยทำ
       //   ขั้นต่อไป = ขั้นเหนือจากที่เคยทำ (วาจา→ลายลักษณ์→ใบเตือน 1→2→3) · เตือนเฉพาะรอบที่ breach เท่านั้น
-      const _hitLate = (e.late_total || 0) >= lateMinTotal;
-      const _hitAbsent = (e.absent || 0) >= absentMinD;
+      // ★ ค่า 0 = ปิดเกณฑ์นั้น (หน้าตั้งค่าบอกไว้แบบนี้) — ไม่งั้น 0 >= 0 จะตีธงทุกคน
+      const _hitLate = lateMinTotal > 0 && (e.late_total || 0) >= lateMinTotal;
+      const _hitAbsent = absentMinD > 0 && (e.absent || 0) >= absentMinD;
       const breach = _hitLate || _hitAbsent;                           // คะแนนรอบนี้ตกถึงเกณฑ์ต้องดำเนินการ (แบนด์ใดก็ตามที่มี action)
       const winMine = winMap[e.emp_id] || [];
       const verbalDone = winMine.some(a => a.action_type === 'verbal');
@@ -3671,14 +3737,14 @@
       sb().from('score_rules').select('*').order('sort'),
       sb().from('score_bands').select('*').order('sort'),
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,start_date,end_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
-      sb().from('attendance').select('emp_id,work_date,check_in,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
-      sb().from('shifts').select('shift_id,day_value'),
+      sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
     ]);
     if (empsR.error) throw empsR.error;
-    const start = (cfgR.data && cfgR.data.start_score) || 100;
+    const start = (cfgR.data && cfgR.data.start_score != null) ? Number(cfgR.data.start_score) : 100;   // ★ != null เหมือนฝั่ง supabase.js
     const rules = rulesR.data || [];
     const bands = (bandsR.data || []).slice().sort((a, b) => b.min_score - a.min_score);
     const ruleByKind = {};
@@ -3698,7 +3764,8 @@
     // ★ เกณฑ์วันทำงานขั้นต่ำต่อรอบ — ไม่ถึง = หักคะแนน (ที่นี่) + ตัดเบี้ยวินัย (หน้าเงินเดือน) · 0 = ปิด
     const minWD = await getSettingNum('min_work_days', 0);
     const minWDpen = await getSettingNum('min_work_days_penalty', 0);
-    const schSum = {}; _schOkSC.forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; schSum[k] = (schSum[k] || 0) + dvOf(s.shift_id); } });   // ผลรวม day_value ตารางเวร (เครดิตควบ) — ★ ไม่รวมเวรเฉพาะกิจที่ไม่มีคนมา
+    const _hrMapSC = shiftHoursMap(shR.data);            // ★ ชั่วโมงต่อกะ (เช็กควบกะจริง 75%)
+    const _schOkByEmpSC = groupByEmp(_schOkSC);         // ★ ตารางเวรที่กรองเฉพาะกิจแล้ว แยกรายคน
 
     const employees = (empsR.data || []).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id && a.check_in);
@@ -3736,10 +3803,9 @@
       }
 
       // ★ วันทำงานไม่ถึงเกณฑ์ขั้นต่ำ → หักคะแนน (เครดิตควบตามตารางเวร ให้ตรงกับหน้าเงินเดือน)
-      const attByDate = {}; myAtt.forEach(a => { attByDate[a.work_date] = (attByDate[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });
-      let days_worked = 0; const _isMgr = !!e.is_manager;
-      Object.keys(attByDate).forEach(d => { const scS = schSum[e.emp_id + '|' + d] || 0, at = attByDate[d] || 0; days_worked += ((!_isMgr && scS > at) ? scS : at); });
-      days_worked = Math.round(days_worked * 10) / 10;
+      // ★ 21 ก.ย. 69 — ใช้กติกาเดียวกับเงินเดือน HR (workDaysFor) · เดิม "ตาราง > สแกน" ก็เติมให้ทันทีโดยไม่เช็ก ≥2 กะ
+      //   จึงไปทับครึ่งวันที่ HR ปรับไว้ (ข้าวตัง 25/08 → หน้าคะแนน 26.0 แต่เงินเดือน 25.5)
+      const days_worked = workDaysFor(myAtt, _schOkByEmpSC[e.emp_id], dvOf, _hrMapSC, !!e.is_manager).total;
       const below_min = minWD > 0 && days_worked < minWD;
       if (below_min && minWDpen > 0) { const pts = -Math.abs(minWDpen); autoDeduct += pts; items.push({ label: 'วันทำงานไม่ถึงเกณฑ์ (' + days_worked + '/' + minWD + ' วัน)', count: 1, points: pts, source: 'auto' }); }
 
@@ -6111,7 +6177,7 @@
     const endEff = end < today ? end : today;
     const [empR, brR, shR, attR, schR, lvR, taR, staR, stR, dvR,
            revR, fixR, ctrlR, leadR, gdR, qaR, shcR, shaR, hoR, mtR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,default_shift,photo_url,phone').eq('emp_id', p.emp_id).maybeSingle(),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,end_date,is_manager,default_shift,photo_url,phone').eq('emp_id', p.emp_id).maybeSingle(),
       sb().from('branches').select('branch_id,name'),
       sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
       sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min,extend_until').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
@@ -6149,7 +6215,7 @@
     const att = attR.data || [], leaves = lvR.data || [];
     const onLeave = d => leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
     const workedSet = new Set(att.filter(a => a.check_in).map(a => a.work_date));
-    const late = att.filter(a => a.late_min > 0);
+    const late = att.filter(a => a.check_in && a.late_min > 0);   // ★ 21 ก.ย. 69 — เฉพาะแถวที่สแกนจริง (ฐานเดียวกับหน้าคะแนน)
     const late_count = late.length, late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
     const otWhole = await getSettingBool('ot_whole_day');
     const ot_hours = Math.round(att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
@@ -6160,16 +6226,17 @@
     const early_out_hours = Math.round((earlyRows.reduce((s, a) => s + (a.early_out_min || 0), 0) / 60) * 10) / 10;
 
     // ★ 20 ก.ย. 69 — ตัดเวร "เพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีคนมาลงเวลาออก (ดูคำอธิบายหัวไฟล์)
-    const schMap = {}; (schR.data || []).forEach(s => {
-      if (!s.shift_id) return;
-      if (s.note === ADHOC_SCHED_NOTE && !workedSet.has(s.work_date)) return;
-      schMap[s.work_date] = s.shift_id;
-    });
-    const pastSched = Object.keys(schMap).filter(d => d < today);
+    const _eRow = empR.data || {};
+    const _schOkES = (schR.data || []).filter(s => s.shift_id && !(s.note === ADHOC_SCHED_NOTE && !workedSet.has(s.work_date)));
+    const schMap = {}; _schOkES.forEach(s => { schMap[s.work_date] = s.shift_id; });
+    // ★ 21 ก.ย. 69 — ไม่นับเวรนอกช่วงการเป็นพนักงาน (เหมือนหน้าวินัย/คะแนน)
+    const pastSched = Object.keys(schMap).filter(d => d < today
+      && (!_eRow.start_date || d >= _eRow.start_date) && (!_eRow.end_date || d <= _eRow.end_date));
     // ★ ใช้ฐานเดียวกับหน้าวินัยเป๊ะ ๆ: มาทำงาน = ทุกวันที่มี check_in (รวมวันที่ไม่ได้จัดเวร เช่น ไปช่วยสาขาอื่น)
     const attDV = {}; att.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });   // ควบกะ: บวกทุกกะในวัน
     const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
-    const days_worked = Math.round([...workedSet].reduce((s, d) => s + (attDV[d] || 1), 0) * 10) / 10;
+    // ★ 21 ก.ย. 69 — วันทำงานกติกาเดียวกับเงินเดือน (รวมเครดิตควบกะ)
+    const days_worked = workDaysFor(att, _schOkES, dvOf, shiftHoursMap(shR.data), !!_eRow.is_manager).total;
     const absentDays = pastSched.filter(d => !workedSet.has(d) && !onLeave(d)).sort();
     const absent = Math.round(absentDays.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
     let leave_days = 0;
@@ -6370,9 +6437,9 @@
     // ★ กรองสาขา = กรองที่ "สาขาประจำของพนักงาน" เท่านั้น
     //   ห้ามกรอง attendance/schedules ด้วย branch_id ของแถว เพราะวันที่ไป "ทำแทนสาขาอื่น"
     //   แถวจะอยู่ที่สาขาปลายทาง → ถูกตัดทิ้ง ทำให้วันทำงานหาย/ตัวเลขเพี้ยน
-    const qEmpBase = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift').eq('active', true);
+    const qEmpBase = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift,start_date,end_date,is_manager').eq('active', true);
     const qEmp = branch ? qEmpBase.eq('branch_id', branch) : qEmpBase;
-    const qAtt = sb().from('attendance').select('emp_id,work_date,check_in,late_min,ot_hours,branch_id,shift_id,day_value').gte('work_date', start).lte('work_date', endEff);
+    const qAtt = sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,branch_id,shift_id,day_value').gte('work_date', start).lte('work_date', endEff);
     const qSch = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', start).lte('work_date', endEff);   // ★ note ไว้กรองเวรเฉพาะกิจ
     const qTask = sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id').gte('work_date', start).lte('work_date', end);
     const qShelf = sb().from('shelf_checks').select('emp_id,check_date,branch_id').gte('check_date', start).lte('check_date', end);
@@ -6381,7 +6448,7 @@
 
     const [empR, brR, shR, attR, schR, lvR, taskR, shelfR, handR, qaR, scR] = await Promise.all([
       qEmp, sb().from('branches').select('branch_id,name'),
-      sb().from('shifts').select('shift_id,name,day_value'),
+      sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
       qAtt, qSch,
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', end).gte('end_date', start),
       qTask, qShelf, qHand, qQa,
@@ -6399,6 +6466,10 @@
     const att = attR.data || [], sch = dropPhantomAdhoc(schR.data, workedKeySet(attR.data)), leaves = lvR.data || [];
     const tasks = taskR.data || [], shelfChk = shelfR.data || [], handovers = handR.data || [], qaItems = qaR.data || [];
     const otWhole = await getSettingBool('ot_whole_day');
+    // ★ 21 ก.ย. 69 — เกณฑ์ตักเตือนเดียวกับหน้าวินัย (สายรวม N นาที/รอบ หรือขาดงาน) · 0 = ปิดเกณฑ์นั้น
+    const _lateMinA = await getSettingNum('disc_late_min_total', 260);
+    const _absMinA = await getSettingNum('disc_absent_min', 1);
+    const _hrMapA = shiftHoursMap(shR.data);
 
     // จัดกลุ่มตาม emp
     const byEmp = {};
@@ -6418,24 +6489,27 @@
       const workedRows = g.att.filter(a => a.check_in);
       const workedSet = new Set(workedRows.map(a => a.work_date));
       const onLeave = d => g.leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
-      const lateRows = g.att.filter(a => (a.late_min || 0) > 0);
+      const lateRows = g.att.filter(a => a.check_in && (a.late_min || 0) > 0);   // ★ เฉพาะแถวที่สแกนจริง
       const late_count = lateRows.length;
       const late_total = lateRows.reduce((s, a) => s + (a.late_min || 0), 0);
       const ot_hours = Math.round(g.att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
 
       // ★ ถ่วงน้ำหนักวันด้วย day_value (กะครึ่งวัน = 0.5) ให้ตรงกับหน้ารายงาน/คะแนน
       const schMap = {}; g.sched.forEach(s => { schMap[s.work_date] = s.shift_id; });
-      const pastSched = Object.keys(schMap).filter(d => d < today);
+      // ★ 21 ก.ย. 69 — ไม่นับเวรนอกช่วงการเป็นพนักงาน + วันทำงานกติกาเดียวกับเงินเดือน (รวมเครดิตควบกะ)
+      const pastSched = Object.keys(schMap).filter(d => d < today
+        && (!e.start_date || d >= e.start_date) && (!e.end_date || d <= e.end_date));
       const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
-      const dvOfRow = a => (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id));
-      const days_worked = Math.round(workedRows.reduce((s, a) => s + dvOfRow(a), 0) * 10) / 10;
+      const days_worked = workDaysFor(g.att, g.sched, dvOf, _hrMapA, !!e.is_manager).total;
       const absent = Math.round(pastSched.filter(d => !workedSet.has(d) && !onLeave(d))
         .reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
 
-      // ★ ระดับวินัย = จากคะแนน (score_bands) ไม่ใช่เกณฑ์นับครั้งเดิม
+      // ★ 21 ก.ย. 69 — สถานะวินัย = เกณฑ์ตักเตือนเดียวกับหน้าวินัย ไม่ใช่แบนด์คะแนนอีกต่อไป
+      //   เดิมเอา warn_level ของแบนด์ → ขึ้น "ใบเตือนระดับ 1/2" ให้คนที่ไม่เคยได้ใบเตือนจริง
+      //   คะแนนยังส่งไปในช่อง score/band_label (ใช้ดูเบี้ยวินัย)
       const sc = scMap[e.emp_id] || {};
-      const level = sc.warn_level != null ? sc.warn_level
-        : (sc.action_type === 'verbal' ? 1 : sc.action_type === 'written' ? 2 : 0);
+      const _breach = (_lateMinA > 0 && late_total >= _lateMinA) || (_absMinA > 0 && absent >= _absMinA);
+      const level = _breach ? 1 : 0;
 
       const t_total = g.tasks.length;
       const t_approved = g.tasks.filter(t => t.status === 'approved').length;
@@ -6447,7 +6521,7 @@
         branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '—',
         days_should, days_worked, late_count, late_total, absent, ot_hours,
         score: sc.score != null ? sc.score : null, band_label: sc.band_label || '',
-        level, level_name: sc.warn_name || sc.band_label || 'ปกติ', level_color: sc.band_color || '#16a34a',
+        level, level_name: _breach ? 'เข้าเกณฑ์ตักเตือน' : 'ปกติ', level_color: _breach ? '#d97706' : '#16a34a',
         task_total: t_total, task_approved: t_approved, pass_rate, sent_back,
         qa: g.qa, shelf: g.shelf, handover: g.handover,
       };
@@ -8773,7 +8847,7 @@
     (attR.data || []).forEach(a => {
       if (!a.check_in || !a.check_out) return;
       const h = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000;
-      if (h > 0 && h < 26) _actHrPR[a.emp_id + '|' + a.work_date] = h;
+      if (h > 0 && h < 26) { const _k = a.emp_id + '|' + a.work_date; _actHrPR[_k] = Math.max(_actHrPR[_k] || 0, h); }   // ★ ใช้ค่าสูงสุดของวัน (เหมือน workDaysFor) ไม่ใช่แถวสุดท้าย
     });
     const dualWarnBy = {};   // ธงเตือน: วันที่จัดควบแต่ชั่วโมงจริงไม่ถึงเกณฑ์
     const _dualHrPR = {};    // เก็บชั่วโมงไว้โชว์ในหน้าตรวจ
