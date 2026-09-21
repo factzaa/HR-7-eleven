@@ -3283,16 +3283,24 @@
     const { data: asg }=await sb.from('shelf_assignments').select('*').eq('emp_id', empId).eq('month', month);
     const rowsA=asg||[]; if(!rowsA.length) return { emp, month, rows:[] };
     const ids=[...new Set(rowsA.map(a=>a.shelf_id))];
-    const [shR, ckR]=await Promise.all([
+    // ★ 22 ก.ย. 69 — ประวัติการตรวจของเชลฟ์นั้น "ของทุกคน" (ก่อนวันนี้ · 30 วัน · สูงสุด 5 ครั้ง/เชลฟ์) ให้คนถัดไปทำต่อได้ถูก
+    const since30=new Date(new Date(today+'T00:00:00').getTime()-30*86400000).toISOString().slice(0,10);
+    const [shR, ckR, hsR]=await Promise.all([
       sb.from('shelves').select('*').in('id', ids),
       sb.from('shelf_checks').select('*').eq('emp_id', empId).eq('check_date', today).in('shelf_id', ids),
+      sb.from('shelf_checks').select('shelf_id,emp_id,check_date,status,note,review_note,items').in('shelf_id', ids).lt('check_date', today).gte('check_date', since30).order('check_date',{ascending:false}).limit(ids.length*8),
     ]);
     const shBy={}; (shR.data||[]).forEach(s=>{ shBy[s.id]=s; });
     const ckBy={}; (ckR.data||[]).forEach(c=>{ ckBy[c.shelf_id]=c; });
+    const hsBy={}; const hsEmp=new Set();
+    (hsR.data||[]).forEach(h=>{ const a=hsBy[h.shelf_id]||(hsBy[h.shelf_id]=[]); if(a.length<5){ a.push(h); if(h.emp_id) hsEmp.add(h.emp_id); } });
+    const hsNm={};
+    if(hsEmp.size){ try{ const { data: es }=await sb.from('employees').select('emp_id,name,nickname').in('emp_id',[...hsEmp]); (es||[]).forEach(e=>{ hsNm[e.emp_id]=e.nickname||e.name||e.emp_id; }); }catch(_e){} }
     const DEF_CL=['ทำความสะอาดเชลฟ์เรียบร้อย','จัดเรียงสินค้าหน้าตรง เต็มชั้น','FIFO — สินค้าตรงป้ายราคา','ตรวจวันหมดอายุครบทุกแถว'];
     const rows=rowsA.map(a=>{ const s=shBy[a.shelf_id]||{}; const cl=(Array.isArray(s.checklist)&&s.checklist.length)?s.checklist:DEF_CL; return {
       assignment_id:a.id, shelf_id:a.shelf_id, shelf_code:s.shelf_code||'', name:s.name||('#'+a.shelf_id),
-      branch_id:a.branch_id||s.branch_id||null, detail:a.detail||'', checklist:cl, today_check:ckBy[a.shelf_id]||null };
+      branch_id:a.branch_id||s.branch_id||null, detail:a.detail||'', checklist:cl, today_check:ckBy[a.shelf_id]||null,
+      history:(hsBy[a.shelf_id]||[]).slice().reverse().map(h=>{ const it=Array.isArray(h.items)?h.items:[]; return { check_date:h.check_date, emp_name:hsNm[h.emp_id]||h.emp_id||'', status:h.status||'submitted', note:h.note||'', review_note:h.review_note||'', done:it.filter(x=>x&&x.done).length, total:it.length }; }) };
     }).sort((x,y)=>(x.name>y.name?1:-1));
     return { emp, month, today, rows };
   }
@@ -3303,6 +3311,8 @@
     const { data: asg }=await sb.from('shelf_assignments').select('id').eq('emp_id', empId).eq('shelf_id', shelf_id).eq('month', month).limit(1);
     if(!asg||!asg.length) throw new Error('เชลฟ์นี้ไม่ได้อยู่ในความรับผิดชอบของคุณเดือนนี้');
     if(!(photos&&photos.length)) throw new Error('กรุณาแนบรูปถ่ายอย่างน้อย 1 รูป');
+    // ★ 22 ก.ย. 69 — บังคับบันทึก "ทำถึงไหน / เหลืออะไร" ให้คนถัดไปทำต่อได้
+    if(String(note||'').trim().length<5) throw new Error('กรุณาเขียนบันทึกว่าทำถึงไหน / เหลืออะไร (อย่างน้อย 5 ตัวอักษร)');
     const items2=(Array.isArray(items)?items:[]).map(it=>({ label:String(it.label||'').slice(0,120), done:!!it.done }));
     const urls=[];
     for(const p of (photos||[])){ if(p) urls.push(await uploadPhoto('employee-docs','shelf/'+(emp.branch_id||'x')+'_'+shelf_id+'_'+today+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
