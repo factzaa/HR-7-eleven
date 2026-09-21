@@ -3568,7 +3568,10 @@
   async function reviewLoad(which, branch) {
     const cyc = reviewCycleRange(which);
     const today = bangkokDate(); const endEff = cyc.end < today ? cyc.end : today;
-    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id,end_date,start_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id');
+    // ★ 21 ก.ย. 69 — รวมคนที่ปิดใช้งานแล้วแต่ยังทำงานในรอบนี้ (ลาออกกลางรอบ) — รอบนั้นยังต้องจ่ายเงินเดือน
+    //   เดิม .eq('active', true) → รอบ 21/08–20/09 หายไป 10 คน (ปอย 14 วัน · ฟาง 16 · แตงโม 12 · ทิว 9 · ใบปอ 8 ฯลฯ)
+    //   ใช้เงื่อนไขเดียวกับเงินเดือนฝั่ง HR (hrPayrollRun): ยังเป็นพนักงาน หรือ วันสิ้นสุด ≥ วันเริ่มรอบ
+    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id,end_date,start_date,is_manager,active').or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id');
     if (branch) empQ = empQ.eq('branch_id', branch);
     const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR, ctrlR] = await Promise.all([
       empQ,
@@ -3632,7 +3635,7 @@
     (seR.data || []).forEach(e => (evBy[e.emp_id] || (evBy[e.emp_id] = [])).push(e));
     const advBy = {}; (advR.data || []).forEach(r => { if (r.defer_rounds && Number(r.defer_rounds) > 0) return; const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0; advBy[r.emp_id] = (advBy[r.emp_id] || 0) + amt; });
     const rvM = {}; (rvR.data || []).forEach(r => rvM[r.emp_id] = r);
-    const rows = (empR.data || []).map(e => {
+    const rows = (empR.data || []).filter(e => e.active !== false || e.end_date || (attBy[e.emp_id] || []).some(a => a.check_in)).map(e => {
       const att = attBy[e.emp_id] || [];
       const worked = new Set(att.filter(a => a.check_in).map(a => a.work_date));
       const myLeaves = lvBy[e.emp_id] || [];
@@ -3670,6 +3673,7 @@
       }
       return {
         emp_id: e.emp_id, name: e.name, nickname: e.nickname, branch_id: e.branch_id, branch_name: brName[e.branch_id] || '',
+        ended: e.active === false || !!(e.end_date && String(e.end_date) <= cyc.end), end_date: e.end_date || null,   // ★ ลาออก/ปิดใช้งาน (ยังต้องจ่ายรอบนี้)
         att_days: attDays, att_ot: attOT, late_count, absent, leave_days, dil_ok, dil_note, below_min, dil_off: rv.dil_off === true,
         score, band, band_color: bandColor, auto_advance: advBy[e.emp_id] || 0,
         auto_shift_allowance: shiftAllowBy[e.emp_id] || 0, shift_allowance_override: rv.shift_allowance_override,

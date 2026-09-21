@@ -2708,7 +2708,9 @@
     // โหมดรายวัน
     const date = p.date || bkkToday(); const branch = p.branch || '';
     const [empsR, schR, attR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,nickname,branch_id,default_shift').eq('active', true),
+      // ★ 21 ก.ย. 69 — รวมคนที่ปิดใช้งานแล้วด้วย (ลาออกกลางรอบยังต้องแก้เวลาย้อนหลังได้ · เงินเดือนรอบนั้นยังต้องจ่าย)
+      //   เวรของคนที่ปิดใช้งาน โชว์เฉพาะวันที่ยังเป็นพนักงาน (≤ end_date) · แถวลงเวลาโชว์เสมอ
+      sb().from('employees').select('emp_id,name,nickname,branch_id,default_shift,active,end_date'),
       sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', date),
       sb().from('attendance').select('*').eq('work_date', date),
     ]);
@@ -2718,14 +2720,16 @@
     // จากตารางเวรของวันนั้น (กรองสาขา)
     (schR.data || []).forEach(s => {
       if (branch && String(s.branch_id) !== String(branch)) return;
-      const e = empBy[s.emp_id]; if (!e) return; if (seen.has(s.emp_id)) return; seen.add(s.emp_id);
-      rows.push(mkRow(attBy[s.emp_id] || null, { emp_id: s.emp_id, name: e.nickname || e.name, work_date: date, shift_id: s.shift_id }));
+      const e = empBy[s.emp_id]; if (!e) return; if (seen.has(s.emp_id)) return;
+      if (e.active === false && !attBy[s.emp_id] && (!e.end_date || String(e.end_date) < date)) return;   // ปิดใช้งาน + เลยวันสิ้นสุด + ไม่มีลงเวลา
+      seen.add(s.emp_id);
+      rows.push(mkRow(attBy[s.emp_id] || null, { emp_id: s.emp_id, name: (e.nickname || e.name) + (e.active === false ? ' (ปิดใช้งาน)' : ''), work_date: date, shift_id: s.shift_id }));
     });
     // คนที่ลงเวลาแต่ไม่มีในตารางเวร (มาแทน/ลืมจัด)
     (attR.data || []).forEach(a => {
       if (seen.has(a.emp_id)) return; const e = empBy[a.emp_id]; if (!e) return;
       if (branch && String(a.branch_id || e.branch_id) !== String(branch)) return;
-      seen.add(a.emp_id); rows.push(mkRow(a, { emp_id: a.emp_id, name: e.nickname || e.name, work_date: date }));
+      seen.add(a.emp_id); rows.push(mkRow(a, { emp_id: a.emp_id, name: (e.nickname || e.name) + (e.active === false ? ' (ปิดใช้งาน)' : ''), work_date: date }));
     });
     rows.sort((x, y) => String(x.shift_id).localeCompare(String(y.shift_id)) || String(x.emp_name).localeCompare(String(y.emp_name)));
     return { ok: true, mode: 'daily', date, rows };
@@ -3751,7 +3755,10 @@
       sb().from('score_config').select('*').eq('id', 1).maybeSingle(),
       sb().from('score_rules').select('*').order('sort'),
       sb().from('score_bands').select('*').order('sort'),
-      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,start_date,end_date,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
+      // ★ 21 ก.ย. 69 — เอาคนที่ปิดใช้งานแล้วแต่ยังทำงานอยู่ในรอบนี้ด้วย (ลาออกกลางรอบ)
+      //   เดิม .eq('active', true) → คนลาออกหายจากคะแนน → หน้าเงินเดือน HR ได้เบี้ยวินัย 0 / สถิติว่าง ทั้งที่รอบนั้นยังต้องจ่าย
+      //   (หน้าคะแนน/วินัยซ่อนคนที่ ended อยู่แล้ว ไม่รก)
+      sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,start_date,end_date,is_manager,active').or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
       sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -3782,7 +3789,8 @@
     const _hrMapSC = shiftHoursMap(shR.data);            // ★ ชั่วโมงต่อกะ (เช็กควบกะจริง 75%)
     const _schOkByEmpSC = groupByEmp(_schOkSC);         // ★ ตารางเวรที่กรองเฉพาะกิจแล้ว แยกรายคน
 
-    const employees = (empsR.data || []).map(e => {
+    const _workedSC = new Set(att.filter(a => a.check_in).map(a => a.emp_id));
+    const employees = (empsR.data || []).filter(e => e.active !== false || e.end_date || _workedSC.has(e.emp_id)).map(e => {
       const myAtt = att.filter(a => a.emp_id === e.emp_id && a.check_in);
       const myLeaves = leaves.filter(l => l.emp_id === e.emp_id);
       const onLeave = d => myLeaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
