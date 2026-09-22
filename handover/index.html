@@ -892,7 +892,7 @@ async function openLeaderPanel(){
           +'<circle cx="12" cy="12" r="8.5"/><path d="M6.2 6.2l11.6 11.6"/></svg></button>';
     }
     let body='<div style="font-weight:600;margin-bottom:6px'+(_corner?';padding-right:28px':'')+'">'+esc(d.title)+(d.mgr_owner?' <span class="pill" style="background:#fef3c7;color:#92400e;font-weight:700">ผจก.</span>':'')+(d.require_photo?' <span class="pill muted2"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>':'')+'</div>';
-    if(a){ const s=ST(a.status); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
+    if(a){ const s=STa(a); body+='<div style="margin-bottom:6px"><span class="pill '+s[1]+'">'+s[0]+'</span> <span class="muted">'+esc(a.emp_name||a.emp_id)+'</span></div>'; }
     // ★ งานที่ปิดเพราะทำไม่ได้ — โชว์เหตุผทและปุ่มเปิดกลับ
     if(a && a.status==='closed'){
       body+='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:12.5px;line-height:1.6">'
@@ -1129,7 +1129,7 @@ async function openM2(){
   // สถานะทีม
   html+='<h3 class="sec">สถานะทีมในผลัด</h3>';
   if(!r.team.length) html+='<div class="muted" style="padding:4px 2px">ยังไม่มีการมอบหมาย</div>';
-  else html+='<div class="card">'+r.team.map(a=>{const s=ST(a.status);return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)"><div style="flex:1;font-size:13.5px">'+esc(a.title)+' <span class="muted">· '+esc(a.emp_name||a.emp_id)+'</span></div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';}).join('')+'</div>';
+  else html+='<div class="card">'+r.team.map(a=>{const s=STa(a);return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)"><div style="flex:1;font-size:13.5px">'+esc(a.title)+' <span class="muted">· '+esc(a.emp_name||a.emp_id)+'</span></div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';}).join('')+'</div>';
   } else {
     // วันนี้ไม่มีกะ — ยังเห็นงานพิเศษได้
     html+='<h3 class="sec">งานของฉัน (ตามกะ)</h3><div class="card muted">'+esc(shiftErr||'วันนี้ยังไม่มีข้อมูลกะของคุณ')+'</div>';
@@ -1209,7 +1209,7 @@ function renderSpecialHTML(rows){
   if(!rows||!rows.length) return '';
   let h='<h3 class="sec"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> งานพิเศษจากผู้จัดการ</h3>';
   h+=rows.map(a=>{
-    const s=spST(a.status); const canDo=(a.status==='todo'||a.status==='sent_back');
+    const s=AUTO_OK(a)?['ทำเสร็จแล้ว','ok']:spST(a.status); const canDo=(a.status==='todo'||a.status==='sent_back');
     let c='<div class="card" style="border-left:3px solid var(--green)"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:700;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     if(a.detail) c+='<div style="font-size:13.5px;margin-bottom:4px;white-space:pre-wrap">'+esc(a.detail)+'</div>';
     c+=fmtDeadline(a.deadline);
@@ -1834,7 +1834,7 @@ async function loadReport(){
   const groups={}; r.rows.forEach(a=>{ (groups[a.shift_id||'']=groups[a.shift_id||'']||[]).push(a); });
   let html=''; Object.keys(groups).sort((a,b)=>order.indexOf(a)-order.indexOf(b)).forEach(k=>{
     html+='<h3 class="sec">กะ '+esc(shName[k]||k||'-')+'</h3>';
-    html+=groups[k].map(a=>{ const s=ST(a.status);
+    html+=groups[k].map(a=>{ const s=STa(a);
       return '<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>'
         +'<div class="muted">ผู้ทำ: '+esc(a.emp_name||a.emp_id||'—')+(a.submitted_at?(' · ส่ง '+fmt(a.submitted_at)):'')+'</div>'
         +'<div class="muted">ตรวจโดย: '+esc(a.reviewer||'—')+(a.reviewed_at?(' · '+fmt(a.reviewed_at)):'')+'</div>'
