@@ -1781,6 +1781,38 @@
       const body={ kind:'staff_done_check', branch_id:branch }; if(shift_id) body.shift_id=shift_id;   // ระบุผลัด → แจ้งเสร็จครบ "รายผลัด" (การ์ดจะบอกผลัดด้วย)
       fetch(base+'/functions/v1/staff-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }catch(e){}
   }
+  // ★ 23 ก.ย. 2569 — ดึงงานที่ส่งไปแล้วกลับมาแก้เอง (เคสส่งผิดหัวข้อ/ส่งผิดรูป)
+  //   เงื่อนไข: งานของตัวเอง · ยังไม่มีใครตรวจ (ผลัดถัดไป/ผจก.) · ผลัดยังไม่กดส่งผลัด
+  //   รูปและหมายเหตุเดิมยังอยู่ ให้แก้แล้วส่งใหม่ได้ · นับจำนวนครั้งไว้ให้ HR/ผจก. เห็น
+  async function unsubmitTask({ id, empId }){
+    if (!empId) throw new Error('ต้องระบุรหัสพนักงาน');
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const row = (await sb.from('task_assignments').select('*').eq('id', id).maybeSingle()).data;
+    if (!row) throw new Error('ไม่พบงานนี้');
+    if (String(row.emp_id) !== String(emp.emp_id)) throw new Error('ดึงกลับได้เฉพาะงานของตัวเอง');
+    if (row.status !== 'submitted') throw new Error(row.status === 'approved'
+      ? 'งานนี้ถูกตรวจผ่านไปแล้ว — ให้หัวหน้าผลัดหรือ ผจก. ตีกลับให้'
+      : 'งานนี้ยังไม่ได้ส่ง หรือดึงกลับไม่ได้แล้ว');
+    if (row.reviewed_at || row.reviewer || row.checked_at || row.mgr_checked_at)
+      throw new Error('งานนี้มีผู้ตรวจแล้ว ดึงกลับไม่ได้ — ให้ผู้ตรวจตีกลับแทน');
+    const sub = (await sb.from('shift_submits').select('id')
+      .eq('work_date', row.work_date).eq('branch_id', row.branch_id || '').eq('shift_id', row.shift_id || '').maybeSingle()).data;
+    if (sub) throw new Error('ผลัดนี้กดส่งผลัดไปแล้ว — ให้หัวหน้าผลัดหรือ ผจก. ตีกลับแทน');
+    const upd = { status: 'todo', submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
+    const n = (Number(row.pull_count) || 0) + 1;
+    const extra = { pull_count: n, pulled_at: new Date().toISOString(), pulled_by: emp.nickname || emp.name || emp.emp_id };
+    let { error } = await sb.from('task_assignments').update({ ...upd, ...extra }).eq('id', id).eq('status', 'submitted');
+    if (error && /pull_count|pulled_at|pulled_by|column/i.test(String(error.message || ''))) {   // ยังไม่ได้รัน SQL เพิ่มคอลัมน์ → ดึงกลับได้ แต่ไม่นับครั้ง
+      const r2 = await sb.from('task_assignments').update(upd).eq('id', id).eq('status', 'submitted');
+      error = r2.error;
+    }
+    if (error) throw error;
+    try{ await sb.from('activity_log').insert({ action: 'ดึงงานกลับมาแก้', emp_id: emp.emp_id,
+      actor: emp.nickname || emp.name || '',
+      detail: (row.title || 'งาน') + ' · สาขา ' + (row.branch_id || '-') + ' · กะ ' + (row.shift_id || '-') + ' · ครั้งที่ ' + n }); }catch(e){}
+    return { ok: true, pull_count: n };
+  }
+
   // (ผู้ตรวจหน้างาน) งานที่ส่งแล้วของสาขานี้วันนี้ — ไว้ตรวจ/ตีกลับ
   async function getBranchTasks(branchId) {
     if (!branchId) return [];
@@ -4044,6 +4076,6 @@
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
-    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
