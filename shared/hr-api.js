@@ -4151,7 +4151,14 @@
     return { ok: true, rows };
   }
   // ========== ตัวแยกยอดขาย + ตัวจัดหมวดข้อความไลน์ ==========
-  const _snum = s => { const t = String(s).replace(/[, ]/g, '').replace(/%/g, ''); const v = parseFloat(t); return isNaN(v) ? null : v; };
+  // ★ 22 ก.ย. 2569: รองรับเลขที่พิมพ์ผิดรูปแบบ — "17,851,74" (จุลภาคแทนจุดทศนิยม) → 17851.74 · "21.052" (จุดแทนจุลภาค) → 21052
+  const _snum = s => { let t = String(s).replace(/\s/g, '').replace(/%/g, '');
+    if (/^\d{1,3}(,\d{3})+,\d{2}$/.test(t)) t = t.replace(/,(\d{2})$/, '.$1');
+    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    t = t.replace(/,/g, ''); const v = parseFloat(t); return isNaN(v) ? null : v; };
+  // ยอดรวมต้องใกล้เคียง สินค้า+บัตร — ถ้าห่างเกิน 3 เท่า (เช่นพิมพ์ "1,528705") ใช้ สินค้า+บัตร แทน และเก็บเลขเดิมไว้ใน extra.total_raw
+  function _salesSanity(s) { const pc = (+s.sales_product || 0) + (+s.sales_card || 0); const st = s.sales_total;
+    if (pc > 0 && st != null && (st > pc * 3 || st < pc / 3)) { s.extra = s.extra || {}; s.extra.total_raw = st; s.sales_total = Math.round(pc * 100) / 100; } }
   function _stripLabel(l) { return String(l).replace(/^[\s\d]+[.．)]\s*/, '').replace(/[\u{1F000}-\u{1FAFF}]/gu, '').replace(/[《》「」\[\]☀-➿️🌅🌆🌇🥇🥈🥉]/gu, '').trim(); }
   function _isShift(l) { const s = _stripLabel(l).replace(/\s/g, ''); if (/สิ้นวัน|สิ้นสุดวัน|ปิดยอด/.test(s)) return 'สิ้นวัน'; if (/ผลัดเช้า/.test(s)) return 'เช้า'; if (/ผลัดบ่าย/.test(s)) return 'บ่าย'; if (/ผลัด(ดึก|กลางคืน)/.test(s)) return 'ดึก'; return null; }
   function _salesAssign(o, label, valPart) {
@@ -4191,7 +4198,7 @@
     }
     // เก็บเฉพาะผลัดที่มีตัวเลขยอดขาย/เป้าจริง + ถ้าไม่มี "ยอดรวม" ให้ใช้ยอดขายสินค้าเป็นยอดรวม (เช่นสาขา 8747)
     const rows = Object.values(shifts).filter(s => s.sales_total != null || s.sales_product != null || s.target_total != null);
-    rows.forEach(s => { if (s.sales_total == null && s.sales_product != null) s.sales_total = s.sales_product; });
+    rows.forEach(s => { if (s.sales_total == null && s.sales_product != null) s.sales_total = s.sales_product; _salesSanity(s); });
     return rows;
   }
   // ทำแถวยอดขายให้มี "คอลัมน์ครบเท่ากันทุกแถว" (เติม null) — จำเป็นสำหรับ batch upsert ของ PostgREST
