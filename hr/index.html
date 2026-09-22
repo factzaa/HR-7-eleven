@@ -7503,50 +7503,145 @@ function anLineChart(s){
     +dots+xl+'</svg>';
 }
 function renderAnalytics(){
-  const a=ANALYTICS, k=a.kpis;
-  const kpi=(lbl,val,cls,sub)=>`<div class="kpi ${cls||''}"><div class="lbl">${lbl}</div><div class="val">${val}</div>${sub?`<div class="delta">${sub}</div>`:''}</div>`;
-  let html='<div class="kpi-grid">'
-    +kpi('พนักงาน', k.total_emp)
-    +kpi('วันทำงานรวม', k.worked_days)
-    +kpi('มาสาย', k.late_count+'<span class="sm"> ครั้ง</span>', k.late_count?'warn':'', 'รวม '+k.late_total+' นาที')
-    +kpi('ขาดงาน', k.absent+'<span class="sm"> วัน</span>', k.absent?'bad':'ok')
-    +kpi('OT รวม', (k.ot_hours||0)+'<span class="sm"> ชม</span>')
-    +kpi('งานในกะ', k.task_approved+'/'+k.task_total, '', 'ตีกลับ '+k.sent_back+' ครั้ง')
-    +kpi('งานผ่านเฉลี่ย', (k.avg_pass_rate==null?'—':k.avg_pass_rate+'%'), (k.avg_pass_rate!=null&&k.avg_pass_rate>=90?'ok':(k.avg_pass_rate!=null&&k.avg_pass_rate<70?'bad':'')))
-    +kpi('เสี่ยงใบเตือน', k.at_risk+'<span class="sm"> คน</span>', k.at_risk?'bad':'ok')
+  const a=ANALYTICS, k=a.kpis, pv=a.prev||null, ex=a.extra||{};
+  const f=n=>Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:0});
+  const f1=n=>Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:1});
+  const pct=(x,y)=>y?Math.round(x/y*1000)/10:0;
+  // ★ 23 ก.ย. 2569 — ออกแบบใหม่: ตัวเลขต้องมีบริบท (เทียบกับอะไร) + แยก "งานที่มีคนตรวจ" ออกจาก "ผ่านอัตโนมัติ"
+  const trend=(now,before,goodDown)=>{
+    if(before==null||!before) return '';
+    const p=Math.round((now-before)/before*100); if(!isFinite(p)) return '';
+    const bad=(p>0)===!!goodDown;
+    const col=p===0?'var(--muted)':(bad?'var(--red)':'var(--ok)');
+    return '<span style="font-size:11.5px;font-weight:600;color:'+col+'">'+(p>0?'▲':p<0?'▼':'•')+' '+Math.abs(p)+'% เทียบรอบก่อน</span>';
+  };
+  const box=(lbl,val,sub,col)=>'<div class="card"><div class="card-b" style="padding:12px 14px">'
+    +'<div style="font-size:12px;color:var(--muted)">'+lbl+'</div>'
+    +'<div style="font-size:24px;font-weight:800;margin-top:1px;line-height:1.2'+(col?(';color:'+col):'')+'">'+val+'</div>'
+    +(sub?'<div style="font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.55">'+sub+'</div>':'')+'</div></div>';
+  const G='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px">';
+  const wr=a.worked_rows||0;
+  const sm=' <span style="font-size:13px;font-weight:500;color:var(--muted)">';
+
+  let html='<div style="background:var(--green-soft);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:12px">'
+    +'พนักงาน <b>'+f(k.total_emp)+' คน</b> · เวรทั้งหมด <b>'+f1(k.days_should)+' วัน</b> · มาทำงานจริง <b>'+f1(k.worked_days)+' วัน</b>'
+    +(k.no_sched?(' · <span style="color:var(--orange)">'+k.no_sched+' คนไม่มีเวรในรอบนี้ (ไม่ถูกนำมาคิดเฉลี่ย)</span>'):'')
+    +(pv?(' · เทียบกับรอบก่อน '+esc(beDate(pv.start))+' – '+esc(beDate(pv.end))):'')+'</div>';
+
+  // ---------- กลุ่มที่ 1: คนและเวลา ----------
+  html+='<div class="an-sec" style="margin-top:2px">คน &amp; เวลาทำงาน</div>'+G
+    +box('วันทำงานรวม', f1(k.worked_days)+sm+'วัน</span>',
+         'เฉลี่ย '+f1(k.total_emp?k.worked_days/k.total_emp:0)+' วัน/คน · กะครึ่งวันนับ 0.5<br>'+trend(wr,pv&&pv.worked,false))
+    +box('มาสาย', f(k.late_count)+sm+'ครั้ง</span>',
+         'รวม '+f(k.late_total)+' นาที ('+f1(k.late_total/60)+' ชม.) · เฉลี่ย '+f(k.late_count?k.late_total/k.late_count:0)+' นาที/ครั้ง<br>'
+         +'คิดเป็น '+pct(k.late_count,wr)+'% ของเวรที่มาทำงาน '+trend(k.late_total,pv&&pv.late_total,true), 'var(--orange)')
+    +box('ขาดงาน', f1(k.absent)+sm+'วัน</span>',
+         pct(k.absent,k.days_should)+'% ของเวรทั้งหมด<br>'+trend(k.absent,pv&&pv.absent,true), k.absent?'var(--red)':'var(--ok)')
+    +box('OT รวม', f1(k.ot_hours)+sm+'ชม.</span>',
+         (k.ot_whole_setting?('นับเฉพาะชั่วโมงเต็มตามที่ตั้งค่าไว้<br>ชั่วโมงที่บันทึกจริง '+f1(k.ot_real)+' ชม.'):'ชั่วโมงที่บันทึกจริง'))
+    +box('เข้าเกณฑ์ตักเตือน', f(k.at_risk)+sm+'คน</span>',
+         'เกณฑ์: สายรวม ≥ '+f(k.rule_late_min)+' นาที/รอบ หรือขาดงาน ≥ '+f1(k.rule_absent_min)+' วัน', k.at_risk?'var(--red)':'var(--ok)')
     +'</div>';
 
-  // ----- แนวโน้มรายวัน -----
-  const s=a.series||[]; const maxP=Math.max(1,...s.map(d=>d.present));
-  html+='<div class="card an-chartcard" style="margin-bottom:12px"><div class="card-h"><h3>แนวโน้มรายวัน — มาทำงาน / มาสาย</h3></div><div class="card-b">';
-  if(s.length){
-    html+=anLineChart(s)
-    +'<div class="chart-legend"><span><i style="background:var(--green)"></i>มาตรงเวลา</span><span><i style="background:var(--red)"></i>มาสาย</span></div>';
-  } else html+='<div class="empty">— ไม่มีข้อมูลในช่วงนี้ —</div>';
-  html+='</div></div>';
+  // ---------- กลุ่มที่ 2: งานในกะ ----------
+  const tt=k.task_total||0, au=k.task_auto||0, ck=k.task_checked||0;
+  html+='<div class="an-sec">งานในกะ &amp; การตรวจงาน</div>'+G
+    +box('งานในกะทั้งหมด', f(tt)+sm+'งาน</span>',
+         (k.task_open?('ยังไม่จบ '+f(k.task_open)+' งาน · '):'')+'เฉลี่ย '+f(tt/Math.max(1,(a.series||[]).length))+' งาน/วัน<br>'+trend(tt,pv&&pv.tasks,false))
+    +box('มีคนตรวจจริง', (tt?Math.round(ck/tt*100):0)+'%', f(ck)+' งาน — ผลัดถัดไปกดผ่าน/ตีกลับเอง', 'var(--ok)')
+    +box('ผ่านอัตโนมัติ', (tt?Math.round(au/tt*100):0)+'%', f(au)+' งาน — ตั้งค่าไว้ว่าไม่ต้องตรวจ ไม่มีใครดูรูป', au?'var(--orange)':'var(--muted)')
+    +box('ตีกลับให้แก้', f(k.sent_back)+sm+'ครั้ง</span>', 'ผจก. ตรวจซ้ำ '+f(k.task_mgr)+' งาน ('+(tt?Math.round(k.task_mgr/tt*100):0)+'% ของงานทั้งหมด)')
+    +'</div>';
 
-  // ----- เทียบสาขา (ถ้ามีมากกว่า 1 สาขา) -----
+  // ---------- กราฟรายวัน ----------
+  const s=a.series||[];
+  html+='<div class="card" style="margin-bottom:12px"><div class="card-h"><h3>มาทำงาน / สาย / ขาด รายวัน</h3></div><div class="card-b">'
+    +(s.length?(anDailyBars(s)
+      +'<div class="chart-legend" style="flex-wrap:wrap"><span><i style="background:#cfe0d7"></i>มาทำงาน</span><span><i style="background:var(--orange)"></i>ในนั้นมาสาย</span><span><i style="background:#b45309"></i>เส้น = % คนสายของวัน</span><span><i style="background:var(--red);border-radius:50%"></i>จุดล่าง = คนขาดงาน</span></div>')
+      :'<div class="empty">— ไม่มีข้อมูลในช่วงนี้ —</div>')
+    +'</div></div>';
+
+  // ---------- เทียบสาขา ----------
   const br=a.branches||[];
   if(br.length>1){
-    const maxL=Math.max(1,...br.map(b=>b.late_total));
-    html+='<div class="card" style="margin-bottom:12px"><div class="card-h"><h3>เทียบสาขา (เรียงตามนาทีสายรวม)</h3></div><div class="card-b">'
-      +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">แถบยิ่งยาว = สายรวมมากกว่า · <b>งานผ่านตรวจ%</b> = สัดส่วนงานที่ตรวจแล้วผ่าน</div>'
-      +br.map(b=>'<div class="an-brrow"><div class="nm">'+esc(b.branch_name)+'</div>'
-        +'<div class="bar"><i style="width:'+Math.round(b.late_total/maxL*100)+'%"></i></div>'
-        +'<div class="stat">มาสาย '+b.late_total+' นาที · ขาดงาน '+b.absent+' วัน · OT '+b.ot+' ชม. · งานผ่านตรวจ '+(b.pass_rate==null?'—':b.pass_rate+'%')+'</div></div>').join('')
-      +'</div></div>';
+    const maxL=Math.max(1,...br.map(b=>b.late_per_day||0));
+    html+='<div class="card" style="margin-bottom:12px"><div class="card-h"><h3>เทียบสาขา <span style="font-weight:400;color:var(--muted);font-size:12px">· เรียงตามนาทีสายต่อวันทำงาน</span></h3></div>'
+      +'<div class="tablewrap"><table style="font-size:12.5px"><thead><tr><th>สาขา</th><th class="num">คน</th><th class="num">วันทำงาน</th><th class="num">สาย (ครั้ง)</th><th class="num">นาทีสาย/วันทำงาน</th><th class="num">ขาด</th><th class="num">OT</th><th class="num">งานในกะ</th><th class="num">ผ่านอัตโนมัติ</th><th class="num">ตีกลับ</th></tr></thead><tbody>'
+      +br.map(b=>'<tr><td>'+esc(b.branch_name)+' <span class="muted" style="font-size:11.5px">'+esc(b.branch_id)+'</span></td>'
+        +'<td class="num">'+f(b.emp)+'</td><td class="num">'+f1(b.days_worked)+'</td><td class="num">'+f(b.late_count)+'</td>'
+        +'<td class="num"><span style="display:inline-block;height:7px;border-radius:4px;background:var(--orange);vertical-align:middle;width:'+Math.round((b.late_per_day||0)/maxL*46)+'px"></span> <b>'+f1(b.late_per_day)+'</b></td>'
+        +'<td class="num"'+(b.absent_pct>=3?' style="color:var(--red)"':'')+'>'+f1(b.absent)+' <span class="muted">('+f1(b.absent_pct)+'%)</span></td>'
+        +'<td class="num">'+f1(b.ot)+'</td><td class="num">'+f(b.task_total)+'</td>'
+        +'<td class="num"'+(b.auto_pct>=35?' style="color:var(--orange)"':'')+'>'+(b.auto_pct==null?'—':b.auto_pct+'%')+'</td>'
+        +'<td class="num">'+f(b.sent_back)+'</td></tr>').join('')
+      +'</tbody></table></div>'
+      +'<div class="card-b" style="padding-top:6px;font-size:11.5px;color:var(--muted)">อ่านยังไง: <b>นาทีสาย/วันทำงาน</b> เทียบกันได้แม้จำนวนคนต่างกัน · <b>ขาด %</b> คิดจากเวรทั้งหมดของสาขานั้น</div></div>';
   }
 
-  // ----- สกอร์บอร์ดรายคน -----
+  // ---------- คนที่ควรคุยก่อน ----------
+  const rk=(a.rows||[]).slice().sort((x,y)=>(y.late_total+y.absent*480)-(x.late_total+x.absent*480)).slice(0,8);
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:12px">'
+    +'<div class="card"><div class="card-h"><h3>คนที่ควรคุยก่อน <span style="font-weight:400;color:var(--muted);font-size:12px">· ขาดงาน 1 วัน = สาย 480 นาที</span></h3></div><div class="card-b" style="padding-top:4px">'
+    +(rk.length?rk.map(r=>{
+      const hit=r.level>=1;
+      const chip=(t,c,b2)=>'<span style="font-size:11.5px;border-radius:6px;padding:1px 7px;background:'+b2+';color:'+c+'">'+t+'</span>';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px">'
+        +'<b style="flex:1;cursor:pointer" onclick="anOpenEmp(\''+esc(r.emp_id)+'\')">'+esc(r.nickname||r.name)+' <span class="muted" style="font-weight:400;font-size:11.5px">· '+esc(r.branch_name)+'</span></b>'
+        +(r.absent?chip('ขาด '+f1(r.absent)+' วัน','#991b1b','var(--red-soft)'):'')
+        +chip('สาย '+f(r.late_count)+' ครั้ง · '+f(r.late_total)+' นาที','#92400e','var(--orange-soft)')
+        +chip(hit?'เข้าเกณฑ์ตักเตือน':'ยังไม่เข้าเกณฑ์',hit?'#991b1b':'#166534',hit?'var(--red-soft)':'var(--ok-soft)')
+        +'</div>';
+    }).join(''):'<div class="empty">ไม่มีใครสายหรือขาดในช่วงนี้</div>')
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แตะชื่อเพื่อเปิดประวัติรายคน</div></div></div>'
+  // ---------- จุดที่ข้อมูลอาจไม่ครบ ----------
+    +'<div class="card" style="border-color:var(--orange)"><div class="card-h"><h3>⚠️ จุดที่ข้อมูลอาจไม่ครบ</h3></div><div class="card-b" style="font-size:12.5px;line-height:1.7">'
+    +'<ul style="margin:0;padding-left:18px">'
+    +(k.absent?('<li>มีเวรที่ไม่มีใครมาลงเวลาและไม่มีใบลา <b>'+f1(k.absent)+' วัน</b> — ถ้าเป็นการสลับเวรที่ไม่ได้แก้ตาราง ให้แก้ที่หน้าตารางเวรก่อน</li>'):'')
+    +(au?('<li>งาน <b>'+f(au)+' งาน</b> ขึ้นผ่านทันทีที่ส่ง (ตั้งค่าไม่ต้องตรวจ) — ไม่ควรอ่านว่าเป็น "งานที่ผ่านการตรวจ"</li>'):'')
+    +(k.ot_whole_setting&&k.ot_real>k.ot_hours?('<li>OT แสดง '+f1(k.ot_hours)+' ชม. เพราะตั้งค่าให้นับเฉพาะชั่วโมงเต็ม · บันทึกจริง '+f1(k.ot_real)+' ชม. (ส่วนต่าง '+f1(k.ot_real-k.ot_hours)+' ชม. คือเศษนาที)</li>'):'')
+    +(k.no_sched?('<li>พนักงาน <b>'+k.no_sched+' คน</b> ไม่มีเวรในรอบนี้ (เข้าใหม่/ลาออกกลางรอบ) จึงไม่ถูกนำมาคิดค่าเฉลี่ย</li>'):'')
+    +(k.task_open?('<li>งาน <b>'+f(k.task_open)+' งาน</b> ยังไม่จบ (ยังไม่ส่ง/รอตรวจ/ถูกตีกลับ)</li>'):'')
+    +'</ul></div></div></div>';
+
+  // ---------- กิจกรรมอื่น ----------
+  html+='<div class="an-sec">กิจกรรมอื่นในรอบนี้</div>'+G
+    +box('ตรวจเชลฟ์', f(k.shelf)+sm+'ครั้ง</span>', 'เฉลี่ย '+f1(k.shelf/Math.max(1,(a.series||[]).length))+' ครั้ง/วัน')
+    +box('บันทึก QA', f(k.qa)+sm+'รายการ</span>', 'สินค้าใกล้หมดอายุที่บันทึกเข้าระบบ')
+    +box('หัวหน้าผลัดกดส่งผลัด', f(ex.shift_submits)+sm+'ผลัด</span>', 'นับเฉพาะผลัดที่กดยืนยันส่งในระบบ')
+    +box('รับสินค้าจากคลัง', f(ex.goods)+sm+'ใบ</span>', 'ลังเข้า '+f(ex.crates_in)+' · ลังคืน '+f(ex.crates_return))
+    +'</div>';
+
+  // ---------- สกอร์บอร์ด ----------
   html+='<div class="an-sec">สกอร์บอร์ดรายบุคคล — วินัย + ความรับผิดชอบงาน</div>'
     +'<div class="card"><div class="tablewrap"><table id="an_scoretbl"><thead><tr>'
     +anTh('รหัส','emp_id')+anTh('ชื่อ','name')+anTh('สาขา','branch_name')
     +anTh('ทำงาน','days_worked')+anTh('สาย','late_count')+anTh('นาทีสาย','late_total')+anTh('ขาด','absent')+anTh('OT','ot_hours')+anTh('วินัย','level')
-    +anTh('งาน','task_total')+anTh('ผ่าน%','pass_rate')+anTh('ตีกลับ','sent_back')+anTh('QA','qa')+anTh('เชลฟ์','shelf')+anTh('ผลัด','handover')
+    +anTh('งาน','task_total')+anTh('มีคนตรวจ','task_checked')+anTh('ผ่านอัตโนมัติ','task_auto')+anTh('ตีกลับ','sent_back')+anTh('QA','qa')+anTh('เชลฟ์','shelf')+anTh('ผลัด','handover')
     +'</tr></thead><tbody id="an_scorebody"></tbody></table></div></div>';
   $('an_body').innerHTML=html;
   document.querySelectorAll('#an_scoretbl th').forEach(th=>{ th.onclick=()=>anSortBy(th.dataset.key); });
   anRenderScoreboard();
+}
+// กราฟรายวัน: แท่ง = คนมาทำงาน (ส่วนสีส้มคือมาสาย) · เส้น = % คนสาย · จุดแดงล่าง = คนขาด
+function anDailyBars(s){
+  const W=1100,H=250,L=36,R=14,T=14,B=40,n=s.length; if(!n) return '';
+  const mx=Math.max(1,...s.map(d=>d.present))*1.15;
+  const step=(W-L-R)/n, bw=Math.max(3,step*0.6);
+  const X=i=>L+step*i+step/2, Y=v=>T+(1-v/mx)*(H-T-B), y0=Y(0);
+  const tick=Math.max(1,Math.ceil(mx/4/5)*5);
+  let g='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block">';
+  for(let v=0;v<=mx;v+=tick) g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)"/><text x="'+(L-6)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="10.5" fill="var(--muted)">'+v+'</text>';
+  const every=Math.max(1,Math.ceil(n/16));
+  s.forEach((d,i)=>{
+    g+='<rect x="'+(X(i)-bw/2).toFixed(1)+'" y="'+Y(d.present).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(y0-Y(d.present)).toFixed(1)+'" rx="3" fill="#cfe0d7"><title>'+esc(d.date)+' · มาทำงาน '+d.present+' คน</title></rect>';
+    if(d.late) g+='<rect x="'+(X(i)-bw/2).toFixed(1)+'" y="'+Y(d.late).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(y0-Y(d.late)).toFixed(1)+'" rx="3" fill="#e0a355"><title>'+esc(d.date)+' · มาสาย '+d.late+' คน</title></rect>';
+    if(d.absent) g+='<circle cx="'+X(i).toFixed(1)+'" cy="'+(H-B+13)+'" r="'+Math.min(8,3+d.absent)+'" fill="#dc2626" opacity=".85"><title>'+esc(d.date)+' · ขาดงาน '+d.absent+' คน</title></circle>';
+    if(i%every===0||i===n-1) g+='<text x="'+X(i).toFixed(1)+'" y="'+(H-B+31)+'" text-anchor="middle" font-size="10" fill="var(--muted)">'+(+d.date.slice(8))+'</text>';
+  });
+  let p='';s.forEach((d,i)=>{ const r=d.present?Math.min(1,(d.late/d.present)/0.6):0; p+=(p?'L':'M')+X(i).toFixed(1)+' '+(T+(1-r)*(H-T-B)).toFixed(1); });
+  g+='<path d="'+p+'" fill="none" stroke="#b45309" stroke-width="2"/>';
+  g+='<text x="'+(W-R)+'" y="'+(T+10)+'" text-anchor="end" font-size="10.5" fill="#b45309">เส้น = % คนสายของวัน (เต็มกราฟ = 60%)</text>';
+  return g+'</svg>';
 }
 function anTh(label,key){ return '<th data-key="'+key+'"'+(AN_SORT.key===key?' class="sorted"':'')+'>'+label+'</th>'; }
 function anSortBy(key){ if(AN_SORT.key===key) AN_SORT.dir*=-1; else { AN_SORT={ key, dir:(key==='emp_id'||key==='name'||key==='branch_name')?1:-1 }; } renderAnalytics(); }
@@ -7557,8 +7652,6 @@ function anRenderScoreboard(){
   rows.sort((x,y)=>{ let a=val(x),b=val(y); if(typeof a==='string'||typeof b==='string'){ a=String(a); b=String(b); return a<b?-dir:a>b?dir:0; } return (a-b)*dir; });
   $('an_scorebody').innerHTML = rows.length ? rows.map(r=>{
     const lv = r.level>0 ? '<span class="an-lv" style="background:'+esc(r.level_color)+'">'+esc(r.level_name)+'</span>' : '<span class="pill ok" style="padding:2px 8px">ปกติ</span>';
-    const pass = r.pass_rate==null?'—':r.pass_rate+'%';
-    const passCls = r.pass_rate==null?'':(r.pass_rate>=90?'good':(r.pass_rate<70?'bad':''));
     return '<tr class="clickable" data-emp="'+esc(r.emp_id)+'">'
       +'<td class="mono">'+esc(r.emp_id)+'</td>'
       +'<td>'+esc(r.name)+(r.nickname?' <span style="color:var(--muted);font-size:12px">('+esc(r.nickname)+')</span>':'')+'</td>'
@@ -7569,13 +7662,14 @@ function anRenderScoreboard(){
       +'<td class="num'+(r.absent?' bad':'')+'">'+r.absent+'</td>'
       +'<td class="num">'+(r.ot_hours||0)+'</td>'
       +'<td>'+lv+'</td>'
-      +'<td class="num">'+r.task_approved+'/'+r.task_total+'</td>'
-      +'<td class="num'+(passCls?' '+passCls:'')+'">'+pass+'</td>'
+      +'<td class="num">'+r.task_total+'</td>'
+      +'<td class="num">'+(r.task_checked||0)+'</td>'
+      +'<td class="num'+((r.task_auto||0)?' warn':'')+'">'+(r.task_auto||0)+'</td>'
       +'<td class="num'+(r.sent_back?' bad':'')+'">'+r.sent_back+'</td>'
       +'<td class="num">'+r.qa+'</td>'
       +'<td class="num">'+r.shelf+'</td>'
       +'<td class="num">'+r.handover+'</td></tr>';
-  }).join('') : '<tr><td colspan="15"><div class="empty">— ไม่มีข้อมูล —</div></td></tr>';
+  }).join('') : '<tr><td colspan="16"><div class="empty">— ไม่มีข้อมูล —</div></td></tr>';
   document.querySelectorAll('#an_scorebody tr.clickable').forEach(tr=>{ tr.onclick=()=>anOpenEmp(tr.dataset.emp); });
 }
 function anOpenEmp(empId){
