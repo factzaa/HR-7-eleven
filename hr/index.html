@@ -12969,7 +12969,8 @@ function buildFormDocHtml(sp){
     } else if(x.type==='table'){
       const cols=x.columns||[]; h+='<table class="es-dt"><tr>'+cols.map(c=>'<th style="background:#f3f4f6;text-align:center'+(/^(รายการ|รายละเอียด|เรื่อง)/.test(c)?';width:34%':(/^(ลำดับ|ที่|ครั้งที่)$/.test(c)?';width:8%':''))+'">'+esc(c)+'</th>').join('')+'</tr>';
       if(Array.isArray(x.rows)){   // ★ ตารางที่มีข้อมูลจริง (make_doc)
-        (x.rows||[]).forEach(r=>{ h+='<tr>'+cols.map((c,j)=>'<td style="height:24px;font-size:12px;white-space:pre-wrap;vertical-align:top;'+(j===0&&/ลำดับ|ที่/.test(c)?'text-align:center':'')+'">'+esc((r&&r[j]!=null)?r[j]:'')+'</td>').join('')+'</tr>'; });
+        const _rh=(x.rowh||24)+'px';
+        (x.rows||[]).forEach(r=>{ h+='<tr>'+cols.map((c,j)=>'<td style="height:'+_rh+';font-size:12px;white-space:pre-wrap;vertical-align:top;'+(j===0&&/ลำดับ|ที่/.test(c)?'text-align:center':'')+'">'+esc((r&&r[j]!=null)?r[j]:'')+'</td>').join('')+'</tr>'; });
       } else for(let i=0;i<(x.rows||5);i++) h+='<tr>'+cols.map((c,j)=>'<td style="height:24px;'+(j===0&&/ลำดับ|ที่/.test(c)?'text-align:center':'')+'">'+(j===0&&/ลำดับ/.test(c)?(i+1):'')+'</td>').join('')+'</tr>';
       if(x.total) h+='<tr><td colspan="'+Math.max(1,cols.length-1)+'" style="text-align:right;font-weight:700">รวม</td><td></td></tr>';
       h+='</table>';
