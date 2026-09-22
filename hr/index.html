@@ -12819,6 +12819,10 @@ function asstCardsHtml(cards){
       else if(d.kind==='doc'){ let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d.spec||{})))); }catch(_e){} act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'form_view\',\''+enc+'\')">ดู/พิมพ์</button> <button class="btn btn-pri btn-sm" onclick="asstDoc(\'form\',\''+enc+'\')">PDF</button>'; }
       else if(d.kind==='form'){ let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d.spec||{})))); }catch(_e){} act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'form_view\',\''+enc+'\')">ดู/พิมพ์</button> <button class="btn btn-pri btn-sm" onclick="asstDoc(\'form\',\''+enc+'\')">PDF</button>'; }
       else if(d.kind==='nav'){ act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'nav\',\''+esc(d.menu)+'\')">เปิดเมนู</button>'; }
+      if(!act && d.spec){   // ★ เอกสารชนิดใหม่จากนิดา (เผื่อหน้าเว็บเก่ากว่าฝั่งเซิร์ฟเวอร์) — ยังกดดู/พิมพ์ได้
+        let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d.spec)))); }catch(_e){}
+        if(enc) act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'form_view\',\''+enc+'\')">ดู/พิมพ์</button> <button class="btn btn-pri btn-sm" onclick="asstDoc(\'form\',\''+enc+'\')">PDF</button>';
+      }
       return '<div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:11px;padding:9px 11px"><span style="color:var(--green);flex:none;display:flex">'+svg+'</span><span style="flex:1;font-size:13px;line-height:1.35">'+esc(d.label||d.kind)+'</span>'+act+'</div>';
     }).join('')+'</div>');
   }
