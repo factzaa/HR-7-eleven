@@ -104,6 +104,7 @@
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
       <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
       <!-- ★ ส่งผลัด — ย้ายมาไว้หน้าแรก ให้หัวหน้าผลัดเห็นทันทีไม่ต้องเข้าเมนูย่อย -->
+      <div id="hoPrevNote" style="margin-top:10px"></div>
       <div id="hoSendCard" style="margin-top:10px"></div>
       <!-- ★ 15 ก.ย. 69 — ย้ายเข้าไปอยู่ในงาน "รับสินค้าจาก DC / Supplier" ของแต่ละผลัดแล้ว -->
       <button class="btn btn-sec" id="bNotify" style="width:100%;margin-top:4px;display:none"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg> เปิดแจ้งเตือนงานบนมือถือนี้</button>
@@ -692,6 +693,7 @@ $('goBtn').onclick=async()=>{
     refreshGoodsBtn();       // แสดงปุ่มรับสินค้าเฉพาะผู้คุมผลัด / ปุ่มกดรับตอนยังว่าง
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"
     refreshCoCard();         // การ์ดเตือนกดออก/ควบกะ
+    refreshPrevNote();       // ★ หมายเหตุที่ผลัดก่อนหน้าฝากไว้
     refreshSendCard();       // ★ การ์ดส่งผลัด (หัวหน้าผลัดกดยืนยันงานพร้อมให้ตรวจ)
     if(window.refreshNotifyBtn) window.refreshNotifyBtn();
     // ★ ลิงก์ตรงจากการ์ด LINE — ?go=review เปิดหน้า "ตรวจรับผลัด" ให้ทันที
@@ -740,7 +742,9 @@ function shiftSendHTML(st){
       +'<div style="font-weight:700;color:#166534"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ส่งผลัดแล้ว '+esc(t)+' น.</div>'
       +'<div class="muted" style="font-size:12.5px;margin-top:3px">โดย '+esc(st.submitted.emp_name||'')
         +' · ส่งงาน '+st.submitted.done+'/'+st.submitted.total+(st.submitted.closed?(' · ปิดงาน '+st.submitted.closed):'')
-        +'<br>รายงานถูกส่งเข้าไลน์กลุ่มแล้ว ผลัดถัดไปตรวจงานได้เลย</div></div>';
+        +'<br>รายงานถูกส่งเข้าไลน์กลุ่มแล้ว ผลัดถัดไปตรวจงานได้เลย</div>'
+      +(st.submitted.note?('<div style="margin-top:7px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 10px;font-size:12.5px;white-space:pre-wrap">📝 หมายเหตุที่ฝากผลัดถัดไป: '+esc(st.submitted.note)+'</div>'):'')
+      +'</div>';
   }
   var ok=st.pending.length===0;
   var h='<div class="card" style="border-left:3px solid '+(ok?'#16a34a':'#dc2626')+'">'
@@ -754,7 +758,12 @@ function shiftSendHTML(st){
     +(st.pending.length>8?('<br><span class="muted">…และอีก '+(st.pending.length-8)+' รายการ</span>'):'')+'</div>';
   if(!st.is_lead) h+='<div class="muted" style="font-size:12.5px">ส่งผลัดได้เฉพาะหัวหน้าผลัด'
     +(st.lead?(' (' + esc(st.lead.emp_name||st.lead.emp_id) + ')'):' — ยังไม่มีใครรับเป็นหัวหน้าผลัด')+'</div>';
-  else h+='<button class="btn '+(ok?'btn-pri':'btn-sec')+'" id="bShiftSend"'+(ok?'':' disabled style="opacity:.55"')+'>'
+  else h+='<div style="margin:2px 0 8px">'
+      +'<div style="font-size:12.5px;font-weight:600;margin-bottom:4px">หมายเหตุถึงผลัดถัดไป <span class="muted" style="font-weight:400">(ไม่บังคับ)</span></div>'
+      +'<textarea id="ss_note" rows="3" placeholder="เช่น ตู้แช่ช่อง 2 เย็นไม่พอ แจ้งช่างแล้วรอเข้าพรุ่งนี้ · ของ Food ขาด 3 รายการ สั่งเพิ่มแล้ว · ลูกค้าฝากของไว้หน้าเคาน์เตอร์" style="width:100%;padding:8px 10px;border:1.5px solid #d6d9e0;border-radius:9px;font:inherit;font-size:13.5px;resize:vertical"></textarea>'
+      +'<div class="muted" style="font-size:11.5px;margin-top:3px">ข้อความนี้จะขึ้นให้ผลัดถัดไปเห็นในแอป และส่งเข้าไลน์กลุ่มพร้อมรายงานสิ้นผลัด</div>'
+      +'</div>'
+    +'<button class="btn '+(ok?'btn-pri':'btn-sec')+'" id="bShiftSend"'+(ok?'':' disabled style="opacity:.55"')+'>'
     +'ส่งผลัด · ยืนยันงานพร้อมให้ตรวจ</button>';
   return h+'</div>';
 }
@@ -778,6 +787,25 @@ function wireCloseTask(){
     catch(e){ b.disabled=false; toast('err',(e.message||'ไม่สำเร็จ')); }
   }; });
 }
+// ★ 23 ก.ย. 2569 — หมายเหตุจากผลัดก่อนหน้า (ปัญหา/เรื่องที่ต้องตามต่อ) — ขึ้นบนสุดของหน้าเมนู
+async function refreshPrevNote(){
+  var box=$('hoPrevNote'); if(!box) return;
+  box.innerHTML='';
+  try{
+    var list=await window.HR.prevShiftNotes(EMP.emp_id, 3);
+    if(!list || !list.length) return;
+    var SH={'M':'เช้า','A':'บ่าย','N':'ดึก'};
+    box.innerHTML='<div class="card" style="background:#fffbeb;border-color:#fde68a">'
+      +'<div style="font-weight:700;color:#92400e"><svg class="ei" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg> ฝากจากผลัดก่อนหน้า</div>'
+      +list.map(function(x){
+        var t=''; try{ t=new Date(x.submitted_at).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(_e){}
+        return '<div style="margin-top:7px;padding-top:7px;border-top:1px dashed #fde68a">'
+          +'<div class="muted" style="font-size:11.5px">ผลัด'+esc(SH[x.shift_id]||x.shift_id||'')+' · '+esc(x.emp_name||'')+(t?(' · '+esc(t)):'')+'</div>'
+          +'<div style="font-size:13.5px;color:#7c2d12;white-space:pre-wrap;margin-top:2px">'+esc(x.note)+'</div></div>';
+      }).join('')
+      +'</div>';
+  }catch(e){}
+}
 // ★ ปุ่มส่งผลัด — ยืนยันด้วยรหัสหัวหน้าผลัดเท่านั้น
 // ★ การ์ดส่งผลัดบนหน้าแรก — โหลดสถานะแล้ววาดใหม่ทุกครั้งที่กลับมาหน้าเมนู
 async function refreshSendCard(){
@@ -786,6 +814,11 @@ async function refreshSendCard(){
        IS_LEAD=!!(SS_STATE&&SS_STATE.is_lead); SHIFT_SENT=!!(SS_STATE&&SS_STATE.submitted);
   }catch(e){ SS_STATE=null; IS_LEAD=false; SHIFT_SENT=false; }
   box.innerHTML=shiftSendHTML(SS_STATE);
+  var _sn=$('ss_note');
+  if(_sn){
+    try{ _sn.value=sessionStorage.getItem('ss_note_draft')||''; }catch(_e){}
+    _sn.oninput=function(){ try{ sessionStorage.setItem('ss_note_draft',_sn.value); }catch(_e){} };
+  }
   wireShiftSend();
 }
 function wireShiftSend(){
@@ -793,14 +826,17 @@ function wireShiftSend(){
   b.onclick=async function(){
     var st=SS_STATE; if(!st||!st.lead) return;
     if(st.pending.length){ toast('err','ยังมีงานค้างอยู่'); return; }
+    var ssNote=(($('ss_note')||{}).value||'').trim();
     var code=prompt('ยืนยันส่งผลัด\n\nส่งงาน '+st.done+'/'+st.total+' งาน'
+      +(ssNote?('\nหมายเหตุถึงผลัดถัดไป: '+ssNote.slice(0,120)):'\n(ไม่ได้เขียนหมายเหตุถึงผลัดถัดไป)')
       +(st.closed.length?(' · ปิดงาน '+st.closed.length+' งาน'):'')
       +'\n\nกดส่งแล้วระบบจะส่งรายงานเข้าไลน์กลุ่มทันที\n\nกรอกรหัสพนักงานของหัวหน้าผลัดเพื่อยืนยัน:');
     if(code===null) return;
     if(!String(code).trim()){ toast('err','ต้องกรอกรหัสยืนยัน'); return; }
     b.disabled=true; b.textContent='กำลังส่ง…';
     try{
-      var r=await window.HR.shiftSubmit({ empId:EMP.emp_id, confirmEmpId:String(code).trim() });
+      var r=await window.HR.shiftSubmit({ empId:EMP.emp_id, confirmEmpId:String(code).trim(), note:ssNote||null });
+      try{ sessionStorage.removeItem('ss_note_draft'); }catch(_e){}
       toast('ok', r.line_sent ? 'ส่งผลัดแล้ว — รายงานเข้าไลน์กลุ่มเรียบร้อย'
         : 'ส่งผลัดแล้ว (ส่งไลน์ไม่สำเร็จ ให้แจ้ง ผจก.)');
       refreshSendCard();
