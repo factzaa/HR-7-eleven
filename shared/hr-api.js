@@ -6454,6 +6454,19 @@
   //   คืน: kpis, series(รายวัน), branches(เทียบสาขา), rows(สกอร์บอร์ดรายคน)
   //   f = { start, end, branch, cycle }
   // ============================================================
+  // ★ 23 ก.ย. 2569 — PostgREST คืนได้สูงสุด 1,000 แถวต่อครั้ง
+  //   เคสจริง: หน้าวิเคราะห์นับงานในกะได้ 997 จาก 2,937 งาน แล้วขึ้น "997/997 ผ่าน 100%"
+  //   ต้องไล่ดึงทีละหน้าจนหมด ไม่งั้นตัวเลขทุกอย่างที่นับจากงานจะผิดหมด
+  async function fetchPaged(build, pageSize) {
+    const SZ = pageSize || 1000; const out = [];
+    for (let from = 0; from < 100000; from += SZ) {
+      const { data, error } = await build().range(from, from + SZ - 1);
+      if (error) throw error;
+      const rows = data || []; out.push(...rows);
+      if (rows.length < SZ) break;
+    }
+    return out;
+  }
   async function hrAnalytics(f) {
     f = f || {};
     const today = bkkToday();
@@ -6474,9 +6487,9 @@
     //   แถวจะอยู่ที่สาขาปลายทาง → ถูกตัดทิ้ง ทำให้วันทำงานหาย/ตัวเลขเพี้ยน
     const qEmpBase = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift,start_date,end_date,is_manager').eq('active', true);
     const qEmp = branch ? qEmpBase.eq('branch_id', branch) : qEmpBase;
-    const qAtt = sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,branch_id,shift_id,day_value').gte('work_date', start).lte('work_date', endEff);
-    const qSch = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', start).lte('work_date', endEff);   // ★ note ไว้กรองเวรเฉพาะกิจ
-    const qTask = sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id').gte('work_date', start).lte('work_date', end);
+    const qAtt = () => sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,branch_id,shift_id,day_value').gte('work_date', start).lte('work_date', endEff);
+    const qSch = () => sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', start).lte('work_date', endEff);   // ★ note ไว้กรองเวรเฉพาะกิจ
+    const qTask = () => sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id,reviewer,mgr_checked_at,work_date').gte('work_date', start).lte('work_date', end);
     const qShelf = sb().from('shelf_checks').select('emp_id,check_date,branch_id').gte('check_date', start).lte('check_date', end);
     const qHand = sb().from('handovers').select('from_emp_id,work_date,status,branch_id').gte('work_date', start).lte('work_date', end);
     const qQa   = sb().from('qa_items').select('emp_id,branch_id,created_at').gte('created_at', start + 'T00:00:00').lte('created_at', end + 'T23:59:59');
@@ -6484,9 +6497,9 @@
     const [empR, brR, shR, attR, schR, lvR, taskR, shelfR, handR, qaR, scR] = await Promise.all([
       qEmp, sb().from('branches').select('branch_id,name'),
       sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
-      qAtt, qSch,
+      fetchPaged(qAtt).then(d => ({ data: d })), fetchPaged(qSch).then(d => ({ data: d })),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', end).gte('end_date', start),
-      qTask, qShelf, qHand, qQa,
+      fetchPaged(qTask).then(d => ({ data: d })), qShelf, qHand, qQa,
       // ★ ระดับวินัยตัดสินจาก "คะแนน" ชุดเดียวกับหน้าวินัย/คะแนน (discipline_rules เลิกใช้แล้ว)
       hrScoreGet('current', { start, end }),
     ]);
@@ -6548,6 +6561,11 @@
 
       const t_total = g.tasks.length;
       const t_approved = g.tasks.filter(t => t.status === 'approved').length;
+      // ★ งานที่ตั้งค่า "ไม่ต้องตรวจ" ขึ้นผ่านเองตั้งแต่ส่ง — ไม่ใช่งานที่มีคนตรวจจริง
+      const t_auto = g.tasks.filter(t => /ไม่ต้องตรวจ/.test(String(t.reviewer || ''))).length;
+      const t_checked = g.tasks.filter(t => t.status === 'approved' && !/ไม่ต้องตรวจ/.test(String(t.reviewer || ''))).length;
+      const t_mgr = g.tasks.filter(t => t.mgr_checked_at).length;
+      const t_open = g.tasks.filter(t => t.status === 'todo' || t.status === 'submitted' || t.status === 'sent_back').length;
       // ★ ตีกลับ = นับจากตัวนับจริงอย่างเดียว (เดิมบวกซ้ำกับงานที่สถานะยังเป็น sent_back → ตัวเลขบวม)
       const sent_back = g.tasks.reduce((s, t) => s + (t.sent_back_count || 0), 0);
       const pass_rate = t_total ? Math.round(t_approved / t_total * 100) : null;
@@ -6558,6 +6576,7 @@
         score: sc.score != null ? sc.score : null, band_label: sc.band_label || '',
         level, level_name: _breach ? 'เข้าเกณฑ์ตักเตือน' : 'ปกติ', level_color: _breach ? '#d97706' : '#16a34a',
         task_total: t_total, task_approved: t_approved, pass_rate, sent_back,
+        task_auto: t_auto, task_checked: t_checked, task_mgr: t_mgr, task_open: t_open,
         qa: g.qa, shelf: g.shelf, handover: g.handover,
       };
     }).sort((a, b) => (b.late_total + b.absent * 480) - (a.late_total + a.absent * 480));
@@ -6586,15 +6605,23 @@
     // ---- เทียบสาขา ----
     const brAgg = {};
     rows.forEach(r => {
-      const b = brAgg[r.branch_id] || (brAgg[r.branch_id] = { branch_id: r.branch_id, branch_name: r.branch_name, emp: 0, late_count: 0, late_total: 0, absent: 0, ot: 0, pass_sum: 0, pass_n: 0 });
+      const b = brAgg[r.branch_id] || (brAgg[r.branch_id] = { branch_id: r.branch_id, branch_name: r.branch_name, emp: 0, late_count: 0, late_total: 0, absent: 0, ot: 0, pass_sum: 0, pass_n: 0, days_worked: 0, days_should: 0, task_total: 0, task_auto: 0, task_mgr: 0, sent_back: 0 });
       b.emp++; b.late_count += r.late_count; b.late_total += r.late_total; b.absent += r.absent; b.ot += r.ot_hours;
+      b.days_worked += r.days_worked; b.days_should += r.days_should;
+      b.task_total += r.task_total; b.task_auto += r.task_auto; b.task_mgr += r.task_mgr; b.sent_back += r.sent_back;
       if (r.pass_rate != null) { b.pass_sum += r.pass_rate; b.pass_n++; }
     });
     const branches = Object.values(brAgg).map(b => ({
       branch_id: b.branch_id, branch_name: b.branch_name, emp: b.emp,
       late_count: b.late_count, late_total: b.late_total, absent: Math.round(b.absent * 10) / 10,
       ot: Math.round(b.ot * 10) / 10, pass_rate: b.pass_n ? Math.round(b.pass_sum / b.pass_n) : null,
-    })).sort((a, b) => b.late_total - a.late_total);
+      days_worked: Math.round(b.days_worked * 10) / 10, days_should: Math.round(b.days_should * 10) / 10,
+      task_total: b.task_total, task_auto: b.task_auto, task_mgr: b.task_mgr, sent_back: b.sent_back,
+      // ★ ตัวเลขที่เทียบกันได้แม้คนไม่เท่ากัน
+      late_per_day: b.days_worked ? Math.round(b.late_total / b.days_worked * 10) / 10 : 0,
+      absent_pct: b.days_should ? Math.round(b.absent / b.days_should * 1000) / 10 : 0,
+      auto_pct: b.task_total ? Math.round(b.task_auto / b.task_total * 100) : null,
+    })).sort((a, b) => b.late_per_day - a.late_per_day);
 
     // ---- KPI รวม ----
     const passVals = rows.filter(r => r.pass_rate != null).map(r => r.pass_rate);
@@ -6609,10 +6636,66 @@
       task_total: rows.reduce((s, r) => s + r.task_total, 0),
       task_approved: rows.reduce((s, r) => s + r.task_approved, 0),
       avg_pass_rate: passVals.length ? Math.round(passVals.reduce((a, b) => a + b, 0) / passVals.length) : null,
-      at_risk: rows.filter(r => r.level >= 3).length,
+      // ★ 23 ก.ย. 69 — เดิมนับ level>=3 แต่ level มีแค่ 0/1 → ขึ้น 0 ตลอด
+      at_risk: rows.filter(r => r.level >= 1).length,
+      days_should: Math.round(rows.reduce((s, r) => s + r.days_should, 0) * 10) / 10,
+      task_auto: rows.reduce((s, r) => s + r.task_auto, 0),
+      task_checked: rows.reduce((s, r) => s + r.task_checked, 0),
+      task_mgr: rows.reduce((s, r) => s + r.task_mgr, 0),
+      task_open: rows.reduce((s, r) => s + r.task_open, 0),
+      ot_real: Math.round(att.filter(a => inScope.has(a.emp_id)).reduce((s, a) => s + (Number(a.ot_hours) || 0), 0) * 10) / 10,
+      ot_whole_setting: !!otWhole,
+      shelf: rows.reduce((s, r) => s + r.shelf, 0),
+      qa: rows.reduce((s, r) => s + r.qa, 0),
+      rule_late_min: _lateMinA, rule_absent_min: _absMinA,
+      no_sched: rows.filter(r => r.days_should === 0).length,
     };
 
-    return { ok: true, range: { start, end, label }, kpis, series, branches, rows };
+    // ---- เทียบกับรอบก่อนหน้า (ช่วงยาวเท่ากันที่อยู่ติดกันก่อนหน้า) ----
+    let prev = null;
+    try {
+      const _d = (iso1, iso2) => Math.round((new Date(iso2 + 'T00:00:00Z') - new Date(iso1 + 'T00:00:00Z')) / 86400000);
+      const len = _d(start, endEff) + 1;
+      const pEnd = addDays(start, -1), pStart = addDays(pEnd, -(len - 1));
+      const ids = [...inScope];
+      const [pAtt, pSch, pTaskN, pLv] = await Promise.all([
+        fetchPaged(() => sb().from('attendance').select('emp_id,work_date,check_in,late_min').gte('work_date', pStart).lte('work_date', pEnd)),
+        fetchPaged(() => sb().from('schedules').select('emp_id,work_date,shift_id').gte('work_date', pStart).lte('work_date', pEnd)),
+        fetchPaged(() => sb().from('task_assignments').select('emp_id').gte('work_date', pStart).lte('work_date', pEnd)),
+        sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', pEnd).gte('end_date', pStart),
+      ]);
+      const pA = pAtt.filter(a => inScope.has(a.emp_id));
+      const pS = dropPhantomAdhoc(pSch.filter(x => inScope.has(x.emp_id)), workedKeySet(pAtt));
+      const pL = (pLv.data || []).filter(l => inScope.has(l.emp_id));
+      const workedKey = new Set(pA.filter(a => a.check_in).map(a => a.emp_id + '|' + a.work_date));
+      const onLeaveP = (id, d) => pL.some(l => l.emp_id === id && d >= l.start_date && d <= (l.end_date || l.start_date));
+      const lateRowsP = pA.filter(a => a.check_in && (a.late_min || 0) > 0);
+      prev = {
+        start: pStart, end: pEnd,
+        worked: pA.filter(a => a.check_in).length,
+        late_count: lateRowsP.length,
+        late_total: lateRowsP.reduce((s, a) => s + (a.late_min || 0), 0),
+        absent: Math.round(pS.filter(x => x.shift_id && !workedKey.has(x.emp_id + '|' + x.work_date) && !onLeaveP(x.emp_id, x.work_date))
+          .reduce((s, x) => s + dvOf(x.shift_id), 0) * 10) / 10,
+        tasks: pTaskN.filter(t => inScope.has(t.emp_id)).length,
+      };
+    } catch (e) { prev = null; }
+
+    // ---- กิจกรรมอื่น (ส่งผลัด / รับสินค้า) ----
+    let extra = { shift_submits: 0, goods: 0, crates_in: 0, crates_return: 0 };
+    try {
+      let sq = sb().from('shift_submits').select('branch_id').gte('work_date', start).lte('work_date', end);
+      let gq = sb().from('goods_receipts').select('branch_id,crates_in,crates_return').gte('work_date', start).lte('work_date', end);
+      if (branch) { sq = sq.eq('branch_id', branch); gq = gq.eq('branch_id', branch); }
+      const [sR, gR] = await Promise.all([sq, gq]);
+      extra.shift_submits = (sR.data || []).length;
+      const gg = gR.data || [];
+      extra.goods = gg.length;
+      extra.crates_in = gg.reduce((s, r) => s + (Number(r.crates_in) || 0), 0);
+      extra.crates_return = gg.reduce((s, r) => s + (Number(r.crates_return) || 0), 0);
+    } catch (e) { /* ตารางอาจยังไม่มี */ }
+
+    return { ok: true, range: { start, end, label }, kpis, series, branches, rows, prev, extra, worked_rows: att.filter(a => inScope.has(a.emp_id) && a.check_in).length };
   }
 
   // ---------- TASK LOG (ตรวจสอบงานย้อนหลัง) ----------
