@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>ดูรูป</title>
+<!-- ตัวดูรูปจากการ์ดแจ้งเตือนไลน์ — แตะรูปในการ์ด → เปิดหน้านี้ในไลน์ · ปัดซ้าย/ขวาดูรูปถัดไป · จีบนิ้ว/แตะสองครั้งเพื่อซูม
+     ลิงก์: /view/?p=<path>|<path>...&i=<ลำดับเริ่ม>&t=<หัวข้อ>
+     path = ส่วนหลัง .../storage/v1/object/public/employee-docs/ (หรือ URL เต็มของ Supabase โปรเจกต์นี้เท่านั้น) -->
+<style>
+  :root{--bg:#0b0d10;--bar:rgba(11,13,16,.82);--txt:#f1f3f5;--mut:#9aa3ad;--acc:#34c46b}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;overflow:hidden;overscroll-behavior:none}
+  #top{position:fixed;left:0;right:0;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px;background:linear-gradient(var(--bar),rgba(11,13,16,0))}
+  #ttl{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #cnt{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums;background:rgba(255,255,255,.1);border-radius:99px;padding:3px 10px}
+  .ib{border:0;background:rgba(255,255,255,.12);color:var(--txt);width:36px;height:36px;border-radius:50%;font-size:18px;display:grid;place-items:center;cursor:pointer;text-decoration:none}
+  .ib:focus-visible{outline:2px solid var(--acc)}
+  #track{position:fixed;inset:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none}
+  #track::-webkit-scrollbar{display:none}
+  #track.lock{overflow:hidden}
+  .sl{flex:0 0 100%;height:100%;scroll-snap-align:center;display:grid;place-items:center;overflow:hidden;position:relative;touch-action:pan-x}
+  .sl img{max-width:100%;max-height:100%;object-fit:contain;transform-origin:0 0;user-select:none;-webkit-user-drag:none;will-change:transform}
+  .sl .ld{position:absolute;width:30px;height:30px;border:3px solid rgba(255,255,255,.2);border-top-color:var(--txt);border-radius:50%;animation:sp 0.8s linear infinite}
+  .sl.ok .ld{display:none}
+  .sl .er{position:absolute;color:var(--mut);font-size:13px;display:none}
+  .sl.bad .ld{display:none}.sl.bad .er{display:block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .nav{position:fixed;top:50%;transform:translateY(-50%);z-index:4;width:44px;height:44px;font-size:22px}
+  #prev{left:10px}#next{right:10px}
+  @media (hover:none){.nav{display:none}}
+  #thumbs{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;gap:6px;overflow-x:auto;padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 12px);background:linear-gradient(rgba(11,13,16,0),var(--bar));scrollbar-width:none}
+  #thumbs::-webkit-scrollbar{display:none}
+  #thumbs img{flex:0 0 52px;width:52px;height:52px;object-fit:cover;border-radius:7px;opacity:.5;border:2px solid transparent;cursor:pointer}
+  #thumbs img.on{opacity:1;border-color:var(--acc)}
+  #hint{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:6;background:rgba(0,0,0,.6);color:var(--txt);font-size:12.5px;padding:6px 12px;border-radius:99px;white-space:nowrap;transition:opacity .4s}
+  body.ui-off #top,body.ui-off #thumbs,body.ui-off .nav{opacity:0;pointer-events:none}
+  #top,#thumbs,.nav{transition:opacity .2s}
+  #empty{position:fixed;inset:0;display:grid;place-items:center;color:var(--mut);font-size:14px;text-align:center;padding:24px}
+  @media (prefers-reduced-motion:reduce){#track{scroll-behavior:auto}.sl .ld{animation:none}}
+</style>
+</head>
+<body>
+<div id="top">
+  <button class="ib" id="close" aria-label="ปิด">✕</button>
+  <div id="ttl">รูปภาพ</div>
+  <span id="cnt">1 / 1</span>
+  <a class="ib" id="orig" href="#" target="_blank" rel="noopener" aria-label="เปิดรูปต้นฉบับ" title="เปิดรูปต้นฉบับ (กดค้างเพื่อบันทึก)">⤢</a>
+</div>
+<div id="track"></div>
+<button class="ib nav" id="prev" aria-label="รูปก่อนหน้า">‹</button>
+<button class="ib nav" id="next" aria-label="รูปถัดไป">›</button>
+<div id="thumbs"></div>
+<div id="hint">ปัดซ้าย/ขวาเพื่อดูรูปถัดไป · แตะสองครั้งเพื่อซูม</div>
+<script>
+(function(){
+  var BASE='https://vppvctftfgchweonxycb.supabase.co/storage/v1/object/public/employee-docs/';
+  var HOST='https://vppvctftfgchweonxycb.supabase.co/';
+  var q=new URLSearchParams(location.search);
+  // รับเฉพาะรูปใน Supabase ของระบบนี้ — กันการใช้หน้านี้เปิดลิงก์ภายนอก
+  var urls=(q.get('p')||'').split(/[,|]/).map(function(s){ s=s.trim(); if(!s) return null;
+    if(s.indexOf(HOST)===0) return s;
+    if(/^[\w\-.\/]+$/.test(s) && s.indexOf('..')<0) return BASE+s;
+    return null; }).filter(Boolean);
+  var $=function(id){return document.getElementById(id)};
+  var t=(q.get('t')||'').slice(0,80); if(t){ $('ttl').textContent=t; document.title=t; }
+  if(!urls.length){ document.body.innerHTML='<div id="empty">ไม่พบรูปในลิงก์นี้<br>ลองเปิดดูในแอปแทน</div>'; return; }
+  var cur=Math.min(Math.max(parseInt(q.get('i')||'0',10)||0,0),urls.length-1);
+  var track=$('track'), thumbs=$('thumbs');
+  urls.forEach(function(u,i){
+    var s=document.createElement('div'); s.className='sl'; s.innerHTML='<div class="ld"></div><div class="er">โหลดรูปไม่สำเร็จ</div>';
+    var im=new Image(); im.alt='รูปที่ '+(i+1); im.decoding='async';
+    im.onload=function(){ s.classList.add('ok'); }; im.onerror=function(){ s.classList.add('bad'); };
+    s.appendChild(im); track.appendChild(s);
+    var th=new Image(); th.loading='lazy'; th.src=u; th.alt=''; th.onclick=function(){ go(i,true); }; thumbs.appendChild(th);
+  });
+  if(urls.length<2){ thumbs.style.display='none'; $('prev').style.display=$('next').style.display='none'; $('hint').textContent='แตะสองครั้งหรือจีบนิ้วเพื่อซูม'; }
+  var slides=track.children, tImgs=thumbs.children;
+  function load(i){ if(i<0||i>=urls.length) return; var im=slides[i].querySelector('img'); if(!im.src) im.src=urls[i]; }
+  function mark(i){
+    cur=i; $('cnt').textContent=(i+1)+' / '+urls.length; $('orig').href=urls[i];
+    for(var k=0;k<tImgs.length;k++) tImgs[k].classList.toggle('on',k===i);
+    if(tImgs[i]) tImgs[i].scrollIntoView({block:'nearest',inline:'center'});
+    load(i); load(i+1); load(i-1);
+  }
+  function go(i,smooth){ i=Math.max(0,Math.min(urls.length-1,i)); resetZoom(); track.scrollTo({left:i*track.clientWidth,behavior:smooth?'smooth':'auto'}); mark(i); }
+  var st; track.addEventListener('scroll',function(){ clearTimeout(st); st=setTimeout(function(){ var i=Math.round(track.scrollLeft/track.clientWidth); if(i!==cur){ resetZoom(); mark(i); } },60); },{passive:true});
+  $('prev').onclick=function(){ go(cur-1,true); }; $('next').onclick=function(){ go(cur+1,true); };
+  document.addEventListener('keydown',function(e){ if(e.key==='ArrowLeft') go(cur-1,true); else if(e.key==='ArrowRight') go(cur+1,true); else if(e.key==='Escape') closeView(); });
+  function closeView(){ try{ if(window.liff&&liff.closeWindow){ liff.closeWindow(); return; } }catch(e){} if(history.length>1) history.back(); else window.close(); }
+  $('close').onclick=closeView;
+  window.addEventListener('resize',function(){ track.scrollTo({left:cur*track.clientWidth}); });
+  setTimeout(function(){ $('hint').style.opacity=0; },2600);
+
+  // ---- ซูม: จีบนิ้ว + แตะสองครั้ง + ลากเลื่อนตอนซูม ----
+  var Z={s:1,x:0,y:0,img:null};
+  function apply(){ if(Z.img) Z.img.style.transform='translate('+Z.x+'px,'+Z.y+'px) scale('+Z.s+')'; var zz=Z.s>1.01; track.classList.toggle('lock',zz); for(var k=0;k<slides.length;k++) slides[k].style.touchAction=zz?'none':'pan-x'; }
+  function resetZoom(){ if(Z.img){ Z.img.style.transition='transform .2s'; Z.s=1;Z.x=0;Z.y=0; apply(); var im=Z.img; setTimeout(function(){ im.style.transition=''; },220); } Z.img=null; track.classList.remove('lock'); for(var k=0;k<slides.length;k++) slides[k].style.touchAction='pan-x'; }
+  function clamp(){ var im=Z.img, sl=im.parentNode; var w=im.offsetWidth*Z.s, h=im.offsetHeight*Z.s, W=sl.clientWidth, H=sl.clientHeight;
+    var ox=im.offsetLeft, oy=im.offsetTop;
+    var minX=Math.min(0,W-w)-ox, maxX=Math.max(0,W-w)-ox, minY=Math.min(0,H-h)-oy, maxY=Math.max(0,H-h)-oy;
+    if(w<=W) Z.x=(W-w)/2-ox; else Z.x=Math.min(-ox, Math.max(W-w-ox, Z.x));
+    if(h<=H) Z.y=(H-h)/2-oy; else Z.y=Math.min(-oy, Math.max(H-h-oy, Z.y)); }
+  function zoomAt(img,ns,cx,cy){ // cx,cy = จุดบนจอ
+    if(Z.img!==img){ resetZoom(); Z.img=img; }
+    var r=img.parentNode.getBoundingClientRect(); var px=cx-r.left-img.offsetLeft, py=cy-r.top-img.offsetTop;
+    ns=Math.max(1,Math.min(5,ns)); Z.x=px-(px-Z.x)*ns/Z.s; Z.y=py-(py-Z.y)*ns/Z.s; Z.s=ns; clamp(); apply(); }
+  var pts={}, pinch=null, pan=null, lastTap=0, moved=false;
+  track.addEventListener('pointerdown',function(e){
+    var img=e.target.closest('.sl') && e.target.closest('.sl').querySelector('img'); if(!img) return;
+    pts[e.pointerId]={x:e.clientX,y:e.clientY}; moved=false;
+    var ids=Object.keys(pts);
+    if(ids.length===2){ var a=pts[ids[0]],b=pts[ids[1]]; if(Z.img!==img){ resetZoom(); Z.img=img; }
+      pinch={d:Math.hypot(a.x-b.x,a.y-b.y),s:Z.s,cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,img:img}; pan=null; track.classList.add('lock'); }
+    else if(ids.length===1 && Z.s>1.01 && Z.img===img){ pan={x:e.clientX,y:e.clientY,ox:Z.x,oy:Z.y}; }
+  });
+  track.addEventListener('pointermove',function(e){
+    if(!pts[e.pointerId]) return; if(Math.abs(e.clientX-pts[e.pointerId].x)>6||Math.abs(e.clientY-pts[e.pointerId].y)>6) moved=true;
+    pts[e.pointerId]={x:e.clientX,y:e.clientY}; var ids=Object.keys(pts);
+    if(pinch && ids.length>=2){ var a=pts[ids[0]],b=pts[ids[1]]; var d=Math.hypot(a.x-b.x,a.y-b.y); zoomAt(pinch.img,pinch.s*d/pinch.d,pinch.cx,pinch.cy); e.preventDefault(); }
+    else if(pan){ Z.x=pan.ox+(e.clientX-pan.x); Z.y=pan.oy+(e.clientY-pan.y); clamp(); apply(); e.preventDefault(); }
+  },{passive:false});
+  function up(e){ delete pts[e.pointerId]; if(Object.keys(pts).length<2) pinch=null; if(!Object.keys(pts).length){ pan=null; if(Z.s<=1.01) resetZoom(); } }
+  track.addEventListener('pointerup',function(e){
+    var img=e.target.closest('.sl') && e.target.closest('.sl').querySelector('img');
+    if(img && !moved && Object.keys(pts).length===1){ var now=Date.now();
+      if(now-lastTap<300){ if(Z.s>1.01) resetZoom(); else zoomAt(img,2.5,e.clientX,e.clientY); lastTap=0; clearTimeout(window._tapT); }
+      else { lastTap=now; window._tapT=setTimeout(function(){ if(Z.s<=1.01) document.body.classList.toggle('ui-off'); },310); } }
+    up(e); });
+  track.addEventListener('pointercancel',up);
+  track.addEventListener('wheel',function(e){ if(!e.ctrlKey) return; var img=slides[cur].querySelector('img'); zoomAt(img,Z.s*(e.deltaY<0?1.15:0.87),e.clientX,e.clientY); e.preventDefault(); },{passive:false});
+  track.style.touchAction='pan-x';
+  go(cur,false);
+})();
+</script>
+</body>
+</html>
