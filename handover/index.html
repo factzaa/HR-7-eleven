@@ -1086,7 +1086,12 @@ async function openM2(){
         +'<div class="muted" id="mc_'+a.id+'" style="margin-bottom:4px">'+(a.require_photo?'ต้องแนบรูป — ถ่ายได้หลายรูป (บังคับกล้อง กันใช้รูปเก่า)':'ถ่ายรูปได้ตามต้องการ (บังคับกล้อง)')+'</div>'
         +'<div style="font-size:11.5px;color:#0369a1;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7"/><rect x="8" y="13" width="8" height="5"/></svg> ระบบเก็บรูปที่ถ่ายไว้ให้อัตโนมัติ — สลับแอป/คนอื่นใช้มือถือแล้วกลับมาถ่ายต่อได้ ไม่ต้องเริ่มใหม่</div>'
         +'<textarea id="mn_'+a.id+'" rows="2" placeholder="หมายเหตุ / ฝากผลัดถัดไป เช่น วันนี้ไส้กรอกหมด ต้องเตรียมเพิ่ม" style="width:100%;margin-bottom:8px;padding:8px 10px;border:1.5px solid #d6d9e0;border-radius:9px;font:inherit;font-size:13.5px;resize:vertical">'+esc(a.emp_note||'')+'</textarea>'
-        +'<button class="btn btn-pri" data-sub="'+a.id+'">'+(isEdit?'อัปเดต / ส่งใหม่':'ส่งงาน')+'</button>';
+        +'<button class="btn btn-pri" data-sub="'+a.id+'">'+(isEdit?'อัปเดต / ส่งใหม่':'ส่งงาน')+'</button>'
+        +(isEdit&&!a.checked_at&&!a.mgr_checked_at
+            ? ('<button class="btn btn-sec" data-unsub="'+a.id+'" style="width:100%;margin-top:6px;font-size:13px">↩ ดึงงานกลับมาแก้ (ส่งผิดหัวข้อ/ผิดรูป)</button>'
+               +'<div class="muted" style="font-size:11.5px;margin-top:3px">ดึงกลับได้จนกว่าจะมีคนตรวจ หรือจนกว่าหัวหน้าผลัดจะกดส่งผลัด · ระบบบันทึกจำนวนครั้งไว้</div>')
+            : '')
+        +((Number(a.pull_count)||0)?('<div class="muted" style="font-size:11.5px;margin-top:4px">เคยดึงกลับมาแก้ '+(Number(a.pull_count)||0)+' ครั้ง</div>'):'');
     }
     return c+'</div>';
   };
@@ -1168,6 +1173,13 @@ async function openM2(){
       if(b.disabled) return; b.disabled=true; b.innerHTML='<span class="spin"></span>';
       try{ const photos = TASK_PHOTOS[id]||[]; await window.HR.submitTaskMulti({ id, empId:EMP.emp_id, photos, note }); await wipDel('t:'+_dkey(id)); toast('ok','ส่งงานแล้ว'); openM2(); }
       catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='ส่งงาน'; b.disabled=false; }
+    });
+    // ★ 23 ก.ย. 2569 — ดึงงานที่ส่งแล้วกลับมาแก้ (ส่งผิดหัวข้อ/ผิดรูป) — ได้จนกว่าจะมีคนตรวจหรือส่งผลัด
+    document.querySelectorAll('[data-unsub]').forEach(b=>b.onclick=async()=>{
+      if(!confirm('ดึงงานนี้กลับมาแก้?\n\nงานจะกลับไปเป็น "ยังไม่ส่ง" รูปและหมายเหตุเดิมยังอยู่ แก้แล้วส่งใหม่ได้\nระบบบันทึกไว้ว่าคุณดึงกลับ และหัวหน้า/ผจก. เห็นได้')) return;
+      if(b.disabled) return; b.disabled=true; b.innerHTML='<span class="spin"></span>';
+      try{ await window.HR.unsubmitTask({ id:Number(b.dataset.unsub), empId:EMP.emp_id }); toast('ok','ดึงงานกลับแล้ว — แก้แล้วส่งใหม่ได้เลย'); openM2(); }
+      catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.textContent='↩ ดึงงานกลับมาแก้'; b.disabled=false; }
     });
     document.querySelectorAll('[data-goods]').forEach(b=>b.onclick=()=>{ GD_FROM_TASK=true; openGoods(); });
     document.querySelectorAll('[data-pull]').forEach(b=>b.onclick=async()=>{
