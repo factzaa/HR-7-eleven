@@ -11146,7 +11146,7 @@ async function loadExitOverrides(){
     +'<div class="card-h"><h3>ส่งผลัด &amp; สิทธิออกงานฉุกเฉิน</h3></div>'
     +'<div class="card-b" style="padding-top:0">'
     +'<div style="font-size:12.5px;line-height:1.75;margin-bottom:8px">'
-      +(subs.length?subs.map(x=>'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> กะ '+esc(x.shift_id)+' ส่งผลัดแล้ว '+fmtDT(x.submitted_at)+' <span class="muted">· '+esc(x.emp_name||'')+' · งาน '+x.done+'/'+x.total+(x.closed?(' · ปิดงาน '+x.closed):'')+'</span>').join('<br>')
+      +(subs.length?subs.map(x=>'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> กะ '+esc(x.shift_id)+' ส่งผลัดแล้ว '+fmtDT(x.submitted_at)+' <span class="muted">· '+esc(x.emp_name||'')+' · งาน '+x.done+'/'+x.total+(x.closed?(' · ปิดงาน '+x.closed):'')+'</span>'+(x.note?('<div style="margin:3px 0 6px 20px;padding:6px 9px;background:var(--orange-soft);border-radius:7px;color:var(--txt);white-space:pre-wrap">📝 ฝากถึงผลัดถัดไป: '+esc(x.note)+'</div>'):'')).join('<br>')
         :'<span class="muted">วันนี้ยังไม่มีกะไหนกดส่งผลัด — พนักงานในกะที่ยังไม่ส่งจะยังสแกนออกงานไม่ได้</span>')
     +'</div>'
     +'<div style="border-top:1px dashed var(--line);padding-top:9px">'
