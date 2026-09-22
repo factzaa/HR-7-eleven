@@ -1790,10 +1790,12 @@
     const row = (await sb.from('task_assignments').select('*').eq('id', id).maybeSingle()).data;
     if (!row) throw new Error('ไม่พบงานนี้');
     if (String(row.emp_id) !== String(emp.emp_id)) throw new Error('ดึงกลับได้เฉพาะงานของตัวเอง');
-    if (row.status !== 'submitted') throw new Error(row.status === 'approved'
+    // งานที่ตั้งค่า "ไม่ต้องตรวจ" จะขึ้นสถานะ approved ทันทีที่ส่ง ทั้งที่ยังไม่มีใครตรวจ → ต้องดึงกลับได้เหมือนกัน
+    const autoOk = row.status === 'approved' && /ไม่ต้องตรวจ/.test(String(row.reviewer || ''));
+    if (row.status !== 'submitted' && !autoOk) throw new Error(row.status === 'approved'
       ? 'งานนี้ถูกตรวจผ่านไปแล้ว — ให้หัวหน้าผลัดหรือ ผจก. ตีกลับให้'
       : 'งานนี้ยังไม่ได้ส่ง หรือดึงกลับไม่ได้แล้ว');
-    if (row.reviewed_at || row.reviewer || row.checked_at || row.mgr_checked_at)
+    if (row.checked_at || row.mgr_checked_at || (!autoOk && (row.reviewed_at || row.reviewer)))
       throw new Error('งานนี้มีผู้ตรวจแล้ว ดึงกลับไม่ได้ — ให้ผู้ตรวจตีกลับแทน');
     const sub = (await sb.from('shift_submits').select('id')
       .eq('work_date', row.work_date).eq('branch_id', row.branch_id || '').eq('shift_id', row.shift_id || '').maybeSingle()).data;
@@ -1801,9 +1803,9 @@
     const upd = { status: 'todo', submitted_at: null, reviewer: null, review_note: null, reviewed_at: null };
     const n = (Number(row.pull_count) || 0) + 1;
     const extra = { pull_count: n, pulled_at: new Date().toISOString(), pulled_by: emp.nickname || emp.name || emp.emp_id };
-    let { error } = await sb.from('task_assignments').update({ ...upd, ...extra }).eq('id', id).eq('status', 'submitted');
+    let { error } = await sb.from('task_assignments').update({ ...upd, ...extra }).eq('id', id).eq('status', row.status);
     if (error && /pull_count|pulled_at|pulled_by|column/i.test(String(error.message || ''))) {   // ยังไม่ได้รัน SQL เพิ่มคอลัมน์ → ดึงกลับได้ แต่ไม่นับครั้ง
-      const r2 = await sb.from('task_assignments').update(upd).eq('id', id).eq('status', 'submitted');
+      const r2 = await sb.from('task_assignments').update(upd).eq('id', id).eq('status', row.status);
       error = r2.error;
     }
     if (error) throw error;
