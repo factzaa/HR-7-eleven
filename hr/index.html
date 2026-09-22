@@ -12779,8 +12779,9 @@ function asstCardsHtml(cards){
     return wrap(cards.groups.map(g=>{
       const head='กะ '+esc(shiftName(g.shift))+' · สาขา '+esc(branchName(g.branch))+(g.date?(' · '+esc(g.date)):'');
       const items=(g.items||[]).map(it=>{
-        const stC=it.status==='approved'?'#16a34a':it.status==='submitted'?'#d97706':it.status==='sent_back'?'#dc2626':'#6b7280';
-        const stT=it.status==='approved'?'ผ่านแล้ว':it.status==='submitted'?'รอตรวจ':it.status==='sent_back'?'ตีกลับ':esc(it.status||'');
+        const _auto=(it.status==='approved' && /ไม่ต้องตรวจ/.test(String(it.reviewer||'')));
+        const stC=_auto?'#0891b2':it.status==='approved'?'#16a34a':it.status==='submitted'?'#d97706':it.status==='sent_back'?'#dc2626':'#6b7280';
+        const stT=_auto?'ทำเสร็จแล้ว':it.status==='approved'?'ผ่านแล้ว':it.status==='submitted'?'รอตรวจ':it.status==='sent_back'?'ตีกลับ':esc(it.status||'');
         const im=(Array.isArray(it.images)&&it.images.length)?'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">'+it.images.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:62px;height:62px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>':'';
         return '<div style="border-top:1px solid #e8ebe8;padding:7px 0">'
           +'<div style="display:flex;gap:6px;align-items:center"><span style="font-weight:600;font-size:13.5px;flex:1">'+esc(it.title||'-')+'</span><span style="font-size:11.5px;font-weight:700;color:'+stC+'">'+stT+(it.sent_back_count?(' ×'+it.sent_back_count):'')+'</span></div>'
@@ -13854,8 +13855,10 @@ async function spCreate(){
   SP_PHOTOS=[]; SP_SEL.clear(); renderSpPhotoPreview(); renderSpEmpList();
   loadSpecialList();
 }
-function spStatusPill(s){
+function spStatusPill(s, reviewer){
   const m={ todo:['ยังไม่ทำ','#6b7280'], submitted:['รอตรวจ','#d97706'], approved:['ผ่านแล้ว','#16a34a'], sent_back:['ตีกลับ','#dc2626'] };
+  // ★ 23 ก.ย. 69 — งานที่ตั้ง "ไม่ต้องตรวจ" ขึ้นผ่านเองตั้งแต่ส่ง ไม่มีใครตรวจจริง → เขียนว่า "ทำเสร็จแล้ว"
+  if(s==='approved' && /ไม่ต้องตรวจ/.test(String(reviewer||''))) return '<span style="display:inline-block;background:#0891b21a;color:#0891b2;border:1px solid #0891b2;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600">ทำเสร็จแล้ว</span>';
   const v=m[s]||['—','#6b7280'];
   return '<span style="display:inline-block;background:'+v[1]+'1a;color:'+v[1]+';border:1px solid '+v[1]+';border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600">'+v[0]+'</span>';
 }
@@ -13878,7 +13881,7 @@ async function loadSpecialList(){
     h+='<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:10px">';
     h+=t.people.map(p=>{
       SP_MAP[p.id]=p;
-      let c='<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-size:14px;font-weight:600">'+esc(p.emp_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(p.branch_name)+'</span> '+spStatusPill(p.status)+'</div>';
+      let c='<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-size:14px;font-weight:600">'+esc(p.emp_name)+' <span style="color:var(--muted);font-weight:400;font-size:12px">· '+esc(p.branch_name)+'</span> '+spStatusPill(p.status, p.reviewer)+'</div>';
       if(p.submitted_at) c+='<div style="font-size:12px;color:var(--muted)">ส่งเมื่อ '+spFmt(p.submitted_at)+'</div>';
       if(p.emp_note) c+='<div style="font-size:12.5px;margin-top:2px">หมายเหตุพนักงาน: '+esc(p.emp_note)+'</div>';
       if(Number(p.pull_count)||0) c+='<div style="font-size:12px;margin-top:2px;color:var(--orange)">↩ ดึงงานกลับมาแก้เอง '+(Number(p.pull_count)||0)+' ครั้ง</div>';
