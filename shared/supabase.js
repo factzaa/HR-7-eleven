@@ -446,18 +446,19 @@
 
   // ★ 23 ก.ย. 2569 — หมายเหตุที่ผลัดก่อนหน้าฝากไว้ (ปัญหา/เรื่องที่ต้องตามต่อ)
   //   ใช้ในหน้ารับส่งผลัดของพนักงาน — ผลัดถัดไปเปิดแอปแล้วเห็นทันที
-  async function prevShiftNotes(empId, limit = 3){
+  async function prevShiftNotes(empId, limit = 1){
     try{
       const emp = await lookupEmployee(empId); if (!emp) return [];
       const { workDate: today, group: shift, branch } = await _shiftCtx(emp);
-      const yest = new Date(new Date(today + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+      const pv = await _prevMainShift(shift, today);                    // ★ ผลัดก่อนหน้าโดยตรงเท่านั้น
+      if (!pv) return [];
       const { data } = await sb.from('shift_submits').select('*')
-        .eq('branch_id', branch || '').in('work_date', [yest, today])
-        .not('note', 'is', null).order('submitted_at', { ascending: false }).limit(8);
+        .eq('branch_id', branch || '').eq('work_date', pv.work_date).eq('shift_id', pv.shift_id)
+        .not('note', 'is', null).order('submitted_at', { ascending: false }).limit(3);
       return (data || [])
-        .filter(r => String(r.note || '').trim() && !(String(r.work_date) === today && String(r.shift_id) === String(shift || '')))
+        .filter(r => String(r.note || '').trim())
         .slice(0, limit)
-        .map(r => ({ note: String(r.note).trim(), shift_id: r.shift_id, work_date: r.work_date,
+        .map(r => ({ note: String(r.note).trim(), shift_id: r.shift_id, shift_name: pv.name, work_date: r.work_date,
                      emp_name: r.emp_name || '', submitted_at: r.submitted_at }));
     }catch(e){ return []; }
   }
@@ -2248,6 +2249,19 @@
     if(idx===0) return { shift:list[list.length-1]||null, date:_addDays(today,-1), list };  // กะแรก → ผลัดก่อนหน้า = กะสุดท้ายเมื่อวาน
     return { shift:list[idx-1], date:today, list };
   }
+  // ★ 23 ก.ย. 2569 — "ผลัดก่อนหน้า" แบบผลัดหลัก (เช้า→บ่าย→ดึก) พร้อมวันทำงานของผลัดนั้น
+  //   ใช้กับหมายเหตุฝากงาน: ต้องเอาเฉพาะผลัดที่ส่งงานต่อให้เราโดยตรงเท่านั้น
+  //   ถ้าดึงข้ามวันหลายผลัด พนักงานจะเข้าใจผิดว่างานยังไม่ได้ทำ ทั้งที่ผลัดก่อนหน้าทำไปแล้ว
+  async function _prevMainShift(curGroup, workDate){
+    const day = workDate || bangkokDate();
+    const list = ((await sb.from('shifts').select('shift_id,name,start_time,main_shift').order('start_time')).data || [])
+      .filter(s => !s.main_shift || s.main_shift === s.shift_id);
+    const idx = list.findIndex(s => s.shift_id === curGroup);
+    if (idx < 0) return null;
+    if (idx === 0) { const last = list[list.length - 1]; return last ? { shift_id: last.shift_id, name: last.name || last.shift_id, work_date: _addDays(day, -1) } : null; }
+    const p = list[idx - 1];
+    return { shift_id: p.shift_id, name: p.name || p.shift_id, work_date: day };
+  }
   // ---- ผลัดหลัก (จัดกลุ่ม): group = main_shift ของกะ (ว่าง = ใช้ shift_id เดิม = พิเศษ) ----
   async function _empGroup(emp){
     const today=bangkokDate();
@@ -2471,18 +2485,18 @@
     //   ดึงครั้งเดียวทั้งชุด แล้วแปะไว้กับงานแต่ละตัว ให้หน้าจอขึ้นเตือนก่อนลงมือทำ
     const prevNote = {};
     try{
-      const _yest = new Date(new Date(today+'T00:00:00Z').getTime()-86400000).toISOString().slice(0,10);
+      const _pv = await _prevMainShift(shift, today);                 // ★ เฉพาะ "ผลัดที่ส่งงานต่อให้เรา" ผลัดเดียว ไม่ไล่ย้อนหลายวัน
       const _ids = [...new Set(defs.map(d=>d.id).concat(mine.map(a=>a.task_def_id)).filter(Boolean))];
-      if(_ids.length){
+      if(_pv && _ids.length){
         const { data: pn } = await sb.from('task_assignments')
           .select('task_def_id,emp_note,emp_name,shift_id,work_date,submitted_at')
-          .eq('branch_id', branch||'').in('work_date', [_yest, today]).in('task_def_id', _ids)
-          .not('emp_note','is',null).order('submitted_at',{ ascending:false }).limit(200);
+          .eq('branch_id', branch||'').eq('work_date', _pv.work_date).eq('shift_id', _pv.shift_id)
+          .in('task_def_id', _ids).not('emp_note','is',null)
+          .order('submitted_at',{ ascending:false }).limit(200);
         (pn||[]).forEach(r=>{
           if(!String(r.emp_note||'').trim()) return;
-          if(String(r.work_date)===today && String(r.shift_id||'')===String(shift||'')) return;   // ของผลัดตัวเองวันนี้ ไม่ใช่ "ผลัดก่อน"
-          if(prevNote[r.task_def_id]) return;                                                    // เอาอันล่าสุดพอ
-          prevNote[r.task_def_id] = { note:String(r.emp_note).trim(), by:r.emp_name||'', shift_id:r.shift_id||'', work_date:r.work_date, at:r.submitted_at };
+          if(prevNote[r.task_def_id]) return;                          // งานเดียวกันมีหลายแถว เอาอันล่าสุด
+          prevNote[r.task_def_id] = { note:String(r.emp_note).trim(), by:r.emp_name||'', shift_id:r.shift_id||'', shift_name:_pv.name, work_date:r.work_date, at:r.submitted_at };
         });
       }
     }catch(e){}
