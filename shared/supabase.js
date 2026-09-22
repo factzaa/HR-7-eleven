@@ -2467,9 +2467,29 @@
           (ex||[]).forEach(d=>{ known[d.id]=1; details.push(_defBrief(d)); }); }catch(e){}
       }
     }
+    // ★ 23 ก.ย. 2569 — หมายเหตุของงานเดียวกันจาก "ผลัดก่อนหน้า" (เช่น วันนี้ไส้กรอกหมด ต้องเตรียมเพิ่ม)
+    //   ดึงครั้งเดียวทั้งชุด แล้วแปะไว้กับงานแต่ละตัว ให้หน้าจอขึ้นเตือนก่อนลงมือทำ
+    const prevNote = {};
+    try{
+      const _yest = new Date(new Date(today+'T00:00:00Z').getTime()-86400000).toISOString().slice(0,10);
+      const _ids = [...new Set(defs.map(d=>d.id).concat(mine.map(a=>a.task_def_id)).filter(Boolean))];
+      if(_ids.length){
+        const { data: pn } = await sb.from('task_assignments')
+          .select('task_def_id,emp_note,emp_name,shift_id,work_date,submitted_at')
+          .eq('branch_id', branch||'').in('work_date', [_yest, today]).in('task_def_id', _ids)
+          .not('emp_note','is',null).order('submitted_at',{ ascending:false }).limit(200);
+        (pn||[]).forEach(r=>{
+          if(!String(r.emp_note||'').trim()) return;
+          if(String(r.work_date)===today && String(r.shift_id||'')===String(shift||'')) return;   // ของผลัดตัวเองวันนี้ ไม่ใช่ "ผลัดก่อน"
+          if(prevNote[r.task_def_id]) return;                                                    // เอาอันล่าสุดพอ
+          prevNote[r.task_def_id] = { note:String(r.emp_note).trim(), by:r.emp_name||'', shift_id:r.shift_id||'', work_date:r.work_date, at:r.submitted_at };
+        });
+      }
+    }catch(e){}
+    mine.forEach(a=>{ const p=prevNote[a.task_def_id]; if(p) a._prev_note=p; });
     return { emp, shift, shift_name: shR.data?shR.data.name:shift,
       leader: leadR.data?{ emp_id:leadR.data.emp_id, name:leadR.data.emp_name }:null,
-      mine, team: asg,
+      mine, team: asg, prev_notes: prevNote,
       cross_shift: crossShift,   // ★ งานที่มอบข้ามกะ/ข้ามสาขามาให้
       details,
       my_shelves: myShelves, auto_picks: _af.picks,
