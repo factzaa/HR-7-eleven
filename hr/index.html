@@ -12816,6 +12816,7 @@ function asstCardsHtml(cards){
       else if(d.kind==='warning') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'warning\',\''+esc(d.warning_id)+'\')">เปิด/พิมพ์</button>';
       else if(d.kind==='report') act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'report\',\''+esc(d.emp_id)+'\',\''+esc(d.which||'current')+'\')">รายงาน PDF</button>';
       else if(d.kind==='ack_form'){ let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d)))); }catch(_e){} act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'ack_form\',\''+enc+'\')">ใบเซ็นรับทราบ PDF</button>'; }
+      else if(d.kind==='doc'){ let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d.spec||{})))); }catch(_e){} act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'form_view\',\''+enc+'\')">ดู/พิมพ์</button> <button class="btn btn-pri btn-sm" onclick="asstDoc(\'form\',\''+enc+'\')">PDF</button>'; }
       else if(d.kind==='form'){ let enc=''; try{ enc=btoa(unescape(encodeURIComponent(JSON.stringify(d.spec||{})))); }catch(_e){} act='<button class="btn btn-sec btn-sm" onclick="asstDoc(\'form_view\',\''+enc+'\')">ดู/พิมพ์</button> <button class="btn btn-pri btn-sm" onclick="asstDoc(\'form\',\''+enc+'\')">PDF</button>'; }
       else if(d.kind==='nav'){ act='<button class="btn btn-pri btn-sm" onclick="asstDoc(\'nav\',\''+esc(d.menu)+'\')">เปิดเมนู</button>'; }
       return '<div style="display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:11px;padding:9px 11px"><span style="color:var(--green);flex:none;display:flex">'+svg+'</span><span style="flex:1;font-size:13px;line-height:1.35">'+esc(d.label||d.kind)+'</span>'+act+'</div>';
@@ -12944,8 +12945,15 @@ function buildFormDocHtml(sp){
   const box='<span style="display:inline-block;width:12px;height:12px;border:1.3px solid #000;border-radius:2px;margin-right:6px;vertical-align:-2px"></span>';
   let h='<div class="es-doc" style="display:block">';
   h+=docHeadHTML(cfg, sp.title||'แบบฟอร์ม', sp.subtitle||'', '', '');
+  // ★ 23 ก.ย. 69 — เอกสารที่มีเนื้อหา (สรุปประชุม/บันทึกข้อความ) จากนิดา: หัวเอกสาร ที่/วันที่/เรียน/เรื่อง
+  if(Array.isArray(sp.meta) && sp.meta.length){
+    h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12.5px;margin:2px 0 14px">'
+      +sp.meta.map(m=>'<div style="white-space:nowrap;color:#374151">'+esc(m.label||'')+(m.label?':':'')+'</div><div style="font-weight:600">'+esc(m.value||'')+'</div>').join('')
+      +'</div>';
+  }
   (sp.sections||[]).forEach(x=>{
     if(x.heading) h+='<div class="es-dsec">'+esc(x.heading)+'</div>';
+
     if(x.type==='fields'){
       const it=x.items||[]; h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 22px;font-size:12.5px;margin:4px 0 12px">';
       it.forEach(lbl=>{ const long=String(lbl).length>18||it.length===1; h+='<div style="display:flex;align-items:flex-end;gap:6px'+(long?';grid-column:1 / -1':'')+'"><span style="white-space:nowrap">'+esc(lbl)+'</span>'+dots(80)+'</div>'; });
@@ -12956,12 +12964,25 @@ function buildFormDocHtml(sp){
       h+='<div style="display:flex;flex-wrap:wrap;gap:7px 22px;font-size:12.5px;margin:4px 0 12px;'+(x.inline?'':'flex-direction:column')+'">'+(x.items||[]).map(o=>'<div>'+box+esc(o)+(/ระบุ\)?$/.test(o)?(' <span style="display:inline-block;width:180px;border-bottom:1px dotted #000"></span>'):'')+'</div>').join('')+'</div>';
     } else if(x.type==='table'){
       const cols=x.columns||[]; h+='<table class="es-dt"><tr>'+cols.map(c=>'<th style="background:#f3f4f6;text-align:center'+(/^(รายการ|รายละเอียด|เรื่อง)/.test(c)?';width:34%':(/^(ลำดับ|ที่|ครั้งที่)$/.test(c)?';width:8%':''))+'">'+esc(c)+'</th>').join('')+'</tr>';
-      for(let i=0;i<(x.rows||5);i++) h+='<tr>'+cols.map((c,j)=>'<td style="height:24px;'+(j===0&&/ลำดับ|ที่/.test(c)?'text-align:center':'')+'">'+(j===0&&/ลำดับ/.test(c)?(i+1):'')+'</td>').join('')+'</tr>';
+      if(Array.isArray(x.rows)){   // ★ ตารางที่มีข้อมูลจริง (make_doc)
+        (x.rows||[]).forEach(r=>{ h+='<tr>'+cols.map((c,j)=>'<td style="height:24px;font-size:12px;'+(j===0&&/ลำดับ|ที่/.test(c)?'text-align:center':'')+'">'+esc((r&&r[j]!=null)?r[j]:'')+'</td>').join('')+'</tr>'; });
+      } else for(let i=0;i<(x.rows||5);i++) h+='<tr>'+cols.map((c,j)=>'<td style="height:24px;'+(j===0&&/ลำดับ|ที่/.test(c)?'text-align:center':'')+'">'+(j===0&&/ลำดับ/.test(c)?(i+1):'')+'</td>').join('')+'</tr>';
       if(x.total) h+='<tr><td colspan="'+Math.max(1,cols.length-1)+'" style="text-align:right;font-weight:700">รวม</td><td></td></tr>';
       h+='</table>';
     } else if(x.type==='paragraph'){
-      h+='<div class="es-note" style="line-height:1.85;margin:4px 0 12px">'+esc(x.text||'')+'</div>';
+      h+='<div class="es-note" style="line-height:1.85;margin:4px 0 12px;white-space:pre-wrap">'+esc(x.text||'')+'</div>';
+    } else if(x.type==='bullets'||x.type==='numbered'){
+      // รายการมีเนื้อหาจริง (จาก make_doc) — ย่อหน้าละข้อ อ่านง่ายบน A4
+      const tag=(x.type==='numbered')?'ol':'ul';
+      h+='<'+tag+' style="margin:4px 0 12px 18px;padding:0;font-size:12.5px;line-height:1.8">'
+        +(x.items||[]).map(i=>'<li style="margin:2px 0">'+esc(i)+'</li>').join('')+'</'+tag+'>';
+      if(x.text) h+='<div class="es-note" style="line-height:1.8;margin:-6px 0 12px;white-space:pre-wrap">'+esc(x.text)+'</div>';
+    } else if(x.type==='kv'){
+      h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12.5px;margin:4px 0 12px">'
+        +(x.items||[]).map(i=>{ const p=String(i).split(/\s*[:：]\s*/); const k=p.shift()||''; const v=p.join(': ');
+          return '<div style="white-space:nowrap;color:#374151">'+esc(k)+':</div><div>'+esc(v)+'</div>'; }).join('')+'</div>';
     }
+    if(x.note) h+='<div class="es-note" style="font-size:11px;color:#6b7280;margin:-6px 0 12px">'+esc(x.note)+'</div>';
   });
   const sg=(sp.signatures||[]);
   if(sg.length){ h+='<div class="es-sign" style="display:grid;grid-template-columns:repeat('+Math.min(sg.length,sg.length===4?2:3)+',1fr);gap:22px 16px;margin-top:22px">'+sg.map(l=>'<div style="text-align:center;font-size:12px"><div class="ln"></div>(............................................)<br>'+esc(l)+'<br>วันที่ ........./........./.........</div>').join('')+'</div>'; }
