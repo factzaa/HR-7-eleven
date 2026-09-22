@@ -994,6 +994,15 @@ $('l_addbtn').onclick=async()=>{
   catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
 };
 
+// ★ 23 ก.ย. 2569 — กล่อง "ฝากจากผลัดก่อนหน้า" ของงานนั้น ๆ
+function prevNoteHTML(p){
+  if(!p || !p.note) return '';
+  var SH={M:'เช้า',A:'บ่าย',N:'ดึก'}; var t='';
+  try{ t=new Date(p.at).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){}
+  return '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:7px 10px;margin-bottom:7px;font-size:12.5px;color:#7c2d12;line-height:1.55">'
+    +'<b>📝 ฝากจากผลัดก่อนหน้า</b> <span style="color:#a16207">ผลัด'+esc(SH[p.shift_id]||p.shift_id||'')+(p.by?(' · '+esc(p.by)):'')+(t?(' · '+esc(t)):'')+'</span>'
+    +'<div style="white-space:pre-wrap;margin-top:2px">'+esc(p.note)+'</div></div>';
+}
 // ============ เมนู 2: งานที่ได้รับมอบหมาย ============
 $('bMenu2').onclick=openM2;
 $('my_back').onclick=()=>{ show('step_menu'); refreshSendCard(); };
@@ -1055,6 +1064,7 @@ async function openM2(){
       : '';
     let c='<div class="card"'+((a._x_shift&&a._x_label)?' style="border-left:3px solid #3b82f6"':'')+'><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>'+_xb;
     c+=taskDetailHTML(window.TASK_DET[a.task_def_id]);
+    if(a._prev_note) c+=prevNoteHTML(a._prev_note);   // ★ ฝากจากผลัดก่อนหน้าเรื่องงานนี้ (เช่น ไส้กรอกหมด ต้องเตรียมเพิ่ม)
     if(a.status==='closed') c+='<div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:12.5px;line-height:1.6"><b>ปิดงาน — ทำไม่ได้</b><div style="margin-top:2px">'+esc(a.closed_reason||'')+'</div><div class="muted" style="font-size:11.5px;margin-top:3px">ปิดโดย '+esc(a.closed_by_name||'')+'</div></div>';
     if(a.status==='sent_back'&&a.review_note) c+='<div style="color:#b91c1c;font-size:13px;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ตีกลับ: '+esc(a.review_note)+(a.reviewer?(' (โดย '+esc(a.reviewer)+')'):'')+'</div>';
     if(a.status==='sent_back'&&Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12.5px;font-weight:700;margin:2px 0 4px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่ต้องแก้ (ผู้ตรวจวาดชี้ไว้)</div>'+thumbsHtml(a.review_markup);
@@ -1075,7 +1085,7 @@ async function openM2(){
         +'<div class="thumbs" id="mt_'+a.id+'" style="margin:2px 0 4px"></div>'
         +'<div class="muted" id="mc_'+a.id+'" style="margin-bottom:4px">'+(a.require_photo?'ต้องแนบรูป — ถ่ายได้หลายรูป (บังคับกล้อง กันใช้รูปเก่า)':'ถ่ายรูปได้ตามต้องการ (บังคับกล้อง)')+'</div>'
         +'<div style="font-size:11.5px;color:#0369a1;margin-bottom:8px"><svg class="ei" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7"/><rect x="8" y="13" width="8" height="5"/></svg> ระบบเก็บรูปที่ถ่ายไว้ให้อัตโนมัติ — สลับแอป/คนอื่นใช้มือถือแล้วกลับมาถ่ายต่อได้ ไม่ต้องเริ่มใหม่</div>'
-        +'<input type="text" id="mn_'+a.id+'" placeholder="หมายเหตุ (ถ้ามี)" value="'+esc(a.emp_note||'')+'" style="margin-bottom:8px">'
+        +'<textarea id="mn_'+a.id+'" rows="2" placeholder="หมายเหตุ / ฝากผลัดถัดไป เช่น วันนี้ไส้กรอกหมด ต้องเตรียมเพิ่ม" style="width:100%;margin-bottom:8px;padding:8px 10px;border:1.5px solid #d6d9e0;border-radius:9px;font:inherit;font-size:13.5px;resize:vertical">'+esc(a.emp_note||'')+'</textarea>'
         +'<button class="btn btn-pri" data-sub="'+a.id+'">'+(isEdit?'อัปเดต / ส่งใหม่':'ส่งงาน')+'</button>';
     }
     return c+'</div>';
@@ -1572,6 +1582,7 @@ async function openM3(){
       +'<div class="muted" style="font-size:12.5px;margin-bottom:6px">ตั้งค่าไว้ว่าไม่ต้องตรวจทุกใบ — ไม่ต้องไล่กดผ่าน'+(r.canReview?' แต่ถ้าเจอว่า<b>ทำไม่เรียบร้อย</b> กด “แจ้งแก้” ส่งกลับให้ผลัดก่อนหน้าแก้ได้':'')+'</div>'
       +nrv.map(a=>{ const s2=ST(a.status); return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)">'
         +'<div style="flex:1;font-size:13px">'+esc(a.title)+' <span class="muted">· '+esc(a.emp_name||a.emp_id||'—')+'</span>'
+          +(a.emp_note?('<div style="color:#7c2d12;font-size:12px;margin-top:2px;white-space:pre-wrap">📝 '+esc(a.emp_note)+'</div>'):'')
           +(a.review_note?('<div style="color:#b45309;font-size:12px;margin-top:2px">↳ '+esc(a.review_note)+'</div>'):'')+'</div>'
         +'<span class="pill '+s2[1]+'">'+s2[0]+'</span>'
         +((r.canReview && a.status!=='sent_back')?('<button class="btn btn-warn btn-sm" data-rb="'+a.id+'" style="flex:none;padding:5px 10px;font-size:12px">⤴ แจ้งแก้</button>'):'')
@@ -1586,6 +1597,7 @@ async function openM3(){
   $('pv_body').innerHTML=head+r.tasks.map(a=>{
     const s=ST(a.status); let c='<div class="card"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div style="font-weight:600;flex:1">'+esc(a.title)+'</div><span class="pill '+s[1]+'">'+s[0]+'</span></div>';
     c+='<div class="muted">ผู้ทำ: '+esc(a.emp_name||a.emp_id||'—')+(a.submitted_at?(' · ส่ง '+fmt(a.submitted_at)):'')+'</div>';
+    if(a.emp_note) c+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:7px 10px;margin-top:6px;font-size:12.5px;color:#7c2d12;white-space:pre-wrap"><b>📝 หมายเหตุจากผู้ทำ:</b> '+esc(a.emp_note)+'</div>';
     if(a.review_note) c+='<div style="color:#b45309;font-size:13px;margin-top:4px">↳ '+esc(a.review_note)+'</div>';
     if(Array.isArray(a.review_markup)&&a.review_markup.length) c+='<div style="color:#dc2626;font-size:12px;font-weight:700;margin-top:6px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg> จุดที่สั่งแก้</div>'+thumbsHtml(a.review_markup);
     c+=thumbsHtml(a.photos);
