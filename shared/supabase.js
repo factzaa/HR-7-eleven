@@ -444,6 +444,24 @@
     return { ok:true, line_sent, total: st.total, done: st.done, closed: st.closed.length };
   }
 
+  // ★ 23 ก.ย. 2569 — หมายเหตุที่ผลัดก่อนหน้าฝากไว้ (ปัญหา/เรื่องที่ต้องตามต่อ)
+  //   ใช้ในหน้ารับส่งผลัดของพนักงาน — ผลัดถัดไปเปิดแอปแล้วเห็นทันที
+  async function prevShiftNotes(empId, limit = 3){
+    try{
+      const emp = await lookupEmployee(empId); if (!emp) return [];
+      const { workDate: today, group: shift, branch } = await _shiftCtx(emp);
+      const yest = new Date(new Date(today + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+      const { data } = await sb.from('shift_submits').select('*')
+        .eq('branch_id', branch || '').in('work_date', [yest, today])
+        .not('note', 'is', null).order('submitted_at', { ascending: false }).limit(8);
+      return (data || [])
+        .filter(r => String(r.note || '').trim() && !(String(r.work_date) === today && String(r.shift_id) === String(shift || '')))
+        .slice(0, limit)
+        .map(r => ({ note: String(r.note).trim(), shift_id: r.shift_id, work_date: r.work_date,
+                     emp_name: r.emp_name || '', submitted_at: r.submitted_at }));
+    }catch(e){ return []; }
+  }
+
   // ---- ด่านสแกนออก: ยังไม่ส่งผลัด = ออกงานไม่ได้ ----
   //   ปลอดภัยไว้ก่อน — ถ้าตรวจไม่สำเร็จด้วยเหตุใดก็ตาม จะ "ไม่ล็อก" คนออกงาน
   async function _checkoutShiftGate(empId, row){
@@ -3992,6 +4010,6 @@
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
-    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
