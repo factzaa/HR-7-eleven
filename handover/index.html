@@ -68,6 +68,17 @@
   .imgbtn{display:block;width:100%;padding:0;margin:0 0 12px;border:none;background:none;cursor:pointer;border-radius:14px;}
   .imgbtn img{display:block;width:100%;height:auto;border-radius:14px;}
   .imgbtn:active{transform:scale(.99);}
+  /* ★ 23 ก.ย. 69 — แบบทดสอบพนักงาน (ย้ายมาโชว์ในหน้ารับส่งผลัด) */
+  .exq{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
+  .exq .q{font-weight:600;font-size:15.5px;margin-bottom:10px;line-height:1.5;}
+  .opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:11px;padding:11px 12px;margin-bottom:8px;cursor:pointer;font-size:15px;line-height:1.45;}
+  .opt.sel{border-color:var(--green);background:var(--green-soft);}
+  .opt input{margin-top:3px;flex:none;width:18px;height:18px;accent-color:var(--green);}
+  .opt.correct{border-color:var(--green);background:var(--green-soft);}
+  .opt.wrong{border-color:var(--red);background:#fdeaea;}
+  .exp{font-size:12.5px;color:var(--muted);margin-top:6px;background:#f7f9f7;border-radius:8px;padding:7px 10px;}
+  .scorebig{font-size:44px;font-weight:800;line-height:1;}
+  .excard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--green);border-radius:14px;padding:12px 13px;margin-bottom:10px;}
 </style>
 <style id="ui-refresh">
 .ei{width:1em;height:1em;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;display:inline-block}
@@ -99,6 +110,8 @@
     <div id="step_menu" class="hide">
       <div class="who"><div><div class="nm" id="m_nm">—</div><div class="sub" id="m_sub"></div></div><span class="ch" id="changeBtn">เปลี่ยนรหัส</span></div>
       <div id="hoCoCard" style="margin-bottom:12px"></div>
+      <!-- ★ 23 ก.ย. 69 — แบบทดสอบที่ต้องทำ (ดึงจากระบบข้อสอบ HR) -->
+      <div id="hoExamCard" style="margin-bottom:12px"></div>
       <button class="imgbtn" id="bMenu1"><img src="../01_shift_leader_assign.png?v=1" alt="หัวหน้าผลัด · มอบหมายงาน"></button>
       <button class="imgbtn" id="bMenu2" style="position:relative"><img src="../02_my_tasks.png?v=1" alt="งานที่ได้รับมอบหมาย"><span id="spBadge" style="display:none;position:absolute;top:8px;right:10px;background:#dc2626;color:#fff;font-size:13px;font-weight:700;min-width:24px;height:24px;line-height:24px;border-radius:999px;padding:0 7px;box-shadow:0 2px 6px rgba(0,0,0,.3)">0</span></button>
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
@@ -150,6 +163,12 @@
       <div id="rp_body"></div>
     </div>
 
+    <!-- ★ แบบทดสอบพนักงาน -->
+    <div id="step_exam" class="hide">
+      <div class="who"><div><div class="nm" id="ex_nm">แบบทดสอบ</div><div class="sub" id="ex_who"></div></div><span class="ch" id="ex_back">‹ เมนู</span></div>
+      <div id="ex_body"><div class="card muted">กำลังโหลด…</div></div>
+    </div>
+
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -163,7 +182,7 @@
 const $=id=>document.getElementById(id);
 function toast(t,m){const e=$('toast');e.textContent=m;e.className='toast show '+(t||'ok');setTimeout(()=>e.className='toast',3000);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function show(id){['step_id','step_menu','step_m1','step_m2','step_m3','step_goods','step_report'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
+function show(id){['step_id','step_menu','step_m1','step_m2','step_m3','step_goods','step_report','step_exam'].forEach(s=>$(s).classList.add('hide'));$(id).classList.remove('hide');}
 function fmt(t){try{return new Date(t).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'});}catch(e){return '';}}
 // ★ 23 ก.ย. 2569 — งานที่ตั้งค่า "ไม่ต้องตรวจ" ระบบขึ้นสถานะผ่านทันทีที่ส่ง ทั้งที่ยังไม่มีใครตรวจ
 //   ต้องเขียนให้ตรงความจริงว่า "ทำเสร็จแล้ว" ไม่ใช่ "ผ่านแล้ว" กันพนักงานเข้าใจว่าส่งอะไรไปก็ผ่าน
@@ -697,6 +716,7 @@ $('goBtn').onclick=async()=>{
     refreshGoodsBtn();       // แสดงปุ่มรับสินค้าเฉพาะผู้คุมผลัด / ปุ่มกดรับตอนยังว่าง
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"
     refreshCoCard();         // การ์ดเตือนกดออก/ควบกะ
+    refreshExamCard();       // ★ แบบทดสอบที่ยังต้องทำ
     refreshPrevNote();       // ★ หมายเหตุที่ผลัดก่อนหน้าฝากไว้
     refreshSendCard();       // ★ การ์ดส่งผลัด (หัวหน้าผลัดกดยืนยันงานพร้อมให้ตรวจ)
     if(window.refreshNotifyBtn) window.refreshNotifyBtn();
@@ -1937,6 +1957,93 @@ function openCorrForm(row){
 }
 
 // ===== แจ้งเตือนงานบนมือถือพนักงาน (Web Push) =====
+// ============================================================
+// ★ 23 ก.ย. 69 — แบบทดสอบพนักงาน (โชว์ในหน้ารับส่งผลัด)
+//   HR กด "เผยแพร่" ที่เมนูแบบทดสอบ → ข้อสอบจะมาขึ้นเป็นการ์ดบนหน้าเมนูนี้
+//   ทำในหน้านี้ได้เลย ไม่ต้องกรอกรหัส/PIN ซ้ำ · ตรวจคะแนนที่เซิร์ฟเวอร์เหมือนหน้า /exam/
+// ============================================================
+let EXPAPER=null, EXSTART=null, EXCUR=null;
+async function refreshExamCard(){
+  const box=$('hoExamCard'); if(!box) return;
+  if(!EMP){ box.innerHTML=''; return; }
+  let r; try{ r=await window.HR.getMyExams(EMP.emp_id); }catch(e){ box.innerHTML=''; return; }
+  const todo=(r.rows||[]).filter(e=>e.can_attempt);
+  if(!todo.length){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="card" style="border-left:3px solid var(--orange);padding:12px 13px;margin-bottom:0">'
+    +'<div style="font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:7px">'
+    +'<svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
+    +'แบบทดสอบที่ต้องทำ <span class="pill warn">'+todo.length+'</span></div>'
+    +todo.map(e=>'<div style="border-top:1px solid var(--line);margin-top:9px;padding-top:9px">'
+      +'<div style="font-weight:600;font-size:14.5px">'+esc(e.title)+'</div>'
+      +(e.description?'<div class="muted" style="margin-top:2px">'+esc(e.description)+'</div>':'')
+      +'<div class="muted" style="margin-top:3px;font-size:12.5px">เกณฑ์ผ่าน '+e.pass_percent+'% · ทำได้ '+e.max_attempts+' ครั้ง'
+        +(e.attempts_used>0?(' · ทำแล้ว '+e.attempts_used+' ครั้ง สูงสุด '+e.best+'%'):'')
+        +(e.time_limit_min?(' · จำกัด '+e.time_limit_min+' นาที'):'')
+        +(e.deadline?(' · ถึง '+esc(e.deadline)):'')+'</div>'
+      +'<button class="btn btn-pri btn-sm" style="margin-top:8px" data-exgo="'+e.id+'">'+(e.attempts_used>0?'ทำใหม่':'ทำข้อสอบ')+'</button>'
+      +'</div>').join('')
+    +'</div>';
+  box.querySelectorAll('[data-exgo]').forEach(b=>b.onclick=()=>hoStartExam(Number(b.dataset.exgo)));
+}
+function exShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+async function hoStartExam(examId){
+  let r; try{ r=await window.HR.getExamPaper(examId, EMP.emp_id); }catch(e){ toast('err', e.message||'เปิดข้อสอบไม่ได้'); return; }
+  EXCUR=r.exam; EXSTART=new Date().toISOString();
+  const qs=(r.questions||[]).map(q=>({ id:q.id, question:q.question, opts:(q.choices||[]).map((c,idx)=>({t:c,idx})) }));
+  if(EXCUR.shuffle!==false){ exShuffle(qs); qs.forEach(q=>exShuffle(q.opts)); }
+  EXPAPER={ examId, qs, answers:{} };
+  $('ex_nm').textContent=EXCUR.title;
+  $('ex_who').textContent='เกณฑ์ผ่าน '+EXCUR.pass_percent+'% · '+qs.length+' ข้อ'+(EXCUR.time_limit_min?(' · จำกัด '+EXCUR.time_limit_min+' นาที'):'');
+  hoRenderQs();
+  show('step_exam'); window.scrollTo(0,0);
+}
+function hoRenderQs(){
+  $('ex_body').innerHTML=EXPAPER.qs.map((q,qi)=>'<div class="exq"><div class="q">'+(qi+1)+'. '+esc(q.question)+'</div>'
+      +q.opts.map(o=>'<label class="opt" data-q="'+q.id+'" data-v="'+o.idx+'"><input type="radio" name="exq'+q.id+'"><span>'+esc(o.t)+'</span></label>').join('')
+      +'</div>').join('')
+    +'<button class="btn btn-pri" id="ex_submit">ส่งคำตอบ</button>';
+  $('ex_body').querySelectorAll('.opt').forEach(lb=>lb.onclick=()=>{
+    const qid=lb.dataset.q; EXPAPER.answers[qid]=Number(lb.dataset.v);
+    $('ex_body').querySelectorAll('.opt[data-q="'+qid+'"]').forEach(x=>x.classList.remove('sel'));
+    lb.classList.add('sel'); const rb=lb.querySelector('input'); if(rb) rb.checked=true;
+  });
+  $('ex_submit').onclick=hoSubmitExam;
+}
+async function hoSubmitExam(){
+  const un=EXPAPER.qs.filter(q=>EXPAPER.answers[q.id]==null).length;
+  if(un>0 && !confirm('ยังไม่ได้ตอบ '+un+' ข้อ · ส่งเลยไหม? (ข้อที่ไม่ตอบจะถือว่าผิด)')) return;
+  const b=$('ex_submit'); b.disabled=true; b.innerHTML='<span class="spin"></span> กำลังส่ง…';
+  let r;
+  try{ r=await window.HR.submitExam({ empId:EMP.emp_id, examId:EXPAPER.examId, answers:EXPAPER.answers, started_at:EXSTART }); }
+  catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); b.disabled=false; b.textContent='ส่งคำตอบ'; return; }
+  EXPAPER=null; hoExamResult(r);
+}
+function hoExamResult(r){
+  const col=r.passed?'var(--green)':'var(--red)';
+  let h='<div class="card" style="text-align:center">'
+    +'<div class="scorebig" style="color:'+col+'">'+r.percent+'%</div>'
+    +'<div style="margin-top:6px;font-size:15px">ตอบถูก '+r.score+'/'+r.total+' ข้อ</div>'
+    +'<div style="margin-top:8px">'+(r.passed?'<span class="pill ok">ผ่าน</span>':'<span class="pill bad">ไม่ผ่าน (เกณฑ์ '+r.pass_percent+'%)</span>')+'</div>'
+    +(!r.passed&&r.attempts_left>0?'<div class="muted" style="margin-top:8px">ทำใหม่ได้อีก '+r.attempts_left+' ครั้ง</div>':'')
+    +(!r.passed&&r.attempts_left<=0?'<div class="muted" style="margin-top:8px">ใช้สิทธิ์ครบแล้ว — ติดต่อ HR หากต้องการทำเพิ่ม</div>':'')
+    +'</div>';
+  if(Array.isArray(r.review)&&r.review.length){
+    h+='<h3 class="sec">เฉลย/ทบทวน</h3>'+r.review.map((q,i)=>{
+      let opts='';
+      if(Array.isArray(q.choices)) opts=q.choices.map((c,idx)=>{ const cls=idx===q.answer?'opt correct':((idx===q.chosen&&!q.correct)?'opt wrong':'opt'); return '<div class="'+cls+'" style="cursor:default"><span>'+esc(c)+'</span></div>'; }).join('');
+      return '<div class="exq"><div class="q">'+(i+1)+'. '+esc(q.question)+' '+(q.correct?'<span class="pill ok">ถูก</span>':'<span class="pill bad">ผิด</span>')+'</div>'+opts+(q.explain?'<div class="exp">เฉลย: '+esc(q.explain)+'</div>':'')+'</div>';
+    }).join('');
+  }
+  h+='<button class="btn btn-pri" id="ex_done">กลับเมนูงานผลัด</button>';
+  $('ex_body').innerHTML=h;
+  $('ex_done').onclick=()=>{ show('step_menu'); refreshExamCard(); };
+  window.scrollTo(0,0);
+}
+$('ex_back').onclick=()=>{
+  if(EXPAPER && !confirm('ออกจากแบบทดสอบ? คำตอบที่ทำไว้จะไม่ถูกบันทึก')) return;
+  EXPAPER=null; show('step_menu'); refreshExamCard();
+};
+
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('../sw.js',{updateViaCache:'none'}).then(function(r){try{r.update();}catch(e){}}).catch(function(){}); }); }
 (function(){
   const btn=$('bNotify'); if(!btn) return;
