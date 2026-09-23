@@ -1247,10 +1247,67 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 .ec-lgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px 16px}
 .ec-lg{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--txt)}
 .ec-lg .ec-md{width:19px;height:19px;flex:none;box-shadow:none}
+/* ★ 24 ก.ย. 69 — หน้าบัตรพนักงานบนมือถือ */
+@media(max-width:560px){
+  .ec-grid{grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:9px}
+  .ec-bar{padding:9px 10px;gap:6px}
+  .ec-search{flex:1 1 100%}
+  .ec-chip{font-size:11.5px;padding:5px 10px}
+  .ec-brhead{margin:14px 2px 9px}
+  .ec-brhead h3{font-size:13px}
+  .ec-lgrid{grid-template-columns:1fr}
+  .ec-nick{font-size:13.5px}
+  .ec-photo{font-size:30px}
+}
 .es-report{background:var(--card);color:var(--txt);max-width:820px;margin:8px auto;padding:10px 6px;font-size:13px}
 .an-axes{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
 @media(max-width:900px){.an-axes{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.an-axes{grid-template-columns:1fr}}
+
+/* ===== ★ 24 ก.ย. 69 — หน้าสรุปรายบุคคลบนมือถือ =====
+   เดิมวางเป็น 2–3 คอลัมน์ตายตัว พอจอแคบเลยบีบจนอ่านไม่ออก · ตรงนี้ให้เรียงลงมาทีละบล็อกแทน */
+.an-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.an-head{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.an-score{text-align:right;min-width:180px}
+.an-rail{display:grid;grid-template-columns:130px 1fr 104px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line2);font-size:12.5px}
+@media(max-width:760px){
+  .an-2col{grid-template-columns:1fr;gap:14px}
+}
+@media(max-width:640px){
+  /* หัวบัตร: รูป+ชื่อบรรทัดเดียว · คะแนนวินัยย้ายลงมาเต็มความกว้าง อ่านง่ายกว่าโดนบีบชิดขวา */
+  .an-head{gap:11px}
+  .an-score{min-width:0;width:100%;text-align:left;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    border-top:1px dashed var(--line2);padding-top:10px;margin-top:2px}
+  .an-score .an-score-l{order:1}
+  .an-score .an-score-v{order:2;font-size:26px!important}
+  .an-score > div:last-child{order:3;margin-top:0!important}
+  /* เทียบเพื่อน: ชื่อหัวข้อ+อันดับบรรทัดบน · แถบเทียบเต็มความกว้างบรรทัดล่าง */
+  .an-rail{grid-template-columns:1fr auto;gap:5px 10px;padding:9px 0}
+  .an-rail .an-rail-bar{grid-column:1 / -1;order:3}
+  .an-rail-h{display:none}
+  /* การ์ดในหน้านี้ ลดขอบในให้เนื้อหากว้างขึ้น */
+  #es_body > .card{padding:13px!important}
+  #es_body .an-axes{gap:9px}
+}
+@media(max-width:480px){
+  #view_empsum .container,#view_empsum{padding-left:10px;padding-right:10px}
+  .an-head img,.an-head > div:first-child{width:46px!important;height:46px!important}
+}
+/* แถบเครื่องมือด้านบน: บนมือถือให้แต่ละช่องเต็มแถว ไม่เบียดกัน */
+@media(max-width:640px){
+  .es-controls{gap:8px}
+  .es-controls > div{flex:1 1 100%;min-width:0}
+  .es-controls select,.es-controls input[type=date]{width:100%;min-width:0!important}
+  .es-controls .btn{flex:1 1 auto}
+  #es_range span{display:flex;gap:6px}
+  #es_range input{flex:1;min-width:0}
+}
+/* เอกสาร A4 ที่พับดูบนจอ: บนมือถือให้ตารางเลื่อนแนวนอนได้ ไม่ดันหน้าทั้งหน้า */
+@media(max-width:760px){
+  .es-report{max-width:100%;padding:8px 2px;font-size:12.5px}
+  .es-report table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .es-report .es-grid{grid-template-columns:repeat(3,1fr)}
+}
 .es-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e2430;padding-bottom:8px;margin-bottom:10px}
 .es-title{font-size:18px;font-weight:700;color:#1e2430}
 .es-sub{font-size:12px;color:#555;margin-top:2px}
@@ -14381,12 +14438,12 @@ function anRail(o,label){
   if(!o) return '';
   const pos=Math.max(2,Math.min(98,o.mine)), avg=Math.max(2,Math.min(98,o.avg));
   const good=o.rank<=Math.ceil(o.of/3), bad=o.rank>Math.ceil(o.of*2/3);
-  return '<div style="display:grid;grid-template-columns:130px 1fr 104px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line2);font-size:12.5px">'
-    +'<span>'+esc(label)+'</span>'
-    +'<span style="position:relative;height:22px;background:linear-gradient(90deg,#fee2e2,#fef3c7 45%,#dcfce7);border-radius:6px;display:block">'
+  return '<div class="an-rail">'
+    +'<span class="an-rail-lb">'+esc(label)+'</span>'
+    +'<span class="an-rail-bar" style="position:relative;height:22px;background:linear-gradient(90deg,#fee2e2,#fef3c7 45%,#dcfce7);border-radius:6px;display:block">'
       +'<i style="position:absolute;top:2px;left:'+avg+'%;width:2px;height:18px;background:#64748b"></i>'
       +'<i style="position:absolute;top:-3px;left:'+pos+'%;width:3px;height:28px;background:#111;border-radius:2px"></i></span>'
-    +'<span style="text-align:right;font-weight:700;color:'+(good?'#16a34a':bad?'#dc2626':'#d97706')+'">อันดับ '+o.rank+' / '+o.of+'</span></div>';
+    +'<span class="an-rail-rk" style="text-align:right;font-weight:700;color:'+(good?'#16a34a':bad?'#dc2626':'#d97706')+'">อันดับ '+o.rank+' / '+o.of+'</span></div>';
 }
 function anSpark(rows,key,color,unit){
   const vals=rows.map(r=>r[key]).map(v=>v==null?0:Number(v));
@@ -14415,12 +14472,12 @@ function renderEmpAnalysis(r){
   const sc=r.score||{};
   let h='<div class="card" style="padding:16px;margin-bottom:12px">';
   // หัวบัตร
-  h+='<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">'
+  h+='<div class="an-head">'
     +(e.photo_url?('<img src="'+esc(e.photo_url)+'" style="width:56px;height:56px;border-radius:14px;object-fit:cover">'):('<div style="width:56px;height:56px;border-radius:14px;background:#dbe5de;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:21px;color:#59695f">'+esc((e.nickname||e.name||'?').slice(0,1))+'</div>'))
     +'<div style="min-width:0;flex:1"><div style="font-weight:700;font-size:16.5px">'+esc(e.nickname||e.name)+' <span class="muted" style="font-weight:400;font-size:13px">'+esc(e.name)+' · '+esc(e.emp_id)+'</span></div>'
       +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">'+esc(e.branch_name)+(e.shift_name?(' · กะหลัก '+esc(e.shift_name)):'')+' · '+esc(r.range.label)+'</div></div>'
-    +'<div style="text-align:right;min-width:180px"><div style="font-size:11.5px;color:var(--muted)">คะแนนวินัยรอบนี้</div>'
-      +'<div style="font-size:31px;font-weight:700;line-height:1;color:'+(sc.band_color||'#475569')+'">'+(sc.score!=null?sc.score:'—')+'<span style="font-size:14px;color:var(--muted);font-weight:400">/'+(sc.start!=null?sc.start:100)+'</span></div>'
+    +'<div class="an-score"><div class="an-score-l" style="font-size:11.5px;color:var(--muted)">คะแนนวินัยรอบนี้</div>'
+      +'<div class="an-score-v" style="font-size:31px;font-weight:700;line-height:1;color:'+(sc.band_color||'#475569')+'">'+(sc.score!=null?sc.score:'—')+'<span style="font-size:14px;color:var(--muted);font-weight:400">/'+(sc.start!=null?sc.start:100)+'</span></div>'
       +(sc.band_label?('<div style="margin-top:5px"><span class="pill" style="background:'+(sc.band_color||'#475569')+'22;color:'+(sc.band_color||'#475569')+'">'+esc(sc.band_label)+'</span></div>'):'')
     +'</div></div>';
   if(hl.text) h+='<div style="margin-top:12px;padding:11px 13px;background:'+toneBg+';border:1px solid '+toneBd+';border-radius:11px;font-size:13px;line-height:1.65;color:'+toneTx+'">'+esc(hl.text)
@@ -14434,7 +14491,7 @@ function renderEmpAnalysis(r){
   const cp=an.compare||{};
   if(cp.on_time||cp.quality||cp.load||cp.score){
     h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:6px">ตัวเลขนี้ดีหรือแย่ — เทียบกับเพื่อนร่วมสาขา</h3>'
-      +'<div style="display:grid;grid-template-columns:130px 1fr 104px;gap:10px;font-size:11.5px;color:var(--muted);font-weight:600;padding-bottom:5px;border-bottom:1px solid var(--line2)"><span>หัวข้อ</span><span>แย่ที่สุด ←→ ดีที่สุด</span><span style="text-align:right">อันดับในสาขา</span></div>'
+      +'<div class="an-rail an-rail-h" style="font-weight:600;color:var(--muted);border-bottom:1px solid var(--line2)"><span>หัวข้อ</span><span>แย่ที่สุด ←→ ดีที่สุด</span><span style="text-align:right">อันดับในสาขา</span></div>'
       +anRail(cp.on_time,'ความตรงต่อเวลา')+anRail(cp.quality,'คุณภาพงาน')+anRail(cp.load,'ปริมาณงานที่รับ')+anRail(cp.score,'คะแนนวินัย')
       +'<div style="font-size:11.5px;color:var(--muted);margin-top:9px">เส้นดำ = คนนี้ · เส้นเทา = ค่าเฉลี่ยของสาขา</div></div>';
   }
@@ -14442,7 +14499,7 @@ function renderEmpAnalysis(r){
   const tr=an.trend||[];
   if(tr.length>1){
     h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">แนวโน้มย้อนหลัง '+tr.length+' รอบ</h3>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
+      +'<div class="an-2col">'
         +'<div><div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">จำนวนครั้งที่มาสาย</div>'+anSpark(tr,'late','#dc2626')+'</div>'
         +'<div><div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">นาทีสายรวมต่อรอบ</div>'+anSpark(tr,'late_min','#d97706')+'</div>'
       +'</div>'
@@ -14454,7 +14511,7 @@ function renderEmpAnalysis(r){
   if((pt.dow||[]).some(v=>v>0)){
     const maxD=Math.max(...pt.dow);
     h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">รูปแบบการมาสาย — หาสาเหตุที่แท้จริงก่อนคุย</h3>'
-      +'<div style="display:grid;grid-template-columns:1.1fr 1fr;gap:18px">'
+      +'<div class="an-2col">'
       +'<div><div style="font-size:11.5px;color:var(--muted);margin-bottom:7px">สายแยกตามวันในสัปดาห์ (6 รอบล่าสุด)</div>'
         +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center">'
         +pt.dow.map((v,i)=>'<div><div style="background:#eceff0;border-radius:7px;height:70px;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden">'
@@ -14472,7 +14529,7 @@ function renderEmpAnalysis(r){
   // สรุป + สิ่งที่ควรทำ
   const kcol={red:'#dc2626',amber:'#d97706',blue:'#2563eb',green:'#16a34a'};
   h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">สรุปอัตโนมัติ · สิ่งที่ควรทำต่อ</h3>'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:13px">'
+    +'<div class="an-2col" style="margin-bottom:13px">'
       +'<div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d;border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.75"><b style="display:block;margin-bottom:4px">จุดแข็ง</b>'
         +((an.strong||[]).length?an.strong.map(t=>'• '+esc(t)).join('<br>'):'<span style="color:var(--muted)">ยังไม่มีจุดที่โดดเด่นพอในช่วงนี้</span>')+'</div>'
       +'<div style="background:#fef2f2;border:1px solid #fecaca;color:#7f1d1d;border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.75"><b style="display:block;margin-bottom:4px">จุดที่ต้องพัฒนา</b>'
