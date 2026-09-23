@@ -891,11 +891,24 @@
       }
     }
     if (!examId) return { ok: false, error: 'บันทึกชุดข้อสอบไม่สำเร็จ' };
-    // แทนที่คำถามทั้งชุด
-    await sb().from('exam_questions').delete().eq('exam_id', examId);
+    // ★ 23 ก.ย. 69 — บันทึกคำถามแบบ "คงรหัสข้อเดิมไว้" (เทียบจากข้อความคำถาม)
+    //   เดิม: ลบทิ้งทั้งชุดแล้วใส่ใหม่ → รหัสข้อเปลี่ยนทุกครั้งที่กดบันทึก
+    //   ผลเสีย: คำตอบที่พนักงานทำไว้ชี้ไปที่รหัสข้อเก่าที่ถูกลบแล้ว → หน้า "จุดตอบผิดบ่อย" หาข้อไม่เจอ ขึ้นว่าง
     const qrows = qs.map((q, i) => ({ exam_id: examId, seq: i, question: String(q.question).trim(), choices: q.choices.map(c => String(c)), answer: Math.max(0, Math.min(q.choices.length - 1, parseInt(q.answer, 10) || 0)), explain: (q.explain || '').trim() || null, knowledge_ref: (q.knowledge_ref || '').trim() || null }));
-    const { error: qErr } = await sb().from('exam_questions').insert(qrows);
-    if (qErr) return { ok: false, error: qErr.message };
+    const { data: oldQs } = await sb().from('exam_questions').select('id,question').eq('exam_id', examId);
+    const oldByText = {}; (oldQs || []).forEach(q => { const k = String(q.question || '').trim(); if (!(k in oldByText)) oldByText[k] = q.id; });
+    const keptIds = new Set(); const toInsert = [];
+    for (const r of qrows) {
+      const oldId = oldByText[r.question];
+      if (oldId != null && !keptIds.has(oldId)) {
+        keptIds.add(oldId);
+        const { error: uErr } = await sb().from('exam_questions').update({ seq: r.seq, choices: r.choices, answer: r.answer, explain: r.explain, knowledge_ref: r.knowledge_ref }).eq('id', oldId);
+        if (uErr) return { ok: false, error: uErr.message };
+      } else toInsert.push(r);
+    }
+    const goneIds = (oldQs || []).map(q => q.id).filter(qid => !keptIds.has(qid));
+    if (goneIds.length) await sb().from('exam_questions').delete().in('id', goneIds);
+    if (toInsert.length) { const { error: qErr } = await sb().from('exam_questions').insert(toInsert); if (qErr) return { ok: false, error: qErr.message }; }
     // มอบหมายรายคน
     if (row.scope === 'emp' && Array.isArray(d.emp_ids)) {
       await sb().from('exam_assignees').delete().eq('exam_id', examId);
@@ -1080,7 +1093,19 @@
     const first = Object.values(firstBy);
     const takers = first.length;
     const stat = {}; (qs || []).forEach(q => stat[q.id] = { wrong: 0, ans: 0 });
-    first.forEach(a => { (a.answers || []).forEach(d => { const s = stat[d.q_id]; if (!s) return; s.ans++; if (!d.correct) s.wrong++; }); });
+    // ★ 23 ก.ย. 69 — รองรับคำตอบเก่าที่ "รหัสข้อ" ไม่ตรง (เกิดจากการบันทึกข้อสอบทับก่อนแก้บั๊ก)
+    //   ถ้าหารหัสไม่เจอเลย และจำนวนข้อเท่ากัน → เทียบตามลำดับข้อแทน (คำตอบเก็บเรียงตาม seq อยู่แล้ว)
+    let matchedAny = false;
+    first.forEach(a => { (a.answers || []).forEach(d => { if (stat[d.q_id]) matchedAny = true; }); });
+    first.forEach(a => {
+      const arr = a.answers || [];
+      const byPos = !matchedAny && arr.length === (qs || []).length;
+      arr.forEach((d, i) => {
+        const s = byPos ? stat[(qs[i] || {}).id] : stat[d.q_id];
+        if (!s) return;
+        s.ans++; if (!d.correct) s.wrong++;
+      });
+    });
     const qMap = {}; (qs || []).forEach(q => qMap[q.id] = q);
     const spots = (qs || []).map(q => { const s = stat[q.id] || { wrong: 0, ans: 0 }; const denom = s.ans || takers; const pct = denom ? Math.round(s.wrong / denom * 100) : 0; const ch = Array.isArray(q.choices) ? q.choices : []; return { q_id: q.id, seq: q.seq, question: q.question, wrong: s.wrong, answered: denom, wrong_pct: pct, correct_text: ch[q.answer] || '', knowledge_ref: q.knowledge_ref || '' }; })
       .sort((a, b) => b.wrong_pct - a.wrong_pct);
