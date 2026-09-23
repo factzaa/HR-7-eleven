@@ -1963,6 +1963,13 @@ function openCorrForm(row){
 //   ทำในหน้านี้ได้เลย ไม่ต้องกรอกรหัส/PIN ซ้ำ · ตรวจคะแนนที่เซิร์ฟเวอร์เหมือนหน้า /exam/
 // ============================================================
 let EXPAPER=null, EXSTART=null, EXCUR=null;
+// ข้อความบอกว่าชุดนี้มีผลกับคะแนนวินัยอย่างไร
+function exDiscText(e){
+  const p=[];
+  if(e.disc_points>0) p.push('ได้ต่ำกว่า '+e.disc_threshold+'% หัก '+e.disc_points+' คะแนน');
+  if(e.disc_bonus_points>0) p.push('ได้ตั้งแต่ '+e.disc_bonus_min+'% ขึ้นไป บวก '+e.disc_bonus_points+' คะแนน');
+  return p.join(' · ')+(e.disc_basis==='first'?' (ยึดคะแนนครั้งแรก)':'');
+}
 async function refreshExamCard(){
   const box=$('hoExamCard'); if(!box) return;
   if(!EMP){ box.innerHTML=''; return; }
@@ -1980,7 +1987,7 @@ async function refreshExamCard(){
         +(e.attempts_used>0?(' · ทำแล้ว '+e.attempts_used+' ครั้ง สูงสุด '+e.best+'%'):'')
         +(e.time_limit_min?(' · จำกัด '+e.time_limit_min+' นาที'):'')
         +(e.deadline?(' · ถึง '+esc(e.deadline)):'')+'</div>'
-      +(e.disc_enabled?'<div style="margin-top:4px;font-size:12px;color:#9a3412;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:5px 8px">ชุดนี้มีผลกับคะแนนวินัย — ได้ต่ำกว่า '+e.disc_threshold+'% หัก '+e.disc_points+' คะแนน'+(e.disc_basis==='first'?' (ยึดคะแนนครั้งแรก)':'')+'</div>':'')
+      +(e.disc_enabled?'<div style="margin-top:4px;font-size:12px;color:#9a3412;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:5px 8px">ชุดนี้มีผลกับคะแนนวินัย — '+exDiscText(e)+'</div>':'')
       +'<button class="btn btn-pri btn-sm" style="margin-top:8px" data-exgo="'+e.id+'">'+(e.attempts_used>0?'ทำใหม่':'ทำข้อสอบ')+'</button>'
       +'</div>').join('')
     +'</div>';
