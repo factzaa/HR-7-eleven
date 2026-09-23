@@ -10665,6 +10665,28 @@ async function exEdit(id, seed){
     +'<div style="margin-bottom:8px"><label style="font-size:12.5px;color:var(--muted)">ใครต้องทำ</label><select id="ex_scope" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px"><option value="all"'+(ex.scope==='all'?' selected':'')+'>ทุกสาขา</option><option value="branch"'+(ex.scope==='branch'?' selected':'')+'>เฉพาะสาขา</option><option value="emp"'+(ex.scope==='emp'?' selected':'')+'>เฉพาะบุคคล (ระบุรหัส)</option></select></div>'
     +'<div id="ex_scope_branch" style="display:'+(ex.scope==='branch'?'block':'none')+';margin-bottom:8px;padding:8px;border:1px dashed var(--line);border-radius:9px">'+brOpts+'</div>'
     +'<div id="ex_scope_emp" style="display:'+(ex.scope==='emp'?'block':'none')+';margin-bottom:8px"><label style="font-size:12px;color:var(--muted)">รหัสพนักงาน (คั่นด้วย , )</label><input id="ex_empids" type="text" value="'+esc(asg.join(','))+'" placeholder="0657379,0657380" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+    // ★ 23 ก.ย. 69 — ผลสอบมีผลกับคะแนนวินัย (ตั้งค่าแยกรายชุด · ปิดไว้เป็นค่าเริ่มต้น)
+    +'<div class="card" style="padding:11px;margin:0 0 8px;background:#fff7ed;border:1px dashed #fdba74">'
+      +'<label style="display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;color:#9a3412"><input type="checkbox" id="ex_disc"'+(ex.disc_enabled?' checked':'')+'> ให้ผลสอบมีผลกับคะแนนวินัย</label>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">ไม่ติ๊ก = ข้อสอบชุดนี้ไม่ยุ่งกับคะแนนวินัยเลย (ค่าเริ่มต้น)</div>'
+      +'<div id="ex_discwrap" style="display:'+(ex.disc_enabled?'block':'none')+';margin-top:9px">'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+          +'<div style="width:130px"><label style="font-size:12px;color:var(--muted)">ต่ำกว่ากี่ % ถึงหัก</label><input id="ex_disc_thr" type="number" min="1" max="100" value="'+(ex.disc_threshold!=null&&ex.disc_threshold!==''?ex.disc_threshold:'')+'" placeholder="ใช้เกณฑ์ผ่าน" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+          +'<div style="width:120px"><label style="font-size:12px;color:var(--muted)">หักกี่คะแนน</label><input id="ex_disc_pts" type="number" min="0" max="100" value="'+(ex.disc_points||5)+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+          +'<div style="width:180px"><label style="font-size:12px;color:var(--muted)">ยึดคะแนนครั้งไหน</label><select id="ex_disc_basis" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px">'
+            +'<option value="first"'+((ex.disc_basis||'first')==='first'?' selected':'')+'>ครั้งแรก (ตัดสินครั้งเดียว)</option>'
+            +'<option value="best"'+(ex.disc_basis==='best'?' selected':'')+'>คะแนนดีที่สุด (สอบใหม่ผ่าน = คืนคะแนน)</option>'
+            +'<option value="last"'+(ex.disc_basis==='last'?' selected':'')+'>ครั้งล่าสุด (สอบใหม่ผ่าน = คืนคะแนน)</option>'
+          +'</select></div>'
+          +'<div style="width:170px"><label style="font-size:12px;color:var(--muted)">ไม่ทำเลย หักกี่คะแนน</label><input id="ex_disc_nodo" type="number" min="0" max="100" value="'+(ex.disc_nodo_points||0)+'" placeholder="0 = ไม่หัก" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
+        +'</div>'
+        +'<div style="font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.7">'
+          +'• หักอัตโนมัติทันทีที่พนักงานส่งข้อสอบ และแจ้งเตือนให้เจ้าตัวทราบทันที<br>'
+          +'• "ครั้งแรก" = ตัดสินจากคะแนนสอบครั้งแรกครั้งเดียว ทำใหม่ทีหลังได้คะแนนดีขึ้นก็ไม่คืนคะแนนวินัย<br>'
+          +'• "ดีที่สุด/ล่าสุด" = ถ้าสอบใหม่แล้วผ่านเกณฑ์ ระบบคืนคะแนนวินัยที่หักไปให้เอง<br>'
+          +'• คนที่ไม่ทำเลย ระบบไม่หักให้อัตโนมัติ — HR กดปุ่มยืนยันที่หน้าผลสอบหลังหมดเขต</div>'
+      +'</div>'
+    +'</div>'
     +'<div class="card" id="ex_bankcard" style="padding:11px;margin:14px 0 6px;background:var(--bg);border:1px dashed var(--line2)">'
       +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="flex:1;font-size:13.5px">ดึงจากคลังข้อสอบคู่มือ</b>'
       +'<button class="btn btn-sec btn-sm" id="ex_bank_toggle">เปิด/ปิด</button></div>'
@@ -10683,6 +10705,7 @@ async function exEdit(id, seed){
   +'</div>';
   $('ex_back').onclick=loadExams;
   $('ex_scope').onchange=()=>{ const v=$('ex_scope').value; $('ex_scope_branch').style.display=v==='branch'?'block':'none'; $('ex_scope_emp').style.display=v==='emp'?'block':'none'; };
+  $('ex_disc').onchange=()=>{ $('ex_discwrap').style.display=$('ex_disc').checked?'block':'none'; };
   $('ex_addq').onclick=()=>{ exCollect(); EXED.qs.push({question:'',choices:['','','',''],answer:0,explain:'',knowledge_ref:''}); exRenderQEditor(); };
   $('ex_save').onclick=exSave;
   $('ex_bank_toggle').onclick=()=>{ const w=$('ex_bankwrap'); const open=w.style.display!=='none'; w.style.display=open?'none':'block'; if(!open) exBankRender(); };
@@ -10948,6 +10971,7 @@ async function exSave(){
   exCollect();
   const scope=$('ex_scope').value;
   const data={ id:EXED.id, title:$('ex_title').value, description:$('ex_desc').value, pass_percent:$('ex_pass').value, max_attempts:$('ex_max').value, time_limit_min:$('ex_time').value, shuffle:$('ex_shuffle').checked, show_result:$('ex_show').value, deadline:$('ex_deadline').value, scope,
+    disc_enabled:$('ex_disc').checked, disc_threshold:$('ex_disc_thr').value, disc_points:$('ex_disc_pts').value, disc_basis:$('ex_disc_basis').value, disc_nodo_points:$('ex_disc_nodo').value,
     branch_ids: scope==='branch'?[...document.querySelectorAll('.exbr:checked')].map(c=>c.value):[],
     emp_ids: scope==='emp'?($('ex_empids').value||'').split(/[,\s]+/).map(s=>s.trim()).filter(Boolean):[],
     questions: EXED.qs.filter(q=>String(q.question).trim()&&q.choices.filter(c=>String(c).trim()).length>=2)
@@ -10969,14 +10993,57 @@ async function exResults(id){
     +'<div style="flex:1;min-width:90px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px"><div style="font-size:12px;color:var(--muted)">ผ่าน</div><div style="font-size:22px;font-weight:600;color:#16a34a">'+s.passed+'</div></div>'
     +'<div style="flex:1;min-width:90px;background:var(--card);border:0.5px solid var(--line);border-radius:12px;padding:10px"><div style="font-size:12px;color:var(--muted)">อัตราผ่าน</div><div style="font-size:22px;font-weight:600">'+s.pass_rate+'%</div></div>'
   +'</div>';
+  // ★ 23 ก.ย. 69 — กดที่แถวเพื่อดูคะแนน "แต่ละครั้ง" ที่พนักงานทำ
+  const exDT=v=>{ try{ return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}); }catch(e){ return '—'; } };
+  const exDur=s=>{ const n=Number(s||0); if(!n) return ''; return n<60?(' · ใช้เวลา '+n+' วิ'):(' · ใช้เวลา '+Math.floor(n/60)+' นาที'+(n%60?(' '+(n%60)+' วิ'):'')); };
   h+='<div class="tablewrap"><table style="font-size:13px"><thead><tr><th>พนักงาน</th><th>สาขา</th><th style="text-align:center">ครั้ง</th><th style="text-align:center">คะแนนสูงสุด</th><th style="text-align:center">ผล</th></tr></thead><tbody>'
-    +(r.takers||[]).map(t=>'<tr><td>'+esc(t.name)+'</td><td style="font-size:11.5px;color:var(--muted)">'+esc(t.branch)+'</td><td style="text-align:center">'+t.attempts+'</td><td style="text-align:center">'+t.best+'%</td><td style="text-align:center">'+(t.passed?'<span class="pill ok">ผ่าน</span>':'<span class="pill bad">ไม่ผ่าน</span>')+'</td></tr>').join('')
+    +(r.takers||[]).map(t=>{
+      const tries=t.tries||[];
+      return '<tr data-extog="'+esc(t.emp_id)+'" style="cursor:pointer" title="กดเพื่อดูคะแนนแต่ละครั้ง">'
+        +'<td>'+esc(t.name)+'</td>'
+        +'<td style="font-size:11.5px;color:var(--muted)">'+esc(t.branch)+'</td>'
+        +'<td style="text-align:center">'+t.attempts+(tries.length>1?' <span style="font-size:10px;color:var(--muted)">▾</span>':'')+'</td>'
+        +'<td style="text-align:center">'+t.best+'%</td>'
+        +'<td style="text-align:center">'+(t.passed?'<span class="pill ok">ผ่าน</span>':'<span class="pill bad">ไม่ผ่าน</span>')
+          +(t.disc_event?' <span class="pill" style="background:#fff7ed;color:#9a3412" title="หักคะแนนวินัยแล้ว">−'+Math.abs(t.disc_event.points)+' คะแนน</span>':'')+'</td></tr>'
+      +'<tr id="exd_'+esc(t.emp_id)+'" style="display:none"><td colspan="5" style="background:var(--bg2,rgba(127,127,127,.06));padding:8px 12px">'
+        +(tries.length?tries.map(a=>'<div style="display:flex;gap:10px;align-items:center;font-size:12.5px;padding:3px 0">'
+            +'<span style="min-width:62px;color:var(--muted)">ครั้งที่ '+(a.attempt_no||'—')+'</span>'
+            +'<b style="min-width:52px;color:'+(a.passed?'#16a34a':'#dc2626')+'">'+a.percent+'%</b>'
+            +'<span style="color:var(--muted)">'+a.score+'/'+a.total+' ข้อ</span>'
+            +'<span style="color:var(--muted)">'+exDT(a.submitted_at)+exDur(a.duration_sec)+'</span>'
+          +'</div>').join('')
+          : '<div style="font-size:12.5px;color:var(--muted)">ไม่มีรายละเอียด</div>')
+      +'</td></tr>';
+    }).join('')
     +'</tbody></table></div>';
-  if((r.not_done||[]).length){ h+='<h3 style="font-size:13px;color:#b45309;font-weight:700;margin:14px 2px 6px">ยังไม่ทำ ('+r.not_done.length+')</h3><div style="font-size:12.5px;color:var(--muted)">'+r.not_done.map(e=>esc(e.name)+' ('+esc(e.branch)+')').join(' · ')+'</div>'; }
+  // ★ 23 ก.ย. 69 — สรุปการตั้งค่า "ผลสอบมีผลกับคะแนนวินัย" ของชุดนี้
+  if(ex.disc_enabled && Math.abs(ex.disc_points||0)>0){
+    const bTxt={first:'ยึดคะแนนครั้งแรก',best:'ยึดคะแนนดีที่สุด',last:'ยึดคะแนนครั้งล่าสุด'}[ex.disc_basis||'first'];
+    h+='<div style="margin-top:12px;padding:10px 12px;background:#fff7ed;border:1px dashed #fdba74;border-radius:10px;font-size:12.5px;color:#9a3412">'
+      +'<b>ชุดนี้มีผลกับคะแนนวินัย</b> — ต่ำกว่า '+(ex.disc_threshold||ex.pass_percent)+'% หัก '+Math.abs(ex.disc_points)+' คะแนน · '+bTxt
+      +(ex.disc_nodo_points>0?(' · ไม่ทำเลยหัก '+ex.disc_nodo_points+' คะแนน'):'')+'</div>';
+  }
+  if((r.not_done||[]).length){
+    const nodoPts=Math.abs(ex.disc_nodo_points||0), pend=r.not_done.filter(e=>!e.disc_event).length;
+    h+='<h3 style="font-size:13px;color:#b45309;font-weight:700;margin:14px 2px 6px">ยังไม่ทำ ('+r.not_done.length+')</h3>'
+      +'<div style="font-size:12.5px;color:var(--muted)">'+r.not_done.map(e=>esc(e.name)+' ('+esc(e.branch)+')'+(e.disc_event?' <span class="pill" style="background:#fff7ed;color:#9a3412">−'+Math.abs(e.disc_event.points)+'</span>':'')).join(' · ')+'</div>'
+      +(ex.disc_enabled&&nodoPts>0&&pend>0
+        ? '<button class="btn btn-sec btn-sm" id="exr_nodo" style="margin-top:9px;color:#9a3412;border-color:#fdba74">หักคะแนนวินัยคนที่ไม่ทำ ('+pend+' คน · คนละ '+nodoPts+' คะแนน)</button>'
+        : '');
+  }
   box.innerHTML=h;
+  if($('exr_nodo')) $('exr_nodo').onclick=async()=>{
+    if(!confirm('หักคะแนนวินัยพนักงานที่ยังไม่ทำแบบทดสอบชุดนี้?\nระบบจะแจ้งเตือนให้เจ้าตัวทราบด้วย · ยกเลิกได้ที่หน้าคะแนน')) return;
+    const b=$('exr_nodo'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    const rr=await post({ action:'hr_exam_disc_nodo', password:pwd, id });
+    if(rr&&rr.ok){ toast('ok', rr.done?('หักคะแนนแล้ว '+rr.done+' คน'):(rr.msg||'ไม่มีใครต้องหักเพิ่ม')); exResults(id); }
+    else { toast('err',(rr&&rr.error)||'ไม่สำเร็จ'); b.disabled=false; b.textContent='ลองใหม่'; }
+  };
   $('exr_back').onclick=loadExams;
   $('exr_wrong').onclick=()=>exWrongSpots(id);
-  $('exr_csv').onclick=()=>{ const rows=[['พนักงาน','สาขา','ครั้ง','คะแนนสูงสุด(%)','ผล']].concat((r.takers||[]).map(t=>[t.name,t.branch,t.attempts,t.best,t.passed?'ผ่าน':'ไม่ผ่าน'])); const csv='﻿'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'); const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='exam_'+id+'_results.csv'; document.body.appendChild(a); a.click(); a.remove(); };
+  box.querySelectorAll('[data-extog]').forEach(tr=>tr.onclick=()=>{ const d=$('exd_'+tr.dataset.extog); if(d) d.style.display = (d.style.display==='none' ? '' : 'none'); });
+  $('exr_csv').onclick=()=>{ const rows=[['พนักงาน','สาขา','ครั้ง','คะแนนสูงสุด(%)','ผล','คะแนนแต่ละครั้ง']].concat((r.takers||[]).map(t=>[t.name,t.branch,t.attempts,t.best,t.passed?'ผ่าน':'ไม่ผ่าน',(t.tries||[]).map(a=>'ครั้งที่ '+a.attempt_no+' = '+a.percent+'% ('+a.score+'/'+a.total+') '+exDT(a.submitted_at)).join(' | ')])); const csv='﻿'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'); const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='exam_'+id+'_results.csv'; document.body.appendChild(a); a.click(); a.remove(); };
 }
 async function exWrongSpots(id){
   const box=$('exadm_body'); box.innerHTML='<div class="empty">กำลังวิเคราะห์…</div>';
