@@ -11032,8 +11032,14 @@ async function exResults(id){
     if(Math.abs(ex.disc_points||0)>0) parts.push('ต่ำกว่า '+(ex.disc_threshold||ex.pass_percent)+'% หัก '+Math.abs(ex.disc_points)+' คะแนน');
     if(Math.abs(ex.disc_bonus_points||0)>0) parts.push('ตั้งแต่ '+(ex.disc_bonus_min||ex.pass_percent)+'% ขึ้นไป บวก '+Math.abs(ex.disc_bonus_points)+' คะแนน');
     if(ex.disc_nodo_points>0) parts.push('ไม่ทำเลยหัก '+ex.disc_nodo_points+' คะแนน');
+    // คนที่สอบไปแล้วแต่ยังไม่มีรายการคะแนน (เช่น สอบก่อนเปิดใช้กติกา หรือเพิ่งแก้เกณฑ์)
+    const pendCalc=(r.takers||[]).filter(t=>!t.disc_event && !t.bonus_event).length;
     h+='<div style="margin-top:12px;padding:10px 12px;background:#fff7ed;border:1px dashed #fdba74;border-radius:10px;font-size:12.5px;color:#9a3412">'
-      +'<b>ชุดนี้มีผลกับคะแนนวินัย</b> — '+parts.join(' · ')+' · '+bTxt+'</div>';
+      +'<b>ชุดนี้มีผลกับคะแนนวินัย</b> — '+parts.join(' · ')+' · '+bTxt
+      +'<div style="margin-top:7px">'
+        +'<button class="btn btn-sec btn-sm" id="exr_calc" style="color:#9a3412;border-color:#fdba74">คำนวณคะแนนจากผลสอบที่มีอยู่'+(pendCalc?(' ('+pendCalc+' คนยังไม่ได้คิด)'):' (ตรวจซ้ำ)')+'</button>'
+        +'<div style="font-size:11px;margin-top:4px;color:var(--muted)">ใช้กับคนที่สอบไปก่อนเปิดกติกา หรือหลังแก้เกณฑ์ · ลงวันที่ตามวันที่สอบจริง · กดซ้ำได้ ระบบยึดเกณฑ์ปัจจุบันเสมอ</div>'
+      +'</div></div>';
   }
   if((r.not_done||[]).length){
     const nodoPts=Math.abs(ex.disc_nodo_points||0), pend=r.not_done.filter(e=>!e.disc_event).length;
@@ -11044,6 +11050,13 @@ async function exResults(id){
         : '');
   }
   box.innerHTML=h;
+  if($('exr_calc')) $('exr_calc').onclick=async()=>{
+    if(!confirm('คำนวณคะแนนวินัยจากผลสอบของทุกคนที่ทำชุดนี้แล้ว?\nระบบจะหัก/บวกตามเกณฑ์ที่ตั้งไว้ปัจจุบัน และแจ้งเตือนเจ้าตัว\nรายการที่ไม่เข้าเกณฑ์แล้วจะถูกยกเลิกให้')) return;
+    const b=$('exr_calc'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    const rr=await post({ action:'hr_exam_disc_apply', password:pwd, id });
+    if(rr&&rr.ok){ toast('ok','เสร็จแล้ว · หัก '+rr.added+' คน · บวก '+rr.bonus_added+' คน'+(rr.removed?(' · ยกเลิก '+rr.removed):'')); exResults(id); }
+    else { toast('err',(rr&&rr.error)||'ไม่สำเร็จ'); b.disabled=false; b.textContent='ลองใหม่'; }
+  };
   if($('exr_nodo')) $('exr_nodo').onclick=async()=>{
     if(!confirm('หักคะแนนวินัยพนักงานที่ยังไม่ทำแบบทดสอบชุดนี้?\nระบบจะแจ้งเตือนให้เจ้าตัวทราบด้วย · ยกเลิกได้ที่หน้าคะแนน')) return;
     const b=$('exr_nodo'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
