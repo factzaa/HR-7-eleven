@@ -445,6 +445,7 @@
         case 'hr_task_close_group':  return await hrTaskCloseGroup(p.data);
         case 'hr_emp_summary':       return await hrEmpSummary(p.data);
         case 'hr_emp_cards':         return await hrEmpCards(p.data);
+        case 'hr_emp_thumbs':        return await hrEmpThumbs(p.data);
         case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
         case 'hr_special_list':      return await hrSpecialList(p.branch);
@@ -1782,7 +1783,12 @@
     // PIN ผจก.: ยกเลิกสิทธิ์ = ล้าง PIN · ตั้ง ผจก.+กรอก PIN ใหม่ = อัปเดต · ตั้ง ผจก.แต่เว้น PIN = คง PIN เดิม
     if (('is_manager' in d) && !d.is_manager) row.manager_pin = null;   // ★ แตะ PIN เฉพาะตอนที่ส่ง is_manager มาจริง
     else if (d.manager_pin != null && String(d.manager_pin).trim() !== '') row.manager_pin = String(d.manager_pin).trim();
-    if (d._photo_base64) row.photo_url = await window.HR.uploadPhoto('employee-photos', d.emp_id + '.jpg', d._photo_base64);
+    if (d._photo_base64) {
+      row.photo_url = await window.HR.uploadPhoto('employee-photos', d.emp_id + '.jpg', d._photo_base64);
+      // ★ 24 ก.ย. 69 — อัปรูปย่อ 320px ไว้ด้วย (thumb/<รหัส>.jpg)
+      //   หน้าบัตรพนักงานโหลดรูปย่อแทนรูปเต็ม → เปิดหน้าเร็วขึ้นหลายเท่า (รูปเต็มจากมือถือใบละ 2–5 MB)
+      try { await window.HR.uploadPhoto('employee-photos', 'thumb/' + d.emp_id + '.jpg', await _shrinkDataUrl(d._photo_base64, 320)); } catch (_e) { /* ย่อไม่ได้ก็ใช้รูปเต็มไปก่อน */ }
+    }
     else if (d.photo_url === '') row.photo_url = null;
 
     const { data: existing } = await sb().from('employees').select('emp_id').eq('emp_id', d.emp_id).maybeSingle();
@@ -1796,6 +1802,48 @@
       if (cutoff) await sb().from('schedules').delete().eq('emp_id', row.emp_id).gt('work_date', cutoff);
     } catch (_e) { /* ลบเวรไม่สำเร็จก็ไม่ให้พังการบันทึก */ }
     return { ok: true, action };
+  }
+
+  // ★ ย่อรูป (data URL หรือ URL) ให้ด้านกว้างสุดไม่เกิน max แล้วคืนเป็น JPEG data URL
+  function _shrinkDataUrl(src, max) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const sc = Math.min(1, max / Math.max(img.naturalWidth || max, img.naturalHeight || max));
+          const w = Math.max(1, Math.round((img.naturalWidth || max) * sc));
+          const h = Math.max(1, Math.round((img.naturalHeight || max) * sc));
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(cv.toDataURL('image/jpeg', 0.82));
+        } catch (e) { reject(e); }
+      };
+      img.onerror = () => reject(new Error('โหลดรูปไม่ได้'));
+      img.src = src;
+    });
+  }
+
+  // ★ สร้างรูปย่อย้อนหลังให้พนักงานที่ยังไม่มี (ใช้ครั้งเดียวหลังอัปเดตระบบ)
+  async function hrEmpThumbs(d) {
+    d = d || {};
+    const { data: emps, error } = await sb().from('employees').select('emp_id,photo_url').eq('active', true);
+    if (error) throw error;
+    let have = new Set();
+    try {
+      const { data: files } = await sb().storage.from('employee-photos').list('thumb', { limit: 1000 });
+      (files || []).forEach(f => have.add(String(f.name || '').replace(/\.jpg$/i, '')));
+    } catch (_e) { /* อ่านรายการไม่ได้ก็ทำใหม่ทั้งหมด */ }
+    const todo = (emps || []).filter(e => e.photo_url && (d.force === true || !have.has(String(e.emp_id))));
+    let ok = 0, fail = 0;
+    for (const e of todo) {
+      try {
+        const thumb = await _shrinkDataUrl(e.photo_url, 320);
+        await window.HR.uploadPhoto('employee-photos', 'thumb/' + e.emp_id + '.jpg', thumb);
+        ok++;
+      } catch (_e) { fail++; }
+    }
+    return { ok: true, total: (emps || []).length, made: ok, failed: fail, skipped: (emps || []).length - todo.length };
   }
 
   // ---------- ย้าย/เปลี่ยนรหัสพนักงาน (ย้ายสาขา) — retarget ทุกตารางในทีเดียว ----------
@@ -6629,17 +6677,27 @@
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
 
-    const [scoreR, empR, brR, taR, exAtR, exR, leadR, ctrlR] = await Promise.all([
+    const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR] = await Promise.all([
       hrScoreGet(which),
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url,is_manager,position,start_date,end_date,active,default_shift'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
       fetchPaged(() => sb().from('task_assignments').select('emp_id,status,sent_back_count').gte('work_date', cyc.start).lte('work_date', cyc.end)),
       fetchPaged(() => sb().from('exam_attempts').select('emp_id,exam_id,attempt_no,passed,percent').gte('submitted_at', cyc.start).lte('submitted_at', cyc.end + 'T23:59:59')),
-      sb().from('exams').select('id,title'),
       sb().from('shift_leads').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shift_controllers').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
     ]);
     if (empR.error) throw empR.error;
+
+    // ★ รูปย่อที่มีอยู่จริงใน storage — ใช้แทนรูปเต็มบนบัตร (โหลดเร็วกว่าหลายเท่า)
+    const thumbHave = new Set();
+    try {
+      const { data: tf } = await sb().storage.from('employee-photos').list('thumb', { limit: 1000 });
+      (tf || []).forEach(f => thumbHave.add(String(f.name || '').replace(/\.jpg$/i, '')));
+    } catch (_e) { /* ไม่มีโฟลเดอร์ thumb ก็ใช้รูปเต็ม */ }
+    const thumbUrl = id => {
+      try { return sb().storage.from('employee-photos').getPublicUrl('thumb/' + id + '.jpg').data.publicUrl; }
+      catch (_e) { return ''; }
+    };
 
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const scMap = {}; ((scoreR && scoreR.employees) || []).forEach(s => { scMap[s.emp_id] = s; });
@@ -6704,7 +6762,9 @@
       return {
         emp_id: e.emp_id, name: e.name || e.emp_id, nickname: e.nickname || '',
         branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '—',
-        photo_url: e.photo_url || '', position: e.position || (e.is_manager ? 'ผู้จัดการร้าน' : ''),
+        photo_url: (e.photo_url && thumbHave.has(String(e.emp_id))) ? thumbUrl(e.emp_id) : (e.photo_url || ''),
+        photo_full: e.photo_url || '',
+        position: e.position || (e.is_manager ? 'ผู้จัดการร้าน' : ''),
         is_manager: e.is_manager === true,
         is_new: !!(e.start_date && String(e.start_date) >= cyc.start),
         score: sc, score_full: full, band_label: s.band_label || '', band_color: s.band_color || '',
