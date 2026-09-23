@@ -269,6 +269,7 @@
         case 'hr_exam_results':     return await hrExamResults(p.id);
         case 'hr_exam_wrong_spots': return await hrExamWrongSpots(p.id);
         case 'hr_exam_disc_nodo':   return await hrExamDiscNoDo(p.id, p.by);
+        case 'hr_exam_disc_apply':  return await hrExamDiscApply(p.id, p.by);
         case 'hr_qssi_items':       return await hrQssiItems(p);
         case 'hr_qssi_submit':      return await hrQssiSubmit(p);
         case 'hr_qssi_undo':        return await hrQssiUndo(p);
@@ -952,6 +953,82 @@
       not_done.forEach(e => { const v = evBy['examnodo:' + id + ':' + e.emp_id]; if (v) { e.disc_event = { id: v.id, points: v.points, date: v.event_date }; } });
     } catch (e) { /* ยังไม่ได้เพิ่มคอลัมน์ ref — ข้ามไป */ }
     return { ok: true, exam: ex, takers, not_done, summary: { takers: takers.length, passed: passCount, target: pool.length, pass_rate: takers.length ? Math.round(passCount / takers.length * 100) : 0 } };
+  }
+  // ★ 23 ก.ย. 69 — คำนวณคะแนนวินัยย้อนหลังจาก "ผลสอบที่มีอยู่แล้ว"
+  //   ใช้กับคนที่สอบไปก่อนเปิดใช้กติกา หรือเมื่อ HR แก้เกณฑ์แล้วอยากให้ตรงกันทั้งชุด
+  //   ลงวันที่ตาม "วันที่สอบจริง" ของครั้งที่ใช้ตัดสิน · รันซ้ำได้ (ยึดตามเกณฑ์ปัจจุบันเสมอ)
+  async function hrExamDiscApply(id, by) {
+    if (!id) return { ok: false, error: 'ไม่ระบุชุดข้อสอบ' };
+    const { data: ex } = await sb().from('exams').select('*').eq('id', id).maybeSingle();
+    if (!ex) return { ok: false, error: 'ไม่พบชุดข้อสอบ' };
+    if (ex.disc_enabled !== true) return { ok: false, error: 'ชุดนี้ยังไม่ได้เปิด "ให้ผลสอบมีผลกับคะแนนวินัย"' };
+    const pts = Math.abs(parseInt(ex.disc_points, 10) || 0);
+    const bonus = Math.abs(parseInt(ex.disc_bonus_points, 10) || 0);
+    if (!pts && !bonus) return { ok: false, error: 'ชุดนี้ยังไม่ได้ตั้งคะแนนหักหรือคะแนนบวก' };
+    const thr = (ex.disc_threshold != null && ex.disc_threshold !== '') ? Number(ex.disc_threshold) : Number(ex.pass_percent || 80);
+    const bthr = (ex.disc_bonus_min != null && ex.disc_bonus_min !== '') ? Number(ex.disc_bonus_min) : Number(ex.pass_percent || 80);
+    const basis = ['first', 'best', 'last'].includes(ex.disc_basis) ? ex.disc_basis : 'first';
+    const [{ data: ats }, { data: emps }, { data: evs }] = await Promise.all([
+      sb().from('exam_attempts').select('emp_id,attempt_no,percent,submitted_at').eq('exam_id', id),
+      sb().from('employees').select('emp_id,name,nickname'),
+      sb().from('score_events').select('id,ref').like('ref', 'exam%:' + id + ':%'),
+    ]);
+    const empBy = {}; (emps || []).forEach(e => empBy[e.emp_id] = e);
+    const evBy = {}; (evs || []).forEach(v => evBy[String(v.ref)] = v);
+    const byEmp = {};
+    (ats || []).forEach(a => { (byEmp[a.emp_id] || (byEmp[a.emp_id] = [])).push(a); });
+    const title = String(ex.title || 'แบบทดสอบ').slice(0, 60);
+    let added = 0, bonusAdded = 0, removed = 0, kept = 0;
+    for (const empId of Object.keys(byEmp)) {
+      const list = byEmp[empId].slice().sort((x, y) => Number(x.attempt_no || 0) - Number(y.attempt_no || 0));
+      let pick, useLabel;
+      if (basis === 'best') { pick = list.slice().sort((x, y) => (Number(y.percent) || 0) - (Number(x.percent) || 0))[0]; useLabel = 'คะแนนดีที่สุด'; }
+      else if (basis === 'last') { pick = list[list.length - 1]; useLabel = 'คะแนนครั้งล่าสุด'; }
+      else { pick = list[0]; useLabel = 'คะแนนครั้งแรก'; }
+      const usePct = Number(pick.percent) || 0;
+      const when = String(pick.submitted_at || '').slice(0, 10) || bkkToday();
+      const emp = empBy[empId] || { emp_id: empId };
+      // --- หักคะแนน ---
+      if (pts) {
+        const ref = 'exam:' + id + ':' + empId, has = evBy[ref];
+        if (usePct < thr && !has) {
+          await examScoreEvent({ emp, ref, rule_key: 'exam_fail', points: -pts, event_date: when, by,
+            label: 'สอบไม่ผ่านเกณฑ์: ' + title, note: useLabel + ' ' + usePct + '% (เกณฑ์ ' + thr + '%)' });
+          added++;
+        } else if (usePct >= thr && has) { await examScoreEventDel(has.id); removed++; }
+        else if (has) kept++;
+      }
+      // --- บวกคะแนน ---
+      if (bonus) {
+        const bref = 'exampass:' + id + ':' + empId, bhas = evBy[bref];
+        if (usePct >= bthr && !bhas) {
+          await examScoreEvent({ emp, ref: bref, rule_key: 'exam_pass', points: bonus, event_date: when, by,
+            label: 'สอบผ่านเกณฑ์: ' + title, note: useLabel + ' ' + usePct + '% (เกณฑ์บวกคะแนน ' + bthr + '%)' });
+          bonusAdded++;
+        } else if (usePct < bthr && bhas) { await examScoreEventDel(bhas.id); removed++; }
+        else if (bhas) kept++;
+      }
+    }
+    await logAct('คำนวณคะแนนวินัยจากผลสอบ', null, title + ' · หัก ' + added + ' · บวก ' + bonusAdded + ' · ยกเลิก ' + removed);
+    return { ok: true, added, bonus_added: bonusAdded, removed, kept, takers: Object.keys(byEmp).length };
+  }
+  async function examScoreEvent({ emp, ref, rule_key, label, note, points, event_date, by }) {
+    const { data: ins } = await sb().from('score_events')
+      .insert({ emp_id: emp.emp_id, event_date: event_date || bkkToday(), rule_key, label, points, note, ref, created_by: by || 'สำนักงาน (HR)' })
+      .select('id').maybeSingle();
+    try {
+      await sb().from('emp_notifications').insert({
+        emp_id: emp.emp_id, kind: points > 0 ? 'score_add' : 'score_deduct',
+        title: points > 0 ? ('🎉 ได้รับคะแนนเพิ่ม ' + points + ' คะแนน') : ('คะแนนวินัยถูกหัก ' + Math.abs(points) + ' คะแนน'),
+        body: 'เหตุผล: ' + label + '\n' + note + '\nดูคะแนนรวมล่าสุดในหน้า "สถานะของฉัน"',
+        ref: ins ? ('score:' + ins.id) : 'score', created_by: by || 'สำนักงาน (HR)',
+      });
+    } catch (_e) { /* ข้าม */ }
+    return ins;
+  }
+  async function examScoreEventDel(evId) {
+    await sb().from('score_events').delete().eq('id', evId);
+    try { await sb().from('emp_notifications').delete().eq('ref', 'score:' + evId); } catch (_e) { }
   }
   // ★ 23 ก.ย. 69 — หักคะแนนวินัย "คนที่ไม่ทำข้อสอบเลย" (HR กดยืนยันเอง · ปกติทำหลังหมดเขต)
   //   หักซ้ำไม่ได้ — ผูก ref = 'examnodo:<examId>:<empId>' กันไว้
