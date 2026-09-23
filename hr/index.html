@@ -13071,6 +13071,7 @@ function openAsstMkDoc(idx){
   const firstHead=(secs.find(x=>x.heading)||{}).heading||'';
   const brOpts=['<option value="">— ไม่ระบุสาขา —</option>'].concat((DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(MGR_MODE&&String(b.branch_id)===String(MGR_BRANCH)?' selected':'')+'>'+esc(b.name)+'</option>')).join('');
   const ov=document.createElement('div'); ov.className='overlay show'; ov.id='asstMkDocOv';
+  ov.style.zIndex='1300';   // ★ ต้องสูงกว่าหน้าต่างแชทนิดา (#asstPop = 900) ไม่งั้นกดแล้วเหมือนไม่มีอะไรเกิดขึ้น
   ov.innerHTML='<div class="modal" style="max-width:460px">'
     +'<div class="modal-h"><h2 style="font-size:16px">ทำเป็นเอกสาร PDF</h2><button class="close" id="mkdX">×</button></div>'
     +'<div class="modal-b">'
@@ -13277,8 +13278,32 @@ async function asstDlForm(sp){
     toast('ok','ดาวน์โหลดแบบฟอร์มแล้ว');
   }catch(e){ toast('err','สร้างแบบฟอร์มไม่สำเร็จ'); }
 }
+// ★ ดูเอกสารในหน้าเดิม (มือถือมักบล็อก window.open) + ปุ่มพิมพ์/บันทึก PDF
+function asstPrintForm(sp){
+  const old=document.getElementById('afvPrintFrame'); if(old) old.remove();
+  const fr=document.createElement('iframe'); fr.id='afvPrintFrame';
+  fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(fr);
+  const d=fr.contentWindow.document; d.open();
+  d.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&display=swap"><style>'+DOC_PRINT_CSS+'</style></head><body>'+buildFormDocHtml(sp)+'</body></html>');
+  d.close();
+  setTimeout(()=>{ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(_e){} setTimeout(()=>{ const f=document.getElementById('afvPrintFrame'); if(f) f.remove(); },60000); },450);
+}
+function asstViewFormInline(sp){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:1400;background:rgba(15,20,17,.82);overflow:auto;-webkit-overflow-scrolling:touch';
+  ov.innerHTML='<div style="position:sticky;top:0;display:flex;gap:8px;justify-content:flex-end;padding:10px 12px;background:#101614">'
+    +'<button class="btn btn-pri btn-sm" id="afvPrint">พิมพ์ / บันทึก PDF</button>'
+    +'<button class="btn btn-sec btn-sm" id="afvDl">ดาวน์โหลด PDF</button>'
+    +'<button class="btn btn-sec btn-sm" id="afvClose">ปิด</button></div>'
+    +'<div class="force-light" style="background:#fff;color:#000;max-width:820px;margin:0 auto 26px;padding:22px 24px">'+buildFormDocHtml(sp)+'</div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#afvClose').onclick=()=>ov.remove();
+  ov.querySelector('#afvPrint').onclick=()=>asstPrintForm(sp);
+  ov.querySelector('#afvDl').onclick=()=>asstDlForm(sp);
+}
 function asstViewForm(sp){
-  const w=window.open('','_blank','width=860,height=1000'); if(!w){ toast('err','เบราว์เซอร์บล็อกป๊อปอัพ'); return; }
+  const w=window.open('','_blank','width=860,height=1000'); if(!w){ asstViewFormInline(sp); return; }
   let css=''; try{ css=[...document.querySelectorAll('style')].map(s=>s.textContent).filter(t=>/\.es-doc/.test(t)).join('\n'); }catch(_e){}
   w.document.open();
   w.document.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>'+esc(sp.title||'แบบฟอร์ม')+'</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap"><style>'+css+' body{margin:0;background:#fff;color:#000;font-family:Sarabun,sans-serif} .es-doc{display:block!important;max-width:760px;margin:0 auto;padding:26px 28px} @page{size:A4;margin:12mm} @media print{.noprint{display:none}}</style></head><body>'
