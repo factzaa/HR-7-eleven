@@ -13121,7 +13121,7 @@ function asstMkAckRows(branchId, blankN){
       .sort((a,b)=>String(a.emp_id).localeCompare(String(b.emp_id)));
     rows=list.map((e,i)=>[String(i+1),String(e.name||e.nickname||''),String(e.emp_id||''),'','']);
   }
-  return { heading:'ผู้รับทราบ (ลงชื่อรับทราบทุกคน)', type:'table', text:'', items:[], columns:cols, rows, lines:3, rowh:34,
+  return { heading:'ผู้รับทราบ (ลงชื่อรับทราบทุกคน)', type:'table', text:'', items:[], columns:cols, rows, lines:3, rowh:34, pagebreak:true, _ack:true,
     note:'ลงชื่อรับทราบเท่านั้น ไม่ได้แปลว่าเห็นด้วยหรือไม่เห็นด้วย · ผู้ที่ไม่ได้เข้าประชุมให้อ่านเอกสารแล้วลงวันที่ตามวันที่อ่านจริง' };
 }
 function openAsstMkDoc(idx){
@@ -13137,7 +13137,7 @@ function openAsstMkDoc(idx){
     +'<div class="modal-b">'
       +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ใช้เนื้อหาที่นิดาเขียนไว้ในข้อความนี้ทั้งหมด ('+parsed.sections.length+' ส่วน) — จัดเป็นเอกสาร A4 ให้ดู/พิมพ์/บันทึกเป็น PDF</div>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">ชื่อเอกสาร<input id="mkd_title" type="text" value="'+esc(parsed.title||'บันทึกข้อความ')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
-      +'<label style="display:block;font-size:13px;margin-bottom:9px">คำอธิบายใต้ชื่อ (เว้นได้)<input id="mkd_sub" type="text" value="'+esc(parsed.subtitle||'')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">เรื่อง (หัวข้อประชุม/เรื่องที่แจ้ง)<input id="mkd_sub" type="text" value="'+esc(parsed.subtitle||'')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">สาขา (หัวเอกสาร/รายชื่อผู้รับทราบ)<select id="mkd_br" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'+brOpts+'</select></label>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">ตารางเซ็นรับทราบท้ายเอกสาร<select id="mkd_ack" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'
         +'<option value="">ไม่ใส่</option><option value="auto">ใส่ — ดึงรายชื่อพนักงานของสาขานี้</option><option value="12">ใส่ — เว้นแถวว่าง 12 แถว</option><option value="20">ใส่ — เว้นแถวว่าง 20 แถว</option></select></label>'
@@ -13162,10 +13162,15 @@ function openAsstMkDoc(idx){
       if(ack==='auto'&&!sec.rows.length){ toast('err','ไม่พบพนักงานของสาขานี้ — เลือกแบบเว้นแถวว่างแทน'); return null; }
       out.push(sec);
     }
-    const meta=(pp.meta||[]).slice();
-    if(!meta.some(x=>x.label==='วันที่')) meta.unshift({label:'วันที่',value:new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})});
-    if(br&&!meta.some(x=>x.label==='สาขา')) meta.push({label:'สาขา',value:branchName(br)});
-    return { doc:true, title, subtitle:ov.querySelector('#mkd_sub').value.trim(), meta, sections:out,
+    // หัวกระดาษ: ใต้ชื่อเอกสาร = ชื่อ+รหัสสาขา · แถวล่าง = วันที่ / เรียน / เรื่อง
+    const pm={}; (pp.meta||[]).forEach(x=>{ if(x&&x.label&&!(x.label in pm)) pm[x.label]=x.value; });
+    const subj=(ov.querySelector('#mkd_sub').value.trim())||pm['เรื่อง']||'';
+    const meta=[{label:'วันที่',value:pm['วันที่']||new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})}];
+    if(pm['เรียน']) meta.push({label:'เรียน',value:pm['เรียน']});
+    if(subj) meta.push({label:'เรื่อง',value:subj});
+    (pp.meta||[]).forEach(x=>{ if(x&&x.label&&!['วันที่','เรียน','เรื่อง','สาขา','ที่','หน่วยงาน'].includes(x.label)&&!meta.some(y=>y.label===x.label)) meta.push(x); });
+    const subtitle=br?(branchName(br)+' ('+br+')'):'';
+    return { doc:true, title, subtitle, dept:(br?'':null), meta, sections:out,
       signatures:ov.querySelector('#mkd_sign').checked?['ผู้บันทึก','ผู้จัดการสาขา']:[],
       note:'', company:MKD_CO_BY_BRANCH[br]||'' };
   };
@@ -13200,12 +13205,20 @@ function _findCutRow(ctx, w, from, minY){
   }
   return from;
 }
-function asstPdfFromCanvas(canvas){
+function asstPdfFromCanvas(canvas){ return asstPdfFromCanvases([canvas]); }
+// ★ 23 ก.ย. 69 — สร้าง PDF จากหลายส่วน: แต่ละส่วนเริ่มหน้าใหม่เสมอ (ใช้กับตารางเซ็นรับทราบ ให้อยู่หน้าสุดท้ายหน้าเดียว)
+function asstPdfFromCanvases(list){
   const jsPDF=window.jspdf.jsPDF; const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
   const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-  const M=26, iw=pw-M*2, pageH=Math.floor((ph-M*2)*canvas.width/iw);   // px ต่อหน้า
+  const M=26, iw=pw-M*2;
+  let first=true;
+  (list||[]).filter(Boolean).forEach(canvas=>{ first=_asstPdfPart(pdf,canvas,M,iw,ph,first); });
+  return pdf;
+}
+function _asstPdfPart(pdf,canvas,M,iw,ph,first){
+  const pageH=Math.floor((ph-M*2)*canvas.width/iw);   // px ต่อหน้า
   const ctx=canvas.getContext('2d');
-  let sy=0, first=true;
+  let sy=0;
   while(sy<canvas.height){
     let hh=Math.min(pageH, canvas.height-sy);
     if(sy+hh < canvas.height){                                          // ไม่ใช่หน้าสุดท้าย → หาเส้นตัดพื้นว่าง
@@ -13218,7 +13231,7 @@ function asstPdfFromCanvas(canvas){
     pdf.addImage(c2.toDataURL('image/jpeg',0.94),'JPEG',M,M,iw,iw*hh/canvas.width);
     first=false; sy+=hh;
   }
-  return pdf;
+  return first;
 }
 // สร้าง+ดาวน์โหลด "รายงานสรุปรายบุคคล" เป็น PDF ในแชท (มีช่องเซ็นผู้รับทราบในตัว = ใช้เป็นใบเซ็นรับทราบได้)
 async function asstDlReport(empId, which){
@@ -13277,7 +13290,7 @@ function buildAckDocHtml(d){
 // ★ 21 ก.ย. 69 — แบบฟอร์มเอกสารเปล่าที่นิดาออกแบบ (blank_form) → HTML A4 → PDF / พิมพ์
 function buildFormDocHtml(sp){
   const base=(typeof DOC_CFG!=='undefined'&&DOC_CFG)||{};
-  const cfg=Object.assign({}, base, sp.company?{company:sp.company}:{});
+  const cfg=Object.assign({}, base, sp.company?{company:sp.company}:{}, (sp.dept!=null)?{dept:sp.dept}:{});
   const dots=n=>'<span style="display:inline-block;flex:1;min-width:'+(n||60)+'px;border-bottom:1px dotted #000;height:1.15em"></span>';
   const box='<span style="display:inline-block;width:12px;height:12px;border:1.3px solid #000;border-radius:2px;margin-right:6px;vertical-align:-2px"></span>';
   let h='<div class="es-doc" style="display:block">';
@@ -13289,6 +13302,7 @@ function buildFormDocHtml(sp){
       +'</div>';
   }
   (sp.sections||[]).forEach(x=>{
+    if(x.pagebreak) h+='<div class="es-pgbrk" style="page-break-before:always;break-before:page"></div>';
     if(x.heading) h+='<div class="es-dsec">'+esc(x.heading)+'</div>';
 
     if(x.type==='fields'){
@@ -13332,11 +13346,24 @@ async function asstDlForm(sp){
   toast('ok','กำลังสร้างแบบฟอร์ม…');
   try{
     if(typeof loadDocSettings==='function'){ try{ await loadDocSettings(); }catch(_e){} }
-    const wrap=document.createElement('div'); wrap.style.cssText='position:fixed;left:-99999px;top:0;width:794px;background:#fff;padding:30px 32px'; wrap.className='force-light';
-    wrap.innerHTML=buildFormDocHtml(sp); document.body.appendChild(wrap);
     await ensurePdfLibs();
-    let canvas; try{ canvas=await html2canvas(wrap.querySelector('.es-doc')||wrap,{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:840}); } finally { wrap.remove(); }
-    const pdf=asstPdfFromCanvas(canvas);
+    // แยกเอกสารเป็นส่วน ๆ ตรงจุดที่สั่ง "ขึ้นหน้าใหม่" (เช่น ตารางเซ็นรับทราบ) แล้วเรนเดอร์ทีละส่วน
+    const _all=(sp.sections||[]); const parts=[]; let curP=[];
+    _all.forEach(x=>{ if(x.pagebreak && curP.length){ parts.push(curP); curP=[]; } curP.push(x); });
+    if(curP.length) parts.push(curP);
+    const specs=parts.map((secs,i)=>Object.assign({},sp,{
+      sections:secs,
+      signatures:(i===parts.length-1&&parts.length===1)?sp.signatures:(i===0?sp.signatures:[]),
+      note:(i===0?sp.note:''),
+    }));
+    const canvases=[];
+    for(const one of specs){
+      const wrap=document.createElement('div'); wrap.style.cssText='position:fixed;left:-99999px;top:0;width:794px;background:#fff;padding:30px 32px'; wrap.className='force-light';
+      wrap.innerHTML=buildFormDocHtml(one); document.body.appendChild(wrap);
+      try{ canvases.push(await html2canvas(wrap.querySelector('.es-doc')||wrap,{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:840})); }
+      finally { wrap.remove(); }
+    }
+    const pdf=asstPdfFromCanvases(canvases);
     const fn=('form_'+(sp.title||'blank')).replace(/[\\/:*?"<>|\s]+/g,'_').slice(0,60)+'.pdf';
     const a=document.createElement('a'); a.href=pdf.output('datauristring'); a.download=fn; document.body.appendChild(a); a.click(); a.remove();
     toast('ok','ดาวน์โหลดแบบฟอร์มแล้ว');
