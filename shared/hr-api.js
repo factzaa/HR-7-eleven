@@ -8626,15 +8626,38 @@
   //   C = KPI ธุรกิจคีย์มือ (ยอดขาย/waste/QSSI) แยกต่างหาก
   //   ★ เห็นเฉพาะ HR — ไม่มีการเปิด PIN/รหัสใด ๆ
   // ============================================================
+  // ★ 23 ก.ย. 69 — ชุดตัวชี้วัดใหม่ (ตัดหัวข้อที่เลิกใช้/วัดไม่ได้ออก)
+  //   A = งานที่ ผจก. รับผิดชอบเอง · B = ผลของร้าน/ทีม (รวม QSSI + ยอดขาย + ตัดจ่าย)
   async function _mgrEvalConfig() {
     const rows = ((await sb().from('mgr_eval_config').select('key,value')).data) || [];
     const cfg = {}; rows.forEach(r => { cfg[r.key] = r.value; });
+    const n = (v, d) => (v == null || v === '' || isNaN(Number(v))) ? d : Number(v);
+    const wa = cfg.weights_a || {}, wb = cfg.weights_b || {};
     return {
-      wA: Object.assign({ responsibility: 40, review: 40, responsiveness: 20 }, cfg.weights_a || {}),
-      wB: Object.assign({ team_discipline: 55, store_ops: 45 }, cfg.weights_b || {}),
+      wA: {
+        mgr_own:      n(wa.mgr_own, 30),      // งานหน้าที่ ผจก. ในรอบผลัด (task_defs.mgr_owner)
+        review_cov:   n(wa.review_cov, 30),   // ตรวจงานทีมครบ
+        review_speed: n(wa.review_speed, 15), // ตรวจเร็วภายใน X ชม.
+        hr_tasks:     n(wa.hr_tasks, 25),     // งานที่สำนักงานสั่ง ตรงกำหนด
+      },
+      wB: {
+        qssi:        n(wb.qssi, 30),        // คะแนนตรวจร้าน QSSI
+        sales:       n(wb.sales, 20),       // ยอดขายเทียบเป้า
+        on_time:     n(wb.on_time, 15),     // ทีมมาตรงเวลา
+        discipline:  n(wb.discipline, 12),  // คะแนนวินัยเฉลี่ยของทีม
+        waste:       n(wb.waste, 10),       // ตัดจ่าย (คีย์สิ้นเดือน)
+        goods:       n(wb.goods, 8),        // ลังคืนคลาดไม่เกินเกณฑ์
+        shift_close: n(wb.shift_close, 5),  // ปิดผลัดครบ
+      },
       bands: Array.isArray(cfg.grade_bands) && cfg.grade_bands.length ? cfg.grade_bands
         : [{ min: 90, label: 'ดีเยี่ยม', color: '#16a34a' }, { min: 75, label: 'ดี', color: '#22c55e' }, { min: 60, label: 'พอใช้', color: '#f59e0b' }, { min: 0, label: 'ต้องพัฒนา', color: '#ef4444' }],
-      th: Object.assign({ review_fast_hours: 6, chat_reply_hours: 12, chat_silent_days: 3, waste_pct_good: 2.5, waste_pct_warn: 4.0, qssi_good: 85, qssi_warn: 70, sales_good_pct: 100, sales_warn_pct: 90 }, cfg.thresholds || {}),
+      th: Object.assign({
+        review_fast_hours: 6,   // ตรวจงานถือว่า "ไว" ภายในกี่ชั่วโมง
+        goods_tol: 2,           // ลังคืนคลาดได้ไม่เกินกี่ลัง
+        waste_max_pct: 2.5,     // ตัดจ่ายไม่ควรเกินกี่ % ของยอดขาย
+        sales_good_pct: 100, sales_warn_pct: 90,
+        qssi_good: 85, qssi_warn: 70,
+      }, cfg.thresholds || {}),
     };
   }
   async function hrMgrEvalConfigGet() {
@@ -8666,23 +8689,23 @@
     d = d || {};
     if (!d.branch_id || !d.period_start) return { ok: false, error: 'ต้องระบุสาขาและรอบ' };
     const num = v => (v === '' || v == null || isNaN(Number(v))) ? null : Number(v);
-    let wastePct = num(d.waste_pct);
-    const salesActual = num(d.sales_actual), wasteVal = num(d.waste_value);
-    if (wastePct == null && wasteVal != null && salesActual) wastePct = Math.round(wasteVal / salesActual * 10000) / 100;
     const row = {
-      branch_id: d.branch_id, period_start: d.period_start,
-      sales_target: num(d.sales_target), sales_actual: salesActual,
-      waste_value: wasteVal, waste_pct: wastePct, qssi_score: num(d.qssi_score),
-      note: d.note ? String(d.note).trim() : null,
-      updated_by: d.updated_by || 'สำนักงาน (HR)', updated_at: new Date().toISOString(),
+      branch_id: String(d.branch_id), period_start: String(d.period_start),
+      waste_value: num(d.waste_value), waste_pct: num(d.waste_pct),
+      note: d.note || null, updated_at: new Date().toISOString(),
     };
     const { error } = await sb().from('mgr_eval_business').upsert(row, { onConflict: 'branch_id,period_start' });
     if (error) throw error;
     return { ok: true };
   }
+
+  const _meBkkDate = ts => { if (!ts) return ''; const t = new Date(ts); if (isNaN(t)) return String(ts).slice(0, 10); return new Date(t.getTime() + 7 * 3600000).toISOString().slice(0, 10); };
+  const _meNum = v => (v == null || v === '' || isNaN(Number(v))) ? null : Number(v);
+  const _meInt = v => Math.round(Number(v) || 0).toLocaleString('th-TH');
+
   async function hrMgrEval(p) {
     p = p || {};
-    const which = (p.which != null && p.which !== '') ? p.which : 'current';   // รองรับ offset ตัวเลข (ย้อนหลังหลายรอบ)
+    const which = (p.which != null && p.which !== '') ? p.which : 'current';
     const cyc = cycleRange(which);
     const start = cyc.start, end = cyc.end;
     const today = bkkToday();
@@ -8690,152 +8713,206 @@
     const c = await _mgrEvalConfig();
     const th = c.th;
     const clamp = v => Math.max(0, Math.min(100, v));
-    // ค่าเฉลี่ยถ่วงน้ำหนักโดยข้ามตัวชี้วัดที่ไม่มีข้อมูล (null) แล้วเกลี่ยน้ำหนักให้ตัวที่เหลือ
-    const wmean = parts => { let sw = 0, s = 0; parts.forEach(pt => { if (pt.v != null && !isNaN(pt.v)) { s += pt.v * pt.w; sw += pt.w; } }); return sw ? Math.round(s / sw * 10) / 10 : null; };
+    // ค่าเฉลี่ยถ่วงน้ำหนัก: ข้ามหัวข้อที่ไม่มีข้อมูล (null) แล้วเกลี่ยน้ำหนักให้หัวข้อที่เหลือ
+    const wmean = parts => { let sw = 0, s = 0; parts.forEach(pt => { if (pt.score != null && !isNaN(pt.score)) { s += pt.score * pt.weight; sw += pt.weight; } }); return sw ? Math.round(s / sw * 10) / 10 : null; };
+    const markUsed = parts => { let sw = 0; parts.forEach(pt => { if (pt.score != null && !isNaN(pt.score)) { pt.score = Math.round(pt.score * 10) / 10; sw += pt.weight; } }); parts.forEach(pt => { pt.used_weight = (pt.score != null && sw) ? Math.round(pt.weight / sw * 1000) / 10 : null; }); return parts; };
     const gradeOf = v => { if (v == null) return { label: 'ไม่มีข้อมูล', color: '#94a3b8' }; for (const b of c.bands) { if (v >= b.min) return { label: b.label, color: b.color }; } const last = c.bands[c.bands.length - 1]; return { label: last.label, color: last.color }; };
     const hoursBetween = (a, b) => (!a || !b) ? null : (new Date(b).getTime() - new Date(a).getTime()) / 3600000;
 
-    const [empR, brR, attR, mtR, mdlR, mdDefR, taR, chatR, hoR, gdR, dscR] = await Promise.all([
+    const [empR, brR, attR, mtR, defR, gdR, dscR, ssR, auR, slR, bizR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,branch_id,is_manager,active,start_date,photo_url').eq('active', true),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,branch_id').gte('work_date', start).lte('work_date', endEff),
-      sb().from('mgr_tasks').select('assignee_emp,status,due_date,emp_submitted_at,done_at,created_at'),
-      sb().from('mgr_daily_logs').select('branch_id,status,work_date').gte('work_date', start).lte('work_date', endEff),
-      sb().from('mgr_daily_defs').select('id').eq('active', true),
-      sb().from('task_assignments').select('checked_by_emp,mgr_result,mgr_checked_at,submitted_at,fix_emp,branch_id,needs_mgr,status,work_date').gte('work_date', start).lte('work_date', end),
-      sb().from('mgr_chat').select('branch_id,sender_role,created_at').gte('created_at', start + 'T00:00:00').lte('created_at', end + 'T23:59:59'),
-      sb().from('handovers').select('branch_id,status,work_date').gte('work_date', start).lte('work_date', endEff),
-      sb().from('goods_receipts').select('branch_id,diff,work_date').gte('work_date', start).lte('work_date', endEff),
+      sb().from('mgr_tasks').select('branch_id,assignee_emp,status,due_date,emp_submitted_at,done_at,created_at,title'),
+      sb().from('task_defs').select('id,title,mgr_owner,active'),
+      sb().from('goods_receipts').select('branch_id,diff,work_date,no_delivery').gte('work_date', start).lte('work_date', endEff),
       sb().from('disc_actions').select('emp_id,performed_role,performed_at,action_type').gte('performed_at', start + 'T00:00:00').lte('performed_at', end + 'T23:59:59'),
+      sb().from('shift_submits').select('branch_id,work_date,shift_id,total,done').gte('work_date', start).lte('work_date', endEff),
+      sb().from('audit_reports').select('branch_id,inspect_date,round,score,max_score,result,qms,stockout').lte('inspect_date', end).order('inspect_date', { ascending: true }),
+      sb().from('sales_daily').select('branch_id,sale_date,sales_total,target_total').gte('sale_date', start).lte('sale_date', endEff),
+      sb().from('mgr_eval_business').select('*').eq('period_start', start),
     ]);
+    // วันแรกที่ระบบรับส่งผลัดเริ่มมีข้อมูล — ใช้เป็นจุดเริ่มนับ "ปิดผลัดครบ" (ไม่งั้นรอบเก่าจะติดลบฟรี)
+    const ssFirstR = await sb().from('shift_submits').select('work_date').order('work_date', { ascending: true }).limit(1);
+    const ssFirst = ((ssFirstR.data || [])[0] || {}).work_date || null;
     if (empR.error) throw empR.error;
+    // ★ task_assignments รอบหนึ่งมีหลายพันแถว — ต้องดึงแบบแบ่งหน้า (PostgREST คืนสูงสุด 1,000 แถว)
+    const tas = await fetchPaged(() => sb().from('task_assignments')
+      .select('id,task_def_id,emp_id,branch_id,work_date,status,submitted_at,needs_mgr,mgr_checked_at,mgr_result')
+      .gte('work_date', start).lte('work_date', endEff).order('id', { ascending: true }), 1000);
+
     const emps = empR.data || [];
-    const empById = {}; emps.forEach(e => { empById[e.emp_id] = e; });
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const empById = {}; emps.forEach(e => { empById[e.emp_id] = e; });
     const scAll = await hrScoreGet(which, null);
     const scByEmp = {}; (scAll.employees || []).forEach(s => { scByEmp[s.emp_id] = s; });
-    const bizRows = ((await sb().from('mgr_eval_business').select('*').eq('period_start', start)).data) || [];
-    const bizByBr = {}; bizRows.forEach(r => { bizByBr[r.branch_id] = r; });
 
-    const defCount = (mdDefR.data || []).length;
+    const att = attR.data || [], mts = mtR.data || [], gds = gdR.data || [], dscs = dscR.data || [], sss = ssR.data || [], aus = auR.data || [], sls = slR.data || [];
+    const bizByBr = {}; (bizR.data || []).forEach(r => { bizByBr[r.branch_id] = r; });
+    const ownDefIds = {}; let ownDefCount = 0;
+    (defR.data || []).forEach(d => { if (d.mgr_owner) { ownDefIds[String(d.id)] = d.title || ''; if (d.active !== false) ownDefCount++; } });
     const dayCount = (endEff >= start) ? daysBetween(start, endEff) : 0;
-    const att = attR.data || [], mts = mtR.data || [], mdl = mdlR.data || [], tas = taR.data || [], chats = chatR.data || [], hos = hoR.data || [], gds = gdR.data || [], dscs = dscR.data || [];
+    const cycleDays = daysBetween(start, end);
 
-    // ---- คิดคะแนน "ผลทีม (B)" ระดับสาขา (คำนวณครั้งเดียวต่อสาขา) ----
-    const branchCache = {};
-    function teamOf(brId) {
-      if (branchCache[brId]) return branchCache[brId];
-      const team = emps.filter(e => e.branch_id === brId && !e.is_manager);   // ลูกน้องที่ ผจก. ดูแล
-      const new_hires = team.filter(e => e.start_date && String(e.start_date) >= start).length;
-      // วินัยทีม
-      const bAtt = att.filter(a => a.branch_id === brId && a.check_in);
-      const onTimeRate = bAtt.length ? clamp((bAtt.filter(a => !(a.late_min > 0)).length) * 100 / bAtt.length) : null;
-      const scores = team.map(e => scByEmp[e.emp_id]).filter(s => s && s.score != null).map(s => Number(s.score));
-      const avgDisc = scores.length ? Math.round(scores.reduce((x, y) => x + y, 0) / scores.length * 10) / 10 : null;
-      const team_discipline = wmean([{ v: onTimeRate, w: 1 }, { v: avgDisc, w: 1 }]);
-      // ดำเนินงานหน้าร้าน
-      const bHo = hos.filter(h => h.branch_id === brId);
-      const hoRate = bHo.length ? clamp((bHo.filter(h => h.status !== 'no_handover' && h.status !== 'rejected').length) * 100 / bHo.length) : null;
-      const bGd = gds.filter(g => g.branch_id === brId);
-      const gdRate = bGd.length ? clamp((bGd.filter(g => Number(g.diff || 0) === 0).length) * 100 / bGd.length) : null;
-      const bPastAtt = att.filter(a => a.branch_id === brId && a.check_in && a.work_date < today);
-      const coRate = bPastAtt.length ? clamp((bPastAtt.filter(a => !!a.check_out).length) * 100 / bPastAtt.length) : null;
-      const store_ops = wmean([{ v: hoRate, w: 2 }, { v: gdRate, w: 2 }, { v: coRate, w: 1 }]);
-      const score_b = wmean([{ v: team_discipline, w: c.wB.team_discipline }, { v: store_ops, w: c.wB.store_ops }]);
-      // จัดการวินัยเชิงรุก (ข้อมูลประกอบ ไม่ถ่วงคะแนน)
-      const proactive = dscs.filter(a => { const e = empById[a.emp_id]; return e && e.branch_id === brId; }).length;
-      const res = {
-        team_size: team.length, new_hires,
-        b_breakdown: [
-          { key: 'team_discipline', label: 'วินัยทีม', score: team_discipline, weight: c.wB.team_discipline, raw: { on_time_pct: onTimeRate, avg_discipline: avgDisc, team_scored: scores.length } },
-          { key: 'store_ops', label: 'ดำเนินงานหน้าร้าน', score: store_ops, weight: c.wB.store_ops, raw: { handover_pct: hoRate, goods_accuracy_pct: gdRate, checkout_complete_pct: coRate, handovers: bHo.length, goods_docs: bGd.length } },
-        ],
-        score_b, proactive_disc: proactive,
-      };
-      branchCache[brId] = res;
-      return res;
-    }
+    // ยอดขาย: เอาค่าสูงสุดของแต่ละวัน (แถวเป็นยอดสะสมรายผลัด)
+    const salesByBr = {};
+    sls.forEach(r => {
+      const b = salesByBr[r.branch_id] || (salesByBr[r.branch_id] = {});
+      const d = b[r.sale_date] || (b[r.sale_date] = { s: 0, t: 0 });
+      const s = _meNum(r.sales_total), t = _meNum(r.target_total);
+      if (s != null && s > d.s) d.s = s;
+      if (t != null && t > d.t) d.t = t;
+    });
 
     const managers = emps.filter(e => e.is_manager);
+    const notes = [];
+    if (!ownDefCount) notes.push('ยังไม่ได้ตั้งหัวข้องานที่เป็นหน้าที่ ผจก. (mgr_owner) — หัวข้อ "งานหน้าที่ ผจก. ในรอบผลัด" จะคิดไม่ได้');
+    if (!aus.length) notes.push('ยังไม่มีผลตรวจร้าน QSSI ในระบบ');
+    if (!sls.length) notes.push('ยังไม่มียอดขายในรอบนี้');
+
     const out = managers.map(m => {
       const brId = m.branch_id || '';
-      // ---- คะแนน A: 1) รับผิดชอบงานที่มอบหมาย ----
-      const myMt = mts.filter(t => String(t.assignee_emp || '') === String(m.emp_id))
-        .filter(t => { const d = String(t.created_at || '').slice(0, 10); return !d || (d >= start && d <= end); });
-      const mtDone = myMt.filter(t => t.status === 'done' || !!t.emp_submitted_at).length;
-      const mtOnTime = myMt.filter(t => (t.status === 'done' || !!t.emp_submitted_at) && (!t.due_date || String(t.emp_submitted_at || t.done_at || '').slice(0, 10) <= t.due_date)).length;
-      const mtScore = myMt.length ? clamp(mtOnTime * 100 / myMt.length) : null;
-      // งานประจำวัน ผจก. ของสาขา
-      const bMdl = mdl.filter(l => l.branch_id === brId);
-      const mdlExpected = defCount * dayCount;
-      const mdlDone = bMdl.length;
-      const mdlApproved = bMdl.filter(l => l.status === 'approved').length;
-      const mdlCoverage = mdlExpected ? clamp(mdlDone * 100 / mdlExpected) : null;
-      const mdlPass = mdlDone ? clamp(mdlApproved * 100 / mdlDone) : null;
-      const dailyScore = wmean([{ v: mdlCoverage, w: 1 }, { v: mdlPass, w: 1 }]);
-      const responsibility = wmean([{ v: mtScore, w: 2 }, { v: dailyScore, w: 1 }]);
-      // ---- คะแนน A: 2) ตรวจงาน & คุมคุณภาพ ----
+      const team = emps.filter(e => e.branch_id === brId && !e.is_manager);
+      const new_hires = team.filter(e => e.start_date && String(e.start_date) >= start).length;
       const bTa = tas.filter(t => t.branch_id === brId);
+
+      // ---- A1 งานหน้าที่ ผจก. ในรอบผลัด ----
+      const own = bTa.filter(t => ownDefIds[String(t.task_def_id)] != null);
+      const ownDone = own.filter(t => t.status === 'submitted' || t.status === 'approved');
+      const ownOnDay = ownDone.filter(t => _meBkkDate(t.submitted_at) <= String(t.work_date)).length;
+      const ownByMgr = own.filter(t => String(t.emp_id || '') === String(m.emp_id)).length;
+      const ownScore = own.length ? clamp(ownOnDay * 100 / own.length) : null;
+
+      // ---- A2 ตรวจงานทีมครบ / A3 ตรวจเร็ว ----
       const needs = bTa.filter(t => t.needs_mgr);
-      const needsChecked = needs.filter(t => !!t.mgr_checked_at).length;
-      const coverage = needs.length ? clamp(needsChecked * 100 / needs.length) : null;
-      const myReviewed = tas.filter(t => String(t.checked_by_emp || '') === String(m.emp_id));
-      const rvTotal = myReviewed.length;
-      const rvMissed = myReviewed.filter(t => t.mgr_result === 'sent_back' || String(t.fix_emp || '') === String(m.emp_id)).length;
-      const rvAccuracy = rvTotal ? clamp((rvTotal - rvMissed) * 100 / rvTotal) : null;
-      const rvTimed = myReviewed.filter(t => t.mgr_checked_at && t.submitted_at);
-      const rvFast = rvTimed.length ? clamp(rvTimed.filter(t => { const h = hoursBetween(t.submitted_at, t.mgr_checked_at); return h != null && h <= th.review_fast_hours; }).length * 100 / rvTimed.length) : null;
-      const review = wmean([{ v: coverage, w: 2 }, { v: rvAccuracy, w: 2 }, { v: rvFast, w: 1 }]);
-      // ---- คะแนน A: 3) ตอบสนอง & สื่อสาร ----
-      const bChat = chats.filter(x => x.branch_id === brId).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      const asks = bChat.filter(x => x.sender_role === 'hr' || x.sender_role === 'nida');
-      let repliedOnTime = 0;
-      asks.forEach(q => {
-        const rep = bChat.find(x => x.sender_role === 'mgr' && new Date(x.created_at) > new Date(q.created_at));
-        if (rep) { const h = hoursBetween(q.created_at, rep.created_at); if (h != null && h <= th.chat_reply_hours) repliedOnTime++; }
+      const checked = needs.filter(t => !!t.mgr_checked_at);
+      const covScore = needs.length ? clamp(checked.length * 100 / needs.length) : null;
+      const timed = checked.filter(t => !!t.submitted_at);
+      const fast = timed.filter(t => { const h = hoursBetween(t.submitted_at, t.mgr_checked_at); return h != null && h <= th.review_fast_hours; }).length;
+      const avgH = timed.length ? Math.round(timed.reduce((a, t) => a + (hoursBetween(t.submitted_at, t.mgr_checked_at) || 0), 0) / timed.length * 10) / 10 : null;
+      const spdScore = timed.length ? clamp(fast * 100 / timed.length) : null;
+      const sentBack = bTa.filter(t => t.mgr_result === 'sent_back').length;
+
+      // ---- A4 งานที่สำนักงานสั่ง (ผูกตามสาขา ถ้าไม่ได้ระบุชื่อ) ----
+      const myMt = mts.filter(t => {
+        const d = _meBkkDate(t.created_at);
+        if (d && (d < start || d > end)) return false;
+        if (t.assignee_emp) return String(t.assignee_emp) === String(m.emp_id);
+        return String(t.branch_id || '') === String(brId);
       });
-      const responsiveness = asks.length ? clamp(repliedOnTime * 100 / asks.length) : null;
-      const score_a = wmean([{ v: responsibility, w: c.wA.responsibility }, { v: review, w: c.wA.review }, { v: responsiveness, w: c.wA.responsiveness }]);
-      const a_breakdown = [
-        { key: 'responsibility', label: 'รับผิดชอบงานที่มอบหมาย', score: responsibility, weight: c.wA.responsibility, raw: { mgr_tasks: myMt.length, done: mtDone, on_time: mtOnTime, daily_coverage_pct: mdlCoverage, daily_pass_pct: mdlPass } },
-        { key: 'review', label: 'ตรวจงาน & คุมคุณภาพ', score: review, weight: c.wA.review, raw: { needs_mgr: needs.length, checked: needsChecked, coverage_pct: coverage, reviewed: rvTotal, accuracy_pct: rvAccuracy, fast_pct: rvFast } },
-        { key: 'responsiveness', label: 'ตอบสนอง & สื่อสาร', score: responsiveness, weight: c.wA.responsiveness, raw: { asks: asks.length, replied_on_time: repliedOnTime } },
-      ];
-      // ---- ผลทีม (B) ----
-      const tm = teamOf(brId);
-      // ---- บล็อก C: KPI ธุรกิจ ----
+      const mtDone = myMt.filter(t => t.status === 'done' || !!t.emp_submitted_at);
+      const mtOnTime = mtDone.filter(t => !t.due_date || _meBkkDate(t.emp_submitted_at || t.done_at) <= t.due_date).length;
+      const mtScore = myMt.length ? clamp(mtOnTime * 100 / myMt.length) : null;
+
+      // ---- B1 QSSI (ผลตรวจล่าสุดในระบบ) ----
+      const auB = aus.filter(a => String(a.branch_id) === String(brId));
+      const auLast = auB.length ? auB[auB.length - 1] : null;
+      const qssiVal = auLast ? _meNum(auLast.result) : null;
+      const qssiHist = auB.slice(-3).map(a => ({ date: a.inspect_date, result: _meNum(a.result), qms: _meNum(a.qms), stockout: _meNum(a.stockout) }));
+      const qssiStale = auLast ? (String(auLast.inspect_date) < start) : false;
+
+      // ---- B2 ยอดขายเทียบเป้า ----
+      const sd = salesByBr[brId] || {};
+      let sSum = 0, tSum = 0, sDays = 0;
+      Object.keys(sd).forEach(d => { if (sd[d].t > 0 || sd[d].s > 0) { sSum += sd[d].s; tSum += sd[d].t; sDays++; } });
+      const salesPct = tSum > 0 ? Math.round(sSum / tSum * 1000) / 10 : null;
+      const salesScore = salesPct != null ? clamp(salesPct) : null;
+
+      // ---- B3 ทีมมาตรงเวลา / B4 วินัยเฉลี่ย ----
+      const bAtt = att.filter(a => a.branch_id === brId && a.check_in);
+      const otScore = bAtt.length ? clamp(bAtt.filter(a => !(a.late_min > 0)).length * 100 / bAtt.length) : null;
+      const lateCnt = bAtt.filter(a => a.late_min > 0).length;
+      const scores = team.map(e => scByEmp[e.emp_id]).filter(s => s && s.score != null).map(s => Number(s.score));
+      const avgDisc = scores.length ? Math.round(scores.reduce((x, y) => x + y, 0) / scores.length * 10) / 10 : null;
+
+      // ---- B5 ตัดจ่าย (คีย์สิ้นเดือน) ----
       const biz = bizByBr[brId] || null;
-      let block_c = null;
-      if (biz) {
-        const salesPct = (biz.sales_target && Number(biz.sales_target) > 0) ? Math.round(Number(biz.sales_actual || 0) / Number(biz.sales_target) * 1000) / 10 : null;
-        const wastePct = biz.waste_pct != null ? Number(biz.waste_pct) : null;
-        const qssi = biz.qssi_score != null ? Number(biz.qssi_score) : null;
-        const light = (v, good, warn, invert) => v == null ? 'none' : (invert ? (v <= good ? 'green' : (v <= warn ? 'yellow' : 'red')) : (v >= good ? 'green' : (v >= warn ? 'yellow' : 'red')));
-        block_c = {
-          sales_target: biz.sales_target, sales_actual: biz.sales_actual, sales_pct: salesPct,
-          waste_value: biz.waste_value, waste_pct: wastePct, qssi_score: qssi, note: biz.note || '',
-          lights: {
-            sales: light(salesPct, th.sales_good_pct, th.sales_warn_pct, false),
-            waste: light(wastePct, th.waste_pct_good, th.waste_pct_warn, true),
-            qssi: light(qssi, th.qssi_good, th.qssi_warn, false),
-          },
-        };
-      }
-      const gA = gradeOf(score_a), gB = gradeOf(tm.score_b);
+      let wasteVal = biz ? _meNum(biz.waste_value) : null;
+      let wastePct = biz ? _meNum(biz.waste_pct) : null;
+      if (wastePct == null && wasteVal != null && sSum > 0) wastePct = Math.round(wasteVal / sSum * 10000) / 100;
+      const wMax = Number(th.waste_max_pct) || 2.5;
+      const wasteScore = wastePct == null ? null : (wastePct <= wMax ? 100 : clamp(100 - (wastePct - wMax) / wMax * 100));
+
+      // ---- B6 ลังคืน ----
+      const bGd = gds.filter(g => g.branch_id === brId && !g.no_delivery);
+      const tol = Number(th.goods_tol) || 0;
+      const gdOk = bGd.filter(g => Math.abs(Number(g.diff || 0)) <= tol).length;
+      const gdScore = bGd.length ? clamp(gdOk * 100 / bGd.length) : null;
+      const gdSkip = gds.filter(g => g.branch_id === brId && g.no_delivery).length;
+      const gdAvg = bGd.length ? Math.round(bGd.reduce((a, g) => a + Math.abs(Number(g.diff || 0)), 0) / bGd.length * 10) / 10 : null;
+
+      // ---- B7 ปิดผลัดครบ ----
+      const bSs = sss.filter(s => s.branch_id === brId);
+      const ssFrom = (ssFirst && ssFirst > start) ? ssFirst : start;
+      const ssDays = (ssFirst && ssFirst > endEff) ? 0 : ((endEff >= ssFrom) ? daysBetween(ssFrom, endEff) : 0);
+      const ssExpect = ssDays * 3;
+      const ssScore = (bSs.length && ssExpect) ? clamp(bSs.length * 100 / ssExpect) : null;
+      const ssTotal = bSs.reduce((a, s) => a + (Number(s.total) || 0), 0);
+      const ssDone = bSs.reduce((a, s) => a + (Number(s.done) || 0), 0);
+
+      const a_breakdown = markUsed([
+        { key: 'mgr_own', label: 'งานหน้าที่ ผจก. ในรอบผลัด', score: ownScore, weight: c.wA.mgr_own,
+          raw_text: own.length ? (own.length + ' งาน · ส่งตรงวัน ' + ownOnDay + ' · ผจก. ทำเอง ' + ownByMgr + ' งาน') : 'ไม่มีงานหน้าที่ ผจก. ในรอบนี้',
+          raw: { tasks: own.length, on_day: ownOnDay, by_mgr: ownByMgr, defs: ownDefCount } },
+        { key: 'review_cov', label: 'ตรวจงานทีมครบ', score: covScore, weight: c.wA.review_cov,
+          raw_text: needs.length ? ('ต้องตรวจ ' + needs.length + ' งาน · ตรวจแล้ว ' + checked.length + ' · ค้าง ' + (needs.length - checked.length)) : 'ไม่มีงานที่ต้องให้ ผจก. ตรวจ',
+          raw: { needs_mgr: needs.length, checked: checked.length, sent_back: sentBack } },
+        { key: 'review_speed', label: 'ตรวจเร็วภายใน ' + th.review_fast_hours + ' ชม.', score: spdScore, weight: c.wA.review_speed,
+          raw_text: timed.length ? ('ทันเวลา ' + fast + ' จาก ' + timed.length + ' ใบ · เฉลี่ย ' + avgH + ' ชม.') : 'ยังไม่มีใบที่จับเวลาได้',
+          raw: { timed: timed.length, fast: fast, avg_hours: avgH } },
+        { key: 'hr_tasks', label: 'งานที่สำนักงานสั่ง ตรงกำหนด', score: mtScore, weight: c.wA.hr_tasks,
+          raw_text: myMt.length ? (myMt.length + ' ใบ · เสร็จ ' + mtDone.length + ' · ตรงกำหนด ' + mtOnTime) : 'รอบนี้ยังไม่มีใบสั่งงาน',
+          raw: { tasks: myMt.length, done: mtDone.length, on_time: mtOnTime } },
+      ]);
+      const b_breakdown = markUsed([
+        { key: 'qssi', label: 'คะแนนตรวจร้าน QSSI', score: qssiVal, weight: c.wB.qssi,
+          raw_text: auLast ? (qssiVal + '% · ตรวจ ' + auLast.inspect_date + (qssiStale ? ' (ก่อนรอบนี้)' : '') + ' · QMS ' + (_meNum(auLast.qms) != null ? auLast.qms : '—') + ' · ของขาด ' + (_meNum(auLast.stockout) != null ? auLast.stockout : '—') + ' รายการ') : 'ยังไม่มีผลตรวจ',
+          raw: { result: qssiVal, inspect_date: auLast ? auLast.inspect_date : null, qms: auLast ? _meNum(auLast.qms) : null, stockout: auLast ? _meNum(auLast.stockout) : null } },
+        { key: 'sales', label: 'ยอดขายเทียบเป้า', score: salesScore, weight: c.wB.sales,
+          raw_text: salesPct != null ? ('ยอดจริง ' + _meInt(sSum) + ' / เป้า ' + _meInt(tSum) + ' บาท (' + sDays + ' วัน) = ' + salesPct + '%') : 'ยังไม่มียอดขายในรอบนี้',
+          raw: { sales: Math.round(sSum), target: Math.round(tSum), pct: salesPct, days: sDays } },
+        { key: 'on_time', label: 'ทีมมาตรงเวลา', score: otScore, weight: c.wB.on_time,
+          raw_text: bAtt.length ? ('ลงเวลา ' + bAtt.length + ' กะ · สาย ' + lateCnt + ' กะ') : 'ไม่มีข้อมูลลงเวลา',
+          raw: { shifts: bAtt.length, late: lateCnt } },
+        { key: 'discipline', label: 'คะแนนวินัยเฉลี่ยของทีม', score: avgDisc, weight: c.wB.discipline,
+          raw_text: scores.length ? (scores.length + ' คน · เฉลี่ย ' + avgDisc + ' คะแนน') : 'ยังไม่มีคะแนนวินัย',
+          raw: { team_scored: scores.length, avg: avgDisc } },
+        { key: 'waste', label: 'ตัดจ่าย (ไม่เกิน ' + wMax + '% ของยอดขาย)', score: wasteScore, weight: c.wB.waste,
+          raw_text: wastePct != null ? (_meInt(wasteVal || 0) + ' บาท = ' + wastePct + '% ของยอดขาย') : 'ยังไม่ได้คีย์ยอดตัดจ่ายของรอบนี้',
+          raw: { waste_value: wasteVal, waste_pct: wastePct, max_pct: wMax } },
+        { key: 'goods', label: 'ลังคืนคลาดไม่เกิน ±' + tol + ' ลัง', score: gdScore, weight: c.wB.goods,
+          raw_text: bGd.length ? ('ใบที่มีของส่ง ' + bGd.length + ' · เข้าเกณฑ์ ' + gdOk + ' · คลาดเฉลี่ย ' + gdAvg + ' ลัง' + (gdSkip ? (' (ตัดใบไม่มีรถส่ง ' + gdSkip + ')') : '')) : 'ไม่มีใบรับสินค้า',
+          raw: { docs: bGd.length, in_tol: gdOk, avg_diff: gdAvg, no_delivery: gdSkip } },
+        { key: 'shift_close', label: 'ปิดผลัดครบ 3 ผลัด/วัน', score: ssScore, weight: c.wB.shift_close,
+          raw_text: (bSs.length && ssExpect) ? ('ปิดแล้ว ' + bSs.length + ' จาก ' + ssExpect + ' ผลัด (' + ssDays + ' วัน) · งานในผลัดเสร็จ ' + ssDone + '/' + ssTotal) : 'ยังไม่มีการปิดผลัดในรอบนี้',
+          raw: { submits: bSs.length, expect: ssExpect, days: ssDays, done: ssDone, total: ssTotal } },
+      ]);
+
+      const score_a = wmean(a_breakdown), score_b = wmean(b_breakdown);
+      const gA = gradeOf(score_a), gB = gradeOf(score_b);
+      const proactive = dscs.filter(a => { const e = empById[a.emp_id]; return e && e.branch_id === brId; }).length;
       return {
         emp_id: m.emp_id, mgr_name: m.name, nickname: m.nickname || '', photo_url: m.photo_url || '',
         branch_id: brId, branch_name: brName[brId] || brId || '—',
-        team_size: tm.team_size, new_hires: tm.new_hires,
+        team_size: team.length, new_hires,
         score_a, grade_a: gA.label, grade_a_color: gA.color, a_breakdown,
-        score_b: tm.score_b, grade_b: gB.label, grade_b_color: gB.color, b_breakdown: tm.b_breakdown, proactive_disc: tm.proactive_disc,
-        block_c,
+        score_b, grade_b: gB.label, grade_b_color: gB.color, b_breakdown,
+        proactive_disc: proactive, sent_back: sentBack,
+        qssi: { value: qssiVal, date: auLast ? auLast.inspect_date : null, stale: qssiStale, history: qssiHist },
+        sales: { actual: Math.round(sSum), target: Math.round(tSum), pct: salesPct, days: sDays },
+        waste: { value: wasteVal, pct: wastePct, max_pct: wMax, filled: wastePct != null },
+        missing: [].concat(a_breakdown, b_breakdown).filter(x => x.score == null).map(x => x.label),
       };
     }).sort((a, b) => (b.score_a || 0) - (a.score_a || 0));
 
     return {
       ok: true,
-      which, range: { start, end, label: (which === 'previous' ? 'รอบก่อนหน้า' : 'รอบปัจจุบัน') + ' (' + start + ' ถึง ' + end + ')' },
-      config: { weights_a: c.wA, weights_b: c.wB, grade_bands: c.bands, thresholds: th },
+      which, range: {
+        start, end, label: (which === 'previous' ? 'รอบก่อนหน้า' : 'รอบปัจจุบัน') + ' (' + start + ' ถึง ' + end + ')',
+        days_done: dayCount, days_total: cycleDays, running: end >= today,
+      },
+      config: { weights_a: c.wA, weights_b: c.wB, grade_bands: c.bands, thresholds: c.th },
+      notes,
       managers: out,
     };
   }
@@ -8848,7 +8925,8 @@
       mgr_emp: m.emp_id, mgr_name: m.mgr_name, branch_id: m.branch_id, branch_name: m.branch_name,
       period_start: r.range.start, period_end: r.range.end, team_size: m.team_size, new_hires: m.new_hires,
       score_a: m.score_a, score_b: m.score_b, grade_a: m.grade_a, grade_b: m.grade_b,
-      block_c: m.block_c || null, detail: { a_breakdown: m.a_breakdown, b_breakdown: m.b_breakdown }, created_by: p.by || 'สำนักงาน (HR)',
+      block_c: { qssi: m.qssi || null, sales: m.sales || null, waste: m.waste || null },
+      detail: { a_breakdown: m.a_breakdown, b_breakdown: m.b_breakdown }, created_by: p.by || 'สำนักงาน (HR)',
     }));
     if (!rows.length) return { ok: true, saved: 0 };
     const { error } = await sb().from('mgr_eval_snapshots').upsert(rows, { onConflict: 'mgr_emp,period_start' });
