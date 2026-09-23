@@ -6555,6 +6555,8 @@
     if (exFirst.length === 0) actions.push({ level: 'blue', title: 'ส่งแบบทดสอบให้ทำ', detail: 'ยังไม่มีข้อมูลความเข้าใจงานของคนนี้เลย — เผยแพร่แบบทดสอบให้ทำสักชุดจะช่วยให้ประเมินได้ครบด้าน' });
 
     // ---------- หัวเรื่อง: ประเด็นเดียวที่ต้องคุย ----------
+    // คะแนนประวัติวินัย — ไม่ขึ้นกับจำนวนกะในรอบ จึงคิดได้เสมอ
+    function _discScore() { let v = 100; (x.disc_history || []).forEach(h => { const t = String(h.type || '') + String(h.type_name || ''); v -= /ใบเตือน|warning/.test(t) ? 40 : /ลายลักษณ์|written/.test(t) ? 25 : 15; }); return Math.max(0, v); }
     let headline = null;
     if (thin) {
       return {
@@ -6565,7 +6567,8 @@
           { key: 'quality', label: 'คุณภาพงานในกะ', score: axQuality, good: 95, warn: 85, why: x.t_total ? ('งานในกะ ' + x.t_total + ' ใบ · เคยถูกตีกลับ ' + everBack + ' ใบ') : 'ยังไม่มีงานในกะในช่วงนี้' },
           { key: 'assist', label: 'ความรับผิดชอบเสริม', score: null, good: 60, warn: 25, why: 'ข้อมูลยังน้อย' },
           { key: 'know', label: 'ความรู้ (แบบทดสอบ)', score: axKnow, good: 85, warn: 70, why: exFirst.length ? ('ทำแล้ว ' + exFirst.length + ' ชุด · เฉลี่ยครั้งแรก ' + axKnow + '%') : 'ยังไม่เคยทำแบบทดสอบในระบบ', exams: exams },
-          { key: 'disc', label: 'ประวัติวินัย', score: null, good: 100, warn: 70, why: (x.disc_history || []).length + ' รายการในประวัติ' },
+          { key: 'disc', label: 'ประวัติวินัย', score: _discScore(), good: 100, warn: 70,
+            why: (x.disc_history || []).length ? ((x.disc_history || []).length + ' รายการ · ล่าสุด ' + String((x.disc_history || [])[0] && (x.disc_history || [])[0].at || '').slice(0, 10)) : 'ไม่มีประวัติการดำเนินการทางวินัย' },
         ],
         compare: {}, trend: cycles, trend_worse_run: 0, trend_text: null,
         pattern: { dow: dow, dow_shifts: dowShift, dow_labels: _DOW_TH, by_shift: shiftRows, calendar: calendar, avg_late_min: avgLateMin, text: patternText },
@@ -6601,7 +6604,7 @@
           why: 'รวม ' + extraMe + ' ครั้ง — หัวหน้าผลัด ' + x.lead_days + ' · ผู้คุมผลัด ' + x.ctrl_days + ' · เชลฟ์ ' + x.sh_checks + ' · QA ' + x.qa_total + ' · รับสินค้า ' + x.gd_total + ' · งานพิเศษ ' + (x.sp_total + x.mt_total) },
         { key: 'know', label: 'ความรู้ (แบบทดสอบ)', score: axKnow, good: 85, warn: 70,
           why: exFirst.length ? ('ทำแล้ว ' + exFirst.length + ' ชุด · เฉลี่ยครั้งแรก ' + axKnow + '%') : 'ยังไม่เคยทำแบบทดสอบในระบบ', exams },
-        { key: 'disc', label: 'ประวัติวินัย', score: (function () { let v = 100; (x.disc_history || []).forEach(h => { const t = String(h.type || '') + String(h.type_name || ''); v -= /ใบเตือน|warning/.test(t) ? 40 : /ลายลักษณ์|written/.test(t) ? 25 : 15; }); return (x.disc_history || []).length ? Math.max(0, v) : 100; })(), good: 100, warn: 70,
+        { key: 'disc', label: 'ประวัติวินัย', score: _discScore(), good: 100, warn: 70,
           why: (x.disc_history || []).length ? ((x.disc_history || []).length + ' รายการ · ล่าสุด ' + String((x.disc_history || [])[0] && (x.disc_history || [])[0].at || '').slice(0, 10)) : 'ไม่มีประวัติการดำเนินการทางวินัย' },
       ],
       compare, trend: cycles, trend_worse_run: worseRun, trend_text: trendWord,
