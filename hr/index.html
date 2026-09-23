@@ -13047,6 +13047,8 @@ function asstTextToDoc(text, formal){
   const flush=()=>{ if(cur&&((cur.text&&cur.text.trim())||(cur.items&&cur.items.length)||(cur.rows&&cur.rows.length))) secs.push(cur); cur=null; };
   const start=type=>{ flush(); cur={ heading:head, type, text:'', items:[], columns:[], rows:[], lines:3, note:'' }; head=''; };
   const META=/^(เรียน|เรื่อง|ถึง|จาก|วันที่|ที่|สาขา|หน่วยงาน)\s*[:：]?\s*(.+)$/;
+  // ★ หัวข้อหลักของเอกสาร — นิดามักเขียนเป็น "วัตถุประสงค์: ..." ต้องขึ้นเป็นหัวข้อ ไม่ใช่ข้อความธรรมดา
+  const HEADLBL=/^(วัตถุประสงค์|จุดประสงค์|เป้าหมาย|ขอบเขต|ผู้เข้าร่วมประชุม|ผู้เข้าประชุม|ผู้ร่วมประชุม|ระเบียบวาระ(การประชุม)?|วาระการประชุม|เนื้อหาการประชุม|มติที่ประชุม|ข้อตกลง|สรุป(ผล)?(การประชุม)?|ข้อเสนอแนะ|แนวทางปฏิบัติ|สิ่งที่ต้อง(ทำ|ดำเนินการ)(ต่อ)?|กำหนดการ|หมายเหตุ)\s*[:：]\s*(.*)$/;
   for(let i=0;i<lines.length;i++){
     const ln=lines[i].trim();
     if(!ln){ if(cur&&cur.type==='paragraph'&&cur.text) cur.text+='\n'; continue; }
@@ -13072,6 +13074,13 @@ function asstTextToDoc(text, formal){
     }
     if(m){ flush(); head=plain; top=false; continue; }
     top=false;
+    const hl=plain.match(HEADLBL);
+    if(hl){
+      flush(); head=hl[1];
+      const rest=(hl[hl.length-1]||'').trim();
+      if(rest){ start('paragraph'); cur.text=rest; }
+      continue;
+    }
     if(/^\|.*\|$/.test(ln)){
       const cells=r=>r.replace(/^\||\|$/g,'').split('|').map(x=>mkdStrip(x));
       if(!cur||cur.type!=='table'){ start('table'); cur.columns=cells(ln).slice(0,8); continue; }
