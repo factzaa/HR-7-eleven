@@ -13021,21 +13021,41 @@ function mkdClean(t){
     .replace(/\r/g,'').replace(/[ \t]+$/gm,'');
 }
 function mkdStrip(t){ return String(t||'').replace(/\*\*(.+?)\*\*/g,'$1').replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$)/g,'$1$2').replace(/`([^`]+)`/g,'$1').trim(); }
-// แปลงข้อความ (markdown เบา ๆ) → sections ของเอกสาร
-function asstTextToSections(text){
+// แปลงข้อความ (markdown เบา ๆ) → เอกสาร — ยึด "ให้เหมือนที่นิดาพิมพ์ในแชท" เป็นหลัก
+//   · บรรทัดหัวเอกสาร (เรียน/เรื่อง/ถึง/วันที่/ที่) → ไปอยู่หัวเอกสาร ไม่ใช่หัวข้อในเนื้อหา
+//   · รายการเลขข้อ เก็บเลขเดิมของนิดาไว้ (ไม่ให้ระบบไล่เลขใหม่แล้วเพี้ยน/เริ่ม 1 ซ้ำ)
+function asstTextToDoc(text){
   const lines=mkdClean(text).split('\n');
-  const secs=[]; let cur=null, head='';
-  const flush=()=>{ if(cur&&((cur.text&&cur.text.trim())||(cur.items&&cur.items.length)||(cur.rows&&cur.rows.length))){ secs.push(cur); } cur=null; };
-  const start=(type)=>{ flush(); cur={ heading:head, type, text:'', items:[], columns:[], rows:[], lines:3, note:'' }; head=''; };
+  const meta=[], secs=[]; let cur=null, head='', top=true, guess='', isMeet=false;
+  const flush=()=>{ if(cur&&((cur.text&&cur.text.trim())||(cur.items&&cur.items.length)||(cur.rows&&cur.rows.length))) secs.push(cur); cur=null; };
+  const start=type=>{ flush(); cur={ heading:head, type, text:'', items:[], columns:[], rows:[], lines:3, note:'' }; head=''; };
+  const META=/^(เรียน|เรื่อง|ถึง|จาก|วันที่|ที่|สาขา|หน่วยงาน)\s*[:：]?\s*(.+)$/;
   for(let i=0;i<lines.length;i++){
-    const raw=lines[i], ln=raw.trim();
+    const ln=lines[i].trim();
     if(!ln){ if(cur&&cur.type==='paragraph'&&cur.text) cur.text+='\n'; continue; }
-    if(/^([-–—*_=]\s*){3,}$/.test(ln)) continue;                                  // เส้นคั่น
-    let m=ln.match(/^#{1,6}\s*(.+?)\s*#*$/);                                       // # หัวข้อ
-    if(!m){ const b=ln.match(/^\*\*(.+?)\*\*\s*:?$/); if(b) m=[null,b[1]]; }       // **หัวข้อ**
+    if(/^([-–—*_=]\s*){3,}$/.test(ln)) continue;
+    let m=ln.match(/^#{1,6}\s*(.+?)\s*#*$/);
+    if(!m){ const b=ln.match(/^\*\*(.+?)\*\*\s*[:：]?$/); if(b) m=[null,b[1]]; }
     if(!m){ const v=ln.match(/^((?:วาระที่|หัวข้อที่|ส่วนที่|ตอนที่|บทที่)\s*\d+[.):]?\s*.*)$/); if(v&&v[1].length<=140) m=[null,v[1]]; }
-    if(m){ flush(); head=mkdStrip(m[1]).replace(/:$/,''); continue; }
-    if(/^\|.*\|$/.test(ln)){                                                       // ตาราง markdown
+    const plain=mkdStrip(m?m[1]:ln);
+    // หัวเอกสาร (เฉพาะช่วงต้นเอกสาร ก่อนเจอเนื้อหาจริง)
+    const mt=plain.match(META);
+    if(mt && (top||m) && mt[2].length<=120 && plain.length<=140){
+      if(!meta.some(x=>x.label===mt[1])) meta.push({label:mt[1],value:mt[2]});
+      if(!guess && /^(เรื่อง)$/.test(mt[1])) guess=mt[2];
+      continue;
+    }
+    if(!guess && /^หัวข้อ(การประชุม|เรื่อง)?\s*[:：]/.test(plain)){
+      if(/^หัวข้อการประชุม/.test(plain)) isMeet=true;
+      guess=plain.replace(/^หัวข้อ(การประชุม|เรื่อง)?\s*[:：]\s*/,''); continue;   // ใช้เป็นชื่อเอกสาร ไม่ต้องซ้ำในเนื้อหา
+    }
+    if(!guess && /(บันทึก|สรุป|รายงาน|ประกาศ|การประชุม|วาระการประชุม)/.test(plain) && plain.length<=140){
+      guess=plain;
+      if(m) { continue; }   // เป็นหัวเรื่องอยู่แล้ว ไม่ต้องซ้ำในเนื้อหา
+    }
+    if(m){ flush(); head=plain; top=false; continue; }
+    top=false;
+    if(/^\|.*\|$/.test(ln)){
       const cells=r=>r.replace(/^\||\|$/g,'').split('|').map(x=>mkdStrip(x));
       if(!cur||cur.type!=='table'){ start('table'); cur.columns=cells(ln).slice(0,8); continue; }
       if(/^[\s|:\-]+$/.test(ln)) continue;
@@ -13043,14 +13063,28 @@ function asstTextToSections(text){
     }
     const bu=ln.match(/^[-*•·]\s+(.+)$/);
     if(bu){ if(!cur||cur.type!=='bullets') start('bullets'); cur.items.push(mkdStrip(bu[1])); continue; }
-    const nu=ln.match(/^(\d+)[.)]\s+(.+)$/);
-    if(nu){ if(!cur||cur.type!=='numbered') start('numbered'); cur.items.push(mkdStrip(nu[2])); continue; }
-    if(!cur||cur.type!=='paragraph') start('paragraph');
+    // ★ รายการเลขข้อ
+    const nu=ln.match(/^\d+[.)]\s+.+$/);
+    if(nu){
+      const isNum=t=>/^\d+[.)]\s+/.test(t);
+      let prev=''; for(let k=i-1;k>=0;k--){ const t=lines[k].trim(); if(t){ prev=t; break; } }
+      let next=''; for(let k=i+1;k<lines.length;k++){ const t=lines[k].trim(); if(t){ next=t; break; } }
+      // ยืนเดี่ยว (ไม่มีเลขข้ออื่นติดกัน) + สั้นพอ = ใช้เป็นหัวข้อย่อยของเอกสาร
+      if(!isNum(prev) && !isNum(next) && ln.length<=160){ flush(); head=mkdStrip(ln); continue; }
+      // เป็นรายการจริง — เก็บเลขเดิมของนิดาไว้ ไม่ให้ระบบไล่เลขใหม่
+      if(!cur||cur.type!=='paragraph'||!cur._num) { start('paragraph'); cur._num=true; }
+      cur.text+=(cur.text?'\n':'')+mkdStrip(ln); continue;
+    }
+    if(!cur||cur.type!=='paragraph'||cur._num) start('paragraph');
     cur.text+=(cur.text?'\n':'')+mkdStrip(ln);
   }
   flush();
   if(head) secs.push({ heading:head, type:'paragraph', text:'', items:[], columns:[], rows:[], lines:3, note:'' });
-  return secs.slice(0,60);
+  if(!guess){ const h=secs.find(x=>x.heading&&!META.test(x.heading)); guess=(h&&h.heading)||'บันทึกข้อความ'; }
+  let sub='';
+  if(!isMeet) isMeet=secs.some(x=>/ประชุม/.test(x.heading||''))||/ประชุม/.test(guess);
+  if(guess.length>70){ sub=guess; guess=isMeet?'บันทึกการประชุม':'บันทึกข้อความ'; }
+  return { meta, sections:secs.slice(0,80), title:guess, subtitle:sub };
 }
 function asstMkAckRows(branchId, blankN){
   const cols=['ลำดับ','ชื่อ–สกุล','รหัสพนักงาน','ลายเซ็น','วันที่'];
@@ -13066,9 +13100,9 @@ function asstMkAckRows(branchId, blankN){
 }
 function openAsstMkDoc(idx){
   const m=ASST_MSGS[idx]; if(!m||!m.text){ toast('err','ไม่มีเนื้อหาให้ทำเอกสาร'); return; }
-  const secs=asstTextToSections(m.text);
+  const parsed=asstTextToDoc(m.text);
+  const secs=parsed.sections;
   if(!secs.length){ toast('err','อ่านเนื้อหาไม่ออก ลองคัดลอกไปวางเองนะครับ'); return; }
-  const firstHead=(secs.find(x=>x.heading)||{}).heading||'';
   const brOpts=['<option value="">— ไม่ระบุสาขา —</option>'].concat((DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(MGR_MODE&&String(b.branch_id)===String(MGR_BRANCH)?' selected':'')+'>'+esc(b.name)+'</option>')).join('');
   const ov=document.createElement('div'); ov.className='overlay show'; ov.id='asstMkDocOv';
   ov.style.zIndex='1300';   // ★ ต้องสูงกว่าหน้าต่างแชทนิดา (#asstPop = 900) ไม่งั้นกดแล้วเหมือนไม่มีอะไรเกิดขึ้น
@@ -13076,8 +13110,8 @@ function openAsstMkDoc(idx){
     +'<div class="modal-h"><h2 style="font-size:16px">ทำเป็นเอกสาร PDF</h2><button class="close" id="mkdX">×</button></div>'
     +'<div class="modal-b">'
       +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ใช้เนื้อหาที่นิดาเขียนไว้ในข้อความนี้ทั้งหมด ('+secs.length+' ส่วน) — จัดเป็นเอกสาร A4 ให้ดู/พิมพ์/บันทึกเป็น PDF</div>'
-      +'<label style="display:block;font-size:13px;margin-bottom:9px">ชื่อเอกสาร<input id="mkd_title" type="text" value="'+esc(firstHead||'บันทึกข้อความ')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
-      +'<label style="display:block;font-size:13px;margin-bottom:9px">คำอธิบายใต้ชื่อ (เว้นได้)<input id="mkd_sub" type="text" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">ชื่อเอกสาร<input id="mkd_title" type="text" value="'+esc(parsed.title||'บันทึกข้อความ')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">คำอธิบายใต้ชื่อ (เว้นได้)<input id="mkd_sub" type="text" value="'+esc(parsed.subtitle||'')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">สาขา (หัวเอกสาร/รายชื่อผู้รับทราบ)<select id="mkd_br" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'+brOpts+'</select></label>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">ตารางเซ็นรับทราบท้ายเอกสาร<select id="mkd_ack" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'
         +'<option value="">ไม่ใส่</option><option value="auto">ใส่ — ดึงรายชื่อพนักงานของสาขานี้</option><option value="12">ใส่ — เว้นแถวว่าง 12 แถว</option><option value="20">ใส่ — เว้นแถวว่าง 20 แถว</option></select></label>'
@@ -13091,17 +13125,19 @@ function openAsstMkDoc(idx){
   const build=()=>{
     const br=ov.querySelector('#mkd_br').value||'';
     const ack=ov.querySelector('#mkd_ack').value||'';
+    const title=ov.querySelector('#mkd_title').value.trim()||'บันทึกข้อความ';
     const out=secs.map(x=>Object.assign({},x));
+    if(out.length && out[0].heading && out[0].heading===title) out[0].heading='';   // กันหัวข้อซ้ำกับชื่อเอกสาร
     if(ack){
       if(ack==='auto'&&!br){ toast('err','เลือกสาขาก่อน ถึงจะดึงรายชื่อได้'); return null; }
       const sec=asstMkAckRows(br, ack==='auto'?0:Number(ack)||12);
       if(ack==='auto'&&!sec.rows.length){ toast('err','ไม่พบพนักงานของสาขานี้ — เลือกแบบเว้นแถวว่างแทน'); return null; }
       out.push(sec);
     }
-    const meta=[{label:'วันที่',value:new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})}];
-    if(br) meta.push({label:'สาขา',value:branchName(br)});
-    return { doc:true, title:ov.querySelector('#mkd_title').value.trim()||'บันทึกข้อความ',
-      subtitle:ov.querySelector('#mkd_sub').value.trim(), meta, sections:out,
+    const meta=(parsed.meta||[]).slice();
+    if(!meta.some(x=>x.label==='วันที่')) meta.unshift({label:'วันที่',value:new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})});
+    if(br&&!meta.some(x=>x.label==='สาขา')) meta.push({label:'สาขา',value:branchName(br)});
+    return { doc:true, title, subtitle:ov.querySelector('#mkd_sub').value.trim(), meta, sections:out,
       signatures:ov.querySelector('#mkd_sign').checked?['ผู้บันทึก','ผู้จัดการสาขา']:[],
       note:'', company:MKD_CO_BY_BRANCH[br]||'' };
   };
