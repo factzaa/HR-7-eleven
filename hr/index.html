@@ -3663,12 +3663,23 @@ function showTab(name){
   $('tab_'+n).onclick = ()=>showTab(n);
 });
 
+// ★ 24 ก.ย. 69 — รายการตำแหน่งในฟอร์มพนักงาน
+//   ตำแหน่งมาตรฐาน + ตำแหน่งที่เคยพิมพ์ไว้กับพนักงานคนอื่น → พิมพ์ครั้งเดียว ครั้งต่อไปเลือกได้เลย
+const POS_DEFAULT=['ผู้จัดการร้าน','ผู้ช่วยผู้จัดการร้าน','หัวหน้าผลัด','พนักงานอาวุโส','พนักงานร้าน','พนักงานพาร์ทไทม์','พนักงานส่งสินค้า'];
+function fillPositionList(){
+  const dl=$('f_position_list'); if(!dl) return;
+  const used=[...new Set((DATA&&DATA.rows?DATA.rows:[]).map(r=>String(r.position||'').trim()).filter(Boolean))];
+  const all=[...new Set(POS_DEFAULT.concat(used))];
+  dl.innerHTML=all.map(x=>'<option value="'+esc(x)+'">').join('');
+}
+
 // ---------- LOAD ALL (พนักงาน + meta) ----------
 async function loadAll(){
   const r = await post({ action:'hr_list', password:pwd });
   if(!r.ok){ toast('err', r.error||'โหลดไม่สำเร็จ'); return; }
   DATA = { headers:r.headers, rows:r.rows, branches:r.branches, shifts:r.shifts };
   fillSelect($('f_branch_id'), DATA.branches.map(b=>[b.branch_id, b.name]));
+  fillPositionList();   // ★ ตัวเลือกตำแหน่ง = ตำแหน่งมาตรฐาน + ตำแหน่งที่เคยพิมพ์ไว้เองในฐานข้อมูล
   fillSelect($('r_emp'), DATA.rows.filter(e=>e.active!==false).map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— ทั้งหมด —');
   fillSelect($('r_branch'), DATA.branches.map(b=>[b.branch_id, b.name]), '— ทั้งหมด —');
   fillSelect($('r_shift'), DATA.shifts.map(s=>[s.shift_id, s.name]), '— ทั้งหมด —');
