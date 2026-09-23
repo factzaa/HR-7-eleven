@@ -6374,6 +6374,241 @@
   }
 
   // ---------- สรุปผลการทำงาน + วินัย รายบุคคล (สำหรับพิมพ์เอกสาร) ----------
+  // ============================================================
+  // ★ บทวิเคราะห์รายบุคคล — ใช้โดย hrEmpSummary
+  //   axes    : 6 ด้าน (null = ยังไม่มีข้อมูล ไม่ใช่ 0)
+  //   compare : อันดับในสาขา + ค่าเฉลี่ยสาขา
+  //   trend   : 6 รอบย้อนหลัง (ครั้งสาย/นาทีสาย/ขาด/งานตีกลับ)
+  //   pattern : สายตามวันในสัปดาห์ · ตามกะ · ปฏิทินรายวันของรอบ
+  //   insights: จุดแข็ง/จุดต้องพัฒนา/สิ่งที่ควรทำต่อ (สร้างจากกติกา ไม่ใช่ข้อความลอย)
+  // ============================================================
+  const _DOW_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+  async function _empAnalysis(x) {
+    const empId = String(x.emp.emp_id), brId = x.emp.branch_id || '';
+    const r1 = Math.round;
+    const pct = (a, b) => (b > 0 ? Math.round(a / b * 1000) / 10 : null);
+
+    // ---------- ข้อมูลเพิ่มที่บทวิเคราะห์ต้องใช้ ----------
+    const trendFrom = cycleRange(5).start;                       // ย้อนหลัง 6 รอบ
+    const [exR, exqR, bAttR, bTaR, hAttR, hTaR] = await Promise.all([
+      sb().from('exam_attempts').select('exam_id,attempt_no,percent,passed,submitted_at').eq('emp_id', empId),
+      sb().from('exams').select('id,title,pass_percent'),
+      sb().from('attendance').select('emp_id,work_date,check_in,late_min').eq('branch_id', brId).gte('work_date', x.start).lte('work_date', x.endEff),
+      sb().from('task_assignments').select('emp_id,sent_back_count').eq('branch_id', brId).gte('work_date', x.start).lte('work_date', x.end),
+      sb().from('attendance').select('work_date,check_in,late_min,shift_id').eq('emp_id', empId).gte('work_date', trendFrom).lte('work_date', x.endEff),
+      sb().from('task_assignments').select('work_date,sent_back_count').eq('emp_id', empId).gte('work_date', trendFrom).lte('work_date', x.end),
+    ]);
+    const exAll = exR.data || [], exTitle = {}; (exqR.data || []).forEach(e => { exTitle[String(e.id)] = { title: e.title, pass: e.pass_percent }; });
+
+    // ---------- 1) 6 ด้าน ----------
+    const scanned = x.att.filter(a => a.check_in).length;
+    // ★ กันสรุปจากข้อมูลน้อยเกินไป — รอบที่เพิ่งเริ่ม (เช่นผ่านไป 3 วัน) ยังตัดสินพฤติกรรมไม่ได้
+    const MIN_SHIFTS = 5, MIN_TASKS = 10;
+    const thin = scanned < MIN_SHIFTS;
+    const axOnTime = (scanned >= MIN_SHIFTS) ? pct(scanned - x.late_count, scanned) : null;
+    const axAttend = x.days_should >= 3 ? Math.max(0, pct(x.days_should - x.absent, x.days_should)) : null;
+    // "เคยถูกตีกลับ" (sent_back_count > 0) = ตัวชี้วัดคุณภาพที่ตรงกว่าสถานะปัจจุบัน
+    const everBack = (x.tasks || []).filter(t => Number(t.sent_back_count || 0) > 0).length;
+    const axQuality = x.t_total >= MIN_TASKS ? Math.max(0, pct(x.t_total - everBack, x.t_total)) : null;
+    // ความรู้: ใช้ "ครั้งแรกของแต่ละชุด" = สะท้อนความเข้าใจตั้งต้น
+    const firstBy = {}; exAll.forEach(a => { const c = firstBy[a.exam_id]; if (!c || a.attempt_no < c.attempt_no) firstBy[a.exam_id] = a; });
+    const exFirst = Object.values(firstBy);
+    const axKnow = exFirst.length ? Math.round(exFirst.reduce((s, a) => s + (Number(a.percent) || 0), 0) / exFirst.length * 10) / 10 : null;
+    // ความรับผิดชอบเสริม: นับบทบาทนอกงานในกะ เทียบกับคนที่ทำมากสุดในสาขา
+    const extraMe = (x.ctrl_days || 0) + (x.lead_days || 0) + (x.sh_checks || 0) + (x.qa_total || 0) + (x.gd_total || 0) + (x.sp_total || 0) + (x.mt_total || 0);
+    // ---------- 2) เทียบเพื่อนร่วมสาขา ----------
+    const peers = {};
+    (bAttR.data || []).forEach(a => { if (!a.check_in) return; const m = peers[a.emp_id] || (peers[a.emp_id] = { shifts: 0, late: 0, tasks: 0, back: 0 }); m.shifts++; if (a.late_min > 0) m.late++; });
+    (bTaR.data || []).forEach(t => { const m = peers[t.emp_id] || (peers[t.emp_id] = { shifts: 0, late: 0, tasks: 0, back: 0 }); m.tasks++; if (Number(t.sent_back_count || 0) > 0) m.back++; });
+    const peerRows = Object.keys(peers).map(id => {
+      const m = peers[id];
+      const sc = (x.scAll.employees || []).find(e => String(e.emp_id) === String(id));
+      return { emp_id: id, on_time: m.shifts ? (m.shifts - m.late) / m.shifts * 100 : null,
+               quality: m.tasks ? (m.tasks - m.back) / m.tasks * 100 : null, load: m.tasks,
+               score: sc && sc.score != null ? Number(sc.score) : null };
+    });
+    const rankOf = (key, mine, higherBetter) => {
+      const vals = peerRows.map(r => r[key]).filter(v => v != null);
+      if (mine == null || vals.length < 2) return null;
+      const sorted = vals.slice().sort((a, b) => higherBetter ? b - a : a - b);
+      const pos = sorted.findIndex(v => (higherBetter ? v <= mine : v >= mine)) + 1;
+      const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10;
+      return { rank: pos || vals.length, of: vals.length, avg, mine: Math.round(mine * 10) / 10 };
+    };
+    const myLoad = x.t_total, myScore = (x.me && x.me.score != null) ? Number(x.me.score) : null;
+    const compare = {
+      on_time: rankOf('on_time', axOnTime, true),
+      quality: rankOf('quality', axQuality, true),
+      load: rankOf('load', myLoad, true),
+      score: rankOf('score', myScore, true),
+    };
+    // ความรับผิดชอบเสริม: ให้คะแนนตามจำนวนครั้งที่รับบทบาทนอกงานในกะ (เกณฑ์ตายตัว อ่านเข้าใจได้)
+    //   0 ครั้ง = 0 · 1–2 = 40 · 3–5 = 70 · 6–9 = 85 · 10 ขึ้นไป = 100
+    const axAssist = thin ? null
+      : extraMe >= 10 ? 100 : extraMe >= 6 ? 85 : extraMe >= 3 ? 70 : extraMe >= 1 ? 40 : 0;
+
+    // ---------- 3) แนวโน้ม 6 รอบ ----------
+    const cycles = [];
+    for (let b = 5; b >= 0; b--) {
+      const c = cycleRange(b);
+      const aIn = (hAttR.data || []).filter(a => a.work_date >= c.start && a.work_date <= c.end && a.check_in);
+      const tIn = (hTaR.data || []).filter(t => t.work_date >= c.start && t.work_date <= c.end);
+      const lateN = aIn.filter(a => a.late_min > 0).length;
+      cycles.push({
+        start: c.start, end: c.end, label: String(c.start).slice(0, 7),
+        shifts: aIn.length, late: lateN, late_min: aIn.reduce((s, a) => s + (Number(a.late_min) || 0), 0),
+        on_time_pct: aIn.length ? Math.round((aIn.length - lateN) / aIn.length * 1000) / 10 : null,
+        tasks: tIn.length, sent_back: tIn.filter(t => Number(t.sent_back_count || 0) > 0).length,
+      });
+    }
+
+    // ตัดรอบหัว-ท้ายที่ไม่มีข้อมูลเลยออก (เช่น ยังไม่เข้าทำงาน หรือดูรอบเก่าแล้วรอบปัจจุบันยังว่าง)
+    while (cycles.length && cycles[cycles.length - 1].shifts === 0) cycles.pop();
+    while (cycles.length && cycles[0].shifts === 0) cycles.shift();
+
+    // ---------- 4) รูปแบบพฤติกรรม ----------
+    const dow = [0, 0, 0, 0, 0, 0, 0], dowShift = [0, 0, 0, 0, 0, 0, 0];
+    (hAttR.data || []).forEach(a => { if (!a.check_in) return; const d = new Date(a.work_date + 'T00:00:00').getDay(); dowShift[d]++; if (a.late_min > 0) dow[d]++; });
+    const byShift = {};
+    (hAttR.data || []).forEach(a => { if (!a.check_in) return; const k = a.shift_id || '-'; const m = byShift[k] || (byShift[k] = { shifts: 0, late: 0 }); m.shifts++; if (a.late_min > 0) m.late++; });
+    const shiftRows = Object.keys(byShift).map(k => ({ shift_id: k, name: x.shName[k] || k, shifts: byShift[k].shifts, late: byShift[k].late, late_pct: pct(byShift[k].late, byShift[k].shifts) }))
+      .sort((a, b) => b.shifts - a.shifts);
+    // ปฏิทินรายวันของรอบ
+    const attByDate = {}; x.att.forEach(a => { attByDate[a.work_date] = a; });
+    const calendar = [];
+    for (let d = new Date(x.start + 'T00:00:00'); iso(d) <= x.endEff; d.setDate(d.getDate() + 1)) {
+      const ds = iso(d);
+      const a = attByDate[ds];
+      let st = 'off';
+      if (a && a.check_in) st = (a.late_min > 0) ? 'late' : 'ontime';
+      else if (x.schMap[ds]) st = x.onLeave(ds) ? 'leave' : (ds < x.today ? 'absent' : 'future');
+      calendar.push({ date: ds, dow: _DOW_TH[d.getDay()], status: st, late_min: a && a.late_min ? a.late_min : 0 });
+    }
+    const avgLateMin = x.late_count ? Math.round(x.late_total / x.late_count * 10) / 10 : null;
+    // อ่านรูปแบบให้: กระจุกวันไหนไหม (วันที่สายเกิน 1.6 เท่าของค่าเฉลี่ย = กระจุก)
+    const dowLatePct = dow.map((v, i) => dowShift[i] ? v / dowShift[i] : null);
+    const dv = dowLatePct.filter(v => v != null);
+    const dowAvg = dv.length ? dv.reduce((a, b) => a + b, 0) / dv.length : 0;
+    const spikes = dowLatePct.map((v, i) => ({ i, v })).filter(o => o.v != null && dowAvg > 0 && o.v >= dowAvg * 1.6 && dow[o.i] >= 3);
+    const patternText = !x.late_count ? 'ไม่มีการมาสายในช่วงที่ดู'
+      : spikes.length ? ('สายกระจุกที่วัน' + spikes.map(o => _DOW_TH[o.i]).join('/') + ' มากกว่าวันอื่นชัดเจน — ควรถามเจาะจงว่าวันนั้นติดอะไร')
+      : 'สายกระจายเกือบเท่ากันทุกวันในสัปดาห์ — ไม่ใช่ปัญหาเฉพาะวัน แต่เป็นรูปแบบการตื่น/ออกจากบ้าน ต้องแก้ทั้งระบบ';
+
+    // ---------- 5) ข้อสอบรายชุด ----------
+    const exams = Object.keys(firstBy).map(id => {
+      const a = firstBy[id], t = exTitle[String(id)] || {};
+      const best = exAll.filter(z => String(z.exam_id) === String(id)).reduce((m, z) => Math.max(m, Number(z.percent) || 0), 0);
+      return { exam_id: id, title: t.title || ('ชุด #' + id), first: Number(a.percent) || 0, best, pass_percent: t.pass || null, passed: exAll.some(z => String(z.exam_id) === String(id) && z.passed) };
+    });
+
+    // ---------- 6) จุดแข็ง / จุดต้องพัฒนา / สิ่งที่ควรทำ ----------
+    const strong = [], weak = [], actions = [];
+    if (axAttend != null && axAttend >= 99 && x.days_should >= 5) strong.push('ไม่ขาดงานเลย — มาครบทุกเวรที่จัดให้ (' + x.days_worked + '/' + x.days_should + ' วัน)');
+    if (axQuality != null && axQuality >= 95 && x.t_total >= 20) strong.push('คุณภาพงานในกะดี — ส่งงาน ' + x.t_total + ' ใบ ถูกตีกลับเพียง ' + everBack + ' ใบ (' + (100 - axQuality).toFixed(1) + '%)');
+    if (compare.load && compare.load.rank <= Math.ceil(compare.load.of / 3)) strong.push('รับงานปริมาณมาก ' + x.t_total + ' ใบ — อันดับ ' + compare.load.rank + ' จาก ' + compare.load.of + ' คนในสาขา');
+    if (axOnTime != null && axOnTime >= 95 && scanned >= 10) strong.push('ตรงต่อเวลาสม่ำเสมอ — สาย ' + x.late_count + ' จาก ' + scanned + ' กะ');
+    if (axKnow != null && axKnow >= 85) strong.push('ทำแบบทดสอบได้ดี — เฉลี่ยครั้งแรก ' + axKnow + '%');
+    if (extraMe >= 5) strong.push('รับผิดชอบงานนอกเหนืองานในกะ ' + extraMe + ' ครั้ง (หัวหน้าผลัด/เชลฟ์/QA/รับสินค้า/งานพิเศษ)');
+
+    if (axOnTime != null && axOnTime < 80 && scanned >= 5) weak.push('มาสาย ' + x.late_count + ' จาก ' + scanned + ' กะ (' + (100 - axOnTime).toFixed(0) + '% ของกะที่ทำงาน) รวม ' + x.late_total + ' นาที');
+    if (x.absent > 0) weak.push('ขาดงาน ' + x.absent + ' วัน' + (x.absentDays.length ? (' — ' + x.absentDays.slice(0, 5).join(', ')) : ''));
+    if (axQuality != null && axQuality < 90 && x.t_total >= 10) weak.push('งานถูกตีกลับ ' + everBack + ' จาก ' + x.t_total + ' ใบ (' + (100 - axQuality).toFixed(1) + '%)');
+    if (exFirst.length === 0) weak.push('ยังไม่เคยทำแบบทดสอบในระบบ — ยังวัดความเข้าใจงานไม่ได้');
+    else if (axKnow != null && axKnow < 70) weak.push('คะแนนแบบทดสอบครั้งแรกเฉลี่ย ' + axKnow + '% — ต่ำกว่าเกณฑ์ ควรทบทวนเนื้อหา');
+    if (extraMe === 0 && x.t_total > 0) weak.push('ยังไม่เคยรับงานนอกเหนืองานในกะเลย (เชลฟ์/QA/หัวหน้าผลัด)');
+    // แนวโน้มแย่ลง
+    const c0 = cycles[cycles.length - 1], cPrev = cycles.length > 1 ? cycles[cycles.length - 2] : null;
+    let trendWord = null;
+    if (c0 && cPrev && c0.on_time_pct != null && cPrev.on_time_pct != null) {
+      const d = Math.round((c0.on_time_pct - cPrev.on_time_pct) * 10) / 10;
+      trendWord = d < -5 ? ('ความตรงเวลาแย่ลงจากรอบก่อน ' + Math.abs(d) + ' จุด') : d > 5 ? ('ความตรงเวลาดีขึ้นจากรอบก่อน ' + d + ' จุด') : 'ความตรงเวลาใกล้เคียงรอบก่อน';
+      if (d < -5) weak.push(trendWord);
+    }
+    const worseRun = (() => { let n = 0; for (let i = cycles.length - 1; i > 0; i--) { const a = cycles[i].on_time_pct, b = cycles[i - 1].on_time_pct; if (a != null && b != null && a < b) n++; else break; } return n; })();
+
+    // สิ่งที่ควรทำต่อ
+    if (axOnTime != null && axOnTime < 80 && scanned >= 5) {
+      actions.push({ level: 'red', title: 'คุยเรื่องเวลาเข้างานโดยใช้ข้อมูลจริง',
+        detail: 'สาย ' + x.late_count + ' จาก ' + scanned + ' กะ เฉลี่ยครั้งละ ' + (avgLateMin || 0) + ' นาที · ' + patternText });
+    }
+    const stepNext = (x.disc_history || []).length ? null : null;
+    const hasVerbal = (x.disc_history || []).some(h => h.type === 'verbal' || /วาจา/.test(String(h.type_name || '')));
+    const hasWritten = (x.disc_history || []).some(h => h.type === 'written' || /ลายลักษณ์/.test(String(h.type_name || '')));
+    const hasWarn = (x.disc_history || []).some(h => h.type === 'warning' || /ใบเตือน/.test(String(h.type_name || '')));
+    if ((axOnTime != null && axOnTime < 80) || x.absent > 0) {
+      const nx = !hasVerbal ? 'ตักเตือนด้วยวาจา' : !hasWritten ? 'ตักเตือนเป็นลายลักษณ์อักษร' : !hasWarn ? 'ออกใบเตือน' : 'พิจารณาขั้นสูงสุดตามระเบียบ';
+      actions.push({ level: 'amber', title: 'ขั้นวินัยถัดไปตามบันได: ' + nx,
+        detail: 'ประวัติที่ผ่านมา: ' + (x.disc_history || []).length + ' รายการ · ทุกขั้นต้องมีหลักฐานแนบครบก่อนเลื่อนขั้น' });
+    }
+    if (shiftRows.length > 1) {
+      const worst = shiftRows.slice().filter(r => r.shifts >= 3).sort((a, b) => (b.late_pct || 0) - (a.late_pct || 0))[0];
+      const best = shiftRows.slice().filter(r => r.shifts >= 3).sort((a, b) => (a.late_pct || 0) - (b.late_pct || 0))[0];
+      if (worst && best && worst.shift_id !== best.shift_id && (worst.late_pct - best.late_pct) >= 25) {
+        actions.push({ level: 'blue', title: 'ลองปรับกะดู — กะ' + worst.name + 'สายมากกว่ากะ' + best.name + 'ชัดเจน',
+          detail: 'กะ' + worst.name + ' สาย ' + worst.late_pct + '% (' + worst.shifts + ' กะ) · กะ' + best.name + ' สาย ' + best.late_pct + '% (' + best.shifts + ' กะ) — ถ้าย้ายแล้วดีขึ้นแปลว่าเป็นเรื่องเวลาตื่น ไม่ใช่ทัศนคติ' });
+      }
+    }
+    if (axQuality != null && axQuality >= 95 && extraMe <= 2 && x.t_total >= 20) {
+      actions.push({ level: 'green', title: 'มอบงานเพิ่มเพื่อรักษาคนที่งานดีไว้',
+        detail: 'คุณภาพงานอยู่ในกลุ่มบน แต่ยังไม่ถูกมอบงานนอกกะ — ลองให้ดูแลเชลฟ์ หรือเป็นหัวหน้าผลัดถี่ขึ้น' });
+    }
+    if (exFirst.length === 0) actions.push({ level: 'blue', title: 'ส่งแบบทดสอบให้ทำ', detail: 'ยังไม่มีข้อมูลความเข้าใจงานของคนนี้เลย — เผยแพร่แบบทดสอบให้ทำสักชุดจะช่วยให้ประเมินได้ครบด้าน' });
+
+    // ---------- หัวเรื่อง: ประเด็นเดียวที่ต้องคุย ----------
+    let headline = null;
+    if (thin) {
+      return {
+        headline: { tone: 'green', focus: 'ข้อมูลยังน้อย', text: 'ช่วงที่เลือกมีข้อมูลการทำงานเพียง ' + scanned + ' กะ — ยังน้อยเกินกว่าจะสรุปพฤติกรรมได้ ลองเลือก "รอบก่อนหน้า" หรือรอให้รอบนี้เดินไปมากกว่านี้' },
+        axes: [
+          { key: 'on_time', label: 'ตรงต่อเวลา', score: null, good: 95, warn: 85, why: 'ข้อมูลยังน้อย (' + scanned + ' กะ) — ต้องมีอย่างน้อย ' + MIN_SHIFTS + ' กะจึงจะประเมินได้' },
+          { key: 'attend', label: 'มาครบตามเวร', score: axAttend, good: 100, warn: 95, why: x.days_should > 0 ? ('จัดเวร ' + x.days_should + ' วัน มา ' + x.days_worked + ' วัน · ขาด ' + x.absent) : 'ยังไม่มีตารางเวรในช่วงนี้' },
+          { key: 'quality', label: 'คุณภาพงานในกะ', score: axQuality, good: 95, warn: 85, why: x.t_total ? ('งานในกะ ' + x.t_total + ' ใบ · เคยถูกตีกลับ ' + everBack + ' ใบ') : 'ยังไม่มีงานในกะในช่วงนี้' },
+          { key: 'assist', label: 'ความรับผิดชอบเสริม', score: null, good: 60, warn: 25, why: 'ข้อมูลยังน้อย' },
+          { key: 'know', label: 'ความรู้ (แบบทดสอบ)', score: axKnow, good: 85, warn: 70, why: exFirst.length ? ('ทำแล้ว ' + exFirst.length + ' ชุด · เฉลี่ยครั้งแรก ' + axKnow + '%') : 'ยังไม่เคยทำแบบทดสอบในระบบ', exams: exams },
+          { key: 'disc', label: 'ประวัติวินัย', score: null, good: 100, warn: 70, why: (x.disc_history || []).length + ' รายการในประวัติ' },
+        ],
+        compare: {}, trend: cycles, trend_worse_run: 0, trend_text: null,
+        pattern: { dow: dow, dow_shifts: dowShift, dow_labels: _DOW_TH, by_shift: shiftRows, calendar: calendar, avg_late_min: avgLateMin, text: patternText },
+        strong: [], weak: [], actions: [{ level: 'blue', title: 'ข้อมูลของรอบนี้ยังน้อย', detail: 'มีเพียง ' + scanned + ' กะ — เลือก "รอบก่อนหน้า" เพื่อดูบทวิเคราะห์เต็มรูปแบบ' }],
+        thin: true,
+      };
+    }
+    const axList = [
+      { k: 'on_time', name: 'ความตรงต่อเวลา', v: axOnTime },
+      { k: 'attend', name: 'การมาครบตามเวร', v: axAttend },
+      { k: 'quality', name: 'คุณภาพงานในกะ', v: axQuality },
+      { k: 'know', name: 'ความรู้จากแบบทดสอบ', v: axKnow },
+    ].filter(a => a.v != null);
+    const worstAx = axList.slice().sort((a, b) => a.v - b.v)[0];
+    const bestAx = axList.slice().sort((a, b) => b.v - a.v)[0];
+    if (worstAx && worstAx.v < 80) {
+      headline = { tone: worstAx.v < 60 ? 'red' : 'amber', focus: worstAx.name,
+        text: 'ประเด็นหลักคือ' + worstAx.name + ' (' + worstAx.v + ')' + (bestAx && bestAx.v >= 90 && bestAx.k !== worstAx.k ? (' ขณะที่' + bestAx.name + 'อยู่ในเกณฑ์ดี (' + bestAx.v + ') — ปัญหาอยู่ที่พฤติกรรม ไม่ใช่ความสามารถ') : '') };
+    } else if (axList.length) {
+      headline = { tone: 'green', focus: 'ภาพรวมดี', text: 'ทุกด้านที่วัดได้อยู่ในเกณฑ์ดี — ไม่มีประเด็นที่ต้องเรียกคุยเป็นพิเศษ' };
+    }
+
+    return {
+      headline,
+      axes: [
+        { key: 'on_time', label: 'ตรงต่อเวลา', score: axOnTime, good: 95, warn: 85,
+          why: scanned ? ('สาย ' + x.late_count + ' จาก ' + scanned + ' กะ' + (avgLateMin ? (' · เฉลี่ยครั้งละ ' + avgLateMin + ' นาที') : '') + ' · ออกก่อนเวลา ' + (x.att.filter(a => a.early_out_min > 0).length) + ' ครั้ง') : 'ยังไม่มีการสแกนเข้างานในช่วงนี้' },
+        { key: 'attend', label: 'มาครบตามเวร', score: axAttend, good: 100, warn: 95,
+          why: x.days_should > 0 ? ('จัดเวร ' + x.days_should + ' วัน มา ' + x.days_worked + ' วัน · ขาด ' + x.absent + ' · ลาอนุมัติ ' + x.leave_days + ' วัน') : 'ยังไม่มีตารางเวรในช่วงนี้' },
+        { key: 'quality', label: 'คุณภาพงานในกะ', score: axQuality, good: 95, warn: 85,
+          why: x.t_total >= MIN_TASKS ? ('งานในกะ ' + x.t_total + ' ใบ · เคยถูกตีกลับให้แก้ ' + everBack + ' ใบ · ยังค้างแก้ ' + x.t_sentback + ' ใบ') : ('งานในกะ ' + x.t_total + ' ใบ — ยังน้อยเกินกว่าจะประเมินคุณภาพ (ต้องมีอย่างน้อย ' + MIN_TASKS + ' ใบ)') },
+        { key: 'assist', label: 'ความรับผิดชอบเสริม', score: axAssist, good: 60, warn: 25,
+          why: 'รวม ' + extraMe + ' ครั้ง — หัวหน้าผลัด ' + x.lead_days + ' · ผู้คุมผลัด ' + x.ctrl_days + ' · เชลฟ์ ' + x.sh_checks + ' · QA ' + x.qa_total + ' · รับสินค้า ' + x.gd_total + ' · งานพิเศษ ' + (x.sp_total + x.mt_total) },
+        { key: 'know', label: 'ความรู้ (แบบทดสอบ)', score: axKnow, good: 85, warn: 70,
+          why: exFirst.length ? ('ทำแล้ว ' + exFirst.length + ' ชุด · เฉลี่ยครั้งแรก ' + axKnow + '%') : 'ยังไม่เคยทำแบบทดสอบในระบบ', exams },
+        { key: 'disc', label: 'ประวัติวินัย', score: (function () { let v = 100; (x.disc_history || []).forEach(h => { const t = String(h.type || '') + String(h.type_name || ''); v -= /ใบเตือน|warning/.test(t) ? 40 : /ลายลักษณ์|written/.test(t) ? 25 : 15; }); return (x.disc_history || []).length ? Math.max(0, v) : 100; })(), good: 100, warn: 70,
+          why: (x.disc_history || []).length ? ((x.disc_history || []).length + ' รายการ · ล่าสุด ' + String((x.disc_history || [])[0] && (x.disc_history || [])[0].at || '').slice(0, 10)) : 'ไม่มีประวัติการดำเนินการทางวินัย' },
+      ],
+      compare, trend: cycles, trend_worse_run: worseRun, trend_text: trendWord,
+      pattern: { dow, dow_shifts: dowShift, dow_labels: _DOW_TH, by_shift: shiftRows, calendar, avg_late_min: avgLateMin, text: patternText },
+      strong, weak, actions,
+    };
+  }
   async function hrEmpSummary(p) {
     p = p || {};
     if (!p.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
@@ -6590,8 +6825,20 @@
       mgr_tasks: { total: mt_total, done: mt_done, overdue: mt_overdue },
       special: { total: sp_total, approved: sp_approved, submitted: sp_submitted, open: sp_open },
     };
+    // ============================================================
+    // ★ 23 ก.ย. 69 — บทวิเคราะห์รายบุคคล (6 ด้าน · เทียบเพื่อน · แนวโน้ม · รูปแบบพฤติกรรม · ข้อเสนอ)
+    //   ใช้ข้อมูลที่มีจริงในระบบเท่านั้น · ด้านที่ไม่มีข้อมูลคืน null (ไม่ใช่ 0) เพื่อไม่ให้คะแนนเพี้ยน
+    // ============================================================
+    const _an = await _empAnalysis({
+      emp, p, start, end, endEff, today, att, late, late_count, late_total,
+      days_should, days_worked, absent, absentDays, leave_days, schMap, pastSched, workedSet, onLeave,
+      tasks, t_total, t_sentback, sent_back_total, ctrl_days, lead_days, gd_total, qa_total,
+      sh_checks, sp_total, mt_total, disc_history, scAll, me, shName, dvOf,
+    });
+
     return {
       ok: true,
+      analysis: _an,
       emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '', photo_url: emp.photo_url || '', phone: emp.phone || '' },
       range: { start, end, label: rangeLabel, generated: new Date().toISOString() },
       attendance: { days_should, days_worked, absent, late_count, late_total, leave_days, ot_hours, early_out_count, early_out_hours },
