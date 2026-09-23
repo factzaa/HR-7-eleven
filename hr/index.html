@@ -1221,7 +1221,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 .ec-hole{position:absolute;top:3px;left:50%;transform:translateX(-50%);width:26px;height:5px;border-radius:3px;background:rgba(0,0,0,.28)}
 .ec-photo{width:100%;aspect-ratio:1/1;background:linear-gradient(160deg,#e3ebe6,#d3ded7);display:flex;align-items:center;justify-content:center;
   font-size:34px;font-weight:600;color:#8b9a91;overflow:hidden;border-bottom:2px solid #e7f3ec;position:relative}
-.ec-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.ec-photo img{width:100%;height:100%;object-fit:cover;object-position:center 20%;display:block}
 .ec-medals{position:absolute;left:5px;bottom:5px;display:flex;gap:3px}
 .ec-md{width:21px;height:21px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.3);border:1.5px solid #fff}
 .ec-md svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
@@ -4078,6 +4078,7 @@ function idcOpen(){
       +'<b style="font-size:13px">เลือกพนักงาน</b><span id="idc_n" style="font-size:12px;color:var(--muted)"></span><span style="flex:1"></span>'
       +'<button class="btn btn-sec btn-sm" id="idc_all">เลือกทั้งหมด</button>'
       +'<button class="btn btn-sec btn-sm" id="idc_none">ไม่เลือกเลย</button></div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin:0 0 8px"><input type="checkbox" id="idc_fill"> ครอบรูปให้เต็มกรอบ (รูปจะสวยเต็มกรอบ แต่อาจตัดขอบบน-ล่าง) — ไม่ติ๊ก = แสดงรูปทั้งใบ ไม่ตัดอะไรเลย</label>'
     +'<div id="idc_list" style="max-height:280px;overflow:auto;border:1px solid var(--line2);border-radius:10px;padding:6px"></div>'
     +'<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">'
       +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
@@ -4111,7 +4112,8 @@ function idcOpen(){
     const or=(sel && sel.getAttribute('data-idcor')) || 'portrait';
     const rows=list.filter(r=>IDC_SEL.has(r.emp_id));
     if(!rows.length){ toast('err','ยังไม่ได้เลือกพนักงาน'); return; }
-    closeModal(); idcPrint(rows, or);
+    const fill=!!($('idc_fill')&&$('idc_fill').checked);
+    closeModal(); idcPrint(rows, or, fill);
   };
 }
 function idcCardHTML(r, or){
@@ -4166,22 +4168,24 @@ body{font-family:'Anuphan','Sarabun','Noto Sans Thai',sans-serif;background:#fff
 
 /* ---------- แนวตั้ง 54 × 85.6 มม. ---------- */
 .idc-p{width:54mm;height:85.6mm}
-.idc-p .phead{background:linear-gradient(135deg,#00703c,#00582f);color:#fff;font-size:3.1mm;font-weight:700;padding:3mm 2.5mm 1.8mm;text-align:center;position:relative;flex:none}
+.idc-p .phead{background:linear-gradient(135deg,#00703c,#00582f);color:#fff;font-size:3mm;font-weight:700;padding:2.6mm 2.5mm 1.5mm;text-align:center;position:relative;flex:none}
 .idc-p .phead small{display:block;font-weight:400;font-size:2.6mm;opacity:.9}
 .idc-p .hole{position:absolute;top:1mm;left:50%;transform:translateX(-50%);width:9mm;height:1.6mm;border-radius:1mm;background:rgba(0,0,0,.3)}
-.idc-p .pphoto{width:100%;height:40mm;background:#e3ebe6;display:flex;align-items:center;justify-content:center;overflow:hidden;border-bottom:1mm solid #e7f3ec;flex:none}
-.idc-p .pphoto img{width:100%;height:100%;object-fit:cover}
-.idc-p .pbody{padding:2.5mm 2mm;text-align:center;flex:1;display:flex;flex-direction:column;justify-content:center}
-.idc-p .nick{font-size:5mm}
+.idc-p .pphoto{width:100%;height:44mm;background:#f2f5f3;display:flex;align-items:center;justify-content:center;overflow:hidden;border-bottom:1mm solid #e7f3ec;flex:none}
+.idc-p .pphoto img{width:100%;height:100%;object-fit:contain;object-position:center}
+.idc-fill .idc-p .pphoto img{object-fit:cover;object-position:center 22%}
+.idc-p .pbody{padding:2mm 2mm;text-align:center;flex:1;display:flex;flex-direction:column;justify-content:center}
+.idc-p .nick{font-size:4.6mm}
 .idc-p .real{font-size:2.9mm;min-height:3.4mm}
-.idc-p .pos{font-size:2.7mm;padding:.6mm 3mm;margin:2mm auto 0}
-.idc-p .id{font-size:2.9mm;margin-top:2.2mm;padding-top:1.8mm;border-top:.3mm dashed #bbb}
+.idc-p .pos{font-size:2.6mm;padding:.5mm 3mm;margin:1.5mm auto 0}
+.idc-p .id{font-size:2.8mm;margin-top:1.6mm;padding-top:1.4mm;border-top:.3mm dashed #bbb}
 
 /* ---------- แนวนอน 85.6 × 54 มม. ---------- */
 .idc-l{width:85.6mm;height:54mm}
 .idc-l .lbody{flex:1;display:flex;gap:3mm;padding:3mm 3.5mm 1mm}
-.idc-l .lphoto{width:24mm;height:30mm;background:#e3ebe6;border:.3mm solid #cfd8d3;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
-.idc-l .lphoto img{width:100%;height:100%;object-fit:cover}
+.idc-l .lphoto{width:26mm;height:34mm;background:#f2f5f3;border:.3mm solid #cfd8d3;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+.idc-l .lphoto img{width:100%;height:100%;object-fit:contain;object-position:center}
+.idc-fill .idc-l .lphoto img{object-fit:cover;object-position:center 22%}
 .idc-l .linfo{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
 .idc-l .brand{font-size:3mm;font-weight:700;color:#00703c;margin-bottom:1.5mm}
 .idc-l .brand span{font-weight:400;color:#555}
@@ -4191,13 +4195,13 @@ body{font-family:'Anuphan','Sarabun','Noto Sans Thai',sans-serif;background:#fff
 .idc-l .id{font-size:3mm;margin-top:2mm;padding-top:1.5mm;border-top:.3mm dashed #bbb}
 .idc-l .foot{font-size:2.2mm;color:#777;text-align:center;padding:0 2mm 1.5mm;flex:none}
 `;
-function idcPrint(rows, or){
+function idcPrint(rows, or, fill){
   const w=window.open('','_blank','width=900,height=1100');
   if(!w){ toast('err','เบราว์เซอร์บล็อกหน้าต่างใหม่ — อนุญาต pop-up แล้วลองอีกครั้ง'); return; }
   const d=w.document;
   d.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>บัตรพนักงาน</title>'
     +'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&display=swap">'
-    +'<style>'+IDC_CSS+'</style></head><body><div class="sheet">'
+    +'<style>'+IDC_CSS+'</style></head><body'+(fill?' class="idc-fill"':'')+'><div class="sheet">'
     + rows.map(r=>idcCardHTML(r, or)).join('')
     + '</div></body></html>');
   d.close();
