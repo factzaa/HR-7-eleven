@@ -444,6 +444,7 @@
         case 'hr_open_tasks':        return await hrOpenTasks();
         case 'hr_task_close_group':  return await hrTaskCloseGroup(p.data);
         case 'hr_emp_summary':       return await hrEmpSummary(p.data);
+        case 'hr_emp_cards':         return await hrEmpCards(p.data);
         case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
         case 'hr_special_list':      return await hrSpecialList(p.branch);
@@ -1776,6 +1777,8 @@
       is_manager: ('is_manager' in d) ? !!d.is_manager : false,
       is_rider: !!d.is_rider,
     };
+    // ★ 24 ก.ย. 69 — ตำแหน่ง (ผู้ช่วยผู้จัดการ/หัวหน้าผลัด/พาร์ทไทม์) · แตะเฉพาะตอนส่งมาจริง กันของเดิมหาย
+    if ('position' in d) row.position = (String(d.position||'').trim() || null);
     // PIN ผจก.: ยกเลิกสิทธิ์ = ล้าง PIN · ตั้ง ผจก.+กรอก PIN ใหม่ = อัปเดต · ตั้ง ผจก.แต่เว้น PIN = คง PIN เดิม
     if (('is_manager' in d) && !d.is_manager) row.manager_pin = null;   // ★ แตะ PIN เฉพาะตอนที่ส่ง is_manager มาจริง
     else if (d.manager_pin != null && String(d.manager_pin).trim() !== '') row.manager_pin = String(d.manager_pin).trim();
@@ -6612,6 +6615,116 @@
       strong, weak, actions,
     };
   }
+  // ============================================================
+  // ★ 24 ก.ย. 69 — บัตรพนักงานหน้าแรกของแท็บ "สรุปรายบุคคล"
+  //   คืนพนักงานทุกคนพร้อม "เหรียญ" ว่าโดดเด่นด้านไหน (คำนวณจากข้อมูลจริงในรอบ)
+  //   ตั้งใจให้เรียกครั้งเดียวแล้วเรนเดอร์บัตรได้ทั้งหน้า — ไม่ยิงรายคน
+  // ============================================================
+  const CARD_MIN_SHIFTS = 5;    // ทำงานน้อยกว่านี้ในรอบ = ยังไม่ติดเหรียญ (กันตัดสินเร็วเกินไป)
+  const CARD_MIN_TASKS  = 10;   // งานในกะน้อยกว่านี้ = ไม่ให้เหรียญ "งานเนี้ยบ"
+  async function hrEmpCards(p) {
+    p = p || {};
+    const which = (p.cycle === 'previous') ? 'previous' : 'current';
+    const cyc = cycleRange(cycleBack(which));
+    const today = bkkToday();
+    const endEff = cyc.end < today ? cyc.end : today;
+
+    const [scoreR, empR, brR, taR, exAtR, exR, leadR, ctrlR] = await Promise.all([
+      hrScoreGet(which),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url,is_manager,position,start_date,end_date,active,default_shift'),
+      sb().from('branches').select('branch_id,name').order('branch_id'),
+      fetchPaged(() => sb().from('task_assignments').select('emp_id,status,sent_back_count').gte('work_date', cyc.start).lte('work_date', cyc.end)),
+      fetchPaged(() => sb().from('exam_attempts').select('emp_id,exam_id,attempt_no,passed,percent').gte('submitted_at', cyc.start).lte('submitted_at', cyc.end + 'T23:59:59')),
+      sb().from('exams').select('id,title'),
+      sb().from('shift_leads').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('shift_controllers').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
+    ]);
+    if (empR.error) throw empR.error;
+
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const scMap = {}; ((scoreR && scoreR.employees) || []).forEach(s => { scMap[s.emp_id] = s; });
+
+    // งานในกะ — นับต่อคน
+    const tk = {};
+    (taR || []).forEach(t => {
+      const o = tk[t.emp_id] || (tk[t.emp_id] = { total: 0, back: 0 });
+      o.total++; if (Number(t.sent_back_count || 0) > 0) o.back++;
+    });
+    // แบบทดสอบ — ผ่านตั้งแต่ครั้งแรกหรือไม่ (ดูครั้งที่ 1 ของแต่ละชุด)
+    const ex = {};
+    (exAtR || []).forEach(a => {
+      const o = ex[a.emp_id] || (ex[a.emp_id] = {});
+      const k = String(a.exam_id);
+      const cur = o[k];
+      if (!cur || Number(a.attempt_no || 1) < Number(cur.attempt_no || 1)) o[k] = a;
+      if (cur && a.passed) cur.everPass = true;
+    });
+    // ช่วยทีม — หัวหน้าผลัด/ผู้คุมผลัด
+    const helpN = {};
+    ((leadR.data || []).concat(ctrlR.data || [])).forEach(x => { helpN[x.emp_id] = (helpN[x.emp_id] || 0) + 1; });
+
+    const rows = (empR.data || []).filter(e => {
+      if (e.active === false) return false;
+      if (e.end_date && String(e.end_date) < today) return false;
+      return true;
+    }).map(e => {
+      const s = scMap[e.emp_id] || {};
+      const shifts = Number(s.days_worked || 0);
+      const thin = shifts < CARD_MIN_SHIFTS;
+      const lateN = Number(s.late_count || 0), absN = Number(s.absent_count || 0);
+      const t = tk[e.emp_id] || { total: 0, back: 0 };
+      const myEx = ex[e.emp_id] ? Object.keys(ex[e.emp_id]).map(k => ex[e.emp_id][k]) : [];
+      const exFirstAll = myEx.length > 0 && myEx.every(a => a.passed === true);
+      const help = Number(helpN[e.emp_id] || 0);
+      const full = Number(s.start != null ? s.start : 100);
+      const sc = (s.score != null) ? Number(s.score) : null;
+
+      // ---- เหรียญ ----
+      const medals = [];
+      if (!thin) {
+        if (lateN === 0 || (lateN / shifts) <= 0.02) medals.push({ key: 'time', label: 'ตรงเวลา', why: lateN === 0 ? ('ไม่สายเลยทั้งรอบ (' + shifts + ' กะ)') : ('สายเพียง ' + lateN + '/' + shifts + ' กะ') });
+        if (absN === 0) medals.push({ key: 'full', label: 'มาครบ', why: 'ไม่ขาดงานเลยทั้งรอบ' });
+      }
+      if (t.total >= CARD_MIN_TASKS && t.back === 0) medals.push({ key: 'work', label: 'งานเนี้ยบ', why: 'งานในกะ ' + t.total + ' ใบ ไม่เคยถูกตีกลับ' });
+      if (!thin && sc != null && sc >= full) medals.push({ key: 'disc', label: 'วินัยเต็ม', why: 'คะแนนวินัย ' + sc + '/' + full + ' ไม่มีหัก' });
+      if (exFirstAll) medals.push({ key: 'exam', label: 'ความรู้ดี', why: 'สอบผ่านตั้งแต่ครั้งแรก ' + myEx.length + ' ชุด' });
+      if (help >= 3) medals.push({ key: 'help', label: 'ช่วยทีม', why: 'รับหน้าที่หัวหน้าผลัด/ผู้คุมผลัด ' + help + ' ครั้ง' });
+      if (e.is_manager === true && !thin && sc != null && sc >= full) medals.push({ key: 'lead', label: 'ผู้นำ', why: 'ผู้จัดการร้าน · วินัยเต็มรอบนี้' });
+
+      // ---- แถบสถานะล่างบัตร ----
+      let tone = 'none', foot = 'ยังไม่มีข้อมูลในรอบนี้';
+      if (!thin) {
+        if (absN > 0) { tone = 'bad'; foot = 'ขาดงาน ' + absN + ' วัน · ต้องคุย'; }
+        else if (shifts > 0 && (lateN / shifts) > 0.3) { tone = 'bad'; foot = 'สาย ' + lateN + '/' + shifts + ' กะ · ต้องคุยเรื่องเวลา'; }
+        else if (t.back > 0 && t.total >= CARD_MIN_TASKS && (t.back / t.total) > 0.1) { tone = 'warn'; foot = 'งานถูกตีกลับ ' + t.back + '/' + t.total + ' ใบ'; }
+        else if (sc != null && sc < full) { tone = 'warn'; foot = 'วินัย ' + sc + '/' + full + (lateN ? (' · สาย ' + lateN + ' กะ') : ''); }
+        else { tone = 'ok'; foot = 'วินัย ' + (sc != null ? sc : '—') + (lateN === 0 ? ' · ไม่สายเลย' : (' · สาย ' + lateN + ' กะ')); }
+      } else if (shifts > 0) { tone = 'none'; foot = 'ทำงาน ' + shifts + ' กะในรอบนี้'; }
+
+      return {
+        emp_id: e.emp_id, name: e.name || e.emp_id, nickname: e.nickname || '',
+        branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '—',
+        photo_url: e.photo_url || '', position: e.position || (e.is_manager ? 'ผู้จัดการร้าน' : ''),
+        is_manager: e.is_manager === true,
+        is_new: !!(e.start_date && String(e.start_date) >= cyc.start),
+        score: sc, score_full: full, band_label: s.band_label || '', band_color: s.band_color || '',
+        shifts, late_count: lateN, absent_count: absN,
+        tasks_total: t.total, tasks_back: t.back,
+        medals, star: medals.length >= 3, tone, foot, thin,
+      };
+    }).sort((a, b) => (b.medals.length - a.medals.length) || String(a.name).localeCompare(String(b.name), 'th'));
+
+    const branches = (brR.data || []).map(b => ({
+      branch_id: b.branch_id, name: b.name,
+      count: rows.filter(r => r.branch_id === b.branch_id).length,
+    })).filter(b => b.count > 0);
+
+    return {
+      ok: true, cycle: which, range: { start: cyc.start, end: cyc.end },
+      branches, rows,
+      stats: { total: rows.length, star: rows.filter(r => r.star).length, watch: rows.filter(r => r.tone === 'bad' || r.tone === 'warn').length },
+    };
+  }
   async function hrEmpSummary(p) {
     p = p || {};
     if (!p.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
@@ -6628,7 +6741,7 @@
     const endEff = end < today ? end : today;
     const [empR, brR, shR, attR, schR, lvR, taR, staR, stR, dvR,
            revR, fixR, ctrlR, leadR, gdR, qaR, shcR, shaR, hoR, mtR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,end_date,is_manager,default_shift,photo_url,phone').eq('emp_id', p.emp_id).maybeSingle(),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,end_date,is_manager,default_shift,photo_url,phone,position').eq('emp_id', p.emp_id).maybeSingle(),
       sb().from('branches').select('branch_id,name'),
       sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
       sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min,extend_until').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
@@ -6842,7 +6955,7 @@
     return {
       ok: true,
       analysis: _an,
-      emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '', photo_url: emp.photo_url || '', phone: emp.phone || '' },
+      emp: { emp_id: emp.emp_id, name: emp.name, nickname: emp.nickname || '', branch_id: emp.branch_id || '', branch_name: brName[emp.branch_id] || emp.branch_id || '—', start_date: emp.start_date || '', shift_name: emp.default_shift ? (shName[emp.default_shift] || emp.default_shift) : '', photo_url: emp.photo_url || '', phone: emp.phone || '', position: emp.position || '', is_manager: emp.is_manager === true },
       range: { start, end, label: rangeLabel, generated: new Date().toISOString() },
       attendance: { days_should, days_worked, absent, late_count, late_total, leave_days, ot_hours, early_out_count, early_out_hours },
       score: {
