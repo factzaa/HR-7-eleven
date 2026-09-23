@@ -1980,6 +1980,7 @@ async function refreshExamCard(){
         +(e.attempts_used>0?(' · ทำแล้ว '+e.attempts_used+' ครั้ง สูงสุด '+e.best+'%'):'')
         +(e.time_limit_min?(' · จำกัด '+e.time_limit_min+' นาที'):'')
         +(e.deadline?(' · ถึง '+esc(e.deadline)):'')+'</div>'
+      +(e.disc_enabled?'<div style="margin-top:4px;font-size:12px;color:#9a3412;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:5px 8px">ชุดนี้มีผลกับคะแนนวินัย — ได้ต่ำกว่า '+e.disc_threshold+'% หัก '+e.disc_points+' คะแนน'+(e.disc_basis==='first'?' (ยึดคะแนนครั้งแรก)':'')+'</div>':'')
       +'<button class="btn btn-pri btn-sm" style="margin-top:8px" data-exgo="'+e.id+'">'+(e.attempts_used>0?'ทำใหม่':'ทำข้อสอบ')+'</button>'
       +'</div>').join('')
     +'</div>';
