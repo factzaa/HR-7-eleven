@@ -810,10 +810,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     </select>
     <button class="btn btn-sec btn-sm" id="me_refresh">รีเฟรช</button>
     <button class="btn btn-sec btn-sm" id="me_cfg"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg> ตั้งค่าน้ำหนัก</button>
+    <button class="btn btn-sec btn-sm" id="me_docall"><svg class="ei" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h4"/><path d="M9 12h6M9 16h6"/></svg> เอกสารประเมินทุกคน</button>
     <button class="btn btn-pri btn-sm" id="me_snap"><svg class="ei" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7"/><rect x="8" y="13" width="8" height="5"/></svg> ตรึงผลรอบนี้</button>
   </div>
   <div class="card" style="padding:11px 14px;background:#f8fafc;border:1px solid var(--line2);font-size:12.5px;color:var(--muted);margin-bottom:12px">
-    เป็น <b>คะแนนการปฏิบัติงาน (Operational Scorecard)</b> จากข้อมูลในระบบ — แยก <b>Own</b> (ผจก. ทำเอง) กับ <b>Team</b> (ผลทีม) · KPI ธุรกิจ (ยอดขาย/ตัดจ่าย/QSSI) คีย์มือแยกต่างหาก · <b>เห็นเฉพาะสำนักงาน</b>
+    <b>คะแนนการปฏิบัติงาน</b> จากข้อมูลจริงในระบบ — <b>A</b> = งานที่ ผจก. รับผิดชอบเอง · <b>B</b> = ผลของร้าน/ทีม (รวม QSSI + ยอดขายเทียบเป้า + ตัดจ่าย) · หัวข้อที่ไม่มีข้อมูลจะถูก<b>เกลี่ยน้ำหนักออก</b> ไม่ใช่ให้ 0 คะแนน · <b>เห็นเฉพาะสำนักงาน</b>
   </div>
   <div id="me_range" style="font-size:12.5px;color:var(--muted);margin:0 2px 10px"></div>
   <div id="me_body"><div class="empty">กำลังโหลด…</div></div>
@@ -824,24 +825,22 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <div class="modal" style="max-width:720px">
     <div class="modal-h"><h2 id="med_title" style="font-size:16px">ประเมิน ผจก.</h2><button class="close" id="medClose">×</button></div>
     <div class="modal-b" id="med_body"></div>
-    <div class="modal-f"><button class="btn btn-sec" id="medPrint"><svg class="ei" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M8 15h8v6H8z"/></svg> พิมพ์ใบประเมิน</button><button class="btn btn-pri" id="medNida"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> นิดาวิเคราะห์</button></div>
+    <div class="modal-f"><button class="btn btn-sec" id="medDoc"><svg class="ei" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h4"/><path d="M9 12h6M9 16h6"/></svg> เอกสารประเมิน</button><button class="btn btn-sec" id="medPrint"><svg class="ei" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M8 15h8v6H8z"/></svg> พิมพ์ใบประเมิน</button><button class="btn btn-pri" id="medNida"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> นิดาวิเคราะห์</button></div>
   </div>
 </div>
 
 <!-- modal: คีย์ KPI ธุรกิจ -->
 <div class="overlay" id="meBizOverlay">
   <div class="modal" style="max-width:460px">
-    <div class="modal-h"><h2 id="meb_title" style="font-size:16px">คีย์ KPI ธุรกิจ</h2><button class="close" id="mebClose">×</button></div>
+    <div class="modal-h"><h2 id="meb_title" style="font-size:16px">คีย์ยอดตัดจ่าย</h2><button class="close" id="mebClose">×</button></div>
     <div class="modal-b">
       <div id="meb_sub" style="font-size:12.5px;color:var(--muted);margin-bottom:10px"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <label style="font-size:13px">เป้ายอดขาย (บาท)<input id="meb_starget" type="number" step="any" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>
-        <label style="font-size:13px">ยอดขายจริง (บาท)<input id="meb_sactual" type="number" step="any" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>
-        <label style="font-size:13px">มูลค่าตัดจ่าย (บาท)<input id="meb_wval" type="number" step="any" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>
+        <label style="font-size:13px">มูลค่าตัดจ่ายรวม (บาท)<input id="meb_wval" type="number" step="any" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>
         <label style="font-size:13px">ตัดจ่าย % (เว้นได้)<input id="meb_wpct" type="number" step="any" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px" placeholder="คำนวณจากยอดขายให้"></label>
-        <label style="font-size:13px;grid-column:1/3">คะแนน QSSI (0–100)<input id="meb_qssi" type="number" step="any" min="0" max="100" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>
         <label style="font-size:13px;grid-column:1/3">หมายเหตุ<input id="meb_note" type="text" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>
       </div>
+      <div id="meb_hint" style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6"></div>
     </div>
     <div class="modal-f"><button class="btn btn-sec" id="mebCancel">ยกเลิก</button><button class="btn btn-pri" id="mebSave">บันทึก</button></div>
   </div>
@@ -5277,55 +5276,78 @@ async function loadMgrEval(){
   $('me_range').textContent=r.range?(''+r.range.label):'';
   renderMgrEval();
 }
+function meRawText(d){ if(d.raw_text) return d.raw_text; const raw=Object.entries(d.raw||{}).filter(([k,v])=>v!=null).map(([k,v])=>k+': '+v).join(' · '); return raw||'—'; }
+function meWeightText(d){ return (d.score==null)?('น้ำหนัก '+(d.weight||0)+' → ไม่ถูกนับ'):((d.weight||0)+' → ใช้จริง '+(d.used_weight!=null?d.used_weight+'%':'—')); }
+function meCycleBar(){
+  const rg=(MEVAL&&MEVAL.range)||null; if(!rg) return '';
+  const done=rg.days_done||0, tot=rg.days_total||0, pct=tot?Math.min(100,Math.round(done/tot*100)):0;
+  const warn=rg.running&&tot&&done<tot*0.5;
+  const notes=(MEVAL&&MEVAL.notes)||[];
+  return '<div class="card" style="padding:12px 14px;margin-bottom:12px;background:'+(warn?'#fffbeb':'#f8fafc')+';border:1px solid '+(warn?'#fcd34d':'var(--line2)')+'">'
+    +'<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
+      +'<b style="font-size:13.5px;color:'+(warn?'#92400e':'var(--ink)')+'">รอบนี้ผ่านไป '+done+' จาก '+tot+' วัน</b>'
+      +'<div style="flex:1;min-width:140px;height:8px;border-radius:8px;background:#e5e7eb;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+(warn?'#f59e0b':'#0a7c4a')+';border-radius:8px"></div></div>'
+      +(warn?'<span style="font-size:12px;color:#92400e">คะแนนยังไม่นิ่ง — ใช้ดูแนวโน้ม ยังไม่ควรใช้ตัดสิน</span>':'')
+    +'</div>'
+    +(notes.length?('<ul style="margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted);line-height:1.6">'+notes.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>'):'')
+    +'</div>';
+}
+function meMiniRow(d){
+  const c=(d.score==null)?'#94a3b8':(d.score>=90?'#16a34a':d.score>=75?'#22c55e':d.score>=60?'#f59e0b':'#ef4444');
+  return '<div style="display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line2)">'
+    +'<div style="min-width:0"><div style="font-size:12.5px'+(d.score==null?';color:#94a3b8':'')+'">'+esc(d.label)+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.45">'+esc(meRawText(d))+'</div></div>'
+    +'<div style="text-align:right;font-weight:700;font-size:13px;color:'+c+'">'+meFmtScore(d.score)+(d.score!=null?'%':'')+'</div></div>';
+}
 function renderMgrEval(){
   const rows=(MEVAL&&MEVAL.managers)||[];
   if(!rows.length){ $('me_body').innerHTML='<div class="empty">ยังไม่มีผู้จัดการสาขา — ตั้งค่าพนักงานเป็น "ผู้จัดการ" (is_manager) ก่อน</div>'; return; }
   const card=(m)=>{
     const av=m.photo_url?('<img src="'+esc(m.photo_url)+'" style="width:42px;height:42px;border-radius:50%;object-fit:cover">'):('<div style="width:42px;height:42px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-weight:700;color:#64748b">'+esc((m.nickname||m.mgr_name||'?').slice(0,1))+'</div>');
-    let cLine='';
-    if(m.block_c){ const c=m.block_c; cLine='<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line2)">'
-      +'<span>'+meLightDot(c.lights.sales)+' ยอดขาย '+(c.sales_pct!=null?(c.sales_pct+'%'):'—')+'</span>'
-      +'<span>'+meLightDot(c.lights.waste)+' ตัดจ่าย '+(c.waste_pct!=null?(c.waste_pct+'%'):'—')+'</span>'
-      +'<span>'+meLightDot(c.lights.qssi)+' QSSI '+(c.qssi_score!=null?c.qssi_score:'—')+'</span></div>'; }
-    else cLine='<div style="font-size:11.5px;color:#94a3b8;margin-top:6px">— ยังไม่ได้คีย์ KPI ธุรกิจรอบนี้ —</div>';
+    const q=m.qssi||{};
+    const qColor=(q.value==null)?'#94a3b8':(q.value>=85?'#16a34a':q.value>=70?'#f59e0b':'#ef4444');
+    const qBox='<div style="display:flex;gap:12px;align-items:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:9px 12px;margin-top:11px;flex-wrap:wrap">'
+      +'<div><div style="font-size:11.5px;color:var(--muted)">คะแนนตรวจร้าน QSSI</div><b style="font-size:22px;color:'+qColor+'">'+(q.value!=null?q.value:'—')+'</b></div>'
+      +'<div style="font-size:11.5px;color:var(--muted);line-height:1.6">'+(q.date?('ตรวจล่าสุด '+esc(q.date)+(q.stale?' <span style="color:#b45309">(ก่อนรอบนี้)</span>':'')):'ยังไม่มีผลตรวจ')
+      +(q.history&&q.history.length>1?('<br>ย้อนหลัง: '+q.history.map(h=>esc(String(h.date).slice(5))+' = '+(h.result!=null?h.result:'—')).join(' → ')):'')+'</div></div>';
+    const sl=m.sales||{}, ws=m.waste||{};
+    const line='<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:9px;padding-top:8px;border-top:1px dashed var(--line2)">'
+      +'<span>'+meLightDot(sl.pct==null?'none':(sl.pct>=100?'green':sl.pct>=90?'yellow':'red'))+' ยอดขาย '+(sl.pct!=null?(sl.pct+'%'):'—')+'</span>'
+      +'<span>'+meLightDot(ws.pct==null?'none':(ws.pct<=ws.max_pct?'green':ws.pct<=ws.max_pct*1.6?'yellow':'red'))+' ตัดจ่าย '+(ws.pct!=null?(ws.pct+'%'):'ยังไม่คีย์')+'</span>'
+      +'<span>ตีกลับงานทีม '+(m.sent_back||0)+' ครั้ง · ตักเตือนเชิงรุก '+(m.proactive_disc||0)+' ครั้ง</span></div>';
     return '<div class="card" style="padding:14px;margin-bottom:10px">'
       +'<div style="display:flex;gap:11px;align-items:center">'+av
         +'<div style="flex:1;min-width:0"><div style="font-weight:700">'+esc(m.nickname||m.mgr_name)+' <span style="color:var(--muted);font-weight:400;font-size:12.5px">'+esc(m.mgr_name)+'</span></div>'
-        +'<div style="font-size:12.5px;color:var(--muted)"><svg class="ei" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg> '+esc(m.branch_name)+' · ลูกน้อง '+m.team_size+' คน'+(m.new_hires?(' <span style="color:#c2410c">(ใหม่ '+m.new_hires+')</span>'):'')+'</div></div></div>'
+        +'<div style="font-size:12.5px;color:var(--muted)">'+esc(m.branch_name)+' · ลูกน้อง '+m.team_size+' คน'+(m.new_hires?(' <span style="color:#c2410c">(ใหม่ '+m.new_hires+')</span>'):'')+'</div></div></div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">'
-        +'<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12.5px;font-weight:600">Own · ผจก.ทำเอง</span><b style="font-size:15px">'+meFmtScore(m.score_a)+'</b></div>'+meBar(m.score_a,m.grade_a_color)+'<div style="margin-top:4px">'+meGrade(m.grade_a,m.grade_a_color)+'</div></div>'
-        +'<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12.5px;font-weight:600">Team · ผลทีม</span><b style="font-size:15px">'+meFmtScore(m.score_b)+'</b></div>'+meBar(m.score_b,m.grade_b_color)+'<div style="margin-top:4px">'+meGrade(m.grade_b,m.grade_b_color)+'</div></div>'
-      +'</div>'+cLine
-      +'<div style="display:flex;gap:8px;margin-top:11px"><button class="btn btn-sec btn-sm" data-medet="'+esc(m.emp_id)+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รายละเอียด</button><button class="btn btn-sec btn-sm" data-mebiz="'+esc(m.branch_id)+'"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg> คีย์ KPI</button></div>'
+        +'<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12.5px;font-weight:600">A · งานของ ผจก. เอง</span><b style="font-size:15px">'+meFmtScore(m.score_a)+'</b></div>'+meBar(m.score_a,m.grade_a_color)+'<div style="margin-top:4px">'+meGrade(m.grade_a,m.grade_a_color)+'</div>'
+          +'<div style="margin-top:6px">'+(m.a_breakdown||[]).map(meMiniRow).join('')+'</div></div>'
+        +'<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12.5px;font-weight:600">B · ผลของร้าน/ทีม</span><b style="font-size:15px">'+meFmtScore(m.score_b)+'</b></div>'+meBar(m.score_b,m.grade_b_color)+'<div style="margin-top:4px">'+meGrade(m.grade_b,m.grade_b_color)+'</div>'
+          +'<div style="margin-top:6px">'+(m.b_breakdown||[]).map(meMiniRow).join('')+'</div></div>'
+      +'</div>'+qBox+line
+      +'<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap"><button class="btn btn-sec btn-sm" data-medet="'+esc(m.emp_id)+'">รายละเอียด</button>'
+      +'<button class="btn btn-sec btn-sm" data-medoc="'+esc(m.emp_id)+'"><svg class="ei" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h4"/><path d="M9 12h6M9 16h6"/></svg> เอกสารประเมิน</button>'
+      +'<button class="btn btn-sec btn-sm" data-mebiz="'+esc(m.branch_id)+'">คีย์ตัดจ่าย</button></div>'
       +'</div>';
   };
-  $('me_body').innerHTML=rows.map(card).join('');
+  $('me_body').innerHTML=meCycleBar()+rows.map(card).join('');
   $('me_body').querySelectorAll('[data-medet]').forEach(b=>b.onclick=()=>openMeDetail(b.dataset.medet));
+  $('me_body').querySelectorAll('[data-medoc]').forEach(b=>b.onclick=()=>meEvalDocPrint(b.dataset.medoc));
   $('me_body').querySelectorAll('[data-mebiz]').forEach(b=>b.onclick=()=>openMeBiz(b.dataset.mebiz));
 }
 function meBreakRows(list){
-  return (list||[]).map(d=>{
-    const raw=Object.entries(d.raw||{}).filter(([k,v])=>v!=null).map(([k,v])=>k+': '+v).join(' · ');
-    return '<tr><td>'+esc(d.label)+'</td><td class="mono" style="text-align:center">'+meFmtScore(d.score)+'</td><td class="mono" style="text-align:center;color:var(--muted)">'+(d.weight||0)+'</td><td style="font-size:11.5px;color:var(--muted)">'+esc(raw||'—')+'</td></tr>';
-  }).join('');
+  return (list||[]).map(d=>'<tr'+(d.score==null?' style="color:#94a3b8"':'')+'><td>'+esc(d.label)+'</td><td style="font-size:11.5px;color:var(--muted)">'+esc(meRawText(d))+'</td><td class="mono" style="text-align:center">'+meFmtScore(d.score)+'</td><td class="mono" style="text-align:center;color:var(--muted);font-size:11.5px">'+esc(meWeightText(d))+'</td></tr>').join('');
 }
 function openMeDetail(empId){
   const m=((MEVAL&&MEVAL.managers)||[]).find(x=>String(x.emp_id)===String(empId)); if(!m) return;
   MEVAL._cur=m;
   $('med_title').textContent='ประเมิน · '+(m.nickname||m.mgr_name)+' ('+m.branch_name+')';
   const tbl=(title,tot,color,grade,rowsHtml)=>'<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>'+title+'</b><span>'+meGrade(grade,color)+' <b style="font-size:16px">'+meFmtScore(tot)+'</b>/100</span></div>'
-    +'<div class="tablewrap"><table><thead><tr><th>ด้าน</th><th style="text-align:center">คะแนน</th><th style="text-align:center">น้ำหนัก</th><th>ที่มา</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div></div>';
-  let html=tbl('คะแนน A · ผจก. ทำเอง',m.score_a,m.grade_a_color,m.grade_a,meBreakRows(m.a_breakdown));
-  html+=tbl('คะแนน B · ผลทีม/สาขา',m.score_b,m.grade_b_color,m.grade_b,meBreakRows(m.b_breakdown));
-  html+='<div style="font-size:12px;color:var(--muted);margin:-6px 0 12px">ทีม '+m.team_size+' คน'+(m.new_hires?(' · พนักงานใหม่ในรอบ '+m.new_hires+' คน (พิจารณาประกอบ)'):'')+' · จัดการวินัยเชิงรุกในรอบ '+(m.proactive_disc||0)+' ครั้ง</div>';
-  if(m.block_c){ const c=m.block_c;
-    html+='<div style="margin-bottom:6px"><b>บล็อก C · KPI ธุรกิจ (คีย์มือ)</b></div><div class="tablewrap"><table><tbody>'
-      +'<tr><td>'+meLightDot(c.lights.sales)+' ยอดขาย</td><td class="mono">'+(c.sales_actual!=null?Number(c.sales_actual).toLocaleString():'—')+' / เป้า '+(c.sales_target!=null?Number(c.sales_target).toLocaleString():'—')+' ('+(c.sales_pct!=null?c.sales_pct+'%':'—')+')</td></tr>'
-      +'<tr><td>'+meLightDot(c.lights.waste)+' ตัดจ่าย</td><td class="mono">'+(c.waste_value!=null?Number(c.waste_value).toLocaleString()+' บาท':'—')+(c.waste_pct!=null?(' · '+c.waste_pct+'%'):'')+'</td></tr>'
-      +'<tr><td>'+meLightDot(c.lights.qssi)+' QSSI</td><td class="mono">'+(c.qssi_score!=null?c.qssi_score:'—')+'</td></tr>'
-      +(c.note?('<tr><td>หมายเหตุ</td><td>'+esc(c.note)+'</td></tr>'):'')
-      +'</tbody></table></div>';
-  } else html+='<div style="font-size:12.5px;color:#94a3b8">— ยังไม่ได้คีย์ KPI ธุรกิจรอบนี้ —</div>';
+    +'<div class="tablewrap"><table><thead><tr><th>หัวข้อ</th><th>ผลงานจริง</th><th style="text-align:center">คะแนน</th><th style="text-align:center">น้ำหนัก</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div></div>';
+  let html=tbl('คะแนน A · งานที่ ผจก. รับผิดชอบเอง',m.score_a,m.grade_a_color,m.grade_a,meBreakRows(m.a_breakdown));
+  html+=tbl('คะแนน B · ผลของร้าน/ทีม',m.score_b,m.grade_b_color,m.grade_b,meBreakRows(m.b_breakdown));
+  html+='<div style="font-size:12px;color:var(--muted);margin:-6px 0 12px">ทีม '+m.team_size+' คน'+(m.new_hires?(' · พนักงานใหม่ในรอบ '+m.new_hires+' คน (พิจารณาประกอบ)'):'')+' · ตีกลับงานทีม '+(m.sent_back||0)+' ครั้ง · จัดการวินัยเชิงรุก '+(m.proactive_disc||0)+' ครั้ง</div>';
+  if(m.missing&&m.missing.length) html+='<div style="padding:10px 12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:9px;font-size:12px;color:#92400e;line-height:1.6;margin-bottom:12px"><b>หัวข้อที่ไม่ถูกนำมาคิดรอบนี้ ('+m.missing.length+')</b><br>'+m.missing.map(esc).join(' · ')+'<br>น้ำหนักถูกเกลี่ยไปให้หัวข้อที่เหลือแล้ว</div>';
   html+='<div id="med_trend" style="margin-top:16px"></div>';
   $('med_body').innerHTML=html;
   $('meDetailOverlay').classList.add('show');
@@ -5363,15 +5385,13 @@ function openMeBiz(branchId){
   const start=(MEVAL&&MEVAL.range)?MEVAL.range.start:'';
   const br=(DATA.branches||[]).find(b=>String(b.branch_id)===String(branchId));
   const m=((MEVAL&&MEVAL.managers)||[]).find(x=>String(x.branch_id)===String(branchId));
-  const c=(m&&m.block_c)||{};
-  $('meb_title').textContent='คีย์ KPI ธุรกิจ · '+(br?br.name:branchId);
-  $('meb_sub').textContent='รอบ '+((MEVAL&&MEVAL.range)?MEVAL.range.label:'')+' · คีย์เท่าที่มี (เว้นว่างได้)';
-  $('meb_starget').value=c.sales_target!=null?c.sales_target:'';
-  $('meb_sactual').value=c.sales_actual!=null?c.sales_actual:'';
-  $('meb_wval').value=c.waste_value!=null?c.waste_value:'';
-  $('meb_wpct').value=c.waste_pct!=null?c.waste_pct:'';
-  $('meb_qssi').value=c.qssi_score!=null?c.qssi_score:'';
-  $('meb_note').value=c.note||'';
+  const w=(m&&m.waste)||{}, sl=(m&&m.sales)||{};
+  $('meb_title').textContent='คีย์ยอดตัดจ่าย · '+(br?br.name:branchId);
+  $('meb_sub').textContent='รอบ '+((MEVAL&&MEVAL.range)?MEVAL.range.label:'')+' · คีย์ตอนสิ้นรอบ';
+  $('meb_wval').value=w.value!=null?w.value:'';
+  $('meb_wpct').value=w.pct!=null?w.pct:'';
+  $('meb_note').value='';
+  $('meb_hint').innerHTML='ยอดขายของรอบนี้ <b>'+(sl.actual!=null?Number(sl.actual).toLocaleString('th-TH'):'—')+'</b> บาท · เพดานที่ตั้งไว้ <b>ไม่เกิน '+((MEVAL_CFG&&MEVAL_CFG.thresholds&&MEVAL_CFG.thresholds.waste_max_pct)||2.5)+'%</b> ของยอดขาย (แก้ได้ที่ปุ่มตั้งค่า)<br>ถ้าเว้นช่อง % ไว้ ระบบจะคำนวณจากยอดขายให้เอง';
   $('meBizOverlay').dataset.branch=branchId; $('meBizOverlay').dataset.period=start;
   $('meBizOverlay').classList.add('show');
 }
@@ -5381,26 +5401,27 @@ async function meBizSave(){
   if(!branch_id||!period_start){ toast('err','ไม่พบสาขา/รอบ'); return; }
   $('mebSave').innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_mgr_eval_biz_save', password:pwd, data:{
-    branch_id, period_start,
-    sales_target:$('meb_starget').value, sales_actual:$('meb_sactual').value,
-    waste_value:$('meb_wval').value, waste_pct:$('meb_wpct').value,
-    qssi_score:$('meb_qssi').value, note:$('meb_note').value
+    branch_id, period_start, waste_value:$('meb_wval').value, waste_pct:$('meb_wpct').value, note:$('meb_note').value
   }});
   $('mebSave').textContent='บันทึก';
-  if(r&&r.ok){ toast('ok','บันทึก KPI แล้ว'); ov.classList.remove('show'); loadMgrEval(); }
+  if(r&&r.ok){ toast('ok','บันทึกยอดตัดจ่ายแล้ว'); ov.classList.remove('show'); loadMgrEval(); }
   else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
 function openMeConfig(){
-  const cfg=MEVAL_CFG||{}; const wA=cfg.weights_a||{responsibility:40,review:40,responsiveness:20}; const wB=cfg.weights_b||{team_discipline:55,store_ops:45}; const th=cfg.thresholds||{};
+  const cfg=MEVAL_CFG||{}; const wA=cfg.weights_a||{}; const wB=cfg.weights_b||{}; const th=cfg.thresholds||{};
   const num=(id,label,val,hint)=>'<label style="display:block;font-size:13px;margin-bottom:9px">'+label+(hint?(' <span style="color:var(--muted);font-size:11.5px">'+hint+'</span>'):'')+'<input id="'+id+'" type="number" step="any" value="'+(val!=null?val:'')+'" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>';
   $('mec_body').innerHTML=
-    '<div style="font-weight:700;margin-bottom:8px">น้ำหนักคะแนน A (รวม 100)</div>'
-    +num('mec_a1','รับผิดชอบงานที่มอบหมาย',wA.responsibility)+num('mec_a2','ตรวจงาน & คุมคุณภาพ',wA.review)+num('mec_a3','ตอบสนอง & สื่อสาร',wA.responsiveness)
-    +'<div style="font-weight:700;margin:6px 0 8px">น้ำหนักคะแนน B (รวม 100)</div>'
-    +num('mec_b1','วินัยทีม',wB.team_discipline)+num('mec_b2','ดำเนินงานหน้าร้าน',wB.store_ops)
-    +'<div style="font-weight:700;margin:6px 0 8px">เกณฑ์ตัวชี้วัด</div>'
-    +num('mec_rf','ตรวจงานถือว่า "ไว" ภายใน (ชม.)',th.review_fast_hours)+num('mec_cr','ตอบแชทภายใน (ชม.)',th.chat_reply_hours)
-    +num('mec_wg','ตัดจ่าย % ระดับดี ≤',th.waste_pct_good)+num('mec_ww','ตัดจ่าย % เตือน ≤',th.waste_pct_warn)
+    '<div style="font-weight:700;margin-bottom:8px">น้ำหนักคะแนน A · งานของ ผจก. เอง (รวม 100)</div>'
+    +num('mec_a1','งานหน้าที่ ผจก. ในรอบผลัด',wA.mgr_own)+num('mec_a2','ตรวจงานทีมครบ',wA.review_cov)
+    +num('mec_a3','ตรวจเร็วภายในเวลา',wA.review_speed)+num('mec_a4','งานที่สำนักงานสั่ง ตรงกำหนด',wA.hr_tasks)
+    +'<div style="font-weight:700;margin:6px 0 8px">น้ำหนักคะแนน B · ผลของร้าน/ทีม (รวม 100)</div>'
+    +num('mec_b1','คะแนนตรวจร้าน QSSI',wB.qssi)+num('mec_b2','ยอดขายเทียบเป้า',wB.sales)
+    +num('mec_b3','ทีมมาตรงเวลา',wB.on_time)+num('mec_b4','คะแนนวินัยเฉลี่ยของทีม',wB.discipline)
+    +num('mec_b5','ตัดจ่าย',wB.waste)+num('mec_b6','ลังคืนตรงจำนวน',wB.goods)+num('mec_b7','ปิดผลัดครบ',wB.shift_close)
+    +'<div style="font-weight:700;margin:6px 0 8px">เกณฑ์</div>'
+    +num('mec_rf','ตรวจงานถือว่า "ไว" ภายใน (ชม.)',th.review_fast_hours)
+    +num('mec_gt','ลังคืนคลาดได้ไม่เกิน (ลัง)',th.goods_tol)
+    +num('mec_wm','ตัดจ่ายไม่ควรเกิน (% ของยอดขาย)',th.waste_max_pct)
     +num('mec_qg','QSSI ดี ≥',th.qssi_good)+num('mec_qw','QSSI เตือน ≥',th.qssi_warn)
     +num('mec_sg','ยอดขาย % ดี ≥',th.sales_good_pct)+num('mec_sw','ยอดขาย % เตือน ≥',th.sales_warn_pct);
   $('meCfgOverlay').classList.add('show');
@@ -5409,10 +5430,10 @@ async function meConfigSave(){
   const n=id=>{ const v=$(id).value; return v===''?null:Number(v); };
   $('mecSave').innerHTML='<span class="spin"></span>';
   const r=await post({ action:'hr_mgr_eval_config_save', password:pwd, data:{
-    weights_a:{ responsibility:n('mec_a1'), review:n('mec_a2'), responsiveness:n('mec_a3') },
-    weights_b:{ team_discipline:n('mec_b1'), store_ops:n('mec_b2') },
-    thresholds:{ review_fast_hours:n('mec_rf'), chat_reply_hours:n('mec_cr'), chat_silent_days:(MEVAL_CFG&&MEVAL_CFG.thresholds&&MEVAL_CFG.thresholds.chat_silent_days)||3,
-      waste_pct_good:n('mec_wg'), waste_pct_warn:n('mec_ww'), qssi_good:n('mec_qg'), qssi_warn:n('mec_qw'), sales_good_pct:n('mec_sg'), sales_warn_pct:n('mec_sw') }
+    weights_a:{ mgr_own:n('mec_a1'), review_cov:n('mec_a2'), review_speed:n('mec_a3'), hr_tasks:n('mec_a4') },
+    weights_b:{ qssi:n('mec_b1'), sales:n('mec_b2'), on_time:n('mec_b3'), discipline:n('mec_b4'), waste:n('mec_b5'), goods:n('mec_b6'), shift_close:n('mec_b7') },
+    thresholds:{ review_fast_hours:n('mec_rf'), goods_tol:n('mec_gt'), waste_max_pct:n('mec_wm'),
+      qssi_good:n('mec_qg'), qssi_warn:n('mec_qw'), sales_good_pct:n('mec_sg'), sales_warn_pct:n('mec_sw') }
   }});
   $('mecSave').textContent='บันทึก';
   if(r&&r.ok){ toast('ok','บันทึกการตั้งค่าแล้ว'); $('meCfgOverlay').classList.remove('show'); loadMgrEval(); }
@@ -5427,36 +5448,87 @@ async function meSnapshot(){
   if(r&&r.ok) toast('ok','ตรึงผลแล้ว '+(r.saved||0)+' ราย');
   else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
-// พิมพ์ใบประเมิน A4 (ใช้เทคนิค iframe + DOC_PRINT_CSS เดียวกับใบเตือน)
-function meDetailPrint(){
-  const m=MEVAL&&MEVAL._cur; if(!m){ toast('err','เปิดรายละเอียดก่อน'); return; }
-  const gen=new Date().toLocaleString('th-TH');
-  const brk=(list)=>(list||[]).map(d=>{ const raw=Object.entries(d.raw||{}).filter(([k,v])=>v!=null).map(([k,v])=>k+': '+v).join(' · ');
-    return '<tr><td>'+esc(d.label)+'</td><td style="text-align:center">'+meFmtScore(d.score)+'</td><td style="text-align:center">'+(d.weight||0)+'</td><td style="font-size:11px">'+esc(raw||'-')+'</td></tr>'; }).join('');
-  let cHtml='';
-  if(m.block_c){ const c=m.block_c;
-    cHtml='<h3>KPI ธุรกิจ (คีย์มือ)</h3><table><tbody>'
-      +'<tr><td>ยอดขาย</td><td>'+(c.sales_actual!=null?Number(c.sales_actual).toLocaleString():'-')+' / เป้า '+(c.sales_target!=null?Number(c.sales_target).toLocaleString():'-')+' ('+(c.sales_pct!=null?c.sales_pct+'%':'-')+')</td></tr>'
-      +'<tr><td>ตัดจ่าย</td><td>'+(c.waste_pct!=null?c.waste_pct+'%':'-')+'</td></tr>'
-      +'<tr><td>QSSI</td><td>'+(c.qssi_score!=null?c.qssi_score:'-')+'</td></tr></tbody></table>'; }
-  const doc='<div class="es-doc" style="display:block"><div style="text-align:center;margin-bottom:10px"><div style="font-size:19px;font-weight:700">ใบประเมินผลงานผู้จัดการสาขา</div><div style="font-size:13px;color:#555">Operational Scorecard · '+esc((MEVAL.range&&MEVAL.range.label)||'')+'</div></div>'
-    +'<table><tbody><tr><td style="width:130px">ผู้จัดการ</td><td>'+esc(m.mgr_name)+' ('+esc(m.emp_id)+')</td></tr>'
-    +'<tr><td>สาขา</td><td>'+esc(m.branch_name)+'</td></tr><tr><td>ทีม</td><td>'+m.team_size+' คน'+(m.new_hires?(' (ใหม่ '+m.new_hires+')'):'')+'</td></tr></tbody></table>'
-    +'<h3>คะแนน A · ผู้จัดการทำเอง — '+meFmtScore(m.score_a)+'/100 ('+esc(m.grade_a)+')</h3>'
-    +'<table><thead><tr><th>ด้าน</th><th>คะแนน</th><th>น้ำหนัก</th><th>ที่มา</th></tr></thead><tbody>'+brk(m.a_breakdown)+'</tbody></table>'
-    +'<h3>คะแนน B · ผลทีม/สาขา — '+meFmtScore(m.score_b)+'/100 ('+esc(m.grade_b)+')</h3>'
-    +'<table><thead><tr><th>ด้าน</th><th>คะแนน</th><th>น้ำหนัก</th><th>ที่มา</th></tr></thead><tbody>'+brk(m.b_breakdown)+'</tbody></table>'
-    +cHtml
-    +'<div style="margin-top:26px;display:flex;justify-content:space-between;font-size:13px"><div>ผู้ประเมิน (สำนักงาน) ............................</div><div>วันที่ '+esc(gen)+'</div></div></div>';
+/* ============ เอกสารประเมินรายบุคคล (A4 · พร้อมช่องลงชื่อ) ============ */
+function meThDate(d){ if(!d) return '—'; const t=new Date(String(d)+'T00:00:00'); if(isNaN(t)) return String(d);
+  return t.toLocaleDateString('th-TH',{year:'numeric',month:'short',day:'numeric'}); }
+function meDocTable(list){
+  return '<table><thead><tr><th style="width:27%">หัวข้อประเมิน</th><th>ผลงานจริงในรอบนี้</th><th style="width:11%;text-align:center">คะแนน</th><th style="width:19%;text-align:center">น้ำหนัก</th></tr></thead><tbody>'
+    +(list||[]).map(d=>'<tr><td>'+esc(d.label)+'</td><td style="font-size:11.5px">'+esc(meRawText(d))+'</td><td style="text-align:center">'+(d.score!=null?meFmtScore(d.score)+'%':'ไม่มีข้อมูล')+'</td><td style="text-align:center;font-size:11px">'+esc(meWeightText(d))+'</td></tr>').join('')
+    +'</tbody></table>';
+}
+function meEvalDocHtml(m){
+  const rg=(MEVAL&&MEVAL.range)||{};
+  const gen=new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'});
+  const q=m.qssi||{}, sl=m.sales||{}, ws=m.waste||{};
+  const all=[].concat(m.a_breakdown||[],m.b_breakdown||[]);
+  const scored=all.filter(x=>x.score!=null);
+  const strong=scored.slice().sort((a,b)=>b.score-a.score).filter(x=>x.score>=85).slice(0,3);
+  const weak=scored.slice().sort((a,b)=>a.score-b.score).filter(x=>x.score<70).slice(0,3);
+  const overall=(m.score_a!=null&&m.score_b!=null)?Math.round((m.score_a+m.score_b)/2*10)/10:(m.score_a!=null?m.score_a:m.score_b);
+  const lines=(n)=>Array.from({length:n}).map(()=>'<div style="border-bottom:1px dotted #999;height:19px"></div>').join('');
+  const qHist=(q.history||[]).map(h=>meThDate(h.date)+' = '+(h.result!=null?h.result+'%':'—')).join('  →  ');
+  return '<div class="es-doc" style="display:block">'
+    +'<div style="text-align:center;margin-bottom:12px"><div style="font-size:19px;font-weight:700">แบบประเมินผลการปฏิบัติงาน ผู้จัดการร้าน</div>'
+    +'<div style="font-size:13px;color:#555">รอบประเมิน '+meThDate(rg.start)+' – '+meThDate(rg.end)+' · ออกเอกสารวันที่ '+esc(gen)+'</div></div>'
+    +'<table><tbody>'
+      +'<tr><td style="width:120px">ชื่อ-สกุล</td><td>'+esc(m.mgr_name)+(m.nickname?(' ('+esc(m.nickname)+')'):'')+'</td><td style="width:90px">รหัสพนักงาน</td><td>'+esc(m.emp_id)+'</td></tr>'
+      +'<tr><td>สาขา</td><td>'+esc(m.branch_name)+'</td><td>ทีมที่ดูแล</td><td>'+m.team_size+' คน'+(m.new_hires?(' (เข้าใหม่ '+m.new_hires+' คน)'):'')+'</td></tr>'
+      +'<tr><td>ช่วงที่ประเมิน</td><td>'+meThDate(rg.start)+' ถึง '+meThDate(rg.end)+'</td><td>ข้อมูลถึงวันที่</td><td>'+(rg.days_done||0)+' จาก '+(rg.days_total||0)+' วันของรอบ</td></tr>'
+    +'</tbody></table>'
+    +'<h3>สรุปคะแนน</h3>'
+    +'<table><thead><tr><th>ส่วน</th><th style="text-align:center">คะแนน</th><th style="text-align:center">ระดับ</th><th>ความหมาย</th></tr></thead><tbody>'
+      +'<tr><td>A · งานที่ผู้จัดการรับผิดชอบเอง</td><td style="text-align:center;font-weight:700">'+meFmtScore(m.score_a)+'</td><td style="text-align:center">'+esc(m.grade_a)+'</td><td style="font-size:11.5px">การส่งงานหน้าที่ตัวเอง · การตรวจงานทีม · งานที่สำนักงานสั่ง</td></tr>'
+      +'<tr><td>B · ผลของร้านและทีม</td><td style="text-align:center;font-weight:700">'+meFmtScore(m.score_b)+'</td><td style="text-align:center">'+esc(m.grade_b)+'</td><td style="font-size:11.5px">QSSI · ยอดขายเทียบเป้า · วินัยทีม · ตัดจ่าย · ลังคืน · ปิดผลัด</td></tr>'
+      +'<tr><td><b>ภาพรวม</b></td><td style="text-align:center;font-weight:700">'+meFmtScore(overall)+'</td><td style="text-align:center">—</td><td style="font-size:11.5px">ค่าเฉลี่ยของ A และ B</td></tr>'
+    +'</tbody></table>'
+    +'<h3>ส่วน A · งานที่ผู้จัดการรับผิดชอบเอง — '+meFmtScore(m.score_a)+'/100</h3>'+meDocTable(m.a_breakdown)
+    +'<h3>ส่วน B · ผลของร้านและทีม — '+meFmtScore(m.score_b)+'/100</h3>'+meDocTable(m.b_breakdown)
+    +'<h3>ข้อมูลประกอบ</h3>'
+    +'<table><tbody>'
+      +'<tr><td style="width:150px">ผลตรวจร้าน QSSI</td><td>'+(q.value!=null?(q.value+'% (ตรวจ '+meThDate(q.date)+')'+(q.stale?' — เป็นผลตรวจก่อนรอบนี้':'')):'ยังไม่มีผลตรวจ')+(qHist?('<br><span style="font-size:11px;color:#555">ย้อนหลัง: '+qHist+'</span>'):'')+'</td></tr>'
+      +'<tr><td>ยอดขายเทียบเป้า</td><td>'+(sl.pct!=null?(Number(sl.actual).toLocaleString('th-TH')+' / เป้า '+Number(sl.target).toLocaleString('th-TH')+' บาท = '+sl.pct+'%'):'ยังไม่มีข้อมูลยอดขาย')+'</td></tr>'
+      +'<tr><td>ตัดจ่าย</td><td>'+(ws.pct!=null?(Number(ws.value||0).toLocaleString('th-TH')+' บาท = '+ws.pct+'% (เพดาน '+ws.max_pct+'%)'):'ยังไม่ได้คีย์ยอดตัดจ่ายของรอบนี้')+'</td></tr>'
+      +'<tr><td>การกำกับทีม</td><td>ตีกลับงานทีม '+(m.sent_back||0)+' ครั้ง · จัดการวินัยเชิงรุก '+(m.proactive_disc||0)+' ครั้ง</td></tr>'
+      +(m.missing&&m.missing.length?('<tr><td>หัวข้อที่ไม่ถูกนำมาคิด</td><td style="font-size:11.5px">'+m.missing.map(esc).join(' · ')+'<br>(น้ำหนักถูกเกลี่ยไปให้หัวข้อที่เหลือ ไม่ได้คิดเป็น 0 คะแนน)</td></tr>'):'')
+    +'</tbody></table>'
+    +'<h3>จุดเด่น</h3><div style="font-size:12.5px;margin-bottom:4px">'+(strong.length?strong.map(x=>'• '+esc(x.label)+' — '+meFmtScore(x.score)+'% ('+esc(meRawText(x))+')').join('<br>'):'—')+'</div>'+lines(2)
+    +'<h3>จุดที่ต้องพัฒนา</h3><div style="font-size:12.5px;margin-bottom:4px">'+(weak.length?weak.map(x=>'• '+esc(x.label)+' — '+meFmtScore(x.score)+'% ('+esc(meRawText(x))+')').join('<br>'):'—')+'</div>'+lines(2)
+    +'<h3>ความเห็นผู้ประเมิน / สิ่งที่ต้องทำในรอบถัดไป</h3>'+lines(4)
+    +'<div style="margin-top:22px;display:flex;justify-content:space-between;gap:16px;font-size:12.5px;text-align:center">'
+      +'<div style="flex:1">ลงชื่อ .................................................<br>( '+esc(m.mgr_name)+' )<br>ผู้รับการประเมิน · วันที่ ........./........./.........</div>'
+      +'<div style="flex:1">ลงชื่อ .................................................<br>(...............................................)<br>ผู้ประเมิน (สำนักงาน) · วันที่ ........./........./.........</div>'
+      +'<div style="flex:1">ลงชื่อ .................................................<br>(...............................................)<br>ผู้อนุมัติ · วันที่ ........./........./.........</div>'
+    +'</div></div>';
+}
+function mePrintDocs(html,fit){
   const old=document.getElementById('mevPrintFrame'); if(old) old.remove();
   const fr=document.createElement('iframe'); fr.id='mevPrintFrame';
   fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
   document.body.appendChild(fr);
   const d=fr.contentWindow.document; d.open();
-  d.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&display=swap"><style>'+DOC_PRINT_CSS+'</style></head><body>'+doc+'</body></html>');
+  d.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;600;700&display=swap"><style>'+DOC_PRINT_CSS+'.es-doc{page-break-after:always}.es-doc:last-child{page-break-after:auto}h3{margin:12px 0 4px;font-size:13.5px}</style></head><body>'+html+'</body></html>');
   d.close();
-  const go=()=>{ try{ const el=d.querySelector('.es-doc'); const pageH=1123, h=el.scrollHeight; if(h>pageH){ const s=Math.max(0.6,pageH/h); el.style.zoom=String(s); el.style.minHeight=Math.round(pageH/s)+'px'; } }catch(_e){} try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){} setTimeout(()=>{ const f=document.getElementById('mevPrintFrame'); if(f) f.remove(); },60000); };
-  setTimeout(go,400);
+  const go=()=>{
+    if(fit){ try{ d.querySelectorAll('.es-doc').forEach(el=>{ const pageH=1123,h=el.scrollHeight; if(h>pageH){ const s=Math.max(0.6,pageH/h); el.style.zoom=String(s); el.style.minHeight=Math.round(pageH/s)+'px'; } }); }catch(_e){} }
+    try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){}
+    setTimeout(()=>{ const f=document.getElementById('mevPrintFrame'); if(f) f.remove(); },60000);
+  };
+  setTimeout(go,450);
+}
+function meEvalDocPrint(empId){
+  const m=((MEVAL&&MEVAL.managers)||[]).find(x=>String(x.emp_id)===String(empId))||(MEVAL&&MEVAL._cur);
+  if(!m){ toast('err','ไม่พบข้อมูล ผจก.'); return; }
+  mePrintDocs(meEvalDocHtml(m),false);
+}
+function meEvalDocAll(){
+  const rows=(MEVAL&&MEVAL.managers)||[];
+  if(!rows.length){ toast('err','ยังไม่มีข้อมูล'); return; }
+  mePrintDocs(rows.map(meEvalDocHtml).join(''),false);
+}
+// พิมพ์สรุป 1 หน้า (ย่อให้พอดีหน้าเดียว)
+function meDetailPrint(){
+  const m=MEVAL&&MEVAL._cur; if(!m){ toast('err','เปิดรายละเอียดก่อน'); return; }
+  mePrintDocs(meEvalDocHtml(m),true);
 }
 async function meDetailNida(){
   const m=MEVAL&&MEVAL._cur; if(!m){ toast('err','เปิดรายละเอียดก่อน'); return; }
@@ -5484,6 +5556,8 @@ $('me_snap') && ($('me_snap').onclick=meSnapshot);
 ['medClose'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('meDetailOverlay').classList.remove('show'); });
 $('meDetailOverlay') && $('meDetailOverlay').addEventListener('click',e=>{ if(e.target.id==='meDetailOverlay') $('meDetailOverlay').classList.remove('show'); });
 $('medPrint') && ($('medPrint').onclick=meDetailPrint);
+$('medDoc') && ($('medDoc').onclick=()=>{ const m=MEVAL&&MEVAL._cur; if(m) meEvalDocPrint(m.emp_id); });
+$('me_docall') && ($('me_docall').onclick=meEvalDocAll);
 $('medNida') && ($('medNida').onclick=meDetailNida);
 ['mebClose','mebCancel'].forEach(id=>{ const e=$(id); if(e) e.onclick=()=>$('meBizOverlay').classList.remove('show'); });
 $('mebSave') && ($('mebSave').onclick=meBizSave);
@@ -12935,6 +13009,104 @@ async function asstDoc(kind,a1,a2){
     if(kind==='payslip'){ await asstDlSlip(a1,a2); return; }
   }catch(e){ toast('err','เปิดเอกสารไม่สำเร็จ'); }
 }
+/* ============================================================
+   ★ 23 ก.ย. 69 — "ทำเป็นเอกสาร PDF" จากข้อความที่นิดาเขียนไว้ในแชท
+   ใช้ตอนเครื่องมือฝั่งเซิร์ฟเวอร์สร้างการ์ดไม่สำเร็จ (เนื้อหายาวจนถูกตัดกลางคัน)
+   ทำงานในเครื่องล้วน ๆ — ได้เนื้อหาเดียวกับที่เห็นในแชทเป๊ะ ๆ ไม่ต้องเรียกโมเดลใหม่
+   ============================================================ */
+const MKD_CO_BY_BRANCH={ '10775':'หจก.เอ็มพี ออลล์', '06573':'หจก.เอ็มพี ออลล์', '08747':'หจก.บีพี ออลล์' };
+function mkdClean(t){
+  return String(t||'')
+    .replace(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi,'')
+    .replace(/\r/g,'').replace(/[ \t]+$/gm,'');
+}
+function mkdStrip(t){ return String(t||'').replace(/\*\*(.+?)\*\*/g,'$1').replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$)/g,'$1$2').replace(/`([^`]+)`/g,'$1').trim(); }
+// แปลงข้อความ (markdown เบา ๆ) → sections ของเอกสาร
+function asstTextToSections(text){
+  const lines=mkdClean(text).split('\n');
+  const secs=[]; let cur=null, head='';
+  const flush=()=>{ if(cur&&((cur.text&&cur.text.trim())||(cur.items&&cur.items.length)||(cur.rows&&cur.rows.length))){ secs.push(cur); } cur=null; };
+  const start=(type)=>{ flush(); cur={ heading:head, type, text:'', items:[], columns:[], rows:[], lines:3, note:'' }; head=''; };
+  for(let i=0;i<lines.length;i++){
+    const raw=lines[i], ln=raw.trim();
+    if(!ln){ if(cur&&cur.type==='paragraph'&&cur.text) cur.text+='\n'; continue; }
+    if(/^([-–—*_=]\s*){3,}$/.test(ln)) continue;                                  // เส้นคั่น
+    let m=ln.match(/^#{1,6}\s*(.+?)\s*#*$/);                                       // # หัวข้อ
+    if(!m){ const b=ln.match(/^\*\*(.+?)\*\*\s*:?$/); if(b) m=[null,b[1]]; }       // **หัวข้อ**
+    if(!m){ const v=ln.match(/^((?:วาระที่|หัวข้อที่|ส่วนที่|ตอนที่|บทที่)\s*\d+[.):]?\s*.*)$/); if(v&&v[1].length<=140) m=[null,v[1]]; }
+    if(m){ flush(); head=mkdStrip(m[1]).replace(/:$/,''); continue; }
+    if(/^\|.*\|$/.test(ln)){                                                       // ตาราง markdown
+      const cells=r=>r.replace(/^\||\|$/g,'').split('|').map(x=>mkdStrip(x));
+      if(!cur||cur.type!=='table'){ start('table'); cur.columns=cells(ln).slice(0,8); continue; }
+      if(/^[\s|:\-]+$/.test(ln)) continue;
+      cur.rows.push(cells(ln).slice(0,8)); continue;
+    }
+    const bu=ln.match(/^[-*•·]\s+(.+)$/);
+    if(bu){ if(!cur||cur.type!=='bullets') start('bullets'); cur.items.push(mkdStrip(bu[1])); continue; }
+    const nu=ln.match(/^(\d+)[.)]\s+(.+)$/);
+    if(nu){ if(!cur||cur.type!=='numbered') start('numbered'); cur.items.push(mkdStrip(nu[2])); continue; }
+    if(!cur||cur.type!=='paragraph') start('paragraph');
+    cur.text+=(cur.text?'\n':'')+mkdStrip(ln);
+  }
+  flush();
+  if(head) secs.push({ heading:head, type:'paragraph', text:'', items:[], columns:[], rows:[], lines:3, note:'' });
+  return secs.slice(0,60);
+}
+function asstMkAckRows(branchId, blankN){
+  const cols=['ลำดับ','ชื่อ–สกุล','รหัสพนักงาน','ลายเซ็น','วันที่'];
+  let rows=[];
+  if(blankN>0) rows=Array.from({length:blankN},(_v,i)=>[String(i+1),'','','','']);
+  else{
+    const list=(DATA.rows||[]).filter(e=>e.active!==false && String(e.branch_id||'')===String(branchId))
+      .sort((a,b)=>String(a.emp_id).localeCompare(String(b.emp_id)));
+    rows=list.map((e,i)=>[String(i+1),String(e.name||e.nickname||''),String(e.emp_id||''),'','']);
+  }
+  return { heading:'ผู้รับทราบ (ลงชื่อรับทราบทุกคน)', type:'table', text:'', items:[], columns:cols, rows, lines:3, rowh:34,
+    note:'ลงชื่อรับทราบเท่านั้น ไม่ได้แปลว่าเห็นด้วยหรือไม่เห็นด้วย · ผู้ที่ไม่ได้เข้าประชุมให้อ่านเอกสารแล้วลงวันที่ตามวันที่อ่านจริง' };
+}
+function openAsstMkDoc(idx){
+  const m=ASST_MSGS[idx]; if(!m||!m.text){ toast('err','ไม่มีเนื้อหาให้ทำเอกสาร'); return; }
+  const secs=asstTextToSections(m.text);
+  if(!secs.length){ toast('err','อ่านเนื้อหาไม่ออก ลองคัดลอกไปวางเองนะครับ'); return; }
+  const firstHead=(secs.find(x=>x.heading)||{}).heading||'';
+  const brOpts=['<option value="">— ไม่ระบุสาขา —</option>'].concat((DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(MGR_MODE&&String(b.branch_id)===String(MGR_BRANCH)?' selected':'')+'>'+esc(b.name)+'</option>')).join('');
+  const ov=document.createElement('div'); ov.className='overlay show'; ov.id='asstMkDocOv';
+  ov.innerHTML='<div class="modal" style="max-width:460px">'
+    +'<div class="modal-h"><h2 style="font-size:16px">ทำเป็นเอกสาร PDF</h2><button class="close" id="mkdX">×</button></div>'
+    +'<div class="modal-b">'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ใช้เนื้อหาที่นิดาเขียนไว้ในข้อความนี้ทั้งหมด ('+secs.length+' ส่วน) — จัดเป็นเอกสาร A4 ให้ดู/พิมพ์/บันทึกเป็น PDF</div>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">ชื่อเอกสาร<input id="mkd_title" type="text" value="'+esc(firstHead||'บันทึกข้อความ')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">คำอธิบายใต้ชื่อ (เว้นได้)<input id="mkd_sub" type="text" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">สาขา (หัวเอกสาร/รายชื่อผู้รับทราบ)<select id="mkd_br" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'+brOpts+'</select></label>'
+      +'<label style="display:block;font-size:13px;margin-bottom:9px">ตารางเซ็นรับทราบท้ายเอกสาร<select id="mkd_ack" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'
+        +'<option value="">ไม่ใส่</option><option value="auto">ใส่ — ดึงรายชื่อพนักงานของสาขานี้</option><option value="12">ใส่ — เว้นแถวว่าง 12 แถว</option><option value="20">ใส่ — เว้นแถวว่าง 20 แถว</option></select></label>'
+      +'<label style="display:flex;gap:7px;align-items:center;font-size:13px"><input id="mkd_sign" type="checkbox" checked> มีช่องลงชื่อท้ายเอกสาร (ผู้บันทึก · ผู้จัดการสาขา)</label>'
+    +'</div>'
+    +'<div class="modal-f"><button class="btn btn-sec" id="mkd_view">ดู/พิมพ์</button><button class="btn btn-pri" id="mkd_pdf">บันทึกเป็น PDF</button></div></div>';
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  ov.querySelector('#mkdX').onclick=close;
+  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+  const build=()=>{
+    const br=ov.querySelector('#mkd_br').value||'';
+    const ack=ov.querySelector('#mkd_ack').value||'';
+    const out=secs.map(x=>Object.assign({},x));
+    if(ack){
+      if(ack==='auto'&&!br){ toast('err','เลือกสาขาก่อน ถึงจะดึงรายชื่อได้'); return null; }
+      const sec=asstMkAckRows(br, ack==='auto'?0:Number(ack)||12);
+      if(ack==='auto'&&!sec.rows.length){ toast('err','ไม่พบพนักงานของสาขานี้ — เลือกแบบเว้นแถวว่างแทน'); return null; }
+      out.push(sec);
+    }
+    const meta=[{label:'วันที่',value:new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})}];
+    if(br) meta.push({label:'สาขา',value:branchName(br)});
+    return { doc:true, title:ov.querySelector('#mkd_title').value.trim()||'บันทึกข้อความ',
+      subtitle:ov.querySelector('#mkd_sub').value.trim(), meta, sections:out,
+      signatures:ov.querySelector('#mkd_sign').checked?['ผู้บันทึก','ผู้จัดการสาขา']:[],
+      note:'', company:MKD_CO_BY_BRANCH[br]||'' };
+  };
+  ov.querySelector('#mkd_view').onclick=()=>{ const sp=build(); if(!sp) return; close(); asstViewForm(sp); };
+  ov.querySelector('#mkd_pdf').onclick=async()=>{ const sp=build(); if(!sp) return; close(); await asstDlForm(sp); };
+}
 // สร้าง+ดาวน์โหลดสลิป PDF โดยไม่ต้องเปิดหน้าเงินเดือน (โหลดรอบเอง → plMakePdf)
 async function asstDlSlip(empId, which){
   toast('ok','กำลังสร้างสลิป…');
@@ -13147,7 +13319,7 @@ function asstRender(){
     const _emptyIco=cardsHtml?'<svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> รายการงาน':(imgs.length?'<svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รูปงาน':' ');
     const _bodyHtml=(txt&&txt.length)?(me?esc(txt):asstMd(txt)):_emptyIco;
     html+='<div style="align-self:'+(me?'flex-end':'flex-start')+';max-width:87%;'+(me?'background:linear-gradient(135deg,#333a4d,#2b3242);color:#fff;border-bottom-right-radius:5px':'background:var(--glass);border:1px solid var(--glass-bd);color:var(--txt);border-bottom-left-radius:5px;box-shadow:0 4px 14px rgba(120,128,140,.08)')+';padding:11px 14px;border-radius:16px;font-size:14px;white-space:pre-wrap;line-height:1.58;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)">'+_bodyHtml+'</div>';
-    if(!me && txt && txt.trim().length>8 && !/^(กำลัง|ยกเลิก)/.test(txt.trim())){ html+='<div style="align-self:flex-start;margin-top:-3px;margin-bottom:2px"><button class="btn btn-sec btn-sm" data-copy="'+idx+'" style="padding:3px 9px;font-size:12px"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg> คัดลอก</button></div>'; }
+    if(!me && txt && txt.trim().length>8 && !/^(กำลัง|ยกเลิก)/.test(txt.trim())){ html+='<div style="align-self:flex-start;margin-top:-3px;margin-bottom:2px"><button class="btn btn-sec btn-sm" data-copy="'+idx+'" style="padding:3px 9px;font-size:12px"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg> คัดลอก</button>'+((txt.trim().length>=200)?(' <button class="btn btn-sec btn-sm" data-mkdoc="'+idx+'" style="padding:3px 9px;font-size:12px"><svg class="ei" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h4"/><path d="M9 12h6M9 16h6"/></svg> ทำเป็นเอกสาร PDF</button>'):'')+'</div>'; }
     if(cardsHtml) html+=cardsHtml;
     if(imgs.length){ html+='<div style="align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap;max-width:88%">'+imgs.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" style="width:92px;height:92px;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">').join('')+'</div>'; }
     if(m.pending){ if(m.pending.action==='create_mgr_task'){ html+=asstMtaskCard(idx,m.pending); } else { html+='<div style="align-self:flex-start;display:flex;gap:8px"><button class="btn btn-pri btn-sm" data-cfm="'+idx+'"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ยืนยัน</button><button class="btn btn-sec btn-sm" data-ccl="'+idx+'">ยกเลิก</button></div>'; } }
@@ -13158,6 +13330,7 @@ function asstRender(){
   box.querySelectorAll('[data-mtcreate]').forEach(b=>b.onclick=()=>asstCreateMgrTask(+b.dataset.mtcreate));
   box.querySelectorAll('[data-mttoggle]').forEach(b=>b.onchange=()=>{ const t=document.getElementById(b.dataset.mttoggle); if(t) t.style.display=b.checked?'':'none'; });
   box.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>asstCopy(+b.dataset.copy,b));
+  box.querySelectorAll('[data-mkdoc]').forEach(b=>b.onclick=()=>openAsstMkDoc(+b.dataset.mkdoc));
   box.scrollTop=box.scrollHeight;
 }
 // คัดลอกข้อความร่างของนิดา (ตัด URL รูปที่ซ่อนไว้ออก)
