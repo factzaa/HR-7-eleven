@@ -13020,12 +13020,29 @@ function mkdClean(t){
     .replace(/https?:\/\/[^\s"')]+\.(?:png|jpe?g|webp)(?:\?[^\s"')]*)?/gi,'')
     .replace(/\r/g,'').replace(/[ \t]+$/gm,'');
 }
+// ★ 23 ก.ย. 69 — ตัดคำพูดคุยของนิดาออก ให้เหลือ "ภาษาเอกสาร"
+const MKD_CHAT=[
+  /^คุณผู้จัดการ/, /^สวัสดี/, /^(ยินดี|ได้เลย|รับทราบ|แน่นอน|เรียบร้อย)/, /^น้องนิดา/, /^นิดา(ได้|ขอ|จะ|ยัง)/,
+  /^(ตามที่|จากที่)(เรา)?(ได้)?(คุย|พูดคุย)/, /(มีอะไร|มีส่วนไหน|ต้องการให้).{0,40}(ไหม|มั้ย)/, /^หวังว่า/, /^ขอบคุณ/,
+  /(แจ้ง|บอก|พิมพ์)ได้เลย/, /(กดปุ่ม|ดาวน์โหลด|การ์ด).{0,20}(ด้านล่าง|ด้านนี้|นี้)/, /^\[?ระบบ\]?/, /^⚠/, /^หากต้องการ/,
+];
+function mkdFormal(t){
+  return String(t||'').split('\n').filter(ln=>{
+    const x=ln.trim(); if(!x) return true;
+    const core=x.replace(/^[-*•·]\s+/,'').replace(/^\d+[.)]\s+/,'').replace(/\*\*/g,'').replace(/^#+\s*/,'');
+    return !MKD_CHAT.some(re=>re.test(core));
+  }).map(ln=>ln
+    .replace(/\s*(นะ)?(ค่ะ|คะ|ครับ|จ้า|จ้ะ)\s*[.。]?\s*$/,'')      // ลงท้ายสุภาพท้ายบรรทัด
+    .replace(/\s*(นะ)?(ค่ะ|คะ|ครับ)\s*([,·:])/g,'$3')
+    .replace(/\*\*\s*\*\*/g,'')
+  ).join('\n');
+}
 function mkdStrip(t){ return String(t||'').replace(/\*\*(.+?)\*\*/g,'$1').replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$)/g,'$1$2').replace(/`([^`]+)`/g,'$1').trim(); }
 // แปลงข้อความ (markdown เบา ๆ) → เอกสาร — ยึด "ให้เหมือนที่นิดาพิมพ์ในแชท" เป็นหลัก
 //   · บรรทัดหัวเอกสาร (เรียน/เรื่อง/ถึง/วันที่/ที่) → ไปอยู่หัวเอกสาร ไม่ใช่หัวข้อในเนื้อหา
 //   · รายการเลขข้อ เก็บเลขเดิมของนิดาไว้ (ไม่ให้ระบบไล่เลขใหม่แล้วเพี้ยน/เริ่ม 1 ซ้ำ)
-function asstTextToDoc(text){
-  const lines=mkdClean(text).split('\n');
+function asstTextToDoc(text, formal){
+  const lines=(formal===false?mkdClean(text):mkdFormal(mkdClean(text))).split('\n');
   const meta=[], secs=[]; let cur=null, head='', top=true, guess='', isMeet=false;
   const flush=()=>{ if(cur&&((cur.text&&cur.text.trim())||(cur.items&&cur.items.length)||(cur.rows&&cur.rows.length))) secs.push(cur); cur=null; };
   const start=type=>{ flush(); cur={ heading:head, type, text:'', items:[], columns:[], rows:[], lines:3, note:'' }; head=''; };
@@ -13100,21 +13117,22 @@ function asstMkAckRows(branchId, blankN){
 }
 function openAsstMkDoc(idx){
   const m=ASST_MSGS[idx]; if(!m||!m.text){ toast('err','ไม่มีเนื้อหาให้ทำเอกสาร'); return; }
-  const parsed=asstTextToDoc(m.text);
-  const secs=parsed.sections;
-  if(!secs.length){ toast('err','อ่านเนื้อหาไม่ออก ลองคัดลอกไปวางเองนะครับ'); return; }
+  const raw=m.text;
+  const parsed=asstTextToDoc(raw, true);
+  if(!parsed.sections.length){ toast('err','อ่านเนื้อหาไม่ออก ลองคัดลอกไปวางเองนะครับ'); return; }
   const brOpts=['<option value="">— ไม่ระบุสาขา —</option>'].concat((DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'"'+(MGR_MODE&&String(b.branch_id)===String(MGR_BRANCH)?' selected':'')+'>'+esc(b.name)+'</option>')).join('');
   const ov=document.createElement('div'); ov.className='overlay show'; ov.id='asstMkDocOv';
   ov.style.zIndex='1300';   // ★ ต้องสูงกว่าหน้าต่างแชทนิดา (#asstPop = 900) ไม่งั้นกดแล้วเหมือนไม่มีอะไรเกิดขึ้น
   ov.innerHTML='<div class="modal" style="max-width:460px">'
     +'<div class="modal-h"><h2 style="font-size:16px">ทำเป็นเอกสาร PDF</h2><button class="close" id="mkdX">×</button></div>'
     +'<div class="modal-b">'
-      +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ใช้เนื้อหาที่นิดาเขียนไว้ในข้อความนี้ทั้งหมด ('+secs.length+' ส่วน) — จัดเป็นเอกสาร A4 ให้ดู/พิมพ์/บันทึกเป็น PDF</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">ใช้เนื้อหาที่นิดาเขียนไว้ในข้อความนี้ทั้งหมด ('+parsed.sections.length+' ส่วน) — จัดเป็นเอกสาร A4 ให้ดู/พิมพ์/บันทึกเป็น PDF</div>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">ชื่อเอกสาร<input id="mkd_title" type="text" value="'+esc(parsed.title||'บันทึกข้อความ')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">คำอธิบายใต้ชื่อ (เว้นได้)<input id="mkd_sub" type="text" value="'+esc(parsed.subtitle||'')+'" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px"></label>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">สาขา (หัวเอกสาร/รายชื่อผู้รับทราบ)<select id="mkd_br" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'+brOpts+'</select></label>'
       +'<label style="display:block;font-size:13px;margin-bottom:9px">ตารางเซ็นรับทราบท้ายเอกสาร<select id="mkd_ack" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;margin-top:3px">'
         +'<option value="">ไม่ใส่</option><option value="auto">ใส่ — ดึงรายชื่อพนักงานของสาขานี้</option><option value="12">ใส่ — เว้นแถวว่าง 12 แถว</option><option value="20">ใส่ — เว้นแถวว่าง 20 แถว</option></select></label>'
+      +'<label style="display:flex;gap:7px;align-items:center;font-size:13px;margin-bottom:7px"><input id="mkd_fml" type="checkbox" checked> ปรับเป็นภาษาเอกสาร — ตัดคำพูดคุย/คำลงท้าย ค่ะ-ครับ ออก</label>'
       +'<label style="display:flex;gap:7px;align-items:center;font-size:13px"><input id="mkd_sign" type="checkbox" checked> มีช่องลงชื่อท้ายเอกสาร (ผู้บันทึก · ผู้จัดการสาขา)</label>'
     +'</div>'
     +'<div class="modal-f"><button class="btn btn-sec" id="mkd_view">ดู/พิมพ์</button><button class="btn btn-pri" id="mkd_pdf">บันทึกเป็น PDF</button></div></div>';
@@ -13126,7 +13144,8 @@ function openAsstMkDoc(idx){
     const br=ov.querySelector('#mkd_br').value||'';
     const ack=ov.querySelector('#mkd_ack').value||'';
     const title=ov.querySelector('#mkd_title').value.trim()||'บันทึกข้อความ';
-    const out=secs.map(x=>Object.assign({},x));
+    const pp=asstTextToDoc(raw, ov.querySelector('#mkd_fml').checked);
+    const out=pp.sections.map(x=>Object.assign({},x));
     if(out.length && out[0].heading && out[0].heading===title) out[0].heading='';   // กันหัวข้อซ้ำกับชื่อเอกสาร
     if(ack){
       if(ack==='auto'&&!br){ toast('err','เลือกสาขาก่อน ถึงจะดึงรายชื่อได้'); return null; }
@@ -13134,7 +13153,7 @@ function openAsstMkDoc(idx){
       if(ack==='auto'&&!sec.rows.length){ toast('err','ไม่พบพนักงานของสาขานี้ — เลือกแบบเว้นแถวว่างแทน'); return null; }
       out.push(sec);
     }
-    const meta=(parsed.meta||[]).slice();
+    const meta=(pp.meta||[]).slice();
     if(!meta.some(x=>x.label==='วันที่')) meta.unshift({label:'วันที่',value:new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})});
     if(br&&!meta.some(x=>x.label==='สาขา')) meta.push({label:'สาขา',value:branchName(br)});
     return { doc:true, title, subtitle:ov.querySelector('#mkd_sub').value.trim(), meta, sections:out,
