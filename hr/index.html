@@ -5292,12 +5292,50 @@ function meCycleBar(){
     +(notes.length?('<ul style="margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted);line-height:1.6">'+notes.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>'):'')
     +'</div>';
 }
-function meMiniRow(d){
-  const c=(d.score==null)?'#94a3b8':(d.score>=90?'#16a34a':d.score>=75?'#22c55e':d.score>=60?'#f59e0b':'#ef4444');
-  return '<div style="display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line2)">'
-    +'<div style="min-width:0"><div style="font-size:12.5px'+(d.score==null?';color:#94a3b8':'')+'">'+esc(d.label)+'</div>'
+// ★ 23 ก.ย. 69 — สีของแต่ละหัวข้อใช้ "เกณฑ์ของหัวข้อนั้น" ไม่ใช่เกณฑ์กลาง
+//   เช่น ยอดขาย: ถึงเป้า 100% = เขียว · 90-99% = ส้ม · ต่ำกว่า 90% = แดง (เดิม 93% ยังขึ้นเขียวทั้งที่ไม่ถึงเป้า)
+function meScoreCol(d){
+  if(d.score==null) return '#94a3b8';
+  const good=(d.good!=null?Number(d.good):90), warn=(d.warn!=null?Number(d.warn):75);
+  if(d.score>=good) return '#16a34a';
+  if(d.score>=warn) return '#f59e0b';
+  return '#ef4444';
+}
+let ME_OPEN={};
+function meMiniRow(d,mid){
+  const c=meScoreCol(d);
+  const det=Array.isArray(d.detail)?d.detail:[];
+  const key=(mid||'')+'|'+d.key;
+  const open=!!ME_OPEN[key];
+  return '<div style="border-bottom:1px dashed var(--line2)">'
+    +'<div'+(det.length?(' data-merow="'+esc(key)+'"'):'')+' style="display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;padding:5px 0'+(det.length?';cursor:pointer':'')+'">'
+    +'<div style="min-width:0"><div style="font-size:12.5px'+(d.score==null?';color:#94a3b8':'')+'">'+esc(d.label)
+      +(det.length?(' <span style="font-size:10.5px;color:var(--muted)">'+(open?'▾':'▸')+' '+det.length+' รายการ</span>'):'')+'</div>'
     +'<div style="font-size:11px;color:var(--muted);line-height:1.45">'+esc(meRawText(d))+'</div></div>'
-    +'<div style="text-align:right;font-weight:700;font-size:13px;color:'+c+'">'+meFmtScore(d.score)+(d.score!=null?'%':'')+'</div></div>';
+    +'<div style="text-align:right;font-weight:700;font-size:13px;color:'+c+'">'+meFmtScore(d.score)+(d.score!=null?'%':'')+'</div></div>'
+    +(det.length&&open?('<div style="margin:0 0 7px;padding:7px 9px;background:var(--bg);border-radius:8px;font-size:11.5px;line-height:1.7">'
+        +'<div style="font-weight:700;color:var(--muted);margin-bottom:3px">'+esc(d.detail_label||'รายละเอียด')+'</div>'
+        +det.map(x=>'<div style="display:flex;gap:7px'+(x.mute?';color:#94a3b8':'')+'"><span class="mono" style="flex:none;width:74px">'+esc(meThDate(x.date))+'</span><span>'+esc(x.text||'')+'</span></div>').join('')
+        +'</div>'):'')
+    +'</div>';
+}
+// ★ 23 ก.ย. 69 — ธงเตือน "หัวใจของการประเมิน ผจก." = บริหารร้าน (QSSI) + ยอดขาย
+//   ถ้าสองตัวนี้ไม่ผ่าน ต้องเด่นชัด ไม่ให้ค่าเฉลี่ยรวมกลบไป
+function meFlagBox(m){
+  const cfg=(MEVAL_CFG&&MEVAL_CFG.thresholds)||{};
+  const qGood=cfg.qssi_good!=null?+cfg.qssi_good:85, qWarn=cfg.qssi_warn!=null?+cfg.qssi_warn:70;
+  const sGood=cfg.sales_good_pct!=null?+cfg.sales_good_pct:100, sWarn=cfg.sales_warn_pct!=null?+cfg.sales_warn_pct:90;
+  const q=(m.qssi||{}).value, sl=(m.sales||{});
+  const f=[];
+  if(q!=null&&q<qWarn) f.push({t:'QSSI '+q+'% ต่ำกว่าเกณฑ์ '+qWarn+'%',c:'#dc2626'});
+  else if(q!=null&&q<qGood) f.push({t:'QSSI '+q+'% ยังไม่ถึงเป้า '+qGood+'%',c:'#b45309'});
+  if(sl.pct!=null&&sl.pct<sWarn) f.push({t:'ยอดขาย '+sl.pct+'% ของเป้า'+(sl.gap_day!=null?(' · ขาดเฉลี่ยวันละ '+plB(Math.abs(sl.gap_day))+' บาท'):''),c:'#dc2626'});
+  else if(sl.pct!=null&&sl.pct<sGood) f.push({t:'ยอดขาย '+sl.pct+'% ยังไม่ถึงเป้า'+(sl.gap_day!=null?(' · ขาดเฉลี่ยวันละ '+plB(Math.abs(sl.gap_day))+' บาท'):''),c:'#b45309'});
+  if((sl.skipped||[]).length) f.push({t:'ข้อมูลเป้ายอดขาย '+sl.skipped.length+' วันใช้เทียบไม่ได้ (กดที่หัวข้อยอดขายเพื่อดู)',c:'#64748b'});
+  if(!f.length) return '';
+  return '<div style="margin-top:11px;display:flex;gap:6px;flex-wrap:wrap">'
+    +f.map(x=>'<span style="font-size:11.5px;font-weight:600;color:'+x.c+';background:'+(x.c==='#dc2626'?'#fef2f2':x.c==='#b45309'?'#fff7ed':'#f1f5f9')+';border:1px solid '+(x.c==='#dc2626'?'#fecaca':x.c==='#b45309'?'#fed7aa':'#e2e8f0')+';border-radius:8px;padding:4px 9px">'+esc(x.t)+'</span>').join('')
+    +'</div>';
 }
 function renderMgrEval(){
   const rows=(MEVAL&&MEVAL.managers)||[];
@@ -5309,10 +5347,11 @@ function renderMgrEval(){
     const qBox='<div style="display:flex;gap:12px;align-items:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:9px 12px;margin-top:11px;flex-wrap:wrap">'
       +'<div><div style="font-size:11.5px;color:var(--muted)">คะแนนตรวจร้าน QSSI</div><b style="font-size:22px;color:'+qColor+'">'+(q.value!=null?q.value:'—')+'</b></div>'
       +'<div style="font-size:11.5px;color:var(--muted);line-height:1.6">'+(q.date?('ตรวจล่าสุด '+esc(q.date)+(q.stale?' <span style="color:#b45309">(ก่อนรอบนี้)</span>':'')):'ยังไม่มีผลตรวจ')
-      +(q.history&&q.history.length>1?('<br>ย้อนหลัง: '+q.history.map(h=>esc(String(h.date).slice(5))+' = '+(h.result!=null?h.result:'—')).join(' → ')):'')+'</div></div>';
+      +(q.history&&q.history.length>1?('<br>ย้อนหลัง: '+q.history.map(h=>esc(String(h.date).slice(5))+' = '+(h.pct!=null?h.pct:'—')).join(' → ')):'')+'</div></div>';
     const sl=m.sales||{}, ws=m.waste||{};
     const line='<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:9px;padding-top:8px;border-top:1px dashed var(--line2)">'
-      +'<span>'+meLightDot(sl.pct==null?'none':(sl.pct>=100?'green':sl.pct>=90?'yellow':'red'))+' ยอดขาย '+(sl.pct!=null?(sl.pct+'%'):'—')+'</span>'
+      +'<span>'+meLightDot(sl.pct==null?'none':(sl.pct>=100?'green':sl.pct>=90?'yellow':'red'))+' ยอดขาย '+(sl.pct!=null?(sl.pct+'%'):'—')
+        +(sl.avg_sales_day!=null?(' · เฉลี่ย/วัน '+plB(sl.avg_sales_day)+' / เป้า '+plB(sl.avg_target_day)+' ('+(sl.gap_day>=0?'+':'')+plB(sl.gap_day)+')'):'')+'</span>'
       +'<span>'+meLightDot(ws.pct==null?'none':(ws.pct<=ws.max_pct?'green':ws.pct<=ws.max_pct*1.6?'yellow':'red'))+' ตัดจ่าย '+(ws.pct!=null?(ws.pct+'%'):'ยังไม่คีย์')+'</span>'
       +'<span>ตีกลับงานทีม '+(m.sent_back||0)+' ครั้ง · ตักเตือนเชิงรุก '+(m.proactive_disc||0)+' ครั้ง</span></div>';
     return '<div class="card" style="padding:14px;margin-bottom:10px">'
@@ -5321,10 +5360,10 @@ function renderMgrEval(){
         +'<div style="font-size:12.5px;color:var(--muted)">'+esc(m.branch_name)+' · ลูกน้อง '+m.team_size+' คน'+(m.new_hires?(' <span style="color:#c2410c">(ใหม่ '+m.new_hires+')</span>'):'')+'</div></div></div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">'
         +'<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12.5px;font-weight:600">A · งานของ ผจก. เอง</span><b style="font-size:15px">'+meFmtScore(m.score_a)+'</b></div>'+meBar(m.score_a,m.grade_a_color)+'<div style="margin-top:4px">'+meGrade(m.grade_a,m.grade_a_color)+'</div>'
-          +'<div style="margin-top:6px">'+(m.a_breakdown||[]).map(meMiniRow).join('')+'</div></div>'
+          +'<div style="margin-top:6px">'+(m.a_breakdown||[]).map(x=>meMiniRow(x,m.emp_id)).join('')+'</div></div>'
         +'<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12.5px;font-weight:600">B · ผลของร้าน/ทีม</span><b style="font-size:15px">'+meFmtScore(m.score_b)+'</b></div>'+meBar(m.score_b,m.grade_b_color)+'<div style="margin-top:4px">'+meGrade(m.grade_b,m.grade_b_color)+'</div>'
-          +'<div style="margin-top:6px">'+(m.b_breakdown||[]).map(meMiniRow).join('')+'</div></div>'
-      +'</div>'+qBox+line
+          +'<div style="margin-top:6px">'+(m.b_breakdown||[]).map(x=>meMiniRow(x,m.emp_id)).join('')+'</div></div>'
+      +'</div>'+meFlagBox(m)+qBox+line
       +'<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap"><button class="btn btn-sec btn-sm" data-medet="'+esc(m.emp_id)+'">รายละเอียด</button>'
       +'<button class="btn btn-sec btn-sm" data-medoc="'+esc(m.emp_id)+'"><svg class="ei" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h4"/><path d="M9 12h6M9 16h6"/></svg> เอกสารประเมิน</button>'
       +'<button class="btn btn-sec btn-sm" data-mebiz="'+esc(m.branch_id)+'">คีย์ตัดจ่าย</button></div>'
@@ -5332,6 +5371,8 @@ function renderMgrEval(){
   };
   $('me_body').innerHTML=meCycleBar()+rows.map(card).join('');
   $('me_body').querySelectorAll('[data-medet]').forEach(b=>b.onclick=()=>openMeDetail(b.dataset.medet));
+  // ★ กดที่หัวข้อเพื่อกาง "หลักฐาน" ของหัวข้อนั้น (ขาดผลัดไหน วันไหน · ยอดขายรายวัน · ใครสาย ฯลฯ)
+  $('me_body').querySelectorAll('[data-merow]').forEach(b=>b.onclick=()=>{ const k=b.dataset.merow; ME_OPEN[k]=!ME_OPEN[k]; renderMgrEval(); });
   $('me_body').querySelectorAll('[data-medoc]').forEach(b=>b.onclick=()=>meEvalDocPrint(b.dataset.medoc));
   $('me_body').querySelectorAll('[data-mebiz]').forEach(b=>b.onclick=()=>openMeBiz(b.dataset.mebiz));
 }
@@ -5466,7 +5507,11 @@ function meEvalDocHtml(m){
   const weak=scored.slice().sort((a,b)=>a.score-b.score).filter(x=>x.score<70).slice(0,3);
   const overall=(m.score_a!=null&&m.score_b!=null)?Math.round((m.score_a+m.score_b)/2*10)/10:(m.score_a!=null?m.score_a:m.score_b);
   const lines=(n)=>Array.from({length:n}).map(()=>'<div style="border-bottom:1px dotted #999;height:19px"></div>').join('');
-  const qHist=(q.history||[]).map(h=>meThDate(h.date)+' = '+(h.result!=null?h.result+'%':'—')).join('  →  ');
+  const qHist=(q.history||[]).map(h=>meThDate(h.date)+' = '+(h.pct!=null?h.pct+'%':'—')).join('  →  ');
+  // ★ 23 ก.ย. 69 — หลักฐานรายหัวข้อ ใส่ลงเอกสารด้วย เพื่อใช้เป็นข้อเท็จจริงตอนคุยกับ ผจก.
+  const evid=all.filter(x=>Array.isArray(x.detail)&&x.detail.length&&x.score!=null&&x.score<100)
+    .map(x=>'<tr><td style="vertical-align:top">'+esc(x.detail_label||x.label)+'</td><td style="font-size:11px">'
+      +x.detail.slice(0,25).map(d=>esc((d.date?meThDate(d.date)+' — ':'')+(d.text||''))).join('<br>')+'</td></tr>').join('');
   return '<div class="es-doc" style="display:block">'
     +'<div style="text-align:center;margin-bottom:12px"><div style="font-size:19px;font-weight:700">แบบประเมินผลการปฏิบัติงาน ผู้จัดการร้าน</div>'
     +'<div style="font-size:13px;color:#555">รอบประเมิน '+meThDate(rg.start)+' – '+meThDate(rg.end)+' · ออกเอกสารวันที่ '+esc(gen)+'</div></div>'
@@ -5486,9 +5531,15 @@ function meEvalDocHtml(m){
     +'<h3>ข้อมูลประกอบ</h3>'
     +'<table><tbody>'
       +'<tr><td style="width:150px">ผลตรวจร้าน QSSI</td><td>'+(q.value!=null?(q.value+'% (ตรวจ '+meThDate(q.date)+')'+(q.stale?' — เป็นผลตรวจก่อนรอบนี้':'')):'ยังไม่มีผลตรวจ')+(qHist?('<br><span style="font-size:11px;color:#555">ย้อนหลัง: '+qHist+'</span>'):'')+'</td></tr>'
-      +'<tr><td>ยอดขายเทียบเป้า</td><td>'+(sl.pct!=null?(Number(sl.actual).toLocaleString('th-TH')+' / เป้า '+Number(sl.target).toLocaleString('th-TH')+' บาท = '+sl.pct+'%'):'ยังไม่มีข้อมูลยอดขาย')+'</td></tr>'
+      +'<tr><td>ยอดขายเทียบเป้า</td><td>'+(sl.pct!=null?(
+            'เฉลี่ยวันละ '+Number(sl.avg_sales_day||0).toLocaleString('th-TH')+' บาท · เป้าเฉลี่ยวันละ '+Number(sl.avg_target_day||0).toLocaleString('th-TH')+' บาท'
+            +' ('+((sl.gap_day||0)>=0?'สูงกว่าเป้า ':'ต่ำกว่าเป้า ')+Number(Math.abs(sl.gap_day||0)).toLocaleString('th-TH')+' บาท/วัน)'
+            +'<br>รวมทั้งรอบ '+Number(sl.actual).toLocaleString('th-TH')+' / เป้า '+Number(sl.target).toLocaleString('th-TH')+' บาท = '+sl.pct+'% (นับ '+(sl.days||0)+' วัน)'
+            +((sl.skipped||[]).length?('<br><span style="font-size:11px;color:#555">ไม่นับ '+sl.skipped.length+' วัน: '+sl.skipped.map(x=>meThDate(x.date)+' ('+x.why+')').join(', ')+'</span>'):'')
+          ):'ยังไม่มีข้อมูลยอดขาย')+'</td></tr>'
       +'<tr><td>ตัดจ่าย</td><td>'+(ws.pct!=null?(Number(ws.value||0).toLocaleString('th-TH')+' บาท = '+ws.pct+'% (เพดาน '+ws.max_pct+'%)'):'ยังไม่ได้คีย์ยอดตัดจ่ายของรอบนี้')+'</td></tr>'
       +'<tr><td>การกำกับทีม</td><td>ตีกลับงานทีม '+(m.sent_back||0)+' ครั้ง · จัดการวินัยเชิงรุก '+(m.proactive_disc||0)+' ครั้ง</td></tr>'
+      +evid
       +(m.missing&&m.missing.length?('<tr><td>หัวข้อที่ไม่ถูกนำมาคิด</td><td style="font-size:11.5px">'+m.missing.map(esc).join(' · ')+'<br>(น้ำหนักถูกเกลี่ยไปให้หัวข้อที่เหลือ ไม่ได้คิดเป็น 0 คะแนน)</td></tr>'):'')
     +'</tbody></table>'
     +'<h3>จุดเด่น</h3><div style="font-size:12.5px;margin-bottom:4px">'+(strong.length?strong.map(x=>'• '+esc(x.label)+' — '+meFmtScore(x.score)+'% ('+esc(meRawText(x))+')').join('<br>'):'—')+'</div>'+lines(2)
