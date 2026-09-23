@@ -1194,6 +1194,9 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 </div>
 <style>
 .es-report{background:var(--card);color:var(--txt);max-width:820px;margin:8px auto;padding:10px 6px;font-size:13px}
+.an-axes{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+@media(max-width:900px){.an-axes{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.an-axes{grid-template-columns:1fr}}
 .es-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e2430;padding-bottom:8px;margin-bottom:10px}
 .es-title{font-size:18px;font-weight:700;color:#1e2430}
 .es-sub{font-size:12px;color:#555;margin-top:2px}
@@ -13967,11 +13970,12 @@ function renderEmpAnalysis(r){
       +'<div style="font-size:31px;font-weight:700;line-height:1;color:'+(sc.band_color||'#475569')+'">'+(sc.score!=null?sc.score:'—')+'<span style="font-size:14px;color:var(--muted);font-weight:400">/'+(sc.start!=null?sc.start:100)+'</span></div>'
       +(sc.band_label?('<div style="margin-top:5px"><span class="pill" style="background:'+(sc.band_color||'#475569')+'22;color:'+(sc.band_color||'#475569')+'">'+esc(sc.band_label)+'</span></div>'):'')
     +'</div></div>';
-  if(hl.text) h+='<div style="margin-top:12px;padding:11px 13px;background:'+toneBg+';border:1px solid '+toneBd+';border-radius:11px;font-size:13px;line-height:1.65;color:'+toneTx+'">'+esc(hl.text)+'</div>';
+  if(hl.text) h+='<div style="margin-top:12px;padding:11px 13px;background:'+toneBg+';border:1px solid '+toneBd+';border-radius:11px;font-size:13px;line-height:1.65;color:'+toneTx+'">'+esc(hl.text)
+    +(an.thin&&$('es_mode')&&$('es_mode').value!=='previous'?'<div style="margin-top:9px"><button class="btn btn-pri btn-sm" id="an_prev">ดูรอบก่อนหน้าแทน</button></div>':'')+'</div>';
   h+='</div>';
   // 6 ด้าน
   h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">วิเคราะห์ 6 ด้าน — เก่งด้านไหน พังด้านไหน</h3>'
-    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px">'+(an.axes||[]).map(anAxCard).join('')+'</div>'
+    +'<div class="an-axes">'+(an.axes||[]).map(anAxCard).join('')+'</div>'
     +'<div style="font-size:11.5px;color:var(--muted);margin-top:9px">ด้านที่ยังไม่มีข้อมูลจะไม่ถูกคิดเป็น 0 — ระบบจะไม่เอามาเฉลี่ยรวม</div></div>';
   // เทียบเพื่อน
   const cp=an.compare||{};
@@ -14031,7 +14035,8 @@ function renderEmpSum(r){
   const e=r.emp, a=r.attendance, d=r.discipline, t=r.tasks, sp=r.special, det=r.details;
   const g=new Date(r.range.generated); const genTxt=g.toLocaleDateString('th-TH')+' '+g.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
   let h=renderEmpAnalysis(r);
-  h+='<div class="es-report">';
+  h+='<div class="no-print" style="margin:4px 0 12px"><button class="btn btn-sec btn-sm" id="es_toggle">▸ ดูเอกสาร A4 (ฉบับพิมพ์/เซ็นรับทราบ)</button></div>';
+  h+='<div id="es_docwrap" class="es-docwrap" style="display:none"><div class="es-report">';
   h+='<div class="es-head"><div><div class="es-title">สรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
     +'<div class="es-sub">ช่วง: '+(beDate(r.range.start)+' – '+beDate(r.range.end))+'</div></div><div class="es-org">HR 7-Eleven</div></div>';
   if(e.photo_url){
@@ -14149,7 +14154,7 @@ function renderEmpSum(r){
       +det.sent_back_tasks.map(x=>'<tr><td>'+esDate(x.date)+'</td><td>'+esc(x.shift)+'</td><td>'+esc(x.title)+'</td><td style="text-align:center">'+x.count+'</td><td>'+(x.status==='approved'?'ผ่านแล้ว':x.status==='sent_back'?'ตีกลับ':esc(x.status))+'</td><td>'+esc(x.note||'-')+'</td></tr>').join('')+'</table></div>';
   } else h+='<div class="es-detail"><b>งานที่ถูกตีกลับ:</b> — ไม่มี —</div>';
   h+='<div class="es-foot">เอกสารนี้สร้างจากระบบ HR 7-Eleven · '+esc(genTxt)+' &nbsp;&nbsp; ลงชื่อผู้ประเมิน __________________ / ผู้รับทราบ __________________</div>';
-  h+='</div>';
+  h+='</div></div>';   // ปิด .es-report และ #es_docwrap
 
   // ================= เวอร์ชันเอกสารทางการ (แสดงเฉพาะตอนสั่งพิมพ์) =================
   h+=buildEmpSumDoc(r, genTxt);
@@ -14162,6 +14167,11 @@ function renderEmpSum(r){
   h+='<div class="no-print" id="es_ai_box" style="max-width:820px;margin:12px auto 0"></div>';
 
   $('es_body').innerHTML=h;
+  // ★ 24 ก.ย. 69 — เอกสารสรุปแบบเดิมพับเก็บไว้ กดดูได้ (การพิมพ์ใช้เอกสารทางการอีกชุด ไม่กระทบ)
+  $('es_toggle') && ($('es_toggle').onclick=()=>{ const w=$('es_docwrap'); const open=w.style.display!=='none';
+    w.style.display=open?'none':''; $('es_toggle').textContent=(open?'▸ ดูเอกสาร A4 (ฉบับพิมพ์/เซ็นรับทราบ)':'▾ ซ่อนเอกสาร A4'); });
+  // ★ ข้อมูลรอบนี้น้อย → กดข้ามไปรอบก่อนหน้าได้ทันที
+  $('an_prev') && ($('an_prev').onclick=()=>{ const m=$('es_mode'); if(!m) return; m.value='previous'; m.dispatchEvent(new Event('change')); genEmpSum(); });
   $('es_ai') && ($('es_ai').onclick=esAskNida);
   $('es_bonus') && ($('es_bonus').onclick=()=>openBonusModal(r.emp.emp_id, r.emp.name, null, ''));
 }
