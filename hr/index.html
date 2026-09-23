@@ -1245,6 +1245,8 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   body.print-es *{visibility:hidden!important}
   body.print-es #es_body, body.print-es #es_body *{visibility:visible!important}
   body.print-es #es_body{position:absolute;left:0;top:0;width:100%}
+  /* ★ 23 ก.ย. 69 — บทวิเคราะห์บนจอ ไม่ต้องพิมพ์ลงเอกสาร (เอกสารใช้ .es-report เท่านั้น) */
+  body.print-es #es_body > .card, body.print-es #es_body > .card *{visibility:hidden!important;display:none!important}
 
   /* ★ พิมพ์เอกสารในหน้าต่างพรีวิว (ใบเตือน / บันทึกเสนอพิจารณา) — ใส่ class print-doc ที่ body
      เดิมพิมพ์ออกมาเป็นกระดาษเปล่า เพราะ .overlay เป็น position:fixed + .modal-b มี max-height/overflow
@@ -13902,10 +13904,134 @@ async function genEmpSum(){
   ES_DATA=r; renderEmpSum(r); $('es_print').style.display='';
 }
 function esStat(label,val,sub){ return '<div class="es-stat"><div class="es-stat-v">'+val+'</div><div class="es-stat-l">'+label+'</div>'+(sub?('<div class="es-stat-s">'+sub+'</div>'):'')+'</div>'; }
+// ============================================================
+// ★ 23 ก.ย. 69 — บทวิเคราะห์รายบุคคล (ส่วนบนของหน้า · ไม่พิมพ์ลงเอกสาร)
+// ============================================================
+function anCol(v,good,warn){ if(v==null) return '#94a3b8'; if(v>=(good!=null?good:90)) return '#16a34a'; if(v>=(warn!=null?warn:75)) return '#d97706'; return '#dc2626'; }
+function anFmt(v){ return v==null?'—':(Math.round(v*10)/10); }
+function anAxCard(ax){
+  const c=anCol(ax.score,ax.good,ax.warn), nd=(ax.score==null);
+  return '<div style="border:1px solid var(--line2);border-radius:12px;padding:11px 12px;background:'+(nd?'#f8f9f9':'#fcfdfc')+(nd?';border-style:dashed':'')+'">'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'
+      +'<span style="font-size:12.5px;font-weight:600'+(nd?';color:var(--muted)':'')+'">'+esc(ax.label)+'</span>'
+      +'<span style="font-size:'+(nd?'12.5':'19')+'px;font-weight:700;color:'+c+'">'+(nd?'ยังไม่มีข้อมูล':anFmt(ax.score))+'</span></div>'
+    +'<div style="height:7px;border-radius:5px;background:#eceff0;overflow:hidden;margin:7px 0 6px"><div style="height:100%;width:'+(ax.score==null?0:Math.max(0,Math.min(100,ax.score)))+'%;background:'+c+';border-radius:5px"></div></div>'
+    +'<div style="font-size:11.5px;color:var(--muted);line-height:1.55">'+esc(ax.why||'')+'</div>'
+    +((ax.exams&&ax.exams.length)?('<div style="font-size:11px;color:var(--muted);background:var(--bg);border-radius:8px;padding:6px 9px;margin-top:7px;line-height:1.6">'
+        +ax.exams.map(x=>esc(x.title)+' — ครั้งแรก '+x.first+'%'+(x.best>x.first?(' · ดีสุด '+x.best+'%'):'')+(x.passed?' ✓':'')).join('<br>')+'</div>'):'')
+    +'</div>';
+}
+function anRail(o,label){
+  if(!o) return '';
+  const pos=Math.max(2,Math.min(98,o.mine)), avg=Math.max(2,Math.min(98,o.avg));
+  const good=o.rank<=Math.ceil(o.of/3), bad=o.rank>Math.ceil(o.of*2/3);
+  return '<div style="display:grid;grid-template-columns:130px 1fr 104px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line2);font-size:12.5px">'
+    +'<span>'+esc(label)+'</span>'
+    +'<span style="position:relative;height:22px;background:linear-gradient(90deg,#fee2e2,#fef3c7 45%,#dcfce7);border-radius:6px;display:block">'
+      +'<i style="position:absolute;top:2px;left:'+avg+'%;width:2px;height:18px;background:#64748b"></i>'
+      +'<i style="position:absolute;top:-3px;left:'+pos+'%;width:3px;height:28px;background:#111;border-radius:2px"></i></span>'
+    +'<span style="text-align:right;font-weight:700;color:'+(good?'#16a34a':bad?'#dc2626':'#d97706')+'">อันดับ '+o.rank+' / '+o.of+'</span></div>';
+}
+function anSpark(rows,key,color,unit){
+  const vals=rows.map(r=>r[key]).map(v=>v==null?0:Number(v));
+  const max=Math.max(1,...vals), W=320,H=118,padL=8,padB=22,padT=18;
+  const bw=(W-padL*2)/rows.length;
+  const bars=rows.map((r,i)=>{ const v=vals[i], hgt=(H-padB-padT)*(v/max);
+    const last=i===rows.length-1;
+    return '<rect x="'+(padL+i*bw+bw*0.18).toFixed(1)+'" y="'+(H-padB-hgt).toFixed(1)+'" width="'+(bw*0.64).toFixed(1)+'" height="'+Math.max(1,hgt).toFixed(1)+'" rx="3" fill="'+(last?color:'#cbd5e1')+'"></rect>'
+      +'<text x="'+(padL+i*bw+bw*0.5).toFixed(1)+'" y="'+(H-padB+13)+'" font-size="9" fill="#64748b" text-anchor="middle">'+esc(String(r.label).slice(5))+'</text>'
+      +(last?('<text x="'+(padL+i*bw+bw*0.5).toFixed(1)+'" y="'+Math.max(12,(H-padB-hgt-5)).toFixed(1)+'" font-size="11" font-weight="700" fill="'+color+'" text-anchor="middle">'+v+'</text>'):'');
+  }).join('');
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto">'+bars+'</svg>';
+}
+function anCal(cal){
+  const col={ontime:'#16a34a',late:'#f59e0b',absent:'#dc2626',leave:'#60a5fa',off:'#e6eae7',future:'#f1f5f9'};
+  return '<div style="display:flex;gap:3px;flex-wrap:wrap">'
+    +cal.map(c=>'<span title="'+esc(c.date+' · '+({ontime:'ตรงเวลา',late:'สาย '+c.late_min+' นาที',absent:'ขาดงาน',leave:'ลา',off:'วันหยุด',future:'ยังไม่ถึง'})[c.status])+'" style="width:15px;height:15px;border-radius:3px;background:'+col[c.status]+'"></span>').join('')
+    +'</div>';
+}
+function renderEmpAnalysis(r){
+  const an=r.analysis; if(!an) return '';
+  const e=r.emp, hl=an.headline||{};
+  const toneBg={red:'#fef2f2',amber:'#fff7ed',green:'#f0fdf4'}[hl.tone||'green'];
+  const toneBd={red:'#fecaca',amber:'#fed7aa',green:'#bbf7d0'}[hl.tone||'green'];
+  const toneTx={red:'#991b1b',amber:'#9a3412',green:'#14532d'}[hl.tone||'green'];
+  const sc=r.score||{};
+  let h='<div class="card" style="padding:16px;margin-bottom:12px">';
+  // หัวบัตร
+  h+='<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">'
+    +(e.photo_url?('<img src="'+esc(e.photo_url)+'" style="width:56px;height:56px;border-radius:14px;object-fit:cover">'):('<div style="width:56px;height:56px;border-radius:14px;background:#dbe5de;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:21px;color:#59695f">'+esc((e.nickname||e.name||'?').slice(0,1))+'</div>'))
+    +'<div style="min-width:0;flex:1"><div style="font-weight:700;font-size:16.5px">'+esc(e.nickname||e.name)+' <span class="muted" style="font-weight:400;font-size:13px">'+esc(e.name)+' · '+esc(e.emp_id)+'</span></div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">'+esc(e.branch_name)+(e.shift_name?(' · กะหลัก '+esc(e.shift_name)):'')+' · '+esc(r.range.label)+'</div></div>'
+    +'<div style="text-align:right;min-width:180px"><div style="font-size:11.5px;color:var(--muted)">คะแนนวินัยรอบนี้</div>'
+      +'<div style="font-size:31px;font-weight:700;line-height:1;color:'+(sc.band_color||'#475569')+'">'+(sc.score!=null?sc.score:'—')+'<span style="font-size:14px;color:var(--muted);font-weight:400">/'+(sc.start!=null?sc.start:100)+'</span></div>'
+      +(sc.band_label?('<div style="margin-top:5px"><span class="pill" style="background:'+(sc.band_color||'#475569')+'22;color:'+(sc.band_color||'#475569')+'">'+esc(sc.band_label)+'</span></div>'):'')
+    +'</div></div>';
+  if(hl.text) h+='<div style="margin-top:12px;padding:11px 13px;background:'+toneBg+';border:1px solid '+toneBd+';border-radius:11px;font-size:13px;line-height:1.65;color:'+toneTx+'">'+esc(hl.text)+'</div>';
+  h+='</div>';
+  // 6 ด้าน
+  h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">วิเคราะห์ 6 ด้าน — เก่งด้านไหน พังด้านไหน</h3>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px">'+(an.axes||[]).map(anAxCard).join('')+'</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:9px">ด้านที่ยังไม่มีข้อมูลจะไม่ถูกคิดเป็น 0 — ระบบจะไม่เอามาเฉลี่ยรวม</div></div>';
+  // เทียบเพื่อน
+  const cp=an.compare||{};
+  if(cp.on_time||cp.quality||cp.load||cp.score){
+    h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:6px">ตัวเลขนี้ดีหรือแย่ — เทียบกับเพื่อนร่วมสาขา</h3>'
+      +'<div style="display:grid;grid-template-columns:130px 1fr 104px;gap:10px;font-size:11.5px;color:var(--muted);font-weight:600;padding-bottom:5px;border-bottom:1px solid var(--line2)"><span>หัวข้อ</span><span>แย่ที่สุด ←→ ดีที่สุด</span><span style="text-align:right">อันดับในสาขา</span></div>'
+      +anRail(cp.on_time,'ความตรงต่อเวลา')+anRail(cp.quality,'คุณภาพงาน')+anRail(cp.load,'ปริมาณงานที่รับ')+anRail(cp.score,'คะแนนวินัย')
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:9px">เส้นดำ = คนนี้ · เส้นเทา = ค่าเฉลี่ยของสาขา</div></div>';
+  }
+  // แนวโน้ม
+  const tr=an.trend||[];
+  if(tr.length>1){
+    h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">แนวโน้มย้อนหลัง '+tr.length+' รอบ</h3>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
+        +'<div><div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">จำนวนครั้งที่มาสาย</div>'+anSpark(tr,'late','#dc2626')+'</div>'
+        +'<div><div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">นาทีสายรวมต่อรอบ</div>'+anSpark(tr,'late_min','#d97706')+'</div>'
+      +'</div>'
+      +(an.trend_text?('<div style="font-size:12px;margin-top:8px;color:'+(an.trend_worse_run>=2?'#991b1b':'var(--muted)')+'">'+esc(an.trend_text)+(an.trend_worse_run>=2?(' · แย่ลงต่อเนื่อง '+an.trend_worse_run+' รอบติด — ไม่ใช่เรื่องบังเอิญของรอบนี้'):'')+'</div>'):'')
+      +'</div>';
+  }
+  // รูปแบบพฤติกรรม
+  const pt=an.pattern||{};
+  if((pt.dow||[]).some(v=>v>0)){
+    const maxD=Math.max(...pt.dow);
+    h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">รูปแบบการมาสาย — หาสาเหตุที่แท้จริงก่อนคุย</h3>'
+      +'<div style="display:grid;grid-template-columns:1.1fr 1fr;gap:18px">'
+      +'<div><div style="font-size:11.5px;color:var(--muted);margin-bottom:7px">สายแยกตามวันในสัปดาห์ (6 รอบล่าสุด)</div>'
+        +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center">'
+        +pt.dow.map((v,i)=>'<div><div style="background:#eceff0;border-radius:7px;height:70px;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden">'
+          +'<i style="display:block;height:'+(maxD?Math.round(v/maxD*100):0)+'%;background:'+(v===maxD&&v>0?'#dc2626':'#f59e0b')+';border-radius:7px 7px 0 0"></i></div>'
+          +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+pt.dow_labels[i]+'<br><b>'+v+'</b></div></div>').join('')
+        +'</div>'
+        +'<div style="font-size:11.5px;color:var(--muted);background:var(--bg);border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.7"><b>ระบบอ่านให้:</b> '+esc(pt.text||'')+'</div></div>'
+      +'<div><div style="font-size:11.5px;color:var(--muted);margin-bottom:7px">ปฏิทินรอบนี้ (เขียว=ตรงเวลา ส้ม=สาย แดง=ขาด ฟ้า=ลา เทา=หยุด)</div>'
+        +anCal(pt.calendar||[])
+        +((pt.by_shift||[]).length?('<div style="font-size:11.5px;color:var(--muted);background:var(--bg);border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.8">'
+            +'<b>สายแยกตามกะ</b><br>'+pt.by_shift.map(x=>esc(x.name)+' — สาย '+x.late+'/'+x.shifts+' กะ ('+(x.late_pct!=null?x.late_pct:'—')+'%)').join('<br>')+'</div>'):'')
+        +(pt.avg_late_min?('<div style="font-size:11.5px;color:var(--muted);margin-top:7px">สายเฉลี่ยครั้งละ <b>'+pt.avg_late_min+' นาที</b></div>'):'')
+      +'</div></div></div>';
+  }
+  // สรุป + สิ่งที่ควรทำ
+  const kcol={red:'#dc2626',amber:'#d97706',blue:'#2563eb',green:'#16a34a'};
+  h+='<div class="card" style="padding:16px;margin-bottom:12px"><h3 style="font-size:13px;font-weight:700;color:var(--green-d);margin-bottom:10px">สรุปอัตโนมัติ · สิ่งที่ควรทำต่อ</h3>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:13px">'
+      +'<div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d;border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.75"><b style="display:block;margin-bottom:4px">จุดแข็ง</b>'
+        +((an.strong||[]).length?an.strong.map(t=>'• '+esc(t)).join('<br>'):'<span style="color:var(--muted)">ยังไม่มีจุดที่โดดเด่นพอในช่วงนี้</span>')+'</div>'
+      +'<div style="background:#fef2f2;border:1px solid #fecaca;color:#7f1d1d;border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.75"><b style="display:block;margin-bottom:4px">จุดที่ต้องพัฒนา</b>'
+        +((an.weak||[]).length?an.weak.map(t=>'• '+esc(t)).join('<br>'):'<span style="color:var(--muted)">ไม่พบจุดที่ต้องแก้ไขในช่วงนี้</span>')+'</div>'
+    +'</div>'
+    +(an.actions||[]).map((x,i)=>'<div style="border:1px solid var(--line2);border-radius:11px;padding:11px 13px;display:flex;gap:11px;align-items:flex-start;margin-bottom:8px;font-size:12.5px;line-height:1.6">'
+      +'<span style="flex:none;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;background:'+(kcol[x.level]||'#64748b')+'">'+(i+1)+'</span>'
+      +'<div><b>'+esc(x.title)+'</b><div style="font-size:11.5px;color:var(--muted);margin-top:3px">'+esc(x.detail||'')+'</div></div></div>').join('')
+    +'</div>';
+  return h;
+}
 function renderEmpSum(r){
   const e=r.emp, a=r.attendance, d=r.discipline, t=r.tasks, sp=r.special, det=r.details;
   const g=new Date(r.range.generated); const genTxt=g.toLocaleDateString('th-TH')+' '+g.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
-  let h='<div class="es-report">';
+  let h=renderEmpAnalysis(r);
+  h+='<div class="es-report">';
   h+='<div class="es-head"><div><div class="es-title">สรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
     +'<div class="es-sub">ช่วง: '+(beDate(r.range.start)+' – '+beDate(r.range.end))+'</div></div><div class="es-org">HR 7-Eleven</div></div>';
   if(e.photo_url){
