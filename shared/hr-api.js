@@ -8897,7 +8897,7 @@
     const gradeOf = v => { if (v == null) return { label: 'ไม่มีข้อมูล', color: '#94a3b8' }; for (const b of c.bands) { if (v >= b.min) return { label: b.label, color: b.color }; } const last = c.bands[c.bands.length - 1]; return { label: last.label, color: last.color }; };
     const hoursBetween = (a, b) => (!a || !b) ? null : (new Date(b).getTime() - new Date(a).getTime()) / 3600000;
 
-    const [empR, brR, attR, mtR, defR, gdR, dscR, ssR, auR, slR, bizR] = await Promise.all([
+    const [empR, brR, attR, mtR, defR, gdR, dscR, ssR, auR, slR, bizR, shR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,branch_id,is_manager,active,start_date,photo_url').eq('active', true),
       sb().from('branches').select('branch_id,name'),
       sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,branch_id').gte('work_date', start).lte('work_date', endEff),
@@ -8906,9 +8906,10 @@
       sb().from('goods_receipts').select('branch_id,diff,work_date,no_delivery').gte('work_date', start).lte('work_date', endEff),
       sb().from('disc_actions').select('emp_id,performed_role,performed_at,action_type').gte('performed_at', start + 'T00:00:00').lte('performed_at', end + 'T23:59:59'),
       sb().from('shift_submits').select('branch_id,work_date,shift_id,total,done').gte('work_date', start).lte('work_date', endEff),
-      sb().from('audit_reports').select('branch_id,inspect_date,round,score,max_score,result,qms,stockout').lte('inspect_date', end).order('inspect_date', { ascending: true }),
-      sb().from('sales_daily').select('branch_id,sale_date,sales_total,target_total').gte('sale_date', start).lte('sale_date', endEff),
+      sb().from('audit_reports').select('branch_id,inspect_date,round,score,max_score,result,qms,process,stockout,qssi_adjust').lte('inspect_date', end).order('inspect_date', { ascending: true }),
+      sb().from('sales_daily').select('branch_id,sale_date,shift,sales_total,target_total').gte('sale_date', start).lte('sale_date', endEff),
       sb().from('mgr_eval_business').select('*').eq('period_start', start),
+      sb().from('shifts').select('shift_id,name'),
     ]);
     // วันแรกที่ระบบรับส่งผลัดเริ่มมีข้อมูล — ใช้เป็นจุดเริ่มนับ "ปิดผลัดครบ" (ไม่งั้นรอบเก่าจะติดลบฟรี)
     const ssFirstR = await sb().from('shift_submits').select('work_date').order('work_date', { ascending: true }).limit(1);
@@ -8927,21 +8928,34 @@
 
     const att = attR.data || [], mts = mtR.data || [], gds = gdR.data || [], dscs = dscR.data || [], sss = ssR.data || [], aus = auR.data || [], sls = slR.data || [];
     const bizByBr = {}; (bizR.data || []).forEach(r => { bizByBr[r.branch_id] = r; });
+    // ★ ผลัดที่ต้องปิดต่อวัน — อ่านจากผลัดที่ใช้จริงในระบบ (ไม่ fix ไว้ที่ 3)
+    const SHIFT_NAME = {}; (shR.data || []).forEach(s => { SHIFT_NAME[s.shift_id] = s.name || s.shift_id; });
+    const _ssIds = [...new Set(sss.map(s => String(s.shift_id)).filter(Boolean))];
+    const SHIFT_IDS = (_ssIds.length >= 3 ? _ssIds : ['M', 'A', 'N']).sort();
+    if (!SHIFT_NAME.N) SHIFT_NAME.N = 'ดึก';
     const ownDefIds = {}; let ownDefCount = 0;
     (defR.data || []).forEach(d => { if (d.mgr_owner) { ownDefIds[String(d.id)] = d.title || ''; if (d.active !== false) ownDefCount++; } });
     const dayCount = (endEff >= start) ? daysBetween(start, endEff) : 0;
     const cycleDays = daysBetween(start, end);
 
-    // ยอดขาย: เอาค่าสูงสุดของแต่ละวัน (แถวเป็นยอดสะสมรายผลัด)
+    // ★ 23 ก.ย. 69 — ยอดขายรายวัน: ตาราง sales_daily เก็บแยก "รายผลัด" (เช้า/บ่าย/ดึก) + แถวสรุป "สิ้นวัน"
+    //   เดิมใช้ max() ของทั้งวัน → บังเอิญได้แถวสิ้นวัน แต่ยอดขายกับเป้าอาจมาจากคนละแถว
+    //   ใหม่: ใช้แถว "สิ้นวัน" เป็นหลัก · ไม่มีค่อยรวมผลัดย่อย · และตีธงวันที่ข้อมูลเป้าไม่น่าเชื่อถือ
     const salesByBr = {};
     sls.forEach(r => {
       const b = salesByBr[r.branch_id] || (salesByBr[r.branch_id] = {});
-      const d = b[r.sale_date] || (b[r.sale_date] = { s: 0, t: 0 });
+      const d = b[r.sale_date] || (b[r.sale_date] = { s: 0, t: 0, eod: false, shifts: 0 });
       const s = _meNum(r.sales_total), t = _meNum(r.target_total);
-      if (s != null && s > d.s) d.s = s;
-      if (t != null && t > d.t) d.t = t;
+      const isEod = /สิ้นวัน|รวม|ทั้งวัน/.test(String(r.shift || ''));
+      if (isEod) { d.eod = true; if (s != null) d.s = s; if (t != null) d.t = t; return; }
+      if (d.eod) return;                       // มีแถวสิ้นวันแล้ว ไม่ต้องเอาผลัดย่อยมาทับ
+      d.shifts++;
+      if (s != null) d.s += s;
+      if (t != null) d.t += t;
     });
 
+    const meName = {}; emps.forEach(e => { meName[e.emp_id] = e.nickname || e.name || e.emp_id; });
+    const defTitle = {}; (defR.data || []).forEach(d => { defTitle[String(d.id)] = d.title; });
     const managers = emps.filter(e => e.is_manager);
     const notes = [];
     if (!ownDefCount) notes.push('ยังไม่ได้ตั้งหัวข้องานที่เป็นหน้าที่ ผจก. (mgr_owner) — หัวข้อ "งานหน้าที่ ผจก. ในรอบผลัด" จะคิดไม่ได้');
@@ -8970,6 +8984,12 @@
       const avgH = timed.length ? Math.round(timed.reduce((a, t) => a + (hoursBetween(t.submitted_at, t.mgr_checked_at) || 0), 0) / timed.length * 10) / 10 : null;
       const spdScore = timed.length ? clamp(fast * 100 / timed.length) : null;
       const sentBack = bTa.filter(t => t.mgr_result === 'sent_back').length;
+      // หลักฐาน: งานที่ยังไม่ได้ตรวจ และงานที่ตรวจช้าเกินเกณฑ์
+      const pendList = needs.filter(t => !t.mgr_checked_at)
+        .map(t => ({ date: t.work_date, emp: (meName[t.emp_id] || t.emp_id), title: defTitle[String(t.task_def_id)] || ('งาน #' + t.task_def_id) }))
+        .sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 20);
+      const slowList = timed.map(t => ({ date: t.work_date, emp: (meName[t.emp_id] || t.emp_id), title: defTitle[String(t.task_def_id)] || ('งาน #' + t.task_def_id), hours: Math.round((hoursBetween(t.submitted_at, t.mgr_checked_at) || 0) * 10) / 10 }))
+        .filter(x => x.hours > th.review_fast_hours).sort((x, y) => y.hours - x.hours).slice(0, 20);
 
       // ---- A4 งานที่สำนักงานสั่ง (ผูกตามสาขา ถ้าไม่ได้ระบุชื่อ) ----
       const myMt = mts.filter(t => {
@@ -8985,21 +9005,41 @@
       // ---- B1 QSSI (ผลตรวจล่าสุดในระบบ) ----
       const auB = aus.filter(a => String(a.branch_id) === String(brId));
       const auLast = auB.length ? auB[auB.length - 1] : null;
-      const qssiVal = auLast ? _meNum(auLast.result) : null;
-      const qssiHist = auB.slice(-3).map(a => ({ date: a.inspect_date, result: _meNum(a.result), qms: _meNum(a.qms), stockout: _meNum(a.stockout) }));
+      // ★ 23 ก.ย. 69 — ใช้ "Qssi Adjust (%)" เป็นคะแนนจริง เหมือนหน้าตรวจร้าน QSSI
+      //   ไม่มี Adjust → ใช้คะแนนดิบ/10 · คอลัมน์ result เป็นคนละตัว (เดิมหยิบมาใช้ผิด คะแนนไม่ตรงหน้า QSSI)
+      const _qPct = a => { if (!a) return null; const adj = _meNum(a.qssi_adjust); if (adj != null) return adj; const sc = _meNum(a.score); return sc != null ? Math.round(sc / 10 * 100) / 100 : null; };
+      const qssiVal = _qPct(auLast);
+      const qssiHist = auB.slice(-3).map(a => ({ date: a.inspect_date, pct: _qPct(a), adjust: _meNum(a.qssi_adjust), score: _meNum(a.score), result: _meNum(a.result), qms: _meNum(a.qms), stockout: _meNum(a.stockout) }));
       const qssiStale = auLast ? (String(auLast.inspect_date) < start) : false;
 
       // ---- B2 ยอดขายเทียบเป้า ----
       const sd = salesByBr[brId] || {};
       let sSum = 0, tSum = 0, sDays = 0;
-      Object.keys(sd).forEach(d => { if (sd[d].t > 0 || sd[d].s > 0) { sSum += sd[d].s; tSum += sd[d].t; sDays++; } });
+      const salesDays = [], salesSkip = [];
+      Object.keys(sd).sort().forEach(d => {
+        const row = sd[d];
+        const partial = (d === today);                                   // วันนี้ยังขายไม่จบวัน
+        const noTarget = !(row.t > 0);                                   // ไม่มีเป้า
+        const targetEqSales = row.t > 0 && row.s > 0 && Math.abs(row.t - row.s) < 1;   // เป้า = ยอดขายเป๊ะ = ข้อมูลเป้าไม่สมบูรณ์
+        const skip = partial || noTarget || targetEqSales;
+        const why = partial ? 'วันนี้ยังไม่จบวัน' : noTarget ? 'ไม่มีเป้าในระบบ' : targetEqSales ? 'เป้าเท่ากับยอดขายพอดี (ข้อมูลเป้าไม่สมบูรณ์)' : '';
+        const item = { date: d, sales: Math.round(row.s), target: Math.round(row.t), pct: row.t > 0 ? Math.round(row.s / row.t * 1000) / 10 : null, eod: !!row.eod, skip, why };
+        if (skip) salesSkip.push(item); else { salesDays.push(item); sSum += row.s; tSum += row.t; sDays++; }
+      });
       const salesPct = tSum > 0 ? Math.round(sSum / tSum * 1000) / 10 : null;
       const salesScore = salesPct != null ? clamp(salesPct) : null;
+      const salesAvgS = sDays ? Math.round(sSum / sDays) : null;
+      const salesAvgT = sDays ? Math.round(tSum / sDays) : null;
+      const salesGapDay = (salesAvgS != null && salesAvgT != null) ? (salesAvgS - salesAvgT) : null;
 
       // ---- B3 ทีมมาตรงเวลา / B4 วินัยเฉลี่ย ----
       const bAtt = att.filter(a => a.branch_id === brId && a.check_in);
       const otScore = bAtt.length ? clamp(bAtt.filter(a => !(a.late_min > 0)).length * 100 / bAtt.length) : null;
       const lateCnt = bAtt.filter(a => a.late_min > 0).length;
+      // หลักฐาน: ใครสายวันไหน กี่นาที (เรียงจากสายมากสุด)
+      const lateList = bAtt.filter(a => a.late_min > 0)
+        .map(a => ({ date: a.work_date, emp: (meName[a.emp_id] || a.emp_id), min: Number(a.late_min) }))
+        .sort((x, y) => y.min - x.min).slice(0, 20);
       const scores = team.map(e => scByEmp[e.emp_id]).filter(s => s && s.score != null).map(s => Number(s.score));
       const avgDisc = scores.length ? Math.round(scores.reduce((x, y) => x + y, 0) / scores.length * 10) / 10 : null;
 
@@ -9018,52 +9058,94 @@
       const gdScore = bGd.length ? clamp(gdOk * 100 / bGd.length) : null;
       const gdSkip = gds.filter(g => g.branch_id === brId && g.no_delivery).length;
       const gdAvg = bGd.length ? Math.round(bGd.reduce((a, g) => a + Math.abs(Number(g.diff || 0)), 0) / bGd.length * 10) / 10 : null;
+      // หลักฐาน: ใบที่คลาดเกินเกณฑ์ (วันที่ + คลาดกี่ลัง)
+      const gdBad = bGd.filter(g => Math.abs(Number(g.diff || 0)) > tol)
+        .map(g => ({ date: g.work_date, diff: Number(g.diff || 0) }))
+        .sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff)).slice(0, 20);
 
       // ---- B7 ปิดผลัดครบ ----
       const bSs = sss.filter(s => s.branch_id === brId);
       const ssFrom = (ssFirst && ssFirst > start) ? ssFirst : start;
       const ssDays = (ssFirst && ssFirst > endEff) ? 0 : ((endEff >= ssFrom) ? daysBetween(ssFrom, endEff) : 0);
-      const ssExpect = ssDays * 3;
+      const ssExpect = ssDays * SHIFT_IDS.length;
       const ssScore = (bSs.length && ssExpect) ? clamp(bSs.length * 100 / ssExpect) : null;
       const ssTotal = bSs.reduce((a, s) => a + (Number(s.total) || 0), 0);
       const ssDone = bSs.reduce((a, s) => a + (Number(s.done) || 0), 0);
+      // ★ หลักฐาน: ขาดปิดผลัดไหน วันที่เท่าไหร่ (เอาไว้คุยกับ ผจก. ว่าเกิดอะไรขึ้นวันนั้น)
+      const ssHave = new Set(bSs.map(s => s.work_date + '|' + s.shift_id));
+      const ssMiss = [];
+      if (ssDays > 0) {
+        for (let dt = new Date(ssFrom + 'T00:00:00'); dt.toISOString().slice(0, 10) <= endEff; dt.setDate(dt.getDate() + 1)) {
+          const ds = dt.toISOString().slice(0, 10);
+          if (ds === today) continue;                    // วันนี้ยังปิดไม่ครบเป็นเรื่องปกติ
+          SHIFT_IDS.forEach(sid => { if (!ssHave.has(ds + '|' + sid)) ssMiss.push({ date: ds, shift_id: sid, shift_name: SHIFT_NAME[sid] || sid }); });
+        }
+      }
 
       const a_breakdown = markUsed([
         { key: 'mgr_own', label: 'งานหน้าที่ ผจก. ในรอบผลัด', score: ownScore, weight: c.wA.mgr_own,
+          good: 100, warn: 90,
           raw_text: own.length ? (own.length + ' งาน · ส่งตรงวัน ' + ownOnDay + ' · ผจก. ทำเอง ' + ownByMgr + ' งาน') : 'ไม่มีงานหน้าที่ ผจก. ในรอบนี้',
           raw: { tasks: own.length, on_day: ownOnDay, by_mgr: ownByMgr, defs: ownDefCount } },
         { key: 'review_cov', label: 'ตรวจงานทีมครบ', score: covScore, weight: c.wA.review_cov,
           raw_text: needs.length ? ('ต้องตรวจ ' + needs.length + ' งาน · ตรวจแล้ว ' + checked.length + ' · ค้าง ' + (needs.length - checked.length)) : 'ไม่มีงานที่ต้องให้ ผจก. ตรวจ',
-          raw: { needs_mgr: needs.length, checked: checked.length, sent_back: sentBack } },
+          good: 100, warn: 90,
+          detail: pendList.map(x => ({ date: x.date, text: x.title + ' · ' + x.emp })), detail_label: 'งานที่ยังไม่ได้ตรวจ',
+          raw: { needs_mgr: needs.length, checked: checked.length, sent_back: sentBack, pending: pendList } },
         { key: 'review_speed', label: 'ตรวจเร็วภายใน ' + th.review_fast_hours + ' ชม.', score: spdScore, weight: c.wA.review_speed,
           raw_text: timed.length ? ('ทันเวลา ' + fast + ' จาก ' + timed.length + ' ใบ · เฉลี่ย ' + avgH + ' ชม.') : 'ยังไม่มีใบที่จับเวลาได้',
-          raw: { timed: timed.length, fast: fast, avg_hours: avgH } },
+          good: 90, warn: 70,
+          detail: slowList.map(x => ({ date: x.date, text: x.title + ' · ' + x.emp + ' — ใช้เวลา ' + x.hours + ' ชม.' })), detail_label: 'งานที่ตรวจช้ากว่าเกณฑ์',
+          raw: { timed: timed.length, fast: fast, avg_hours: avgH, slow: slowList } },
         { key: 'hr_tasks', label: 'งานที่สำนักงานสั่ง ตรงกำหนด', score: mtScore, weight: c.wA.hr_tasks,
+          good: 100, warn: 90,
           raw_text: myMt.length ? (myMt.length + ' ใบ · เสร็จ ' + mtDone.length + ' · ตรงกำหนด ' + mtOnTime) : 'รอบนี้ยังไม่มีใบสั่งงาน',
           raw: { tasks: myMt.length, done: mtDone.length, on_time: mtOnTime } },
       ]);
       const b_breakdown = markUsed([
         { key: 'qssi', label: 'คะแนนตรวจร้าน QSSI', score: qssiVal, weight: c.wB.qssi,
-          raw_text: auLast ? (qssiVal + '% · ตรวจ ' + auLast.inspect_date + (qssiStale ? ' (ก่อนรอบนี้)' : '') + ' · QMS ' + (_meNum(auLast.qms) != null ? auLast.qms : '—') + ' · ของขาด ' + (_meNum(auLast.stockout) != null ? auLast.stockout : '—') + ' รายการ') : 'ยังไม่มีผลตรวจ',
-          raw: { result: qssiVal, inspect_date: auLast ? auLast.inspect_date : null, qms: auLast ? _meNum(auLast.qms) : null, stockout: auLast ? _meNum(auLast.stockout) : null } },
+          good: th.qssi_good, warn: th.qssi_warn,
+          raw_text: auLast ? (qssiVal + '% · ตรวจ ' + auLast.inspect_date + (qssiStale ? ' (ก่อนรอบนี้)' : '') + ' · ' + (_meNum(auLast.qssi_adjust) != null ? 'Qssi Adjust' : 'คะแนนดิบ ' + (_meNum(auLast.score) != null ? auLast.score : '—') + '/1000') + ' · QMS ' + (_meNum(auLast.qms) != null ? auLast.qms : '—') + ' · ของขาด ' + (_meNum(auLast.stockout) != null ? auLast.stockout : '—') + ' รายการ') : 'ยังไม่มีผลตรวจ',
+          detail: qssiHist.slice().reverse().map(h => ({ date: h.date, text: (h.pct != null ? h.pct + '%' : '—') + ' · QMS ' + (h.qms != null ? h.qms : '—') + ' · ของขาด ' + (h.stockout != null ? h.stockout : '—') + ' รายการ' })), detail_label: 'ผลตรวจย้อนหลัง',
+          raw: { pct: qssiVal, adjust: auLast ? _meNum(auLast.qssi_adjust) : null, score: auLast ? _meNum(auLast.score) : null, result: auLast ? _meNum(auLast.result) : null, inspect_date: auLast ? auLast.inspect_date : null, qms: auLast ? _meNum(auLast.qms) : null, stockout: auLast ? _meNum(auLast.stockout) : null } },
         { key: 'sales', label: 'ยอดขายเทียบเป้า', score: salesScore, weight: c.wB.sales,
-          raw_text: salesPct != null ? ('ยอดจริง ' + _meInt(sSum) + ' / เป้า ' + _meInt(tSum) + ' บาท (' + sDays + ' วัน) = ' + salesPct + '%') : 'ยังไม่มียอดขายในรอบนี้',
-          raw: { sales: Math.round(sSum), target: Math.round(tSum), pct: salesPct, days: sDays } },
+          good: th.sales_good_pct, warn: th.sales_warn_pct,
+          raw_text: salesPct != null
+            ? ('เฉลี่ย/วัน ' + _meInt(salesAvgS) + ' / เป้า ' + _meInt(salesAvgT) + ' บาท (' + (salesGapDay >= 0 ? '+' : '') + _meInt(salesGapDay) + '/วัน) = ' + salesPct + '%'
+               + ' · สะสม ' + _meInt(sSum) + ' / ' + _meInt(tSum) + ' บาท (' + sDays + ' วัน)'
+               + (salesSkip.length ? (' · ไม่นับ ' + salesSkip.length + ' วัน') : ''))
+            : (salesSkip.length ? ('ยังคิดไม่ได้ — ' + salesSkip.length + ' วันที่มีข้อมูลยังใช้เทียบเป้าไม่ได้') : 'ยังไม่มียอดขายในรอบนี้'),
+          detail: salesDays.map(x => ({ date: x.date, text: 'ยอด ' + _meInt(x.sales) + ' / เป้า ' + _meInt(x.target) + ' = ' + (x.pct != null ? x.pct + '%' : '—') + ((x.pct != null && x.pct < 100) ? (' (ขาด ' + _meInt(x.target - x.sales) + ')') : '') }))
+            .concat(salesSkip.map(x => ({ date: x.date, text: 'ยอด ' + _meInt(x.sales) + ' / เป้า ' + _meInt(x.target) + ' — ไม่นับ: ' + x.why, mute: true }))),
+          detail_label: 'ยอดขายรายวัน',
+          raw: { sales: Math.round(sSum), target: Math.round(tSum), pct: salesPct, days: sDays,
+                 avg_sales_day: salesAvgS, avg_target_day: salesAvgT, gap_day: salesGapDay,
+                 days: salesDays, skipped: salesSkip } },
         { key: 'on_time', label: 'ทีมมาตรงเวลา', score: otScore, weight: c.wB.on_time,
+          good: 95, warn: 85,
           raw_text: bAtt.length ? ('ลงเวลา ' + bAtt.length + ' กะ · สาย ' + lateCnt + ' กะ') : 'ไม่มีข้อมูลลงเวลา',
-          raw: { shifts: bAtt.length, late: lateCnt } },
+          detail: lateList.map(x => ({ date: x.date, text: x.emp + ' สาย ' + x.min + ' นาที' })), detail_label: 'รายการมาสาย',
+          raw: { shifts: bAtt.length, late: lateCnt, late_list: lateList } },
         { key: 'discipline', label: 'คะแนนวินัยเฉลี่ยของทีม', score: avgDisc, weight: c.wB.discipline,
+          good: 90, warn: 80,
           raw_text: scores.length ? (scores.length + ' คน · เฉลี่ย ' + avgDisc + ' คะแนน') : 'ยังไม่มีคะแนนวินัย',
           raw: { team_scored: scores.length, avg: avgDisc } },
         { key: 'waste', label: 'ตัดจ่าย (ไม่เกิน ' + wMax + '% ของยอดขาย)', score: wasteScore, weight: c.wB.waste,
+          good: 100, warn: 70,
           raw_text: wastePct != null ? (_meInt(wasteVal || 0) + ' บาท = ' + wastePct + '% ของยอดขาย') : 'ยังไม่ได้คีย์ยอดตัดจ่ายของรอบนี้',
           raw: { waste_value: wasteVal, waste_pct: wastePct, max_pct: wMax } },
         { key: 'goods', label: 'ลังคืนคลาดไม่เกิน ±' + tol + ' ลัง', score: gdScore, weight: c.wB.goods,
+          good: 90, warn: 75,
           raw_text: bGd.length ? ('ใบที่มีของส่ง ' + bGd.length + ' · เข้าเกณฑ์ ' + gdOk + ' · คลาดเฉลี่ย ' + gdAvg + ' ลัง' + (gdSkip ? (' (ตัดใบไม่มีรถส่ง ' + gdSkip + ')') : '')) : 'ไม่มีใบรับสินค้า',
-          raw: { docs: bGd.length, in_tol: gdOk, avg_diff: gdAvg, no_delivery: gdSkip } },
-        { key: 'shift_close', label: 'ปิดผลัดครบ 3 ผลัด/วัน', score: ssScore, weight: c.wB.shift_close,
-          raw_text: (bSs.length && ssExpect) ? ('ปิดแล้ว ' + bSs.length + ' จาก ' + ssExpect + ' ผลัด (' + ssDays + ' วัน) · งานในผลัดเสร็จ ' + ssDone + '/' + ssTotal) : 'ยังไม่มีการปิดผลัดในรอบนี้',
-          raw: { submits: bSs.length, expect: ssExpect, days: ssDays, done: ssDone, total: ssTotal } },
+          detail: gdBad.map(x => ({ date: x.date, text: 'คลาด ' + (x.diff > 0 ? '+' : '') + x.diff + ' ลัง' })), detail_label: 'ใบที่คลาดเกินเกณฑ์',
+          raw: { docs: bGd.length, in_tol: gdOk, avg_diff: gdAvg, no_delivery: gdSkip, over: gdBad } },
+        { key: 'shift_close', label: 'ปิดผลัดครบ ' + SHIFT_IDS.length + ' ผลัด/วัน', score: ssScore, weight: c.wB.shift_close,
+          good: 95, warn: 85,
+          raw_text: (bSs.length && ssExpect) ? ('ปิดแล้ว ' + bSs.length + ' จาก ' + ssExpect + ' ผลัด (' + ssDays + ' วัน)' + (ssMiss.length ? (' · ขาด ' + ssMiss.length + ' ผลัด') : '') + ' · งานในผลัดเสร็จ ' + ssDone + '/' + ssTotal) : 'ยังไม่มีการปิดผลัดในรอบนี้',
+          detail: ssMiss.slice(0, 40).map(x => ({ date: x.date, text: 'ไม่ได้ปิดผลัด ' + x.shift_name }))
+            .concat(ssMiss.length > 40 ? [{ date: '', text: '… และอีก ' + (ssMiss.length - 40) + ' ผลัด', mute: true }] : []),
+          detail_label: 'ผลัดที่ยังไม่ได้ปิด (' + ssMiss.length + ')',
+          raw: { submits: bSs.length, expect: ssExpect, days: ssDays, done: ssDone, total: ssTotal, missing: ssMiss } },
       ]);
 
       const score_a = wmean(a_breakdown), score_b = wmean(b_breakdown);
@@ -9077,7 +9159,9 @@
         score_b, grade_b: gB.label, grade_b_color: gB.color, b_breakdown,
         proactive_disc: proactive, sent_back: sentBack,
         qssi: { value: qssiVal, date: auLast ? auLast.inspect_date : null, stale: qssiStale, history: qssiHist },
-        sales: { actual: Math.round(sSum), target: Math.round(tSum), pct: salesPct, days: sDays },
+        sales: { actual: Math.round(sSum), target: Math.round(tSum), pct: salesPct, days: sDays,
+                 avg_sales_day: salesAvgS, avg_target_day: salesAvgT, gap_day: salesGapDay,
+                 rows: salesDays, skipped: salesSkip },
         waste: { value: wasteVal, pct: wastePct, max_pct: wMax, filled: wastePct != null },
         missing: [].concat(a_breakdown, b_breakdown).filter(x => x.score == null).map(x => x.label),
       };
