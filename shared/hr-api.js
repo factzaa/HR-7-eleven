@@ -863,13 +863,33 @@
       disc_enabled: d.disc_enabled === true,
       disc_threshold: (d.disc_threshold != null && d.disc_threshold !== '') ? Math.min(100, Math.max(1, parseInt(d.disc_threshold, 10) || 0)) || null : null,
       disc_points: Math.max(0, Math.min(100, parseInt(d.disc_points, 10) || 0)),
+      disc_bonus_points: Math.max(0, Math.min(100, parseInt(d.disc_bonus_points, 10) || 0)),
+      disc_bonus_min: (d.disc_bonus_min != null && d.disc_bonus_min !== '') ? Math.min(100, Math.max(1, parseInt(d.disc_bonus_min, 10) || 0)) || null : null,
       disc_basis: ['first', 'best', 'last'].includes(d.disc_basis) ? d.disc_basis : 'first',
       disc_nodo_points: Math.max(0, Math.min(100, parseInt(d.disc_nodo_points, 10) || 0)),
       updated_at: new Date().toISOString(),
     };
     let examId = d.id;
-    if (examId) { const { error } = await sb().from('exams').update(row).eq('id', examId); if (error) return { ok: false, error: error.message }; }
-    else { row.status = 'draft'; row.created_by = 'HR'; const { data: ins, error } = await sb().from('exams').insert(row).select('id').single(); if (error) return { ok: false, error: error.message }; examId = ins.id; }
+    // ★ ถ้ายังไม่ได้รันสคริปต์เพิ่มคอลัมน์ (disc_*) ให้ตัดคอลัมน์ที่ยังไม่มีออกแล้วบันทึกต่อ — บันทึกข้อสอบไม่พัง
+    const dropMissing = (err) => {
+      const m = String((err && err.message) || '').match(/'([a-z0-9_]+)' column|column "([a-z0-9_]+)"/i);
+      const col = m ? (m[1] || m[2]) : null;
+      if (col && Object.prototype.hasOwnProperty.call(row, col) && /^disc_/.test(col)) { delete row[col]; return col; }
+      return null;
+    };
+    for (let tryN = 0; tryN < 8; tryN++) {
+      if (examId) {
+        const { error } = await sb().from('exams').update(row).eq('id', examId);
+        if (!error) break;
+        if (!dropMissing(error)) return { ok: false, error: error.message };
+      } else {
+        row.status = 'draft'; row.created_by = 'HR';
+        const { data: ins, error } = await sb().from('exams').insert(row).select('id').single();
+        if (!error) { examId = ins.id; break; }
+        if (!dropMissing(error)) return { ok: false, error: error.message };
+      }
+    }
+    if (!examId) return { ok: false, error: 'บันทึกชุดข้อสอบไม่สำเร็จ' };
     // แทนที่คำถามทั้งชุด
     await sb().from('exam_questions').delete().eq('exam_id', examId);
     const qrows = qs.map((q, i) => ({ exam_id: examId, seq: i, question: String(q.question).trim(), choices: q.choices.map(c => String(c)), answer: Math.max(0, Math.min(q.choices.length - 1, parseInt(q.answer, 10) || 0)), explain: (q.explain || '').trim() || null, knowledge_ref: (q.knowledge_ref || '').trim() || null }));
@@ -925,7 +945,10 @@
     try {
       const { data: evs } = await sb().from('score_events').select('id,emp_id,points,ref,event_date').like('ref', 'exam%:' + id + ':%');
       const evBy = {}; (evs || []).forEach(v => { evBy[String(v.ref)] = v; });
-      takers.forEach(t => { const v = evBy['exam:' + id + ':' + t.emp_id]; if (v) { t.disc_event = { id: v.id, points: v.points, date: v.event_date }; } });
+      takers.forEach(t => {
+        const v = evBy['exam:' + id + ':' + t.emp_id]; if (v) t.disc_event = { id: v.id, points: v.points, date: v.event_date };
+        const b = evBy['exampass:' + id + ':' + t.emp_id]; if (b) t.bonus_event = { id: b.id, points: b.points, date: b.event_date };
+      });
       not_done.forEach(e => { const v = evBy['examnodo:' + id + ':' + e.emp_id]; if (v) { e.disc_event = { id: v.id, points: v.points, date: v.event_date }; } });
     } catch (e) { /* ยังไม่ได้เพิ่มคอลัมน์ ref — ข้ามไป */ }
     return { ok: true, exam: ex, takers, not_done, summary: { takers: takers.length, passed: passCount, target: pool.length, pass_rate: takers.length ? Math.round(passCount / takers.length * 100) : 0 } };
