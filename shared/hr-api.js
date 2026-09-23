@@ -268,6 +268,7 @@
         case 'hr_exam_delete':      return await hrExamDelete(p.id);
         case 'hr_exam_results':     return await hrExamResults(p.id);
         case 'hr_exam_wrong_spots': return await hrExamWrongSpots(p.id);
+        case 'hr_exam_disc_nodo':   return await hrExamDiscNoDo(p.id, p.by);
         case 'hr_qssi_items':       return await hrQssiItems(p);
         case 'hr_qssi_submit':      return await hrQssiSubmit(p);
         case 'hr_qssi_undo':        return await hrQssiUndo(p);
@@ -858,6 +859,12 @@
       scope: ['all', 'branch', 'emp'].includes(d.scope) ? d.scope : 'all',
       branch_ids: (d.scope === 'branch' && Array.isArray(d.branch_ids)) ? d.branch_ids : null,
       deadline: (d.deadline || '').trim() || null,
+      // ★ 23 ก.ย. 69 — ผลสอบมีผลกับคะแนนวินัย (ตั้งค่าแยกรายชุดข้อสอบ)
+      disc_enabled: d.disc_enabled === true,
+      disc_threshold: (d.disc_threshold != null && d.disc_threshold !== '') ? Math.min(100, Math.max(1, parseInt(d.disc_threshold, 10) || 0)) || null : null,
+      disc_points: Math.max(0, Math.min(100, parseInt(d.disc_points, 10) || 0)),
+      disc_basis: ['first', 'best', 'last'].includes(d.disc_basis) ? d.disc_basis : 'first',
+      disc_nodo_points: Math.max(0, Math.min(100, parseInt(d.disc_nodo_points, 10) || 0)),
       updated_at: new Date().toISOString(),
     };
     let examId = d.id;
@@ -901,7 +908,11 @@
     const empBy = {}; (emps || []).forEach(e => empBy[e.emp_id] = e);
     // สรุปรายคน (ครั้งล่าสุด + ดีสุด)
     const byEmp = {};
-    (ats || []).forEach(a => { const m = byEmp[a.emp_id] = byEmp[a.emp_id] || { emp_id: a.emp_id, attempts: 0, best: 0, passed: false, last_at: null }; m.attempts++; if (a.percent > m.best) m.best = a.percent; if (a.passed) m.passed = true; if (!m.last_at || a.submitted_at > m.last_at) { m.last_at = a.submitted_at; m.last_percent = a.percent; } });
+    (ats || []).forEach(a => { const m = byEmp[a.emp_id] = byEmp[a.emp_id] || { emp_id: a.emp_id, attempts: 0, best: 0, passed: false, last_at: null, tries: [] }; m.attempts++; if (a.percent > m.best) m.best = a.percent; if (a.passed) m.passed = true; if (!m.last_at || a.submitted_at > m.last_at) { m.last_at = a.submitted_at; m.last_percent = a.percent; }
+      // ★ 23 ก.ย. 69 — เก็บรายละเอียดทุกครั้งที่สอบ เพื่อให้ HR กดดูคะแนนแต่ละครั้งได้
+      m.tries.push({ attempt_no: a.attempt_no, percent: a.percent, score: a.score, total: a.total, passed: a.passed, submitted_at: a.submitted_at, duration_sec: a.duration_sec });
+    });
+    Object.values(byEmp).forEach(m => m.tries.sort((x, y) => (Number(x.attempt_no || 0) - Number(y.attempt_no || 0))));
     const takers = Object.values(byEmp).map(m => { const e = empBy[m.emp_id] || {}; return { ...m, name: e.nickname || e.name || m.emp_id, branch: brN[e.branch_id] || e.branch_id || '—', branch_id: e.branch_id || '' }; }).sort((x, y) => (y.best - x.best));
     // ใครยังไม่ทำ (ตาม scope)
     let pool = (emps || []).filter(e => e.active !== false);
@@ -910,7 +921,49 @@
     const done = new Set(Object.keys(byEmp));
     const not_done = pool.filter(e => !done.has(e.emp_id)).map(e => ({ emp_id: e.emp_id, name: e.nickname || e.name || e.emp_id, branch: brN[e.branch_id] || e.branch_id || '—' }));
     const passCount = takers.filter(t => t.passed).length;
+    // ★ 23 ก.ย. 69 — ผูกสถานะ "หักคะแนนวินัยจากผลสอบ" เข้ากับรายชื่อ (ref = exam:<id>:<emp> / examnodo:<id>:<emp>)
+    try {
+      const { data: evs } = await sb().from('score_events').select('id,emp_id,points,ref,event_date').like('ref', 'exam%:' + id + ':%');
+      const evBy = {}; (evs || []).forEach(v => { evBy[String(v.ref)] = v; });
+      takers.forEach(t => { const v = evBy['exam:' + id + ':' + t.emp_id]; if (v) { t.disc_event = { id: v.id, points: v.points, date: v.event_date }; } });
+      not_done.forEach(e => { const v = evBy['examnodo:' + id + ':' + e.emp_id]; if (v) { e.disc_event = { id: v.id, points: v.points, date: v.event_date }; } });
+    } catch (e) { /* ยังไม่ได้เพิ่มคอลัมน์ ref — ข้ามไป */ }
     return { ok: true, exam: ex, takers, not_done, summary: { takers: takers.length, passed: passCount, target: pool.length, pass_rate: takers.length ? Math.round(passCount / takers.length * 100) : 0 } };
+  }
+  // ★ 23 ก.ย. 69 — หักคะแนนวินัย "คนที่ไม่ทำข้อสอบเลย" (HR กดยืนยันเอง · ปกติทำหลังหมดเขต)
+  //   หักซ้ำไม่ได้ — ผูก ref = 'examnodo:<examId>:<empId>' กันไว้
+  async function hrExamDiscNoDo(id, by) {
+    if (!id) return { ok: false, error: 'ไม่ระบุชุดข้อสอบ' };
+    const r = await hrExamResults(id);
+    if (!r.ok) return r;
+    const ex = r.exam || {};
+    const pts = Math.abs(parseInt(ex.disc_nodo_points, 10) || 0);
+    if (!pts) return { ok: false, error: 'ชุดนี้ยังไม่ได้ตั้งคะแนนหักสำหรับคนที่ไม่ทำข้อสอบ' };
+    const targets = (r.not_done || []).filter(e => !e.disc_event);
+    if (!targets.length) return { ok: true, done: 0, msg: 'ไม่มีใครต้องหักเพิ่ม (หักครบแล้ว หรือทุกคนทำข้อสอบแล้ว)' };
+    const today = bkkToday();
+    const label = 'ไม่ทำแบบทดสอบตามกำหนด: ' + String(ex.title || 'แบบทดสอบ').slice(0, 60);
+    const note = 'หมดเขต ' + (ex.deadline || today) + ' · ไม่มีการส่งคำตอบ';
+    let done = 0;
+    for (const e of targets) {
+      const ref = 'examnodo:' + id + ':' + e.emp_id;
+      const { data: ins, error } = await sb().from('score_events')
+        .insert({ emp_id: e.emp_id, event_date: today, rule_key: 'exam_nodo', label, points: -pts, note, ref })
+        .select('id').maybeSingle();
+      if (error) continue;
+      done++;
+      try {
+        await sb().from('emp_notifications').insert({
+          emp_id: e.emp_id, kind: 'score_deduct',
+          title: 'คะแนนวินัยถูกหัก ' + pts + ' คะแนน',
+          body: 'เหตุผล: ' + label + '\n' + note + '\nดูคะแนนรวมล่าสุดในหน้า "สถานะของฉัน"',
+          ref: ins ? ('score:' + ins.id) : 'score', created_by: by || 'สำนักงาน (HR)',
+        });
+      } catch (_e) { /* ข้าม */ }
+    }
+    try { await sb().from('exams').update({ disc_nodo_done_at: new Date().toISOString() }).eq('id', id); } catch (_e) { }
+    await logAct('หักคะแนนวินัย (ไม่ทำแบบทดสอบ)', null, ex.title + ' · ' + done + ' คน · คนละ ' + pts + ' คะแนน');
+    return { ok: true, done, points: pts };
   }
   // จุดที่พนักงานตอบผิดบ่อย — รวม %ผิดรายข้อ (นับจาก "ครั้งแรก" ของแต่ละคน = สะท้อนความเข้าใจตั้งต้น)
   async function hrExamWrongSpots(id) {

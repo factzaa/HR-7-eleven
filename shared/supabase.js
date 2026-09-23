@@ -3310,6 +3310,11 @@
     const rows=list.map(e=>{ const m=attBy[e.id]||{used:0,best:0,passed:false}; const expired=e.deadline && String(e.deadline)<today;
       return { id:e.id, title:e.title, description:e.description, pass_percent:e.pass_percent, time_limit_min:e.time_limit_min, max_attempts:e.max_attempts, deadline:e.deadline,
         attempts_used:m.used, best:m.best, passed:m.passed, expired,
+        // ★ 23 ก.ย. 69 — บอกพนักงานตรง ๆ ว่าชุดนี้มีผลกับคะแนนวินัยไหม
+        disc_enabled: e.disc_enabled===true && Math.abs(parseInt(e.disc_points,10)||0)>0,
+        disc_points: Math.abs(parseInt(e.disc_points,10)||0),
+        disc_threshold: (e.disc_threshold!=null && e.disc_threshold!=='') ? Number(e.disc_threshold) : Number(e.pass_percent||80),
+        disc_basis: ['first','best','last'].includes(e.disc_basis)?e.disc_basis:'first',
         can_attempt: !m.passed && m.used < e.max_attempts && !expired }; });
     return { emp, rows };
   }
@@ -3339,13 +3344,62 @@
     const { error }=await sb.from('exam_attempts').insert({ exam_id:examId, emp_id:emp.emp_id, emp_name:emp.nickname||emp.name, branch_id:emp.branch_id||null, attempt_no, started_at:started_at||null, score, total, percent, passed, duration_sec:dur, answers:detail });
     if(error) throw error;
     const attemptsLeft = Math.max(0, Number(ex.max_attempts)-attempt_no);
+    // ★ 23 ก.ย. 69 — ผลสอบมีผลกับคะแนนวินัย (ตั้งค่าได้รายชุดข้อสอบ)
+    let disc=null;
+    try{ disc=await applyExamDiscipline(ex, emp); }catch(e){ console.warn('examDisc', e); }
     // สร้าง review ตามโหมด show_result
     const revealFull = ex.show_result==='full' || (ex.show_result==='score_until_pass' && (passed || attemptsLeft<=0));
     let review=null;
     if(ex.show_result!=='score_only'){
       review=(qs||[]).map(q=>{ const d=detail.find(x=>x.q_id===q.id)||{}; const base={ question:q.question, chosen:d.chosen, correct:d.correct }; if(revealFull){ base.answer=Number(q.answer); base.choices=q.choices; base.explain=q.explain||''; } return base; });
     }
-    return { ok:true, score, total, percent, passed, attempt_no, attempts_left:attemptsLeft, pass_percent:Number(ex.pass_percent||80), show_result:ex.show_result, reveal:revealFull, review };
+    return { ok:true, score, total, percent, passed, attempt_no, attempts_left:attemptsLeft, pass_percent:Number(ex.pass_percent||80), show_result:ex.show_result, reveal:revealFull, review, discipline:disc };
+  }
+  // ---------- ★ 23 ก.ย. 69 — ผลสอบ → คะแนนวินัย ----------
+  //  ตั้งค่าที่ชุดข้อสอบ: disc_enabled / disc_threshold (ว่าง = ใช้เกณฑ์ผ่าน) / disc_points / disc_basis
+  //  disc_basis: 'first' ยึดครั้งแรกเป็นหลัก (ตัดสินครั้งเดียว ทำใหม่ทีหลังไม่คืนคะแนน)
+  //              'best'  ยึดคะแนนดีที่สุด · 'last' ยึดครั้งล่าสุด — สองแบบนี้ถ้าสอบใหม่แล้วผ่าน ระบบคืนคะแนนให้เอง
+  //  กันหักซ้ำด้วย ref = 'exam:<examId>:<empId>' บนตาราง score_events
+  async function applyExamDiscipline(ex, emp){
+    if(!ex || ex.disc_enabled!==true) return null;
+    const pts=Math.abs(parseInt(ex.disc_points,10)||0); if(!pts) return null;
+    const thr=(ex.disc_threshold!=null && ex.disc_threshold!=='') ? Number(ex.disc_threshold) : Number(ex.pass_percent||80);
+    const basis=['first','best','last'].includes(ex.disc_basis)?ex.disc_basis:'first';
+    const ref='exam:'+ex.id+':'+emp.emp_id;
+    const { data: ats }=await sb.from('exam_attempts').select('attempt_no,percent').eq('exam_id',ex.id).eq('emp_id',emp.emp_id);
+    const list=(ats||[]).slice().sort((a,b)=>Number(a.attempt_no||0)-Number(b.attempt_no||0));
+    if(!list.length) return null;
+    let usePct, useLabel;
+    if(basis==='best'){ usePct=Math.max(...list.map(a=>Number(a.percent)||0)); useLabel='คะแนนดีที่สุด'; }
+    else if(basis==='last'){ usePct=Number(list[list.length-1].percent)||0; useLabel='คะแนนครั้งล่าสุด'; }
+    else { usePct=Number(list[0].percent)||0; useLabel='คะแนนครั้งแรก'; }
+    const shouldDeduct = usePct < thr;
+    const { data: exist }=await sb.from('score_events').select('id').eq('ref',ref).limit(1);
+    const has=(exist||[])[0];
+    if(shouldDeduct && !has){
+      const label='สอบไม่ผ่านเกณฑ์: '+String(ex.title||'แบบทดสอบ').slice(0,60);
+      const note=useLabel+' '+usePct+'% (เกณฑ์ '+thr+'%)';
+      const { data: ins }=await sb.from('score_events').insert({
+        emp_id: emp.emp_id, event_date: bangkokDate(), rule_key: 'exam_fail',
+        label, points: -pts, note, ref,
+      }).select('id').maybeSingle();
+      try{
+        await sb.from('emp_notifications').insert({
+          emp_id: emp.emp_id, kind:'score_deduct',
+          title:'คะแนนวินัยถูกหัก '+pts+' คะแนน',
+          body:'เหตุผล: '+label+'\n'+note+'\nดูคะแนนรวมล่าสุดในหน้า "สถานะของฉัน"',
+          ref: ins ? ('score:'+ins.id) : 'score', created_by:'ระบบแบบทดสอบ',
+        });
+      }catch(_e){}
+      return { deducted:true, points:pts, basis, used_percent:usePct, threshold:thr };
+    }
+    // ยึดครั้งแรก = ตัดสินครั้งเดียว ไม่คืนคะแนนแม้สอบใหม่ผ่าน
+    if(!shouldDeduct && has && basis!=='first'){
+      await sb.from('score_events').delete().eq('id', has.id);
+      try{ await sb.from('emp_notifications').delete().eq('ref','score:'+has.id); }catch(_e){}
+      return { deducted:false, restored:true, points:pts, basis, used_percent:usePct, threshold:thr };
+    }
+    return { deducted:!!has, points:pts, basis, used_percent:usePct, threshold:thr };
   }
   // พนักงานที่ได้รับมอบหมายเชลฟ์ สร้างโฟลเดอร์ QA เองได้ (เดือนปัจจุบัน)
   async function qaCreateFolder({ empId, title, target_month, note }){
@@ -4078,6 +4132,6 @@
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
-    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
 })();
