@@ -8584,12 +8584,21 @@
       } catch (_e) { return 0; }
     })();
     const out = { mgrtasks: await C(mtQ), mgrdailyrev };
+
+    // ★ 24 ก.ย. 69 — ป้ายแดงที่ ผจก. ต้องเห็น (นับตามสาขาเมื่อเป็น ผจก. · HR เห็นทุกสาขา)
+    //   เดิมสองอันนี้อยู่ในบล็อก if(!branch) ซึ่ง ผจก. ไม่มีวันเข้าถึง → ป้ายไม่เคยขึ้น
+    //   เคสจริง: งานตรวจเชลฟ์รอ ผจก. ตรวจแล้วไม่มีอะไรเตือน จึงหลุดไม่ได้ตรวจ
+    //   นับ "ค้างทั้งหมด" ไม่จำกัดวัน — ของจริงพบงานค้างตั้งแต่ 9 ก.ค. ถ้าจำกัดช่วงวันป้ายจะไม่ขึ้นและหลุดต่อไปเรื่อย ๆ
+    out.shelf = await C((() => {
+      let q = sb().from('shelf_checks').select('*', { count: 'exact', head: true }).eq('status', 'submitted');
+      if (branch) q = q.eq('branch_id', branch); return q; })());
+    out.recruit = await C((() => {
+      let q = sb().from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'new');
+      if (branch) q = q.eq('branch_id', branch); return q; })());
+
     if (!branch) {   // คิวอนุมัติฝั่ง HR
       out.leaves = await C(sb().from('leaves').select('*', { count: 'exact', head: true }).eq('status', 'pending'));
       out.advance = await C(sb().from('advance_requests').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
-      // ★ 24 ก.ย. 69 — ผจก. เห็นเฉพาะใบสมัครของสาขาตัวเอง ป้ายตัวเลขต้องนับตามสาขาด้วย
-      out.recruit = await C((() => { let q = sb().from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'new');
-        if (branch) q = q.eq('branch_id', branch); return q; })());
       out.submissions = await C(sb().from('profile_submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending'));
       const fuel = await C(sb().from('rider_fuel_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
       const repair = await C(sb().from('rider_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
@@ -9007,13 +9016,17 @@
     p = p || {};
     const me = await _termActor(p);
     if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
-    const days = Number(p.days) || 14;
+    // ★ 24 ก.ย. 69 — days = 0 แปลว่า "ค้างทั้งหมด ไม่จำกัดวัน" (ให้ตามเก็บงานค้างเก่าได้)
+    const days = (p.days === 0 || p.days === '0') ? 0 : (Number(p.days) || 30);
     const today = bkkToday();
-    const since = new Date(new Date(today + 'T00:00:00').getTime() - days * 86400000).toISOString().slice(0, 10);
+    const since = days > 0
+      ? new Date(new Date(today + 'T00:00:00').getTime() - days * 86400000).toISOString().slice(0, 10)
+      : null;
 
     // ★ ดึงทุกสถานะในช่วงนี้ (รอตรวจ / ผ่านแล้ว / ตีกลับ) เพื่อให้เห็นงานที่ตรวจไปแล้วด้วย
-    let q = sb().from('shelf_checks').select('*').gte('check_date', since)
+    let q = sb().from('shelf_checks').select('*')
       .order('check_date', { ascending: false }).order('reviewed_at', { ascending: false });
+    if (since) q = q.gte('check_date', since);
     const branch = me.role === 'mgr' ? me.branch_id : (p.branch || '');
     if (branch) q = q.eq('branch_id', branch);
 
