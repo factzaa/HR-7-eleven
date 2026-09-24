@@ -306,6 +306,7 @@
         case 'hr_att_save':       return await hrAttSave(p.data);
         case 'hr_sched_week':     return await hrSchedWeek(p.start, p.end, p);
         case 'hr_sched_helper_del': return await hrSchedHelperDel(p.id, p);
+        case 'hr_sched_log':      return await hrSchedLog(p.start, p.end, p);
         case 'hr_sched_save':     return await hrSchedSave(p.data, p);
         case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id, p);
         case 'hr_sched_fill_week':return await hrSchedFillWeek(p.data, p);
@@ -3117,9 +3118,55 @@
     const actor = await _scActor(auth);
     if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
     if (!id) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const { data: row } = await sb().from('shift_helpers').select('emp_id,work_date,shift_id').eq('id', id).maybeSingle();
     const { error } = await sb().from('shift_helpers').delete().eq('id', id);
     if (error) throw error;
+    if (row) await logAct('เอาคนมาช่วยออก', row.emp_id, row.work_date + ' · กะ ' + (row.shift_id || '-'), actor.name || 'HR');
     return { ok: true };
+  }
+
+  // ============================================================
+  // ★ 24 ก.ย. 69 — บันทึกการเปลี่ยนแปลงตารางเวร (ให้ HR ตรวจย้อนหลังได้ว่าใครทำอะไรตอนไหน)
+  //   ดึงจาก activity_log เฉพาะการกระทำที่เกี่ยวกับตารางเวร แล้วกรองด้วย "วันทำงาน" ที่อยู่ใน detail
+  //   → เปิดสัปดาห์ไหน เห็นเฉพาะการเปลี่ยนแปลงของสัปดาห์นั้น ไม่ว่าจะกดเมื่อไรก็ตาม
+  // ============================================================
+  const SCHED_LOG_ACTIONS = [
+    'บันทึกกะ', 'เปลี่ยนกะ', 'ลบกะ', 'จัดกะทั้งสัปดาห์', 'คัดลอกตารางเวร (วางทับ)',
+    'เพิ่มคนเข้ากะ (เฉพาะกิจ)', 'เพิ่มคนข้ามสาขาเข้ากะ', 'เอาคนมาช่วยออก',
+    'ปรับกะแถวลงเวลาให้ตรงตารางเวร',
+  ];
+  async function hrSchedLog(start, end, auth) {
+    const actor = await _scActor(auth);
+    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    if (!start) return { ok: false, error: 'ไม่ระบุช่วงวันที่' };
+    const days = [];
+    for (let d = new Date(start + 'T00:00:00Z'); days.length < 60; d.setUTCDate(d.getUTCDate() + 1)) {
+      const x = d.toISOString().slice(0, 10);
+      days.push(x);
+      if (x >= (end || start)) break;
+    }
+    const [lgR, empR] = await Promise.all([
+      sb().from('activity_log').select('id,at,actor,action,emp_id,detail')
+        .in('action', SCHED_LOG_ACTIONS).order('at', { ascending: false }).limit(900),
+      sb().from('employees').select('emp_id,name,nickname,branch_id'),
+    ]);
+    if (lgR.error) throw lgR.error;
+    const nm = {}, brOf = {};
+    (empR.data || []).forEach(e => { nm[e.emp_id] = e.nickname || e.name; brOf[e.emp_id] = e.branch_id || ''; });
+    let rows = (lgR.data || []).filter(r => {
+      const d = String(r.detail || '');
+      return days.some(x => d.indexOf(x) >= 0);
+    });
+    // ผจก. เห็นเฉพาะคนในสาขาตัวเอง
+    if (actor.role === 'mgr') rows = rows.filter(r => !r.emp_id || brOf[r.emp_id] === actor.branch_id);
+    return {
+      ok: true,
+      rows: rows.slice(0, 300).map(r => ({
+        id: r.id, at: r.at, actor: r.actor || '—', action: r.action,
+        emp_id: r.emp_id || '', emp_name: r.emp_id ? (nm[r.emp_id] || r.emp_id) : '',
+        detail: r.detail || '',
+      })),
+    };
   }
   async function hrSchedSave(d, auth) {
     if (!d.emp_id || !d.work_date) return { ok: false, error: 'ต้องระบุพนักงานและวันที่' };
