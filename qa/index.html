@@ -131,11 +131,17 @@
 
 <!-- ตัวสแกนบาร์โค้ด -->
 <div id="scanOverlay">
-  <div class="scanframe"><video id="scanVideo" playsinline muted></video></div>
-  <div class="scanhint">เล็งกล้องให้บาร์โค้ดอยู่กลางเส้นส้ม</div>
-  <button class="btn btn-sec btn-sm" id="scanClose" style="width:auto">ปิด</button>
+  <div class="scanframe"><video id="scanVideo" playsinline autoplay muted></video></div>
+  <div class="scanhint" id="scanMsg">เล็งบาร์โค้ดให้อยู่กลางเส้นส้ม ห่าง 10–20 ซม.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+    <button class="btn btn-sec btn-sm" id="scanTorch" style="width:auto;display:none"><svg class="ei" viewBox="0 0 24 24"><path d="M9 2h6l-1 5H10z"/><path d="M10 7h4v4l-1 10h-2l-1-10z"/></svg> ไฟฉาย</button>
+    <button class="btn btn-sec btn-sm" id="scanShotBtn" style="width:auto"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูปบาร์โค้ด</button>
+    <button class="btn btn-sec btn-sm" id="scanClose" style="width:auto">ปิด</button>
+  </div>
+  <input type="file" id="scanShot" accept="image/*" capture="environment" style="display:none">
   <input type="text" id="scanManual" placeholder="หรือพิมพ์บาร์โค้ดเอง" inputmode="numeric" style="width:80%;max-width:300px;margin-top:14px;text-align:center">
   <button class="btn btn-pri btn-sm" id="scanManualOk" style="width:auto;margin-top:8px">ใช้เลขนี้</button>
+  <div id="scanDiag" style="color:#94a3b8;font-size:11px;margin-top:10px;text-align:center;max-width:90%"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -488,27 +494,184 @@ async function lookupBarcode(bc){
 }
 $('ai_barcode').addEventListener('change',()=>lookupBarcode($('ai_barcode').value));
 
-// ===== สแกนบาร์โค้ด (ZXing) =====
-let zxReader=null, zxActive=false;
+// ===== สแกนบาร์โค้ด =====
+// ★ 24 ก.ย. 69 — เขียนใหม่ทั้งก้อน หลังพบว่า "สแกนไม่ติดทุกเครื่อง"
+//   ของเดิม: ปล่อยให้ ZXing เปิดกล้องเอง (decodeFromConstraints) ไม่ขอความละเอียด ไม่ขอโฟกัส
+//     → ได้ภาพ 640×480 โฟกัสไม่เข้า และ ZXing ไล่อ่าน "ทุกรูปแบบ" ทั้งเฟรม
+//     → บาร์โค้ด EAN-13 บนซองมันวาว/แสงร้านสะดวกซื้อ แทบไม่มีโอกาสอ่านติด
+//     → error ทุกชนิดถูกยุบเป็นข้อความเดียว "เปิดกล้องไม่ได้" แยกไม่ออกว่าติดอะไร
+//   ของใหม่:
+//     1) ใช้ตัวอ่านบาร์โค้ดของตัวเครื่อง (BarcodeDetector) ก่อน — เร็วและแม่นกว่ามาก
+//     2) ถ้าไม่มี ค่อยใช้ ZXing แต่จำกัดเฉพาะรูปแบบที่ร้านใช้จริง + TRY_HARDER
+//     3) ขอกล้องหลังความละเอียดสูง + โฟกัสต่อเนื่อง + ปุ่มไฟฉาย
+//     4) ครอบเฉพาะ "แถบกลางจอ" มาอ่าน (ที่เส้นส้ม) สลับกับเต็มเฟรม — เร็วขึ้นและแม่นขึ้น
+//     5) บอกสาเหตุจริงเมื่อเปิดกล้องไม่ได้ (ไม่อนุญาต / ไม่มีกล้อง / แอปอื่นใช้อยู่ / ไม่ใช่ https)
+//     6) สำรอง: ถ่ายรูปบาร์โค้ดแล้วให้ระบบอ่านจากรูป
+let zxReader=null, zxActive=false, zxStream=null, zxTrack=null, zxTimer=null, zxDetector=null, zxTick=0, zxTorchOn=false;
+const zxCanvas=document.createElement('canvas');
+const BC_NATIVE=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','codabar','qr_code'];
+
 $('ai_scan').onclick=openScanner;
 $('scanClose').onclick=closeScanner;
 $('scanManualOk').onclick=()=>{ const v=($('scanManual').value||'').trim(); if(v){ onBarcode(v); } };
+$('scanShotBtn').onclick=()=>$('scanShot').click();
+$('scanShot').onchange=async()=>{ const f=$('scanShot').files&&$('scanShot').files[0]; $('scanShot').value=''; if(f) await decodeFromFile(f); };
+$('scanTorch').onclick=async()=>{
+  if(!zxTrack) return;
+  try{ zxTorchOn=!zxTorchOn; await zxTrack.applyConstraints({ advanced:[{ torch:zxTorchOn }] });
+    $('scanTorch').style.background = zxTorchOn ? '#f59e0b' : ''; $('scanTorch').style.color = zxTorchOn ? '#fff' : '';
+  }catch(e){ scanMsg('เปิดไฟฉายไม่ได้บนเครื่องนี้','err'); }
+};
+function scanMsg(t,cls){ const el=$('scanMsg'); if(el){ el.textContent=t||''; el.style.color = cls==='err' ? '#fca5a5' : '#fff'; } }
+function scanDiag(t){ const el=$('scanDiag'); if(el) el.textContent=t||''; }
+
 async function openScanner(){
   $('scanManual').value='';
   $('scanOverlay').style.display='flex';
+  $('scanTorch').style.display='none'; zxTorchOn=false;
+  scanMsg('กำลังเปิดกล้อง…'); scanDiag('');
+  if(!window.isSecureContext){ scanMsg('เปิดกล้องไม่ได้ — ต้องเปิดหน้านี้ผ่าน https (ไม่ใช่ไฟล์ในเครื่อง)','err'); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ scanMsg('เบราว์เซอร์นี้เปิดกล้องจากเว็บไม่ได้ — ลองเปิดด้วย Chrome หรือ Safari','err'); return; }
+  // ขอกล้องหลังความละเอียดสูง (ของเดิมไม่ได้ขอ เลยได้ 640×480 อ่านบาร์โค้ดไม่ออก)
   try{
-    await loadScript('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js');
-    if(!window.ZXing){ throw new Error('no lib'); }
-    zxReader=zxReader||new ZXing.BrowserMultiFormatReader();
-    zxActive=true;
-    zxReader.decodeFromConstraints({ video:{ facingMode:'environment' } }, $('scanVideo'), (result,err)=>{
-      if(result && zxActive){ onBarcode(result.getText()); }
-    });
-  }catch(e){ toast('err','เปิดกล้องไม่ได้ — พิมพ์บาร์โค้ดเองด้านล่าง'); }
+    zxStream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{
+      facingMode:{ ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 }, frameRate:{ ideal:30 } } });
+  }catch(e1){
+    try{ zxStream = await navigator.mediaDevices.getUserMedia({ audio:false, video:true }); }
+    catch(e2){
+      const n=String((e2&&e2.name)||(e1&&e1.name)||'');
+      scanMsg(
+        n==='NotAllowedError' ? 'ยังไม่ได้อนุญาตให้ใช้กล้อง — กดไอคอนซ้ายช่อง URL → สิทธิ์ → อนุญาต "กล้อง" แล้วเปิดใหม่'
+      : n==='NotFoundError'   ? 'ไม่พบกล้องบนเครื่องนี้'
+      : n==='NotReadableError'? 'กล้องถูกแอปอื่นใช้อยู่ — ปิดแอปกล้อง/วิดีโอคอลแล้วลองใหม่'
+      : ('เปิดกล้องไม่ได้ ('+(n||'ไม่ทราบสาเหตุ')+')'), 'err');
+      scanDiag('ระหว่างนี้ใช้ปุ่ม "ถ่ายรูปบาร์โค้ด" หรือพิมพ์เลขเองได้');
+      return;
+    }
+  }
+  const v=$('scanVideo');
+  v.srcObject=zxStream; v.setAttribute('playsinline',''); v.muted=true;
+  try{ await v.play(); }catch(_e){}
+  zxTrack=(zxStream.getVideoTracks()||[])[0]||null;
+  if(zxTrack){
+    try{ await zxTrack.applyConstraints({ advanced:[{ focusMode:'continuous' }] }); }catch(_e){}
+    try{ const caps=zxTrack.getCapabilities?zxTrack.getCapabilities():{}; if(caps && caps.torch) $('scanTorch').style.display=''; }catch(_e){}
+  }
+  zxActive=true; zxTick=0;
+  // 1) ตัวอ่านของเครื่อง — เร็วและแม่นสุด
+  zxDetector=null;
+  if('BarcodeDetector' in window){
+    try{
+      const sup=await window.BarcodeDetector.getSupportedFormats();
+      const use=BC_NATIVE.filter(f=>sup.indexOf(f)>=0);
+      if(use.length){ zxDetector=new window.BarcodeDetector({ formats:use }); }
+    }catch(_e){ zxDetector=null; }
+  }
+  // 2) ZXing (สำรอง) — จำกัดรูปแบบเฉพาะที่ร้านใช้ + TRY_HARDER
+  if(!zxDetector){
+    try{
+      await loadScript('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js');
+      if(!window.ZXing) throw new Error('no lib');
+      zxReader=zxMakeReader();
+      if(!zxReader) throw new Error('no reader');
+    }catch(e){
+      scanMsg('โหลดตัวอ่านบาร์โค้ดไม่ได้ (เน็ตช้าหรือออฟไลน์)','err');
+      scanDiag('ใช้ปุ่ม "ถ่ายรูปบาร์โค้ด" หรือพิมพ์เลขเองได้');
+      return;
+    }
+  }
+  const st=(zxTrack&&zxTrack.getSettings)?zxTrack.getSettings():{};
+  scanMsg('เล็งบาร์โค้ดให้อยู่กลางเส้นส้ม ห่าง 10–20 ซม.');
+  scanDiag('ตัวอ่าน: '+(zxDetector?'ของเครื่อง':'ZXing')+' · ภาพ '+(st.width||'?')+'×'+(st.height||'?'));
+  scanLoop();
 }
-function closeScanner(){ zxActive=false; try{ if(zxReader) zxReader.reset(); }catch(e){} $('scanOverlay').style.display='none'; }
+// อ่านทีละเฟรม: สลับ "แถบกลางจอ" (บาร์โค้ด 1 มิติ) กับ "เต็มเฟรม" (QR)
+async function scanLoop(){
+  if(!zxActive) return;
+  const v=$('scanVideo');
+  try{
+    if(v && v.readyState>=2 && v.videoWidth){
+      const cw=v.videoWidth, ch=v.videoHeight;
+      const band=(zxTick++%3!==2);
+      const bh=band?Math.max(80,Math.round(ch*0.40)):ch;
+      const y =band?Math.round((ch-bh)/2):0;
+      zxCanvas.width=cw; zxCanvas.height=bh;
+      const g=zxCanvas.getContext('2d',{willReadFrequently:true});
+      g.drawImage(v, 0,y,cw,bh, 0,0,cw,bh);
+      const code=await decodeCanvas(zxCanvas);
+      if(code){ onBarcode(code); return; }
+    }
+  }catch(_e){}
+  zxTimer=setTimeout(scanLoop, 110);
+}
+// ★ สำคัญ: ไลบรารี ZXing รุ่นนี้ "ไม่มี" decodeFromCanvas (ตรวจกับไฟล์จริงบน CDN แล้ว)
+//   ต้องประกอบเอง: canvas → LuminanceSource → HybridBinarizer → BinaryBitmap → MultiFormatReader.decode
+//   ทดสอบแล้วอ่าน EAN-13 ติดแม้แท่งกว้างแค่ 1 พิกเซล
+function zxMakeReader(){
+  try{
+    if(!window.ZXing || !ZXing.MultiFormatReader) return null;
+    const H=new Map();
+    H.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,  ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.CODABAR, ZXing.BarcodeFormat.QR_CODE ]);
+    H.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    const m=new ZXing.MultiFormatReader(); m.setHints(H); return m;
+  }catch(_e){ return null; }
+}
+async function decodeCanvas(cvs){
+  if(zxDetector){
+    try{ const r=await zxDetector.detect(cvs); if(r && r.length && r[0].rawValue) return String(r[0].rawValue); }catch(_e){}
+    return '';
+  }
+  if(zxReader){
+    try{
+      const src=new ZXing.HTMLCanvasElementLuminanceSource(cvs);
+      const bmp=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src));
+      const r=zxReader.decode(bmp);
+      if(r) return r.getText();
+    }catch(_e){}                      // ไม่เจอบาร์โค้ดในเฟรมนี้ = ปกติ
+    finally{ try{ zxReader.reset(); }catch(_e){} }
+  }
+  return '';
+}
+// สำรอง: อ่านจากรูปที่ถ่าย (ใช้ได้ตอนแสงน้อย/ซองมันวาว — ถ่ายนิ่ง ๆ อ่านง่ายกว่า)
+async function decodeFromFile(file){
+  scanMsg('กำลังอ่านจากรูป…');
+  try{
+    const bmp = ('createImageBitmap' in window)
+      ? await createImageBitmap(file)
+      : await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=URL.createObjectURL(file); });
+    const W=bmp.width||bmp.naturalWidth, H=bmp.height||bmp.naturalHeight;
+    const sc=Math.min(1, 2000/Math.max(W,H));
+    zxCanvas.width=Math.round(W*sc); zxCanvas.height=Math.round(H*sc);
+    zxCanvas.getContext('2d',{willReadFrequently:true}).drawImage(bmp,0,0,zxCanvas.width,zxCanvas.height);
+    if(!zxDetector && !zxReader){
+      try{
+        await loadScript('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js');
+        zxReader=zxMakeReader();
+      }catch(_e){}
+      if('BarcodeDetector' in window && !zxDetector){ try{ zxDetector=new window.BarcodeDetector({formats:BC_NATIVE}); }catch(_e){} }
+    }
+    const code=await decodeCanvas(zxCanvas);
+    if(code){ onBarcode(code); return; }
+    scanMsg('อ่านจากรูปไม่ได้ — ถ่ายให้บาร์โค้ดเต็มกรอบ ตรง ๆ ไม่เอียง แสงพอ แล้วลองใหม่','err');
+  }catch(e){ scanMsg('อ่านรูปไม่สำเร็จ','err'); }
+}
+function closeScanner(){
+  zxActive=false;
+  if(zxTimer){ clearTimeout(zxTimer); zxTimer=null; }
+  try{ if(zxTrack && zxTorchOn) zxTrack.applyConstraints({ advanced:[{ torch:false }] }); }catch(_e){}
+  try{ if(zxStream) zxStream.getTracks().forEach(t=>t.stop()); }catch(_e){}
+  try{ const v=$('scanVideo'); if(v){ v.pause(); v.srcObject=null; } }catch(_e){}
+  try{ if(zxReader && zxReader.reset) zxReader.reset(); }catch(_e){}   // ล้างสถานะตัวอ่าน (ตัวอ่านใช้ซ้ำได้)
+  zxStream=null; zxTrack=null; zxTorchOn=false;
+  $('scanOverlay').style.display='none';
+}
 function onBarcode(code){
   code=String(code||'').trim(); if(!code) return;
+  try{ if(navigator.vibrate) navigator.vibrate(60); }catch(_e){}
   closeScanner();
   $('ai_barcode').value=code;
   lookupBarcode(code).then(()=>qaDupLive());
