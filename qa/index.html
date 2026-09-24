@@ -36,6 +36,10 @@
   .thumbs{display:flex;gap:6px;overflow-x:auto;padding:2px 0;margin-top:6px;-webkit-overflow-scrolling:touch;}
   .thumbs img{height:66px;border-radius:8px;flex:none;border:1px solid var(--line);cursor:pointer;}
   .muted{color:var(--muted);font-size:13.5px;}
+  /* ★ 24 ก.ย. 69 — แถบค้นหาในรายการสินค้า */
+  .qchip{display:inline-block;font-size:13px;padding:6px 12px;border-radius:999px;border:1.5px solid var(--line);background:#fff;color:var(--txt);cursor:pointer;white-space:nowrap;}
+  .qchip.on{background:var(--green);border-color:var(--green);color:#fff;font-weight:600;}
+  .itbar input[type=text],.itbar input[type=date]{font-size:15px;padding:10px 12px;}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);padding:12px 18px;border-radius:11px;color:#fff;font-weight:500;font-size:14.5px;display:none;z-index:90;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.18);text-align:center;}
   .toast.ok{background:var(--green);} .toast.err{background:var(--red);} .toast.show{display:block;}
   .hide{display:none;} .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-2px;}
@@ -93,6 +97,32 @@
     <div id="step_items" class="hide">
       <div class="who"><div><div class="nm" id="it_title">—</div><div class="sub" id="it_sub"></div></div><span class="ch" id="it_back">‹ โฟลเดอร์</span></div>
       <button class="btn btn-pri" id="addItemBtn" style="margin-bottom:12px">＋ เพิ่มสินค้า</button>
+
+      <!-- ★ 24 ก.ย. 69 — ค้นหาสินค้าในโฟลเดอร์: พิมพ์ / สแกนบาร์โค้ด / กรองตามวันหมดอายุ -->
+      <div class="card itbar" style="padding:12px;margin-bottom:12px">
+        <div class="row2" style="margin-bottom:8px">
+          <input id="it_q" type="text" placeholder="ค้นหาชื่อ / บาร์โค้ด / ขนาด / โซน">
+          <button class="btn btn-sec btn-sm" id="it_scan" style="flex:none;white-space:nowrap"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> สแกนหา</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px" id="it_chips">
+          <span class="qchip on" data-f="">ทั้งหมด</span>
+          <span class="qchip" data-f="on_shelf">ยังอยู่บนเชลฟ์</span>
+          <span class="qchip" data-f="sold">ขายแล้ว</span>
+          <span class="qchip" data-f="removed">เก็บออกแล้ว</span>
+          <span class="qchip" data-f="d:exp">หมดอายุแล้ว</span>
+          <span class="qchip" data-f="d:7">หมดใน 7 วัน</span>
+          <span class="qchip" data-f="d:30">หมดใน 30 วัน</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="muted" style="flex:none">วันหมดอายุ</span>
+          <input id="it_from" type="date" style="flex:1;min-width:120px">
+          <span class="muted" style="flex:none">ถึง</span>
+          <input id="it_to" type="date" style="flex:1;min-width:120px">
+          <button class="btn btn-sec btn-sm" id="it_clear" style="flex:none">ล้าง</button>
+        </div>
+        <div class="muted" id="it_count" style="margin-top:9px;font-size:12.5px"></div>
+      </div>
+
       <div id="items_body"></div>
     </div>
 
@@ -343,33 +373,103 @@ function expiryText(dstr){
   else tag=' · เหลือ '+dl+' วัน';
   return '<span style="color:'+col+';font-weight:600"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> หมดอายุ '+dt+tag+'</span>';
 }
+// ★ 24 ก.ย. 69 — รายการสินค้าในโฟลเดอร์: ค้นหา/กรอง + ไม่เด้งกลับขึ้นบนเวลาเปลี่ยนสถานะ
+//   ของเดิม: กดขายแล้ว/เก็บออก → เรียก openFolder() ใหม่ทั้งก้อน (ยิง API + สร้าง DOM ใหม่)
+//            หน้าจึงกระโดดกลับไปบนสุดทุกครั้ง เลื่อนหาสินค้าตัวถัดไปใหม่ทุกที
+//   ของใหม่: เก็บรายการไว้ในหน่วยความจำ อัปเดตเฉพาะรายการที่เปลี่ยน แล้ววาดใหม่พร้อมคืนตำแหน่งเลื่อน
+let IT_ROWS=[], IT_FILTER='';
+function itDaysLeft(d){ try{ return daysLeft(d); }catch(_e){ return 0; } }
+function itMatch(it){
+  const q=(($('it_q')||{}).value||'').trim().toLowerCase();
+  if(q){
+    const hay=((it.name||'')+' '+(it.barcode||'')+' '+(it.size||'')+' '+(it.zone||'')).toLowerCase();
+    if(hay.indexOf(q)<0) return false;
+  }
+  const f=IT_FILTER;
+  if(f==='on_shelf'||f==='sold'||f==='removed'){ if(String(it.status||'')!==f) return false; }
+  else if(f==='d:exp'){ if(itDaysLeft(it.expiry_date)>=0) return false; }
+  else if(f==='d:7'){ const d=itDaysLeft(it.expiry_date); if(d<0||d>7) return false; }
+  else if(f==='d:30'){ const d=itDaysLeft(it.expiry_date); if(d<0||d>30) return false; }
+  const from=(($('it_from')||{}).value||''), to=(($('it_to')||{}).value||'');
+  const ex=String(it.expiry_date||'').slice(0,10);
+  if(from && ex && ex<from) return false;
+  if(to   && ex && ex>to)   return false;
+  return true;
+}
+function itCardHTML(it){
+  const sp=statusPill(it.status);
+  let c='<div class="card" data-itcard="'+it.id+'"><div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><div style="font-weight:700">'+esc(it.name)+'</div>';
+  c+='<div class="muted" style="margin-top:2px">'+(it.barcode?('รหัส '+esc(it.barcode)+' · '):'')+(it.size?('ขนาด '+esc(it.size)+' · '):'')+'จำนวน '+(it.qty||1)+' ชิ้น'+(it.zone?(' · โซน '+esc(it.zone)):'')+'</div>';
+  c+='<div style="margin-top:4px;font-size:13.5px">'+expiryText(it.expiry_date)+'</div>';
+  c+='</div><span class="pill '+sp[1]+'">'+sp[0]+'</span></div>';
+  if(it.photos&&it.photos.length) c+='<div class="thumbs">'+it.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this.src)">').join('')+'</div>';
+  c+='<div class="row2" style="margin-top:10px">'
+    +'<button class="btn btn-sm '+(it.status==='on_shelf'?'btn-warn':'btn-sec')+'" data-st="on_shelf" data-id="'+it.id+'">ยังอยู่</button>'
+    +'<button class="btn btn-sm '+(it.status==='sold'?'btn-pri':'btn-sec')+'" data-st="sold" data-id="'+it.id+'">ขายแล้ว</button>'
+    +'<button class="btn btn-sm '+(it.status==='removed'?'btn-danger':'btn-sec')+'" data-st="removed" data-id="'+it.id+'" title="ต้องถ่ายรูปหลักฐานก่อนบันทึก">เก็บออก 📷</button>'
+    +'</div>';
+  return c+'</div>';
+}
+function renderItems(keepScroll){
+  const box=$('items_body'); if(!box) return;
+  const y = keepScroll ? (window.pageYOffset||document.documentElement.scrollTop||0) : null;
+  const rows=IT_ROWS.filter(itMatch);
+  const cnt=$('it_count');
+  if(cnt) cnt.textContent = IT_ROWS.length
+    ? ('แสดง '+rows.length+' จาก '+IT_ROWS.length+' รายการ'
+       +' · ยังอยู่ '+IT_ROWS.filter(x=>x.status==='on_shelf').length
+       +' · ขายแล้ว '+IT_ROWS.filter(x=>x.status==='sold').length
+       +' · เก็บออก '+IT_ROWS.filter(x=>x.status==='removed').length)
+    : '';
+  box.innerHTML = IT_ROWS.length
+    ? (rows.length ? rows.map(itCardHTML).join('') : '<div class="card muted">ไม่พบสินค้าตามเงื่อนไขที่ค้นหา</div>')
+    : '<div class="card muted">ยังไม่มีสินค้าในโฟลเดอร์นี้ กด "＋ เพิ่มสินค้า"</div>';
+  box.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>itSetStatus(b));
+  if(y!=null){ try{ window.scrollTo(0,y); }catch(_e){} }   // ★ คืนตำแหน่งเดิม ไม่เด้งขึ้นบน
+}
+async function itSetStatus(b){
+  const id=Number(b.dataset.id), st=b.dataset.st;
+  if(st==='removed'){ rmPhotoFlow(id); return; }           // เก็บออก = ต้องถ่ายรูปหลักฐานก่อนเสมอ
+  const prev=b.textContent; b.disabled=true; b.textContent='…';
+  try{
+    await window.HR.qaUpdateItemStatus({ item_id:id, empId:EMP.emp_id, status:st });
+    itApplyLocal(id, st);                                   // อัปเดตในหน่วยความจำ ไม่โหลดใหม่ทั้งหน้า
+    toast('ok', st==='sold'?'บันทึกขายแล้ว':'อัปเดตสถานะแล้ว');
+  }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); b.disabled=false; b.textContent=prev; }
+}
+// อัปเดตสถานะรายการเดียวในหน่วยความจำ แล้ววาดใหม่โดยคงตำแหน่งเลื่อน
+function itApplyLocal(id, st, photos){
+  const it=IT_ROWS.find(x=>Number(x.id)===Number(id));
+  if(it){ it.status=st; if(photos && photos.length) it.photos=(it.photos||[]).concat(photos); }
+  renderItems(true);
+}
 async function openFolder(f){
   if(!f) return; CUR_FOLDER=f;
   show('step_items'); $('it_title').textContent=''+f.title; $('it_sub').textContent=f.target_month||'';
   $('items_body').innerHTML='<div class="card muted">กำลังโหลด…</div>';
   let r; try{ r=await window.HR.getQaItems(f.id); }catch(e){ $('items_body').innerHTML='<div class="card muted">'+esc(e.message||'')+'</div>'; return; }
-  if(!r.rows.length){ $('items_body').innerHTML='<div class="card muted">ยังไม่มีสินค้าในโฟลเดอร์นี้ กด "＋ เพิ่มสินค้า"</div>'; return; }
-  $('items_body').innerHTML=r.rows.map(it=>{
-    const sp=statusPill(it.status);
-    let c='<div class="card"><div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><div style="font-weight:700">'+esc(it.name)+'</div>';
-    c+='<div class="muted" style="margin-top:2px">'+(it.barcode?('รหัส '+esc(it.barcode)+' · '):'')+(it.size?('ขนาด '+esc(it.size)+' · '):'')+'จำนวน '+(it.qty||1)+' ชิ้น'+(it.zone?(' · โซน '+esc(it.zone)):'')+'</div>';
-    c+='<div style="margin-top:4px;font-size:13.5px">'+expiryText(it.expiry_date)+'</div>';
-    c+='</div><span class="pill '+sp[1]+'">'+sp[0]+'</span></div>';
-    if(it.photos&&it.photos.length) c+='<div class="thumbs">'+it.photos.map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this.src)">').join('')+'</div>';
-    c+='<div class="row2" style="margin-top:10px">'
-      +'<button class="btn btn-sm '+(it.status==='on_shelf'?'btn-warn':'btn-sec')+'" data-st="on_shelf" data-id="'+it.id+'">ยังอยู่</button>'
-      +'<button class="btn btn-sm '+(it.status==='sold'?'btn-pri':'btn-sec')+'" data-st="sold" data-id="'+it.id+'">ขายแล้ว</button>'
-      +'<button class="btn btn-sm '+(it.status==='removed'?'btn-danger':'btn-sec')+'" data-st="removed" data-id="'+it.id+'" title="ต้องถ่ายรูปหลักฐานก่อนบันทึก">เก็บออก 📷</button>'
-      +'</div>';
-    return c+'</div>';
-  }).join('');
-  document.querySelectorAll('[data-st]').forEach(b=>b.onclick=async()=>{
-    const id=Number(b.dataset.id), st=b.dataset.st;
-    if(st==='removed'){ rmPhotoFlow(id); return; }   // ★ เก็บออก = ต้องถ่ายรูปหลักฐานก่อนเสมอ
-    try{ await window.HR.qaUpdateItemStatus({ item_id:id, empId:EMP.emp_id, status:st }); toast('ok','อัปเดตสถานะแล้ว'); openFolder(CUR_FOLDER); }
-    catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
-  });
+  IT_ROWS=r.rows||[];
+  renderItems(false);
 }
+// ---- แถบค้นหา ----
+(function wireItemSearch(){
+  const q=$('it_q'); if(!q) return;
+  let t=null;
+  q.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>renderItems(true),140); };
+  ['it_from','it_to'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>renderItems(true); });
+  const clr=$('it_clear');
+  if(clr) clr.onclick=()=>{ q.value=''; $('it_from').value=''; $('it_to').value=''; IT_FILTER='';
+    document.querySelectorAll('#it_chips .qchip').forEach(c=>c.classList.toggle('on', c.dataset.f===''));
+    renderItems(false); };
+  document.querySelectorAll('#it_chips .qchip').forEach(c=>c.onclick=()=>{
+    IT_FILTER = (IT_FILTER===c.dataset.f) ? '' : c.dataset.f;
+    document.querySelectorAll('#it_chips .qchip').forEach(x=>x.classList.toggle('on', x.dataset.f===IT_FILTER));
+    renderItems(false);
+  });
+  const sc=$('it_scan');
+  if(sc) sc.onclick=()=>{ SCAN_TARGET='search'; openScanner(); };
+})();
+
 // ★ เก็บออกต้องมีรูปหลักฐาน — เปิดกล้อง/เลือกรูปก่อน แล้วค่อยบันทึก (ยกเลิกได้ ไม่มีอะไรเปลี่ยน)
 // ★ 20 ก.ย. 69 — แก้ "กล้องไม่เปิด" ตอนกดเก็บออกในเมนู QA
 //   ต้นเหตุ 2 อย่างที่ทับกันอยู่ในช่องรับไฟล์ตัวนี้ (เป็นที่เดียวในระบบที่สร้างด้วย JS):
@@ -436,7 +536,8 @@ function rmPhotoFlow(item_id){
     const b=document.getElementById('rm_save'); b.disabled=true; b.textContent='กำลังบันทึก…';
     try{
       await window.HR.qaUpdateItemStatus({ item_id, empId:EMP.emp_id, status:'removed', photos:shots });
-      close(); toast('ok','บันทึกเก็บออกแล้ว ('+shots.length+' รูป)'); openFolder(CUR_FOLDER);
+      close(); toast('ok','บันทึกเก็บออกแล้ว ('+shots.length+' รูป)');
+      itApplyLocal(item_id,'removed',shots);   // ★ ไม่โหลดใหม่ทั้งหน้า → ไม่เด้งกลับขึ้นบน
     }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); }
     b.disabled=false; b.textContent='บันทึกเก็บออก';
   };
@@ -511,7 +612,8 @@ let zxReader=null, zxActive=false, zxStream=null, zxTrack=null, zxTimer=null, zx
 const zxCanvas=document.createElement('canvas');
 const BC_NATIVE=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','codabar','qr_code'];
 
-$('ai_scan').onclick=openScanner;
+let SCAN_TARGET='add';                      // ★ 'add' = ใส่ช่องบาร์โค้ดตอนเพิ่มสินค้า · 'search' = ใช้ค้นหาในรายการ
+$('ai_scan').onclick=()=>{ SCAN_TARGET='add'; openScanner(); };
 $('scanClose').onclick=closeScanner;
 $('scanManualOk').onclick=()=>{ const v=($('scanManual').value||'').trim(); if(v){ onBarcode(v); } };
 $('scanShotBtn').onclick=()=>$('scanShot').click();
@@ -672,7 +774,16 @@ function closeScanner(){
 function onBarcode(code){
   code=String(code||'').trim(); if(!code) return;
   try{ if(navigator.vibrate) navigator.vibrate(60); }catch(_e){}
+  const target=SCAN_TARGET; SCAN_TARGET='add';
   closeScanner();
+  if(target==='search'){                     // ★ สแกนเพื่อ "ค้นหา" สินค้าในโฟลเดอร์
+    const q=$('it_q'); if(q){ q.value=code; }
+    IT_FILTER=''; document.querySelectorAll('#it_chips .qchip').forEach(c=>c.classList.toggle('on', c.dataset.f===''));
+    renderItems(false);
+    const n=IT_ROWS.filter(itMatch).length;
+    toast(n?'ok':'err', n ? ('พบ '+n+' รายการ · '+code) : ('ไม่พบสินค้ารหัส '+code+' ในโฟลเดอร์นี้'));
+    return;
+  }
   $('ai_barcode').value=code;
   lookupBarcode(code).then(()=>qaDupLive());
   toast('ok','อ่านบาร์โค้ด: '+code);
@@ -733,7 +844,7 @@ $('ai_save').onclick=async()=>{
       } else throw e;
     }
     toast('ok',st==='removed'?'บันทึกเก็บออกแล้ว':'บันทึกสินค้าแล้ว');
-    openFolder(CUR_FOLDER);
+    openFolder(CUR_FOLDER);   // มีรายการใหม่จริง จึงต้องดึงใหม่
   }catch(e){ toast('err',(e.message||'ไม่สำเร็จ')); btn.disabled=false; btn.textContent=label; return; }
   btn.disabled=false; btn.textContent=label;
 };
