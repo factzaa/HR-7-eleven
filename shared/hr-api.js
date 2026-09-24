@@ -305,6 +305,7 @@
         case 'hr_att_list':       return await hrAttList(p);
         case 'hr_att_save':       return await hrAttSave(p.data);
         case 'hr_sched_week':     return await hrSchedWeek(p.start, p.end, p);
+        case 'hr_sched_helper_del': return await hrSchedHelperDel(p.id, p);
         case 'hr_sched_save':     return await hrSchedSave(p.data, p);
         case 'hr_sched_delete':   return await hrSchedDelete(p.emp_id, p.work_date, p.shift_id, p);
         case 'hr_sched_fill_week':return await hrSchedFillWeek(p.data, p);
@@ -3079,17 +3080,23 @@
   async function hrSchedWeek(start, end, auth) {
     const actor = await _scActor(auth);
     if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
-    const [empsR, schR, brR, shR] = await Promise.all([
+    const [empsR, schR, brR, shR, hlpR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,phone,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).or('start_date.is.null,start_date.lte.' + end).order('emp_id'),
       sb().from('schedules').select('*').gte('work_date', start).lte('work_date', end),
       sb().from('branches').select('branch_id,name').order('branch_id'),
       sb().from('shifts').select('shift_id,name').order('start_time'),
+      // ★ 24 ก.ย. 69 — คนที่หัวหน้าผลัดกดเพิ่มเข้ามาช่วยงาน (คนละตารางกับเวร ไม่นับเป็นวันทำงาน)
+      sb().from('shift_helpers').select('id,emp_id,work_date,shift_id,branch_id,added_by').gte('work_date', start).lte('work_date', end),
     ]);
     if (empsR.error) throw empsR.error;
     if (schR.error) throw schR.error;
     // index ตารางเวร: key = emp_id|work_date → array ของกะ (รองรับควบกะหลายกะ/วัน)
     const cells = {};
     (schR.data || []).forEach(s => { const k = s.emp_id + '|' + s.work_date; (cells[k] = cells[k] || []).push(s); });
+    const helpers = {};
+    (((hlpR && hlpR.error) ? [] : ((hlpR && hlpR.data) || []))).forEach(h => {
+      const k = h.emp_id + '|' + h.work_date; (helpers[k] = helpers[k] || []).push(h);
+    });
     // ★ ผจก. เห็นเฉพาะพนักงานประจำสาขาตัวเอง (กรองที่ server ไม่ใช่แค่ที่หน้าเว็บ)
     let emps = empsR.data || [];
     if (actor.role === 'mgr') emps = emps.filter(e => String(e.branch_id || '') === actor.branch_id);
@@ -3100,9 +3107,19 @@
       week_min: _scThisMonday(),
       employees: emps,
       schedules: cells,
+      helpers,
       branches: brR.data || [],
       shifts: shR.data || [],
     };
+  }
+  // ★ 24 ก.ย. 69 — เอา "คนมาช่วยงาน" ออก (ไม่ใช่การลบเวร — แถวนี้ไม่เคยนับเป็นวันทำงานอยู่แล้ว)
+  async function hrSchedHelperDel(id, auth) {
+    const actor = await _scActor(auth);
+    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    if (!id) return { ok: false, error: 'ไม่ระบุรายการ' };
+    const { error } = await sb().from('shift_helpers').delete().eq('id', id);
+    if (error) throw error;
+    return { ok: true };
   }
   async function hrSchedSave(d, auth) {
     if (!d.emp_id || !d.work_date) return { ok: false, error: 'ต้องระบุพนักงานและวันที่' };

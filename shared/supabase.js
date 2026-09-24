@@ -2054,10 +2054,11 @@
     const today = _ctx.workDate;
     const branch = _ctx.branch;                       // สาขาที่ทำงานจริงวันนี้ (อาจเป็นสาขาที่ไปแทน)
     const group = shiftId || _ctx.group;             // ผลัดหลัก (เช้า/บ่าย/ดึก หรือ กะพิเศษ)
-    const [defsR, asgR, schR, empsR, shR, brR] = await Promise.all([
+    const [defsR, asgR, schR, hlpR, empsR, shR, brR] = await Promise.all([
       _taskDefsFor(branch, today, group),
       sb.from('task_assignments').select('*').eq('branch_id', branch || '').eq('work_date', today).eq('shift_id', group),
       sb.from('schedules').select('emp_id,shift_id').eq('branch_id', branch || '').eq('work_date', today),
+      sb.from('shift_helpers').select('emp_id,shift_id').eq('branch_id', branch || '').eq('work_date', today),   // ★ คนมาช่วยงาน (ไม่ใช่เวร)
       // ★ 20 ก.ย. 69 — ดึง start_date/end_date มาด้วย เพื่อคัดคนที่พ้นสภาพแล้วออกจากหน้ามอบงาน
       //   ของเดิมกรองแค่ active = true ซึ่งไม่พอ: พนักงานที่ลาออกไปแล้วหลายคนยังมี active = true อยู่
       //   (HR ใส่ end_date ให้ แต่ไม่ได้ปิดสวิตช์ active) → ชื่อยังโผล่ในดรอปดาวน์ "เพิ่มคนเข้ากะ" + "มอบงาน"
@@ -2080,7 +2081,11 @@
     const pickable = {}; empsActive.forEach(e => { pickable[e.emp_id] = true; });
     const grpOf = {}; (shR.data || []).forEach(s => { grpOf[s.shift_id] = s.main_shift || s.shift_id; });
     // คนในกะ = จากตารางเวร แต่ตัดคนที่พ้นสภาพแล้วออก (ปิดใช้งาน หรือเลยวันสิ้นสุดการทำงานไปแล้ว)
-    const memberIds = [...new Set((schR.data || []).filter(r => grpOf[r.shift_id] === group && pickable[r.emp_id]).map(r => r.emp_id))];
+    // ★ คนในกะ = ตารางเวรจริง + คนที่หัวหน้าผลัดกดเพิ่มเข้ามาช่วย (ช่วยงานได้ แต่ไม่ใช่เวร)
+    const _helperIds = new Set(((hlpR && hlpR.data) || [])
+      .filter(r => (grpOf[r.shift_id] || r.shift_id) === group && pickable[r.emp_id]).map(r => r.emp_id));
+    const _schedIds = (schR.data || []).filter(r => grpOf[r.shift_id] === group && pickable[r.emp_id]).map(r => r.emp_id);
+    const memberIds = [...new Set(_schedIds.concat([..._helperIds]))];
     const defs = (defsR || []).filter(d => !d.auto_day);   // งานที่สุ่มวันรายคน = พนักงานดึงเองในเมนูของตัวเอง
     // ★ ผจก. — เข้าร่วมผลัดที่เวลาทับกัน + งานที่ติ๊ก "ผจก.รับผิดชอบ" มอบให้อัตโนมัติ
     const mgrs = await _mgrOnDuty(branch, today, group);
@@ -2092,7 +2097,7 @@
     const byDef = {}; asgRows.forEach(a => { byDef[a.task_def_id] = a; });
     return {
       emp, shift: group, work_date: today, branch, shifts: shR.data || [],
-      members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id }))       // คนในกะวันนี้ (จากตารางเวรจริง)
+      members: memberIds.map(id => ({ emp_id: id, name: nameOf[id] || id, is_helper: _helperIds.has(id) && !_schedIds.includes(id) }))   // คนในกะวันนี้ (เวรจริง + คนมาช่วย)
         .concat(mgrs.filter(m => !memberIds.includes(m.emp_id)).map(m => ({ emp_id: m.emp_id, name: m.name + ' · ผจก.', is_mgr: true }))),
       managers: mgrs,
       // ★ รายชื่อที่เลือกได้ — เฉพาะคนที่ยังเป็นพนักงาน ณ วันทำงานของกะนี้
@@ -2157,16 +2162,44 @@
     if (exist && exist.length) {
       return { ok: true, name: e.nickname || e.name, is_cover: !!exist[0].is_cover, already: true };
     }
+    // ★ เพิ่มเป็น "คนมาช่วย" ไว้แล้วก็ไม่ต้องเพิ่มซ้ำ
+    try {
+      let _qh = sb.from('shift_helpers').select('id').eq('emp_id', e.emp_id).eq('work_date', today);
+      _qh = shiftId ? _qh.eq('shift_id', shiftId) : _qh.is('shift_id', null);
+      const { data: exh } = await _qh.limit(1);
+      if (exh && exh.length) return { ok: true, name: e.nickname || e.name, is_cover: false, already: true, helper: true };
+    } catch (_e) { /* ยังไม่มีตาราง = ไม่เป็นไร */ }
 
-    const { error } = await sb.from('schedules').insert({
-      emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br,
-      is_cover: isCover,
-      note: isCover ? 'ไปช่วยสาขาอื่น' : 'เพิ่มเข้ากะเฉพาะกิจ',
-    });
-    if (error) throw error;
+    // ★ 24 ก.ย. 69 — แยก "คนมาช่วยงาน" ออกจาก "ตารางเวร" อย่างสิ้นเชิง
+    //   เดิมเขียนลง schedules → โผล่เป็นกะในตารางเวร · นับเป็นวันที่ต้องมาทำงาน · ควบกะปลอม
+    //   ใหม่: เก็บที่ shift_helpers ใช้แค่ให้ขึ้นบนบอร์ดมอบงานในกะ ไม่มีหน้าไหนของ
+    //         วินัย/คะแนน/เงินเดือน/รายงาน อ่านตารางนี้ → ไม่กระทบกะทำงานเลย
+    //   ข้ามสาขา = ไปช่วยสาขาอื่น ยังเป็นวันทำงานจริง จึงยังเขียน schedules เหมือนเดิม
+    if (isCover) {
+      const { error } = await sb.from('schedules').insert({
+        emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br,
+        is_cover: true, note: 'ไปช่วยสาขาอื่น',
+      });
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('shift_helpers').insert({
+        emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br,
+        added_by: byName || (byEmpId ? ('รหัส ' + byEmpId) : null),
+      });
+      // ตารางยังไม่ถูกสร้าง (ยังไม่ได้รันไฟล์ supabase/shift_helpers.sql) → ถอยไปใช้วิธีเดิมชั่วคราว
+      if (error) {
+        if (/shift_helpers|does not exist|schema cache/i.test(String(error.message || ''))) {
+          const { error: e2 } = await sb.from('schedules').insert({
+            emp_id: e.emp_id, work_date: today, shift_id: shiftId || null, branch_id: br,
+            is_cover: false, note: 'เพิ่มเข้ากะเฉพาะกิจ',
+          });
+          if (e2) throw e2;
+        } else if (!/duplicate key/i.test(String(error.message || ''))) throw error;
+      }
+    }
     // บันทึก log — ให้รู้ว่ากะที่ "โผล่เพิ่มเอง" จริง ๆ มาจากหัวหน้าผลัดกดเพิ่มคนเข้ากะ
     try { await sb.from('activity_log').insert({ action: isCover ? 'เพิ่มคนข้ามสาขาเข้ากะ' : 'เพิ่มคนเข้ากะ (เฉพาะกิจ)', emp_id: e.emp_id, detail: 'เพิ่ม ' + (e.nickname || e.name) + ' เข้ากะ ' + (shiftId || '-') + ' วันที่ ' + today + ' สาขา ' + (br || '-') + (isCover ? (' · ไปช่วยจากสาขาประจำ ' + home) : ''), actor: byName || (byEmpId ? ('รหัส ' + byEmpId) : 'หัวหน้าผลัด/แอปพนักงาน') }); } catch (_) {}
-    return { ok: true, name: e.nickname || e.name, is_cover: isCover };
+    return { ok: true, name: e.nickname || e.name, is_cover: isCover, helper: !isCover };
   }
   // หางาน assignment เดิมของ (สาขา+วัน+กะ+งาน)
   async function _findAsg(branch, today, shift, defId) {
