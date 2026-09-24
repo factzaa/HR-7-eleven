@@ -16591,6 +16591,17 @@ function renderSchedule(){
   //   เวรแถวนี้เกิดจากหัวหน้าผลัดกดปุ่ม "เพิ่มคนเข้ากะ" ในแอปรับส่งผลัด
   //   ไม่ใช่เวรที่ ผจก./สำนักงานจัด — เดิมแยกด้วยตาไม่ออก จึงดูเหมือนระบบจัดกะให้เอง
   const SC_ADHOC_NOTE = 'เพิ่มเข้ากะเฉพาะกิจ';
+  // ★ 24 ก.ย. 69 — "คนมาช่วยงาน" เก็บคนละตารางกับเวรแล้ว (shift_helpers)
+  //   โชว์ไว้ให้ HR/ผจก. เห็นว่าใครมาช่วยกะไหน แต่ไม่ใช่เวร ไม่นับวันทำงาน ไม่มีผลกับคะแนน/เงินเดือน
+  const _helperTag = (empId, d) => {
+    const hs = (SC.helpers && SC.helpers[empId+'|'+d]) || [];
+    if(!hs.length) return '';
+    return hs.map(h=>'<div title="หัวหน้าผลัดกดเพิ่มเข้ามาช่วยงานในกะ'+(h.added_by?(' โดย '+esc(h.added_by)):'')+' — ไม่ใช่เวร ไม่นับเป็นวันทำงาน" '
+      +'style="display:flex;align-items:center;justify-content:center;gap:2px;font-size:9.5px;line-height:1.4;color:#0e7490;background:#ecfeff;border:1px dashed #a5f3fc;border-radius:5px;padding:1px 3px;margin-top:2px;font-weight:700;white-space:nowrap">'
+      +'มาช่วย '+esc(shiftCodeOf(h.shift_id)||'-')
+      +(SC_PAST?'':'<span onclick="scDelHelper('+h.id+')" style="cursor:pointer;color:#94a3b8;font-weight:700" title="เอาออก">×</span>')
+      +'</div>').join('');
+  };
   const _adhocTag = c => (c && c.note === SC_ADHOC_NOTE)
     ? '<div title="หัวหน้าผลัดกดเพิ่มจากแอปรับส่งผลัด — ไม่ใช่เวรที่ ผจก./สำนักงานจัด · ถ้าไม่มีการลงเวลา ระบบจะไม่นับเป็นขาดงาน" style="font-size:9.5px;line-height:1.35;color:#92400e;background:#fef3c7;border-radius:4px;padding:0 3px;margin-top:1px;font-weight:700;white-space:nowrap">เฉพาะกิจ</div>'
     : '';
@@ -16622,7 +16633,7 @@ function renderSchedule(){
         // มี 1 กะ → ปุ่ม + เขียวมุมขวาบน สำหรับเพิ่มกะที่ 2 (ควบกะ)
         if(arr.length===1) inner += `<button onclick="this.nextElementSibling.style.display='block';this.style.display='none'" title="เพิ่มกะ (ควบกะ)" style="position:absolute;top:-3px;right:-3px;width:15px;height:15px;border-radius:50%;background:#eef0f2;color:#aeb6c0;border:0;font-size:11px;line-height:13px;cursor:pointer;padding:0">+</button><select onchange="if(this.value){scAddShift('${esc(e.emp_id)}','${d}',this.value)}" style="${_selCss};width:100%;margin-top:2px;display:none">${_optAdd}</select>`;
       }
-      return `<td style="position:relative;padding:5px 5px;vertical-align:top;text-align:center;min-width:72px">${inner}</td>`;
+      return `<td style="position:relative;padding:5px 5px;vertical-align:top;text-align:center;min-width:72px">${inner}${_helperTag(e.emp_id,d)}</td>`;
     }).join('');
     const telLink = e.phone
       ? `<a href="tel:${esc(e.phone)}" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:3px;margin-top:3px;color:#0369a1;font-weight:700;font-size:11.5px;text-decoration:none"><svg class="ei" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19 19 0 0 1-8.3-3 19 19 0 0 1-6-6 19 19 0 0 1-3-8.3A2 2 0 0 1 4.1 2H7a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6 6l1.2-1.1a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6A2 2 0 0 1 22 16.9z"/></svg> ${esc(e.phone)}</a>`
@@ -16737,6 +16748,13 @@ async function scDelShift(emp, date, shiftId){
   const r=await post({ action:'hr_sched_delete', ...authBody(), reason:_rsn, emp_id:emp, work_date:date, shift_id:shiftId });
   if(r && r.ok===false) toast('err', r.error||'ลบไม่สำเร็จ');
   else if(_rsn) SC_CHG=(SC_CHG||0)+1;
+  loadSchedule();
+}
+// ★ 24 ก.ย. 69 — เอา "คนมาช่วยงาน" ออก (ไม่ใช่เวร จึงไม่ต้องขอเหตุผลเหมือนลบเวร)
+async function scDelHelper(id){
+  if(!confirm('เอารายการ "มาช่วย" นี้ออก?\nรายการนี้ไม่ใช่เวร ไม่มีผลกับวันทำงาน/คะแนน/เงินเดือนอยู่แล้ว')) return;
+  const r=await post({ action:'hr_sched_helper_del', ...authBody(), id:id });
+  if(r && r.ok===false) toast('err', r.error||'เอาออกไม่สำเร็จ');
   loadSchedule();
 }
 // ---------- สรุปตาราง → ข้อความ / รูป (สำหรับส่ง Line) ----------
