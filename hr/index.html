@@ -3349,7 +3349,8 @@ let MGR_MODE = false, MGR_BRANCH = '', MGR_EMP = '', MGR_PIN = '';
 function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : { password: pwd }; }
 // ★ 17 ก.ย. 69 — เปิดแท็บ "พนักงาน" ให้ ผจก. ด้วย แต่เป็นแบบ "ดูอย่างเดียว + เปลี่ยนรหัสพนักงานได้"
 //   สิทธิ์แก้ช่องอื่น ๆ ลบ ย้ายสาขา เปิด-ปิดใช้งาน เพิ่มคนใหม่ ยังเป็นของสำนักงานเท่านั้น
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees'];
+// ★ 24 ก.ย. 69 — เพิ่ม 'recruit': ผจก. ดูใบสมัครงานได้ แต่เห็นเฉพาะคนที่สมัครสาขาตัวเอง (เซิร์ฟเวอร์บังคับอีกชั้น)
+const MGR_TABS = ['mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -8860,6 +8861,22 @@ const RC_STAGES = [
 function rcStageLabel(k){ const s=RC_STAGES.find(x=>x.key===k); return s?s.label:k; }
 async function loadRecruit(){
   const box=$('rc_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  // ★ 24 ก.ย. 69 — โหมด ผจก.: ล็อกช่องสาขาไว้ที่สาขาตัวเอง + บอกให้รู้ว่าเห็นเฉพาะสาขาตัวเอง
+  //   (เซิร์ฟเวอร์กรองให้อีกชั้นอยู่แล้ว ตรงนี้แค่ทำให้หน้าเว็บไม่สับสน)
+  if(MGR_MODE && $('rc_branch')){
+    const _b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
+    $('rc_branch').innerHTML='<option value="'+esc(MGR_BRANCH)+'">'+esc(_b?_b.name:MGR_BRANCH)+'</option>';
+    $('rc_branch').value=MGR_BRANCH; $('rc_branch').disabled=true;
+    $('rc_branch').dataset.filled='1'; $('rc_branch').dataset.mgrLocked='1';
+    const _hint=$('rc_mgrhint');
+    if(!_hint){
+      const d=document.createElement('div'); d.id='rc_mgrhint';
+      d.style.cssText='font-size:12px;color:var(--muted);margin:2px 2px 10px;display:flex;align-items:center;gap:6px';
+      d.innerHTML='<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.5"/></svg>'
+        +'แสดงเฉพาะผู้ที่สมัครเข้าสาขา <b style="color:var(--txt)">'+esc(_b?_b.name:MGR_BRANCH)+'</b> · คัดกรองและนัดสัมภาษณ์ได้ · การรับเข้าทำงานเป็นขั้นตอนของสำนักงาน';
+      box.parentNode.insertBefore(d, box);
+    }
+  }
   if($('rc_branch') && !$('rc_branch').dataset.filled){
     $('rc_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
     $('rc_branch').dataset.filled='1';
@@ -8872,7 +8889,7 @@ async function loadRecruit(){
     $('rc_to').onchange=renderRcBoard;
     $('rc_clear').onclick=()=>{ $('rc_search').value=''; $('rc_position').value=''; $('rc_status').value=''; $('rc_branch').value=''; $('rc_from').value=''; $('rc_to').value=''; renderRcBoard(); };
   }
-  let r; try{ r=await post({ action:'hr_applicants_list', password:pwd }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  let r; try{ r=await post({ action:'hr_applicants_list', ...authBody() }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   RC_ROWS=r.rows||[];
   // เติมตัวเลือกตำแหน่งจากใบสมัครจริง (คงค่าที่เลือกไว้)
@@ -8923,7 +8940,7 @@ function rcCard(a){
     +'</div>';
 }
 async function openApplicant(id){
-  const r=await post({ action:'hr_applicant_get', password:pwd, id });
+  const r=await post({ action:'hr_applicant_get', ...authBody(), id });
   if(!r.ok){ toast('err', r.error||'ไม่พบผู้สมัคร'); return; }
   const a=r.applicant; RC_CUR=a;
   const idx=RC_ROWS.findIndex(x=>String(x.id)===String(id)); if(idx>=0) RC_ROWS[idx].seen=true;
@@ -8957,37 +8974,41 @@ async function openApplicant(id){
 }
 function renderRcActions(a){
   const btns=[];
+  // ★ 24 ก.ย. 69 — ผจก. คัดกรอง/นัดสัมภาษณ์ได้ · รับเข้าทำงาน-ไม่ผ่าน-ลบใบสมัคร สงวนไว้ให้สำนักงาน
   if(a.status!=='hired' && a.status!=='rejected'){
     if(a.status==='new') btns.push('<button class="btn btn-sec btn-sm" data-rcact="reviewing"><svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รอพิจารณา</button>');
     btns.push('<button class="btn btn-sec btn-sm" data-rcact="interview"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> นัดสัมภาษณ์</button>');
-    btns.push('<button class="btn btn-pri btn-sm" data-rcact="hire"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน</button>');
-    btns.push('<button class="btn btn-warn btn-sm" data-rcact="reject"><svg class="ei" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> ไม่ผ่าน</button>');
-  } else {
+    if(!MGR_MODE){
+      btns.push('<button class="btn btn-pri btn-sm" data-rcact="hire"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน</button>');
+      btns.push('<button class="btn btn-warn btn-sm" data-rcact="reject"><svg class="ei" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> ไม่ผ่าน</button>');
+    }
+  } else if(!MGR_MODE) {
     btns.push('<button class="btn btn-sec btn-sm" data-rcact="reviewing">↩ กลับไปรอพิจารณา</button>');
   }
   // ลบใบสมัครได้เฉพาะที่ยังไม่รับเข้าทำงาน (ใบซ้ำ/ไม่ผ่าน) — คนที่รับเข้าแล้วต้องไปลบที่หน้าพนักงาน
-  if(a.status!=='hired' && !a.hired_emp_id){
+  if(!MGR_MODE && a.status!=='hired' && !a.hired_emp_id){
     btns.push('<button class="btn btn-sm" data-rcact="delete" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ลบใบสมัคร</button>');
   }
+  if(MGR_MODE) btns.push('<span style="font-size:11.5px;color:var(--muted);align-self:center;margin-left:4px">รับเข้าทำงาน / ไม่ผ่าน / ลบใบสมัคร — แจ้งสำนักงาน</span>');
   $('rc_foot').innerHTML=btns.join('');
   $('rc_foot').querySelectorAll('[data-rcact]').forEach(b=>b.onclick=()=>rcAct(b.dataset.rcact, a));
 }
 async function rcAct(act, a){
   const box=$('rc_actionbox');
   if(act==='reviewing'){
-    const r=await post({ action:'hr_applicant_stage', password:pwd, id:a.id, status:'reviewing' });
+    const r=await post({ action:'hr_applicant_stage', ...authBody(), id:a.id, status:'reviewing' });
     if(r.ok){ toast('ok','ย้ายไปรอพิจารณา'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ไม่สำเร็จ');
     return;
   }
   if(act==='delete'){
     if(!confirm('ลบใบสมัครของ '+a.full_name+' ?\n(ใช้กับใบซ้ำ/ไม่ผ่าน · ลบแล้วกู้คืนไม่ได้)')) return;
-    const r=await post({ action:'hr_applicant_delete', password:pwd, id:a.id });
+    const r=await post({ action:'hr_applicant_delete', ...authBody(), id:a.id });
     if(r.ok){ toast('ok','ลบใบสมัครแล้ว'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ลบไม่สำเร็จ');
     return;
   }
   if(act==='reject'){
     const reason=prompt('เหตุผลที่ไม่ผ่านเกณฑ์ (เก็บไว้ภายใน · ผู้สมัครไม่เห็น):'); if(reason===null) return;
-    const r=await post({ action:'hr_applicant_reject', password:pwd, id:a.id, reason });
+    const r=await post({ action:'hr_applicant_reject', ...authBody(), id:a.id, reason });
     if(r.ok){ toast('ok','บันทึกไม่ผ่านแล้ว'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ไม่สำเร็จ');
     return;
   }
@@ -8999,7 +9020,7 @@ async function rcAct(act, a){
     $('iv_save').onclick=async()=>{
       const at=$('iv_at').value; if(!at){ toast('err','เลือกวัน-เวลา'); return; }
       const note=$('iv_note').value.trim();
-      const r=await post({ action:'hr_applicant_interview', password:pwd, id:a.id, interview_at:new Date(at).toISOString(), note });
+      const r=await post({ action:'hr_applicant_interview', ...authBody(), id:a.id, interview_at:new Date(at).toISOString(), note });
       if(!r.ok){ toast('err', r.error||'ไม่สำเร็จ'); return; }
       toast('ok','นัดสัมภาษณ์แล้ว');
       const msg=rcDraftMsg(a, at, note);
@@ -9043,7 +9064,7 @@ async function rcAct(act, a){
         : ('ยืนยันรับ '+a.full_name+' เข้าทำงาน · รหัส '+code+'\nวันเริ่มงาน '+beDate(sd)+' ?');
       if(!confirm(confMsg)) return;
       $('hire_go').disabled=true; $('hire_go').innerHTML='<span class="spin"></span>';
-      const r=await post({ action:'hr_applicant_hire', password:pwd, id:a.id, branch_id:$('hire_branch').value, emp_id:code,
+      const r=await post({ action:'hr_applicant_hire', ...authBody(), id:a.id, branch_id:$('hire_branch').value, emp_id:code,
                            start_date:sd, default_shift:$('hire_shift').value||null, link_existing:linkExisting?true:undefined });
       if(r.ok){ toast('ok', r.linked?('เชื่อมกับพนักงานรหัส '+r.emp_id+' แล้ว'):('รับเข้าทำงานแล้ว · รหัส '+r.emp_id)); closeApplicant(); loadRecruit(); if(typeof loadAll==='function') await loadAll(); }
       else {
@@ -13255,8 +13276,11 @@ function closeAllNavGroups(){ document.querySelectorAll('.navgrp.open').forEach(
 // ===== ตัวเลขแจ้งเตือน (badge) บนแท็บ/ปุ่มกลุ่มเมนู — งานใหม่/รอตรวจ/รออนุมัติ =====
 function _setNavBadge(el,n){ if(!el) return; let b=el.querySelector(':scope > .navbadge'); n=Number(n)||0; if(n>0){ if(!b){ b=document.createElement('span'); b.className='navbadge'; el.appendChild(b);} b.textContent=n>99?'99+':String(n); } else if(b){ b.remove(); } }
 async function refreshNavBadges(){
-  if(typeof pwd==='undefined' || !pwd) return;
-  let r; try{ r=await post({ action:'hr_nav_badges', password:pwd, branch:(typeof MGR_MODE!=='undefined'&&MGR_MODE)?MGR_BRANCH:null }); }catch(e){ return; }
+  // ★ 24 ก.ย. 69 — โหมด ผจก. ไม่มี pwd → เดิม return ทิ้งทั้งก้อน ป้ายตัวเลขบนเมนูเลยไม่เคยขึ้นเลย
+  const _mgr = (typeof MGR_MODE!=='undefined' && MGR_MODE);
+  if(!_mgr && (typeof pwd==='undefined' || !pwd)) return;
+  if(_mgr && !MGR_EMP) return;
+  let r; try{ r=await post({ action:'hr_nav_badges', ...authBody(), branch:_mgr?MGR_BRANCH:null }); }catch(e){ return; }
   if(!r||!r.ok) return; const c=r.counts||{};
   ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider','attnedit'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });   // ★ attnedit = คำขอควบกะรอ HR
   document.querySelectorAll('.navgrp').forEach(grp=>{ const tabs=(grp.dataset.tabs||'').split(',').filter(Boolean); const sum=tabs.reduce((s,t)=>s+(Number(c[t])||0),0); _setNavBadge(grp.querySelector('.navgrp-btn'), sum); });
