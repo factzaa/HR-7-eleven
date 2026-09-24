@@ -13282,7 +13282,8 @@ async function refreshNavBadges(){
   if(_mgr && !MGR_EMP) return;
   let r; try{ r=await post({ action:'hr_nav_badges', ...authBody(), branch:_mgr?MGR_BRANCH:null }); }catch(e){ return; }
   if(!r||!r.ok) return; const c=r.counts||{};
-  ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider','attnedit'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });   // ★ attnedit = คำขอควบกะรอ HR
+  // ★ 24 ก.ย. 69 — เพิ่ม 'shelf' (งานตรวจเชลฟ์รอ ผจก. ตรวจ) — ของเดิมไม่มีป้ายเตือนเลย ผจก. เลยพลาดไม่ได้ตรวจ
+  ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider','attnedit','shelf'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });   // ★ attnedit = คำขอควบกะรอ HR
   document.querySelectorAll('.navgrp').forEach(grp=>{ const tabs=(grp.dataset.tabs||'').split(',').filter(Boolean); const sum=tabs.reduce((s,t)=>s+(Number(c[t])||0),0); _setNavBadge(grp.querySelector('.navgrp-btn'), sum); });
 }
 setInterval(()=>{ const t=document.getElementById('topact'); if(t && t.style.display!=='none') refreshNavBadges(); }, 60000);
@@ -16129,7 +16130,7 @@ function shpFoldBox(title, color, rows, kind, open){
     +'</details>';
 }
 // ★ 22 ก.ย. 69 — แผง "ตรวจผ่านแล้ว": ตัวกรองเชลฟ์/พนักงาน/ช่วงวัน + มุมมองรายการ / ความคืบหน้ารายเชลฟ์ (พับได้)
-let SHR={ shelf:'', emp:'', view:'list', days:14 };
+let SHR={ shelf:'', emp:'', view:'list', days:30 };   // ★ 24 ก.ย. 69 — ขยายจาก 14 วัน ให้เห็นงานค้างเก่าที่ป้ายแดงนับไว้
 function renderShelfRecent(){
   const rc=$('shp_recent'); if(!rc) return;
   const r=SHP_ALL||{}; const all=[].concat(r.approved||[], r.sent_back||[], r.rows||[]);
@@ -16138,7 +16139,7 @@ function renderShelfRecent(){
   const opt=(v,t,sel)=>'<option value="'+esc(v)+'"'+(String(sel)===String(v)?' selected':'')+'>'+esc(t)+'</option>';
   const sOpts=opt('','เชลฟ์: ทุกเชลฟ์',SHR.shelf)+Object.keys(shelves).sort((a,b)=>shelves[a].localeCompare(shelves[b],'th')).map(k=>opt(k,shelves[k],SHR.shelf)).join('');
   const eOpts=opt('','พนักงาน: ทุกคน',SHR.emp)+Object.keys(emps).sort((a,b)=>emps[a].localeCompare(emps[b],'th')).map(k=>opt(k,emps[k],SHR.emp)).join('');
-  const dOpts=[14,30,60].map(d=>opt(d,d+' วันล่าสุด',SHR.days)).join('');
+  const dOpts=[14,30,60,90].map(d=>opt(d,d+' วันล่าสุด',SHR.days)).join('')+opt(0,'ค้างทั้งหมด (ไม่จำกัดวัน)',SHR.days);
   const selSt='padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px';
   const segB=(v,t)=>'<button type="button" data-shrv="'+v+'" style="border:0;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;'+(SHR.view===v?'background:#15803d;color:#fff':'background:transparent;color:var(--txt)')+'">'+t+'</button>';
   let h='<div class="card" style="margin-bottom:10px"><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
@@ -16183,10 +16184,11 @@ function renderShelfRecent(){
   rc.innerHTML=h;
   const sf=$('shr_shelf'); if(sf) sf.onchange=()=>{ SHR.shelf=sf.value; renderShelfRecent(); };
   const ef=$('shr_emp'); if(ef) ef.onchange=()=>{ SHR.emp=ef.value; renderShelfRecent(); };
-  const df=$('shr_days'); if(df) df.onchange=()=>{ SHR.days=Number(df.value)||14; loadShelfPending(); };
+  const df=$('shr_days'); if(df) df.onchange=()=>{ const v=df.value; SHR.days=(v==='0'?0:(Number(v)||30)); loadShelfPending(); };
   rc.querySelectorAll('[data-shrv]').forEach(b=>b.onclick=()=>{ SHR.view=b.dataset.shrv; renderShelfRecent(); });
 }
 async function loadShelfPending(){
+  setTimeout(refreshNavBadges, 400);   // ★ ตรวจเสร็จ/เข้าหน้านี้ → อัปเดตป้ายแดงทันที
   const box=$('shp_body'); if(!box) return;
   box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_shelf_pending', ...authBody(), branch: (MGR_MODE?'':($('shp_branch')?$('shp_branch').value:'')), days: SHR.days });
