@@ -461,13 +461,13 @@
         case 'hr_qa_all_items':      return await hrQaAllItems(p);
         case 'hr_qa_item_delete':    return await hrQaItemDelete(p.id);
         case 'hr_qa_item_update':    return await hrQaItemUpdate(p.id, p.data);
-        case 'hr_applicants_list':   return await hrApplicantsList(p.branch);
-        case 'hr_applicant_get':     return await hrApplicantGet(p.id);
-        case 'hr_applicant_stage':   return await hrApplicantStage(p.id, p.status);
-        case 'hr_applicant_interview': return await hrApplicantInterview(p.id, p.interview_at, p.note);
-        case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason);
-        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id, { start_date: p.start_date, default_shift: p.default_shift, link_existing: p.link_existing });
-        case 'hr_applicant_delete':  return await hrApplicantDelete(p.id);
+        case 'hr_applicants_list':   return await hrApplicantsList(p.branch, p);
+        case 'hr_applicant_get':     return await hrApplicantGet(p.id, p);
+        case 'hr_applicant_stage':   return await hrApplicantStage(p.id, p.status, p);
+        case 'hr_applicant_interview': return await hrApplicantInterview(p.id, p.interview_at, p.note, p);
+        case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason, p);
+        case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id, { start_date: p.start_date, default_shift: p.default_shift, link_existing: p.link_existing }, p);
+        case 'hr_applicant_delete':  return await hrApplicantDelete(p.id, p);
         case 'hr_positions_list':    return await hrPositionsList();
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
@@ -7608,7 +7608,27 @@
   }
 
   // ---------- รับสมัครงาน (Recruitment) ----------
-  async function hrApplicantsList(branch) {
+  // ★ 24 ก.ย. 69 — เปิดให้ ผจก.สาขา ดูใบสมัครได้ แต่เห็นเฉพาะคนที่สมัคร "สาขาตัวเอง"
+  //   บังคับที่ฝั่งเซิร์ฟเวอร์ ไม่ใช่แค่ซ่อนที่หน้าเว็บ — ส่ง branch อะไรมาก็ถูกทับด้วยสาขาจริงของ PIN
+  //   สิ่งที่ ผจก. ทำได้: ดูใบสมัคร · เปลี่ยนสถานะ · นัดสัมภาษณ์ · บันทึกผล
+  //   สิ่งที่สงวนไว้ให้สำนักงาน: รับเข้าทำงาน (ออกรหัสพนักงาน) · ปฏิเสธ · ลบใบสมัคร
+  async function _apGate(auth) {
+    const actor = await _scActor(auth);
+    if (actor.role === 'invalid') return { err: 'PIN ไม่ถูกต้อง' };
+    return { actor };
+  }
+  // ใบสมัครใบนี้เป็นของสาขา ผจก. คนนี้หรือเปล่า
+  async function _apAssertOwn(actor, id) {
+    if (actor.role !== 'mgr') return null;
+    const { data } = await sb().from('applicants').select('branch_id').eq('id', id).maybeSingle();
+    if (!data) return 'ไม่พบใบสมัคร';
+    if (String(data.branch_id || '') !== actor.branch_id) return 'ใบสมัครนี้สมัครที่สาขาอื่น — ดูได้เฉพาะสาขาของคุณ';
+    return null;
+  }
+  async function hrApplicantsList(branch, auth) {
+    const g = await _apGate(auth);
+    if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') branch = g.actor.branch_id;   // ★ ล็อกสาขาที่เซิร์ฟเวอร์
     let q = sb().from('applicants').select('*').order('created_at', { ascending: false }).limit(500);
     if (branch) q = q.eq('branch_id', branch);
     const [aR, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
@@ -7619,8 +7639,10 @@
     rows.forEach(r => { if (counts[r.status] != null) counts[r.status]++; if (!r.seen) counts.unseen++; });
     return { ok: true, rows, counts };
   }
-  async function hrApplicantGet(id) {
+  async function hrApplicantGet(id, auth) {
     if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    const bad = await _apAssertOwn(g.actor, id); if (bad) return { ok: false, error: bad };
     const { data, error } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     if (!data) return { ok: false, error: 'ไม่พบผู้สมัคร' };
@@ -7628,16 +7650,23 @@
     const { data: br } = await sb().from('branches').select('name').eq('branch_id', data.branch_id || '').maybeSingle();
     return { ok: true, applicant: { ...data, seen: true, branch_name: (br && br.name) || data.branch_id || '—' } };
   }
-  async function hrApplicantStage(id, status) {
+  async function hrApplicantStage(id, status, auth) {
     const allowed = ['new', 'reviewing', 'interview', 'hired', 'rejected'];
     if (!id || !allowed.includes(status)) return { ok: false, error: 'ข้อมูลไม่ถูกต้อง' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    const bad = await _apAssertOwn(g.actor, id); if (bad) return { ok: false, error: bad };
+    if (g.actor.role === 'mgr' && (status === 'hired' || status === 'rejected')) {
+      return { ok: false, error: 'การรับเข้าทำงาน/ปฏิเสธ เป็นสิทธิ์ของสำนักงาน — ผจก. เปลี่ยนเป็น "รอพิจารณา/นัดสัมภาษณ์" ได้' };
+    }
     const { error } = await sb().from('applicants').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
     await logAct('เปลี่ยนสถานะผู้สมัคร', null, '#' + id + ' → ' + status);
     return { ok: true };
   }
-  async function hrApplicantInterview(id, interviewAt, note) {
+  async function hrApplicantInterview(id, interviewAt, note, auth) {
     if (!id || !interviewAt) return { ok: false, error: 'ระบุวัน-เวลาสัมภาษณ์' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    const bad = await _apAssertOwn(g.actor, id); if (bad) return { ok: false, error: bad };
     const { error } = await sb().from('applicants').update({
       status: 'interview', interview_at: interviewAt, interview_note: note || null, updated_at: new Date().toISOString(),
     }).eq('id', id);
@@ -7645,8 +7674,10 @@
     await logAct('นัดสัมภาษณ์ผู้สมัคร', null, '#' + id + ' · ' + interviewAt);
     return { ok: true };
   }
-  async function hrApplicantReject(id, reason) {
+  async function hrApplicantReject(id, reason, auth) {
     if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') return { ok: false, error: 'การปฏิเสธผู้สมัครเป็นสิทธิ์ของสำนักงาน' };
     const { error } = await sb().from('applicants').update({
       status: 'rejected', reject_reason: reason || null, updated_at: new Date().toISOString(),
     }).eq('id', id);
@@ -7655,9 +7686,11 @@
     return { ok: true };
   }
   // รับเข้าทำงาน → เจนรหัสชั่วคราว NEW-xxxxx + สร้างพนักงาน + ย้ายเอกสาร
-  async function hrApplicantHire(id, branchId, empId, opt) {
+  async function hrApplicantHire(id, branchId, empId, opt, auth) {
     opt = opt || {};
     if (!id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') return { ok: false, error: 'การรับเข้าทำงาน (ออกรหัสพนักงาน) เป็นสิทธิ์ของสำนักงาน' };
     const { data: a } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
     if (!a) return { ok: false, error: 'ไม่พบผู้สมัคร' };
     // เดิม: ถ้ามี hired_emp_id ก็ return ทันที → บั๊ก: ถ้ารหัสค้างแต่ไม่มีพนักงานจริง (attempt เก่าไม่สมบูรณ์)
@@ -7720,7 +7753,9 @@
   }
   // ลบใบสมัคร (สำหรับใบซ้ำ/ไม่ผ่าน เพื่อไม่ให้รก) — ลบได้เฉพาะที่ "ยังไม่รับเข้าทำงาน"
   //   ถ้ารับเข้าแล้ว (เป็นพนักงาน) ห้ามลบใบสมัครที่นี่ → ต้องไปลบที่หน้าพนักงานแทน (กันข้อมูลพนักงานหลุด)
-  async function hrApplicantDelete(id) {
+  async function hrApplicantDelete(id, auth) {
+    { const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+      if (g.actor.role === 'mgr') return { ok: false, error: 'การลบใบสมัครเป็นสิทธิ์ของสำนักงาน' }; }
     if (!id) return { ok: false, error: 'ไม่ระบุใบสมัคร' };
     const { data: a } = await sb().from('applicants').select('id,full_name,status,hired_emp_id').eq('id', id).maybeSingle();
     if (!a) return { ok: false, error: 'ไม่พบใบสมัคร' };
@@ -8552,7 +8587,9 @@
     if (!branch) {   // คิวอนุมัติฝั่ง HR
       out.leaves = await C(sb().from('leaves').select('*', { count: 'exact', head: true }).eq('status', 'pending'));
       out.advance = await C(sb().from('advance_requests').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
-      out.recruit = await C(sb().from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'new'));
+      // ★ 24 ก.ย. 69 — ผจก. เห็นเฉพาะใบสมัครของสาขาตัวเอง ป้ายตัวเลขต้องนับตามสาขาด้วย
+      out.recruit = await C((() => { let q = sb().from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'new');
+        if (branch) q = q.eq('branch_id', branch); return q; })());
       out.submissions = await C(sb().from('profile_submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending'));
       const fuel = await C(sb().from('rider_fuel_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
       const repair = await C(sb().from('rider_claims').select('*', { count: 'exact', head: true }).eq('status', 'submitted'));
