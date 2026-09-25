@@ -11411,15 +11411,22 @@ function exRenderQEditor(){
     +[0,1,2,3].map(ci=>'<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><input type="radio" name="exans'+i+'" data-exans="'+i+'|'+ci+'"'+(Number(q.answer)===ci?' checked':'')+' title="เฉลยข้อถูก" style="flex:none">'+'<input type="text" data-exc="'+i+'|'+ci+'" value="'+esc(q.choices[ci]||'')+'" placeholder="ตัวเลือก '+(ci+1)+'" style="flex:1;padding:7px;border:1.5px solid var(--line2);border-radius:7px"></div>').join('')
     +'<input type="text" data-exex="'+i+'" value="'+esc(q.explain||'')+'" placeholder="อธิบายเฉลย (ไม่บังคับ)" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:7px;margin-top:4px;font-size:13px">'
   +'</div>').join('');
-  w.querySelectorAll('[data-exqdel]').forEach(b=>b.onclick=()=>{ EXED.qs.splice(Number(b.dataset.exqdel),1); exCollect(); exRenderQEditor(); });
-  w.querySelectorAll('[data-exans]').forEach(r=>r.onchange=()=>{ const p=r.dataset.exans.split('|'); EXED.qs[+p[0]].answer=+p[1]; });
+  // ★ 25 ก.ย. 69 — ต้อง exCollect() ก่อน splice เสมอ
+  //   ของเดิม splice ก่อน → อาร์เรย์สั้นลง แต่ DOM ยังมีช่องเท่าเดิม
+  //   → exCollect() ไปแตะ EXED.qs[ข้อสุดท้าย] ที่กลายเป็น undefined → TypeError
+  //   → exRenderQEditor() ไม่ทำงานต่อ (กดลบแล้วหน้าจอเหมือนเดิม)
+  //   → และ exSave() ที่เรียก exCollect() เป็นอันแรก ก็ตายทั้งหมด → กดบันทึกไม่ได้เลย
+  w.querySelectorAll('[data-exqdel]').forEach(b=>b.onclick=()=>{ exCollect(); EXED.qs.splice(Number(b.dataset.exqdel),1); exRenderQEditor(); });
+  w.querySelectorAll('[data-exans]').forEach(r=>r.onchange=()=>{ const p=r.dataset.exans.split('|'); const o=EXED.qs[+p[0]]; if(o) o.answer=+p[1]; });
   const n=$('ex_qn'); if(n){ const fromBank=EXED.qs.filter(q=>q.knowledge_ref).length; n.textContent='· '+EXED.qs.length+' ข้อ'+(fromBank?(' (จากคลังคู่มือ '+fromBank+')'):''); }
 }
 function exCollect(){
-  const w=$('ex_qwrap'); if(!w) return;
-  w.querySelectorAll('[data-exq]').forEach(el=>{ EXED.qs[+el.dataset.exq].question=el.value; });
-  w.querySelectorAll('[data-exc]').forEach(el=>{ const p=el.dataset.exc.split('|'); EXED.qs[+p[0]].choices[+p[1]]=el.value; });
-  w.querySelectorAll('[data-exex]').forEach(el=>{ EXED.qs[+el.dataset.exex].explain=el.value; });
+  const w=$('ex_qwrap'); if(!w || !EXED || !EXED.qs) return;
+  // ★ 25 ก.ย. 69 — กันพังทั้งหน้า: ถ้า DOM กับอาร์เรย์ไม่ตรงกัน ให้ข้ามข้อนั้น อย่าโยน TypeError
+  const q=i=>EXED.qs[i];
+  w.querySelectorAll('[data-exq]').forEach(el=>{ const o=q(+el.dataset.exq); if(o) o.question=el.value; });
+  w.querySelectorAll('[data-exc]').forEach(el=>{ const p=el.dataset.exc.split('|'); const o=q(+p[0]); if(o){ if(!Array.isArray(o.choices)) o.choices=['','','','']; o.choices[+p[1]]=el.value; } });
+  w.querySelectorAll('[data-exex]').forEach(el=>{ const o=q(+el.dataset.exex); if(o) o.explain=el.value; });
 }
 async function exSave(){
   exCollect();
