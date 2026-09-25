@@ -518,6 +518,11 @@
         case 'hr_mdaily_review':     return await hrMdailyReview(p.log_id, p.status, p.note, p.markup);
         case 'hr_mdaily_board':      return await hrMdailyBoard(p.date, p.branch);
         case 'hr_mdaily_report':     return await hrMdailyReport(p.month, p.branch);
+        case 'hr_shirt_config_get':  return await hrShirtConfigGet(p);
+        case 'hr_shirt_config_save': return await hrShirtConfigSave(p.data, p);
+        case 'hr_shirt_list':        return await hrShirtList(p);
+        case 'hr_shirt_deliver':     return await hrShirtDeliver(p.data, p);
+        case 'hr_shirt_reject':      return await hrShirtReject(p.data, p);
         case 'hr_shelf_list':        return await hrShelfList(p.branch);
         case 'hr_shelf_save':        return await hrShelfSave(p.data);
         case 'hr_shelf_delete':      return await hrShelfDelete(p.id);
@@ -1797,6 +1802,10 @@
     const action = existing ? 'updated' : 'created';
     const { error } = await sb().from('employees').upsert(row, { onConflict: 'emp_id' });
     if (error) throw error;
+    // ★ 25 ก.ย. 69 — เพิ่มพนักงานใหม่เองที่หน้าพนักงาน (ไม่ผ่านใบสมัคร) ก็ตั้งใบเบิกเสื้อให้เหมือนกัน
+    if (action === 'created' && row.active !== false) {
+      await _shirtAutoForNewHire(row.emp_id, row.nickname || row.name, row.branch_id, '');
+    }
     // ★ กำหนดวันสิ้นสุดงาน (หรือปิดใช้งาน) → ลบตารางเวร "หลังวันสิ้นสุด" ที่จัดล่วงหน้าไว้
     //   กันเคสลาออกแล้วยังขึ้น "ขาด" + หักคะแนน/มีผลใบเตือน เพราะมีเวรค้างล่วงหน้า
     try {
@@ -4388,6 +4397,167 @@
     { key: 'score_low_15',    name: 'คะแนนวินัยตกเกณฑ์ (≤ 15)',            kind: 'score_band',    params: { max_score: 15 },      severity: 'high',     note: 'เปิดใช้เองได้จากปุ่มเกณฑ์เข้าข่าย', enabled: false, sort: 40 },
     { key: 'late_total_20',   name: 'มาสายรวมในรอบ ≥ 20 ครั้ง',            kind: 'late_total',    params: { count: 20 },          severity: 'medium',   note: 'เปิดใช้เองได้จากปุ่มเกณฑ์เข้าข่าย', enabled: false, sort: 50 },
   ];
+
+
+  // ===================================================================
+  // เบิกซื้อเสื้อพนักงาน (ฝั่ง ผจก./HR)                   ★ 25 ก.ย. 69
+  //   pending → ผจก. นำจ่าย (แนบรูป + พนักงานเซ็นรับบนจอ) → หักเงินเดือนรอบที่นำจ่าย
+  //   ไม่มีรูปหรือไม่มีลายเซ็น = นำจ่ายไม่ได้ → ไม่มีทางหักเงินโดยไม่มีหลักฐาน
+  //   ราคาถูกตรึงตอนนำจ่าย (unit_price) — ขึ้นราคาทีหลังไม่ย้อนกระทบใบเก่า
+  // ===================================================================
+  const SHIRT_CFG_DEF = {
+    id: 1, enabled: true, price_staff: 150, price_delivery: 300,
+    sizes: 'S,M,L,XL,2XL,3XL', max_qty_per_order: 3,
+    delivery_rider_only: true, auto_new_hire: true, auto_new_hire_qty: 1, allow_cancel: true,
+  };
+  const SHIRT_NAME = { staff: 'เสื้อพนักงาน', delivery: 'เสื้อ Delivery' };
+
+  async function _shirtCfg() {
+    try {
+      const { data } = await sb().from('shirt_config').select('*').eq('id', 1).maybeSingle();
+      return data || SHIRT_CFG_DEF;
+    } catch (_e) { return SHIRT_CFG_DEF; }
+  }
+  function _shirtPrice(cfg, t) { return Number(t === 'delivery' ? cfg.price_delivery : cfg.price_staff) || 0; }
+
+  async function hrShirtConfigGet(auth) {
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    return { ok: true, config: await _shirtCfg(), role: me.role };
+  }
+
+  async function hrShirtConfigSave(d, auth) {
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'ตั้งค่าราคาเสื้อเป็นสิทธิ์ของสำนักงาน' };
+    d = d || {};
+    const num = (v, dflt) => { const n = Number(v); return isFinite(n) && n >= 0 ? n : dflt; };
+    const cur = await _shirtCfg();
+    const up = {
+      id: 1,
+      enabled: d.enabled !== false,
+      price_staff: num(d.price_staff, cur.price_staff),
+      price_delivery: num(d.price_delivery, cur.price_delivery),
+      sizes: String(d.sizes || cur.sizes).split(',').map(x => x.trim()).filter(Boolean).join(',') || SHIRT_CFG_DEF.sizes,
+      max_qty_per_order: Math.max(1, Math.round(num(d.max_qty_per_order, cur.max_qty_per_order))),
+      delivery_rider_only: d.delivery_rider_only !== false,
+      auto_new_hire: d.auto_new_hire !== false,
+      auto_new_hire_qty: Math.max(1, Math.round(num(d.auto_new_hire_qty, cur.auto_new_hire_qty))),
+      allow_cancel: d.allow_cancel !== false,
+      updated_at: new Date().toISOString(), updated_by: me.name,
+    };
+    const { error } = await sb().from('shirt_config').upsert(up, { onConflict: 'id' });
+    if (error) return { ok: false, error: /shirt_config/.test(String(error.message || '')) ? 'ยังไม่ได้รัน supabase/shirt_orders.sql' : error.message };
+    await logAct('ตั้งค่าเบิกซื้อเสื้อ', null, 'พนักงาน ' + up.price_staff + ' · Delivery ' + up.price_delivery, me.name);
+    return { ok: true, config: up };
+  }
+
+  // รายการใบเบิก — ผจก. เห็นเฉพาะสาขาตัวเอง · HR เห็นทุกสาขา
+  async function hrShirtList(p) {
+    p = p || {};
+    const me = await _termActor(p);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    const cfg = await _shirtCfg();
+    const branch = me.role === 'mgr' ? me.branch_id : (p.branch || '');
+    // ★ "รอนำจ่าย" ไม่จำกัดช่วงวันเด็ดขาด (บทเรียนจากป้ายตรวจเชลฟ์ — ของค้างหลุดจอแล้วไม่มีใครตาม)
+    //   ช่วงวันใช้กับประวัติที่ปิดจบแล้วเท่านั้น
+    const days = (p.days === 0 || p.days === '0') ? 0 : (Number(p.days) || 90);
+    const since = days > 0 ? addDays(bkkToday(), -days) : null;
+    let q = sb().from('shirt_orders').select('*').order('created_at', { ascending: false }).limit(500);
+    if (since) q = q.or('status.eq.pending,created_at.gte.' + since);
+    if (branch) q = q.eq('branch_id', branch);
+    const { data, error } = await q;
+    if (error) return { ok: false, error: /shirt_orders/.test(String(error.message || '')) ? 'ยังไม่ได้รัน supabase/shirt_orders.sql' : error.message };
+    const rows = data || [];
+    return {
+      ok: true, role: me.role, branch, config: cfg, days,
+      sizes: String(cfg.sizes || '').split(',').map(x => x.trim()).filter(Boolean),
+      pending: rows.filter(r => r.status === 'pending'),
+      history: rows.filter(r => r.status !== 'pending'),
+    };
+  }
+
+  // นำจ่าย — ผจก. ยืนยันไซส์/จำนวน + รูปหลักฐาน + ลายเซ็นพนักงาน
+  async function hrShirtDeliver(d, auth) {
+    d = d || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    if (!d.id) return { ok: false, error: 'ไม่ระบุใบเบิก' };
+    const { data: r } = await sb().from('shirt_orders').select('*').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบใบเบิกนี้' };
+    if (r.status !== 'pending') return { ok: false, error: 'ใบนี้ถูกดำเนินการไปแล้ว (' + r.status + ')' };
+    if (me.role === 'mgr' && String(r.branch_id) !== String(me.branch_id)) return { ok: false, error: 'ใบนี้ไม่ใช่ของสาขาคุณ' };
+
+    const cfg = await _shirtCfg();
+    const sizes = String(cfg.sizes || '').split(',').map(x => x.trim()).filter(Boolean);
+    const size = String(d.size || r.size || '').trim();
+    if (!size) return { ok: false, error: 'กรุณาระบุไซส์ก่อนนำจ่าย' };
+    if (sizes.length && !sizes.includes(size)) return { ok: false, error: 'ไซส์ไม่ถูกต้อง' };
+    const qty = Math.max(1, Math.round(Number(d.qty != null ? d.qty : r.qty) || 1));
+
+    const photos = (d.photos || []).filter(Boolean);
+    if (!photos.length) return { ok: false, error: 'ต้องแนบรูปหลักฐานการนำจ่ายอย่างน้อย 1 รูป' };
+    if (!d.signature) return { ok: false, error: 'ให้พนักงานเซ็นรับบนหน้าจอก่อนบันทึก' };
+    const signName = String(d.sign_name || '').trim();
+    if (signName.length < 2) return { ok: false, error: 'พิมพ์ชื่อ-สกุลผู้รับกำกับใต้ลายเซ็น' };
+
+    const photoUrls = await _uploadMany('shirt/' + r.emp_id, photos);
+    if (!photoUrls.length) return { ok: false, error: 'อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง' };
+    const signUrls = await _uploadMany('shirt-sign/' + r.emp_id, [d.signature]);
+    if (!signUrls.length) return { ok: false, error: 'บันทึกลายเซ็นไม่สำเร็จ ลองใหม่อีกครั้ง' };
+
+    const unit = _shirtPrice(cfg, r.item_type);          // ★ ตรึงราคา ณ วันนำจ่าย
+    const today = bkkToday();
+    const upd = {
+      size, qty, unit_price: unit, amount: unit * qty,
+      status: 'delivered', delivered_at: new Date().toISOString(), delivered_by: me.name,
+      photo_urls: photoUrls, sign_url: signUrls[0], sign_name: signName,
+      cycle_month: cycleMonthOf(today),                  // รอบเงินเดือนที่วันนำจ่ายตกอยู่
+      note: d.note != null ? String(d.note) : r.note,
+    };
+    const { error } = await sb().from('shirt_orders').update(upd).eq('id', d.id);
+    if (error) return { ok: false, error: error.message };
+    await logAct('นำจ่ายเสื้อพนักงาน ' + (r.order_no || ''), r.emp_id,
+      SHIRT_NAME[r.item_type] + ' ไซส์ ' + size + ' × ' + qty + ' = ' + (unit * qty) + ' บาท · หักรอบ ' + upd.cycle_month, me.name);
+    return { ok: true, amount: upd.amount, cycle_month: upd.cycle_month };
+  }
+
+  // ปฏิเสธ / ไม่ต้องซื้อ (เช่น พนักงานใหม่ที่มีเสื้อเดิมอยู่แล้ว) — ไม่หักเงิน
+  async function hrShirtReject(d, auth) {
+    d = d || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'สิทธิ์ไม่ถูกต้อง' };
+    if (!d.id) return { ok: false, error: 'ไม่ระบุใบเบิก' };
+    const { data: r } = await sb().from('shirt_orders').select('*').eq('id', d.id).maybeSingle();
+    if (!r) return { ok: false, error: 'ไม่พบใบเบิกนี้' };
+    if (r.status !== 'pending') return { ok: false, error: 'ใบนี้ถูกดำเนินการไปแล้ว' };
+    if (me.role === 'mgr' && String(r.branch_id) !== String(me.branch_id)) return { ok: false, error: 'ใบนี้ไม่ใช่ของสาขาคุณ' };
+    const reason = String(d.reason || '').trim() || 'มีเสื้อเดิมอยู่แล้ว ไม่ต้องซื้อ';
+    const { error } = await sb().from('shirt_orders').update({
+      status: 'rejected', rejected_at: new Date().toISOString(), rejected_by: me.name, reject_reason: reason,
+    }).eq('id', d.id);
+    if (error) return { ok: false, error: error.message };
+    await logAct('ปฏิเสธใบเบิกเสื้อ ' + (r.order_no || ''), r.emp_id, reason, me.name);
+    return { ok: true };
+  }
+
+  // สร้างใบให้พนักงานใหม่อัตโนมัติ (เรียกตอนรับเข้าทำงาน) — พังแล้วต้องไม่ล้มการรับเข้า
+  async function _shirtAutoForNewHire(empId, empName, branchId, branchName) {
+    try {
+      const cfg = await _shirtCfg();
+      if (cfg.enabled === false || cfg.auto_new_hire === false) return;
+      const { data: had } = await sb().from('shirt_orders').select('id')
+        .eq('emp_id', empId).eq('source', 'auto_new_hire').limit(1);
+      if (had && had.length) return;                     // เคยสร้างแล้ว ไม่สร้างซ้ำ
+      await sb().from('shirt_orders').insert({
+        emp_id: empId, emp_name: empName || empId, branch_id: branchId, branch_name: branchName || '',
+        item_type: 'staff', size: null, qty: Math.max(1, Number(cfg.auto_new_hire_qty) || 1),
+        unit_price: _shirtPrice(cfg, 'staff'),
+        amount: _shirtPrice(cfg, 'staff') * Math.max(1, Number(cfg.auto_new_hire_qty) || 1),
+        status: 'pending', source: 'auto_new_hire', created_by: 'ระบบ (รับเข้าทำงาน)',
+        note: 'พนักงานใหม่ — ผู้จัดการระบุไซส์ตอนนำจ่าย หรือติ๊กว่ามีเสื้อเดิมแล้วเพื่อไม่ต้องซื้อ',
+      });
+    } catch (_e) { /* ไม่ให้เรื่องเสื้อไปล้มการรับเข้าทำงาน */ }
+  }
 
   // ---------- LINE กลุ่มสาขา (ฟีดข้อความขาเข้า) ----------
   async function hrLineFeed(p) {
@@ -7748,6 +7918,8 @@
       const { error: e2b } = await sb().from('applicants').update(patch).eq('id', id);
       if (e2b) throw e2b;
     }
+    // ★ 25 ก.ย. 69 — พนักงานใหม่: ตั้งใบเบิกเสื้อพนักงานรอ ผจก. นำจ่ายให้เลย (ไซส์ว่าง ให้ ผจก. ระบุ)
+    await _shirtAutoForNewHire(code, a.nickname || a.full_name, branch, '');
     await logAct('รับผู้สมัครเข้าทำงาน', code, a.full_name + ' · สาขา ' + branch + ' · เริ่มงาน ' + startDate);
     return { ok: true, emp_id: code, start_date: startDate };
   }
@@ -8591,6 +8763,10 @@
     //   นับ "ค้างทั้งหมด" ไม่จำกัดวัน — ของจริงพบงานค้างตั้งแต่ 9 ก.ค. ถ้าจำกัดช่วงวันป้ายจะไม่ขึ้นและหลุดต่อไปเรื่อย ๆ
     out.shelf = await C((() => {
       let q = sb().from('shelf_checks').select('*', { count: 'exact', head: true }).eq('status', 'submitted');
+      if (branch) q = q.eq('branch_id', branch); return q; })());
+    // ★ 25 ก.ย. 69 — ใบเบิกเสื้อรอนำจ่าย (ไม่จำกัดวัน เหตุผลเดียวกับป้ายตรวจเชลฟ์)
+    out.shirt = await C((() => {
+      let q = sb().from('shirt_orders').select('*', { count: 'exact', head: true }).eq('status', 'pending');
       if (branch) q = q.eq('branch_id', branch); return q; })());
     out.recruit = await C((() => {
       let q = sb().from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'new');
@@ -10006,6 +10182,18 @@
       const { data: fuelRows } = await fq;
       (fuelRows || []).forEach(r => { fuelByEmp[r.emp_id] = (fuelByEmp[r.emp_id] || 0) + Number(r.amount || 0); });
     } catch (_e) { /* ยังไม่มีระบบน้ำมัน */ }
+    // ★ ค่าเสื้อพนักงาน/เสื้อ Delivery ที่นำจ่ายแล้ว → หักคืน (รอบที่นำจ่าย · ตกทอดได้ถ้าปิดรอบไปแล้ว)
+    let shirtByEmp = {};
+    try {
+      let sq = sb().from('shirt_orders').select('emp_id,item_type,qty,amount').eq('status', 'delivered').eq('deducted', false);
+      sq = carry ? sq.lte('cycle_month', runMonth) : sq.eq('cycle_month', runMonth);
+      const { data: shRows } = await sq;
+      (shRows || []).forEach(r => {
+        const k = r.item_type === 'delivery' ? 'delivery' : 'staff';
+        const e = shirtByEmp[r.emp_id] || (shirtByEmp[r.emp_id] = { staff: 0, delivery: 0, staff_n: 0, delivery_n: 0 });
+        e[k] += Number(r.amount || 0); e[k + '_n'] += Number(r.qty || 0);
+      });
+    } catch (_e) { /* ยังไม่ได้รัน shirt_orders.sql */ }
     // ★ ค่าซ่อมบำรุงรถไรเดอร์ (อนุมัติแล้ว ยังไม่จ่าย) → รายได้ (บริษัทจ่ายคืน จ่ายพร้อมเงินเดือน)
     let maintByEmp = {};
     try {
@@ -10085,7 +10273,7 @@
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
-      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.src !== 'maint' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)' && a.label !== 'ค่าซ่อมบำรุงรถ' && a.label !== 'Delivery';
+      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.src !== 'maint' && a.src !== 'shirt' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)' && a.label !== 'ค่าซ่อมบำรุงรถ' && a.label !== 'Delivery';
       let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
       if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
       if (Number(rv.delivery) > 0) additions.push({ label: 'Delivery', amount: _pr2(Number(rv.delivery)), src: 'rv' });
@@ -10101,6 +10289,10 @@
       (instByEmp[e.emp_id] || []).forEach(x => deductions.push({ label: 'ผ่อน: ' + x.label + (x.remain_after > 0 ? (' (เหลือ ' + x.remain_after.toLocaleString() + ')') : ' (งวดสุดท้าย)'), amount: x.amount, src: 'inst', inst_id: x.id }));
       // เบิกค่าน้ำมัน (อนุมัติแล้ว) → หักคืน
       if (Number(fuelByEmp[e.emp_id]) > 0) deductions.push({ label: 'ค่าน้ำมัน (เบิก)', amount: _pr2(Number(fuelByEmp[e.emp_id])), src: 'fuel' });
+      // ค่าเสื้อพนักงาน — แยกบรรทัดตามชนิด ให้อ่านสลิปแล้วรู้ทันทีว่าหักค่าอะไร
+      { const sh = shirtByEmp[e.emp_id];
+        if (sh && sh.staff > 0) deductions.push({ label: 'ค่าเสื้อพนักงาน (' + sh.staff_n + ' ตัว)', amount: _pr2(sh.staff), src: 'shirt' });
+        if (sh && sh.delivery > 0) deductions.push({ label: 'ค่าเสื้อ Delivery (' + sh.delivery_n + ' ตัว)', amount: _pr2(sh.delivery), src: 'shirt' }); }
       const stats = { days_worked, ot_hours, bonus: s.bonus || 0, late_count: s.late_count || 0, absent_count: s.absent_count || 0, dil_off: rv.dil_off === true, below_min: minWorkDays > 0 && Number(days_worked) < minWorkDays };
       const comp = _payrollCompute(prof, cfg, stats, advAmt, additions, deductions);
       // ★ เหตุผลที่ "ตัดเบี้ยวินัย" (auto) — โชว์ในหน้าตรวจช่องหมายเหตุ (เฉพาะคนที่ปกติมีสิทธิ์ได้เบี้ย)
@@ -10410,6 +10602,12 @@
         fuQ = carry ? fuQ.lte('cycle_month', runMonth) : fuQ.eq('cycle_month', runMonth);
         await fuQ; }
     } catch (_e) { /* ไม่มีระบบน้ำมัน */ }
+    try {
+      // ★ ค่าเสื้อพนักงาน (นำจ่ายแล้ว): ตีธงว่าหักคืนแล้ว กันหักซ้ำรอบถัดไป
+      { let shQ = sb().from('shirt_orders').update({ deducted: true, deducted_at: new Date().toISOString(), payroll_ref: run.id }).eq('status', 'delivered').eq('deducted', false);
+        shQ = carry ? shQ.lte('cycle_month', runMonth) : shQ.eq('cycle_month', runMonth);
+        await shQ; }
+    } catch (_e) { /* ยังไม่ได้รัน shirt_orders.sql */ }
     try {
       // ค่าซ่อมบำรุงรถ: อนุมัติแล้ว → เปลี่ยนเป็น "จ่ายแล้ว" ทันที (จ่ายพร้อมเงินเดือน)
       // ★ ตี paid เฉพาะใบที่อนุมัติภายในรอบนี้และยังไม่ผูกรอบไหน (เดิมตีทุกใบ → ใบที่อนุมัติหลังคำนวณถูกปิดทั้งที่ไม่มีในสลิป)

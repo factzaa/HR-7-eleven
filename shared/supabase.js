@@ -4189,11 +4189,110 @@
     throw new Error('action ไม่ถูกต้อง');
   }
 
+
+  // ===================================================================
+  // เบิกซื้อเสื้อพนักงาน (ฝั่งพนักงาน — หน้าแรก)          ★ 25 ก.ย. 69
+  //   พนง. เลือกเสื้อ/ไซส์/จำนวน → ใบ pending → ผจก. นำจ่าย → หักเงินเดือนรอบนั้น
+  //   ราคาถูกตรึงตอน "นำจ่าย" ไม่ใช่ตอนสั่ง — ขึ้นราคาระหว่างรอไม่กระทบใบเก่า
+  // ===================================================================
+  const SHIRT_FALLBACK = {
+    enabled: true, price_staff: 150, price_delivery: 300,
+    sizes: 'S,M,L,XL,2XL,3XL', max_qty_per_order: 3,
+    delivery_rider_only: true, auto_new_hire: true, auto_new_hire_qty: 1, allow_cancel: true,
+  };
+  async function shirtConfig() {
+    try {
+      const { data } = await sb.from('shirt_config').select('*').eq('id', 1).maybeSingle();
+      return data || SHIRT_FALLBACK;
+    } catch (_e) { return SHIRT_FALLBACK; }
+  }
+  function shirtSizeList(cfg) {
+    return String((cfg || {}).sizes || SHIRT_FALLBACK.sizes).split(',').map(x => x.trim()).filter(Boolean);
+  }
+  function shirtPriceOf(cfg, itemType) {
+    return Number(itemType === 'delivery' ? (cfg || {}).price_delivery : (cfg || {}).price_staff) || 0;
+  }
+  const SHIRT_LABEL = { staff: 'เสื้อพนักงาน', delivery: 'เสื้อ Delivery' };
+
+  // สถานะรวมของพนักงาน 1 คน: ตั้งค่า + สิทธิ์ + ใบของตัวเอง
+  async function shirtMyState(empId) {
+    const id = String(empId || '').trim();
+    if (!id) throw new Error('กรุณากรอกรหัสพนักงาน');
+    const { data: emp } = await sb.from('employees')
+      .select('emp_id,name,nickname,active,branch_id,is_rider').eq('emp_id', id).maybeSingle();
+    if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if (emp.active === false) throw new Error('รหัสนี้ไม่ได้ทำงานแล้ว');
+    const cfg = await shirtConfig();
+    const rows = await shirtMyOrders(id);
+    return {
+      emp, cfg, rows,
+      sizes: shirtSizeList(cfg),
+      can_delivery: cfg.delivery_rider_only === false || emp.is_rider === true,
+      enabled: cfg.enabled !== false,
+    };
+  }
+
+  async function shirtMyOrders(empId) {
+    if (!empId) return [];
+    const { data } = await sb.from('shirt_orders').select('*')
+      .eq('emp_id', String(empId)).order('created_at', { ascending: false }).limit(24);
+    return data || [];
+  }
+
+  async function shirtSubmit({ empId, item_type, size, qty }) {
+    const st = await shirtMyState(empId);
+    if (!st.enabled) throw new Error('ระบบเบิกซื้อเสื้อปิดใช้งานอยู่');
+    const type = item_type === 'delivery' ? 'delivery' : 'staff';
+    if (type === 'delivery' && !st.can_delivery) throw new Error('เสื้อ Delivery เบิกได้เฉพาะไรเดอร์');
+    const sz = String(size || '').trim();
+    if (!sz) throw new Error('กรุณาเลือกไซส์');
+    if (!st.sizes.includes(sz)) throw new Error('ไซส์ไม่ถูกต้อง');
+    const n = Math.floor(Number(qty) || 0);
+    const maxQ = Number(st.cfg.max_qty_per_order) || 3;
+    if (n < 1) throw new Error('กรุณาระบุจำนวน');
+    if (n > maxQ) throw new Error('สั่งได้สูงสุด ' + maxQ + ' ตัวต่อครั้ง');
+
+    // กันกดซ้ำ: ยังมีใบชนิดเดียวกันรออยู่
+    const dup = (st.rows || []).find(r => r.status === 'pending' && r.item_type === type);
+    if (dup) throw new Error('คุณมีใบเบิก' + SHIRT_LABEL[type] + 'ที่ยังรอผู้จัดการนำจ่ายอยู่แล้ว (' + (dup.order_no || '') + ')');
+
+    let branch_name = '';
+    try {
+      const { data: b } = await sb.from('branches').select('name').eq('branch_id', st.emp.branch_id).maybeSingle();
+      branch_name = (b && b.name) || '';
+    } catch (_e) {}
+
+    const { data: ins, error } = await sb.from('shirt_orders').insert({
+      emp_id: st.emp.emp_id, emp_name: st.emp.nickname || st.emp.name || st.emp.emp_id,
+      branch_id: st.emp.branch_id, branch_name,
+      item_type: type, size: sz, qty: n,
+      unit_price: shirtPriceOf(st.cfg, type),          // ราคาประมาณการ ณ วันสั่ง (ตรึงจริงตอนนำจ่าย)
+      amount: shirtPriceOf(st.cfg, type) * n,
+      status: 'pending', source: 'self', created_by: 'พนักงาน',
+    }).select('id,order_no').maybeSingle();
+    if (error) throw error;
+    return { ok: true, id: ins && ins.id, order_no: ins && ins.order_no };
+  }
+
+  async function shirtCancel(id, empId) {
+    const cfg = await shirtConfig();
+    if (cfg.allow_cancel === false) throw new Error('ระบบไม่อนุญาตให้ยกเลิกเอง');
+    const { data: r } = await sb.from('shirt_orders').select('*').eq('id', id).maybeSingle();
+    if (!r) throw new Error('ไม่พบใบเบิกนี้');
+    if (String(r.emp_id) !== String(empId)) throw new Error('ใบนี้ไม่ใช่ของคุณ');
+    if (r.status !== 'pending') throw new Error('ยกเลิกได้เฉพาะใบที่ยังไม่ได้นำจ่าย');
+    if (r.source === 'auto_new_hire') throw new Error('ใบของพนักงานใหม่ยกเลิกเองไม่ได้ — แจ้งผู้จัดการแทน');
+    const { error } = await sb.from('shirt_orders').update({ status: 'cancelled' }).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
+  }
+
   // export
   window.HR = { sb, loadConfig, uploadPhoto,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
-    getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow };
+    getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow,
+    shirtConfig, shirtMyState, shirtMyOrders, shirtSubmit, shirtCancel, shirtSizeList, shirtPriceOf };
 })();
