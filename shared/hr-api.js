@@ -9024,9 +9024,13 @@
       : null;
 
     // ★ ดึงทุกสถานะในช่วงนี้ (รอตรวจ / ผ่านแล้ว / ตีกลับ) เพื่อให้เห็นงานที่ตรวจไปแล้วด้วย
+    // ★ 25 ก.ย. 69 — "รอตรวจ" ไม่จำกัดช่วงวันเด็ดขาด
+    //   เดิมกรองวันกับทุกสถานะ → งานค้างเก่า (ก.ค.) หลุดจากหน้าจอ แต่ป้ายแดงยังนับอยู่
+    //   ผจก. เห็น "ตรวจครบแล้ว" ทั้งที่ป้ายขึ้น 6 → ตามเก็บไม่ได้เลย
+    //   ช่วงวันใช้กับประวัติ (ผ่านแล้ว/ตีกลับ) เท่านั้น
     let q = sb().from('shelf_checks').select('*')
       .order('check_date', { ascending: false }).order('reviewed_at', { ascending: false });
-    if (since) q = q.gte('check_date', since);
+    if (since) q = q.or('status.eq.submitted,status.is.null,check_date.gte.' + since);
     const branch = me.role === 'mgr' ? me.branch_id : (p.branch || '');
     if (branch) q = q.eq('branch_id', branch);
 
