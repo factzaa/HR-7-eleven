@@ -563,6 +563,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_terminate"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></span>พิจารณาเลิกจ้าง</button>
   <button class="tab" id="tab_advance"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.4"/></svg></span>เบิกเงินล่วงหน้า</button>
   <button class="tab" id="tab_payroll"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg></span>เงินเดือน</button>
+  <button class="tab" id="tab_shirt"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M8 3l4 2 4-2 5 3-2.5 4L17 9v11H7V9l-1.5 1L3 6z"/></svg></span>เบิกซื้อเสื้อ</button>
   <button class="tab" id="tab_rider"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg></span>เบิกซ่อมรถ (ไรเดอร์)</button>
   <button class="tab" id="tab_empsum"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>สรุปรายบุคคล</button>
   <button class="tab" id="tab_mgreval"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M9 13l-1.5 8 4.5-3 4.5 3-1.5-8"/></svg></span>ประเมิน ผจก.</button>
@@ -939,6 +940,16 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 </div>
 
 <!-- Rider: เบิกซ่อมบำรุงรถ -->
+<div id="view_shirt" class="container" style="display:none">
+  <div class="toolbar" style="margin-bottom:10px">
+    <h3 style="flex:1;font-size:15px;font-weight:600"><svg class="ei" viewBox="0 0 24 24"><path d="M8 3l4 2 4-2 5 3-2.5 4L17 9v11H7V9l-1.5 1L3 6z"/></svg> เบิกซื้อเสื้อพนักงาน</h3>
+    <select id="sh_days" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"></select>
+    <button class="btn btn-sec btn-sm" id="sh_reload">รีเฟรช</button>
+    <button class="btn btn-sec btn-sm" id="sh_cfgbtn" style="display:none">ตั้งค่าราคา</button>
+  </div>
+  <div id="sh_body"><div class="empty">กำลังโหลด…</div></div>
+</div>
+
 <div id="view_rider" class="container" style="display:none">
   <div class="toolbar" style="margin-bottom:10px;gap:6px;flex-wrap:wrap">
     <button class="btn btn-sec btn-sm rd-sub on" data-rdsec="claims"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> คำขอเบิก</button>
@@ -3350,7 +3361,7 @@ function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : 
 // ★ 17 ก.ย. 69 — เปิดแท็บ "พนักงาน" ให้ ผจก. ด้วย แต่เป็นแบบ "ดูอย่างเดียว + เปลี่ยนรหัสพนักงานได้"
 //   สิทธิ์แก้ช่องอื่น ๆ ลบ ย้ายสาขา เปิด-ปิดใช้งาน เพิ่มคนใหม่ ยังเป็นของสำนักงานเท่านั้น
 // ★ 24 ก.ย. 69 — เพิ่ม 'recruit': ผจก. ดูใบสมัครงานได้ แต่เห็นเฉพาะคนที่สมัครสาขาตัวเอง (เซิร์ฟเวอร์บังคับอีกชั้น)
-const MGR_TABS = ['mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
+const MGR_TABS = ['shirt','mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -12280,7 +12291,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
+const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -12297,6 +12308,7 @@ showTab = function(name){
   else if(name==='terminate') loadTerm();
   else if(name==='advance') loadAdvance();
   else if(name==='payroll') enterPayroll();
+  else if(name==='shirt') loadShirt();
   else if(name==='rider') loadRider();
   else if(name==='empsum') initEmpSum();
   else if(name==='mgreval') loadMgrEval();
@@ -13273,7 +13285,7 @@ const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','taskset','special','qa','shelf','exams','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','attnedit','shiftexit','schedule','leaves'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>', label:'การเงิน',    tabs:['advance','payroll','shirt'], links:[{icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>', label:'ตรวจวันทำงาน (ผจก.)', href:'../payroll-review/'}] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg>', label:'ไรเดอร์',     tabs:['rider'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg>', label:'คู่มือ',      tabs:['manual'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></svg>', label:'โปรโมชั่น',  tabs:['promo'] },
@@ -13290,7 +13302,7 @@ async function refreshNavBadges(){
   let r; try{ r=await post({ action:'hr_nav_badges', ...authBody(), branch:_mgr?MGR_BRANCH:null }); }catch(e){ return; }
   if(!r||!r.ok) return; const c=r.counts||{};
   // ★ 24 ก.ย. 69 — เพิ่ม 'shelf' (งานตรวจเชลฟ์รอ ผจก. ตรวจ) — ของเดิมไม่มีป้ายเตือนเลย ผจก. เลยพลาดไม่ได้ตรวจ
-  ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider','attnedit','shelf'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });   // ★ attnedit = คำขอควบกะรอ HR
+  ['mgrtasks','mgrdailyrev','leaves','advance','recruit','submissions','rider','attnedit','shelf','shirt'].forEach(k=>{ _setNavBadge($('tab_'+k), c[k]); });   // ★ attnedit = คำขอควบกะรอ HR
   document.querySelectorAll('.navgrp').forEach(grp=>{ const tabs=(grp.dataset.tabs||'').split(',').filter(Boolean); const sum=tabs.reduce((s,t)=>s+(Number(c[t])||0),0); _setNavBadge(grp.querySelector('.navgrp-btn'), sum); });
 }
 setInterval(()=>{ const t=document.getElementById('topact'); if(t && t.style.display!=='none') refreshNavBadges(); }, 60000);
@@ -19447,6 +19459,240 @@ window.NIDALive=(function(){
   if(tbtn) tbtn.addEventListener('click', function(e){ e.stopPropagation(); panel.classList.toggle('on'); if(panel.classList.contains('on')) refresh(); });
   document.addEventListener('click', function(e){ if(panel.classList.contains('on') && !panel.contains(e.target) && e.target.id!=='themeBtn' && !e.target.closest('#themeBtn')) panel.classList.remove('on'); });
 })();
+</script>
+
+
+<script>
+/* ===================================================================
+   เบิกซื้อเสื้อพนักงาน — หน้า ผจก./HR                    ★ 25 ก.ย. 69
+   pending → นำจ่าย (ยืนยันไซส์ + รูปหลักฐาน + ลายเซ็นพนักงาน) → หักเงินเดือน
+   ปุ่มบันทึกกดไม่ได้จนกว่าจะมีครบทั้งรูปและลายเซ็น
+   =================================================================== */
+let SH_DATA=null, SH_DAYS=90, SHD=null;   // SHD = ใบที่กำลังนำจ่าย
+const SH_LBL={ staff:'เสื้อพนักงาน', delivery:'เสื้อ Delivery' };
+const SH_MONEY=n=>Number(n||0).toLocaleString('th-TH');
+
+async function loadShirt(){
+  setTimeout(refreshNavBadges, 400);
+  const box=$('sh_body'); if(!box) return;
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_shirt_list', ...authBody(), days:SH_DAYS });
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  SH_DATA=r;
+  const cb=$('sh_cfgbtn'); if(cb) cb.style.display = (r.role==='hr') ? '' : 'none';
+  const ds=$('sh_days');
+  if(ds && !ds.dataset.built){ ds.dataset.built='1';
+    ds.innerHTML=[30,90,180].map(d=>'<option value="'+d+'"'+(d===SH_DAYS?' selected':'')+'>ประวัติ '+d+' วันล่าสุด</option>').join('')
+      +'<option value="0"'+(SH_DAYS===0?' selected':'')+'>ประวัติทั้งหมด</option>';
+    ds.onchange=()=>{ SH_DAYS=Number(ds.value)||0; loadShirt(); };
+  }
+  renderShirt();
+}
+
+function shCard(r, pending){
+  const isAuto = r.source==='auto_new_hire';
+  const price = r.unit_price!=null ? Number(r.unit_price) : 0;
+  const st = { delivered:['รับของแล้ว','#15803d','#f0fdf4','#86efac'],
+               rejected:['ไม่ต้องซื้อ','#6b7280','#f3f4f6','#e5e7eb'],
+               cancelled:['พนักงานยกเลิก','#6b7280','#f3f4f6','#e5e7eb'] }[r.status] || ['รอนำจ่าย','#b45309','#fffbeb','#fde68a'];
+  return '<div class="card" style="margin-bottom:9px;border-left:5px solid '+st[1]+'"><div class="card-b">'
+    +'<div style="display:flex;gap:9px;align-items:flex-start;flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:150px">'
+        +'<b style="font-size:14.5px">'+esc(r.emp_name||r.emp_id)+'</b> <span class="muted" style="font-size:12px">'+esc(r.emp_id)+'</span>'
+        +(r.branch_name?('<span class="muted" style="font-size:12px"> · '+esc(r.branch_name)+'</span>'):'')
+        +'<div style="font-size:13.5px;margin-top:3px">'+SH_LBL[r.item_type]
+          +(r.size?(' · ไซส์ <b>'+esc(r.size)+'</b>'):' · <span style="color:#b45309">ยังไม่ระบุไซส์</span>')
+          +' × '+r.qty+' ตัว'+(price?(' · ตัวละ '+SH_MONEY(price)):'')+'</div>'
+        +'<div class="muted" style="font-size:11.5px;margin-top:2px">'+esc(r.order_no||'')+' · สั่งเมื่อ '+esc(String(r.created_at||'').slice(0,10))
+          +(isAuto?' · <span style="color:#7c3aed;font-weight:700">พนักงานใหม่ (ระบบตั้งให้)</span>':'')+'</div>'
+      +'</div>'
+      +'<span class="pill" style="background:'+st[2]+';color:'+st[1]+';border:1px solid '+st[3]+'">'+st[0]+'</span>'
+    +'</div>'
+    +(pending
+      ? ('<div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">'
+          +'<button class="btn btn-pri btn-sm" data-shdel="'+r.id+'" style="flex:1;min-width:120px">นำจ่าย</button>'
+          +'<button class="btn btn-sec btn-sm" data-shrej="'+r.id+'">'+(isAuto?'มีเสื้อเดิมแล้ว':'ปฏิเสธ')+'</button>'
+        +'</div>')
+      : ('<div class="muted" style="font-size:11.5px;margin-top:6px">'
+          +(r.status==='delivered'
+            ? ('นำจ่าย '+esc(String(r.delivered_at||'').slice(0,10))+' โดย '+esc(r.delivered_by||'')+' · หัก '+SH_MONEY(r.amount)+' บาท รอบ '+esc(r.cycle_month||'')+(r.deducted?' · หักแล้ว':' · รอหัก'))
+            : (r.status==='rejected' ? ('ปฏิเสธโดย '+esc(r.rejected_by||'')+' · '+esc(r.reject_reason||'')) : 'พนักงานยกเลิกเอง'))
+          +'</div>'
+          +((r.photo_urls&&r.photo_urls.length)||r.sign_url
+            ? ('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
+                +(r.photo_urls||[]).map(u=>'<img src="'+esc(u)+'" onclick="lightbox(this)" loading="lazy" style="width:58px;height:58px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1px solid var(--line)">').join('')
+                +(r.sign_url?('<img src="'+esc(r.sign_url)+'" onclick="lightbox(this)" loading="lazy" title="ลายเซ็นรับ" style="height:58px;background:#fff;border-radius:8px;cursor:zoom-in;border:1px solid var(--line);padding:2px">'):'')
+              +'</div>') : ''))
+      )
+    +'</div></div>';
+}
+
+function renderShirt(){
+  const box=$('sh_body'); const r=SH_DATA||{};
+  const pend=r.pending||[], hist=r.history||[];
+  const cfg=r.config||{};
+  let h='<div class="card" style="margin-bottom:11px;background:var(--bg);border:1px dashed var(--line2)"><div class="card-b" style="font-size:12.5px;line-height:1.8">'
+    +'ราคาปัจจุบัน: <b>'+SH_LBL.staff+' '+SH_MONEY(cfg.price_staff)+' บาท</b> · <b>'+SH_LBL.delivery+' '+SH_MONEY(cfg.price_delivery)+' บาท</b>'
+    +'<br><span class="muted">ราคาถูกตรึงตอนกดนำจ่าย — ขึ้นราคาทีหลังไม่ย้อนกระทบใบที่จ่ายไปแล้ว</span></div></div>';
+  h+='<h3 style="font-size:13px;color:var(--green-d);font-weight:700;margin:4px 2px 8px">รอนำจ่าย <span class="pill" style="background:#fef3c7;color:#92400e">'+pend.length+'</span></h3>';
+  h+= pend.length ? pend.map(x=>shCard(x,true)).join('') : '<div class="empty">ไม่มีใบเบิกรอนำจ่าย</div>';
+  h+='<details style="margin-top:14px"'+(pend.length?'':' open')+'>'
+    +'<summary style="cursor:pointer;font-weight:700;font-size:14px;padding:10px 12px;background:#f8fafc;border:1.5px solid var(--line2);border-radius:12px;list-style:none">ประวัติ <span class="pill" style="background:#e2e8f0;color:#475569">'+hist.length+'</span></summary>'
+    +'<div style="margin-top:8px">'+(hist.length?hist.map(x=>shCard(x,false)).join(''):'<div class="empty">ยังไม่มีประวัติ</div>')+'</div></details>';
+  box.innerHTML=h;
+  box.querySelectorAll('[data-shdel]').forEach(b=>b.onclick=()=>shDeliverOpen(b.dataset.shdel));
+  box.querySelectorAll('[data-shrej]').forEach(b=>b.onclick=()=>shRejectOpen(b.dataset.shrej));
+}
+$('sh_reload') && ($('sh_reload').onclick=loadShirt);
+
+/* ---------- โมดัลนำจ่าย ---------- */
+let SH_PHOTOS=[];
+function shFind(id){ const r=SH_DATA||{}; return (r.pending||[]).find(x=>String(x.id)===String(id)); }
+
+function shDeliverOpen(id){
+  const r=shFind(id); if(!r) return;
+  SHD=r; SH_PHOTOS=[]; DSIG_DIRTY=false;
+  const cfg=(SH_DATA&&SH_DATA.config)||{};
+  const sizes=(SH_DATA&&SH_DATA.sizes)||[];
+  const price=Number(r.item_type==='delivery'?cfg.price_delivery:cfg.price_staff)||0;
+  openModal('นำจ่าย'+SH_LBL[r.item_type]+' — '+esc(r.emp_name||r.emp_id),
+     '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">'+esc(r.order_no||'')+' · '+esc(r.branch_name||r.branch_id||'')+'</div>'
+    +'<div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">1 · ยืนยันไซส์'+(r.source==='auto_new_hire'?' (พนักงานใหม่ — ระบุให้ด้วย)':'')+'</div>'
+    +'<div id="shd_sizes" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px">'
+      +sizes.map(z=>'<button type="button" data-shdz="'+esc(z)+'" style="min-width:52px;padding:9px 8px;border:2px solid '+(r.size===z?'#16a34a':'var(--line2)')+';background:'+(r.size===z?'#f0fdf4':'var(--card)')+';border-radius:10px;cursor:pointer;font:inherit;font-size:14px;font-weight:700">'+esc(z)+'</button>').join('')
+    +'</div>'
+    +'<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">'
+      +'<span style="font-size:12.5px;color:var(--muted);font-weight:700">จำนวน</span>'
+      +'<input type="number" id="shd_qty" min="1" max="10" value="'+(r.qty||1)+'" style="width:78px;padding:8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:center">'
+      +'<span id="shd_total" style="flex:1;text-align:right;font-size:15px;font-weight:800;color:#166534"></span>'
+    +'</div>'
+    +'<div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">2 · รูปหลักฐานการนำจ่าย <span style="color:var(--red)">*</span></div>'
+    +'<button type="button" class="btn btn-sec btn-sm" id="shd_addphoto" style="width:100%;margin-bottom:7px">📷 เพิ่มรูป</button>'
+    +'<div id="shd_prev" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px"></div>'
+    +'<div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">3 · ให้พนักงานเซ็นรับบนหน้าจอ <span style="color:var(--red)">*</span></div>'
+    +'<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:11px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">'
+        +'<div style="font-size:12px;color:var(--muted)">ยื่นเครื่องให้พนักงานเซ็น</div>'
+        +'<button type="button" class="btn btn-sec btn-sm" id="dsg_clear">ล้าง</button></div>'
+      +'<canvas id="dsg_cv" style="width:100%;height:170px;border:1.5px dashed var(--line2);border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>'
+      +'<div id="dsg_hint" style="text-align:center;font-size:12px;color:var(--muted);margin-top:-95px;margin-bottom:83px;pointer-events:none">เซ็นชื่อในกรอบนี้</div>'
+      +'<input type="text" id="shd_name" value="'+esc(r.emp_name||'')+'" placeholder="ชื่อ-นามสกุลผู้รับ (ตัวบรรจง)" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;margin-top:10px;text-align:center;box-sizing:border-box">'
+    +'</div>'
+    +'<div id="shd_err" style="display:none;color:var(--red);font-size:13.5px;font-weight:600;margin-bottom:9px"></div>'
+    +'<button class="btn btn-pri" id="shd_save" style="width:100%;padding:12px">✓ บันทึกการนำจ่าย</button>'
+    +'<div style="text-align:center;font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6">บันทึกแล้วยอดนี้จะถูกหักจากเงินเดือนของพนักงานในรอบปัจจุบัน</div>');
+
+  SHD._size=r.size||''; SHD._price=price;
+  const paint=()=>{
+    document.querySelectorAll('[data-shdz]').forEach(b=>{
+      const on=b.dataset.shdz===SHD._size;
+      b.style.borderColor=on?'#16a34a':'var(--line2)'; b.style.background=on?'#f0fdf4':'var(--card)'; });
+    const q=Math.max(1,Number($('shd_qty').value)||1);
+    $('shd_total').textContent='รวม '+SH_MONEY(price*q)+' บาท';
+  };
+  document.querySelectorAll('[data-shdz]').forEach(b=>b.onclick=()=>{ SHD._size=b.dataset.shdz; paint(); });
+  $('shd_qty').oninput=paint; paint();
+
+  dsgInit(); setTimeout(()=>{ const cv=$('dsg_cv'); if(cv&&cv._fit) cv._fit(); },60);
+  $('dsg_clear').onclick=dsgClear;
+  $('shd_addphoto').onclick=shdPickPhoto;
+  $('shd_save').onclick=shdSave;
+}
+
+function shdRenderPrev(){
+  $('shd_prev').innerHTML=SH_PHOTOS.map((u,i)=>
+    '<div style="position:relative"><img src="'+u+'" style="width:64px;height:64px;object-fit:cover;border-radius:9px;border:1px solid var(--line)">'
+    +'<button type="button" data-shdrm="'+i+'" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:#dc2626;color:#fff;font-size:14px;line-height:1;cursor:pointer">×</button></div>').join('');
+  $('shd_prev').querySelectorAll('[data-shdrm]').forEach(b=>b.onclick=()=>{ SH_PHOTOS.splice(Number(b.dataset.shdrm),1); shdRenderPrev(); });
+}
+function shdPickPhoto(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true;
+  inp.onchange=async()=>{
+    for(const f of Array.from(inp.files||[])){
+      if(SH_PHOTOS.length>=4){ toast('err','แนบได้สูงสุด 4 รูป'); break; }
+      try{ SH_PHOTOS.push(await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(f); })); }
+      catch(_e){ toast('err','อ่านไฟล์ไม่สำเร็จ'); }
+    }
+    shdRenderPrev();
+  };
+  inp.click();
+}
+
+async function shdSave(){
+  const err=$('shd_err'), btn=$('shd_save');
+  const fail=t=>{ err.textContent=t; err.style.display='block'; btn.disabled=false; btn.textContent='✓ บันทึกการนำจ่าย'; };
+  err.style.display='none';
+  if(!SHD._size) return fail('เลือกไซส์ก่อน');
+  if(!SH_PHOTOS.length) return fail('แนบรูปหลักฐานอย่างน้อย 1 รูป');
+  const sig=dsgData(); if(!sig) return fail('ให้พนักงานเซ็นรับในกรอบก่อน');
+  const nm=($('shd_name').value||'').trim(); if(nm.length<2) return fail('พิมพ์ชื่อ-สกุลผู้รับกำกับใต้ลายเซ็น');
+  const qty=Math.max(1,Number($('shd_qty').value)||1);
+  if(!confirm('ยืนยันนำจ่าย '+SH_LBL[SHD.item_type]+' ไซส์ '+SHD._size+' × '+qty+' ตัว ให้ '+(SHD.emp_name||SHD.emp_id)+'?\nยอด '+SH_MONEY(SHD._price*qty)+' บาท จะถูกหักจากเงินเดือนรอบนี้')) return;
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const r=await post({ action:'hr_shirt_deliver', ...authBody(),
+    data:{ id:SHD.id, size:SHD._size, qty:qty, photos:SH_PHOTOS, signature:sig, sign_name:nm } });
+  if(!r||!r.ok) return fail((r&&r.error)||'บันทึกไม่สำเร็จ');
+  closeModal();
+  toast('ok','นำจ่ายแล้ว · หัก '+SH_MONEY(r.amount)+' บาท รอบ '+(r.cycle_month||''));
+  loadShirt();
+}
+
+function shRejectOpen(id){
+  const r=shFind(id); if(!r) return;
+  const isAuto=r.source==='auto_new_hire';
+  openModal('ไม่นำจ่ายใบนี้ — '+esc(r.emp_name||r.emp_id),
+     '<div style="font-size:13px;margin-bottom:10px">'+SH_LBL[r.item_type]+' '+esc(r.order_no||'')+'</div>'
+    +'<div style="background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:10px;padding:9px 11px;font-size:12.5px;margin-bottom:11px">ปิดใบนี้แล้วจะ<b>ไม่มีการหักเงิน</b>จากพนักงานเลย</div>'
+    +'<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:9px"><input type="checkbox" id="shr_have"'+(isAuto?' checked':'')+'> มีเสื้อเดิมอยู่แล้ว ไม่ต้องซื้อ</label>'
+    +'<input type="text" id="shr_reason" placeholder="เหตุผลอื่น (ถ้ามี)" style="width:100%;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;box-sizing:border-box">'
+    +'<button class="btn btn-pri" id="shr_save" style="width:100%;padding:12px;margin-top:12px">ยืนยัน</button>');
+  $('shr_save').onclick=async()=>{
+    const reason=$('shr_have').checked ? 'มีเสื้อเดิมอยู่แล้ว ไม่ต้องซื้อ' : (($('shr_reason').value||'').trim());
+    if(!reason){ toast('err','ระบุเหตุผล หรือติ๊กว่ามีเสื้อเดิมแล้ว'); return; }
+    const b=$('shr_save'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    const rr=await post({ action:'hr_shirt_reject', ...authBody(), data:{ id:r.id, reason } });
+    if(rr&&rr.ok){ closeModal(); toast('ok','ปิดใบแล้ว — ไม่หักเงิน'); loadShirt(); }
+    else { b.disabled=false; b.textContent='ยืนยัน'; toast('err',(rr&&rr.error)||'ไม่สำเร็จ'); }
+  };
+}
+
+/* ---------- ตั้งค่าราคา (HR เท่านั้น) ---------- */
+async function shConfigOpen(){
+  const r=await post({ action:'hr_shirt_config_get', ...authBody() });
+  if(!r||!r.ok){ toast('err',(r&&r.error)||'โหลดไม่สำเร็จ'); return; }
+  const c=r.config||{};
+  const num=(id,label,val,hint)=>'<div style="flex:1;min-width:140px"><label style="font-size:12px;color:var(--muted)">'+label+'</label>'
+    +'<input type="number" id="'+id+'" min="0" value="'+(val!=null?val:'')+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;box-sizing:border-box">'
+    +(hint?'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+hint+'</div>':'')+'</div>';
+  openModal('👕 ตั้งค่าเบิกซื้อเสื้อพนักงาน',
+     '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:11px">'
+      +num('shc_ps','ราคาเสื้อพนักงาน (บาท/ตัว)',c.price_staff)
+      +num('shc_pd','ราคาเสื้อ Delivery (บาท/ตัว)',c.price_delivery)
+     +'</div>'
+    +'<div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:9px;padding:8px 10px;font-size:12px;margin-bottom:11px">ราคาที่แก้มีผลกับ<b>ใบที่นำจ่ายหลังจากนี้</b>เท่านั้น ใบที่จ่ายไปแล้วยังใช้ราคาเดิม</div>'
+    +'<label style="font-size:12px;color:var(--muted)">ไซส์ที่ให้เลือก (คั่นด้วย ,)</label>'
+    +'<input type="text" id="shc_sizes" value="'+esc(c.sizes||'')+'" style="width:100%;padding:9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;margin-bottom:11px;box-sizing:border-box">'
+    +'<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:11px">'
+      +num('shc_maxq','สั่งได้สูงสุด (ตัว/ครั้ง)',c.max_qty_per_order)
+      +num('shc_autoq','พนักงานใหม่ ตั้งให้กี่ตัว',c.auto_new_hire_qty)
+     +'</div>'
+    +'<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:7px"><input type="checkbox" id="shc_en"'+(c.enabled!==false?' checked':'')+'> เปิดใช้งานระบบเบิกซื้อเสื้อ</label>'
+    +'<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:7px"><input type="checkbox" id="shc_ro"'+(c.delivery_rider_only!==false?' checked':'')+'> เสื้อ Delivery ให้เฉพาะไรเดอร์เห็น</label>'
+    +'<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:7px"><input type="checkbox" id="shc_auto"'+(c.auto_new_hire!==false?' checked':'')+'> พนักงานใหม่ ตั้งใบเบิกเสื้อให้อัตโนมัติ</label>'
+    +'<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:11px"><input type="checkbox" id="shc_cancel"'+(c.allow_cancel!==false?' checked':'')+'> พนักงานยกเลิกใบเองได้ก่อนนำจ่าย</label>'
+    +'<button class="btn btn-pri" id="shc_save" style="width:100%;padding:12px">บันทึกการตั้งค่า</button>');
+  $('shc_save').onclick=async()=>{
+    const b=$('shc_save'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    const rr=await post({ action:'hr_shirt_config_save', ...authBody(), data:{
+      price_staff:$('shc_ps').value, price_delivery:$('shc_pd').value, sizes:$('shc_sizes').value,
+      max_qty_per_order:$('shc_maxq').value, auto_new_hire_qty:$('shc_autoq').value,
+      enabled:$('shc_en').checked, delivery_rider_only:$('shc_ro').checked,
+      auto_new_hire:$('shc_auto').checked, allow_cancel:$('shc_cancel').checked } });
+    if(rr&&rr.ok){ closeModal(); toast('ok','บันทึกแล้ว'); loadShirt(); }
+    else { b.disabled=false; b.textContent='บันทึกการตั้งค่า'; toast('err',(rr&&rr.error)||'บันทึกไม่สำเร็จ'); }
+  };
+}
+$('sh_cfgbtn') && ($('sh_cfgbtn').onclick=shConfigOpen);
 </script>
 
 </body>
