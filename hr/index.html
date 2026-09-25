@@ -16130,7 +16130,8 @@ function shpFoldBox(title, color, rows, kind, open){
     +'</details>';
 }
 // ★ 22 ก.ย. 69 — แผง "ตรวจผ่านแล้ว": ตัวกรองเชลฟ์/พนักงาน/ช่วงวัน + มุมมองรายการ / ความคืบหน้ารายเชลฟ์ (พับได้)
-let SHR={ shelf:'', emp:'', view:'list', days:30 };   // ★ 24 ก.ย. 69 — ขยายจาก 14 วัน ให้เห็นงานค้างเก่าที่ป้ายแดงนับไว้
+let SHR={ shelf:'', emp:'', view:'list', days:30 };   // ★ 24 ก.ย. 69 — ช่วงวันนี้ใช้กับ "ประวัติที่ตรวจแล้ว" เท่านั้น — "รอตรวจ" เซิร์ฟเวอร์ส่งมาครบทุกวันเสมอ
+const shrDaysTxt=()=>SHR.days?(SHR.days+' วันล่าสุด'):'ทั้งหมด';
 function renderShelfRecent(){
   const rc=$('shp_recent'); if(!rc) return;
   const r=SHP_ALL||{}; const all=[].concat(r.approved||[], r.sent_back||[], r.rows||[]);
@@ -16152,7 +16153,7 @@ function renderShelfRecent(){
   const pass=c=>(!SHR.shelf||String(c.shelf_id)===String(SHR.shelf))&&(!SHR.emp||String(c.emp_id)===String(SHR.emp));
   const approved=(r.approved||[]).filter(pass), sentBack=(r.sent_back||[]).filter(pass);
   if(SHR.view==='list'){
-    const body=shpFoldBox('<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจผ่านแล้ว ('+SHR.days+' วันล่าสุด)', '#16a34a', approved, 'ok', true)
+    const body=shpFoldBox('<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจผ่านแล้ว ('+shrDaysTxt()+')', '#16a34a', approved, 'ok', true)
       + shpFoldBox('⤴ ตีกลับ — รอพนักงานแก้', '#dc2626', sentBack, 'no', false);
     h+=body||'<div class="empty">ไม่มีรายการตามตัวกรองนี้</div>';
   } else {
@@ -16175,7 +16176,7 @@ function renderShelfRecent(){
         +'</div>'; }).join('');
       return '<details style="margin-bottom:8px;background:var(--card);border:1px solid var(--line);border-radius:14px"'+((idx===0||SHR.shelf)?' open':'')+'>'
         +'<summary style="cursor:pointer;list-style:none;padding:12px 14px"><b style="font-size:14px">'+esc(shelves[k]||('#'+k))+'</b> <span class="muted" style="font-size:12.5px">· '+esc(people)+'</span>'
-        +'<div class="muted" style="font-size:12px;margin-top:2px">ทำแล้ว '+list.length+' ครั้งใน '+SHR.days+' วัน · ล่าสุด '+beDate(last.check_date)+' · ผ่าน '+nOk+' · ตีกลับ '+nNo+'</div></summary>'
+        +'<div class="muted" style="font-size:12px;margin-top:2px">ทำแล้ว '+list.length+' ครั้ง ('+shrDaysTxt()+') · ล่าสุด '+beDate(last.check_date)+' · ผ่าน '+nOk+' · ตีกลับ '+nNo+'</div></summary>'
         +'<div style="padding:0 14px 12px"><div style="border-left:2px solid #d1fae5;padding-left:12px;margin-left:4px">'+tl+'</div>'
         +'<div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 10px;font-size:12.5px;margin-top:4px">➜ บันทึกล่าสุด ('+beDate(last.check_date)+'): <b>'+(last.note?esc(last.note):'— ไม่มีหมายเหตุ —')+'</b>'+(gap>1?(' · ไม่มีการทำต่อมา '+gap+' วัน'):'')+'</div></div>'
         +'</details>';
