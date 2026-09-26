@@ -27,8 +27,16 @@
   .btn:disabled{opacity:.6}
   .doc{border:1.5px dashed var(--line);border-radius:10px;padding:10px;text-align:center;margin-top:4px}
   .doc img{max-width:100%;max-height:120px;border-radius:8px;margin-top:8px;display:none}
-  .doc label{display:inline-block;background:var(--green);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer;margin:0}
-  .doc input{display:none}
+  .doc label{display:inline-flex;align-items:center;gap:6px;background:var(--green);color:#fff;border-radius:8px;padding:9px 13px;font-size:13px;cursor:pointer;margin:0}
+  .doc label.alt{background:#fff;color:var(--green-d,#15803d);border:1.5px solid var(--green)}
+  .doc .btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  /* ★ แก้ 26 ก.ย. 69 — ห้ามใช้ display:none กับ input[type=file]
+     บนมือถือ (iOS Safari / WebView บาง Android) ปุ่มจะกดไม่ติดเลย เพราะ input ที่ display:none
+     ถูกถอดออกจากผังหน้า label จึงสั่งเปิดตัวเลือกไฟล์ไม่ได้
+     วิธีที่ใช้ได้ทุกเครื่อง: ซ่อนแบบ "มองไม่เห็นแต่ยังอยู่ในผัง" + วาง input ไว้ข้างใน label */
+  .doc input[type=file]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+    clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;opacity:0}
+  .doc .fname{display:block;font-size:11.5px;color:var(--muted);margin-top:7px;word-break:break-all}
   .who{font-size:14px;font-weight:600;color:var(--green-d);margin-bottom:6px}
   .hint{font-size:12.5px;color:var(--muted);margin-top:4px}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;max-width:90%;text-align:center;z-index:9}
@@ -91,15 +99,15 @@
     <div class="sec">แนบเอกสาร (ถ่ายรูป/เลือกไฟล์ภาพ)</div>
     <div class="hint" style="margin-bottom:6px">เอกสารที่เคยส่งไว้แล้วจะแสดงให้เห็นด้านล่าง — <b>ไม่ต้องถ่ายใหม่</b> ถ้าไม่มีอะไรเปลี่ยน · ถ่ายใหม่เฉพาะใบที่ต้องการแก้</div>
     <label>รูปถ่ายพนักงาน</label>
-    <div class="doc"><label for="d_photo">เลือก/ถ่ายรูป</label><input id="d_photo" type="file" accept="image/*" capture="user"><img id="p_photo"></div>
+    <div class="doc"><div class="btns"><label><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input id="d_photo" type="file" accept="image/*" capture="user"></label><label class="alt"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> เลือกจากเครื่อง<input id="g_photo" type="file" accept="image/*"></label></div><span class="fname" id="n_photo"></span><img id="p_photo"></div>
     <label>สำเนาบัตรประชาชน</label>
-    <div class="doc"><label for="d_idcard">เลือก/ถ่ายรูป</label><input id="d_idcard" type="file" accept="image/*"><img id="p_idcard"></div>
+    <div class="doc"><div class="btns"><label><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input id="d_idcard" type="file" accept="image/*" capture="environment"></label><label class="alt"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> เลือกจากเครื่อง<input id="g_idcard" type="file" accept="image/*"></label></div><span class="fname" id="n_idcard"></span><img id="p_idcard"></div>
     <label>หน้าสมุดบัญชีธนาคาร</label>
-    <div class="doc"><label for="d_bankbook">เลือก/ถ่ายรูป</label><input id="d_bankbook" type="file" accept="image/*"><img id="p_bankbook"></div>
+    <div class="doc"><div class="btns"><label><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input id="d_bankbook" type="file" accept="image/*" capture="environment"></label><label class="alt"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> เลือกจากเครื่อง<input id="g_bankbook" type="file" accept="image/*"></label></div><span class="fname" id="n_bankbook"></span><img id="p_bankbook"></div>
     <label>ทะเบียนบ้าน</label>
-    <div class="doc"><label for="d_house">เลือก/ถ่ายรูป</label><input id="d_house" type="file" accept="image/*"><img id="p_house"></div>
+    <div class="doc"><div class="btns"><label><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input id="d_house" type="file" accept="image/*" capture="environment"></label><label class="alt"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> เลือกจากเครื่อง<input id="g_house" type="file" accept="image/*"></label></div><span class="fname" id="n_house"></span><img id="p_house"></div>
     <label>วุฒิการศึกษา</label>
-    <div class="doc"><label for="d_edu">เลือก/ถ่ายรูป</label><input id="d_edu" type="file" accept="image/*"><img id="p_edu"></div>
+    <div class="doc"><div class="btns"><label><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> ถ่ายรูป<input id="d_edu" type="file" accept="image/*" capture="environment"></label><label class="alt"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg> เลือกจากเครื่อง<input id="g_edu" type="file" accept="image/*"></label></div><span class="fname" id="n_edu"></span><img id="p_edu"></div>
 
     <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;margin:6px 0 12px;cursor:pointer">
       <input type="checkbox" id="agreeRules" style="width:18px;height:18px;margin-top:2px;flex:none">
@@ -194,19 +202,59 @@ $('checkBtn').onclick = async ()=>{
   $('checkBtn').disabled=false; $('checkBtn').textContent='ถัดไป';
 };
 
-function bindFile(inputId, key, prevId){
-  $(inputId).addEventListener('change', e=>{
-    const f = e.target.files[0]; if(!f) return;
-    const r = new FileReader();
-    r.onload = ()=>{ docs[key]=r.result; const p=$(prevId); p.src=r.result; p.style.display='block'; };
-    r.readAsDataURL(f);
+// ★ แก้ 26 ก.ย. 69 — ย่อรูปก่อนส่ง
+//   รูปจากมือถือใบละ 3–8 MB · แปลงเป็น base64 โตอีก ~33% · ส่งพร้อมกัน 5 ใบ = เกิน 30 MB
+//   เน็ตร้านหลุดกลางทางบ่อย ผู้ใช้เห็นแค่ "ส่งไม่สำเร็จ" โดยไม่รู้สาเหตุ
+//   ย่อด้านยาวสุดเหลือ 1600px คุณภาพ 0.82 → ใบละ ~300–600 KB อ่านเอกสารยังชัดเจน
+function shrinkImage(file, max){
+  return new Promise((resolve, reject)=>{
+    const fr = new FileReader();
+    fr.onerror = ()=>reject(new Error('อ่านไฟล์รูปไม่สำเร็จ'));
+    fr.onload = ()=>{
+      const src = fr.result;
+      const img = new Image();
+      img.onerror = ()=>resolve(src);        // ย่อไม่ได้ (เช่นไฟล์แปลก) → ส่งของเดิมไป
+      img.onload = ()=>{
+        try{
+          const sc = Math.min(1, max / Math.max(img.width, img.height));
+          if(sc >= 1) return resolve(src);
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(img.width * sc); cv.height = Math.round(img.height * sc);
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          resolve(cv.toDataURL('image/jpeg', 0.82));
+        }catch(_e){ resolve(src); }
+      };
+      img.src = src;
+    };
+    fr.readAsDataURL(file);
   });
 }
-bindFile('d_photo','photo','p_photo');
-bindFile('d_idcard','idcard','p_idcard');
-bindFile('d_bankbook','bankbook','p_bankbook');
-bindFile('d_house','house','p_house');
-bindFile('d_edu','edu','p_edu');
+const KB = b => b < 1024*1024 ? (Math.round(b/1024) + ' KB') : ((b/1048576).toFixed(1) + ' MB');
+
+// ★ ผูกทั้งปุ่ม "ถ่ายรูป" (d_*) และ "เลือกจากเครื่อง" (g_*) เข้าช่องเดียวกัน
+function bindFile(inputId, key, prevId){
+  const el = $(inputId); if(!el) return;
+  el.addEventListener('change', async e=>{
+    const f = e.target.files && e.target.files[0]; if(!f) return;
+    const nm = $('n_' + key);
+    if(nm) nm.textContent = 'กำลังเตรียมรูป…';
+    try{
+      const data = await shrinkImage(f, 1600);
+      docs[key] = data;
+      const p = $(prevId); p.src = data; p.style.display = 'block';
+      if(nm) nm.textContent = '✓ ' + (f.name || 'รูป') + ' · ' + KB(f.size) + ' (ย่อแล้วพร้อมส่ง)';
+    }catch(err){
+      docs[key] = null;
+      if(nm) nm.textContent = '';
+      toast('err', err.message || 'อ่านไฟล์รูปไม่สำเร็จ ลองถ่ายใหม่อีกครั้ง');
+    }
+    e.target.value = '';      // เลือกไฟล์เดิมซ้ำได้
+  });
+}
+['photo','idcard','bankbook','house','edu'].forEach(k=>{
+  bindFile('d_' + k, k, 'p_' + k);     // ถ่ายรูป
+  bindFile('g_' + k, k, 'p_' + k);     // เลือกจากเครื่อง
+});
 
 $('submitBtn').onclick = async ()=>{
   const id = $('empId').value.trim();
