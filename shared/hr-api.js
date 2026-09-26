@@ -854,6 +854,17 @@
     if (!ex) return { ok: false, error: 'ไม่พบชุดข้อสอบ' };
     return { ok: true, exam: ex, questions: qs || [], assignees: (asg || []).map(a => a.emp_id) };
   }
+  // ★ 26 ก.ย. 69 — ลอก "ก./ข./ค./ง." (หรือ 1./a)) ที่ติดมาหน้าตัวเลือกออก
+  //   ที่มาของปัญหา: ผู้ออกข้อสอบ (คน/นิดา/คลังข้อสอบ) พิมพ์ตัวอักษรนำไว้ในเนื้อตัวเลือกเอง
+  //   แต่หน้าทำข้อสอบ "สุ่มลำดับตัวเลือก" กันลอกกัน → ตัวอักษรที่ฝังมาเลยสลับมั่ว
+  //     (เห็นเป็น "ค. … / ก. … / ง. … / ข. …")
+  //   กติกาใหม่: เนื้อตัวเลือกต้องไม่มีหมายเลข/ตัวอักษรนำ — หน้าจอเป็นคนใส่ 1. 2. 3. 4. ตามลำดับที่แสดงจริง
+  function _stripChoiceLabel(v) {
+    let t = String(v == null ? '' : v).trim();
+    // ก. ข. ค. ง. จ. ฉ. / 1. 2. / a) b) — รับทั้งจุด วงเล็บ และขีด
+    t = t.replace(/^\s*(?:[ก-ฉ]|[1-9][0-9]?|[a-zA-Z])\s*[.)\-:]\s+/, '');
+    return t.trim();
+  }
   async function hrExamSave(d) {
     d = d || {};
     if (!d.title || !String(d.title).trim()) return { ok: false, error: 'ต้องมีชื่อชุดข้อสอบ' };
@@ -903,7 +914,7 @@
     // ★ 23 ก.ย. 69 — บันทึกคำถามแบบ "คงรหัสข้อเดิมไว้" (เทียบจากข้อความคำถาม)
     //   เดิม: ลบทิ้งทั้งชุดแล้วใส่ใหม่ → รหัสข้อเปลี่ยนทุกครั้งที่กดบันทึก
     //   ผลเสีย: คำตอบที่พนักงานทำไว้ชี้ไปที่รหัสข้อเก่าที่ถูกลบแล้ว → หน้า "จุดตอบผิดบ่อย" หาข้อไม่เจอ ขึ้นว่าง
-    const qrows = qs.map((q, i) => ({ exam_id: examId, seq: i, question: String(q.question).trim(), choices: q.choices.map(c => String(c)), answer: Math.max(0, Math.min(q.choices.length - 1, parseInt(q.answer, 10) || 0)), explain: (q.explain || '').trim() || null, knowledge_ref: (q.knowledge_ref || '').trim() || null }));
+    const qrows = qs.map((q, i) => ({ exam_id: examId, seq: i, question: String(q.question).trim(), choices: q.choices.map(c => _stripChoiceLabel(c)), answer: Math.max(0, Math.min(q.choices.length - 1, parseInt(q.answer, 10) || 0)), explain: (q.explain || '').trim() || null, knowledge_ref: (q.knowledge_ref || '').trim() || null }));
     const { data: oldQs } = await sb().from('exam_questions').select('id,question').eq('exam_id', examId);
     const oldByText = {}; (oldQs || []).forEach(q => { const k = String(q.question || '').trim(); if (!(k in oldByText)) oldByText[k] = q.id; });
     const keptIds = new Set(); const toInsert = [];
@@ -1404,7 +1415,7 @@
     const ch = Array.isArray(r.options) ? r.options.map(x => String(x)) : [];
     const an = parseInt(r.answer, 10);
     if (ch.length < 2 || !(an >= 0 && an < ch.length)) return null;
-    return { question: String(r.question || '').trim(), choices: ch, answer: an, explain: (r.explain || '').trim() || null, knowledge_ref: bankRef(r) };
+    return { question: String(r.question || '').trim(), choices: ch.map(c => _stripChoiceLabel(c)), answer: an, explain: (r.explain || '').trim() || null, knowledge_ref: bankRef(r) };
   }
 
   // รายการหลักสูตร/ส่วน/บท พร้อมจำนวนข้อที่ใช้ได้ — เอาไปทำตัวเลือกในหน้าจอ
