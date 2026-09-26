@@ -34,6 +34,10 @@
   .opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:11px;padding:11px 12px;margin-bottom:8px;cursor:pointer;font-size:15px;line-height:1.45;}
   .opt.sel{border-color:var(--green);background:var(--green-soft);}
   .opt input{margin-top:3px;flex:none;width:18px;height:18px;accent-color:var(--green);}
+  /* ★ 26 ก.ย. 69 — เลขตัวเลือก 1. 2. 3. 4. เรียงตามลำดับที่เห็นจริงเสมอ */
+  .opt .onum{flex:none;min-width:20px;font-weight:700;color:var(--muted,#6b7280);font-variant-numeric:tabular-nums}
+  .opt.sel .onum,.opt.correct .onum{color:var(--green)}
+  .opt.wrong .onum{color:var(--red)}
   .opt.correct{border-color:var(--green);background:var(--green-soft);}
   .opt.wrong{border-color:var(--red);background:#fdeaea;}
   .exp{font-size:12.5px;color:var(--muted);margin-top:6px;background:#f7f9f7;border-radius:8px;padding:7px 10px;}
@@ -137,12 +141,17 @@ async function loadList(){
 }
 
 // ===== ทำข้อสอบ =====
+// ★ 26 ก.ย. 69 — ลอก "ก./ข./ค./ง." ที่ฝังมาในเนื้อตัวเลือกออกตอนแสดงผลด้วย
+//   (ข้อเก่าที่บันทึกไปแล้วยังมีตัวอักษรนำติดอยู่ ถ้าไม่ลอกจะเห็นซ้อนกันเป็น "1. ค. ...")
+function stripLabel(v){
+  return String(v==null?'':v).trim().replace(/^\s*(?:[ก-ฉ]|[1-9][0-9]?|[a-zA-Z])\s*[.)\-:]\s+/,'').trim();
+}
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 async function startExam(examId){
   let r; try{ r=await window.HR.getExamPaper(examId, EMP.emp_id); }catch(e){ toast('err',e.message||'เปิดข้อสอบไม่ได้'); return; }
   CUR=r.exam; START_AT=new Date().toISOString();
   // สุ่มลำดับข้อ + สุ่มตัวเลือก (เก็บ index เดิมไว้ตรวจ)
-  const qs=(r.questions||[]).map(q=>({ id:q.id, question:q.question, opts:(q.choices||[]).map((c,idx)=>({t:c,idx})) }));
+  const qs=(r.questions||[]).map(q=>({ id:q.id, question:q.question, opts:(q.choices||[]).map((c,idx)=>({t:stripLabel(c),idx})) }));
   if(CUR.shuffle!==false){ shuffle(qs); qs.forEach(q=>shuffle(q.opts)); }
   PAPER={ examId, qs, answers:{} };
   $('ex_title').textContent=CUR.title;
@@ -153,7 +162,7 @@ async function startExam(examId){
 function renderQs(){
   $('ex_qs').innerHTML=PAPER.qs.map((q,qi)=>{
     return '<div class="exq"><div class="q">'+(qi+1)+'. '+esc(q.question)+'</div>'
-      +q.opts.map(o=>'<label class="opt" data-q="'+q.id+'" data-v="'+o.idx+'"><input type="radio" name="q'+q.id+'"><span>'+esc(o.t)+'</span></label>').join('')
+      +q.opts.map((o,oi)=>'<label class="opt" data-q="'+q.id+'" data-v="'+o.idx+'"><input type="radio" name="q'+q.id+'"><b class="onum">'+(oi+1)+'.</b><span>'+esc(o.t)+'</span></label>').join('')
       +'</div>';
   }).join('');
   $('ex_qs').querySelectorAll('.opt').forEach(lb=>lb.onclick=()=>{
@@ -184,7 +193,7 @@ function showResult(r){
   if(Array.isArray(r.review)&&r.review.length){
     rev.innerHTML='<h3 style="font-size:13px;color:var(--green-d);font-weight:700;margin:16px 2px 8px">เฉลย/ทบทวน</h3>'+r.review.map((q,i)=>{
       let opts='';
-      if(Array.isArray(q.choices)){ opts=q.choices.map((c,idx)=>{ const cls=idx===q.answer?'opt correct':(idx===q.chosen&&!q.correct?'opt wrong':'opt'); return '<div class="'+cls+'" style="cursor:default"><span>'+esc(c)+'</span></div>'; }).join(''); }
+      if(Array.isArray(q.choices)){ opts=q.choices.map((c,idx)=>{ const cls=idx===q.answer?'opt correct':(idx===q.chosen&&!q.correct?'opt wrong':'opt'); return '<div class="'+cls+'" style="cursor:default"><b class="onum">'+(idx+1)+'.</b><span>'+esc(stripLabel(c))+'</span></div>'; }).join(''); }
       return '<div class="exq"><div class="q">'+(i+1)+'. '+esc(q.question)+' '+(q.correct?'<span class="pill ok">ถูก</span>':'<span class="pill bad">ผิด</span>')+'</div>'+opts+(q.explain?'<div class="exp">เฉลย: '+esc(q.explain)+'</div>':'')+'</div>';
     }).join('');
   } else { rev.innerHTML='<div class="muted" style="margin:12px 2px">ระบบไม่แสดงเฉลยสำหรับแบบทดสอบนี้</div>'; }
