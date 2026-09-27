@@ -274,6 +274,8 @@
         case 'hr_qssi_submit':      return await hrQssiSubmit(p);
         case 'hr_qssi_undo':        return await hrQssiUndo(p);
         case 'hr_qssi_audit_save':  return await hrQssiAuditSave(p);
+        case 'hr_qssi_audit_get':   return await hrQssiAuditGet(p);
+        case 'hr_qssi_audit_list':  return await hrQssiAuditList(p);
         case 'hr_qssi_month':       return await hrQssiMonth(p);
         case 'hr_qssi_dash':        return await hrQssiDash(p);
         case 'hr_qssi_note_save':   return await hrQssiNoteSave(p);
@@ -1272,13 +1274,18 @@
     if (!d.branch_id || !d.inspect_date) return { ok: false, error: 'ต้องมีสาขาและวันที่ตรวจ' };
     const N = (v) => (v === '' || v == null || isNaN(Number(v))) ? null : Number(v);
     const key = 'qssi_' + d.branch_id + '_' + String(d.inspect_date).replace(/-/g, '');
+    // ★★ 27 ก.ย. 69 — ดูก่อนว่าใบนี้มีอยู่แล้วหรือยัง — เพื่อแยก "บันทึกใหม่" กับ "แก้ไขของเก่า"
+    //   ในร่องรอยการใช้งาน ค่า QSSI กระทบเงินเดือน จึงต้องรู้ว่าใครแก้ตัวเลขเมื่อไหร่
+    const { data: _before } = await sb().from('audit_reports')
+      .select('report_key,score,result,inspector,round').eq('report_key', key).maybeSingle();
+    const who = String((p && p.actor) || '').trim() || 'สำนักงาน (HR)';
     const row = {
       report_key: key, branch_id: String(d.branch_id), branch_code: String(d.branch_id),
       round: N(d.round) || 1, inspector: (d.inspector || '').trim() || null, inspect_date: d.inspect_date,
       score: N(d.score), max_score: N(d.max_score) || 1000,
       s: N(d.s), a: N(d.a), v: N(d.v), e: N(d.e), q: N(d.q), c: N(d.c), qms: N(d.qms),
       result: N(d.result), process: N(d.process), stockout: N(d.stockout), qssi_adjust: N(d.qssi_adjust),
-      source: 'ผจก.คีย์เอง', extra: d.extra || null,
+      source: who, extra: d.extra || null,
     };
     const { error } = await sb().from('audit_reports').upsert(row, { onConflict: 'report_key' });
     if (error) return { ok: false, error: error.message };
@@ -1306,8 +1313,45 @@
         top_rank: N(x.top_rank), cause: (x.cause || '').trim() || null, bucket: (x.bucket || '').trim() || null,
       })));
     }
-    await logAct('บันทึกผลตรวจ QSSI', null, row.branch_id + ' · ' + row.inspect_date + ' · ข้อบกพร่อง ' + finds.length + ' ข้อ');
-    return { ok: true, findings: finds.length, stockouts: stk.length };
+    const _chg = [];
+    if (_before) {
+      if (Number(_before.score) !== Number(row.score)) _chg.push('คะแนนรวม ' + (_before.score == null ? '-' : _before.score) + '→' + (row.score == null ? '-' : row.score));
+      if (Number(_before.result) !== Number(row.result)) _chg.push('Result ' + (_before.result == null ? '-' : _before.result) + '→' + (row.result == null ? '-' : row.result));
+      if ((_before.inspector || '') !== (row.inspector || '')) _chg.push('ผู้ตรวจ');
+      if (Number(_before.round) !== Number(row.round)) _chg.push('ครั้งที่ ' + _before.round + '→' + row.round);
+    }
+    await logAct(_before ? 'แก้ไขผลตรวจ QSSI' : 'บันทึกผลตรวจ QSSI', null,
+      row.branch_id + ' · ' + row.inspect_date + ' · ข้อบกพร่อง ' + finds.length + ' ข้อ'
+      + (_chg.length ? (' · แก้: ' + _chg.join(', ')) : ''), who);
+    return { ok: true, findings: finds.length, stockouts: stk.length, edited: !!_before };
+  }
+
+  // ★★ 27 ก.ย. 69 — อ่านใบตรวจที่บันทึกไว้กลับมาเพื่อแก้
+  //   เดิมมีแต่ "เขียนเข้า" กับ "สรุปรายเดือน" — ไม่มีทางดึงใบเดิมกลับขึ้นมาใส่ฟอร์ม
+  //   คนคียจึงต้องพิมพ์ใหม่ทั้งใบ (คะแนน 13 ช่อง + ข้อบกพร่องทุกข้อ) แค่จะแก้เลขเดียว
+  async function hrQssiAuditList(p) {
+    p = p || {};
+    let q = sb().from('audit_reports')
+      .select('report_key,branch_id,inspect_date,round,inspector,score,max_score,result,source')
+      .order('inspect_date', { ascending: false }).limit(60);
+    if (p.branch_id) q = q.eq('branch_id', String(p.branch_id));
+    const { data, error } = await q;
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, rows: data || [] };
+  }
+
+  async function hrQssiAuditGet(p) {
+    p = p || {};
+    const br = String((p && p.branch_id) || ''), dt = String((p && p.inspect_date) || '');
+    if (!br || !dt) return { ok: false, error: 'ต้องระบุสาขาและวันที่ตรวจ' };
+    const [auR, fdR, stR] = await Promise.all([
+      sb().from('audit_reports').select('*').eq('branch_id', br).eq('inspect_date', dt).maybeSingle(),
+      sb().from('qssi_findings').select('*').eq('branch_id', br).eq('inspect_date', dt).order('id', { ascending: true }),
+      sb().from('qssi_stockout').select('*').eq('branch_id', br).eq('inspect_date', dt).order('id', { ascending: true }),
+    ]);
+    if (auR.error) return { ok: false, error: auR.error.message };
+    if (!auR.data) return { ok: true, found: false };
+    return { ok: true, found: true, audit: auR.data, findings: fdR.data || [], stockouts: stR.data || [] };
   }
 
   // สรุปรายเดือน — กดเข้าไปดูรายละเอียดได้
