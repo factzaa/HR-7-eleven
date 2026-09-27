@@ -10776,6 +10776,11 @@ async function qsAssign(){
 
 // ===== 2) บันทึกผลตรวจ (ผจก. คีย์เอง) =====
 let QS_FIND=[], QS_STK=[];
+// ★★ 27 ก.ย. 69 — แก้ไขบันทึกผลตรวจ QSSI ที่เคยเก็บไว้ได้
+//   เดิมฟอร์มนี้เปิดมาว่างเสมอ จะแก้เลขเดียวก็ต้องคียใหม่ทั้งใบ
+//   QS_EDIT ไม่ null = กำลังแก้ใบเดิม · QS_SNAP = หน้าตาฟอร์มตอนโหลด (ใช้เทียบว่ามีอะไรค้างที่ยังไม่ได้บันทึก)
+let QS_EDIT=null, QS_SNAP='';
+const QS_NUMF=['qe_round','qe_inspector','qe_s','qe_a','qe_v','qe_e','qe_q','qe_c','qe_qms','qe_result','qe_process','qe_score','qe_max','qe_stockout','qe_adjust'];
 function qsEntry(){
   const box=$('au_body');
   const brs=(DATA.branches||[]).map(b=>'<option value="'+esc(b.branch_id)+'">'+esc(b.name)+'</option>').join('');
@@ -10784,6 +10789,11 @@ function qsEntry(){
   box.innerHTML='<div class="card" style="padding:14px">'
     +'<h3 style="font-size:15px;font-weight:600;margin-bottom:4px">บันทึกผลตรวจ QSSI</h3>'
     +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:11px">คีย์จากใบตรวจที่ผู้ตรวจให้ไว้ · ยิ่งคีย์ข้อบกพร่องละเอียด ระบบยิ่งบอกได้ว่าข้อไหนโดนซ้ำ</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:9px">'
+      +'<div style="flex:1;min-width:230px"><label style="font-size:12px;color:var(--muted)">ใบตรวจที่บันทึกไว้ — เลือกเพื่อเข้าไปแก้</label>'
+        +'<select id="qe_pick" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"><option value="">— ใบใหม่ —</option></select></div>'
+    +'</div>'
+    +'<div id="qe_mode" style="margin-bottom:10px"></div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
       +'<div style="flex:1;min-width:160px"><label style="font-size:12px;color:var(--muted)">สาขา</label><select id="qe_branch" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px">'+brs+'</select></div>'
       +'<div style="width:150px"><label style="font-size:12px;color:var(--muted)">วันที่ตรวจ</label><input id="qe_date" type="date" style="width:100%;padding:8px;border:1.5px solid var(--line2);border-radius:8px"></div>'
@@ -10815,6 +10825,94 @@ function qsEntry(){
   $('qe_addf').onclick=()=>{ qsCollectFinds(); QS_FIND.push({}); qsRenderFinds(); };
   $('qe_adds').onclick=()=>{ qsCollectStks(); QS_STK.push({}); qsRenderStks(); };
   $('qe_save').onclick=qsSaveAudit;
+  QS_EDIT=null; QS_SNAP=qsFormSig();
+  $('qe_branch').onchange=()=>{ qsAuditPickList(); qsAuditFill(); };
+  $('qe_date').onchange=qsAuditFill;
+  $('qe_pick').onchange=()=>{ const v=$('qe_pick').value; if(!v){ qsAuditNew(); return; } $('qe_date').value=v; qsAuditFill(); };
+  qsAuditPickList(); qsAuditFill();
+}
+
+// ลายนิ้วข้อมูลในฟอร์ม — ใช้เทียบว่าคนแก้อะไรไปหรือเปล่า
+function qsFormSig(){
+  qsCollectFinds(); qsCollectStks();
+  const v=QS_NUMF.map(id=>{ const e=$(id); return e?String(e.value||''):''; }).join('|');
+  return v+'||'+JSON.stringify(QS_FIND)+'||'+JSON.stringify(QS_STK);
+}
+function qsDirty(){ return qsFormSig()!==QS_SNAP; }
+
+// รายการใบตรวจที่เคยบันทึกไว้ของสาขานี้
+async function qsAuditPickList(){
+  const sel=$('qe_pick'); if(!sel) return;
+  const br=$('qe_branch')?$('qe_branch').value:'';
+  const r=await post({ action:'hr_qssi_audit_list', password:pwd, branch_id:br });
+  const keep=sel.value;
+  sel.innerHTML='<option value="">— ใบใหม่ —</option>';
+  if(r&&r.ok) (r.rows||[]).forEach(x=>{
+    const o=document.createElement('option');
+    o.value=x.inspect_date;
+    o.textContent=x.inspect_date+' · ครั้งที่ '+(x.round||1)
+      +(x.result!=null?(' · Result '+x.result):'')
+      +(x.inspector?(' · '+x.inspector):'');
+    sel.appendChild(o);
+  });
+  if(keep) sel.value=keep;
+}
+
+// ดึงใบเดิมของ สาขา+วันที่ ขึ้นมาใส่ฟอร์ม (ถ้ามี)
+async function qsAuditFill(){
+  const br=$('qe_branch')?$('qe_branch').value:'', dt=$('qe_date')?$('qe_date').value:'';
+  if(!br||!dt){ QS_EDIT=null; qsAuditMode(); return; }
+  const hint=$('qe_mode'); if(hint) hint.innerHTML='<span style="color:var(--muted);font-size:12.5px">กำลังตรวจว่ามีใบเดิม…</span>';
+  const r=await post({ action:'hr_qssi_audit_get', password:pwd, branch_id:br, inspect_date:dt });
+  if(!r||!r.ok){ qsAuditMode((r&&r.error)||'ตรวจใบเดิมไม่สำเร็จ'); return; }
+  if(!r.found){
+    // วันนี้ยังไม่มีผลตรวจ — เปิดเป็นใบใหม่ แต่ไม่ล้างของที่คนกำลังพิมพ์ค้างไว้
+    QS_EDIT=null; if($('qe_pick')) $('qe_pick').value=''; qsAuditMode(); return;
+  }
+  if(qsDirty() && !confirm('วันที่ '+dt+' มีใบตรวจบันทึกไว้แล้ว\nดึงใบเดิมขึ้นมาแก้ไหม?\n\n⚠ ที่พิมพ์ค้างไว้แล้วยังไม่ได้บันทึก จะหายไป')){ qsAuditMode(); return; }
+  const a=r.audit||{};
+  const S=(id,v)=>{ const e=$(id); if(e) e.value=(v==null?'':v); };
+  S('qe_round',a.round||1); S('qe_inspector',a.inspector);
+  S('qe_s',a.s); S('qe_a',a.a); S('qe_v',a.v); S('qe_e',a.e); S('qe_q',a.q); S('qe_c',a.c); S('qe_qms',a.qms);
+  S('qe_result',a.result); S('qe_process',a.process); S('qe_score',a.score);
+  S('qe_max',a.max_score==null?1000:a.max_score);
+  S('qe_stockout',a.stockout); S('qe_adjust',a.qssi_adjust);
+  // ★ คัดลอกทุกช่องมา รวมช่องที่ฟอร์มไม่ได้แสดง (car_code / car_before / car_after / evidence / bucket)
+  //   ไม่งั้นพอกดบันทึกทับ ข้อมูลเหล่านี้จะหาย
+  QS_FIND=(r.findings||[]).map(f=>Object.assign({},f));
+  if(!QS_FIND.length) QS_FIND=[{}];
+  QS_STK=(r.stockouts||[]).map(x=>Object.assign({},x));
+  qsRenderFinds(); qsRenderStks();
+  QS_EDIT={ key:a.report_key, source:a.source, at:a.created_at };
+  if($('qe_pick')) $('qe_pick').value=dt;
+  QS_SNAP=qsFormSig();
+  qsAuditMode();
+}
+
+// ล้างฟอร์มกลับเป็นใบใหม่
+function qsAuditNew(){
+  if(qsDirty() && !confirm('ทิ้งที่กรอกไว้แล้วเริ่มใบใหม่?')){ return; }
+  QS_NUMF.forEach(id=>{ const e=$(id); if(e) e.value=''; });
+  const mx=$('qe_max'); if(mx) mx.value=1000;
+  const rd=$('qe_round'); if(rd) rd.value=1;
+  QS_FIND=[{}]; QS_STK=[]; qsRenderFinds(); qsRenderStks();
+  QS_EDIT=null; if($('qe_pick')) $('qe_pick').value='';
+  QS_SNAP=qsFormSig(); qsAuditMode();
+}
+
+// แถบสถานะ + ข้อความบนปุ่มบันทึก
+function qsAuditMode(err){
+  const hint=$('qe_mode'), btn=$('qe_save');
+  if(hint){
+    if(err) hint.innerHTML='<span style="color:#dc2626;font-size:12.5px">'+esc(err)+'</span>';
+    else if(QS_EDIT) hint.innerHTML='<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#92400e;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      +'<span style="flex:1;min-width:180px"><b>กำลังแก้ใบเดิม</b> — ดึงข้อมูลที่บันทึกไว้ขึ้นมาแล้ว กดบันทึกเพื่อทับใบนี้'
+      +(QS_EDIT.source?(' · เคยคีย์โดย '+esc(QS_EDIT.source)):'')+'</span>'
+      +'<button class="btn btn-sec btn-sm" id="qe_new">เริ่มใบใหม่</button></div>';
+    else hint.innerHTML='<span style="color:var(--muted);font-size:12.5px">ใบใหม่ — ยังไม่มีผลตรวจของวันที่นี้</span>';
+    const nb=$('qe_new'); if(nb) nb.onclick=qsAuditNew;
+  }
+  if(btn) btn.textContent=QS_EDIT?'บันทึกการแก้ไข (ทับใบเดิม)':'บันทึกผลตรวจ';
 }
 function qsRenderFinds(){
   const w=$('qe_finds'); if(!w) return;
@@ -10836,7 +10934,8 @@ function qsRenderFinds(){
 function qsCollectFinds(){
   const w=$('qe_finds'); if(!w) return;
   const g=(k,i)=>{ const el=w.querySelector('['+k+'="'+i+'"]'); return el?el.value:''; };
-  QS_FIND=QS_FIND.map((_,i)=>({ cat:g('data-fc',i), item_no:g('data-fn',i), score:g('data-fs',i), max_score:g('data-fm',i), question:g('data-fq',i), finding:g('data-ff',i), reason:g('data-fr',i) }));
+  // ★ รวมช่องเก่า (Object.assign) — กัน car_code/car_before/car_after/evidence หายตอนแก้ใบเดิม
+  QS_FIND=QS_FIND.map((o,i)=>Object.assign({},o,{ cat:g('data-fc',i), item_no:g('data-fn',i), score:g('data-fs',i), max_score:g('data-fm',i), question:g('data-fq',i), finding:g('data-ff',i), reason:g('data-fr',i) }));
 }
 function qsRenderStks(){
   const w=$('qe_stks'); if(!w) return;
@@ -10852,21 +10951,30 @@ function qsRenderStks(){
 function qsCollectStks(){
   const w=$('qe_stks'); if(!w||!QS_STK.length) return;
   const g=(k,i)=>{ const el=w.querySelector('['+k+'="'+i+'"]'); return el?el.value:''; };
-  QS_STK=QS_STK.map((_,i)=>({ sku:g('data-sk',i), product:g('data-sp',i), top_rank:g('data-st',i), cause:g('data-sc',i) }));
+  // ★ รวมช่องเก่า — กัน bucket หายตอนแก้ใบเดิม
+  QS_STK=QS_STK.map((o,i)=>Object.assign({},o,{ sku:g('data-sk',i), product:g('data-sp',i), top_rank:g('data-st',i), cause:g('data-sc',i) }));
 }
 async function qsSaveAudit(){
   qsCollectFinds(); qsCollectStks();
   const V=id=>{ const e=$(id); return e?e.value:''; };
   if(!V('qe_date')){ toast('err','ใส่วันที่ตรวจ'); return; }
   const b=$('qe_save'); b.disabled=true; const old=b.textContent; b.innerHTML='<span class="spin"></span>';
-  const r=await post({ action:'hr_qssi_audit_save', password:pwd, data:{
+  const r=await post({ action:'hr_qssi_audit_save', password:pwd,
+    // ★ 27 ก.ย. 69 — ส่งชื่อคนคียไปด้วย เพื่อเก็บร่องรอยว่าใครบันทึก/แก้ไข
+    actor: MGR_MODE ? ('ผจก.สาขา '+(MGR_BRANCH||'')) : 'สำนักงาน (HR)',
+    data:{
     branch_id:V('qe_branch'), inspect_date:V('qe_date'), round:V('qe_round'), inspector:V('qe_inspector'),
     s:V('qe_s'), a:V('qe_a'), v:V('qe_v'), e:V('qe_e'), q:V('qe_q'), c:V('qe_c'), qms:V('qe_qms'),
     result:V('qe_result'), process:V('qe_process'), score:V('qe_score'), max_score:V('qe_max'),
     stockout:V('qe_stockout'), qssi_adjust:V('qe_adjust'),
     findings:QS_FIND.filter(f=>f.cat&&(f.question||f.finding||f.max_score)), stockouts:QS_STK.filter(x=>x.product||x.sku) } });
   b.disabled=false; b.textContent=old;
-  if(r&&r.ok) toast('ok','บันทึกแล้ว · ข้อบกพร่อง '+r.findings+' ข้อ · สินค้าขาด '+r.stockouts+' รายการ');
+  if(r&&r.ok){
+    toast('ok',(r.edited?'แก้ไขใบเดิมแล้ว':'บันทึกแล้ว')+' · ข้อบกพร่อง '+r.findings+' ข้อ · สินค้าขาด '+r.stockouts+' รายการ');
+    // บันทึกสำเร็จ → ใบนี้กลายเป็น "ใบที่มีอยู่" แล้ว กดบันทึกอีกครั้งคือการแก้ไข
+    QS_EDIT={ key:'qssi_'+V('qe_branch')+'_'+V('qe_date').replace(/-/g,''), source:null, at:null };
+    QS_SNAP=qsFormSig(); qsAuditMode(); qsAuditPickList();
+  }
   else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
 }
 
