@@ -1846,7 +1846,13 @@
     if (('is_manager' in d) && !d.is_manager) row.manager_pin = null;   // ★ แตะ PIN เฉพาะตอนที่ส่ง is_manager มาจริง
     else if (d.manager_pin != null && String(d.manager_pin).trim() !== '') row.manager_pin = String(d.manager_pin).trim();
     if (d._photo_base64) {
-      row.photo_url = await window.HR.uploadPhoto('employee-photos', d.emp_id + '.jpg', d._photo_base64);
+      // ★★ 29 ก.ย. 69 — แก้ "เปลี่ยนรูปพนักงานแล้วระบบยังขึ้นรูปเก่า"
+      //   เหตุ: รูปทุกคนเก็บที่ชื่อไฟล์เดิมเสมอ (employee-photos/<รหัส>.jpg) อัปทับของเก่า
+      //         ไฟล์ใน storage เปลี่ยนจริง แต่ URL เหมือนเดิมเป๊ะ และ Supabase ส่ง Cache-Control: max-age=3600
+      //         เบราว์เซอร์/CDN/service worker จึงคืนรูปเก่าในแคชต่ออีกนาน คนใช้เห็นเป็น "ระบบไม่ยอมเปลี่ยน"
+      //   แก้: ต่อ ?v=<เวลาอัป> ท้าย URL — อัปใหม่ทีไร URL ก็เปลี่ยน แคชทุกชั้นจึงต้องโหลดใหม่
+      const _pu = await window.HR.uploadPhoto('employee-photos', d.emp_id + '.jpg', d._photo_base64);
+      row.photo_url = _pu + (_pu.indexOf('?') >= 0 ? '&' : '?') + 'v=' + Date.now();
       // ★ 24 ก.ย. 69 — อัปรูปย่อ 320px ไว้ด้วย (thumb/<รหัส>.jpg)
       //   หน้าบัตรพนักงานโหลดรูปย่อแทนรูปเต็ม → เปิดหน้าเร็วขึ้นหลายเท่า (รูปเต็มจากมือถือใบละ 2–5 MB)
       try { await window.HR.uploadPhoto('employee-photos', 'thumb/' + d.emp_id + '.jpg', await _shrinkDataUrl(d._photo_base64, 320)); } catch (_e) { /* ย่อไม่ได้ก็ใช้รูปเต็มไปก่อน */ }
@@ -6983,9 +6989,19 @@
       const { data: tf } = await sb().storage.from('employee-photos').list('thumb', { limit: 1000 });
       (tf || []).forEach(f => thumbHave.add(String(f.name || '').replace(/\.jpg$/i, '')));
     } catch (_e) { /* ไม่มีโฟลเดอร์ thumb ก็ใช้รูปเต็ม */ }
+    // ★ 29 ก.ย. 69 — รูปย่อก็ชื่อไฟล์คงที่ (thumb/<รหัส>.jpg) ติดแคชเหมือนกัน
+    //   ยืม ?v= จาก photo_url ของคนนั้นมาใช้ จะได้เปลี่ยนพร้อมกันทีเดียว
+    const _pv = {};
+    (empR.data || []).forEach(e => {
+      const m = String(e.photo_url || '').match(/[?&]v=(\d+)/);
+      if (m) _pv[String(e.emp_id)] = m[1];
+    });
     const thumbUrl = id => {
-      try { return sb().storage.from('employee-photos').getPublicUrl('thumb/' + id + '.jpg').data.publicUrl; }
-      catch (_e) { return ''; }
+      try {
+        const u = sb().storage.from('employee-photos').getPublicUrl('thumb/' + id + '.jpg').data.publicUrl;
+        const v = _pv[String(id)];
+        return v ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=' + v) : u;
+      } catch (_e) { return ''; }
     };
 
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
