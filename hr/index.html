@@ -6587,7 +6587,7 @@ function plSlipInner(it, meta){
     +'<div class="ps-info"><div class="ps-info-c">'
       +'<div class="ps-f"><div class="ps-k">ชื่อ–นามสกุล(รหัส)<div class="ps-en">Emp. name (Code)</div></div><div class="ps-v">'+esc(it.emp_name||'')+' ('+esc(it.emp_id)+')</div></div>'
       +'<div class="ps-f"><div class="ps-k">ตำแหน่ง<div class="ps-en">Position</div></div><div class="ps-v">'+esc((it.branch_name||'')+(it.branch_name?'/':'')+wageLabel)+'</div></div>'
-      +'<div class="ps-f"><div class="ps-k">วันทำงาน / OT<div class="ps-en">Work days / OT hours</div></div><div class="ps-v">'+(daily?(esc(it.days_worked!=null?it.days_worked:0)+' วัน'):'รายเดือน')+(N(it.ot_hours)>0?(' · OT '+esc(it.ot_hours)+' ชม.'):'')+'</div></div>'
+      // ★ 30 ก.ย. 69 — เอาแถว "วันทำงาน / OT" ออกจากหัวสลิปตามที่เจ้าของสั่ง — ไม่ต้องแสดงให้พนักงานเห็น
       +'</div><div class="ps-info-c">'
       +'<div class="ps-f"><div class="ps-k">รอบเงินเดือน<div class="ps-en">Payroll Period</div></div><div class="ps-v">'+esc(meta.period||'')+'</div></div>'
       +'<div class="ps-f"><div class="ps-k">วันที่จ่าย<div class="ps-en">Payment Date</div></div><div class="ps-v">'+esc(meta.payDate||'—')+'</div></div>'
