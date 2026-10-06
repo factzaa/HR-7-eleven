@@ -3361,7 +3361,8 @@ function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : 
 // ★ 17 ก.ย. 69 — เปิดแท็บ "พนักงาน" ให้ ผจก. ด้วย แต่เป็นแบบ "ดูอย่างเดียว + เปลี่ยนรหัสพนักงานได้"
 //   สิทธิ์แก้ช่องอื่น ๆ ลบ ย้ายสาขา เปิด-ปิดใช้งาน เพิ่มคนใหม่ ยังเป็นของสำนักงานเท่านั้น
 // ★ 24 ก.ย. 69 — เพิ่ม 'recruit': ผจก. ดูใบสมัครงานได้ แต่เห็นเฉพาะคนที่สมัครสาขาตัวเอง (เซิร์ฟเวอร์บังคับอีกชั้น)
-const MGR_TABS = ['shirt','mgrtasks','dashboard','board','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
+// ★ 6 ต.ค. 69 — เปิดหน้ายอดขายให้ ผจก.สาขา (salesDash) — ดูได้เฉพาะสาขาตัวเอง ล็อกไว้ใน loadSalesDash()
+const MGR_TABS = ['shirt','mgrtasks','dashboard','board','salesDash','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -3374,6 +3375,9 @@ const isActive = v => v===true || String(v).toUpperCase()==='TRUE';
 async function post(payload){
   // โหมด ผจก.: บังคับสโคปสาขาในทุก API ที่รับพารามิเตอร์ branch
   if(MGR_MODE && payload && typeof payload==='object' && 'branch' in payload) payload.branch = MGR_BRANCH;
+  // ★ 6 ต.ค. 69 — หน้ายอดขายใช้ชื่อพารามิเตอร์ branch_id (คนละตัวกับ branch ข้างบน) — บังคับสาขาตัวเองซ้ำอีกชั้น
+  //   เผื่อหน้าจอส่งค่าว่างมา (= ทุกสาขา) ด้วยเหตุใดก็ตาม
+  if(MGR_MODE && payload && payload.action==='hr_sales_list') payload.branch_id = MGR_BRANCH;
   // ★ ทุก action ของหน้าเงินเดือน แนบรหัสที่ปลดล็อกไว้ไปด้วยเสมอ
   if(payload && typeof payload==='object' && typeof payload.action==='string'
      && payload.action.indexOf('hr_payroll_')===0 && !('pay_pass' in payload)) payload.pay_pass = PAY_PASS;
@@ -15454,7 +15458,18 @@ async function loadLineGroupsManage(){
 // ========== แดชบอร์ดยอดขาย (จากกลุ่มไลน์) ==========
 const _thb=n=>Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:0});
 async function loadSalesDash(){
-  if($('sd_branch') && $('sd_branch').options.length<=1) $('sd_branch').innerHTML='<option value="">ทุกสาขา (เทียบกัน)</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
+  // ★★ 6 ต.ค. 69 — โหมด ผจก.: เห็นยอดขายเฉพาะสาขาตัวเอง
+  //   ตัดตัวเลือก "ทุกสาขา (เทียบกัน)" ออก เหลือสาขาเดียวแล้วปิดการแก้ — จะไม่เห็นยอดสาขาอื่นและไม่มีแผงเทียบข้ามสาขา
+  if(MGR_MODE){
+    const sb=$('sd_branch');
+    if(!MGR_BRANCH){ $('sd_body').innerHTML='<div class="empty">บัญชีนี้ยังไม่ได้ผูกกับสาขา — แจ้งสำนักงานให้ตั้งสาขาให้ก่อน</div>'; return; }
+    if(sb){
+      const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
+      sb.innerHTML='<option value="'+esc(MGR_BRANCH)+'">'+esc(b?b.name:MGR_BRANCH)+'</option>';
+      sb.value=MGR_BRANCH; sb.disabled=true;
+    }
+  }
+  else if($('sd_branch') && $('sd_branch').options.length<=1) $('sd_branch').innerHTML='<option value="">ทุกสาขา (เทียบกัน)</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
   const pad=n=>String(n).padStart(2,'0');
   // ตัวเลือกเดือน — 18 เดือนล่าสุด + กำหนดเอง
   if($('sd_month') && !$('sd_month').options.length){
