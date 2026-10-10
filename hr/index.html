@@ -2016,7 +2016,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
   </div>
 
 
-  <div class="card">
+  <div class="card" id="mn_import">
     <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg> นำเข้าคู่มือจากบทเรียน</h3></div>
     <div class="card-b">
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.65">
@@ -2033,7 +2033,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="mn_lessons">
     <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3 7-7"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg> บทเรียนในระบบ</h3></div>
     <div class="card-b">
       <div id="cm_summary" style="margin-bottom:10px"></div>
@@ -2042,7 +2042,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="mn_quiz">
     <div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3 7-7"/><path d="M12 3a9 9 0 1 0 9 9"/></svg> ข้อสอบซ้อม</h3></div>
     <div class="card-b">
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.65">
@@ -3362,7 +3362,8 @@ function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : 
 //   สิทธิ์แก้ช่องอื่น ๆ ลบ ย้ายสาขา เปิด-ปิดใช้งาน เพิ่มคนใหม่ ยังเป็นของสำนักงานเท่านั้น
 // ★ 24 ก.ย. 69 — เพิ่ม 'recruit': ผจก. ดูใบสมัครงานได้ แต่เห็นเฉพาะคนที่สมัครสาขาตัวเอง (เซิร์ฟเวอร์บังคับอีกชั้น)
 // ★ 6 ต.ค. 69 — เปิดหน้ายอดขายให้ ผจก.สาขา (salesDash) — ดูได้เฉพาะสาขาตัวเอง ล็อกไว้ใน loadSalesDash()
-const MGR_TABS = ['shirt','mgrtasks','dashboard','board','salesDash','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
+// ★ 10 ต.ค. 69 — เปิดเมนูคู่มือให้ ผจก. — เห็นเฉพาะส่วน "อ่านคู่มือ" · ส่วนนำเข้า/บทเรียน/ข้อสอบซ้อม ถูกซ่อน
+const MGR_TABS = ['shirt','mgrtasks','dashboard','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -9328,7 +9329,9 @@ function cmInit(){
 }
 async function cmPost(payload){
   const {base,key}=asstApiBase(); if(!base) throw new Error('ไม่พบ URL ระบบ');
-  const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify(Object.assign({password:pwd},payload))});
+  // ★★ 10 ต.ค. 69 — เดิมส่งเฉพาะรหัส HR · โหมด ผจก. pwd ว่าง จึงโดน 401 อ่านคู่มือไม่ได้
+  //   เปลี่ยนมาใช้ asstAuth() ที่ส่งรหัส+PIN ของ ผจก. ให้เอง (สำนักงานยังส่ง password เหมือนเดิม)
+  const r=await fetch(base+'/functions/v1/hr-assistant',{method:'POST',headers:{'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},body:JSON.stringify(Object.assign({},asstAuth(),payload))});
   return await r.json().catch(()=>({ok:false,error:'อ่านคำตอบไม่ได้'}));
 }
 // "2.1การยกเลิก post void ... - p3.jpg" → {no:'2.1', title:'การยกเลิก post void ...', page:3}
@@ -12408,7 +12411,15 @@ showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
   else if(name==='promo'){ pmLoad(); pmBrowseInit(); }
-  else if(name==='manual'){ mrInit(); cmInit(); cmLoad(); exInit(); }
+  else if(name==='manual'){
+    // ★★ 10 ต.ค. 69 — โหมด ผจก.: เห็นแค่ "อ่านคู่มือหลักสูตร"
+    //   ซ่อน 3 การ์ด: นำเข้าคู่มือ (มีติ๊ก "นำเข้าซ้ำ ทับบทเดิม" — กดพลาดทีเดียวคู่มือหายทั้งบท)
+    //   · บทเรียนในระบบ (แก้ขั้นตอน) · ข้อสอบซ้อม
+    //   และไม่เรียกตัวโหลดของส่วนที่ซ่อน — ประหยัดโหลดด้วย
+    ['mn_import','mn_lessons','mn_quiz'].forEach(id=>{ const el=$(id); if(el) el.style.display = MGR_MODE ? 'none' : ''; });
+    mrInit();
+    if(!MGR_MODE){ cmInit(); cmLoad(); exInit(); }
+  }
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
