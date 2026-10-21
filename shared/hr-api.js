@@ -11091,7 +11091,7 @@
   async function hrStockSwap(branch, from, to, pairKind) {
     if (!(await stockReady())) return STOCK_NOTREADY;
     const [tr, ls] = await Promise.all([
-      sb().rpc('stock_swap_trend', { p_branch: branch || null, p_limit: 24 }),
+      sb().rpc('stock_swap_trend', { p_branch: branch || null, p_from: from || null, p_to: to || null, p_limit: 24 }),
       sb().rpc('stock_swap_list', {
         p_branch: branch || null, p_from: from || null, p_to: to || null,
         p_kind: pairKind || null, p_limit: 300,
@@ -11117,11 +11117,11 @@
     if (!(await stockReady())) return STOCK_NOTREADY;
     const b = branch || null, f = from || null, t = to || null;
     const [aT, wT, pma, risk, swap] = await Promise.all([
-      sb().rpc('stock_audit_trend',    { p_branch: b, p_limit: 24 }),
-      sb().rpc('stock_writeoff_trend', { p_branch: b, p_limit: 24 }),
+      sb().rpc('stock_audit_trend',    { p_branch: b, p_from: f, p_to: t, p_limit: 24 }),
+      sb().rpc('stock_writeoff_trend', { p_branch: b, p_from: f, p_to: t, p_limit: 24 }),
       sb().rpc('stock_audit_pma',      { p_branch: b, p_from: f, p_to: t }),
       sb().rpc('stock_risk_summary',   { p_branch: b, p_from: f, p_to: t }),
-      sb().rpc('stock_swap_trend',     { p_branch: b, p_limit: 24 }),
+      sb().rpc('stock_swap_trend',     { p_branch: b, p_from: f, p_to: t, p_limit: 24 }),
     ]);
     const bad = [aT, wT, pma, risk, swap].find(x => x.error);
     if (bad) throw bad.error;
