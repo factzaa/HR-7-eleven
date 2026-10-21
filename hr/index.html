@@ -1896,13 +1896,8 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
   <div class="stkpan" id="stkpan_pma" style="display:none">
     <div id="stk_pmamain">
       <div class="card" style="padding:14px;margin-bottom:14px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:4px">อันดับกลุ่มสินค้าที่ขาดมากที่สุด</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">รวมทั้งช่วงเดือนที่เลือก · ตัวเลขในแท่งคือสัดส่วนของยอดขาดทั้งหมด</div>
-        <div id="stk_pmabar"></div>
-      </div>
-      <div class="card" style="padding:14px;margin-bottom:14px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:4px">เทียบรายเดือน — 5 กลุ่มที่ขาดมากที่สุด</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">ดูว่ากลุ่มไหนแย่ลงต่อเนื่อง กลุ่มไหนเป็นแค่เดือนเดียว</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">กลุ่มสินค้าที่ขาดมากที่สุด</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px"><b>เส้น</b> = ดูแนวโน้มรายเดือนของ 5 กลุ่มแรก ว่ากลุ่มไหนแย่ลงต่อเนื่อง กลุ่มไหนเป็นแค่เดือนเดียว · <b>แท่ง</b> = ดูอันดับและสัดส่วนรวมทั้งช่วง</div>
         <div id="stk_pmagrp"></div>
       </div>
       <div class="card" style="padding:14px">
@@ -1918,12 +1913,8 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
         <button class="btn btn-sec btn-sm" id="stk_pmacsv" type="button">ดาวน์โหลด CSV</button>
       </div>
       <div class="card" style="padding:14px;margin-bottom:14px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:10px">10 สินค้าที่ขาดมากที่สุดในกลุ่มนี้</div>
-        <div id="stk_pmaitembar"></div>
-      </div>
-      <div class="card" style="padding:14px;margin-bottom:14px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:4px">แนวโน้มรายเดือนของ 6 ตัวแรก</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">เส้นที่ลากสูงต่อเนื่องทุกเดือน = ปัญหาเชิงระบบ · เส้นที่พุ่งเดือนเดียว = เหตุเฉพาะกิจ</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">สินค้าที่ขาดมากที่สุดในกลุ่มนี้</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px"><b>เส้น</b> = แนวโน้มรายเดือนของ 6 ตัวแรก — เส้นที่สูงต่อเนื่องทุกเดือนคือปัญหาเชิงระบบ เส้นที่พุ่งเดือนเดียวคือเหตุเฉพาะกิจ · <b>แท่ง</b> = อันดับ 10 ตัวแรกรวมทั้งช่วง</div>
         <div id="stk_pmatrend"></div>
       </div>
       <div style="overflow-x:auto"><div id="stk_pmaitems"><div class="empty">กำลังโหลด…</div></div></div>
@@ -14459,24 +14450,22 @@ function stkRenderPma(){
   const { mons, rows } = stkPmaAgg();
   if(!rows.length){
     $('stk_pma').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงเดือนที่เลือก</div>';
-    $('stk_pmabar').innerHTML=''; $('stk_pmagrp').innerHTML='';
+    $('stk_pmagrp').innerHTML='';
     return;
   }
-  // --- กราฟอันดับ (12 กลุ่มแรก) ---
-  $('stk_pmabar').innerHTML=stkBarH(rows.slice(0,12).map((o,i)=>({
-    label:o.pma+' '+(o.name||''), value:Math.abs(o.tot), color:stkHue(i<6?i:5)
-  })), { aria:'อันดับกลุ่มสินค้าที่ขาดมากที่สุด' });
-
-  // --- กราฟเทียบรายเดือน: 5 กลุ่มแรก + อื่น ๆ ---
+  // --- กราฟเดียว สลับได้: เส้น = แนวโน้ม 5 กลุ่มแรกรายเดือน · แท่ง = อันดับ 12 กลุ่มรวมทั้งช่วง ---
   const top=rows.slice(0,5), rest=rows.slice(5);
   const series=top.map((o,i)=>({ name:o.pma+' '+(o.name||''), color:stkHue(i),
     values:mons.map(m=>Math.abs(o.m[m]||0)) }));
   if(rest.length) series.push({ name:'กลุ่มอื่น ๆ รวมกัน', color:stkHue(5), dash:true,
     values:mons.map(m=>Math.abs(rest.reduce((s,o)=>s+(o.m[m]||0),0))) });
+  const rankBar=()=>stkBarH(rows.slice(0,12).map((o,i)=>({ label:o.pma+' '+(o.name||''), value:Math.abs(o.tot), color:stkHue(i<6?i:5) })),
+                            { aria:'อันดับกลุ่มสินค้าที่ขาดมากที่สุด' });
   $('stk_pmagrp').innerHTML=stkModeBtn('stk_pmagrp')
-    + (STK.chartMode==='bar'
-        ? stkBarGroup(mons, series, 'เทียบมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก')
-        : stkLineChart(mons, series, { aria:'เทียบมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก' }));
+    + (STK.chartMode==='bar' ? rankBar()
+        : (mons.length<2
+            ? '<div class="empty">มีข้อมูลเดือนเดียว ยังลากเส้นแนวโน้มไม่ได้ — แสดงอันดับให้แทน</div>'+rankBar()
+            : stkLineChart(mons, series, { aria:'แนวโน้มมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก' })));
   stkWireMode('stk_pmagrp');
 
   // --- ตารางอันดับ (กดดูรายการสินค้าได้) ---
@@ -14506,7 +14495,7 @@ async function stkPmaDrill(pma, name){
   $('stk_pmadrill').style.display='';
   $('stk_pmatitle').textContent='กลุ่ม '+pma+' '+(name||'')+' — รายการสินค้า';
   $('stk_pmaitems').innerHTML='<div class="empty">กำลังโหลด…</div>';
-  $('stk_pmaitembar').innerHTML='';
+  $('stk_pmatrend').innerHTML='';
   let r;
   try{ r=await post({ action:'hr_stock_pma_items', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, pma }); }
   catch(e){ $('stk_pmaitems').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
@@ -14515,9 +14504,6 @@ async function stkPmaDrill(pma, name){
   if(!STK.items.length){ $('stk_pmaitems').innerHTML='<div class="empty">ไม่มีรายการในกลุ่มนี้</div>'; return; }
   const mons=stkPmaAgg().mons;
   const short=STK.items.filter(x=>Number(x.short_amt)<0);
-  $('stk_pmaitembar').innerHTML=stkBarH(short.slice(0,10).map((x,i)=>({
-    label:x.sku+' '+(x.name||''), value:Math.abs(Number(x.short_amt)), color:stkHue(0)
-  })), { labelW:270, aria:'สินค้าที่ขาดมากที่สุดในกลุ่ม '+pma });
   stkRenderDrillChart();
   const sumShort=short.reduce((s,x)=>s+Number(x.short_amt||0),0)||-1;
   $('stk_pmaitems').innerHTML='<table class="stk-tbl"><thead><tr><th>#</th><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th>'
@@ -14538,18 +14524,27 @@ async function stkPmaDrill(pma, name){
     +'</tbody></table>'
     +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แสดง '+STK.items.length+' รายการ · เรียงตามมูลค่าที่ขาด · ช่อง "ขาดกี่เดือน" สีแดงคือขาดทุกเดือนที่มีข้อมูล</div>';
 }
-// กราฟรายเดือนของสินค้า 6 ตัวแรกในกลุ่ม — เห็นว่าตัวไหนหายต่อเนื่อง ตัวไหนหายครั้งเดียว
+// กราฟสินค้าในกลุ่ม — เส้น: แนวโน้มรายเดือน 6 ตัวแรก · แท่ง: อันดับ 10 ตัวแรกรวมทั้งช่วง
 function stkRenderDrillChart(){
   const box=$('stk_pmatrend'); if(!box) return;
   const mons=stkPmaAgg().mons;
-  const short=(STK.items||[]).filter(x=>Number(x.short_amt)<0).slice(0,6);
-  if(mons.length<2 || !short.length){ box.innerHTML='<div class="empty">ต้องมีข้อมูลอย่างน้อย 2 เดือนจึงจะเห็นแนวโน้มรายตัว</div>'; return; }
-  const lines=short.map((x,i)=>({ name:x.sku+' '+String(x.name||'').slice(0,22), color:stkHue(i),
+  const short=(STK.items||[]).filter(x=>Number(x.short_amt)<0);
+  if(!short.length){ box.innerHTML='<div class="empty">ไม่มีสินค้าที่ขาดในกลุ่มนี้</div>'; return; }
+  if(STK.chartMode==='bar'){
+    box.innerHTML = stkModeBtn('stk_pmatrend')
+      + stkBarH(short.slice(0,10).map(x=>({ label:x.sku+' '+(x.name||''), value:Math.abs(Number(x.short_amt)), color:stkHue(0) })),
+                { labelW:270, aria:'สินค้าที่ขาดมากที่สุดในกลุ่ม' });
+    stkWireMode('stk_pmatrend'); return;
+  }
+  if(mons.length<2){
+    box.innerHTML = stkModeBtn('stk_pmatrend')
+      + '<div class="empty">มีข้อมูลเดือนเดียว ยังลากเส้นแนวโน้มไม่ได้ — กดปุ่ม "แท่ง" เพื่อดูอันดับแทน</div>';
+    stkWireMode('stk_pmatrend'); return;
+  }
+  const lines=short.slice(0,6).map((x,i)=>({ name:x.sku+' '+String(x.name||'').slice(0,22), color:stkHue(i),
     values:mons.map(m=>{ const v=Number((x.by_month||{})[m]||0); return v<0?Math.abs(v):0; }) }));
   box.innerHTML = stkModeBtn('stk_pmatrend')
-    + (STK.chartMode==='bar'
-        ? stkBarGroup(mons, lines, 'แนวโน้มรายเดือนของสินค้าในกลุ่ม')
-        : stkLineChart(mons, lines, { aria:'แนวโน้มมูลค่าที่ขาดรายเดือนของสินค้าในกลุ่ม' }));
+    + stkLineChart(mons, lines, { aria:'แนวโน้มมูลค่าที่ขาดรายเดือนของสินค้าในกลุ่ม' });
   stkWireMode('stk_pmatrend');
 }
 function stkPmaBack(){ $('stk_pmadrill').style.display='none'; $('stk_pmamain').style.display=''; }
