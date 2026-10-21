@@ -466,7 +466,7 @@ returns table (
          jsonb_object_agg(a.period_ym, a.amt)            as by_month
     from agg a
     left join public.pma_groups g on g.code = a.pm
-    left join wo on wo.sku = a.sku
+    left join wo w on w.sku = a.sku
    group by a.sku
    order by coalesce(sum(a.amt) filter (where a.amt < 0),0) asc
    limit greatest(p_limit,1);
