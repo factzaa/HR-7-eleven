@@ -470,6 +470,9 @@
         case 'hr_applicant_reject':  return await hrApplicantReject(p.id, p.reason, p);
         case 'hr_applicant_hire':    return await hrApplicantHire(p.id, p.branch_id, p.emp_id, { start_date: p.start_date, default_shift: p.default_shift, link_existing: p.link_existing }, p);
         case 'hr_applicant_delete':  return await hrApplicantDelete(p.id, p);
+        case 'hr_applicants_trash':  return await hrApplicantsTrash(p);
+        case 'hr_applicant_restore': return await hrApplicantRestore(p.id, p);
+        case 'hr_applicant_purge':   return await hrApplicantPurge(p.id, p);
         case 'hr_positions_list':    return await hrPositionsList();
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
@@ -3769,7 +3772,9 @@
     // ใบสมัครงานใหม่ (กันตารางยังไม่ถูกสร้าง)
     let new_applicants = [];
     try {
-      const { data: appR } = await sb().from('applicants').select('id,full_name,position,branch_id,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(30);
+      let aq = sb().from('applicants').select('id,full_name,position,branch_id,created_at').eq('status', 'new');
+      if (await apHasTrash()) aq = aq.is('deleted_at', null);
+      const { data: appR } = await aq.order('created_at', { ascending: false }).limit(30);
       new_applicants = (appR || []).filter(a => !branch || a.branch_id === branch).map(a => ({ id: a.id, full_name: a.full_name, position: a.position || '', created_at: a.created_at }));
     } catch (e) { /* ตาราง applicants ยังไม่มี */ }
     return {
@@ -7871,7 +7876,10 @@
     const g = await _apGate(auth);
     if (g.err) return { ok: false, error: g.err };
     if (g.actor.role === 'mgr') branch = g.actor.branch_id;   // ★ ล็อกสาขาที่เซิร์ฟเวอร์
+    const hasTrash = await apHasTrash();
+    if (hasTrash) await apPurgeOldTrash();                    // ★ เก็บกวาดถังขยะที่เกิน 30 วัน
     let q = sb().from('applicants').select('*').order('created_at', { ascending: false }).limit(500);
+    if (hasTrash) q = q.is('deleted_at', null);
     if (branch) q = q.eq('branch_id', branch);
     const [aR, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
     if (aR.error) throw aR.error;
@@ -7888,6 +7896,7 @@
     const { data, error } = await sb().from('applicants').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     if (!data) return { ok: false, error: 'ไม่พบผู้สมัคร' };
+    if (data.deleted_at) return { ok: false, error: 'ใบสมัครนี้อยู่ในถังขยะ — กู้คืนก่อนจึงจะเปิดดูได้' };
     if (!data.seen) { try { await sb().from('applicants').update({ seen: true }).eq('id', id); } catch (e) {} }
     const { data: br } = await sb().from('branches').select('name').eq('branch_id', data.branch_id || '').maybeSingle();
     return { ok: true, applicant: { ...data, seen: true, branch_name: (br && br.name) || data.branch_id || '—' } };
@@ -7997,16 +8006,93 @@
   }
   // ลบใบสมัคร (สำหรับใบซ้ำ/ไม่ผ่าน เพื่อไม่ให้รก) — ลบได้เฉพาะที่ "ยังไม่รับเข้าทำงาน"
   //   ถ้ารับเข้าแล้ว (เป็นพนักงาน) ห้ามลบใบสมัครที่นี่ → ต้องไปลบที่หน้าพนักงานแทน (กันข้อมูลพนักงานหลุด)
+  // ============================================================
+  // ★ 21 ต.ค. 69 — ถังขยะใบสมัคร
+  //   เดิมปุ่มลบ = DELETE จริง กดพลาดแล้วจบ (เกิดขึ้นมาแล้วกับใบสมัคร 1 ใบ)
+  //   ใหม่: ลบ = ใส่เวลาไว้ที่ deleted_at (ซ่อนจากทุกหน้า) · กู้คืนได้ · ครบ 30 วันค่อยลบถาวรอัตโนมัติ
+  //   หมายเหตุ: ไฟล์เอกสารใน Storage ไม่ถูกลบทั้งตอนลงถังขยะและตอนลบถาวร (เผื่อต้องกู้)
+  // ============================================================
+  const AP_TRASH_DAYS = 30;
+  // ★ กันพลาดลำดับติดตั้ง: ถ้าอัปไฟล์เว็บก่อนรัน SQL เพิ่มคอลัมน์ deleted_at
+  //   หน้ารับสมัครงานจะต้องไม่พัง — ตรวจครั้งเดียวแล้วจำไว้
+  let _apSoftDel = null;
+  async function apHasTrash() {
+    if (_apSoftDel !== null) return _apSoftDel;
+    const r = await sb().from('applicants').select('id').is('deleted_at', null).limit(1);
+    _apSoftDel = !r.error;
+    if (r.error) console.warn('[ถังขยะใบสมัคร] ยังไม่มีคอลัมน์ deleted_at — ต้องรัน applicants_trash_setup.sql ก่อน');
+    return _apSoftDel;
+  }
+  let _apPurgedAt = 0;
+  async function apPurgeOldTrash() {
+    if (Date.now() - _apPurgedAt < 3600000) return;           // เช็กอย่างมากชั่วโมงละครั้ง ไม่ให้ถ่วงทุกครั้งที่เปิดหน้า
+    _apPurgedAt = Date.now();
+    try {
+      const cut = new Date(Date.now() - AP_TRASH_DAYS * 86400000).toISOString();
+      const { data: old } = await sb().from('applicants').select('id,full_name').lt('deleted_at', cut).limit(200);
+      if (!old || !old.length) return;
+      await sb().from('applicants').delete().in('id', old.map(o => o.id));
+      await logAct('ล้างถังขยะใบสมัครอัตโนมัติ', null, 'ลบถาวร ' + old.length + ' ใบ (อยู่ในถังขยะเกิน ' + AP_TRASH_DAYS + ' วัน)');
+    } catch (e) { console.warn('apPurgeOldTrash', e); }
+  }
   async function hrApplicantDelete(id, auth) {
     { const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
       if (g.actor.role === 'mgr') return { ok: false, error: 'การลบใบสมัครเป็นสิทธิ์ของสำนักงาน' }; }
     if (!id) return { ok: false, error: 'ไม่ระบุใบสมัคร' };
-    const { data: a } = await sb().from('applicants').select('id,full_name,status,hired_emp_id').eq('id', id).maybeSingle();
+    const { data: a } = await sb().from('applicants').select('id,full_name,status,hired_emp_id,deleted_at').eq('id', id).maybeSingle();
     if (!a) return { ok: false, error: 'ไม่พบใบสมัคร' };
+    if (a.deleted_at) return { ok: true, already: true };
     if (a.status === 'hired' || a.hired_emp_id) return { ok: false, error: 'ผู้สมัครนี้รับเข้าทำงานแล้ว ลบใบสมัครไม่ได้ — หากต้องการนำออกให้ไปลบที่หน้าพนักงาน' };
+    if (!(await apHasTrash())) return { ok: false, error: 'ยังติดตั้งถังขยะใบสมัครไม่ครบ — ต้องรันไฟล์ applicants_trash_setup.sql ก่อน จึงจะลบได้ (กันลบแล้วกู้ไม่ได้)' };
+    const { error } = await sb().from('applicants')
+      .update({ deleted_at: new Date().toISOString(), deleted_by: 'สำนักงาน (HR)' }).eq('id', id);
+    if (error) throw error;
+    await logAct('ลบใบสมัคร (ลงถังขยะ)', null, (a.full_name || '') + ' · สถานะ ' + (a.status || '') + ' · กู้คืนได้ภายใน ' + AP_TRASH_DAYS + ' วัน');
+    return { ok: true, trash_days: AP_TRASH_DAYS };
+  }
+  // รายการในถังขยะ
+  async function hrApplicantsTrash(auth) {
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') return { ok: false, error: 'ถังขยะใบสมัครเป็นสิทธิ์ของสำนักงาน' };
+    await apPurgeOldTrash();
+    const [aR, brR] = await Promise.all([
+      sb().from('applicants').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false }).limit(300),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    if (aR.error) throw aR.error;
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const now = Date.now();
+    const rows = (aR.data || []).map(a => ({
+      ...a,
+      branch_name: brName[a.branch_id] || a.branch_id || '—',
+      days_left: Math.max(0, AP_TRASH_DAYS - Math.floor((now - new Date(a.deleted_at).getTime()) / 86400000)),
+    }));
+    return { ok: true, rows, trash_days: AP_TRASH_DAYS };
+  }
+  // กู้คืนจากถังขยะ
+  async function hrApplicantRestore(id, auth) {
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') return { ok: false, error: 'การกู้คืนใบสมัครเป็นสิทธิ์ของสำนักงาน' };
+    if (!id) return { ok: false, error: 'ไม่ระบุใบสมัคร' };
+    const { data: a } = await sb().from('applicants').select('id,full_name,deleted_at').eq('id', id).maybeSingle();
+    if (!a) return { ok: false, error: 'ไม่พบใบสมัคร — อาจถูกลบถาวรไปแล้ว' };
+    if (!a.deleted_at) return { ok: true, already: true };
+    const { error } = await sb().from('applicants').update({ deleted_at: null, deleted_by: null }).eq('id', id);
+    if (error) throw error;
+    await logAct('กู้คืนใบสมัคร', null, a.full_name || '');
+    return { ok: true };
+  }
+  // ลบถาวรจากถังขยะ (ตั้งใจลบเอง ไม่ต้องรอครบ 30 วัน)
+  async function hrApplicantPurge(id, auth) {
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') return { ok: false, error: 'การลบถาวรเป็นสิทธิ์ของสำนักงาน' };
+    if (!id) return { ok: false, error: 'ไม่ระบุใบสมัคร' };
+    const { data: a } = await sb().from('applicants').select('id,full_name,deleted_at').eq('id', id).maybeSingle();
+    if (!a) return { ok: false, error: 'ไม่พบใบสมัคร' };
+    if (!a.deleted_at) return { ok: false, error: 'ใบสมัครนี้ยังไม่อยู่ในถังขยะ' };
     const { error } = await sb().from('applicants').delete().eq('id', id);
     if (error) throw error;
-    await logAct('ลบใบสมัคร', null, (a.full_name || '') + ' · สถานะ ' + (a.status || ''));
+    await logAct('ลบใบสมัครถาวร', null, (a.full_name || '') + ' · ลบจากถังขยะ (ไฟล์เอกสารยังอยู่ใน Storage)');
     return { ok: true };
   }
   // ---------- ตำแหน่งงาน (สำหรับหน้าสมัคร) ----------
@@ -8842,6 +8928,7 @@
       if (branch) q = q.eq('branch_id', branch); return q; })());
     out.recruit = await C((() => {
       let q = sb().from('applicants').select('*', { count: 'exact', head: true }).eq('status', 'new');
+      if (_apSoftDel) q = q.is('deleted_at', null);
       if (branch) q = q.eq('branch_id', branch); return q; })());
 
     if (!branch) {   // คิวอนุมัติฝั่ง HR
