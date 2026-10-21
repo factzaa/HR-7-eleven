@@ -1933,6 +1933,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
       <span style="font-size:13px;color:var(--muted)">กับ</span>
       <select id="stk_dfb" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
       <button class="btn btn-pri btn-sm" id="stk_dfgo" type="button">เทียบ</button>
+      <span id="stk_dfhint" style="font-size:12px;color:var(--muted)"></span>
       <span style="flex:1"></span>
       <button class="btn btn-sec btn-sm" id="stk_dfcsv" type="button">ดาวน์โหลด CSV</button>
     </div>
@@ -14180,12 +14181,13 @@ function stkPan(name){
   else if(name==='profile') stkLoadProfile();
   else if(name==='upload') stkLoadUploads();
 }
-function stkReload(clear){
+async function stkReload(clear){
   STK.branch = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
   STK.from = $('stk_from')?$('stk_from').value:'';
   STK.to   = $('stk_to')?$('stk_to').value:'';
   if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; STK.diff=[]; STK.items=[]; }
-  stkLoadOver();
+  // ★ ต้องรอให้เสร็จก่อน — หน้า "เทียบเดือน" เอารายชื่อเดือนที่เลือกได้มาจากผลของ stkLoadOver
+  await stkLoadOver();
   if(STK.pan==='chronic') stkLoadChronic();
   if(STK.pan==='swap') stkLoadSwap();
   if(STK.pan==='diff') stkLoadDiff();
@@ -14551,8 +14553,14 @@ function stkPmaBack(){ $('stk_pmadrill').style.display='none'; $('stk_pmamain').
 
 // ---------- เทียบ 2 เดือน ----------
 function stkDiffFillMonths(){
+  // รายชื่อเดือนมาจากผล stock_audit_trend ซึ่งกรองตามช่วงเดือนด้านบนแล้ว
+  // → เปลี่ยนช่วงเดือน ตัวเลือกในหน้านี้จะแคบลงตามไปด้วย
   const mons=(STK.audit_months||[]).slice().sort();
-  if(!mons.length) return;
+  const hint=$('stk_dfhint');
+  if(hint) hint.textContent = mons.length
+    ? 'เลือกได้ '+mons.length+' เดือนตามช่วงที่กรองไว้ด้านบน ('+stkMonLb(mons[0])+'–'+stkMonLb(mons[mons.length-1])+')'
+    : '';
+  if(!mons.length){ const a=$('stk_dfa'), b=$('stk_dfb'); if(a) a.innerHTML=''; if(b) b.innerHTML=''; return; }
   const a=$('stk_dfa'), b=$('stk_dfb');
   const opts=mons.map(m=>'<option value="'+esc(m)+'">'+esc(stkMonLb(m))+'</option>').join('');
   const keepA=a.value, keepB=b.value;
@@ -14563,8 +14571,10 @@ function stkDiffFillMonths(){
 async function stkLoadDiff(){
   stkDiffFillMonths();
   const a=$('stk_dfa').value, b=$('stk_dfb').value;
-  if(!a||!b){ $('stk_dfworse').innerHTML='<div class="empty">ยังไม่มีข้อมูลเดือนให้เทียบ — นำเข้าไฟล์อย่างน้อย 2 เดือนก่อน</div>'; return; }
-  if(a===b){ $('stk_dfworse').innerHTML='<div class="empty">เลือกคนละเดือนจึงจะเทียบได้</div>'; return; }
+  const clearDiff=(msg)=>{ $('stk_dfworse').innerHTML='<div class="empty">'+esc(msg)+'</div>';
+    $('stk_dfbetter').innerHTML=''; $('stk_dfpma').innerHTML=''; $('stk_dfkpi').innerHTML=''; };
+  if(!a||!b){ clearDiff('ช่วงเดือนที่กรองไว้ด้านบนยังไม่มีข้อมูล — ขยายช่วงเดือน หรือไปนำเข้าไฟล์ก่อน'); return; }
+  if(a===b){ clearDiff('ช่วงเดือนที่กรองไว้มีข้อมูลเดือนเดียว — ขยายช่วงเดือนด้านบนให้ครอบคลุมอย่างน้อย 2 เดือน'); return; }
   $('stk_dfworse').innerHTML='<div class="empty">กำลังโหลด…</div>'; $('stk_dfbetter').innerHTML='';
   let r;
   try{ r=await post({ action:'hr_stock_month_diff', ...stkAuth(), branch:STK.branch||null, a, b }); }
