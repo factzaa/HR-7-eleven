@@ -679,13 +679,13 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
   <div id="mdr_report" style="display:none">
     <div class="toolbar" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg> รายงานงานประจำวัน (รายเดือน)</h3>
+      <h3 style="flex:1;font-size:15px;font-weight:600;min-width:120px"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg> สถิติการตรวจงานของผู้จัดการ</h3>
       <input id="mrp_month" type="month" style="padding:6px 9px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
-      <button class="btn btn-pri btn-sm" id="mrp_go">ดูรายงาน</button>
+      <button class="btn btn-pri btn-sm" id="mrp_go">ดูสถิติ</button>
       <button class="btn btn-sec btn-sm" id="mrp_csv"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 4 5-4"/><path d="M4 20h16"/></svg> CSV</button>
-      <button class="btn btn-sec btn-sm" id="mrp_back">← กลับ</button>
+      <button class="btn btn-sec btn-sm" id="mdr_back">← กลับ</button>
     </div>
-    <div id="mrp_body"><div class="empty">เลือกเดือนแล้วกด "ดูรายงาน"</div></div>
+    <div id="mrp_body"><div class="empty">เลือกเดือนแล้วกด "ดูสถิติ"</div></div>
   </div>
 </div>
 
@@ -12037,7 +12037,16 @@ async function loadExitOverrides(){
     else toast('err',(r&&r.error)||'ไม่สำเร็จ');
   };
 }
-function intaskReviewer(){ try{ return MGR_MODE ? (typeof mtName==='function'?mtName():'') : ''; }catch(e){ return ''; } }
+// ★ 21 ต.ค. 69 — เดิมส่ง mtName() ซึ่งคืนคำว่า "ผจก." เฉย ๆ ทุกครั้ง
+//   ระบบจึงไม่เคยรู้ว่าเป็น ผจก. คนไหนตรวจ · ตอนนี้ส่งชื่อจริงจากรหัสที่ล็อกอิน
+function intaskReviewer(){
+  try{
+    if(!MGR_MODE) return '';
+    const e=(DATA.employees||[]).find(x=>String(x.emp_id)===String(MGR_EMP));
+    const nm=e?(e.nickname||e.name||''):'';
+    return nm ? (nm+' ('+MGR_EMP+')') : (MGR_EMP||'');
+  }catch(e){ return ''; }
+}
 // ---------- งานที่ ผจก.สั่งแก้ (รอคนแก้ส่งกลับ) ----------
 async function loadMtaskFixing(boxId){
   boxId = boxId || 'mt_fixing';
@@ -12338,7 +12347,7 @@ async function mdReviewSubmit(logId, note, markup){
   if(r.ok){ toast('ok','ตีกลับแล้ว'); loadMdailyBoard(); } else toast('err', r.error||'ไม่สำเร็จ');
 }
 // ---- รายงานย้อนหลังรายเดือน + export ----
-let MRP_ROWS=[], MRP_MONTH='';
+let MRP_ROWS=[], MRP_MONTH='', MRP_DATA=null;
 let MDR_VIEW='board';
 function showMdrView(which){
   if(['board','review','adhoc'].indexOf(which)<0) which='board';
@@ -12355,27 +12364,130 @@ function mdrShowReport(on){
   if(on){ ['mdrpan_board','mdrpan_review','mdrpan_adhoc'].forEach(id=>{ const el=$(id); if(el) el.style.display='none'; }); }
   else { showMdrView(MDR_VIEW||'board'); }
 }
+// ============================================================
+// ★ 21 ต.ค. 69 — สถิติการตรวจงานของผู้จัดการ (แทนรายงานงานประจำวันเดิม)
+//   ของเดิมตั้งเป้าจากงานประจำวันที่ถูกปิดไปตั้งแต่ ก.ย. 69 เลยขึ้น 0% ทุกสาขาเสมอ
+//   หน้านี้อ่านจากงานในกะที่ยังใช้จริง (task_assignments)
+// ============================================================
+const MRP_HUE=['#2a78d6','#eb6834','#1baf7a'];                 // 3 สาขา — ชุดสีผ่านการตรวจแยกสีตาบอดสีแล้ว
+const MRP_HUE_DARK=['#3987e5','#d95926','#199e70'];
+function mrpHue(i){ const dark=document.documentElement.getAttribute('data-theme')==='dark'; return (dark?MRP_HUE_DARK:MRP_HUE)[i%3]; }
+function mrpNum(v,suffix){ return (v==null||v==='')?'<span style="color:var(--muted)">—</span>':(v+(suffix||'')); }
 async function loadMdailyReport(){
   const box=$('mrp_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const month=$('mrp_month').value; if(!month){ box.innerHTML='<div class="empty">เลือกเดือน</div>'; return; }
   const branch=$('mdr_branch')?$('mdr_branch').value:'';
-  const r=await post({ action:'hr_mdaily_report', password:pwd, month, branch });
+  let r; try{ r=await post({ action:'hr_mgr_review_stats', ...authBody(), month, branch }); }
+  catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
-  MRP_ROWS=r.rows||[]; MRP_MONTH=r.month;
-  if(!r.def_count){ box.innerHTML='<div class="empty" style="padding:16px">ยังไม่มีรายการงานประจำวัน</div>'; return; }
-  const head='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">เดือน '+esc(r.month)+' · '+r.days+' วัน · งาน '+r.def_count+' รายการ/วัน · เป้าหมาย '+r.expected+' ช่อง/สาขา</div>';
-  const rowsH=MRP_ROWS.map(b=>{
-    const col=b.pct>=90?'#16a34a':b.pct>=60?'#b45309':'#dc2626';
-    return '<tr><td style="padding:6px 8px">'+esc(b.branch_name)+'</td><td style="text-align:center;padding:6px 8px">'+b.done+'/'+b.expected+'</td><td style="text-align:center;padding:6px 8px;color:'+col+';font-weight:700">'+b.pct+'%</td><td style="text-align:center;padding:6px 8px;color:#16a34a">'+b.approved+'</td><td style="text-align:center;padding:6px 8px;color:#dc2626">'+b.rejected+'</td><td style="text-align:center;padding:6px 8px;color:#d97706">'+b.submitted+'</td><td style="text-align:center;padding:6px 8px;color:var(--muted)">'+b.missed+'</td></tr>';
+  MRP_ROWS=r.rows||[]; MRP_MONTH=r.month; MRP_DATA=r;
+  const t=r.total||{};
+  if(!t.need && !t.checked){
+    box.innerHTML='<div class="empty" style="padding:18px;line-height:1.7">เดือน '+esc(r.month)+' ยังไม่มีงานในกะที่ต้องให้ ผจก. ตรวจ<br><span style="font-size:12.5px">ลองเลือกเดือนอื่น</span></div>';
+    return;
+  }
+  const head='<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">เดือน '+esc(r.month)+' · '+r.days+' วัน ('+esc(r.start)+' ถึง '+esc(r.end)+') · งานที่ต้องให้ ผจก. ตรวจ '+t.need+' ชิ้น</div>';
+
+  // ---- สรุปรวม ----
+  const kpi='<div class="kpi-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+    +mrpKpi('ตรวจแล้ว', t.checked+' / '+t.need, (t.pct==null?'—':t.pct+'%'), t.pct==null?'var(--muted)':(t.pct>=90?'#16a34a':t.pct>=70?'#b45309':'#dc2626'))
+    +mrpKpi('ค้างรอตรวจ', String(t.waiting), t.waiting?'ยังไม่ได้ตรวจ':'ไม่มีค้าง', t.waiting?'#dc2626':'#16a34a')
+    +mrpKpi('ตีกลับ', String(t.sent_back), (t.back_pct==null?'—':t.back_pct+'% ของที่ตรวจ'), t.sent_back?'#b45309':'var(--muted)')
+    +mrpKpi('ตรวจภายใน (ค่ากลาง)', (t.median_hours==null?'—':t.median_hours+' ชม.'), 'หลังพนักงานส่ง', '#2b3242')
+    +'</div>';
+
+  // ---- ตารางรายสาขา ----
+  const rowsH=MRP_ROWS.map((b,i)=>{
+    const col=b.pct==null?'var(--muted)':b.pct>=90?'#16a34a':b.pct>=70?'#b45309':'#dc2626';
+    return '<tr>'
+      +'<td style="padding:7px 8px;white-space:nowrap"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:'+mrpHue(i)+';margin-right:7px;vertical-align:-1px"></span>'+esc(b.branch_name)+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;font-variant-numeric:tabular-nums">'+b.checked+' / '+b.need+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;color:'+col+';font-weight:700;font-variant-numeric:tabular-nums">'+(b.pct==null?'—':b.pct+'%')+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;color:#16a34a;font-variant-numeric:tabular-nums">'+b.approved+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;color:'+(b.sent_back?'#b45309':'var(--muted)')+';font-variant-numeric:tabular-nums">'+b.sent_back+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;color:'+(b.waiting?'#dc2626':'var(--muted)')+';font-variant-numeric:tabular-nums">'+b.waiting+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;font-variant-numeric:tabular-nums">'+mrpNum(b.median_hours,' ชม.')+'</td>'
+      +'</tr>';
   }).join('');
-  box.innerHTML=head+'<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px"><thead><tr style="background:var(--bg)"><th style="text-align:left;padding:8px">สาขา</th><th style="padding:8px">ทำ/เป้า</th><th style="padding:8px">%</th><th style="padding:8px">ผ่าน</th><th style="padding:8px">ไม่ผ่าน</th><th style="padding:8px">รอตรวจ</th><th style="padding:8px">ขาด</th></tr></thead><tbody>'+(rowsH||'<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--muted)">ไม่มีข้อมูล</td></tr>')+'</tbody></table></div>';
+  const table='<div class="card" style="padding:0;overflow:auto;margin-bottom:14px"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px">'
+    +'<thead><tr style="background:var(--bg)"><th style="text-align:left;padding:9px 8px">สาขา</th><th style="padding:9px 8px">ตรวจแล้ว/ทั้งหมด</th><th style="padding:9px 8px">%</th><th style="padding:9px 8px">ผ่าน</th><th style="padding:9px 8px">ตีกลับ</th><th style="padding:9px 8px">ค้างรอตรวจ</th><th style="padding:9px 8px">ตรวจภายใน</th></tr></thead>'
+    +'<tbody>'+(rowsH||'<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--muted)">ไม่มีข้อมูล</td></tr>')+'</tbody></table></div>';
+
+  // ---- กราฟแนวโน้มรายวัน ----
+  const chart=mrpChart(r);
+
+  // ---- ใครเป็นคนตรวจ ----
+  const rv=(r.reviewers||[]);
+  const anonOnly = rv.length && rv.every(x=>/^ผจก\.$|ไม่ระบุ/.test(x.name));
+  const rvRows=rv.map(x=>'<tr>'
+      +'<td style="padding:7px 8px">'+esc(x.name)+'</td>'
+      +'<td style="padding:7px 8px;color:var(--muted);font-size:12.5px">'+esc((x.branches||[]).join(', '))+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;font-variant-numeric:tabular-nums">'+x.checked+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;color:#16a34a;font-variant-numeric:tabular-nums">'+x.approved+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;color:'+(x.sent_back?'#b45309':'var(--muted)')+';font-variant-numeric:tabular-nums">'+x.sent_back+'</td>'
+      +'<td style="text-align:center;padding:7px 8px;font-variant-numeric:tabular-nums">'+mrpNum(x.median_hours,' ชม.')+'</td>'
+    +'</tr>').join('');
+  const rvNote = anonOnly
+    ? '<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;margin-bottom:8px">ระบบเดิมบันทึกผู้ตรวจเป็น "ผจก." เฉย ๆ ไม่ได้เก็บว่าเป็น ผจก. คนไหน — ตั้งแต่เวอร์ชันนี้ไปจะเก็บชื่อจริง แล้วตารางนี้จะแยกรายคนได้เอง</div>'
+    : '';
+  const rvBox='<h4 style="font-size:14px;font-weight:600;margin:0 0 8px">ผู้ตรวจ</h4>'+rvNote
+    +'<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">'
+    +'<thead><tr style="background:var(--bg)"><th style="text-align:left;padding:9px 8px">ชื่อ</th><th style="text-align:left;padding:9px 8px">สาขา</th><th style="padding:9px 8px">ตรวจ</th><th style="padding:9px 8px">ผ่าน</th><th style="padding:9px 8px">ตีกลับ</th><th style="padding:9px 8px">ตรวจภายใน</th></tr></thead>'
+    +'<tbody>'+(rvRows||'<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--muted)">ยังไม่มีการตรวจในเดือนนี้</td></tr>')+'</tbody></table></div>';
+
+  box.innerHTML=head+kpi+table+chart+rvBox;
+}
+function mrpKpi(label,val,sub,col){
+  return '<div class="card" style="padding:13px 15px"><div style="font-size:12.5px;color:var(--muted);font-weight:500">'+esc(label)+'</div>'
+    +'<div style="font-size:24px;font-weight:600;letter-spacing:-.4px;line-height:1.15;margin-top:3px;color:'+col+';font-variant-numeric:tabular-nums">'+val+'</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+esc(sub)+'</div></div>';
+}
+// เส้นแนวโน้ม % ที่ ผจก. ตรวจแล้วในแต่ละวัน (วันที่ไม่มีงานต้องตรวจ = เว้นช่อง)
+function mrpChart(r){
+  const days=(r.daily||[]); const brs=(r.rows||[]);
+  if(!days.length || !brs.length) return '';
+  const any=days.some(d=>brs.some(b=>d.b[b.branch_id] && d.b[b.branch_id].pct!=null));
+  if(!any) return '';
+  const W=760,H=200,PL=38,PR=12,PT=12,PB=26;
+  const iw=W-PL-PR, ih=H-PT-PB;
+  const x=i=>PL+(days.length<2?iw/2:iw*i/(days.length-1));
+  const y=v=>PT+ih*(1-v/100);
+  let g='';
+  [0,50,100].forEach(v=>{ g+='<line x1="'+PL+'" y1="'+y(v)+'" x2="'+(W-PR)+'" y2="'+y(v)+'" stroke="var(--line)" stroke-width="1"/>'
+    +'<text x="'+(PL-7)+'" y="'+(y(v)+4)+'" text-anchor="end" font-size="10.5" fill="var(--muted)">'+v+'%</text>'; });
+  days.forEach((d,i)=>{ const dd=d.date.slice(8); if(dd==='01'||dd%5===0) g+='<text x="'+x(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10.5" fill="var(--muted)">'+Number(dd)+'</text>'; });
+  let lines='',dots='';
+  brs.forEach((b,bi)=>{
+    const col=mrpHue(bi); let last=null;
+    // แยกเป็นช่วงที่ต่อเนื่องกัน — วันที่ไม่มีงานต้องตรวจจะตัดเส้น ไม่ลากข้ามให้เข้าใจผิด
+    let runs=[],cur=[];
+    days.forEach((d,i)=>{ const c=d.b[b.branch_id]; if(c&&c.pct!=null){ cur.push([x(i),y(c.pct)]); last={i:i,pct:c.pct}; } else { if(cur.length) runs.push(cur); cur=[]; } });
+    if(cur.length) runs.push(cur);
+    runs.forEach(run=>{
+      if(run.length===1){ dots+='<circle cx="'+run[0][0]+'" cy="'+run[0][1]+'" r="3.2" fill="'+col+'" stroke="var(--card)" stroke-width="2"/>'; return; }
+      lines+='<path d="'+run.map((p,k)=>(k?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ')+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    });
+    if(last){ dots+='<circle cx="'+x(last.i)+'" cy="'+y(last.pct)+'" r="3.6" fill="'+col+'" stroke="var(--card)" stroke-width="2"/>'; }
+  });
+  const legend='<div style="display:flex;flex-wrap:wrap;gap:12px;margin:2px 0 8px;font-size:12.5px;color:var(--txt)">'
+    +brs.map((b,i)=>'<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:3px;border-radius:2px;background:'+mrpHue(i)+'"></span>'+esc(b.branch_name)+'</span>').join('')+'</div>';
+  return '<h4 style="font-size:14px;font-weight:600;margin:0 0 6px">แนวโน้มรายวัน — % งานที่ ผจก. ตรวจแล้ว</h4>'+legend
+    +'<div class="card" style="padding:12px;margin-bottom:16px;overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:520px;height:auto;display:block" role="img" aria-label="แนวโน้มเปอร์เซ็นต์การตรวจงานรายวันแยกตามสาขา">'
+    +g+lines+dots+'</svg>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">วันที่ไม่มีงานต้องให้ ผจก. ตรวจ จะเว้นช่องไว้ · ตัวเลขรายวันดูได้ในไฟล์ CSV</div></div>';
 }
 function mdrExportCsv(){
-  if(!MRP_ROWS.length){ toast('err','ยังไม่มีข้อมูล — กด "ดูรายงาน" ก่อน'); return; }
-  const head=['สาขา','ทำแล้ว','เป้าหมาย','เปอร์เซ็นต์','ผ่าน','ไม่ผ่าน','รอตรวจ','ขาด'];
-  const lines=[head.join(',')].concat(MRP_ROWS.map(b=>[b.branch_name,b.done,b.expected,b.pct,b.approved,b.rejected,b.submitted,b.missed].map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')));
-  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='งานประจำวัน_'+MRP_MONTH+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+  if(!MRP_ROWS.length){ toast('err','ยังไม่มีข้อมูล — กด "ดูสถิติ" ก่อน'); return; }
+  const L=[];
+  L.push(['สาขา','ตรวจแล้ว','ต้องตรวจ','เปอร์เซ็นต์','ผ่าน','ตีกลับ','ค้างรอตรวจ','ตรวจภายใน (ชม. ค่ากลาง)'].join(','));
+  MRP_ROWS.forEach(b=>L.push([b.branch_name,b.checked,b.need,b.pct,b.approved,b.sent_back,b.waiting,b.median_hours].map(x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"').join(',')));
+  const D=MRP_DATA||{};
+  if((D.reviewers||[]).length){ L.push(''); L.push(['ผู้ตรวจ','สาขา','ตรวจ','ผ่าน','ตีกลับ','ตรวจภายใน (ชม.)'].join(','));
+    D.reviewers.forEach(x=>L.push([x.name,(x.branches||[]).join(' / '),x.checked,x.approved,x.sent_back,x.median_hours].map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(','))); }
+  if((D.daily||[]).length){ L.push(''); L.push((['วันที่'].concat(MRP_ROWS.map(b=>b.branch_name+' ตรวจแล้ว'),MRP_ROWS.map(b=>b.branch_name+' ต้องตรวจ'))).join(','));
+    D.daily.forEach(d=>L.push(([d.date].concat(MRP_ROWS.map(b=>(d.b[b.branch_id]||{}).checked||0),MRP_ROWS.map(b=>(d.b[b.branch_id]||{}).need||0))).map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','))); }
+  const blob=new Blob(['﻿'+L.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='สถิติตรวจงานผจก_'+MRP_MONTH+'.csv'; document.body.appendChild(a); a.click(); a.remove();
   toast('ok','ดาวน์โหลด CSV แล้ว');
 }
 $('mdr_reportbtn') && ($('mdr_reportbtn').onclick=()=>{ if(!$('mrp_month').value) $('mrp_month').value=bkkTodayStr().slice(0,7); mdrShowReport(true); loadMdailyReport(); });
