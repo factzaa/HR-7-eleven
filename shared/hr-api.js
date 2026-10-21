@@ -534,6 +534,12 @@
         case 'hr_stock_swap':        return await hrStockSwap(p.branch, p.from, p.to, p.pair_kind);
         case 'hr_stock_pma_items':   return await hrStockPmaItems(p.branch, p.from, p.to, p.pma, p.limit);
         case 'hr_stock_month_diff':  return await hrStockMonthDiff(p.branch, p.a, p.b);
+        // ★ 22 ต.ค. 69 — เฟส 2: บทวิเคราะห์ของนิดา + งานเฝ้าระวัง
+        case 'hr_stock_insight_get':  return await hrStockInsightGet(p.branch, p.period);
+        case 'hr_stock_insight_save': return await hrStockInsightSave(p);
+        case 'hr_stock_watch_list':   return await hrStockWatchList(p.branch, p.status);
+        case 'hr_stock_watch_add':    return await hrStockWatchAdd(p);
+        case 'hr_stock_watch_close':  return await hrStockWatchClose(p.id, p);
         case 'hr_branch_profile':    return await hrBranchProfileGet(p.branch);
         case 'hr_branch_profile_save': return await hrBranchProfileSave(p.data, p);
         case 'hr_shirt_config_get':  return await hrShirtConfigGet(p);
@@ -11170,6 +11176,107 @@
     });
     if (error) throw error;
     return { ok: true, rows: data || [] };
+  }
+
+  // ============================================================
+  // ★ 22 ต.ค. 69 — เฟส 2: บทวิเคราะห์ของนิดา + งานเฝ้าระวัง
+  //   ต้องรัน supabase/stock_insight_setup.sql ก่อน (แยกไฟล์จากเฟส 1)
+  // ============================================================
+  let _insightReady = null;
+  async function insightReady() {
+    if (_insightReady !== null) return _insightReady;
+    const r = await sb().from('stock_insights').select('id').limit(1);
+    _insightReady = !r.error;
+    if (r.error) console.warn('[วิเคราะห์สต็อก] ยังไม่มีตารางเฟส 2 — ต้องรัน stock_insight_setup.sql ก่อน', r.error.message);
+    return _insightReady;
+  }
+  const INSIGHT_NOTREADY = { ok: false, error: 'ยังไม่ได้ติดตั้งตารางของเฟส 2 — ให้รันไฟล์ stock_insight_setup.sql ใน Supabase ก่อน' };
+
+  async function hrStockInsightGet(branch, period) {
+    if (!(await insightReady())) return INSIGHT_NOTREADY;
+    let q = sb().from('stock_insights').select('*').order('created_at', { ascending: false }).limit(40);
+    if (branch) q = q.eq('branch_id', branch);
+    if (period) q = q.eq('period_ym', period);
+    const { data, error } = await q;
+    if (error) throw error;
+    const rows = data || [];
+    return { ok: true, rows, latest: rows[0] || null };
+  }
+
+  async function hrStockInsightSave(p) {
+    if (!(await insightReady())) return INSIGHT_NOTREADY;
+    const branch = String(p.branch_id || '').trim();
+    const period = String(p.period_ym || '').trim();
+    const body = String(p.body || '').trim();
+    if (!branch) return { ok: false, error: 'ไม่พบรหัสสาขา' };
+    if (!/^\d{4}-\d{2}$/.test(period)) return { ok: false, error: 'เดือนไม่ถูกต้อง' };
+    if (!body) return { ok: false, error: 'ไม่มีเนื้อหาบทวิเคราะห์' };
+    const { data, error } = await sb().from('stock_insights').insert({
+      branch_id: branch, period_ym: period, body,
+      facts: p.facts || {}, model: p.model || null, is_auto: !!p.is_auto,
+      created_by: p.actor || p.emp_id || 'HR',
+    }).select('id,created_at').single();
+    if (error) throw error;
+    await logAct('stock_insight', null, 'นิดาวิเคราะห์สต็อก ' + branch + ' ' + period + (p.is_auto ? ' (อัตโนมัติ)' : ''), p.actor || 'HR');
+    return { ok: true, id: data.id, created_at: data.created_at };
+  }
+
+  async function hrStockWatchList(branch, status) {
+    if (!(await insightReady())) return INSIGHT_NOTREADY;
+    const { data, error } = await sb().rpc('stock_watch_list', {
+      p_branch: branch || null, p_status: status || null, p_limit: 200,
+    });
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+
+  // p = { branch_id, period_ym, items:[{sku,name,pma,reason,source,amt_at_set}], task:{title,detail,deadline,emp_ids} }
+  //   สร้างงานพิเศษก่อน แล้วค่อยผูก special_id กลับเข้ารายการเฝ้าระวัง
+  async function hrStockWatchAdd(p) {
+    if (!(await insightReady())) return INSIGHT_NOTREADY;
+    const branch = String(p.branch_id || '').trim();
+    const period = String(p.period_ym || '').trim();
+    const items = Array.isArray(p.items) ? p.items.filter(x => x && x.sku) : [];
+    if (!branch) return { ok: false, error: 'ไม่พบรหัสสาขา' };
+    if (!/^\d{4}-\d{2}$/.test(period)) return { ok: false, error: 'เดือนไม่ถูกต้อง' };
+    if (!items.length) return { ok: false, error: 'เลือกสินค้าที่จะเฝ้าระวังอย่างน้อย 1 รายการ' };
+
+    let specialId = null, assigned = 0;
+    if (p.task && Array.isArray(p.task.emp_ids) && p.task.emp_ids.length) {
+      const r = await hrSpecialCreate({
+        title: p.task.title, detail: p.task.detail, deadline: p.task.deadline || null,
+        hr_note: p.task.hr_note || null, hr_photos: [], emp_ids: p.task.emp_ids,
+      });
+      if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'สร้างงานเฝ้าระวังไม่สำเร็จ' };
+      specialId = r.id || null; assigned = r.assigned || 0;
+    }
+
+    const rows = items.slice(0, 60).map(x => ({
+      branch_id: branch, period_ym: period,
+      sku: String(x.sku), name: x.name || null,
+      pma: String(x.pma || x.sku || '').slice(0, 2),
+      reason: x.reason || null, source: x.source || 'chronic',
+      amt_at_set: Number(x.amt_at_set) || 0,
+      special_id: specialId, status: 'open',
+      created_by: p.actor || p.emp_id || 'HR',
+    }));
+    // อัปซ้ำเดือนเดิม SKU เดิม = อัปเดตของเดิม ไม่เกิดรายการซ้ำ
+    const { error } = await sb().from('stock_watch')
+      .upsert(rows, { onConflict: 'branch_id,period_ym,sku' });
+    if (error) throw error;
+    await logAct('stock_watch', null, 'ตั้งเฝ้าระวัง ' + rows.length + ' รายการ · ' + branch + ' ' + period, p.actor || 'HR');
+    return { ok: true, saved: rows.length, special_id: specialId, assigned };
+  }
+
+  async function hrStockWatchClose(id, p) {
+    if (!(await insightReady())) return INSIGHT_NOTREADY;
+    if (!id) return { ok: false, error: 'ไม่พบรายการ' };
+    const { error } = await sb().from('stock_watch').update({
+      status: 'done', closed_at: new Date().toISOString(),
+      closed_by: (p && (p.actor || p.emp_id)) || 'HR',
+    }).eq('id', id);
+    if (error) throw error;
+    return { ok: true };
   }
 
   async function hrBranchProfileGet(branch) {
