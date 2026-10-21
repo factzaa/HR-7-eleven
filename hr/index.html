@@ -472,7 +472,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 @media(min-width:641px){
   .topbar{position:sticky;top:0;z-index:34;display:flex;align-items:center;gap:16px;padding:10px 22px !important;flex-wrap:nowrap}
   .hamburger{display:none !important}
-  #tabbar{display:flex !important;flex:1 1 auto;min-width:0;position:static !important;transform:none !important;box-shadow:none !important;border:0 !important;padding:0 !important;background:transparent !important;overflow-x:auto;overflow-y:visible;gap:2px;height:auto;top:auto !important}
+  /* ★ 21 ต.ค. 69 — เดิม overflow-x:auto ทำให้ #tabbar เป็น "กล่องที่เลื่อนได้"
+     ผลข้างเคียง: เบราว์เซอร์คิด overflow-y เป็น auto ตามไปด้วย → เมนูที่กางออกมา (position:fixed)
+     ถูกกล่องนี้ครอบ/ตัดทิ้งบน Safari ของ iPad · และไม่มีสกรอลบาร์ให้เห็นว่าต้องปัด
+     ใหม่: ไม่ให้เลื่อนแนวนอน แต่ให้ "ตกบรรทัด" แทน (ดูกฎจอ 641–1727px ด้านล่าง) */
+  #tabbar{display:flex !important;flex:1 1 auto;min-width:0;position:static !important;transform:none !important;box-shadow:none !important;border:0 !important;padding:0 !important;background:transparent !important;overflow:visible !important;flex-wrap:wrap;gap:2px;height:auto;top:auto !important}
   #tabbar::-webkit-scrollbar{height:0}
   .htext{flex:none}
   .topact{margin-left:auto;display:flex !important;align-items:center;gap:6px;flex:none}
@@ -487,6 +491,17 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   .uinfo b{font-size:13px;font-weight:600;color:#fff}.uinfo i{font-size:11px;color:rgba(255,255,255,.72);font-style:normal}
 }
 @media(max-width:640px){ .uchip{display:none} }
+
+/* ★ 21 ต.ค. 69 — จอ 641–1727px (iPad / โน้ตบุ๊ก): แถบเมนูไม่พอใส่แถวเดียว
+   แถบเมนู 10 หมวดกว้างราว 1,150px แต่ถูกบีบอยู่ระหว่างโลโก้กับปุ่มมุมขวา
+   เหลือจริงแค่ ~196px บน iPad แนวตั้ง (768px) → เห็นแค่ 1–2 หมวด ที่เหลือต้องปัดหาเอง
+   โดยไม่มีสกรอลบาร์ให้รู้ และเมนูที่กางออกถูกกล่องสกรอลครอบจนไม่โผล่บน Safari ของ iPad
+   ใหม่: ให้แถบเมนูลงมาเป็นแถวของตัวเองเต็มความกว้าง แล้วตกบรรทัดได้ — เห็นครบทุกหมวด
+   จอ ≥1728px ยังเป็นหัวแถวเดียวเหมือนเดิม (พอดีอยู่แล้ว) */
+@media(min-width:641px) and (max-width:1727px){
+  .topbar{flex-wrap:wrap !important; row-gap:6px}
+  #tabbar{order:10 !important; flex:1 0 100% !important; width:100% !important; min-width:100% !important}
+}
 
 /* ==== แก้ป้ายในรายการ (โดยเฉพาะวินัย) ไม่ให้ม้วนเป็นก้อนกลมบนมือถือ ==== */
 .shift-row .pill{border-radius:10px !important;white-space:normal;text-align:left;line-height:1.35;display:inline-flex;align-items:center}
