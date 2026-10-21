@@ -717,8 +717,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <input id="rc_to" type="date" title="ถึงวันที่" style="padding:6px 8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">
     <button class="btn btn-sec btn-sm" id="rc_clear">ล้าง</button>
     <button class="btn btn-sec btn-sm" id="rc_refresh"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg></button>
+    <!-- ★ 21 ต.ค. 69 — ถังขยะใบสมัคร (เฉพาะสำนักงาน) -->
+    <button class="btn btn-sec btn-sm" id="rc_trashbtn"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ถังขยะ <span id="rc_trashn" class="shsub-badge" style="display:none">0</span></button>
   </div>
   <div id="rc_board"><div class="empty">กำลังโหลด…</div></div>
+  <div id="rc_trash" style="display:none"></div>
 </div>
 
 <!-- Applicant detail modal -->
@@ -8906,6 +8909,61 @@ const RC_STAGES = [
   { key:'rejected',  label:'ไม่ผ่าน',    color:'#dc2626' },
 ];
 function rcStageLabel(k){ const s=RC_STAGES.find(x=>x.key===k); return s?s.label:k; }
+// ============================================================
+// ★ 21 ต.ค. 69 — ถังขยะใบสมัคร (เฉพาะสำนักงาน)
+//   ลบใบสมัคร = ย้ายลงถังขยะ กู้คืนได้ · ครบ 30 วันระบบลบถาวรให้เอง
+// ============================================================
+let RC_TRASH=[];
+async function rcTrashCount(){
+  try{
+    const r=await post({ action:'hr_applicants_trash', ...authBody() });
+    const n=(r&&r.ok)?(r.rows||[]).length:0;
+    const b=$('rc_trashn'); if(b){ if(n){ b.style.display=''; b.textContent=n; } else b.style.display='none'; }
+  }catch(e){}
+}
+async function rcTrashShow(on){
+  const box=$('rc_trash'), board=$('rc_board');
+  if(!on){ box.style.display='none'; board.style.display=''; return; }
+  board.style.display='none'; box.style.display='block';
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r; try{ r=await post({ action:'hr_applicants_trash', ...authBody() }); }
+  catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  RC_TRASH=r.rows||[];
+  const days=r.trash_days||30;
+  let h='<div class="card" style="margin-bottom:10px"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+    +'<b style="font-size:14px">ถังขยะใบสมัคร</b>'
+    +'<span class="muted" style="font-size:12.5px">เก็บไว้ '+days+' วันแล้วระบบลบถาวรให้เอง · ไฟล์เอกสารใน Storage ไม่ถูกลบ</span>'
+    +'<button class="btn btn-sec btn-sm" style="margin-left:auto" id="rc_trashback">← กลับไปรายชื่อผู้สมัคร</button>'
+    +'</div></div>';
+  if(!RC_TRASH.length){ h+='<div class="empty">ถังขยะว่าง</div>'; }
+  else h+=RC_TRASH.map(a=>{
+    const warn=a.days_left<=3;
+    return '<div class="card" style="margin-bottom:8px"><div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
+      +(a.photo_url?('<div class="thumb"><img src="'+esc(a.photo_url)+'"></div>'):('<div class="thumb">'+esc(pickInitial(a.full_name))+'</div>'))
+      +'<div style="flex:1;min-width:190px"><div style="font-weight:700">'+esc(a.full_name)+(a.nickname?(' <span class="muted" style="font-weight:400">('+esc(a.nickname)+')</span>'):'')+'</div>'
+      +'<div class="muted" style="font-size:12.5px">'+esc(a.position||'—')+' · '+esc(a.branch_name||'—')+' · สมัคร '+beDate(a.created_at)+'</div>'
+      +'<div style="font-size:12.5px;color:'+(warn?'#b91c1c':'var(--muted)')+'">ลบเมื่อ '+beDateTime(a.deleted_at)+' · เหลืออีก <b>'+a.days_left+' วัน</b> ก่อนลบถาวร</div></div>'
+      +'<button class="btn btn-pri btn-sm" data-rcres="'+esc(a.id)+'">กู้คืน</button>'
+      +'<button class="btn btn-sm" data-rcpur="'+esc(a.id)+'" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca">ลบถาวร</button>'
+      +'</div></div>';
+  }).join('');
+  box.innerHTML=h;
+  $('rc_trashback') && ($('rc_trashback').onclick=()=>rcTrashShow(false));
+  box.querySelectorAll('[data-rcres]').forEach(b=>b.onclick=async()=>{
+    const a=RC_TRASH.find(x=>String(x.id)===String(b.dataset.rcres));
+    const r2=await post({ action:'hr_applicant_restore', ...authBody(), id:b.dataset.rcres });
+    if(r2.ok){ toast('ok','กู้คืนใบสมัครของ '+((a&&a.full_name)||'')+' แล้ว'); rcTrashShow(true); loadRecruit(); }
+    else toast('err', r2.error||'กู้คืนไม่สำเร็จ');
+  });
+  box.querySelectorAll('[data-rcpur]').forEach(b=>b.onclick=async()=>{
+    const a=RC_TRASH.find(x=>String(x.id)===String(b.dataset.rcpur));
+    if(!confirm('ลบถาวรใบสมัครของ '+((a&&a.full_name)||'')+' ?\n\nกู้คืนไม่ได้อีก (ไฟล์เอกสารใน Storage ยังอยู่)')) return;
+    const r2=await post({ action:'hr_applicant_purge', ...authBody(), id:b.dataset.rcpur });
+    if(r2.ok){ toast('ok','ลบถาวรแล้ว'); rcTrashShow(true); }
+    else toast('err', r2.error||'ลบไม่สำเร็จ');
+  });
+}
 async function loadRecruit(){
   const box=$('rc_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   // ★ 24 ก.ย. 69 — โหมด ผจก.: ล็อกช่องสาขาไว้ที่สาขาตัวเอง + บอกให้รู้ว่าเห็นเฉพาะสาขาตัวเอง
@@ -8935,7 +8993,11 @@ async function loadRecruit(){
     $('rc_from').onchange=renderRcBoard;
     $('rc_to').onchange=renderRcBoard;
     $('rc_clear').onclick=()=>{ $('rc_search').value=''; $('rc_position').value=''; $('rc_status').value=''; $('rc_branch').value=''; $('rc_from').value=''; $('rc_to').value=''; renderRcBoard(); };
+    if($('rc_trashbtn')) $('rc_trashbtn').onclick=()=>rcTrashShow($('rc_trash').style.display==='none');
   }
+  // ถังขยะเป็นสิทธิ์ของสำนักงาน — โหมด ผจก. ซ่อนปุ่มไปเลย
+  if($('rc_trashbtn')) $('rc_trashbtn').style.display = MGR_MODE ? 'none' : '';
+  if(!MGR_MODE) rcTrashCount();
   let r; try{ r=await post({ action:'hr_applicants_list', ...authBody() }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   RC_ROWS=r.rows||[];
@@ -9048,9 +9110,9 @@ async function rcAct(act, a){
     return;
   }
   if(act==='delete'){
-    if(!confirm('ลบใบสมัครของ '+a.full_name+' ?\n(ใช้กับใบซ้ำ/ไม่ผ่าน · ลบแล้วกู้คืนไม่ได้)')) return;
+    if(!confirm('ลบใบสมัครของ '+a.full_name+' ?\n(ใช้กับใบซ้ำ/ไม่ผ่าน · ย้ายลงถังขยะ กู้คืนได้ภายใน 30 วัน)')) return;
     const r=await post({ action:'hr_applicant_delete', ...authBody(), id:a.id });
-    if(r.ok){ toast('ok','ลบใบสมัครแล้ว'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ลบไม่สำเร็จ');
+    if(r.ok){ toast('ok','ย้ายลงถังขยะแล้ว · กู้คืนได้ภายใน '+(r.trash_days||30)+' วัน'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ลบไม่สำเร็จ');
     return;
   }
   if(act==='reject'){
@@ -16426,14 +16488,20 @@ function shpFoldBox(title, color, rows, kind, open){
     +'</details>';
 }
 // ★ 22 ก.ย. 69 — แผง "ตรวจผ่านแล้ว": ตัวกรองเชลฟ์/พนักงาน/ช่วงวัน + มุมมองรายการ / ความคืบหน้ารายเชลฟ์ (พับได้)
-let SHR={ shelf:'', emp:'', view:'list', days:30 };   // ★ 24 ก.ย. 69 — ช่วงวันนี้ใช้กับ "ประวัติที่ตรวจแล้ว" เท่านั้น — "รอตรวจ" เซิร์ฟเวอร์ส่งมาครบทุกวันเสมอ
+// ★ 21 ต.ค. 69 — เพิ่มตัวกรองสาขา (branch) · กรองในหน้าจอเลย ไม่ต้องโหลดใหม่
+let SHR={ shelf:'', emp:'', branch:'', view:'list', days:30 };   // ★ 24 ก.ย. 69 — ช่วงวันนี้ใช้กับ "ประวัติที่ตรวจแล้ว" เท่านั้น — "รอตรวจ" เซิร์ฟเวอร์ส่งมาครบทุกวันเสมอ
 const shrDaysTxt=()=>SHR.days?(SHR.days+' วันล่าสุด'):'ทั้งหมด';
 function renderShelfRecent(){
   const rc=$('shp_recent'); if(!rc) return;
   const r=SHP_ALL||{}; const all=[].concat(r.approved||[], r.sent_back||[], r.rows||[]);
+  // รายชื่อสาขาสร้างจากข้อมูลทั้งหมด · ส่วนเชลฟ์กับพนักงานสร้างจาก "เฉพาะสาขาที่เลือก" จะได้ไม่มีตัวเลือกที่กดแล้วว่างเปล่า
+  const inBr=c=>!SHR.branch||String(c.branch_id)===String(SHR.branch);
+  const branches={};
+  all.forEach(c=>{ if(c.branch_id) branches[c.branch_id]=c.branch_name||c.branch_id; });
   const shelves={}, emps={};
-  all.forEach(c=>{ shelves[c.shelf_id]=c.shelf_name+(c.shelf_code?(' ['+c.shelf_code+']'):''); emps[c.emp_id]=c.emp_name; });
+  all.filter(inBr).forEach(c=>{ shelves[c.shelf_id]=c.shelf_name+(c.shelf_code?(' ['+c.shelf_code+']'):''); emps[c.emp_id]=c.emp_name; });
   const opt=(v,t,sel)=>'<option value="'+esc(v)+'"'+(String(sel)===String(v)?' selected':'')+'>'+esc(t)+'</option>';
+  const bOpts=opt('','สาขา: ทุกสาขา',SHR.branch)+Object.keys(branches).sort((a,b)=>branches[a].localeCompare(branches[b],'th')).map(k=>opt(k,branches[k],SHR.branch)).join('');
   const sOpts=opt('','เชลฟ์: ทุกเชลฟ์',SHR.shelf)+Object.keys(shelves).sort((a,b)=>shelves[a].localeCompare(shelves[b],'th')).map(k=>opt(k,shelves[k],SHR.shelf)).join('');
   const eOpts=opt('','พนักงาน: ทุกคน',SHR.emp)+Object.keys(emps).sort((a,b)=>emps[a].localeCompare(emps[b],'th')).map(k=>opt(k,emps[k],SHR.emp)).join('');
   const dOpts=[14,30,60,90].map(d=>opt(d,d+' วันล่าสุด',SHR.days)).join('')+opt(0,'ค้างทั้งหมด (ไม่จำกัดวัน)',SHR.days);
@@ -16441,12 +16509,13 @@ function renderShelfRecent(){
   const segB=(v,t)=>'<button type="button" data-shrv="'+v+'" style="border:0;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;'+(SHR.view===v?'background:#15803d;color:#fff':'background:transparent;color:var(--txt)')+'">'+t+'</button>';
   let h='<div class="card" style="margin-bottom:10px"><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     +'<b style="font-size:13px">กรอง</b>'
+    +((!MGR_MODE && Object.keys(branches).length>1) ? ('<select id="shr_branch" style="'+selSt+'">'+bOpts+'</select>') : '')
     +'<select id="shr_shelf" style="'+selSt+'">'+sOpts+'</select>'
     +'<select id="shr_emp" style="'+selSt+'">'+eOpts+'</select>'
     +'<select id="shr_days" style="'+selSt+'">'+dOpts+'</select>'
     +'<span style="margin-left:auto;display:inline-flex;border:1.5px solid var(--line2);border-radius:9px;overflow:hidden">'+segB('list','รายการ')+segB('progress','ความคืบหน้ารายเชลฟ์')+'</span>'
     +'</div></div>';
-  const pass=c=>(!SHR.shelf||String(c.shelf_id)===String(SHR.shelf))&&(!SHR.emp||String(c.emp_id)===String(SHR.emp));
+  const pass=c=>inBr(c)&&(!SHR.shelf||String(c.shelf_id)===String(SHR.shelf))&&(!SHR.emp||String(c.emp_id)===String(SHR.emp));
   const approved=(r.approved||[]).filter(pass), sentBack=(r.sent_back||[]).filter(pass);
   if(SHR.view==='list'){
     const body=shpFoldBox('<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> ตรวจผ่านแล้ว ('+shrDaysTxt()+')', '#16a34a', approved, 'ok', true)
@@ -16479,6 +16548,8 @@ function renderShelfRecent(){
     }).join('');
   }
   rc.innerHTML=h;
+  // เปลี่ยนสาขา → ล้างเชลฟ์/พนักงานที่เลือกไว้ เพราะเป็นของสาขาเดิม ถ้าไม่ล้างจะเห็นหน้าว่างแล้วงง
+  const bf=$('shr_branch'); if(bf) bf.onchange=()=>{ SHR.branch=bf.value; SHR.shelf=''; SHR.emp=''; renderShelfRecent(); };
   const sf=$('shr_shelf'); if(sf) sf.onchange=()=>{ SHR.shelf=sf.value; renderShelfRecent(); };
   const ef=$('shr_emp'); if(ef) ef.onchange=()=>{ SHR.emp=ef.value; renderShelfRecent(); };
   const df=$('shr_days'); if(df) df.onchange=()=>{ const v=df.value; SHR.days=(v==='0'?0:(Number(v)||30)); loadShelfPending(); };
