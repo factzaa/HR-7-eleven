@@ -476,7 +476,12 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
      ผลข้างเคียง: เบราว์เซอร์คิด overflow-y เป็น auto ตามไปด้วย → เมนูที่กางออกมา (position:fixed)
      ถูกกล่องนี้ครอบ/ตัดทิ้งบน Safari ของ iPad · และไม่มีสกรอลบาร์ให้เห็นว่าต้องปัด
      ใหม่: ไม่ให้เลื่อนแนวนอน แต่ให้ "ตกบรรทัด" แทน (ดูกฎจอ 641–1727px ด้านล่าง) */
-  #tabbar{display:flex !important;flex:1 1 auto;min-width:0;position:static !important;transform:none !important;box-shadow:none !important;border:0 !important;padding:0 !important;background:transparent !important;overflow:visible !important;flex-wrap:wrap;gap:2px;height:auto;top:auto !important}
+  /* ★ 21 ต.ค. 69 — display ต้องไม่ใส่ !important
+     เดิมใส่ไว้ จึงทับ style="display:none" ที่ติดมากับแท็กตั้งแต่แรก
+     ทำให้แถบเมนูโผล่ตั้งแต่หน้าล็อกอิน (เมื่อก่อนเป็นแถวเดียวเลื่อนแนวนอนเลยไม่สังเกต
+     พอให้ตกบรรทัดได้เลยกลายเป็น 4 แถวดันกล่องล็อกอินลงไป)
+     ตอนล็อกอินสำเร็จ โค้ดสั่ง tabbar.style.display='flex' ให้อยู่แล้ว จึงไม่ต้องพึ่ง !important */
+  #tabbar{display:flex;flex:1 1 auto;min-width:0;position:static !important;transform:none !important;box-shadow:none !important;border:0 !important;padding:0 !important;background:transparent !important;overflow:visible !important;flex-wrap:wrap;gap:2px;height:auto;top:auto !important}
   #tabbar::-webkit-scrollbar{height:0}
   .htext{flex:none}
   .topact{margin-left:auto;display:flex !important;align-items:center;gap:6px;flex:none}
