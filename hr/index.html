@@ -10235,7 +10235,8 @@ async function loadMtasks(){
     $('mt_branch').style.display=''; $('mt_new').style.display='';
     if(!$('mt_branch').dataset.filled){
       $('mt_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
-      $('mt_branch').dataset.filled='1'; $('mt_branch').onchange=renderMtBoard;
+      $('mt_branch').dataset.filled='1';
+      $('mt_branch').onchange=()=>{ renderMtBoard(); loadMtaskIntask('mt_intask'); loadMtaskFixing('mt_fixing'); };
     }
   }
   if(!$('mt_refresh').dataset.wired){ $('mt_refresh').dataset.wired='1'; $('mt_refresh').onclick=loadMtasks; $('mt_new').onclick=openMtAssign; }
@@ -12252,7 +12253,7 @@ function intaskReviewer(){
 async function loadMtaskFixing(boxId){
   boxId = boxId || 'mt_fixing';
   const box=$(boxId); if(!box) return;
-  let r; try{ r=await post({ action:'hr_mgr_intask_fixing', password:pwd, branch: MGR_MODE?MGR_BRANCH:null }); }catch(e){ box.innerHTML=''; return; }
+  let r; try{ r=await post({ action:'hr_mgr_intask_fixing', password:pwd, branch: intaskBranchOf(boxId) }); }catch(e){ box.innerHTML=''; return; }
   const rows=(r&&r.rows)||[];
   if(!rows.length){ box.innerHTML=''; box.style.display='none'; return; }
   box.style.display='block';
@@ -12284,11 +12285,20 @@ async function loadMtaskFixing(boxId){
   });
 }
 let INTASK_DATE = '';   // วันที่ที่กำลังตรวจ (ว่าง = วันนี้)
+// ★ 21 ต.ค. 69 — เดิมส่ง branch:null เสมอเมื่อเป็น HR → เลือกสาขาในหน้า "ตรวจงานประจำวัน ผจก."
+//   แล้วแผง "งานรอตรวจ" ไม่กรองตาม (เซิร์ฟเวอร์รองรับการกรองอยู่แล้ว แค่หน้าเว็บไม่ส่งไป)
+//   หน้า ตรวจงานประจำวัน ใช้ช่อง mdr_branch · หน้า งาน ผจก. ใช้ช่อง mt_branch
+function intaskBranchOf(boxId){
+  if(MGR_MODE) return MGR_BRANCH;
+  const sel = String(boxId||'').indexOf('mdr_')===0 ? $('mdr_branch') : $('mt_branch');
+  const v = sel ? (sel.value||'') : '';
+  return v || null;
+}
 async function loadMtaskIntask(boxId){
   boxId = boxId || 'mt_intask';
   const box=$(boxId); if(!box) return;
   const day = INTASK_DATE || bkkTodayStr();
-  let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: MGR_MODE?MGR_BRANCH:null, date: day }); }catch(e){ box.innerHTML=''; return; }
+  let r; try{ r=await post({ action:'hr_mgr_intask_list', password:pwd, branch: intaskBranchOf(boxId), date: day }); }catch(e){ box.innerHTML=''; return; }
   const rows=(r&&r.rows)||[]; const meta=(r&&r.meta)||{};
   { const bdId = boxId==='mt_intask' ? 'mtsub_rev' : (boxId==='mdr_intask' ? 'mdrsub_rev' : ''); if(bdId){ const bd=$(bdId); if(bd){ if(rows.length){ bd.style.display=''; bd.textContent=rows.length; } else bd.style.display='none'; } } }
   if(!rows.length){
@@ -12501,7 +12511,12 @@ async function loadMdailyBoard(){
   const box=$('mdr_board'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   if($('mdr_branch') && !$('mdr_branch').dataset.filled){
     $('mdr_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
-    $('mdr_branch').dataset.filled='1'; $('mdr_branch').onchange=loadMdailyBoard;
+    $('mdr_branch').dataset.filled='1';
+    $('mdr_branch').onchange=()=>{
+      if(MDR_VIEW==='review'){ loadMtaskIntask('mdr_intask'); loadMtaskFixing('mdr_fixing'); }
+      else if(MDR_VIEW==='adhoc') loadMdailyAdhoc();
+      else loadMdailyBoard();
+    };
     $('mdr_refresh').onclick=loadMdailyBoard;
     $('mdr_date').onchange=loadMdailyBoard;
   }
@@ -12558,6 +12573,9 @@ function showMdrView(which){
   if(R) R.style.display = which==='review'?'block':'none';
   if(A) A.style.display = which==='adhoc'?'block':'none';
   const bar=$('mdrsub'); if(bar) bar.querySelectorAll('[data-mdrpan]').forEach(b=>b.classList.toggle('on', b.dataset.mdrpan===which));
+  // ★ 21 ต.ค. 69 — โหลดใหม่ตอนสลับแท็บ เผื่อเปลี่ยนสาขาไว้ตอนอยู่แท็บอื่น
+  if(which==='review'){ loadMtaskIntask('mdr_intask'); loadMtaskFixing('mdr_fixing'); }
+  else if(which==='adhoc') loadMdailyAdhoc();
 }
 function mdrShowReport(on){
   $('mdr_report').style.display=on?'block':'none';
