@@ -420,6 +420,87 @@ returns table (
    limit greatest(p_limit,1);
 $$;
 
+-- 6.9 เจาะรายการสินค้าในกลุ่ม PMA (กดจากตารางอันดับกลุ่มแล้วดูว่าเป็นสินค้าตัวไหน)
+--     by_month = {"2026-09": -1845.00, ...} เอาไว้วาดคอลัมน์รายเดือนและกราฟแท่ง
+create or replace function public.stock_pma_items(
+  p_branch text default null, p_from text default null, p_to text default null,
+  p_pma text default null, p_limit int default 300)
+returns table (
+  sku text, name text, pma text, pma_name text, risk_type text,
+  months_n int, months_short int,
+  short_amt numeric, short_qty numeric, over_amt numeric, over_qty numeric,
+  net_amt numeric, wo_amt numeric, last_period text, by_month jsonb
+) language sql stable as $$
+  with scope as (
+    select i.* from public.stock_audit_items i
+     where (p_branch is null or i.branch_id = p_branch)
+       and (p_from   is null or i.period_ym >= p_from)
+       and (p_to     is null or i.period_ym <= p_to)
+       and (p_pma    is null or i.pma = p_pma)
+  ), agg as (          -- รวมหลายสาขาให้เป็นค่าเดียวต่อ (สินค้า, เดือน) ก่อน ไม่งั้น jsonb ซ้ำคีย์
+    select sku, period_ym, sum(amount) as amt, sum(qty) as q,
+           max(name) as nm, max(pma) as pm
+      from scope group by sku, period_ym
+  ), wo as (
+    select w.sku, sum(w.amount) as amt
+      from public.stock_writeoff_items w
+     where (p_branch is null or w.branch_id = p_branch)
+       and (p_from   is null or w.period_ym >= p_from)
+       and (p_to     is null or w.period_ym <= p_to)
+       and (p_pma    is null or w.pma = p_pma)
+       and coalesce(w.section,'') <> 'ชดเชยคืน'
+     group by w.sku
+  )
+  select a.sku, max(a.nm) as name, max(a.pm) as pma,
+         coalesce(max(g.name),'(ไม่ทราบกลุ่ม)') as pma_name,
+         coalesce(max(g.risk_type),'other')     as risk_type,
+         count(*)::int                                   as months_n,
+         count(*) filter (where a.amt < 0)::int          as months_short,
+         coalesce(sum(a.amt) filter (where a.amt < 0),0) as short_amt,
+         coalesce(sum(a.q)   filter (where a.amt < 0),0) as short_qty,
+         coalesce(sum(a.amt) filter (where a.amt > 0),0) as over_amt,
+         coalesce(sum(a.q)   filter (where a.amt > 0),0) as over_qty,
+         coalesce(sum(a.amt),0)                          as net_amt,
+         coalesce(max(w.amt),0)                          as wo_amt,
+         max(a.period_ym) filter (where a.amt < 0)       as last_period,
+         jsonb_object_agg(a.period_ym, a.amt)            as by_month
+    from agg a
+    left join public.pma_groups g on g.code = a.pm
+    left join wo on wo.sku = a.sku
+   group by a.sku
+   order by coalesce(sum(a.amt) filter (where a.amt < 0),0) asc
+   limit greatest(p_limit,1);
+$$;
+
+-- 6.10 เทียบ 2 เดือนระดับรายสินค้า — ตอบว่า "เดือนนี้แย่ลงเพราะตัวไหน"
+--      diff = ยอดเดือน b ลบยอดเดือน a (ติดลบ = แย่ลง) เรียงตามขนาดการเปลี่ยนแปลง
+create or replace function public.stock_month_diff(
+  p_branch text default null, p_a text default null, p_b text default null,
+  p_limit int default 150)
+returns table (
+  sku text, name text, pma text, pma_name text, risk_type text,
+  amt_a numeric, amt_b numeric, diff numeric, qty_a numeric, qty_b numeric
+) language sql stable as $$
+  with s as (
+    select i.sku, max(i.name) as nm, max(i.pma) as pm,
+           coalesce(sum(i.amount) filter (where i.period_ym = p_a),0) as a_amt,
+           coalesce(sum(i.amount) filter (where i.period_ym = p_b),0) as b_amt,
+           coalesce(sum(i.qty)    filter (where i.period_ym = p_a),0) as a_qty,
+           coalesce(sum(i.qty)    filter (where i.period_ym = p_b),0) as b_qty
+      from public.stock_audit_items i
+     where (p_branch is null or i.branch_id = p_branch)
+       and i.period_ym in (p_a, p_b)
+     group by i.sku
+  )
+  select s.sku, s.nm, s.pm,
+         coalesce(g.name,'(ไม่ทราบกลุ่ม)'), coalesce(g.risk_type,'other'),
+         s.a_amt, s.b_amt, (s.b_amt - s.a_amt), s.a_qty, s.b_qty
+    from s left join public.pma_groups g on g.code = s.pm
+   where s.a_amt <> 0 or s.b_amt <> 0
+   order by abs(s.b_amt - s.a_amt) desc
+   limit greatest(p_limit,1);
+$$;
+
 -- ---------- 7) RLS (เหมือนตารางอื่นในระบบ — คุมสิทธิ์จริงที่ชั้น API) ----------
 alter table public.stock_uploads        enable row level security;
 alter table public.stock_audit_items    enable row level security;
