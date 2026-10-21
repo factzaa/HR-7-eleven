@@ -524,6 +524,16 @@
         case 'hr_mdaily_board':      return await hrMdailyBoard(p.date, p.branch);
         case 'hr_mdaily_report':     return await hrMdailyReport(p.month, p.branch);
         case 'hr_mgr_review_stats':  return await hrMgrReviewStats(p.month, p.branch);
+        // ★ 21 ต.ค. 69 — วิเคราะห์ Audit สินค้า + สินค้าตัดจ่าย (เฟส 1)
+        case 'hr_stock_uploads':     return await hrStockUploads(p.branch, p.kind);
+        case 'hr_stock_save':        return await hrStockSave(p);
+        case 'hr_stock_upload_del':  return await hrStockUploadDel(p.id, p);
+        case 'hr_stock_summary':     return await hrStockSummary(p.branch, p.from, p.to);
+        case 'hr_stock_chronic':     return await hrStockChronic(p.branch, p.from, p.to, p.min_months);
+        case 'hr_stock_wo_top':      return await hrStockWoTop(p.branch, p.from, p.to, p.section);
+        case 'hr_stock_swap':        return await hrStockSwap(p.branch, p.from, p.to, p.pair_kind);
+        case 'hr_branch_profile':    return await hrBranchProfileGet(p.branch);
+        case 'hr_branch_profile_save': return await hrBranchProfileSave(p.data, p);
         case 'hr_shirt_config_get':  return await hrShirtConfigGet(p);
         case 'hr_shirt_config_save': return await hrShirtConfigSave(p.data, p);
         case 'hr_shirt_list':        return await hrShirtList(p);
@@ -10963,6 +10973,212 @@
       total_net: rows.reduce((s, r) => s + Number(r.net || 0), 0),
       by_branch: Object.values(byBr),
     };
+  }
+
+  // ============================================================
+  // ★ 21 ต.ค. 69 — วิเคราะห์ Audit สินค้า + สินค้าตัดจ่าย (เฟส 1)
+  //
+  // รองรับ 2 รายงานจาก CP ALL
+  //   RLR8803  รายงาน Audit ราย SKU      (xlsx/csv · ราคาขายรวมภาษี)
+  //   RT040037 รายละเอียดค่าใช้จ่าย       (PDF  · ต้นทุน ไม่รวมภาษี)
+  //
+  // 1 สาขา + 1 ประเภท + 1 เดือน = 1 ใบอัปโหลด  (อัปซ้ำ = ทับของเดิม)
+  // สรุปทุกตัวคำนวณด้วย RPC ฝั่งฐานข้อมูล — เลี่ยงเพดาน 1000 แถวของ PostgREST
+  // ต้องรัน supabase/stock_analysis_setup.sql ก่อน ไม่งั้นทุก action คืน error ที่อ่านรู้เรื่อง
+  // ============================================================
+  let _stockReady = null;
+  async function stockReady() {
+    if (_stockReady !== null) return _stockReady;
+    const r = await sb().from('stock_uploads').select('id').limit(1);
+    _stockReady = !r.error;
+    if (r.error) console.warn('[วิเคราะห์สต็อก] ยังไม่มีตาราง — ต้องรัน stock_analysis_setup.sql ก่อน', r.error.message);
+    return _stockReady;
+  }
+  const STOCK_NOTREADY = { ok: false, error: 'ยังไม่ได้ติดตั้งตารางวิเคราะห์สต็อก — ให้รันไฟล์ stock_analysis_setup.sql ใน Supabase ก่อน' };
+
+  async function hrStockUploads(branch, kind) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    let q = sb().from('stock_uploads').select('*').order('period_ym', { ascending: false }).order('kind');
+    if (branch) q = q.eq('branch_id', branch);
+    if (kind) q = q.eq('kind', kind);
+    const { data, error } = await q.limit(400);
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+
+  // p = { branch_id, branch_name, kind, period_ym, report_code, filename, rows:[...], totals:{} }
+  async function hrStockSave(p) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const kind = String(p.kind || '');
+    if (kind !== 'audit' && kind !== 'writeoff') return { ok: false, error: 'ประเภทรายงานไม่ถูกต้อง' };
+    const branch = String(p.branch_id || '').trim();
+    const period = String(p.period_ym || '').trim();
+    if (!branch) return { ok: false, error: 'ไม่พบรหัสสาขา' };
+    if (!/^\d{4}-\d{2}$/.test(period)) return { ok: false, error: 'เดือนไม่ถูกต้อง (ต้องเป็น YYYY-MM)' };
+    const rows = Array.isArray(p.rows) ? p.rows : [];
+    if (!rows.length) return { ok: false, error: 'ไม่พบรายการในไฟล์ — อาจเป็นไฟล์คนละรูปแบบ' };
+
+    // ทับของเดิมเดือนเดียวกัน (items ลบตาม cascade)
+    const { data: old } = await sb().from('stock_uploads').select('id')
+      .eq('branch_id', branch).eq('kind', kind).eq('period_ym', period).maybeSingle();
+    let replaced = false;
+    if (old && old.id) { await sb().from('stock_uploads').delete().eq('id', old.id); replaced = true; }
+
+    const { data: up, error: eUp } = await sb().from('stock_uploads').insert({
+      branch_id: branch, branch_name: p.branch_name || null, kind, period_ym: period,
+      report_code: p.report_code || null, filename: p.filename || null,
+      row_count: rows.length, totals: p.totals || {}, note: p.note || null,
+      uploaded_by: p.actor || p.emp_id || 'HR',
+    }).select('id').single();
+    if (eUp) throw eUp;
+
+    const tbl = kind === 'audit' ? 'stock_audit_items' : 'stock_writeoff_items';
+    const mk = kind === 'audit'
+      ? (r) => ({
+          upload_id: up.id, branch_id: branch, period_ym: period,
+          pma: String(r.pma || r.sku || '').slice(0, 2), sku: String(r.sku || ''),
+          name: r.name || null, qty: Number(r.qty) || 0, amount: Number(r.amount) || 0,
+          cost_qty: Number(r.cost_qty) || 0, cost_amount: Number(r.cost_amount) || 0,
+        })
+      : (r) => ({
+          upload_id: up.id, branch_id: branch, period_ym: period,
+          section: r.section || null, pma: String(r.sku || '').slice(0, 2), sku: String(r.sku || ''),
+          name: r.name || null, pack_size: r.pack_size || null,
+          qty: Number(r.qty) || 0, unit_price: Number(r.unit_price) || 0, amount: Number(r.amount) || 0,
+        });
+
+    const CH = 500; let saved = 0;
+    for (let i = 0; i < rows.length; i += CH) {
+      const chunk = rows.slice(i, i + CH).map(mk).filter(x => x.sku);
+      if (!chunk.length) continue;
+      const { error } = await sb().from(tbl).insert(chunk);
+      if (error) {   // ล้มกลางคัน → ลบใบทิ้งทั้งใบ ไม่ปล่อยข้อมูลครึ่ง ๆ ไว้
+        await sb().from('stock_uploads').delete().eq('id', up.id);
+        throw error;
+      }
+      saved += chunk.length;
+    }
+
+    // คู่ "คีย์ผิดตัว" ที่ฝั่งเบราว์เซอร์ตรวจไว้แล้ว (เฉพาะไฟล์ Audit)
+    let pairs = 0;
+    if (kind === 'audit' && Array.isArray(p.pairs) && p.pairs.length) {
+      const pr = p.pairs.slice(0, 2000).map(x => ({
+        upload_id: up.id, branch_id: branch, period_ym: period,
+        pma: String(x.pma || '').slice(0, 2),
+        pair_kind: (x.pair_kind === 'unit' ? 'unit' : 'variant'),
+        short_sku: String(x.short_sku || ''), short_name: x.short_name || null,
+        short_qty: Number(x.short_qty) || 0, short_amt: Number(x.short_amt) || 0,
+        over_sku: String(x.over_sku || ''), over_name: x.over_name || null,
+        over_qty: Number(x.over_qty) || 0, over_amt: Number(x.over_amt) || 0,
+        ratio: Number(x.ratio) || 0, similarity: Number(x.similarity) || 0,
+        net_amt: (Number(x.short_amt) || 0) + (Number(x.over_amt) || 0),
+      })).filter(x => x.short_sku && x.over_sku);
+      for (let i = 0; i < pr.length; i += CH) {
+        // คู่คีย์ผิดตัวเก็บไม่ได้ไม่ใช่เรื่องคอขาดบาดตาย — ข้อมูลหลักบันทึกไปแล้ว
+        const { error } = await sb().from('stock_swap_pairs').insert(pr.slice(i, i + CH));
+        if (error) { console.warn('[วิเคราะห์สต็อก] เก็บคู่คีย์ผิดตัวไม่สำเร็จ', error.message); break; }
+        pairs += Math.min(CH, pr.length - i);
+      }
+    }
+    await logAct('stock_upload', null,
+      (kind === 'audit' ? 'Audit' : 'ตัดจ่าย') + ' ' + branch + ' ' + period + ' · ' + saved + ' รายการ' + (replaced ? ' (ทับของเดิม)' : ''),
+      p.actor || 'HR');
+    return { ok: true, id: up.id, saved, pairs, replaced };
+  }
+
+  async function hrStockSwap(branch, from, to, pairKind) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const [tr, ls] = await Promise.all([
+      sb().rpc('stock_swap_trend', { p_branch: branch || null, p_limit: 24 }),
+      sb().rpc('stock_swap_list', {
+        p_branch: branch || null, p_from: from || null, p_to: to || null,
+        p_kind: pairKind || null, p_limit: 300,
+      }),
+    ]);
+    if (tr.error) throw tr.error;
+    if (ls.error) throw ls.error;
+    return { ok: true, trend: tr.data || [], rows: ls.data || [] };
+  }
+
+  async function hrStockUploadDel(id, p) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    if (!id) return { ok: false, error: 'ไม่พบใบอัปโหลด' };
+    const { data: up } = await sb().from('stock_uploads').select('branch_id,kind,period_ym').eq('id', id).maybeSingle();
+    const { error } = await sb().from('stock_uploads').delete().eq('id', id);
+    if (error) throw error;
+    if (up) await logAct('stock_upload_del', null, (up.kind === 'audit' ? 'Audit' : 'ตัดจ่าย') + ' ' + up.branch_id + ' ' + up.period_ym, (p && p.actor) || 'HR');
+    return { ok: true };
+  }
+
+  // ภาพรวมหน้าเดียว — เรียก RPC 4 ตัวพร้อมกัน
+  async function hrStockSummary(branch, from, to) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const b = branch || null, f = from || null, t = to || null;
+    const [aT, wT, pma, risk, swap] = await Promise.all([
+      sb().rpc('stock_audit_trend',    { p_branch: b, p_limit: 24 }),
+      sb().rpc('stock_writeoff_trend', { p_branch: b, p_limit: 24 }),
+      sb().rpc('stock_audit_pma',      { p_branch: b, p_from: f, p_to: t }),
+      sb().rpc('stock_risk_summary',   { p_branch: b, p_from: f, p_to: t }),
+      sb().rpc('stock_swap_trend',     { p_branch: b, p_limit: 24 }),
+    ]);
+    const bad = [aT, wT, pma, risk, swap].find(x => x.error);
+    if (bad) throw bad.error;
+    return { ok: true, audit_trend: aT.data || [], wo_trend: wT.data || [],
+             pma: pma.data || [], risk: risk.data || [], swap_trend: swap.data || [] };
+  }
+
+  async function hrStockChronic(branch, from, to, minMonths) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const { data, error } = await sb().rpc('stock_audit_chronic', {
+      p_branch: branch || null, p_from: from || null, p_to: to || null,
+      p_min_months: Number(minMonths) || 2, p_limit: 300,
+    });
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+
+  async function hrStockWoTop(branch, from, to, section) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const { data, error } = await sb().rpc('stock_writeoff_top', {
+      p_branch: branch || null, p_from: from || null, p_to: to || null,
+      p_section: section || null, p_limit: 60,
+    });
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+
+  async function hrBranchProfileGet(branch) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    let q = sb().from('branch_profiles').select('*');
+    if (branch) q = q.eq('branch_id', branch);
+    const { data, error } = await q;
+    if (error) throw error;
+    return { ok: true, rows: data || [], row: (data || [])[0] || null };
+  }
+
+  async function hrBranchProfileSave(d, p) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const branch = String((d && d.branch_id) || '').trim();
+    if (!branch) return { ok: false, error: 'ไม่พบรหัสสาขา' };
+    const arr = (v) => Array.isArray(v) ? v.map(x => String(x).trim()).filter(Boolean).slice(0, 20) : [];
+    const row = {
+      branch_id: branch,
+      customer_groups: arr(d.customer_groups),
+      surroundings:    arr(d.surroundings),
+      peak_hours:      arr(d.peak_hours),
+      has_allcafe:  d.has_allcafe !== false,
+      has_delivery: !!d.has_delivery,
+      staff_count:  (d.staff_count  === '' || d.staff_count  == null) ? null : Number(d.staff_count),
+      camera_count: (d.camera_count === '' || d.camera_count == null) ? null : Number(d.camera_count),
+      blind_spots: d.blind_spots || null,
+      note: d.note || null,
+      updated_at: new Date().toISOString(),
+      updated_by: (p && (p.actor || p.emp_id)) || 'HR',
+    };
+    const { error } = await sb().from('branch_profiles').upsert(row, { onConflict: 'branch_id' });
+    if (error) throw error;
+    await logAct('branch_profile_save', null, 'โปรไฟล์สาขา ' + branch, row.updated_by);
+    return { ok: true };
   }
 
   window.HRAPI = { dispatch };
