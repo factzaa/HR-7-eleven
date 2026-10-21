@@ -520,6 +520,7 @@
         case 'hr_mdaily_review':     return await hrMdailyReview(p.log_id, p.status, p.note, p.markup);
         case 'hr_mdaily_board':      return await hrMdailyBoard(p.date, p.branch);
         case 'hr_mdaily_report':     return await hrMdailyReport(p.month, p.branch);
+        case 'hr_mgr_review_stats':  return await hrMgrReviewStats(p.month, p.branch);
         case 'hr_shirt_config_get':  return await hrShirtConfigGet(p);
         case 'hr_shirt_config_save': return await hrShirtConfigSave(p.data, p);
         case 'hr_shirt_list':        return await hrShirtList(p);
@@ -9073,6 +9074,109 @@
       return { branch_id: b.branch_id, branch_name: b.name, expected, done, approved, rejected, submitted, missed, pct, pass_pct: passPct };
     });
     return { ok: true, month: m, days, def_count: defCount, expected, rows };
+  }
+
+  // ============================================================
+  // ★ 21 ต.ค. 69 — สถิติการตรวจงานในกะของผู้จัดการ (รายเดือน ต่อสาขา)
+  //   มาแทนหน้า "รายงานงานประจำวัน (รายเดือน)" ที่ขึ้น 0% เพราะงานประจำวันถูกปิดไปตั้งแต่ ก.ย. 69
+  //   อ่านจาก task_assignments ที่มีอยู่แล้ว — ไม่ต้องเก็บข้อมูลใหม่
+  //   needs_mgr = งานที่ต้องให้ ผจก. ตรวจ · mgr_checked_at/mgr_result = ผลการตรวจ
+  // ============================================================
+  async function hrMgrReviewStats(month, branch) {
+    const today = bkkToday();
+    const m = month || today.slice(0, 7);
+    const start = m + '-01';
+    const y = parseInt(m.slice(0, 4)), mo = parseInt(m.slice(5, 7));
+    const endMonth = iso(new Date(y, mo, 0));          // วันสุดท้ายของเดือน
+    const endEff = endMonth < today ? endMonth : today; // ไม่นับวันอนาคต
+    if (endEff < start) return { ok: true, month: m, days: 0, rows: [], reviewers: [], daily: [], total: null };
+
+    // ดึงทีละ 1000 แถวจนหมด — PostgREST จำกัดผลลัพธ์ต่อครั้ง ถ้าไม่ไล่หน้าจะได้ข้อมูลไม่ครบแบบเงียบ ๆ
+    const COLS = 'branch_id,work_date,needs_mgr,mgr_result,mgr_checked_at,mgr_checked_by,submitted_at';
+    const rowsAll = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const q = await sb().from('task_assignments').select(COLS)
+        .gte('work_date', start).lte('work_date', endEff)
+        .or('needs_mgr.eq.true,mgr_checked_at.not.is.null')
+        .order('work_date').range(from, from + 999);
+      if (q.error) throw q.error;
+      const got = q.data || [];
+      rowsAll.push(...got);
+      if (got.length < 1000) break;
+    }
+
+    const brR = await sb().from('branches').select('branch_id,name').order('branch_id');
+    let branches = (brR.data || []);
+    if (branch) branches = branches.filter(b => b.branch_id === branch);
+    const want = new Set(branches.map(b => b.branch_id));
+    const rows = rowsAll.filter(r => want.has(r.branch_id));
+
+    const hoursOf = (r) => {
+      if (!r.submitted_at || !r.mgr_checked_at) return null;
+      const h = (new Date(r.mgr_checked_at) - new Date(r.submitted_at)) / 3600000;
+      return (h >= 0 && h < 24 * 60) ? h : null;      // ตัดค่าติดลบ/เพี้ยนทิ้ง ไม่ให้ลากค่ากลาง
+    };
+    const median = (a) => {
+      if (!a.length) return null;
+      const s = a.slice().sort((x, z) => x - z);
+      const i = Math.floor(s.length / 2);
+      const v = s.length % 2 ? s[i] : (s[i - 1] + s[i]) / 2;
+      return Math.round(v * 10) / 10;
+    };
+    const summarize = (list) => {
+      const need = list.filter(r => r.needs_mgr === true).length;
+      const checked = list.filter(r => r.mgr_checked_at).length;
+      const approved = list.filter(r => r.mgr_result === 'approved').length;
+      const sent_back = list.filter(r => r.mgr_result === 'sent_back').length;
+      const waiting = list.filter(r => r.needs_mgr === true && !r.mgr_checked_at).length;
+      const hrs = list.map(hoursOf).filter(h => h != null);
+      return {
+        need, checked, approved, sent_back, waiting,
+        pct: need ? Math.round(checked / need * 100) : null,
+        back_pct: checked ? Math.round(sent_back / checked * 100) : null,
+        median_hours: median(hrs), timed: hrs.length,
+      };
+    };
+
+    const perBranch = branches.map(b => Object.assign(
+      { branch_id: b.branch_id, branch_name: b.name },
+      summarize(rows.filter(r => r.branch_id === b.branch_id))
+    ));
+
+    // ใครเป็นคนตรวจ (ชื่อเท่าที่ระบบบันทึกไว้)
+    const byWho = {};
+    rows.filter(r => r.mgr_checked_at).forEach(r => {
+      const k = (r.mgr_checked_by || '').replace(/^ผจก\.\s*·\s*/, '').trim() || '(ไม่ระบุชื่อ)';
+      (byWho[k] = byWho[k] || []).push(r);
+    });
+    const reviewers = Object.keys(byWho).map(k => {
+      const list = byWho[k]; const s = summarize(list);
+      const bset = [...new Set(list.map(r => r.branch_id))]
+        .map(id => (branches.find(b => b.branch_id === id) || {}).name || id);
+      return { name: k, checked: s.checked, approved: s.approved, sent_back: s.sent_back, median_hours: s.median_hours, branches: bset };
+    }).sort((a, b) => b.checked - a.checked);
+
+    // แนวโน้มรายวัน — % ที่ตรวจแล้วของแต่ละสาขาในแต่ละวัน
+    const daily = [];
+    for (let d = new Date(start + 'T00:00:00'); iso(d) <= endEff; d.setDate(d.getDate() + 1)) {
+      const day = iso(d);
+      const cell = { date: day, b: {} };
+      branches.forEach(b => {
+        const l = rows.filter(r => r.work_date === day && r.branch_id === b.branch_id);
+        const need = l.filter(r => r.needs_mgr === true).length;
+        const checked = l.filter(r => r.mgr_checked_at).length;
+        cell.b[b.branch_id] = { need, checked, pct: need ? Math.round(checked / need * 100) : null };
+      });
+      daily.push(cell);
+    }
+
+    return {
+      ok: true, month: m, start, end: endEff,
+      days: daysBetween(start, endEff),
+      rows: perBranch, reviewers, daily,
+      total: summarize(rows),
+      scanned: rows.length,
+    };
   }
 
   // แก้ไขงานที่มอบหมาย (หัวข้อ/รายละเอียด/กำหนดส่ง/ด่วน/สาขา)
