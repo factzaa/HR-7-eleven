@@ -200,7 +200,15 @@ create table if not exists public.branch_profiles (
 -- ============================================================
 
 -- 6.1 สรุป Audit รายเดือน
-create or replace function public.stock_audit_trend(p_branch text default null, p_limit int default 24)
+-- ★ 22 ต.ค. 69 — เพิ่ม p_from/p_to ให้ 3 ฟังก์ชันแนวโน้ม เดิมไม่รับช่วงเดือน
+--   ทำให้ตัวกรอง "ช่วงเดือน" บนหน้าเว็บไม่มีผลกับตาราง/กราฟแนวโน้มเลย
+--   เปลี่ยนจำนวนอาร์กิวเมนต์ → create or replace จะกลายเป็นฟังก์ชันตัวใหม่ซ้อนของเดิม ต้อง drop ตัวเก่าทิ้งก่อน
+drop function if exists public.stock_audit_trend(text, int);
+drop function if exists public.stock_writeoff_trend(text, int);
+drop function if exists public.stock_swap_trend(text, int);
+
+create or replace function public.stock_audit_trend(
+  p_branch text default null, p_from text default null, p_to text default null, p_limit int default 24)
 returns table (
   period_ym text, sku_n bigint, short_n bigint, over_n bigint,
   short_amt numeric, over_amt numeric, net_amt numeric, abs_amt numeric, cost_amt numeric
@@ -216,6 +224,8 @@ returns table (
          coalesce(sum(i.cost_amount),0)                       as cost_amt
     from public.stock_audit_items i
    where (p_branch is null or i.branch_id = p_branch)
+     and (p_from   is null or i.period_ym >= p_from)
+     and (p_to     is null or i.period_ym <= p_to)
    group by i.period_ym
    order by i.period_ym desc
    limit greatest(p_limit, 1);
@@ -296,7 +306,8 @@ returns table (
 $$;
 
 -- 6.4 สรุปสินค้าตัดจ่ายรายเดือน แยกหมวด
-create or replace function public.stock_writeoff_trend(p_branch text default null, p_limit int default 24)
+create or replace function public.stock_writeoff_trend(
+  p_branch text default null, p_from text default null, p_to text default null, p_limit int default 24)
 returns table (
   period_ym text, row_n bigint,
   amt_branch numeric, amt_dc numeric, amt_consume numeric, amt_credit numeric, amt_net numeric
@@ -310,6 +321,8 @@ returns table (
          coalesce(sum(w.amount),0) as amt_net
     from public.stock_writeoff_items w
    where (p_branch is null or w.branch_id = p_branch)
+     and (p_from   is null or w.period_ym >= p_from)
+     and (p_to     is null or w.period_ym <= p_to)
    group by w.period_ym
    order by w.period_ym desc
    limit greatest(p_limit,1);
@@ -378,7 +391,8 @@ returns table (
 $$;
 
 -- 6.7 คู่คีย์ผิดตัว — สรุปรายเดือน (ใช้หักออกจากยอด "ขาด" เพื่อให้เห็นของหายจริง)
-create or replace function public.stock_swap_trend(p_branch text default null, p_limit int default 24)
+create or replace function public.stock_swap_trend(
+  p_branch text default null, p_from text default null, p_to text default null, p_limit int default 24)
 returns table (
   period_ym text, pair_n bigint, unit_n bigint, variant_n bigint,
   explained_amt numeric, residual_amt numeric
@@ -391,6 +405,8 @@ returns table (
          coalesce(sum(s.net_amt),0)        as residual_amt
     from public.stock_swap_pairs s
    where (p_branch is null or s.branch_id = p_branch)
+     and (p_from   is null or s.period_ym >= p_from)
+     and (p_to     is null or s.period_ym <= p_to)
    group by s.period_ym
    order by s.period_ym desc
    limit greatest(p_limit,1);
