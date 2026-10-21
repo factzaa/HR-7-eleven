@@ -1800,6 +1800,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <button class="shsub-b" type="button" data-stkpan="pma"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> รายกลุ่มสินค้า</button>
     <button class="shsub-b" type="button" data-stkpan="diff"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-4 3 3 4-6"/><path d="M7 20l4-2 3 1 4-3"/></svg> เทียบเดือน</button>
     <button class="shsub-b" type="button" data-stkpan="wo"><svg class="ei" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg> สินค้าตัดจ่าย</button>
+    <button class="shsub-b" type="button" data-stkpan="nida"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> นิดาวิเคราะห์</button>
     <button class="shsub-b" type="button" data-stkpan="profile"><svg class="ei" viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/></svg> โปรไฟล์สาขา</button>
     <button class="shsub-b" type="button" data-stkpan="upload" id="stksub_upload"><svg class="ei" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg> นำเข้าไฟล์</button>
   </div>
@@ -1966,6 +1967,56 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
       <button class="btn btn-sec btn-sm" id="stk_wcsv" type="button">ดาวน์โหลด CSV</button>
     </div>
     <div style="overflow-x:auto"><div id="stk_wo"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+
+  <!-- ===== นิดาวิเคราะห์ + งานเฝ้าระวัง ===== -->
+  <div class="stkpan" id="stkpan_nida" style="display:none">
+    <div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid #7c3aed">
+      <div style="font-size:13px;line-height:1.65">
+        นิดาอ่านตัวเลขจริงในระบบ (แนวโน้มรายเดือน · กลุ่มที่ขาด · ของหายซ้ำซาก · คู่คีย์ผิดตัว · สินค้าตัดจ่าย) บวกกับ<b>โปรไฟล์สาขา</b>ที่ตั้งไว้ แล้วเขียนสรุปให้อ่านง่าย<br>
+        <span style="color:var(--red);font-weight:600">บทวิเคราะห์เป็นสมมุติฐานและจุดที่ควรไปตรวจ ไม่ใช่ข้อสรุปและไม่ชี้ตัวบุคคล</span>
+        <span style="color:var(--muted)">· ตัวเลขทั้งหมดที่นิดาใช้ถูกเก็บไว้คู่กับบทวิเคราะห์ ย้อนตรวจได้ว่าสรุปมาจากข้อมูลชุดไหน</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <span style="font-size:13px;color:var(--muted)">เดือนที่วิเคราะห์</span>
+      <select id="stk_nmon" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+      <button class="btn btn-pri btn-sm" id="stk_nrun" type="button">ให้นิดาวิเคราะห์ใหม่</button>
+      <span id="stk_nmsg" style="font-size:12.5px;color:var(--muted)"></span>
+    </div>
+    <div class="card" style="padding:16px;margin-bottom:14px">
+      <div id="stk_nmeta" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+      <div id="stk_nbody" style="white-space:pre-wrap;font-size:13.5px;line-height:1.75"><div class="empty">ยังไม่มีบทวิเคราะห์ของเดือนนี้</div></div>
+    </div>
+
+    <div class="toolbar"><h3 style="flex:1;font-size:15px;font-weight:600">สร้างงานเฝ้าระวัง</h3>
+      <button class="btn btn-sec btn-sm" id="stk_wreload" type="button">โหลดรายการที่ควรเฝ้า</button></div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">ระบบเสนอจากของที่ขาดซ้ำหลายเดือนและกลุ่มที่หยิบง่าย · ติ๊กเลือกแล้วมอบหมายเป็นงานพิเศษ พนักงานจะเห็นในแท็บงานของตัวเอง</div>
+      <div style="overflow-x:auto"><div id="stk_wcand"><div class="empty">กด "โหลดรายการที่ควรเฝ้า"</div></div></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+        <div style="flex:1;min-width:240px">
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">มอบหมายให้ (ค่าเริ่มต้น = ผจก. สาขานั้น)</label>
+          <div id="stk_wemp" class="stk-chips"></div>
+        </div>
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">กำหนดส่ง</label>
+          <input id="stk_wdl" type="date" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      </div>
+      <div style="margin-top:12px">
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ข้อความถึงผู้รับงาน (แก้ได้)</label>
+        <textarea id="stk_wnote" style="width:100%;min-height:70px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-pri btn-sm" id="stk_wcreate" type="button">มอบหมายงานเฝ้าระวัง</button>
+        <span id="stk_wmsg" style="font-size:13px"></span>
+      </div>
+    </div>
+
+    <div class="toolbar"><h3 style="flex:1;font-size:15px;font-weight:600">รายการที่เฝ้าระวังอยู่</h3>
+      <select id="stk_wstat" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <option value="open">กำลังเฝ้าระวัง</option><option value="done">ปิดแล้ว</option><option value="">ทั้งหมด</option>
+      </select></div>
+    <div style="overflow-x:auto"><div id="stk_wlist"><div class="empty">กำลังโหลด…</div></div></div>
   </div>
 
   <!-- ===== โปรไฟล์สาขา ===== -->
@@ -14043,7 +14094,7 @@ function tsWire(){
 // ============================================================
 const STK = { pan:'over', branch:'', from:'', to:'', uploads:[], chronic:[], wo:[], pma:[], risk:[], swap:[], swapTrend:[],
                auditTrend:[], audit_months:[], items:[], drillPma:'', drillName:'', diff:[], diffA:'', diffB:'', prof:null,
-               woTrend:[], chartMode:(function(){ try{ return localStorage.getItem('stk_chartmode')||'line'; }catch(e){ return 'line'; } })() };
+               woTrend:[], cand:[], chartMode:(function(){ try{ return localStorage.getItem('stk_chartmode')||'line'; }catch(e){ return 'line'; } })() };
 const STK_RISK_LB = { theft:'ชิ้นเล็กหยิบง่าย', control:'ของควบคุมมูลค่าสูง', consume:'วัสดุสิ้นเปลือง',
                       fresh:'ของสด/หมดอายุ', drink:'เครื่องดื่ม', home:'ของใช้ในบ้าน', other:'อื่น ๆ' };
 const STK_RISK_HINT = {
@@ -14157,6 +14208,12 @@ async function stkInit(){
         เปลี่ยนแปลง:Number(x.diff).toFixed(2),
         ['ชิ้น '+stkMonLb(STK.diffA)]:Number(x.qty_a).toFixed(0),
         ['ชิ้น '+stkMonLb(STK.diffB)]:Number(x.qty_b).toFixed(0) })));
+    $('stk_nmon').onchange=()=>stkLoadNida();
+    $('stk_nrun').onclick=()=>stkNidaRun({});
+    $('stk_wreload').onclick=()=>{ stkWatchCand(); stkWatchEmps(); };
+    $('stk_wcreate').onclick=stkWatchCreate;
+    $('stk_wstat').onchange=()=>stkLoadWatch();
+    $('stk_wnote').oninput=()=>{ $('stk_wnote').dataset.touched='1'; };
     $('stk_pf_save').onclick=stkProfSave;
     if($('stk_up_go'))      $('stk_up_go').onclick=stkUploadGo;
     if($('stk_up_refresh')) $('stk_up_refresh').onclick=()=>stkLoadUploads();
@@ -14172,12 +14229,13 @@ async function stkInit(){
 function stkPan(name){
   STK.pan=name;
   document.querySelectorAll('#stksub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.stkpan===name));
-  ['over','chronic','swap','pma','diff','wo','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
+  ['over','chronic','swap','pma','diff','wo','nida','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
   if(name==='pma') stkPmaBack();                 // กลับมาแท็บนี้ใหม่ให้เริ่มที่อันดับกลุ่มเสมอ
   if(name==='chronic' && !STK.chronic.length) stkLoadChronic();
   else if(name==='swap' && !STK.swap.length) stkLoadSwap();
   else if(name==='diff' && !STK.diff.length) stkLoadDiff();
   else if(name==='wo' && !STK.wo.length) stkLoadWo();
+  else if(name==='nida'){ stkLoadNida(); stkWatchEmps(); }
   else if(name==='profile') stkLoadProfile();
   else if(name==='upload') stkLoadUploads();
 }
@@ -14191,6 +14249,7 @@ async function stkReload(clear){
   if(STK.pan==='chronic') stkLoadChronic();
   if(STK.pan==='swap') stkLoadSwap();
   if(STK.pan==='diff') stkLoadDiff();
+  if(STK.pan==='nida'){ stkLoadNida(); stkWatchEmps(); }
   if(STK.pan==='wo') stkLoadWo();
   if(STK.pan==='profile') stkLoadProfile();
   if(STK.pan==='upload') stkLoadUploads();
@@ -14796,6 +14855,293 @@ async function stkLoadWo(){
     +'</tbody><tfoot><tr><td class="l">รวมที่แสดง</td><td></td><td></td><td></td><td></td><td></td><td>'+stkN(tot,2)+'</td><td></td></tr></tfoot></table>';
 }
 
+// ============================================================
+// เฟส 2 — บทวิเคราะห์ของนิดา + งานเฝ้าระวัง
+//
+// หลักที่ยึด: นิดาได้เห็นเฉพาะตัวเลขที่ระบบคำนวณมาแล้ว ไม่ได้เห็นชื่อพนักงาน
+//   และคำสั่งห้ามชี้ตัวบุคคลอยู่ในพรอมต์ เพราะข้อมูล Audit บอกได้แค่ "หายเท่าไร ที่ไหน"
+//   ตัวเลขที่ส่งไปถูกเก็บคู่กับบทวิเคราะห์ทุกครั้ง ย้อนตรวจได้ว่าสรุปมาจากข้อมูลชุดไหน
+// ============================================================
+async function stkBuildFacts(period){
+  const br=STK.branch||null;
+  const bname=(DATA.branches||[]).reduce((a,b)=>String(b.branch_id)===String(br)?(b.name||a):a,'');
+  const at=(STK.auditTrend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
+  const wt=(STK.woTrend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
+  const sw={}; (STK.swapTrend||[]).forEach(x=>{ sw[x.period_ym]=x; });
+  // ดึงของหายซ้ำซาก + ตัดจ่ายสูงสุด สดใหม่ตรงนี้ เพื่อให้ใช้ได้ไม่ว่าผู้ใช้เปิดแท็บไหนมาก่อน
+  let chronic=[], woTop=[];
+  try{
+    const [c,w]=await Promise.all([
+      post({ action:'hr_stock_chronic', ...stkAuth(), branch:br, from:STK.from||null, to:STK.to||null, min_months:3 }),
+      post({ action:'hr_stock_wo_top', ...stkAuth(), branch:br, from:STK.from||null, to:STK.to||null }),
+    ]);
+    if(c&&c.ok) chronic=(c.rows||[]).slice(0,12);
+    if(w&&w.ok) woTop=(w.rows||[]).slice(0,10);
+  }catch(e){}
+  let prof=null;
+  try{ const r=await post({ action:'hr_branch_profile', ...stkAuth(), branch:br }); if(r&&r.ok) prof=r.row||null; }catch(e){}
+  // คู่คีย์ผิดตัวเด่น ๆ ของเดือนที่วิเคราะห์
+  let swapTop=[];
+  try{
+    const r=await post({ action:'hr_stock_swap', ...stkAuth(), branch:br, from:period, to:period });
+    if(r&&r.ok) swapTop=(r.rows||[]).slice(0,8).map(x=>({
+      แบบ:(x.pair_kind==='unit'?'รับ/คีย์ผิดหน่วยบรรจุ':'ขายผิดตัว'),
+      ขาด:x.short_sku+' '+(x.short_name||'')+' '+Number(x.short_amt).toFixed(0),
+      เกิน:x.over_sku+' '+(x.over_name||'')+' '+Number(x.over_amt).toFixed(0),
+      สุทธิ:Number(x.net_amt).toFixed(0) }));
+  }catch(e){}
+
+  const pm={}; (STK.pma||[]).forEach(x=>{
+    if(period && x.period_ym!==period) return;
+    const o=pm[x.pma]||(pm[x.pma]={กลุ่ม:x.pma+' '+(x.pma_name||''),ลักษณะ:STK_RISK_LB[x.risk_type]||x.risk_type,ขาด:0});
+    o.ขาด+=Number(x.short_amt||0);
+  });
+  const pmaTop=Object.values(pm).sort((a,b)=>a.ขาด-b.ขาด).slice(0,8)
+    .map(o=>({...o, ขาด:Math.round(o.ขาด)}));
+  const s=sw[period]||null;
+  const cur=at.find(x=>x.period_ym===period)||null;
+  return {
+    สาขา:(br||'ทุกสาขา')+(bname?' '+bname:''),
+    เดือนที่วิเคราะห์:stkMonLb(period),
+    หน่วยเงิน:'บาท · Audit เป็นราคาขายรวมภาษี · ตัดจ่ายเป็นต้นทุนไม่รวมภาษี',
+    แนวโน้มรายเดือน:at.map(x=>({ เดือน:stkMonLb(x.period_ym),
+      SKUที่ไม่ตรง:Number(x.sku_n), ขาด:Math.round(x.short_amt), เกิน:Math.round(x.over_amt),
+      สุทธิ:Math.round(x.net_amt), คลาดเคลื่อนรวม:Math.round(x.abs_amt),
+      คีย์ผิดตัวที่อธิบายได้:Math.round((sw[x.period_ym]||{}).explained_amt||0) })),
+    ตัดจ่ายรายเดือน:wt.map(x=>({ เดือน:stkMonLb(x.period_ym),
+      เสื่อมคุณภาพสาขา:Math.round(x.amt_branch), วัสดุสิ้นเปลือง:Math.round(x.amt_consume),
+      รวมสุทธิ:Math.round(x.amt_net) })),
+    เดือนนี้:cur?{ ขาด:Math.round(cur.short_amt), เกิน:Math.round(cur.over_amt),
+      คีย์ผิดตัวอธิบายได้:Math.round((s&&s.explained_amt)||0),
+      ขาดที่ยังอธิบายไม่ได้:Math.round(Number(cur.short_amt)+Number((s&&s.explained_amt)||0)),
+      คู่คีย์ผิดตัว:(s?{รวม:Number(s.pair_n),รับผิดหน่วยบรรจุ:Number(s.unit_n),ขายผิดรุ่น:Number(s.variant_n)}:null) }:null,
+    กลุ่มที่ขาดมากสุดเดือนนี้:pmaTop,
+    ของหายซ้ำซาก:chronic.map(x=>({ รหัส:x.sku, ชื่อ:x.name, กลุ่ม:(x.pma||'')+' '+(x.pma_name||''),
+      ลักษณะ:STK_RISK_LB[x.risk_type]||x.risk_type,
+      ขาดกี่เดือน:x.months_short+'/'+x.months_total,
+      ขาดรวม:Math.round(x.short_amt), ตัดจ่าย:Math.round(x.wo_amt) })),
+    คู่คีย์ผิดตัวเด่นเดือนนี้:swapTop,
+    ตัดจ่ายสูงสุด:woTop.map(x=>({ รหัส:x.sku, ชื่อ:x.name, กลุ่ม:(x.pma||'')+' '+(x.pma_name||''),
+      กี่เดือน:Number(x.months_n), จำนวน:Math.round(x.qty), มูลค่า:Math.round(x.amount) })),
+    แยกตามลักษณะความเสี่ยง:(STK.risk||[]).map(x=>({ ลักษณะ:STK_RISK_LB[x.risk_type]||x.risk_type,
+      ขาด:Math.round(x.short_amt), เกิน:Math.round(x.over_amt), ตัดจ่าย:Math.round(x.wo_amt) })),
+    โปรไฟล์สาขา: prof ? {
+      กลุ่มลูกค้าหลัก:prof.customer_groups||[], สภาพแวดล้อม:prof.surroundings||[],
+      ช่วงที่หนาแน่น:prof.peak_hours||[], มีAllCafe:prof.has_allcafe!==false,
+      จำนวนพนักงาน:prof.staff_count, จำนวนกล้อง:prof.camera_count,
+      จุดที่กล้องมองไม่เห็น:prof.blind_spots||'', บันทึก:prof.note||'' } : 'ยังไม่ได้ตั้งโปรไฟล์สาขา',
+  };
+}
+function stkNidaPrompt(facts){
+  return 'คุณกำลังช่วยผู้บริหารร้านสะดวกซื้อ 7-Eleven อ่านผลตรวจนับสต็อก (Audit ราย SKU) และรายงานสินค้าตัดจ่ายรายเดือน\n\n'
+  +'ข้อมูลจริงของสาขานี้ (JSON):\n'+JSON.stringify(facts)+'\n\n'
+  +'กติกาที่ห้ามละเมิด\n'
+  +'1. ห้ามเอ่ยชื่อหรือพาดพิงพนักงานคนใดคนหนึ่ง และห้ามสรุปว่ามีการทุจริต — ข้อมูลชุดนี้บอกได้แค่ว่าของหายเท่าไร กลุ่มไหน ไม่ได้บอกว่าใครเอาไป\n'
+  +'2. อ้างได้เฉพาะตัวเลขที่อยู่ใน JSON ข้างบน ห้ามสร้างตัวเลขใหม่ ห้ามเดาตัวเลขที่ไม่มี ถ้าข้อมูลไม่พอให้บอกตรง ๆ ว่าไม่พอ\n'
+  +'3. "คีย์ผิดตัว" คือของที่ไม่ได้หายจริง (ตัวหนึ่งขาด อีกตัวเกินหักกันลงตัว) ต้องแยกออกจากของหายจริงเสมอ\n'
+  +'4. "วัสดุสิ้นเปลือง" เช่น แก้ว ถุง หลอด เป็นของที่ร้านใช้เอง ไม่ใช่ของหาย ให้เสนอเป็นเรื่องขั้นตอนการตัดจ่าย ไม่ใช่เรื่องเฝ้าระวัง\n'
+  +'5. "ของสด/หมดอายุ" แก้ด้วยปริมาณการสั่งและ FIFO ไม่ใช่เรื่องการเฝ้าระวังเช่นกัน\n\n'
+  +'เขียนเป็นภาษาไทย ให้ผู้จัดการสาขาอ่านแล้วลงมือต่อได้ทันที ความยาวประมาณ 450–650 คำ ใช้หัวข้อตามนี้เป๊ะ ๆ\n\n'
+  +'สรุปสั้น\n(3 บรรทัด — ตัวเลขสำคัญที่สุดของเดือนนี้ และของหายจริงหลังหักคีย์ผิดตัวแล้วเท่าไร)\n\n'
+  +'เปลี่ยนไปจากเดือนก่อนอย่างไร\n(ดีขึ้นหรือแย่ลงตรงไหน อ้างตัวเลขเทียบกัน)\n\n'
+  +'สมมุติฐานที่น่าจะเป็น\n(2–4 ข้อ เรียงจากที่หลักฐานหนักสุด แต่ละข้อต้องมีตัวเลขจาก JSON ประกอบ และต้องบอกด้วยว่าหลักฐานยังอ่อนตรงไหน '
+  +'ถ้าโปรไฟล์สาขาสอดคล้องกับกลุ่มที่หายให้ยกมาประกอบ)\n\n'
+  +'ควรไปตรวจอะไรก่อน\n(เรียงตามความคุ้มค่า บอกให้ชัดว่าไปดูกลุ่มไหน สินค้าตัวไหน ตรงจุดไหนของร้าน หรือขั้นตอนไหน '
+  +'แต่ละข้อต้องเป็นสิ่งที่พนักงานทำได้จริงในหนึ่งกะ)\n\n'
+  +'สิ่งที่ข้อมูลชุดนี้ตอบไม่ได้\n(บอกข้อจำกัดตรง ๆ เพื่อไม่ให้ผู้อ่านสรุปเกินข้อมูล)';
+}
+function stkNidaMonths(){
+  const sel=$('stk_nmon'); if(!sel) return;
+  const mons=(STK.audit_months||[]).slice().sort().reverse();
+  const cur=sel.value;
+  sel.innerHTML=mons.map(m=>'<option value="'+esc(m)+'">'+esc(stkMonLb(m))+'</option>').join('');
+  if(cur && mons.indexOf(cur)>=0) sel.value=cur;
+}
+async function stkLoadNida(){
+  stkNidaMonths();
+  if($('stk_nrun')) $('stk_nrun').style.display = MGR_MODE ? 'none' : '';
+  const period=$('stk_nmon')?$('stk_nmon').value:'';
+  if(!period){
+    $('stk_nbody').innerHTML='<div class="empty">ช่วงเดือนที่กรองไว้ยังไม่มีข้อมูล Audit — นำเข้าไฟล์ก่อน</div>';
+    $('stk_nmeta').textContent='';
+  } else {
+    let r; try{ r=await post({ action:'hr_stock_insight_get', ...stkAuth(), branch:STK.branch||null, period }); }
+    catch(e){ $('stk_nbody').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; r=null; }
+    if(r && !r.ok) $('stk_nbody').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>';
+    else if(r){
+      const d=r.latest;
+      if(d){
+        $('stk_nbody').textContent=d.body;
+        $('stk_nmeta').innerHTML='วิเคราะห์เมื่อ '+esc(beDateTime(d.created_at))+' · โดย '+esc(d.created_by||'—')
+          +(d.is_auto?' · <span style="color:var(--accent)">สร้างอัตโนมัติตอนนำเข้าไฟล์</span>':'')
+          +((r.rows||[]).length>1?' · มีบทวิเคราะห์ของเดือนนี้ '+r.rows.length+' ฉบับ (แสดงฉบับล่าสุด)':'');
+      } else {
+        $('stk_nbody').innerHTML='<div class="empty">ยังไม่มีบทวิเคราะห์ของ '+esc(stkMonLb(period))+''
+          +(MGR_MODE?' — สำนักงานจะสร้างให้ตอนนำเข้าไฟล์เดือนนี้':' — กดปุ่ม "ให้นิดาวิเคราะห์ใหม่"')+'</div>';
+        $('stk_nmeta').textContent='';
+      }
+    }
+  }
+  stkLoadWatch();
+}
+async function stkNidaRun(opt){
+  opt=opt||{};
+  const period=opt.period || ($('stk_nmon')?$('stk_nmon').value:'');
+  const branch=opt.branch || STK.branch;
+  if(!branch){ if(!opt.auto) toast('err','เลือกสาขาก่อน (นิดาวิเคราะห์ทีละสาขา)'); return false; }
+  if(!period){ if(!opt.auto) toast('err','ยังไม่มีเดือนให้วิเคราะห์'); return false; }
+  const btn=$('stk_nrun'), msg=$('stk_nmsg');
+  if(btn && !opt.auto){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> กำลังวิเคราะห์…'; }
+  if(msg) msg.textContent=opt.auto?'นิดากำลังวิเคราะห์เดือน '+stkMonLb(period)+'…':'';
+  let okFlag=false;
+  try{
+    const facts=await stkBuildFacts(period);
+    const {base,key}=asstApiBase();
+    const res=await fetch(base+'/functions/v1/hr-assistant',{ method:'POST',
+      headers:{ 'Content-Type':'application/json', apikey:key, Authorization:'Bearer '+key },
+      body: JSON.stringify({ password:pwd, messages:[{ role:'user', text:stkNidaPrompt(facts) }] }) });
+    const j=await res.json().catch(()=>({}));
+    const body=String((j&&(j.reply||j.text||j.message))||'').trim();
+    if(!body) throw new Error((j&&j.error)||'นิดาไม่ตอบกลับ');
+    const sv=await post({ action:'hr_stock_insight_save', ...stkAuth(),
+      branch_id:branch, period_ym:period, body, facts, model:(j&&j.model)||null, is_auto:!!opt.auto });
+    if(!sv||!sv.ok) throw new Error((sv&&sv.error)||'บันทึกบทวิเคราะห์ไม่สำเร็จ');
+    okFlag=true;
+    if(msg) msg.textContent='';
+    if(!opt.auto) toast('ok','นิดาวิเคราะห์เสร็จแล้ว');
+  }catch(e){
+    if(msg) msg.textContent='';
+    if(!opt.auto) toast('err','เรียกนิดาไม่สำเร็จ: '+(e.message||e));
+    else console.warn('[นิดาวิเคราะห์อัตโนมัติ]', e);
+  }
+  if(btn && !opt.auto){ btn.disabled=false; btn.textContent='ให้นิดาวิเคราะห์ใหม่'; }
+  if(okFlag && STK.pan==='nida') stkLoadNida();
+  return okFlag;
+}
+
+// ---------- งานเฝ้าระวัง ----------
+async function stkWatchCand(){
+  const box=$('stk_wcand'); if(!box) return;
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r;
+  try{ r=await post({ action:'hr_stock_chronic', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, min_months:2 }); }
+  catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  // คัดเฉพาะที่ "เฝ้าระวังแล้วมีความหมาย" — วัสดุสิ้นเปลืองกับของสดแก้ด้วยขั้นตอน/การสั่ง ไม่ใช่การเฝ้า
+  const rows=(r.rows||[]).filter(x=>x.risk_type!=='consume' && x.risk_type!=='fresh').slice(0,25);
+  STK.cand=rows;
+  if(!rows.length){ box.innerHTML='<div class="empty">ไม่มีรายการที่ควรเฝ้าระวังในช่วงเดือนที่เลือก (ของที่ขาดเป็นวัสดุสิ้นเปลืองหรือของสด ซึ่งแก้ด้วยขั้นตอน ไม่ใช่การเฝ้า)</div>'; return; }
+  box.innerHTML='<table class="stk-tbl"><thead><tr><th style="width:34px"><input type="checkbox" id="stk_wall"></th>'
+    +'<th class="l">รหัส</th><th class="l">ชื่อสินค้า</th><th class="l">กลุ่ม</th><th class="l">ลักษณะ</th>'
+    +'<th>ขาดกี่เดือน</th><th>ขาดรวม</th><th>ตัดจ่าย</th></tr></thead><tbody>'
+    +rows.map((x,i)=>'<tr><td><input type="checkbox" data-wcand="'+i+'"'+(i<5?' checked':'')+'></td>'
+      +'<td class="l">'+esc(x.sku)+'</td><td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+      +'<td class="l nm" style="max-width:150px;font-size:12px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+      +'<td class="l" style="font-size:12px;color:var(--muted)">'+esc(STK_RISK_LB[x.risk_type]||'')+'</td>'
+      +'<td'+(Number(x.months_short)>=Number(x.months_total)?' style="color:var(--red);font-weight:700"':'')+'>'+esc(x.months_short)+'/'+esc(x.months_total)+'</td>'
+      +'<td class="neg">'+stkN(x.short_amt)+'</td><td>'+(Number(x.wo_amt)?stkN(x.wo_amt):'—')+'</td></tr>').join('')
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">ตัดวัสดุสิ้นเปลืองและของสดออกแล้ว เพราะสองกลุ่มนั้นแก้ด้วยขั้นตอนการตัดจ่ายและการสั่งของ ไม่ใช่การเฝ้าระวัง · ติ๊กไว้ให้ 5 อันดับแรก</div>';
+  const all=$('stk_wall');
+  if(all) all.onchange=()=>box.querySelectorAll('[data-wcand]').forEach(c=>{ c.checked=all.checked; });
+  stkWatchNote();
+}
+function stkWatchNote(){
+  const sel=stkWatchPicked();
+  const period=$('stk_nmon')?$('stk_nmon').value:'';
+  if(!$('stk_wnote')) return;
+  if($('stk_wnote').dataset.touched==='1') return;   // ผู้ใช้แก้เองแล้ว อย่าทับ
+  $('stk_wnote').value = sel.length
+    ? ('เฝ้าระวังสินค้าที่ตรวจนับแล้วขาดซ้ำหลายเดือน (ข้อมูล '+stkMonLb(period)+')\n\n'
+      +sel.map(x=>'· '+x.sku+' '+(x.name||'')+' — ขาด '+x.months_short+'/'+x.months_total+' เดือน รวม '+stkN(x.short_amt)+' บาท').join('\n')
+      +'\n\nสิ่งที่ขอให้ทำ\n1. ตรวจของจริงบนชั้นเทียบกับระบบ แล้วถ่ายรูปชั้นวางส่งกลับ\n'
+      +'2. ดูว่ามีรหัสใกล้เคียงที่สแกนสลับกันได้หรือไม่ ถ้ามีให้แจ้งกลับ\n'
+      +'3. ถ้าตำแหน่งวางเป็นมุมอับ ให้เสนอย้ายจุดวาง\n\n'
+      +'หมายเหตุ: งานนี้คือการตรวจของและขั้นตอน ไม่ใช่การสอบสวนใคร')
+    : '';
+}
+function stkWatchPicked(){
+  const box=$('stk_wcand'); if(!box||!STK.cand) return [];
+  return Array.from(box.querySelectorAll('[data-wcand]')).filter(c=>c.checked)
+    .map(c=>STK.cand[Number(c.dataset.wcand)]).filter(Boolean);
+}
+async function stkWatchEmps(){
+  const box=$('stk_wemp'); if(!box) return;
+  const br=STK.branch;
+  if(!br){ box.innerHTML='<span style="font-size:12.5px;color:var(--muted)">เลือกสาขาก่อน</span>'; return; }
+  // พนักงานโหลดมาแล้วตอนเข้าระบบ (DATA.rows) ไม่ต้องยิงซ้ำ
+  const rows=DATA.rows||[];
+  const inBr=rows.filter(e=>String(e.branch_id)===String(br) && e.active!==false && !empEnded(e));
+  if(!inBr.length){ box.innerHTML='<span style="font-size:12.5px;color:var(--muted)">ไม่พบพนักงานที่ยังทำงานอยู่ในสาขานี้</span>'; return; }
+  inBr.sort((a,b)=>(b.is_manager?1:0)-(a.is_manager?1:0));
+  box.innerHTML=inBr.map(e=>'<button type="button" class="stk-chip'+(e.is_manager?' on':'')+'" data-wemp="'+esc(e.emp_id)+'">'
+    +esc((e.nickname||e.name||e.emp_id))+(e.is_manager?' (ผจก.)':'')+'</button>').join('');
+  box.querySelectorAll('.stk-chip').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
+}
+async function stkWatchCreate(){
+  const items=stkWatchPicked();
+  if(!items.length){ toast('err','ติ๊กเลือกสินค้าที่จะเฝ้าระวังก่อน'); return; }
+  const emps=Array.from(($('stk_wemp')||{querySelectorAll:()=>[]}).querySelectorAll('.stk-chip.on')).map(b=>b.dataset.wemp);
+  if(!emps.length){ toast('err','เลือกผู้รับงานอย่างน้อย 1 คน'); return; }
+  const period=$('stk_nmon')?$('stk_nmon').value:'';
+  const br=STK.branch;
+  if(!br||!period){ toast('err','ยังไม่มีสาขา/เดือนที่จะตั้งเฝ้าระวัง'); return; }
+  const dl=$('stk_wdl').value;
+  const btn=$('stk_wcreate'); btn.disabled=true; const old=btn.textContent; btn.textContent='กำลังมอบหมาย…';
+  try{
+    const r=await post({ action:'hr_stock_watch_add', ...stkAuth(),
+      branch_id:br, period_ym:period,
+      items:items.map(x=>({ sku:x.sku, name:x.name, pma:x.pma,
+        reason:'ขาด '+x.months_short+'/'+x.months_total+' เดือน รวม '+Math.round(x.short_amt)+' บาท',
+        source:'chronic', amt_at_set:Number(x.short_amt)||0 })),
+      task:{ title:'เฝ้าระวังสินค้า — '+stkMonLb(period),
+        detail:$('stk_wnote').value||'', deadline: dl? new Date(dl).toISOString():null,
+        hr_note:'สร้างจากหน้าวิเคราะห์สต็อก', emp_ids:emps } });
+    if(!r||!r.ok) throw new Error((r&&r.error)||'ไม่สำเร็จ');
+    $('stk_wmsg').innerHTML='<span style="color:var(--accent);font-weight:600">ตั้งเฝ้าระวัง '+r.saved+' รายการ · มอบหมายให้ '+r.assigned+' คนแล้ว</span>';
+    toast('ok','มอบหมายงานเฝ้าระวังแล้ว');
+    $('stk_wnote').dataset.touched=''; stkWatchNote(); stkLoadWatch();
+  }catch(e){ $('stk_wmsg').innerHTML='<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'; }
+  btn.disabled=false; btn.textContent=old;
+}
+async function stkLoadWatch(){
+  const box=$('stk_wlist'); if(!box) return;
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r;
+  try{ r=await post({ action:'hr_stock_watch_list', ...stkAuth(), branch:STK.branch||null, status:$('stk_wstat').value||null }); }
+  catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
+  if(!r||!r.ok){ box.innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const rows=r.rows||[];
+  if(!rows.length){ box.innerHTML='<div class="empty">ยังไม่มีรายการเฝ้าระวัง</div>'; return; }
+  box.innerHTML='<table class="stk-tbl"><thead><tr><th class="l">ตั้งเมื่อเดือน</th><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th>'
+    +'<th class="l">กลุ่ม</th><th>ยอดตอนตั้ง</th><th>เดือนล่าสุด</th><th>ผล</th><th class="l">เหตุผล</th><th></th></tr></thead><tbody>'
+    +rows.map(x=>{
+      const d=Number(x.delta||0), set=Number(x.amt_at_set||0), last=Number(x.amt_last||0);
+      let res='<span style="color:var(--muted)">—</span>';
+      if(x.last_period && x.last_period!==x.period_ym){
+        if(last===0 && set<0) res='<span style="color:var(--accent);font-weight:600">ไม่ขาดแล้ว</span>';
+        else if(d>0) res='<span style="color:var(--accent);font-weight:600">ดีขึ้น '+stkN(Math.abs(d))+'</span>';
+        else if(d<0) res='<span style="color:var(--red);font-weight:600">แย่ลง '+stkN(Math.abs(d))+'</span>';
+        else res='<span style="color:var(--muted)">เท่าเดิม</span>';
+      } else res='<span style="color:var(--muted)">รอข้อมูลเดือนถัดไป</span>';
+      return '<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td><td class="l">'+esc(x.sku)+'</td>'
+      +'<td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+      +'<td class="l nm" style="max-width:140px;font-size:12px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+      +'<td class="neg">'+stkN(set)+'</td><td'+(last<0?' class="neg"':'')+'>'+(x.last_period?stkN(last):'—')+'</td>'
+      +'<td>'+res+'</td>'
+      +'<td class="l" style="font-size:12px;color:var(--muted);white-space:normal;max-width:220px">'+esc(x.reason||'')+'</td>'
+      +'<td>'+(x.status==='open'?'<button class="btn btn-sec btn-sm" type="button" data-wclose="'+esc(x.id)+'">ปิด</button>':'<span style="font-size:12px;color:var(--muted)">ปิดแล้ว</span>')+'</td></tr>';
+    }).join('')
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">"ผล" เทียบยอดขาดของเดือนล่าสุดกับตอนที่ตั้งเฝ้าระวัง — ใช้ดูว่ามาตรการที่ทำไปได้ผลจริงไหม</div>';
+  box.querySelectorAll('[data-wclose]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{ const rr=await post({ action:'hr_stock_watch_close', ...stkAuth(), id:Number(b.dataset.wclose) });
+      if(rr&&rr.ok){ toast('ok','ปิดรายการแล้ว'); stkLoadWatch(); } else { toast('err',(rr&&rr.error)||'ไม่สำเร็จ'); b.disabled=false; } }
+    catch(e){ toast('err','ไม่สำเร็จ'); b.disabled=false; }
+  });
+}
+
 async function stkLoadProfile(){
   let br = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
   // โปรไฟล์ตั้งได้ทีละสาขา — ถ้าตัวกรองยังเป็น "ทุกสาขา" ให้เลือกสาขาแรกให้ แล้วบอกไว้ในบรรทัดล่าง
@@ -15020,7 +15366,7 @@ async function stkUploadGo(){
   if(kind==='audit' && !month){ toast('err','ไฟล์ Audit ไม่มีเดือนในตัวไฟล์ — ต้องเลือกเดือนเอง'); return; }
   const btn=$('stk_up_go'); btn.disabled=true;
   $('stk_up_msg').innerHTML='<span style="color:var(--muted)">กำลังอ่านไฟล์…</span>';
-  const log=[]; let okN=0;
+  const log=[]; let okN=0; const okMonths=[];
   for(const f of files){
     try{
       const parsed = kind==='audit' ? await stkParseAudit(f) : await stkParseWriteoff(f);
@@ -15043,7 +15389,7 @@ async function stkUploadGo(){
         kind:parsed.kind, period_ym:period, report_code:parsed.report_code,
         filename:f.name, rows:parsed.rows, pairs, totals:parsed.totals });
       if(!r||!r.ok) throw new Error((r&&r.error)||'บันทึกไม่สำเร็จ');
-      okN++;
+      okN++; okMonths.push(period);
       const t=parsed.totals;
       const sum = parsed.kind==='audit'
         ? ('ขาด '+stkN(t.short_amt)+' · เกิน '+stkN(t.over_amt)+' · สุทธิ '+stkN(t.net_amt)+' บ.'
@@ -15061,7 +15407,23 @@ async function stkUploadGo(){
     : '<span style="color:var(--red);font-weight:600">ไม่มีไฟล์ใดนำเข้าได้</span>';
   btn.disabled=false;
   $('stk_up_file').value='';
-  if(okN){ stkLoadUploads(); STK.chronic=[]; STK.wo=[]; STK.swap=[]; stkLoadOver(); }
+  if(okN){
+    stkLoadUploads(); STK.chronic=[]; STK.wo=[]; STK.swap=[]; STK.diff=[];
+    // ★ ให้นิดาวิเคราะห์อัตโนมัติ 1 ครั้งต่อการนำเข้า — เฉพาะไฟล์ Audit และเฉพาะเดือนล่าสุดที่เพิ่งอัป
+    //   (อัป 6 ไฟล์รวดเดียวก็เรียกครั้งเดียว ไม่ยิง AI รัว ๆ)
+    const lastAudit = kind==='audit' ? okMonths.slice().sort().pop() : null;
+    const oldBranch=STK.branch, oldFrom=STK.from, oldTo=STK.to;
+    STK.branch=brSel;                       // นิดาวิเคราะห์ทีละสาขา = สาขาที่เพิ่งอัปเข้า
+    await stkLoadOver();
+    if(lastAudit){
+      $('stk_up_msg').innerHTML+=' <span style="color:var(--muted)">· นิดากำลังวิเคราะห์เดือน '+esc(stkMonLb(lastAudit))+'…</span>';
+      const ok=await stkNidaRun({ auto:true, branch:brSel, period:lastAudit });
+      $('stk_up_msg').innerHTML = $('stk_up_msg').innerHTML.replace(/ <span style="color:var\(--muted\)">· นิดา[\s\S]*?<\/span>/,'')
+        + (ok ? ' <span style="color:var(--accent)">· นิดาวิเคราะห์ '+esc(stkMonLb(lastAudit))+' ให้แล้ว ดูได้ที่แท็บ "นิดาวิเคราะห์"</span>'
+              : ' <span style="color:#a06515">· เรียกนิดาไม่สำเร็จ กดวิเคราะห์เองได้ที่แท็บ "นิดาวิเคราะห์"</span>');
+    }
+    STK.branch=oldBranch; STK.from=oldFrom; STK.to=oldTo;
+  }
 }
 
 const NAV_GROUPS=[
