@@ -802,6 +802,10 @@ function openAdvEmg(){
     +'<label style="font-size:13px;font-weight:700;display:block;margin:10px 0 4px">หลักฐาน (บังคับ)</label>'
     +'<label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> แนบรูป<input type="file" accept="image/*" multiple id="advEmgFile" style="display:none"></label>'
     +'<div id="advEmgThumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>'
+    // ★ 15 ต.ค. 69 — ช่องแจ้งเตือนในกล่องนี้โดยเฉพาะ
+    //   เดิมใช้ showToast ซึ่ง .toast เป็น position:absolute z-index:6 แต่กล่องนี้ z-index:9999
+    //   → ข้อความทุกอันถูกบังอยู่ใต้ฉากดำ พนักงานกดส่งแล้วไม่เห็นอะไรขึ้นเลย
+    +'<div id="advEmgErr" style="display:none;margin-top:10px;background:#fef2f2;border:1.5px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.5;white-space:pre-line"></div>'
     +'<button type="button" id="advEmgSend" style="width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#ea580c;color:#fff;font-weight:700;font-size:15px;cursor:pointer">ยืนยันใบหน้า + ส่งคำขอ</button>'
     +'</div>';
   document.body.appendChild(ov);
@@ -817,20 +821,29 @@ function openAdvEmg(){
     e.target.value='';
     $('advEmgThumbs').innerHTML=ADV_PHOTOS.map(u=>'<img src="'+u+'" style="width:58px;height:58px;object-fit:cover;border-radius:8px">').join('');
   });
+  // แจ้งเตือนในกล่อง (ไม่ใช้ toast เพราะถูกฉากดำบัง) + เลื่อนให้เห็น
+  const emgErr=(msg)=>{
+    const e=$('advEmgErr'); if(!e){ showToast('err',msg); return; }
+    e.textContent=msg; e.style.display='block';
+    try{ e.scrollIntoView({block:'nearest'}); }catch(_e){}
+  };
+  const emgClr=()=>{ const e=$('advEmgErr'); if(e){ e.style.display='none'; e.textContent=''; } };
   $('advEmgSend').onclick=async()=>{
+    emgClr();
     const amt=Math.floor(Number($('advEmgAmt').value)||0);
-    if(!amt){ showToast('err','ระบุจำนวนเงิน'); return; }
-    if(amt>q.remaining){ showToast('err','เกินวงเงิน (สูงสุด '+advMoney(q.remaining)+' บาท)'); return; }
+    if(!amt){ emgErr('กรุณาระบุจำนวนเงินที่ขอเบิก'); return; }
+    if(amt>q.remaining){ emgErr('เกินวงเงิน — เบิกได้สูงสุด '+advMoney(q.remaining)+' บาท'); return; }
+    if(amt<Number(q.config.min_request||0)){ emgErr('ขอเบิกขั้นต่ำ '+advMoney(q.config.min_request)+' บาท'); return; }
     const reason=$('advEmgReason').value.trim();
-    if(reason.length<q.config.min_reason_len){ showToast('err','ระบุเหตุฉุกเฉินอย่างน้อย '+q.config.min_reason_len+' ตัวอักษร'); return; }
-    if(!ADV_PHOTOS.length){ showToast('err','ต้องแนบหลักฐานอย่างน้อย 1 รูป'); return; }
+    if(reason.length<q.config.min_reason_len){ emgErr('ระบุเหตุฉุกเฉินอย่างน้อย '+q.config.min_reason_len+' ตัวอักษร (ตอนนี้ '+reason.length+')'); return; }
+    if(q.config.emergency_require_evidence && !ADV_PHOTOS.length){ emgErr('ต้องแนบหลักฐานอย่างน้อย 1 รูป — กดปุ่ม "แนบรูป" ด้านบน'); return; }
 
     const btn=$('advEmgSend'); btn.disabled=true; btn.textContent='กำลังยืนยันใบหน้า…';
     // ★ ยืนยันตัวตนด้วยใบหน้า (ใช้กล้อง/โมเดลเดียวกับการลงเวลา)
     let faceOk=false;
     try{ faceOk = await advVerifyFace(); }
-    catch(e){ showToast('err', e.message||'ยืนยันใบหน้าไม่สำเร็จ'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; return; }
-    if(!faceOk){ showToast('err','ใบหน้าไม่ตรงกับที่ลงทะเบียนไว้'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; return; }
+    catch(e){ emgErr(e.message||'ยืนยันใบหน้าไม่สำเร็จ'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; return; }
+    if(!faceOk){ emgErr('ใบหน้าไม่ตรงกับที่ลงทะเบียนไว้ — ให้เจ้าตัวสแกนใบหน้าของตนเอง'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; return; }
 
     btn.textContent='กำลังส่งคำขอ…';
     try{
@@ -838,7 +851,7 @@ function openAdvEmg(){
         reason_category:'ฉุกเฉิน', photos: ADV_PHOTOS.slice(), face_verified:true, kind:'emergency' });
       showToast('ok','ส่งคำขอเบิกฉุกเฉินแล้ว · เลขที่ '+r.req_no);
       close(); refreshAdvEmg();
-    }catch(e){ showToast('err', e.message||'ส่งไม่สำเร็จ'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; }
+    }catch(e){ emgErr(e.message||'ส่งไม่สำเร็จ'); btn.disabled=false; btn.textContent='ยืนยันใบหน้า + ส่งคำขอ'; }
   };
 }
 
