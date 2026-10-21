@@ -114,6 +114,20 @@
   .drawer-ov{display:none; position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:19;}
   .drawer-ov.show{display:block;}
 
+  /* ★ 21 ต.ค. 69 — ชิปเลือกหลายข้อ (โปรไฟล์สาขา) */
+  .stk-chips{display:flex; flex-wrap:wrap; gap:7px;}
+  .stk-chip{padding:7px 13px; border-radius:999px; border:1.5px solid var(--line2); background:var(--card); color:var(--muted); font:inherit; font-size:13px; font-weight:600; cursor:pointer;}
+  .stk-chip:hover{color:var(--txt); border-color:var(--muted);}
+  .stk-chip.on{background:var(--green); border-color:var(--green); color:#fff;}
+  .stk-tbl{width:100%; border-collapse:collapse; font-size:13px;}
+  .stk-tbl th{text-align:right; padding:8px 9px; border-bottom:1.5px solid var(--line2); color:var(--muted); font-weight:600; font-size:12px; white-space:nowrap;}
+  .stk-tbl th:first-child, .stk-tbl td:first-child{text-align:left;}
+  .stk-tbl th.l, .stk-tbl td.l{text-align:left;}
+  .stk-tbl td{text-align:right; padding:7px 9px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .stk-tbl tr:hover td{background:var(--hover,rgba(127,127,127,.06));}
+  .stk-tbl td.neg{color:var(--red); font-weight:600;}
+  .stk-tbl td.nm{max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .stk-tbl tfoot td{font-weight:700; border-top:1.5px solid var(--line2); border-bottom:none;}
   .pill{font-size:12.5px; padding:5px 12px; border-radius:999px; font-weight:600; display:inline-block;}
   .pill.ok{background:var(--ok-soft); color:var(--ok-d);}
   .pill.bad{background:var(--red-soft); color:var(--red);}
@@ -590,6 +604,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_analytics"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg></span>วิเคราะห์</button>
   <button class="tab" id="tab_salesDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg></span>ยอดขาย (ไลน์)</button>
   <button class="tab" id="tab_auditDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></span>ตรวจร้าน QSSI</button>
+  <button class="tab" id="tab_stock"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg></span>วิเคราะห์สต็อก</button>
   <button class="tab" id="tab_handover"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 8l4-4 4 4M8 4v9"/><path d="M20 16l-4 4-4-4M16 20v-9"/></svg></span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_taskset"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M8 14l2 2 4-4"/></svg></span>ตั้งค่างานในกะ</button>
   <button class="tab" id="tab_special"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg></span>งานพิเศษ</button>
@@ -1776,6 +1791,202 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
 </div>
 
 <!-- เชลฟ์ประจำเดือน (Shelf Care) -->
+<!-- ★ 21 ต.ค. 69 — วิเคราะห์ Audit สินค้า + สินค้าตัดจ่าย (เฟส 1) -->
+<div id="view_stock" class="container" style="display:none">
+  <div class="shsub" id="stksub">
+    <button class="shsub-b on" type="button" data-stkpan="over"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg> ภาพรวม</button>
+    <button class="shsub-b" type="button" data-stkpan="chronic"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ของหายซ้ำซาก</button>
+    <button class="shsub-b" type="button" data-stkpan="swap"><svg class="ei" viewBox="0 0 24 24"><path d="M4 8h12l-3-3M20 16H8l3 3"/></svg> คีย์ผิดตัว</button>
+    <button class="shsub-b" type="button" data-stkpan="pma"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> รายกลุ่มสินค้า</button>
+    <button class="shsub-b" type="button" data-stkpan="wo"><svg class="ei" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg> สินค้าตัดจ่าย</button>
+    <button class="shsub-b" type="button" data-stkpan="profile"><svg class="ei" viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/></svg> โปรไฟล์สาขา</button>
+    <button class="shsub-b" type="button" data-stkpan="upload" id="stksub_upload"><svg class="ei" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg> นำเข้าไฟล์</button>
+  </div>
+
+  <div class="toolbar">
+    <span style="font-size:13px;color:var(--muted)">สาขา</span>
+    <select id="stk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <span style="font-size:13px;color:var(--muted);margin-left:6px">ช่วงเดือน</span>
+    <input id="stk_from" type="month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <span style="font-size:13px;color:var(--muted)">ถึง</span>
+    <input id="stk_to" type="month" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <button class="btn btn-sec btn-sm" id="stk_refresh" type="button">รีเฟรช</button>
+  </div>
+
+  <!-- ===== ภาพรวม ===== -->
+  <div class="stkpan" id="stkpan_over">
+    <div id="stk_kpi" class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr))"></div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">Audit ราย SKU — รายเดือน</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">มูลค่าเป็นราคาขายรวมภาษี · <b>คลาดเคลื่อนรวม</b> = ขาด+เกิน โดยไม่หักกัน (ตัวนี้บอกคุณภาพข้อมูลสต็อก ตัวสุทธิบอกความเสียหาย)</div>
+      <div style="overflow-x:auto"><div id="stk_atrend"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">สินค้าตัดจ่าย — รายเดือน</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">มูลค่าเป็นต้นทุน ไม่รวมภาษี · ชดเชยคืนเป็นยอดติดลบ (ได้คืน)</div>
+      <div style="overflow-x:auto"><div id="stk_wtrend"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+    <div class="card" style="padding:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">แยกตามลักษณะความเสี่ยง</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">จัดกลุ่มไว้เพื่อให้อ่านว่า "มาตรการแบบไหนใช้ได้" — ของชิ้นเล็กหยิบง่ายกับวัสดุสิ้นเปลือง แก้คนละวิธีกันคนละทาง</div>
+      <div style="overflow-x:auto"><div id="stk_risk"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+  </div>
+
+  <!-- ===== ของหายซ้ำซาก ===== -->
+  <div class="stkpan" id="stkpan_chronic" style="display:none">
+    <div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid var(--red)">
+      <div style="font-size:13px;line-height:1.65">
+        <b>อ่านตารางนี้อย่างไร</b> — รายการที่ขาดซ้ำ <b>หลายเดือนติดกัน</b> คือปัญหาเชิงระบบ ไม่ใช่เหตุบังเอิญ
+        จึงคุ้มที่จะไปตรวจก่อน ส่วนรายการที่ขาดก้อนโตเดือนเดียวมักเป็นเหตุเฉพาะกิจ (คีย์ผิด/รับเข้าผิด/เหตุการณ์เดียว)<br>
+        ช่อง <b>ตัดจ่าย</b> ช่วยแยกสาเหตุ: ขาดเยอะแต่ตัดจ่ายน้อย = ของถูกใช้/หายไปโดยไม่ได้ตัดออกจากระบบ ·
+        ขาดเยอะและตัดจ่ายเยอะ = ของเสียจริง คุมด้วยการสั่งและ FIFO<br>
+        <span style="color:var(--red);font-weight:600">ข้อมูลนี้บอกได้ว่าหายเท่าไร ที่ไหน บอกไม่ได้ว่าใครเอาไป — ใช้เป็นจุดให้ไปตรวจกล้อง/ขั้นตอน ไม่ใช่ข้อกล่าวหา</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <span style="font-size:13px;color:var(--muted)">ขาดอย่างน้อย</span>
+      <select id="stk_minm" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <option value="2">2 เดือน</option><option value="3" selected>3 เดือน</option><option value="4">4 เดือน</option><option value="1">ทุกตัว (1 เดือนขึ้นไป)</option>
+      </select>
+      <select id="stk_crisk" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <option value="">ทุกลักษณะ</option>
+      </select>
+      <span style="flex:1"></span>
+      <button class="btn btn-sec btn-sm" id="stk_ccsv" type="button">ดาวน์โหลด CSV</button>
+    </div>
+    <div style="overflow-x:auto"><div id="stk_chronic"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+
+  <!-- ===== คีย์ผิดตัว ===== -->
+  <div class="stkpan" id="stkpan_swap" style="display:none">
+    <div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid #a06515">
+      <div style="font-size:13px;line-height:1.65">
+        <b>หน้านี้คืออะไร</b> — ยอด "ขาด" ในรายงาน Audit ส่วนหนึ่งไม่ใช่ของหาย แต่เป็นสินค้าตัวหนึ่งขาด
+        แล้วอีกตัวในกลุ่มเดียวกันเกินด้วยจำนวนที่หักกันลงตัว ระบบจับคู่ให้โดยดู 3 อย่างพร้อมกัน:
+        อยู่กลุ่มสินค้าเดียวกัน · จำนวนเข้าอัตราหน่วยบรรจุหรือเท่ากันพอดี · ชื่อสินค้าคล้ายกัน<br>
+        <b style="color:#a06515">รับ/คีย์ผิดหน่วยบรรจุ</b> — อัตรา x2 ขึ้นไป ชื่อเดียวกันต่างหน่วย เช่น "ยกลัง 12" ขาด 1 แต่ขวดเดี่ยวเกิน 12
+        → ของอยู่ครบ แก้ที่ขั้นตอนรับของ<br>
+        <b style="color:#a06515">ขายผิดตัวที่แคชเชียร์</b> — อัตรา x1 จำนวนเท่ากัน ต่างกันแค่สี/เบอร์/กลิ่น
+        → ไม่เสียเงิน แต่ยอดขายรายตัวผิด ทำให้สั่งของผิด ตัวขายดีขาด ตัวไม่ขายกอง<br>
+        <span style="color:var(--muted)">ช่อง <b>สุทธิ</b> ยิ่งใกล้ 0 ยิ่งมั่นใจว่าเป็นคู่กันจริง ·
+        นี่คือ<b>คู่ที่น่าสงสัย</b> ไม่ใช่ข้อสรุป ควรเปิดรายงานเทียบก่อนแก้</span>
+      </div>
+    </div>
+    <div id="stk_swapkpi" class="kpi-grid"></div>
+    <div class="toolbar">
+      <select id="stk_swkind" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <option value="">ทั้ง 2 แบบ</option>
+        <option value="unit">รับ/คีย์ผิดหน่วยบรรจุ</option>
+        <option value="variant">ขายผิดตัว (รุ่น/สี/กลิ่น)</option>
+      </select>
+      <span style="flex:1"></span>
+      <button class="btn btn-sec btn-sm" id="stk_swcsv" type="button">ดาวน์โหลด CSV</button>
+    </div>
+    <div style="overflow-x:auto"><div id="stk_swap"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+
+  <!-- ===== รายกลุ่มสินค้า ===== -->
+  <div class="stkpan" id="stkpan_pma" style="display:none">
+    <div class="card" style="padding:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">มูลค่าที่ขาด แยกตามกลุ่มสินค้า (PMA)</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">เรียงจากกลุ่มที่ขาดมากที่สุด · ช่อง <b>แนวโน้ม</b> เทียบครึ่งหลังกับครึ่งแรกของช่วงที่เลือก</div>
+      <div style="overflow-x:auto"><div id="stk_pma"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+  </div>
+
+  <!-- ===== สินค้าตัดจ่าย ===== -->
+  <div class="stkpan" id="stkpan_wo" style="display:none">
+    <div class="toolbar">
+      <select id="stk_wsec" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+        <option value="">ทุกหมวด (ไม่รวมชดเชยคืน)</option>
+        <option value="เสื่อมคุณภาพ-สาขา">เสื่อมคุณภาพ (สาขา)</option>
+        <option value="เสื่อมคุณภาพ-คลัง">เสื่อมคุณภาพ (คลัง)</option>
+        <option value="วัสดุสิ้นเปลือง">วัสดุสิ้นเปลือง</option>
+      </select>
+      <span style="flex:1"></span>
+      <button class="btn btn-sec btn-sm" id="stk_wcsv" type="button">ดาวน์โหลด CSV</button>
+    </div>
+    <div style="overflow-x:auto"><div id="stk_wo"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+
+  <!-- ===== โปรไฟล์สาขา ===== -->
+  <div class="stkpan" id="stkpan_profile" style="display:none">
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <div style="font-size:13px;line-height:1.6">ผู้จัดการกรอกเองได้ — ข้อมูลนี้ใช้ประกอบการตีความว่าของกลุ่มไหน<b>ควร</b>หายหรือ<b>ไม่ควร</b>หายที่สาขานี้
+        เช่น สาขาที่ลูกค้าหลักเป็นนักเรียน แล้วขนมถุง/ของเล่น/เครื่องสำอางซองหายเยอะ อ่านได้ต่างจากสาขาโรงงานที่ของกลุ่มเดียวกันหาย</div>
+    </div>
+    <div class="card" style="padding:16px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">กลุ่มลูกค้าหลัก (เลือกได้หลายข้อ)</label>
+          <div id="stk_pf_cust" class="stk-chips"></div>
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">สภาพแวดล้อมรอบร้าน</label>
+          <div id="stk_pf_surr" class="stk-chips"></div>
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">ช่วงที่ลูกค้าหนาแน่น</label>
+          <div id="stk_pf_peak" class="stk-chips"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:16px">
+        <label style="display:inline-flex;align-items:center;gap:7px;font-size:13.5px"><input id="stk_pf_cafe" type="checkbox" style="width:17px;height:17px"> มี All Cafe</label>
+        <label style="display:inline-flex;align-items:center;gap:7px;font-size:13.5px"><input id="stk_pf_deli" type="checkbox" style="width:17px;height:17px"> มี Delivery</label>
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">จำนวนพนักงาน</label>
+          <input id="stk_pf_staff" type="number" min="0" style="width:110px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">จำนวนกล้อง</label>
+          <input id="stk_pf_cam" type="number" min="0" style="width:110px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+      </div>
+      <div style="margin-top:14px">
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">จุดที่กล้องมองไม่เห็น / มุมอับในร้าน</label>
+        <textarea id="stk_pf_blind" placeholder="เช่น ชั้นเครื่องสำอางหลังเสา, มุมตู้แช่ไอศกรีมด้านใน" style="width:100%;min-height:70px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea>
+      </div>
+      <div style="margin-top:12px">
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">บันทึกเพิ่มเติม</label>
+        <textarea id="stk_pf_note" style="width:100%;min-height:60px;padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical"></textarea>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+        <button class="btn btn-pri btn-sm" id="stk_pf_save" type="button">บันทึกโปรไฟล์</button>
+        <span id="stk_pf_meta" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== นำเข้าไฟล์ ===== -->
+  <div class="stkpan" id="stkpan_upload" style="display:none">
+    <div class="card" style="padding:16px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">นำเข้าไฟล์รายงาน</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ประเภทรายงาน</label>
+          <select id="stk_up_kind" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+            <option value="audit">Audit ราย SKU (RLR8803 · xlsx/csv)</option>
+            <option value="writeoff">สินค้าตัดจ่าย (RT040037 · PDF)</option>
+          </select></div>
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">เดือนของข้อมูล</label>
+          <input id="stk_up_month" type="month" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></div>
+        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">สาขา</label>
+          <select id="stk_up_branch" style="padding:9px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select></div>
+        <div style="flex:1;min-width:200px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ไฟล์ (เลือกได้หลายไฟล์)</label>
+          <input id="stk_up_file" type="file" multiple accept=".xlsx,.xls,.csv,.pdf" style="width:100%;padding:7px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px"></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6">
+        <b>ไฟล์ Audit ไม่มีเดือนอยู่ในตัวไฟล์</b> — ต้องเลือกเดือนเองทุกครั้ง · ไฟล์ตัดจ่าย (PDF) มีเดือนอยู่ในรายงาน ระบบจะอ่านให้เองและทับช่องเดือนที่เลือก<br>
+        รหัสสาขาอ่านจากหัวรายงาน ถ้าไม่ตรงกับสาขาที่เลือกระบบจะเตือนก่อนบันทึก · อัปไฟล์เดือนเดิมซ้ำ = ทับของเดิม ไม่เกิดข้อมูลซ้ำ
+      </div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-pri btn-sm" id="stk_up_go" type="button">อ่านไฟล์และบันทึก</button>
+        <span id="stk_up_msg" style="font-size:13px"></span>
+      </div>
+      <div id="stk_up_log" style="margin-top:10px;font-size:12.5px;line-height:1.7"></div>
+    </div>
+    <div class="toolbar"><h3 style="flex:1;font-size:15px;font-weight:600">ไฟล์ที่นำเข้าแล้ว</h3>
+      <button class="btn btn-sec btn-sm" id="stk_up_refresh" type="button">รีเฟรช</button></div>
+    <div style="overflow-x:auto"><div id="stk_uplist"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+</div>
+
 <div id="view_shelf" class="container" style="display:none">
   <div class="shsub" id="shsub">
     <button class="shsub-b on" type="button" data-shpan="pending"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 4 5-4"/><path d="M4 20h16"/></svg> รอตรวจ <span id="shsub_pend" class="shsub-badge" style="display:none">0</span></button>
@@ -3403,7 +3614,7 @@ function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : 
 // ★ 24 ก.ย. 69 — เพิ่ม 'recruit': ผจก. ดูใบสมัครงานได้ แต่เห็นเฉพาะคนที่สมัครสาขาตัวเอง (เซิร์ฟเวอร์บังคับอีกชั้น)
 // ★ 6 ต.ค. 69 — เปิดหน้ายอดขายให้ ผจก.สาขา (salesDash) — ดูได้เฉพาะสาขาตัวเอง ล็อกไว้ใน loadSalesDash()
 // ★ 10 ต.ค. 69 — เปิดเมนูคู่มือให้ ผจก. — เห็นเฉพาะส่วน "อ่านคู่มือ" · ส่วนนำเข้า/บทเรียน/ข้อสอบซ้อม ถูกซ่อน
-const MGR_TABS = ['shirt','mgrtasks','dashboard','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
+const MGR_TABS = ['shirt','mgrtasks','dashboard','stock','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -12763,7 +12974,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
+const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','stock','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -12804,6 +13015,7 @@ showTab = function(name){
   else if(name==='shiftexit'){ loadExitOverrides(); }
   else if(name==='salesDash'){ loadSalesDash(); }
   else if(name==='auditDash'){ qsInit(); }
+  else if(name==='stock'){ stkInit(); }
   else if(name==='leaves'){ loadLeaves(); loadHolidays(); initDuty();
     if($('lvsub') && !$('lvsub').dataset.wired){
       $('lvsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>leavesTab(b.dataset.lvpan));
@@ -13759,8 +13971,704 @@ function tsWire(){
 }
 
 // ---------- จัดกลุ่มเมนู (เฉพาะ HR) ----------
+// ============================================================
+// ★ 21 ต.ค. 69 — วิเคราะห์ Audit สินค้า + สินค้าตัดจ่าย (เฟส 1)
+//
+// รองรับ 2 รายงานจาก CP ALL
+//   RLR8803  "รายงาน Audit ราย SKU"     — xlsx/csv · ราคาขายรวมภาษี
+//   RT040037 "รายละเอียดค่าใช้จ่าย"      — PDF    · ต้นทุน ไม่รวมภาษี
+//
+// สิ่งที่ตั้งใจให้ระบบ "ไม่" ทำ: ไม่ชี้ตัวคน ไม่สรุปว่าใครทุจริต
+//   ผลที่ได้คือ "ของกลุ่มไหนหายเท่าไร ซ้ำกี่เดือน" → เป็นจุดให้ไปตรวจกล้อง/ขั้นตอน
+//
+// ต้องรัน supabase/stock_analysis_setup.sql ก่อน (ไม่รัน = ทุกหน้าขึ้นข้อความบอกให้รัน)
+// ============================================================
+const STK = { pan:'over', branch:'', from:'', to:'', uploads:[], chronic:[], wo:[], pma:[], risk:[], swap:[], swapTrend:[], prof:null };
+const STK_RISK_LB = { theft:'ชิ้นเล็กหยิบง่าย', control:'ของควบคุมมูลค่าสูง', consume:'วัสดุสิ้นเปลือง',
+                      fresh:'ของสด/หมดอายุ', drink:'เครื่องดื่ม', home:'ของใช้ในบ้าน', other:'อื่น ๆ' };
+const STK_RISK_HINT = {
+  theft:   'ลูกค้าหยิบ/พนักงานหยิบได้ง่าย — แก้ด้วยผังชั้นวาง มุมกล้อง และการนับย่อยถี่ขึ้น',
+  control: 'ของมูลค่าสูง มีทะเบียน — แก้ด้วยการคุมคีย์ขาย ใบรับเข้า และนับทุกกะ',
+  consume: 'ของที่ใช้ในร้าน ไม่ใช่ของหาย — แก้ด้วยมาตรฐานการใช้/การตัดจ่ายให้ตรง',
+  fresh:   'ของเสียหมดอายุ — แก้ด้วยปริมาณการสั่งและ FIFO ไม่ใช่เรื่องการเฝ้าระวัง',
+  drink:   'ขายเร็ว คีย์ผิดตัวได้ง่าย — เทียบตัวขาดกับตัวเกินในกลุ่มเดียวกัน',
+  home:    'หมุนช้า มูลค่าต่อชิ้นสูง — ตรวจการรับเข้าและป้ายราคา',
+  other:   'ดูรายตัวประกอบ',
+};
+const STK_PF_OPT = {
+  cust: ['นักเรียน/นักศึกษา','คนทำงาน/ออฟฟิศ','ครอบครัว/ชุมชน','แรงงาน/โรงงาน','นักท่องเที่ยว','ผู้สูงอายุ','คนขับรถ/ขนส่ง'],
+  surr: ['โรงเรียน/มหาวิทยาลัย','ตลาด','โรงงาน/นิคม','หอพัก/คอนโด','ปั๊มน้ำมัน','โรงพยาบาล','สถานที่ท่องเที่ยว','ชุมชน/หมู่บ้าน','ถนนสายหลัก'],
+  peak: ['เช้า (06-09)','สาย (09-12)','กลางวัน (12-15)','เย็น (15-19)','ค่ำ (19-23)','กลางคืน (23-06)'],
+};
+function stkMonLb(ym){
+  if(!ym) return '—';
+  const m=String(ym).split('-'); if(m.length<2) return ym;
+  const TH=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const i=parseInt(m[1],10)-1;
+  return (TH[i]||m[1])+' '+String((parseInt(m[0],10)+543)%100).padStart(2,'0');
+}
+function stkN(v,d){ const n=Number(v)||0; return n.toLocaleString('th-TH',{minimumFractionDigits:d==null?0:d, maximumFractionDigits:d==null?0:d}); }
+function stkCsv(name, rows){
+  if(!rows||!rows.length){ toast('err','ไม่มีข้อมูลให้ดาวน์โหลด'); return; }
+  const keys=Object.keys(rows[0]);
+  const csv=[keys.join(',')].concat(rows.map(r=>keys.map(k=>{
+    let v=r[k]; if(v==null) v=''; v=String(v).replace(/"/g,'""');
+    return /[,"\n]/.test(v)?'"'+v+'"':v;
+  }).join(','))).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download=name; a.click();
+}
+function stkFillBranch(sel, allowAll){
+  if(!sel) return;
+  if(MGR_MODE){
+    const b=(DATA.branches||[]).find(x=>String(x.branch_id)===String(MGR_BRANCH));
+    sel.innerHTML='<option value="'+esc(MGR_BRANCH)+'">'+esc(b?b.name:MGR_BRANCH)+'</option>';
+    sel.value=MGR_BRANCH; sel.disabled=true; return;
+  }
+  const cur=sel.value;
+  const brs=DATA.branches||[];
+  // สาขาเดียว = ไม่ต้องมี "ทุกสาขา" ให้เลือก (เลือกไปก็ได้ผลเดียวกัน แต่ทำให้หน้าโปรไฟล์สาขาใช้ไม่ได้)
+  const withAll = allowAll && brs.length>1;
+  sel.innerHTML=(withAll?'<option value="">ทุกสาขา</option>':'')
+    +brs.map(b=>'<option value="'+esc(b.branch_id)+'">'+esc(b.branch_id+' · '+(b.name||''))+'</option>').join('');
+  if(cur) sel.value=cur;
+}
+function stkAuth(){ return (typeof MGR_MODE!=='undefined' && MGR_MODE) ? asstAuth() : { password: pwd }; }
+
+async function stkInit(){
+  if(!$('view_stock')) return;
+  if(!$('stksub').dataset.wired){
+    $('stksub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>stkPan(b.dataset.stkpan));
+    $('stksub').dataset.wired='1';
+    // โหมด ผจก. — ไม่ให้นำเข้าไฟล์ (เป็นงานสำนักงาน) แต่แก้โปรไฟล์สาขาตัวเองได้
+    if(MGR_MODE && $('stksub_upload')) $('stksub_upload').style.display='none';
+    stkFillBranch($('stk_branch'), !MGR_MODE);
+    stkFillBranch($('stk_up_branch'), false);
+    // ช่วงเดือนเริ่มต้น = 6 เดือนล่าสุด
+    const d=new Date(); const to=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    const d2=new Date(d.getFullYear(), d.getMonth()-5, 1);
+    $('stk_to').value=to; $('stk_from').value=d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0');
+    $('stk_up_month').value=to;
+    const rs=$('stk_crisk');
+    if(rs) rs.innerHTML='<option value="">ทุกลักษณะ</option>'+Object.keys(STK_RISK_LB).map(k=>'<option value="'+k+'">'+esc(STK_RISK_LB[k])+'</option>').join('');
+    $('stk_refresh').onclick=()=>stkReload(true);
+    $('stk_branch').onchange=()=>stkReload(true);
+    $('stk_from').onchange=()=>stkReload(true);
+    $('stk_to').onchange=()=>stkReload(true);
+    $('stk_minm').onchange=()=>stkLoadChronic();
+    $('stk_crisk').onchange=()=>stkRenderChronic();
+    $('stk_wsec').onchange=()=>stkLoadWo();
+    $('stk_ccsv').onclick=()=>stkCsv('ของหายซ้ำซาก.csv', STK.chronic.map(r=>({
+      รหัสสินค้า:r.sku, ชื่อสินค้า:r.name, กลุ่ม:r.pma+' '+(r.pma_name||''),
+      ลักษณะ:STK_RISK_LB[r.risk_type]||r.risk_type, ขาดกี่เดือน:r.months_short+'/'+r.months_total,
+      มูลค่าขาดรวม:Number(r.short_amt).toFixed(2), เฉลี่ยต่อเดือน:Number(r.avg_amt).toFixed(2),
+      จำนวนชิ้น:Number(r.short_qty).toFixed(0), ตัดจ่าย:Number(r.wo_amt).toFixed(2), ขาดครั้งล่าสุด:r.last_period })));
+    $('stk_wcsv').onclick=()=>stkCsv('สินค้าตัดจ่าย.csv', STK.wo.map(r=>({
+      รหัสสินค้า:r.sku, ชื่อสินค้า:r.name, กลุ่ม:r.pma+' '+(r.pma_name||''),
+      กี่เดือน:r.months_n, จำนวน:Number(r.qty).toFixed(0), มูลค่า:Number(r.amount).toFixed(2), ล่าสุด:r.last_period })));
+    $('stk_swkind').onchange=()=>stkLoadSwap();
+    $('stk_swcsv').onclick=()=>stkCsv('คีย์ผิดตัว.csv', STK.swap.map(r=>({
+      เดือน:stkMonLb(r.period_ym), กลุ่ม:(r.pma||'')+' '+(r.pma_name||''),
+      แบบ:(r.pair_kind==='unit'?'รับ/คีย์ผิดหน่วยบรรจุ':'ขายผิดตัว'),
+      รหัสที่ขาด:r.short_sku, ชื่อที่ขาด:r.short_name, จำนวนขาด:Number(r.short_qty).toFixed(0), มูลค่าขาด:Number(r.short_amt).toFixed(2),
+      รหัสที่เกิน:r.over_sku, ชื่อที่เกิน:r.over_name, จำนวนเกิน:Number(r.over_qty).toFixed(0), มูลค่าเกิน:Number(r.over_amt).toFixed(2),
+      อัตรา:Number(r.ratio).toFixed(0), ความคล้ายชื่อ:Number(r.similarity).toFixed(2), สุทธิ:Number(r.net_amt).toFixed(2) })));
+    $('stk_pf_save').onclick=stkProfSave;
+    if($('stk_up_go'))      $('stk_up_go').onclick=stkUploadGo;
+    if($('stk_up_refresh')) $('stk_up_refresh').onclick=()=>stkLoadUploads();
+    ['cust','surr','peak'].forEach(k=>{
+      const box=$('stk_pf_'+(k==='cust'?'cust':k==='surr'?'surr':'peak')); if(!box) return;
+      box.innerHTML=STK_PF_OPT[k].map(o=>'<button type="button" class="stk-chip" data-v="'+esc(o)+'">'+esc(o)+'</button>').join('');
+      box.querySelectorAll('.stk-chip').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
+    });
+    stkPan('over');
+  }
+  stkReload(false);
+}
+function stkPan(name){
+  STK.pan=name;
+  document.querySelectorAll('#stksub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.stkpan===name));
+  ['over','chronic','swap','pma','wo','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
+  if(name==='chronic' && !STK.chronic.length) stkLoadChronic();
+  else if(name==='swap' && !STK.swap.length) stkLoadSwap();
+  else if(name==='wo' && !STK.wo.length) stkLoadWo();
+  else if(name==='profile') stkLoadProfile();
+  else if(name==='upload') stkLoadUploads();
+}
+function stkReload(clear){
+  STK.branch = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
+  STK.from = $('stk_from')?$('stk_from').value:'';
+  STK.to   = $('stk_to')?$('stk_to').value:'';
+  if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; }
+  stkLoadOver();
+  if(STK.pan==='chronic') stkLoadChronic();
+  if(STK.pan==='swap') stkLoadSwap();
+  if(STK.pan==='wo') stkLoadWo();
+  if(STK.pan==='profile') stkLoadProfile();
+  if(STK.pan==='upload') stkLoadUploads();
+}
+function stkErr(boxes, msg){ boxes.forEach(id=>{ const el=$(id); if(el) el.innerHTML='<div class="empty">'+esc(msg)+'</div>'; }); }
+
+async function stkLoadOver(){
+  const boxes=['stk_atrend','stk_wtrend','stk_risk'];
+  boxes.forEach(id=>{ const el=$(id); if(el) el.innerHTML='<div class="empty">กำลังโหลด…</div>'; });
+  let r;
+  try{ r=await post({ action:'hr_stock_summary', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null }); }
+  catch(e){ stkErr(boxes,'โหลดข้อมูลไม่สำเร็จ: '+(e.message||e)); return; }
+  if(!r||!r.ok){ stkErr(boxes,(r&&r.error)||'โหลดข้อมูลไม่สำเร็จ'); $('stk_kpi').innerHTML=''; return; }
+  const at=(r.audit_trend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
+  const wt=(r.wo_trend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
+  STK.pma=r.pma||[]; STK.risk=r.risk||[]; STK.swapTrend=r.swap_trend||[];
+  const swMap={}; (r.swap_trend||[]).forEach(x=>{ swMap[x.period_ym]=x; });
+
+  // ---- KPI: เดือนล่าสุดที่มีข้อมูล เทียบเดือนก่อน ----
+  const a1=at[at.length-1], a0=at[at.length-2], w1=wt[wt.length-1], w0=wt[wt.length-2];
+  const dlt=(cur,prev,inv)=>{
+    if(prev==null||!isFinite(prev)||prev===0) return '';
+    const d=((cur-prev)/Math.abs(prev))*100;
+    const worse = inv ? d<0 : d>0;
+    return '<span style="color:'+(worse?'var(--red)':'var(--accent)')+'">'+(d>0?'▲':'▼')+' '+stkN(Math.abs(d),1)+'%</span> จากเดือนก่อน';
+  };
+  if(!at.length && !wt.length){
+    $('stk_kpi').innerHTML='';
+    stkErr(boxes,'ยังไม่มีข้อมูล — ไปที่แท็บ "นำเข้าไฟล์" เพื่ออัปโหลดรายงานเดือนแรก');
+    return;
+  }
+  const sw1 = a1 ? swMap[a1.period_ym] : null;
+  const expl = sw1 ? Number(sw1.explained_amt||0) : 0;             // มูลค่าฝั่งขาดที่อธิบายได้ด้วยคู่คีย์ผิดตัว
+  const realShort = a1 ? Number(a1.short_amt||0) + expl : 0;       // ขาด (ติดลบ) + ที่อธิบายได้ = ขาดที่เหลืออธิบายไม่ได้
+  $('stk_kpi').innerHTML=
+    '<div class="kpi bad"><div class="lbl">ขาดสุทธิ · '+esc(a1?stkMonLb(a1.period_ym):'—')+'</div>'
+      +'<div class="val">'+(a1?stkN(a1.net_amt):'—')+'<span class="sm"> บ.</span></div>'
+      +'<div class="delta">'+(a1&&a0?dlt(Number(a1.net_amt),Number(a0.net_amt),true):'')+'</div></div>'
+    +'<div class="kpi warn"><div class="lbl">คลาดเคลื่อนรวม (ขาด+เกิน)</div>'
+      +'<div class="val">'+(a1?stkN(a1.abs_amt):'—')+'<span class="sm"> บ.</span></div>'
+      +'<div class="delta">'+(a1?stkN(a1.sku_n)+' SKU ที่ไม่ตรง':'')+' '+(a1&&a0?dlt(Number(a1.abs_amt),Number(a0.abs_amt),false):'')+'</div></div>'
+    +'<div class="kpi"><div class="lbl">คีย์ผิดตัว (อธิบายได้)</div>'
+      +'<div class="val">'+(sw1?stkN(expl):'—')+'<span class="sm"> บ.</span></div>'
+      +'<div class="delta">'+(sw1?stkN(sw1.pair_n)+' คู่ · รับผิดหน่วย '+stkN(sw1.unit_n)+' · ขายผิดตัว '+stkN(sw1.variant_n):'ยังไม่มีข้อมูล')+'</div></div>'
+    +'<div class="kpi bad"><div class="lbl">ขาดที่ยังอธิบายไม่ได้</div>'
+      +'<div class="val">'+(a1?stkN(realShort):'—')+'<span class="sm"> บ.</span></div>'
+      +'<div class="delta">'+(a1&&expl?'จากยอดขาด '+stkN(a1.short_amt)+' หักคู่ที่จับได้แล้ว':'ยอดขาดก่อนหักคู่คีย์ผิดตัว')+'</div></div>'
+    +'<div class="kpi"><div class="lbl">ตัดจ่ายสุทธิ · '+esc(w1?stkMonLb(w1.period_ym):'—')+'</div>'
+      +'<div class="val">'+(w1?stkN(w1.amt_net):'—')+'<span class="sm"> บ.</span></div>'
+      +'<div class="delta">'+(w1?'วัสดุสิ้นเปลือง '+stkN(w1.amt_consume)+' บ.':'')+'</div></div>'
+    +'<div class="kpi"><div class="lbl">เดือนที่มีข้อมูล</div>'
+      +'<div class="val">'+at.length+'<span class="sm"> / '+wt.length+'</span></div>'
+      +'<div class="delta">Audit / ตัดจ่าย'+(at.length<3?' · ยังน้อย แนวโน้มจะแม่นขึ้นเมื่อครบ 3 เดือน':'')+'</div></div>';
+
+  // ---- ตาราง Audit รายเดือน ----
+  if(!at.length) $('stk_atrend').innerHTML='<div class="empty">ยังไม่มีไฟล์ Audit</div>';
+  else $('stk_atrend').innerHTML='<table class="stk-tbl"><thead><tr>'
+    +'<th class="l">เดือน</th><th>SKU ไม่ตรง</th><th>ตัวขาด</th><th>ตัวเกิน</th>'
+    +'<th>มูลค่าขาด</th><th>มูลค่าเกิน</th><th>สุทธิ</th><th>คลาดเคลื่อนรวม</th>'
+    +'<th>คีย์ผิดตัว</th><th>ขาดที่เหลือ</th></tr></thead><tbody>'
+    +at.map(x=>{
+      const s=swMap[x.period_ym], e=s?Number(s.explained_amt||0):0;
+      const pct=Number(x.short_amt)?(e/Math.abs(Number(x.short_amt))*100):0;
+      return '<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td><td>'+stkN(x.sku_n)+'</td><td>'+stkN(x.short_n)+'</td><td>'+stkN(x.over_n)+'</td>'
+      +'<td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.over_amt)+'</td><td class="neg">'+stkN(x.net_amt)+'</td><td>'+stkN(x.abs_amt)+'</td>'
+      +'<td>'+(s?stkN(e)+' <span style="color:var(--muted);font-size:11px">('+stkN(pct,0)+'%)</span>':'—')+'</td>'
+      +'<td class="neg">'+(s?stkN(Number(x.short_amt)+e):'—')+'</td></tr>';
+    }).join('')
+    +'</tbody></table>';
+
+  // ---- ตารางตัดจ่ายรายเดือน ----
+  if(!wt.length) $('stk_wtrend').innerHTML='<div class="empty">ยังไม่มีไฟล์สินค้าตัดจ่าย</div>';
+  else $('stk_wtrend').innerHTML='<table class="stk-tbl"><thead><tr>'
+    +'<th class="l">เดือน</th><th>รายการ</th><th>เสื่อมคุณภาพ (สาขา)</th><th>เสื่อมคุณภาพ (คลัง)</th>'
+    +'<th>วัสดุสิ้นเปลือง</th><th>ชดเชยคืน</th><th>รวมสุทธิ</th></tr></thead><tbody>'
+    +wt.map(x=>'<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td><td>'+stkN(x.row_n)+'</td>'
+      +'<td>'+stkN(x.amt_branch,2)+'</td><td>'+stkN(x.amt_dc,2)+'</td><td>'+stkN(x.amt_consume,2)+'</td>'
+      +'<td>'+stkN(x.amt_credit,2)+'</td><td><b>'+stkN(x.amt_net,2)+'</b></td></tr>').join('')
+    +'</tbody></table>';
+
+  stkRenderRisk();
+  stkRenderPma();
+}
+function stkRenderRisk(){
+  const rows=(STK.risk||[]).slice().sort((a,b)=>Number(a.short_amt)-Number(b.short_amt));
+  if(!rows.length){ $('stk_risk').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงเดือนที่เลือก</div>'; return; }
+  $('stk_risk').innerHTML='<table class="stk-tbl"><thead><tr><th class="l">ลักษณะ</th><th>SKU</th><th>มูลค่าขาด</th><th>มูลค่าเกิน</th><th>ตัดจ่าย</th><th class="l">มาตรการที่ตรงกับลักษณะนี้</th></tr></thead><tbody>'
+    +rows.map(x=>'<tr><td class="l"><b>'+esc(STK_RISK_LB[x.risk_type]||x.risk_type)+'</b></td>'
+      +'<td>'+stkN(x.sku_n)+'</td><td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.over_amt)+'</td><td>'+stkN(x.wo_amt)+'</td>'
+      +'<td class="l" style="white-space:normal;color:var(--muted);font-size:12px">'+esc(STK_RISK_HINT[x.risk_type]||'')+'</td></tr>').join('')
+    +'</tbody></table>';
+}
+function stkRenderPma(){
+  const src=STK.pma||[];
+  if(!src.length){ $('stk_pma').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงเดือนที่เลือก</div>'; return; }
+  const mons=Array.from(new Set(src.map(x=>x.period_ym))).sort();
+  const g={};
+  src.forEach(x=>{
+    const k=x.pma||'—';
+    const o=g[k]||(g[k]={pma:k,name:x.pma_name,risk:x.risk_type,m:{},tot:0,sku:0});
+    o.m[x.period_ym]=(o.m[x.period_ym]||0)+Number(x.short_amt||0);
+    o.tot+=Number(x.short_amt||0); o.sku+=Number(x.sku_n||0);
+    if(!o.name) o.name=x.pma_name; if(!o.risk) o.risk=x.risk_type;
+  });
+  const half=Math.ceil(mons.length/2);
+  const rows=Object.values(g).sort((a,b)=>a.tot-b.tot);
+  const trend=(o)=>{
+    if(mons.length<2) return '<span style="color:var(--muted)">—</span>';
+    let a=0,b=0;
+    mons.forEach((m,i)=>{ (i<half?0:1) ? b+=(o.m[m]||0) : a+=(o.m[m]||0); });
+    const na=mons.slice(0,half).length, nb=mons.length-na;
+    const am=na?a/na:0, bm=nb?b/nb:0;
+    if(am===0 && bm===0) return '<span style="color:var(--muted)">—</span>';
+    if(am===0) return '<span style="color:var(--red)">เริ่มขาด</span>';
+    const ch=(bm-am)/Math.abs(am);
+    if(ch < -0.15) return '<span style="color:var(--red);font-weight:600">แย่ลง</span>';
+    if(ch >  0.15) return '<span style="color:var(--accent);font-weight:600">ดีขึ้น</span>';
+    return '<span style="color:var(--muted)">ทรงตัว</span>';
+  };
+  const tot=mons.map(m=>rows.reduce((s,o)=>s+(o.m[m]||0),0));
+  $('stk_pma').innerHTML='<table class="stk-tbl"><thead><tr><th class="l">กลุ่มสินค้า</th><th class="l">ลักษณะ</th>'
+    +mons.map(m=>'<th>'+esc(stkMonLb(m))+'</th>').join('')+'<th>รวม</th><th>แนวโน้ม</th></tr></thead><tbody>'
+    +rows.map(o=>'<tr><td class="l nm"><b>'+esc(o.pma)+'</b> '+esc(o.name||'')+'</td>'
+      +'<td class="l" style="font-size:12px;color:var(--muted)">'+esc(STK_RISK_LB[o.risk]||'')+'</td>'
+      +mons.map(m=>'<td'+(o.m[m]?' class="neg"':'')+'>'+(o.m[m]?stkN(o.m[m]):'—')+'</td>').join('')
+      +'<td class="neg"><b>'+stkN(o.tot)+'</b></td><td>'+trend(o)+'</td></tr>').join('')
+    +'</tbody><tfoot><tr><td class="l">รวมทุกกลุ่ม</td><td></td>'
+    +tot.map(v=>'<td class="neg">'+stkN(v)+'</td>').join('')
+    +'<td class="neg">'+stkN(tot.reduce((s,v)=>s+v,0))+'</td><td></td></tr></tfoot></table>';
+}
+
+async function stkLoadChronic(){
+  $('stk_chronic').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r;
+  try{ r=await post({ action:'hr_stock_chronic', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, min_months:Number($('stk_minm').value)||3 }); }
+  catch(e){ $('stk_chronic').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
+  if(!r||!r.ok){ $('stk_chronic').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  STK.chronic=r.rows||[];
+  stkRenderChronic();
+}
+function stkRenderChronic(){
+  const rf=$('stk_crisk')?$('stk_crisk').value:'';
+  const rows=(STK.chronic||[]).filter(x=>!rf || x.risk_type===rf);
+  if(!rows.length){ $('stk_chronic').innerHTML='<div class="empty">ไม่พบรายการตามเงื่อนไขที่เลือก</div>'; return; }
+  $('stk_chronic').innerHTML='<table class="stk-tbl"><thead><tr>'
+    +'<th class="l">รหัส</th><th class="l">ชื่อสินค้า</th><th class="l">กลุ่ม</th><th class="l">ลักษณะ</th>'
+    +'<th>ขาดกี่เดือน</th><th>มูลค่าขาดรวม</th><th>เฉลี่ย/เดือน</th><th>จำนวนชิ้น</th><th>ตัดจ่าย</th><th class="l">อ่านได้ว่า</th></tr></thead><tbody>'
+    +rows.map(x=>{
+      const sa=Math.abs(Number(x.short_amt||0)), wa=Number(x.wo_amt||0);
+      let read, col='var(--muted)';
+      if(x.risk_type==='consume')      { read='ของใช้ในร้าน — ตรวจว่าตัดจ่ายครบตามที่ใช้จริงหรือไม่'; }
+      else if(wa>=sa*0.6)              { read='ตัดจ่ายใกล้เคียงยอดขาด — เป็นของเสียจริง คุมการสั่ง/FIFO'; }
+      else if(wa<=sa*0.1)              { read='ขาดแต่แทบไม่มีตัดจ่าย — หายไปโดยไม่ได้ตัดออกจากระบบ'; col='var(--red)'; }
+      else                             { read='ปนกันทั้งของเสียและของหาย — ดูรายตัวประกอบ'; }
+      const full=Number(x.months_short)>=Number(x.months_total) && Number(x.months_total)>1;
+      return '<tr><td class="l">'+esc(x.sku)+'</td><td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+        +'<td class="l nm" style="max-width:170px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+        +'<td class="l" style="font-size:12px;color:var(--muted)">'+esc(STK_RISK_LB[x.risk_type]||'')+'</td>'
+        +'<td'+(full?' style="color:var(--red);font-weight:700"':'')+'>'+esc(x.months_short)+'/'+esc(x.months_total)+'</td>'
+        +'<td class="neg">'+stkN(x.short_amt)+'</td><td class="neg">'+stkN(x.avg_amt)+'</td><td>'+stkN(x.short_qty)+'</td>'
+        +'<td>'+(wa?stkN(wa):'—')+'</td>'
+        +'<td class="l" style="white-space:normal;font-size:12px;color:'+col+'">'+esc(read)+'</td></tr>';
+    }).join('')
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แสดง '+rows.length+' รายการ · ช่อง "ขาดกี่เดือน" เป็นสีแดงคือขาดทุกเดือนที่มีข้อมูล</div>';
+}
+
+// ---------- ตัวจับคู่ "คีย์ผิดตัว" (เลขคณิตล้วน ไม่มี AI) ----------
+//  เงื่อนไขครบ 3 ข้อจึงถือเป็นคู่: อยู่กลุ่ม PMA เดียวกัน · จำนวนเข้าอัตราหน่วยบรรจุหรือเท่ากันพอดี · ชื่อคล้ายกัน
+//  วัดความคล้ายด้วย Dice bigram ที่เกณฑ์ 0.5 — เทียบกับ difflib แล้วได้ผลใกล้กัน (คลาดกัน 2–4%)
+//  ตัวเกิน 1 ตัวจับคู่ได้ครั้งเดียว และเลือกคู่ที่คะแนน (ความคล้าย × มูลค่าที่น้อยกว่า) สูงสุด
+const STK_PACKS=[2,3,4,6,10,12,20,24,30,48];
+const STK_NMRX=/ยกลัง\s*\d*|แพ็?ก?ค?\s*\d+|แพค\s*\d+|\([^)]*\)|[\d.]+\s*(?:ML|ml|มล\.?|G\.?|ก\.?|ลิตร|L|oz\.?|OZ\.?|Oz\.?)/gi;
+function stkNorm(s){ return String(s||'').replace(STK_NMRX,'').replace(/[\s​]+/g,''); }
+function stkBigrams(s){
+  const m=new Map();
+  for(let i=0;i<s.length-1;i++){ const g=s.substr(i,2); m.set(g,(m.get(g)||0)+1); }
+  return m;
+}
+function stkSim(x,y){
+  if(!x||!y) return 0;
+  if(x===y) return 1;
+  const A=stkBigrams(x), B=stkBigrams(y);
+  if(!A.size||!B.size) return 0;
+  let inter=0, na=0, nb=0;
+  A.forEach((v,k)=>{ na+=v; const w=B.get(k); if(w) inter+=Math.min(v,w); });
+  B.forEach(v=>{ nb+=v; });
+  return (2*inter)/(na+nb);
+}
+function stkFindSwaps(rows){
+  const neg=rows.filter(x=>x.amount<0).sort((a,b)=>a.amount-b.amount);
+  const byPma=new Map();
+  rows.filter(x=>x.amount>0).forEach(x=>{
+    const k=x.pma||''; if(!byPma.has(k)) byPma.set(k,[]); byPma.get(k).push(x);
+  });
+  const norm=new Map();
+  const nm=(x)=>{ let v=norm.get(x.sku); if(v==null){ v=stkNorm(x.name); norm.set(x.sku,v); } return v; };
+  const used=new Set(), out=[];
+  neg.forEach(n=>{
+    const cands=byPma.get(n.pma||'')||[];
+    let best=null;
+    const qn=Math.abs(n.qty);
+    if(!(qn>0)) return;
+    cands.forEach(p=>{
+      if(used.has(p.sku)) return;
+      const qp=Math.abs(p.qty); if(!(qp>0)) return;
+      const ratio = qp>=qn ? qp/qn : qn/qp;
+      const isUnit = STK_PACKS.some(k=>Math.abs(ratio-k)<0.02);
+      const isSame = Math.abs(ratio-1)<0.02;
+      if(!isUnit && !isSame) return;
+      const sim=stkSim(nm(n), nm(p));
+      if(sim<0.5) return;
+      const score=sim*Math.min(Math.abs(n.amount), Math.abs(p.amount));
+      if(!best || score>best.score) best={ score, p, sim, ratio, kind:isSame?'variant':'unit' };
+    });
+    if(!best) return;
+    used.add(best.p.sku);
+    out.push({ pma:n.pma, pair_kind:best.kind,
+      short_sku:n.sku, short_name:n.name, short_qty:n.qty, short_amt:n.amount,
+      over_sku:best.p.sku, over_name:best.p.name, over_qty:best.p.qty, over_amt:best.p.amount,
+      ratio:Math.round(best.ratio*100)/100, similarity:Math.round(best.sim*1000)/1000 });
+  });
+  return out;
+}
+
+async function stkLoadSwap(){
+  $('stk_swap').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r;
+  try{ r=await post({ action:'hr_stock_swap', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, pair_kind:$('stk_swkind').value||null }); }
+  catch(e){ $('stk_swap').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
+  if(!r||!r.ok){ $('stk_swap').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  STK.swap=r.rows||[]; STK.swapTrend=r.trend||[];
+  const tr=(r.trend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
+  const t1=tr[tr.length-1];
+  const sumP=tr.reduce((s,x)=>s+Number(x.pair_n||0),0);
+  const sumE=tr.reduce((s,x)=>s+Number(x.explained_amt||0),0);
+  const sumU=tr.reduce((s,x)=>s+Number(x.unit_n||0),0);
+  const sumV=tr.reduce((s,x)=>s+Number(x.variant_n||0),0);
+  $('stk_swapkpi').innerHTML= tr.length
+    ? '<div class="kpi warn"><div class="lbl">คู่ที่จับได้ทั้งหมด</div><div class="val">'+stkN(sumP)+'<span class="sm"> คู่</span></div>'
+        +'<div class="delta">จาก '+tr.length+' เดือน</div></div>'
+      +'<div class="kpi warn"><div class="lbl">มูลค่าที่อธิบายได้</div><div class="val">'+stkN(sumE)+'<span class="sm"> บ.</span></div>'
+        +'<div class="delta">ยอดฝั่ง "ขาด" ที่มีตัวเกินมารับ</div></div>'
+      +'<div class="kpi"><div class="lbl">รับ/คีย์ผิดหน่วยบรรจุ</div><div class="val">'+stkN(sumU)+'<span class="sm"> คู่</span></div>'
+        +'<div class="delta">แก้ที่ขั้นตอนรับของ</div></div>'
+      +'<div class="kpi"><div class="lbl">ขายผิดตัว (รุ่น/สี/กลิ่น)</div><div class="val">'+stkN(sumV)+'<span class="sm"> คู่</span></div>'
+        +'<div class="delta">แก้ที่การสแกนหน้าแคชเชียร์'+(t1?' · เดือนล่าสุด '+stkN(t1.variant_n)+' คู่':'')+'</div></div>'
+    : '';
+  if(!STK.swap.length){
+    $('stk_swap').innerHTML='<div class="empty">ยังไม่พบคู่คีย์ผิดตัวในช่วงเดือนที่เลือก'
+      +'<br><span style="font-size:12px">ถ้าเพิ่งอัปเดตโปรแกรม ให้อัปไฟล์ Audit ใหม่อีกครั้งเพื่อให้ระบบตรวจคู่ย้อนหลังให้</span></div>';
+    return;
+  }
+  $('stk_swap').innerHTML='<table class="stk-tbl"><thead><tr>'
+    +'<th class="l">เดือน</th><th class="l">แบบ</th><th class="l">กลุ่ม</th>'
+    +'<th class="l">ตัวที่ขาด</th><th>จำนวน</th><th>มูลค่า</th>'
+    +'<th class="l">ตัวที่เกิน</th><th>จำนวน</th><th>มูลค่า</th>'
+    +'<th>อัตรา</th><th>สุทธิ</th></tr></thead><tbody>'
+    +STK.swap.map(x=>{
+      const net=Number(x.net_amt||0), tight=Math.abs(net)<=Math.abs(Number(x.short_amt||0))*0.05;
+      return '<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td>'
+      +'<td class="l" style="font-size:12px;white-space:normal;max-width:110px;color:'+(x.pair_kind==='unit'?'#a06515':'var(--muted)')+'">'
+        +(x.pair_kind==='unit'?'รับ/คีย์ผิดหน่วยบรรจุ':'ขายผิดตัว')+'</td>'
+      +'<td class="l nm" style="max-width:130px;font-size:12px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+      +'<td class="l nm" style="max-width:220px" title="'+esc(x.short_name||'')+'">'+esc(x.short_sku)+' '+esc(x.short_name||'')+'</td>'
+      +'<td class="neg">'+stkN(x.short_qty)+'</td><td class="neg">'+stkN(x.short_amt)+'</td>'
+      +'<td class="l nm" style="max-width:220px" title="'+esc(x.over_name||'')+'">'+esc(x.over_sku)+' '+esc(x.over_name||'')+'</td>'
+      +'<td>'+stkN(x.over_qty)+'</td><td>'+stkN(x.over_amt)+'</td>'
+      +'<td>×'+stkN(x.ratio)+'</td>'
+      +'<td'+(tight?' style="color:var(--accent);font-weight:700"':'')+'>'+stkN(net)+'</td></tr>';
+    }).join('')
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แสดง '+STK.swap.length+' คู่ (เรียงตามมูลค่าฝั่งขาด) · ช่องสุทธิเป็นสีเขียวคือหักกันลงตัวเกือบสนิท มั่นใจว่าเป็นคู่กันจริง</div>';
+}
+
+async function stkLoadWo(){
+  $('stk_wo').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r;
+  try{ r=await post({ action:'hr_stock_wo_top', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, section:$('stk_wsec').value||null }); }
+  catch(e){ $('stk_wo').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
+  if(!r||!r.ok){ $('stk_wo').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  STK.wo=r.rows||[];
+  if(!STK.wo.length){ $('stk_wo').innerHTML='<div class="empty">ยังไม่มีข้อมูลสินค้าตัดจ่ายในช่วงเดือนที่เลือก</div>'; return; }
+  const tot=STK.wo.reduce((s,x)=>s+Number(x.amount||0),0);
+  $('stk_wo').innerHTML='<table class="stk-tbl"><thead><tr>'
+    +'<th class="l">รหัส</th><th class="l">ชื่อสินค้า</th><th class="l">กลุ่ม</th><th class="l">ลักษณะ</th>'
+    +'<th>กี่เดือน</th><th>จำนวน</th><th>มูลค่า</th><th>ล่าสุด</th></tr></thead><tbody>'
+    +STK.wo.map(x=>'<tr><td class="l">'+esc(x.sku)+'</td><td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+      +'<td class="l nm" style="max-width:180px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+      +'<td class="l" style="font-size:12px;color:var(--muted)">'+esc(STK_RISK_LB[x.risk_type]||'')+'</td>'
+      +'<td>'+esc(x.months_n)+'</td><td>'+stkN(x.qty)+'</td><td><b>'+stkN(x.amount,2)+'</b></td>'
+      +'<td>'+esc(stkMonLb(x.last_period))+'</td></tr>').join('')
+    +'</tbody><tfoot><tr><td class="l">รวมที่แสดง</td><td></td><td></td><td></td><td></td><td></td><td>'+stkN(tot,2)+'</td><td></td></tr></tfoot></table>';
+}
+
+async function stkLoadProfile(){
+  let br = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
+  // โปรไฟล์ตั้งได้ทีละสาขา — ถ้าตัวกรองยังเป็น "ทุกสาขา" ให้เลือกสาขาแรกให้ แล้วบอกไว้ในบรรทัดล่าง
+  if(!br && !MGR_MODE && (DATA.branches||[]).length){
+    br=String(DATA.branches[0].branch_id);
+    if($('stk_branch')) $('stk_branch').value=br;
+    STK.branch=br;
+  }
+  if(!br){ $('stk_pf_meta').textContent='ยังไม่มีสาขาในระบบ — เพิ่มสาขาที่แท็บ "สาขา" ก่อน'; return; }
+  let r; try{ r=await post({ action:'hr_branch_profile', ...stkAuth(), branch:br }); }catch(e){ $('stk_pf_meta').textContent='โหลดไม่สำเร็จ'; return; }
+  const d=(r&&r.ok&&r.row)||null; STK.prof=d;
+  const setChips=(id,arr)=>{ const box=$(id); if(!box) return; const s=new Set(arr||[]);
+    box.querySelectorAll('.stk-chip').forEach(b=>b.classList.toggle('on', s.has(b.dataset.v))); };
+  setChips('stk_pf_cust', d?d.customer_groups:[]);
+  setChips('stk_pf_surr', d?d.surroundings:[]);
+  setChips('stk_pf_peak', d?d.peak_hours:[]);
+  $('stk_pf_cafe').checked = d ? d.has_allcafe!==false : true;
+  $('stk_pf_deli').checked = d ? !!d.has_delivery : false;
+  $('stk_pf_staff').value = (d&&d.staff_count!=null)?d.staff_count:'';
+  $('stk_pf_cam').value   = (d&&d.camera_count!=null)?d.camera_count:'';
+  $('stk_pf_blind').value = (d&&d.blind_spots)||'';
+  $('stk_pf_note').value  = (d&&d.note)||'';
+  $('stk_pf_meta').textContent = d
+    ? 'สาขา '+br+' · แก้ล่าสุด '+(d.updated_at?beDateTime(d.updated_at):'—')+' โดย '+(d.updated_by||'—')
+    : 'สาขา '+br+' · ยังไม่เคยตั้งค่า';
+}
+async function stkProfSave(){
+  const br = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
+  if(!br){ toast('err','เลือกสาขาก่อนบันทึก (โปรไฟล์ตั้งได้ทีละสาขา)'); return; }
+  const chips=(id)=>Array.from($(id).querySelectorAll('.stk-chip.on')).map(b=>b.dataset.v);
+  const data={ branch_id:br, customer_groups:chips('stk_pf_cust'), surroundings:chips('stk_pf_surr'), peak_hours:chips('stk_pf_peak'),
+    has_allcafe:$('stk_pf_cafe').checked, has_delivery:$('stk_pf_deli').checked,
+    staff_count:$('stk_pf_staff').value, camera_count:$('stk_pf_cam').value,
+    blind_spots:$('stk_pf_blind').value.trim(), note:$('stk_pf_note').value.trim() };
+  const b=$('stk_pf_save'); b.disabled=true;
+  try{
+    const r=await post({ action:'hr_branch_profile_save', ...stkAuth(), data });
+    if(r&&r.ok){ toast('ok','บันทึกโปรไฟล์สาขาแล้ว'); stkLoadProfile(); }
+    else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
+  }catch(e){ toast('err','บันทึกไม่สำเร็จ: '+(e.message||e)); }
+  b.disabled=false;
+}
+
+async function stkLoadUploads(){
+  if(!$('stk_uplist')) return;
+  $('stk_uplist').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r; try{ r=await post({ action:'hr_stock_uploads', ...stkAuth(), branch:STK.branch||null }); }
+  catch(e){ $('stk_uplist').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
+  if(!r||!r.ok){ $('stk_uplist').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  STK.uploads=r.rows||[];
+  if(!STK.uploads.length){ $('stk_uplist').innerHTML='<div class="empty">ยังไม่มีไฟล์ที่นำเข้า</div>'; return; }
+  $('stk_uplist').innerHTML='<table class="stk-tbl"><thead><tr><th class="l">เดือน</th><th class="l">ประเภท</th><th class="l">สาขา</th>'
+    +'<th>รายการ</th><th class="l">สรุปที่อ่านได้</th><th class="l">ไฟล์</th><th class="l">นำเข้าเมื่อ</th><th></th></tr></thead><tbody>'
+    +STK.uploads.map(u=>{
+      const t=u.totals||{};
+      const sum = u.kind==='audit'
+        ? ('ขาด '+stkN(t.short_amt)+' · เกิน '+stkN(t.over_amt)+' · สุทธิ '+stkN(t.net_amt)+' บ.')
+        : ('สาขา '+stkN(t.branch,2)+' · คลัง '+stkN(t.dc,2)+' · วัสดุ '+stkN(t.consume,2)+' บ.');
+      return '<tr><td class="l">'+esc(stkMonLb(u.period_ym))+'</td>'
+        +'<td class="l">'+(u.kind==='audit'?'Audit ราย SKU':'สินค้าตัดจ่าย')+'</td>'
+        +'<td class="l">'+esc(u.branch_id)+'</td><td>'+stkN(u.row_count)+'</td>'
+        +'<td class="l" style="font-size:12px">'+esc(sum)+'</td>'
+        +'<td class="l nm" style="max-width:200px;font-size:12px;color:var(--muted)" title="'+esc(u.filename||'')+'">'+esc(u.filename||'—')+'</td>'
+        +'<td class="l" style="font-size:12px">'+esc(u.uploaded_at?beDateTime(u.uploaded_at):'—')+'</td>'
+        +'<td><button class="btn btn-sec btn-sm" type="button" data-stkdel="'+esc(u.id)+'">ลบ</button></td></tr>';
+    }).join('')+'</tbody></table>';
+  $('stk_uplist').querySelectorAll('[data-stkdel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบข้อมูลที่นำเข้าใบนี้ทั้งใบ? (อัปไฟล์ใหม่ทับได้เหมือนกัน ไม่จำเป็นต้องลบก่อน)')) return;
+    b.disabled=true;
+    try{ const r=await post({ action:'hr_stock_upload_del', ...stkAuth(), id:b.dataset.stkdel });
+      if(r&&r.ok){ toast('ok','ลบแล้ว'); stkLoadUploads(); stkReload(true); } else toast('err',(r&&r.error)||'ลบไม่สำเร็จ'); }
+    catch(e){ toast('err','ลบไม่สำเร็จ'); b.disabled=false; }
+  });
+}
+
+// ---------- ตัวอ่านไฟล์ 1: Audit ราย SKU (RLR8803 · xlsx/csv) ----------
+//  โครงไฟล์: แถว 1 RLR8803 · แถว 4 "ร้าน : 08747 สาขา ..." · แถว 7 หัวตาราง · แถว 8 ขึ้นไปข้อมูล
+//  คอลัมน์: PMA | รหัสสินค้า | ชื่อสินค้า | audit จำนวน(หน่วย) | audit จำนวน(บาท) | ต้นทุนสูญเสีย หน่วย | ต้นทุนสูญเสีย บาท
+//  แถวที่ไม่มีรหัสสินค้า = แถวผลรวมย่อยของกลุ่ม → ข้าม (ไม่งั้นยอดจะถูกนับซ้ำ)
+function stkNum(v){
+  if(v==null) return 0;
+  if(typeof v==='number') return isFinite(v)?v:0;
+  let s=String(v).trim().replace(/,/g,'');
+  const neg=/^\(.*\)$/.test(s); if(neg) s=s.slice(1,-1);
+  const n=parseFloat(s);
+  return isFinite(n)?(neg?-n:n):0;
+}
+async function stkParseAudit(file){
+  if(!window.XLSX) throw new Error('ไลบรารีอ่าน xlsx ยังไม่โหลด — รีเฟรชหน้าแล้วลองอีกครั้ง');
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(new Uint8Array(buf), { type:'array' });
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const aoa=XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:'' });
+  const head=aoa.slice(0,7).map(r=>(r||[]).map(c=>String(c==null?'':c)).join(' ')).join('\n');
+  if(head.indexOf('RLR8803')<0 && head.indexOf('Audit')<0)
+    throw new Error('ไม่ใช่ไฟล์รายงาน Audit ราย SKU (RLR8803)');
+  const mb=head.match(/ร้าน\s*:?\s*(\d{4,6})/);
+  let bname=null; const bn=head.match(/ร้าน\s*:?\s*\d{4,6}\s*(?:สาขา)?\s*([^\n]*)/);
+  if(bn) bname=String(bn[1]||'').trim()||null;
+  // หาแถวหัวตาราง แล้วเริ่มอ่านถัดไป (กันไฟล์ที่แถวบนเพิ่ม/ลด)
+  let start=7;
+  for(let i=0;i<Math.min(aoa.length,20);i++){
+    const t=(aoa[i]||[]).map(c=>String(c==null?'':c)).join(' ');
+    if(t.indexOf('รหัสสินค้า')>=0 && t.indexOf('ชื่อสินค้า')>=0){ start=i+1; break; }
+  }
+  const rows=[]; let skipped=0;
+  for(let i=start;i<aoa.length;i++){
+    const r=aoa[i]||[];
+    const sku=String(r[1]==null?'':r[1]).trim();
+    if(!/^\d{6,8}$/.test(sku)){ if(String(r[4]||'').trim()) skipped++; continue; }
+    rows.push({ pma:String(r[0]==null?'':r[0]).trim()||sku.slice(0,2), sku,
+      name:String(r[2]==null?'':r[2]).trim(),
+      qty:stkNum(r[3]), amount:stkNum(r[4]), cost_qty:stkNum(r[5]), cost_amount:stkNum(r[6]) });
+  }
+  const short=rows.filter(x=>x.amount<0), over=rows.filter(x=>x.amount>0);
+  const totals={
+    sku_n:rows.length, short_n:short.length, over_n:over.length,
+    short_amt:short.reduce((s,x)=>s+x.amount,0), over_amt:over.reduce((s,x)=>s+x.amount,0),
+    net_amt:rows.reduce((s,x)=>s+x.amount,0), abs_amt:rows.reduce((s,x)=>s+Math.abs(x.amount),0),
+    cost_amt:rows.reduce((s,x)=>s+x.cost_amount,0), subtotal_rows:skipped,
+  };
+  return { kind:'audit', report_code:'RLR8803', branch_id:mb?mb[1]:null, branch_name:bname, period_ym:null, rows, totals };
+}
+
+// ---------- ตัวอ่านไฟล์ 2: สินค้าตัดจ่าย (RT040037 · PDF) ----------
+//  อ่านด้วย pdf.js แล้วประกอบบรรทัดใหม่จากพิกัด x/y ของข้อความ (รายงานนี้เป็นคอลัมน์ตำแหน่งคงที่)
+//  ขอบคอลัมน์ (หน่วยเดียวกับ PDF point, หน้า A4 กว้าง 595):
+//    รหัสสินค้า 55–105 · ชื่อ/ขนาด 105–370 · ปริมาณ 370–460 · ราคา/หน่วย 460–520 · จำนวนเงิน ≥520
+let STK_PDFJS=null;
+function ensurePdfJs(){
+  if(STK_PDFJS) return STK_PDFJS;
+  STK_PDFJS=new Promise((resolve,reject)=>{
+    if(window.pdfjsLib){ resolve(window.pdfjsLib); return; }
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=()=>{
+      if(!window.pdfjsLib){ reject(new Error('โหลดไลบรารีอ่าน PDF ไม่สำเร็จ')); return; }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    s.onerror=()=>reject(new Error('โหลดไลบรารีอ่าน PDF ไม่สำเร็จ (ต้องต่ออินเทอร์เน็ต)'));
+    document.head.appendChild(s);
+  });
+  return STK_PDFJS;
+}
+const STK_WO_SEC=[
+  ['รายการตัดจ่ายสินค้าเสื่อมคุณภาพ (สาขา)','เสื่อมคุณภาพ-สาขา'],
+  ['รายการตัดจ่ายสินค้าเสื่อมคุณภาพ (คลัง)','เสื่อมคุณภาพ-คลัง'],
+  ['รายการชดเชยตัดจ่ายสินค้าเสื่อมคุณภาพ','ชดเชยคืน'],
+  ['รายการวัสดุสิ้นเปลือง','วัสดุสิ้นเปลือง'],
+];
+async function stkParseWriteoff(file){
+  const pdfjs=await ensurePdfJs();
+  const buf=await file.arrayBuffer();
+  const doc=await pdfjs.getDocument({ data:new Uint8Array(buf) }).promise;
+  const rows=[]; let sec=null, period=null, branch=null, bname=null, code=null;
+  const joinCol=(items)=>{
+    let out='';
+    items.forEach((it,i)=>{
+      if(i>0){ const prev=items[i-1]; if(it.x - (prev.x+prev.w) > 1.2) out+=' '; }
+      out+=it.s;
+    });
+    return out.trim();
+  };
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p);
+    const tc=await page.getTextContent();
+    const H=page.getViewport({ scale:1 }).height;
+    const lines=new Map();
+    tc.items.forEach(it=>{
+      const s=String(it.str||''); if(!s.trim()) return;
+      const x=it.transform[4], y=H-it.transform[5];
+      const key=Math.round(y/2.2);                     // รวมข้อความที่อยู่บรรทัดเดียวกัน (เผื่อคลาด ±1pt)
+      if(!lines.has(key)) lines.set(key,[]);
+      lines.get(key).push({ x, w:it.width||0, s });
+    });
+    Array.from(lines.keys()).sort((a,b)=>a-b).forEach(k=>{
+      const its=lines.get(k).sort((a,b)=>a.x-b.x);
+      const txt=its.map(i=>i.s).join(' ');
+      if(!code && txt.indexOf('RT040037')>=0) code='RT040037';
+      if(!period){
+        const m=txt.match(/ตั้งแต่วันที่\s*(\d{2})\/(\d{2})\/(\d{4})/) || (txt.indexOf('ตั้งแต่วันที่')>=0 ? txt.match(/(\d{2})\/(\d{2})\/(\d{4})/) : null);
+        if(m) period=String(parseInt(m[3],10)-543)+'-'+m[2];     // พ.ศ. → ค.ศ.
+      }
+      if(!branch){ const m=txt.match(/รหัสสาขา\s*(\d{4,6})/); if(m){ branch=m[1];
+        const bm=txt.match(/รหัสสาขา\s*\d{4,6}\s*(?:สาขา)?\s*(.*)$/); if(bm) bname=String(bm[1]||'').trim()||null; } }
+      // หัวหมวด — อยู่ชิดซ้ายสุด (x < 45)
+      if(its[0].x < 45){
+        const t=txt.replace(/\s+/g,' ').trim();
+        for(const [k2,v] of STK_WO_SEC){ if(t.indexOf(k2)===0){ sec=v; return; } }
+      }
+      const c=(a,b)=>its.filter(i=>i.x>=a && i.x<b);
+      const skuTxt=joinCol(c(55,105)).replace(/\s/g,'');
+      if(!/^\d{7}$/.test(skuTxt)) return;               // ไม่ใช่แถวข้อมูล (หัวตาราง/บรรทัดผลรวม)
+      if(!sec) return;
+      const mid=c(105,370);
+      const sizeItems=c(305,370);
+      const nameItems=mid.filter(i=>i.x<305);
+      rows.push({ section:sec, sku:skuTxt, name:joinCol(nameItems),
+        pack_size:joinCol(sizeItems),
+        qty:stkNum(joinCol(c(370,460))), unit_price:stkNum(joinCol(c(460,520))),
+        amount:stkNum(joinCol(c(520,600))) });
+    });
+  }
+  if(!code && !rows.length) throw new Error('ไม่ใช่ไฟล์รายละเอียดค่าใช้จ่าย (RT040037) หรืออ่านข้อความไม่ได้');
+  const g={};
+  rows.forEach(r=>{ g[r.section]=(g[r.section]||0)+Number(r.amount||0); });
+  const totals={ row_n:rows.length,
+    branch:g['เสื่อมคุณภาพ-สาขา']||0, dc:g['เสื่อมคุณภาพ-คลัง']||0,
+    consume:g['วัสดุสิ้นเปลือง']||0, credit:g['ชดเชยคืน']||0,
+    net:rows.reduce((s,r)=>s+Number(r.amount||0),0) };
+  return { kind:'writeoff', report_code:code||'RT040037', branch_id:branch, branch_name:bname, period_ym:period, rows, totals };
+}
+
+async function stkUploadGo(){
+  const files=Array.from(($('stk_up_file').files)||[]);
+  if(!files.length){ toast('err','เลือกไฟล์ก่อน'); return; }
+  const kind=$('stk_up_kind').value;
+  const month=$('stk_up_month').value;
+  const brSel=$('stk_up_branch').value;
+  if(!brSel){ toast('err','เลือกสาขาก่อน'); return; }
+  if(kind==='audit' && !month){ toast('err','ไฟล์ Audit ไม่มีเดือนในตัวไฟล์ — ต้องเลือกเดือนเอง'); return; }
+  const btn=$('stk_up_go'); btn.disabled=true;
+  $('stk_up_msg').innerHTML='<span style="color:var(--muted)">กำลังอ่านไฟล์…</span>';
+  const log=[]; let okN=0;
+  for(const f of files){
+    try{
+      const parsed = kind==='audit' ? await stkParseAudit(f) : await stkParseWriteoff(f);
+      const period = parsed.period_ym || month;
+      if(!/^\d{4}-\d{2}$/.test(String(period||'')))
+        throw new Error('ไม่ทราบเดือนของข้อมูล — เลือกเดือนในช่อง "เดือนของข้อมูล" ก่อน');
+      if(parsed.branch_id && String(parsed.branch_id)!==String(brSel)){
+        if(!confirm('ไฟล์ "'+f.name+'" เป็นของสาขา '+parsed.branch_id+' แต่คุณเลือกสาขา '+brSel+'\n\nบันทึกเข้าสาขา '+brSel+' ต่อไปหรือไม่?')){
+          log.push('<div style="color:var(--muted)">⊘ '+esc(f.name)+' — ข้ามไว้ (รหัสสาขาไม่ตรง)</div>'); continue;
+        }
+      }
+      if(!parsed.rows.length) throw new Error('อ่านไฟล์ได้แต่ไม่พบรายการ');
+      const pairs = parsed.kind==='audit' ? stkFindSwaps(parsed.rows) : [];
+      if(pairs.length){
+        parsed.totals.swap_n = pairs.length;
+        parsed.totals.swap_explained = pairs.reduce((s,x)=>s+Math.abs(Number(x.short_amt)||0),0);
+      }
+      const r=await post({ action:'hr_stock_save', ...stkAuth(),
+        branch_id:brSel, branch_name:(DATA.branches||[]).reduce((a,b)=>String(b.branch_id)===String(brSel)?(b.name||a):a,null),
+        kind:parsed.kind, period_ym:period, report_code:parsed.report_code,
+        filename:f.name, rows:parsed.rows, pairs, totals:parsed.totals });
+      if(!r||!r.ok) throw new Error((r&&r.error)||'บันทึกไม่สำเร็จ');
+      okN++;
+      const t=parsed.totals;
+      const sum = parsed.kind==='audit'
+        ? ('ขาด '+stkN(t.short_amt)+' · เกิน '+stkN(t.over_amt)+' · สุทธิ '+stkN(t.net_amt)+' บ.'
+           +(pairs.length?' · พบคู่คีย์ผิดตัว '+pairs.length+' คู่ อธิบายยอดขาดได้ '+stkN(t.swap_explained)+' บ.':''))
+        : ('สาขา '+stkN(t.branch,2)+' · คลัง '+stkN(t.dc,2)+' · วัสดุ '+stkN(t.consume,2)+' · ชดเชย '+stkN(t.credit,2)+' บ.');
+      log.push('<div style="color:var(--accent)">✓ '+esc(f.name)+' → '+esc(stkMonLb(period))+' · '+r.saved+' รายการ'
+        +(r.replaced?' <span style="color:#a06515">(ทับของเดิม)</span>':'')+'<br><span style="color:var(--muted);font-size:12px">'+esc(sum)+'</span></div>');
+    }catch(e){
+      log.push('<div style="color:var(--red)">✕ '+esc(f.name)+' — '+esc(e.message||String(e))+'</div>');
+    }
+    $('stk_up_log').innerHTML=log.join('');
+  }
+  $('stk_up_msg').innerHTML = okN
+    ? '<span style="color:var(--accent);font-weight:600">นำเข้าสำเร็จ '+okN+' / '+files.length+' ไฟล์</span>'
+    : '<span style="color:var(--red);font-weight:600">ไม่มีไฟล์ใดนำเข้าได้</span>';
+  btn.disabled=false;
+  $('stk_up_file').value='';
+  if(okN){ stkLoadUploads(); STK.chronic=[]; STK.wo=[]; STK.swap=[]; stkLoadOver(); }
+}
+
 const NAV_GROUPS=[
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash','stock'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','taskset','special','qa','shelf','exams','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','attnedit','shiftexit','schedule','leaves'] },
