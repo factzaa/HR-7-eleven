@@ -532,6 +532,8 @@
         case 'hr_stock_chronic':     return await hrStockChronic(p.branch, p.from, p.to, p.min_months);
         case 'hr_stock_wo_top':      return await hrStockWoTop(p.branch, p.from, p.to, p.section);
         case 'hr_stock_swap':        return await hrStockSwap(p.branch, p.from, p.to, p.pair_kind);
+        case 'hr_stock_pma_items':   return await hrStockPmaItems(p.branch, p.from, p.to, p.pma, p.limit);
+        case 'hr_stock_month_diff':  return await hrStockMonthDiff(p.branch, p.a, p.b);
         case 'hr_branch_profile':    return await hrBranchProfileGet(p.branch);
         case 'hr_branch_profile_save': return await hrBranchProfileSave(p.data, p);
         case 'hr_shirt_config_get':  return await hrShirtConfigGet(p);
@@ -11142,6 +11144,29 @@
     const { data, error } = await sb().rpc('stock_writeoff_top', {
       p_branch: branch || null, p_from: from || null, p_to: to || null,
       p_section: section || null, p_limit: 60,
+    });
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+
+  // รายการสินค้าในกลุ่ม PMA (กดจากตารางอันดับกลุ่ม) — pma ว่าง = ทุกกลุ่ม
+  async function hrStockPmaItems(branch, from, to, pma, limit) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const { data, error } = await sb().rpc('stock_pma_items', {
+      p_branch: branch || null, p_from: from || null, p_to: to || null,
+      p_pma: pma || null, p_limit: Math.min(Number(limit) || 300, 500),
+    });
+    if (error) throw error;
+    return { ok: true, rows: data || [] };
+  }
+
+  // เทียบ 2 เดือนระดับรายสินค้า
+  async function hrStockMonthDiff(branch, a, b) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    if (!a || !b) return { ok: false, error: 'ต้องเลือกเดือนที่จะเทียบทั้ง 2 เดือน' };
+    if (a === b) return { ok: false, error: 'เลือกคนละเดือนจึงจะเทียบได้' };
+    const { data, error } = await sb().rpc('stock_month_diff', {
+      p_branch: branch || null, p_a: a, p_b: b, p_limit: 150,
     });
     if (error) throw error;
     return { ok: true, rows: data || [] };
