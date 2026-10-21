@@ -1818,6 +1818,11 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
   <div class="stkpan" id="stkpan_over">
     <div id="stk_kpi" class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr))"></div>
     <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">แนวโน้มรายเดือน</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">เส้นที่ควรจับตาที่สุดคือ <b>ขาดที่ยังอธิบายไม่ได้</b> — เป็นยอดขาดหลังหักคู่คีย์ผิดตัวออกแล้ว</div>
+      <div id="stk_overchart"></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
       <div style="font-size:14px;font-weight:600;margin-bottom:4px">Audit ราย SKU — รายเดือน</div>
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">มูลค่าเป็นราคาขายรวมภาษี · <b>คลาดเคลื่อนรวม</b> = ขาด+เกิน โดยไม่หักกัน (ตัวนี้บอกคุณภาพข้อมูลสต็อก ตัวสุทธิบอกความเสียหาย)</div>
       <div style="overflow-x:auto"><div id="stk_atrend"><div class="empty">กำลังโหลด…</div></div></div>
@@ -1915,6 +1920,11 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
       <div class="card" style="padding:14px;margin-bottom:14px">
         <div style="font-size:14px;font-weight:600;margin-bottom:10px">10 สินค้าที่ขาดมากที่สุดในกลุ่มนี้</div>
         <div id="stk_pmaitembar"></div>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:14px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">แนวโน้มรายเดือนของ 6 ตัวแรก</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">เส้นที่ลากสูงต่อเนื่องทุกเดือน = ปัญหาเชิงระบบ · เส้นที่พุ่งเดือนเดียว = เหตุเฉพาะกิจ</div>
+        <div id="stk_pmatrend"></div>
       </div>
       <div style="overflow-x:auto"><div id="stk_pmaitems"><div class="empty">กำลังโหลด…</div></div></div>
     </div>
@@ -14040,7 +14050,8 @@ function tsWire(){
 // ต้องรัน supabase/stock_analysis_setup.sql ก่อน (ไม่รัน = ทุกหน้าขึ้นข้อความบอกให้รัน)
 // ============================================================
 const STK = { pan:'over', branch:'', from:'', to:'', uploads:[], chronic:[], wo:[], pma:[], risk:[], swap:[], swapTrend:[],
-               auditTrend:[], audit_months:[], items:[], drillPma:'', drillName:'', diff:[], diffA:'', diffB:'', prof:null };
+               auditTrend:[], audit_months:[], items:[], drillPma:'', drillName:'', diff:[], diffA:'', diffB:'', prof:null,
+               woTrend:[], chartMode:(function(){ try{ return localStorage.getItem('stk_chartmode')||'line'; }catch(e){ return 'line'; } })() };
 const STK_RISK_LB = { theft:'ชิ้นเล็กหยิบง่าย', control:'ของควบคุมมูลค่าสูง', consume:'วัสดุสิ้นเปลือง',
                       fresh:'ของสด/หมดอายุ', drink:'เครื่องดื่ม', home:'ของใช้ในบ้าน', other:'อื่น ๆ' };
 const STK_RISK_HINT = {
@@ -14203,7 +14214,7 @@ async function stkLoadOver(){
   const at=(r.audit_trend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
   const wt=(r.wo_trend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
   STK.pma=r.pma||[]; STK.risk=r.risk||[]; STK.swapTrend=r.swap_trend||[];
-  STK.auditTrend=at; STK.audit_months=at.map(x=>x.period_ym);
+  STK.auditTrend=at; STK.audit_months=at.map(x=>x.period_ym); STK.woTrend=wt;
   const swMap={}; (r.swap_trend||[]).forEach(x=>{ swMap[x.period_ym]=x; });
 
   // ---- KPI: เดือนล่าสุดที่มีข้อมูล เทียบเดือนก่อน ----
@@ -14268,8 +14279,32 @@ async function stkLoadOver(){
       +'<td>'+stkN(x.amt_credit,2)+'</td><td><b>'+stkN(x.amt_net,2)+'</b></td></tr>').join('')
     +'</tbody></table>';
 
+  stkRenderOverChart();
   stkRenderRisk();
   stkRenderPma();
+}
+// กราฟแนวโน้มภาพรวม — ยอดขาด / คลาดเคลื่อนรวม / ขาดที่อธิบายไม่ได้ / ตัดจ่าย
+function stkRenderOverChart(){
+  const box=$('stk_overchart'); if(!box) return;
+  const at=STK.auditTrend||[], wt=STK.woTrend||[];
+  const mons=Array.from(new Set(at.map(x=>x.period_ym).concat(wt.map(x=>x.period_ym)))).sort();
+  if(mons.length<2){ box.innerHTML='<div class="empty">ต้องมีข้อมูลอย่างน้อย 2 เดือนจึงจะเห็นแนวโน้ม</div>'; return; }
+  const sw={}; (STK.swapTrend||[]).forEach(x=>{ sw[x.period_ym]=Number(x.explained_amt||0); });
+  const A={}, B={}, W={};
+  at.forEach(x=>{ A[x.period_ym]=Math.abs(Number(x.short_amt||0)); B[x.period_ym]=Math.abs(Number(x.abs_amt||0)); });
+  wt.forEach(x=>{ W[x.period_ym]=Math.abs(Number(x.amt_net||0)); });
+  const lines=[
+    { name:'มูลค่าที่ขาด', color:stkHue(1), values:mons.map(m=>A[m]==null?null:A[m]) },
+    { name:'ขาดที่ยังอธิบายไม่ได้ (หักคีย์ผิดตัวแล้ว)', color:stkHue(3),
+      values:mons.map(m=>A[m]==null?null:Math.max(0, A[m]-(sw[m]||0))) },
+    { name:'คลาดเคลื่อนรวม (ขาด+เกิน)', color:stkHue(0), dash:true, values:mons.map(m=>B[m]==null?null:B[m]) },
+    { name:'สินค้าตัดจ่ายสุทธิ', color:stkHue(2), values:mons.map(m=>W[m]==null?null:W[m]) },
+  ].filter(l=>l.values.some(v=>v!=null));
+  box.innerHTML = stkModeBtn('stk_overchart')
+    + (STK.chartMode==='bar'
+        ? stkBarGroup(mons, lines.map(l=>({ name:l.name, color:l.color, values:l.values.map(v=>v||0) })), 'แนวโน้มรายเดือน')
+        : stkLineChart(mons, lines, { aria:'แนวโน้มมูลค่าที่ขาดและสินค้าตัดจ่ายรายเดือน' }));
+  stkWireMode('stk_overchart');
 }
 function stkRenderRisk(){
   const rows=(STK.risk||[]).slice().sort((a,b)=>Number(a.short_amt)-Number(b.short_amt));
@@ -14305,6 +14340,64 @@ function stkBarH(rows, opt){
       +'<text x="'+(W-2)+'" y="'+(y+rowH/2+4)+'" text-anchor="end" font-size="11" fill="var(--muted)">'+stkN(r.value)+' ('+stkN(r.value/tot*100,1)+'%)</text>';
   });
   return '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:560px;height:auto;display:block" role="img" aria-label="'+esc(opt.aria||'กราฟจัดอันดับ')+'">'+g+'</svg></div>';
+}
+
+// เส้นโค้งมน (Catmull-Rom → Bezier) — ใช้ชุดเดียวกับหน้ายอดขาย เพื่อให้หน้าตากราฟทั้งระบบเป็นภาษาเดียวกัน
+function stkSmooth(pts){
+  if(pts.length<2) return pts.length?('M'+pts[0].x.toFixed(1)+' '+pts[0].y.toFixed(1)):'';
+  let d='M'+pts[0].x.toFixed(1)+' '+pts[0].y.toFixed(1);
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1x=p1.x+(p2.x-p0.x)/6,c1y=p1.y+(p2.y-p0.y)/6,c2x=p2.x-(p3.x-p1.x)/6,c2y=p2.y-(p3.y-p1.y)/6;
+    d+=' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+','+c2x.toFixed(1)+' '+c2y.toFixed(1)+','+p2.x.toFixed(1)+' '+p2.y.toFixed(1);
+  }
+  return d;
+}
+// กราฟเส้นหลายชุด — แกนนอนเป็นเดือน · lines = [{name,color,values:[],dash?}]
+//   ค่าทุกตัวต้องเป็นบวกแล้ว (ยอดขาดให้ส่งค่าสัมบูรณ์มา จะได้อ่านว่า "ยิ่งสูงยิ่งแย่")
+function stkLineChart(months, lines, opt){
+  opt=opt||{};
+  if(!months.length || !lines.length) return '<div class="empty">ไม่มีข้อมูล</div>';
+  const W=760,H=opt.h||260,PL=62,PR=32,PT=14,PB=30;   // PR เผื่อป้ายเดือนสุดท้ายไม่ให้ล้นขอบ viewBox
+  const iw=W-PL-PR, ih=H-PT-PB;
+  const all=[]; lines.forEach(l=>l.values.forEach(v=>{ if(v!=null) all.push(v); }));
+  const max=Math.max(1, Math.max.apply(null, all))*1.08;   // เผื่อหัวกราฟ กันเส้นสูงสุดชนขอบ
+  const xAt=i=>PL+(months.length<=1?iw/2:iw*i/(months.length-1));
+  const yAt=v=>PT+ih-(v/max*ih);
+  let grid='';
+  for(let g=0;g<=3;g++){ const yy=PT+ih*g/3, v=max*(3-g)/3;
+    grid+='<line x1="'+PL+'" y1="'+yy.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+yy.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>'
+        +'<text x="'+(PL-7)+'" y="'+(yy+3.5).toFixed(1)+'" font-size="10" fill="var(--muted)" text-anchor="end">'+stkN(v)+'</text>'; }
+  const paths=lines.map(l=>{
+    const pts=months.map((m,i)=>l.values[i]==null?null:{x:xAt(i),y:yAt(l.values[i]),m:m,v:l.values[i]}).filter(Boolean);
+    if(!pts.length) return '';
+    const line='<path d="'+stkSmooth(pts)+'" fill="none" stroke="'+l.color+'" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"'+(l.dash?' stroke-dasharray="5 4"':'')+'/>';
+    const dots=pts.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3.2" fill="'+l.color+'" stroke="var(--card)" stroke-width="1.6" style="cursor:pointer"><title>'
+      +esc((l.name?l.name+' · ':'')+stkMonLb(p.m)+' · '+stkN(p.v)+' บ.')+'</title></circle>').join('');
+    return line+dots;
+  }).join('');
+  const xlbl=months.map((m,i)=>'<text x="'+xAt(i).toFixed(1)+'" y="'+(H-9)+'" font-size="11" fill="var(--muted)" text-anchor="middle">'+esc(stkMonLb(m))+'</text>').join('');
+  const legend='<div style="display:flex;flex-wrap:wrap;gap:12px;margin:0 0 8px;font-size:12.5px;color:var(--txt)">'
+    +lines.map(l=>'<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:14px;height:3px;border-radius:2px;background:'+l.color+(l.dash?';opacity:.65':'')+'"></span>'+esc(l.name)+'</span>').join('')+'</div>';
+  return legend+'<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:520px;height:auto;display:block" role="img" aria-label="'+esc(opt.aria||'กราฟเส้นรายเดือน')+'">'
+    +grid+paths+xlbl+'</svg></div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">เอาเมาส์ชี้ที่จุดเพื่อดูตัวเลขของเดือนนั้น · ยอดขาดแสดงเป็นค่าบวก (ยิ่งสูงยิ่งแย่)</div>';
+}
+// ปุ่มสลับ เส้น/แท่ง
+function stkModeBtn(id){
+  return '<div style="display:flex;gap:6px;margin-bottom:8px">'
+    +'<button type="button" class="btn btn-sm '+(STK.chartMode==='line'?'btn-pri':'btn-sec')+'" data-stkmode="line" data-stktarget="'+id+'">เส้น</button>'
+    +'<button type="button" class="btn btn-sm '+(STK.chartMode==='bar'?'btn-pri':'btn-sec')+'" data-stkmode="bar" data-stktarget="'+id+'">แท่ง</button></div>';
+}
+function stkWireMode(box){
+  const el=$(box); if(!el) return;
+  el.querySelectorAll('[data-stkmode]').forEach(b=>b.onclick=()=>{
+    STK.chartMode=b.dataset.stkmode;
+    try{ localStorage.setItem('stk_chartmode', STK.chartMode); }catch(e){}
+    stkRenderPma();
+    if(STK.pan==='over') stkRenderOverChart();
+    if($('stk_pmadrill') && $('stk_pmadrill').style.display!=='none' && STK.drillPma) stkRenderDrillChart();
+  });
 }
 
 // กราฟแท่งกลุ่ม — แกนนอนเป็นเดือน แต่ละเดือนมีแท่งของแต่ละชุดข้อมูล
@@ -14378,9 +14471,13 @@ function stkRenderPma(){
   const top=rows.slice(0,5), rest=rows.slice(5);
   const series=top.map((o,i)=>({ name:o.pma+' '+(o.name||''), color:stkHue(i),
     values:mons.map(m=>Math.abs(o.m[m]||0)) }));
-  if(rest.length) series.push({ name:'กลุ่มอื่น ๆ รวมกัน', color:stkHue(5),
+  if(rest.length) series.push({ name:'กลุ่มอื่น ๆ รวมกัน', color:stkHue(5), dash:true,
     values:mons.map(m=>Math.abs(rest.reduce((s,o)=>s+(o.m[m]||0),0))) });
-  $('stk_pmagrp').innerHTML=stkBarGroup(mons, series, 'เทียบมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก');
+  $('stk_pmagrp').innerHTML=stkModeBtn('stk_pmagrp')
+    + (STK.chartMode==='bar'
+        ? stkBarGroup(mons, series, 'เทียบมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก')
+        : stkLineChart(mons, series, { aria:'เทียบมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก' }));
+  stkWireMode('stk_pmagrp');
 
   // --- ตารางอันดับ (กดดูรายการสินค้าได้) ---
   const grand=rows.reduce((s,o)=>s+o.tot,0)||-1;
@@ -14421,6 +14518,7 @@ async function stkPmaDrill(pma, name){
   $('stk_pmaitembar').innerHTML=stkBarH(short.slice(0,10).map((x,i)=>({
     label:x.sku+' '+(x.name||''), value:Math.abs(Number(x.short_amt)), color:stkHue(0)
   })), { labelW:270, aria:'สินค้าที่ขาดมากที่สุดในกลุ่ม '+pma });
+  stkRenderDrillChart();
   const sumShort=short.reduce((s,x)=>s+Number(x.short_amt||0),0)||-1;
   $('stk_pmaitems').innerHTML='<table class="stk-tbl"><thead><tr><th>#</th><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th>'
     +mons.map(m=>'<th>'+esc(stkMonLb(m))+'</th>').join('')
@@ -14439,6 +14537,20 @@ async function stkPmaDrill(pma, name){
     }).join('')
     +'</tbody></table>'
     +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แสดง '+STK.items.length+' รายการ · เรียงตามมูลค่าที่ขาด · ช่อง "ขาดกี่เดือน" สีแดงคือขาดทุกเดือนที่มีข้อมูล</div>';
+}
+// กราฟรายเดือนของสินค้า 6 ตัวแรกในกลุ่ม — เห็นว่าตัวไหนหายต่อเนื่อง ตัวไหนหายครั้งเดียว
+function stkRenderDrillChart(){
+  const box=$('stk_pmatrend'); if(!box) return;
+  const mons=stkPmaAgg().mons;
+  const short=(STK.items||[]).filter(x=>Number(x.short_amt)<0).slice(0,6);
+  if(mons.length<2 || !short.length){ box.innerHTML='<div class="empty">ต้องมีข้อมูลอย่างน้อย 2 เดือนจึงจะเห็นแนวโน้มรายตัว</div>'; return; }
+  const lines=short.map((x,i)=>({ name:x.sku+' '+String(x.name||'').slice(0,22), color:stkHue(i),
+    values:mons.map(m=>{ const v=Number((x.by_month||{})[m]||0); return v<0?Math.abs(v):0; }) }));
+  box.innerHTML = stkModeBtn('stk_pmatrend')
+    + (STK.chartMode==='bar'
+        ? stkBarGroup(mons, lines, 'แนวโน้มรายเดือนของสินค้าในกลุ่ม')
+        : stkLineChart(mons, lines, { aria:'แนวโน้มมูลค่าที่ขาดรายเดือนของสินค้าในกลุ่ม' }));
+  stkWireMode('stk_pmatrend');
 }
 function stkPmaBack(){ $('stk_pmadrill').style.display='none'; $('stk_pmamain').style.display=''; }
 
