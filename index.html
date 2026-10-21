@@ -153,6 +153,7 @@
       <label>รหัสพนักงาน</label>
       <input id="advEmp" type="text" inputmode="numeric" placeholder="เช่น 0874771">
       <div id="advQuota" style="margin-top:10px"></div>
+      <div id="advEmgNote" style="margin-top:10px"></div>
       <div id="advForm" style="display:none">
         <label>จำนวนเงินที่ขอเบิก (บาท)</label>
         <div style="display:flex;gap:8px;align-items:center">
@@ -173,6 +174,12 @@
         <label>รายละเอียด <span style="color:#dc2626">*</span></label>
         <textarea id="advReason" rows="3" placeholder="อธิบายให้ชัดเจนว่าต้องใช้เงินทำอะไร" style="width:100%;padding:11px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font:inherit"></textarea>
         <div id="advReasonHint" style="font-size:12px;color:#6b7280;margin-top:3px"></div>
+        <!-- ★ 15 ต.ค. 69 — ช่องแนบหลักฐาน: โผล่เฉพาะตอนยื่นแบบ "เบิกฉุกเฉิน" (บังคับแนบตามตั้งค่า) -->
+        <div id="advEmgWrap" style="display:none;margin-top:10px">
+          <label>หลักฐานเหตุฉุกเฉิน <span style="color:#dc2626">*</span></label>
+          <label style="display:inline-block;padding:9px 13px;border:1.5px solid #e5e7eb;border-radius:10px;cursor:pointer;font-size:13px">📎 แนบรูป<input type="file" accept="image/*" multiple id="advEmgFiles" style="display:none"></label>
+          <div id="advEmgThumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+        </div>
         <button class="mbtn" id="advSubmit">ส่งคำขอเบิก</button>
       </div>
       <div id="advMine" style="font-size:12.5px;margin-top:12px"></div>
@@ -588,6 +595,11 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   const $=id=>document.getElementById(id);
   const advOvl=$('advOvl');
   let ADVQ=null;                       // ผลคำนวณวงเงินล่าสุด
+  // ★ 15 ต.ค. 69 — โหมดเบิกฉุกเฉินในหน้านี้
+  //   เดิม: หน้านี้ส่ง kind:'normal' ตายตัว + ปุ่มเปิดหน้าโผล่เฉพาะวันที่ 10–12
+  //   → พนักงานที่ ผจก. เปิดสิทธิ์ฉุกเฉินให้ กรอกครบแล้วกดส่ง เซิร์ฟเวอร์ตีกลับ
+  //     "คีย์เบิกได้เฉพาะวันที่ 10–12" ทุกครั้ง (หรือไม่เห็นปุ่มเลย)
+  let ADV_IS_EMG=false, ADV_EMG_PHOTOS=[];
 
   const bkDay = ()=> Number(HR.bangkokDate().slice(8,10));
   const money = n => Number(n||0).toLocaleString('th-TH');
@@ -604,7 +616,18 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     if(on && d>=ws && d<=we){
       btn.style.display='flex';
       $('advBtnSub').textContent='เปิดรอบเบิกแล้ววันนี้ (วันที่ '+ws+'–'+we+') — กดเพื่อดูวงเงินของคุณ';
+      return;
     }
+    // ★ นอกช่วงคีย์ — ถ้าคนที่จำรหัสไว้มีสิทธิ์เบิกฉุกเฉินที่ ผจก. เปิดให้ ก็ต้องเห็นปุ่มด้วย
+    if(!on) return;
+    try{
+      const s = (window.HRSession && HRSession.getEmp()) ? String(HRSession.getEmp()) : '';
+      if(!s) return;
+      const w = await HR.getAdvanceWindow(s);
+      if(!w) return;
+      btn.style.display='flex';
+      $('advBtnSub').textContent='🚨 คุณมีสิทธิ์เบิกฉุกเฉิน — กดเพื่อยื่นคำขอ';
+    }catch(e){}
   })();
 
   function advClose(){ advOvl.classList.remove('show'); }
@@ -620,6 +643,8 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
   async function loadQuota(){
     const id=$('advEmp').value.trim();
     $('advForm').style.display='none'; $('advMine').innerHTML='';
+    ADV_IS_EMG=false; ADV_EMG_PHOTOS=[];
+    $('advEmgNote').innerHTML=''; $('advEmgWrap').style.display='none'; $('advEmgThumbs').innerHTML='';
     if(!id){ $('advQuota').innerHTML=''; return; }
     // ★ ด่าน PIN — วงเงินเบิก/คะแนนวินัย เป็นข้อมูลส่วนตัว ห้ามคนอื่นเปิดดู
     if(!(await pinAllow(id))){ $('advEmp').value=''; $('advQuota').innerHTML=''; return; }
@@ -657,8 +682,44 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
       $('advAmt').max=q.remaining;
       $('advReasonHint').textContent='ต้องมีอย่างน้อย '+q.config.min_reason_len+' ตัวอักษร';
     }
+
+    // ---- โหมดเบิกฉุกเฉิน: นอกช่วงคีย์ แต่ ผจก. เปิดสิทธิ์ให้ ----
+    if(q.emergency_window && !q.in_window){
+      const exp=new Date(q.emergency_window.expires_at);
+      const left=exp.getTime()-Date.now();
+      const leftTxt=left>0 ? (Math.floor(left/3600000)+' ชม. '+Math.floor((left%3600000)/60000)+' นาที') : null;
+      if(!leftTxt){
+        $('advEmgNote').innerHTML='<div style="border:1.5px solid #fecaca;background:#fef2f2;border-radius:12px;padding:10px 12px;font-size:12.5px;color:#b91c1c">⛔ สิทธิ์เบิกฉุกเฉินของคุณหมดอายุแล้ว — ให้ผู้จัดการเปิดสิทธิ์ให้ใหม่</div>';
+        $('advForm').style.display='none';
+      } else if(q.config.require_face){
+        // ตั้งค่าบังคับสแกนใบหน้า → หน้านี้ไม่มีกล้อง ต้องไปยื่นที่หน้าลงเวลา
+        $('advEmgNote').innerHTML='<div style="border:1.5px solid #fdba74;background:#fff7ed;border-radius:12px;padding:10px 12px;font-size:12.5px;color:#7c2d12;line-height:1.6">🚨 คุณมีสิทธิ์เบิกฉุกเฉิน (เหลือ <b>'+leftTxt+'</b>)<br>ระบบตั้งให้ต้องยืนยันใบหน้า กรุณายื่นที่ <b>หน้าลงเวลาเข้างาน</b> — พิมพ์รหัสพนักงานแล้วกดการ์ด "เบิกฉุกเฉิน"</div>';
+        $('advForm').style.display='none';
+      } else {
+        ADV_IS_EMG=true;
+        $('advEmgNote').innerHTML='<div style="border:1.5px solid #fdba74;background:#fff7ed;border-radius:12px;padding:10px 12px;font-size:12.5px;color:#7c2d12;line-height:1.6">🚨 <b>เบิกฉุกเฉิน</b> — ผู้จัดการเปิดสิทธิ์ให้ (เหลือเวลาอีก <b>'+leftTxt+'</b>)<br>ต้องระบุเหตุให้ชัดเจน'+(q.config.emergency_require_evidence?' และ <b>แนบหลักฐานอย่างน้อย 1 รูป</b>':'')+' · HR เป็นผู้อนุมัติ</div>';
+        $('advForm').style.display='block';
+        $('advAmt').max=q.remaining;
+        $('advReasonHint').textContent='ต้องมีอย่างน้อย '+q.config.min_reason_len+' ตัวอักษร';
+        if(q.config.emergency_require_evidence) $('advEmgWrap').style.display='block';
+        $('advSubmit').textContent='ส่งคำขอเบิกฉุกเฉิน';
+      }
+    } else {
+      $('advSubmit').textContent='ส่งคำขอเบิก';
+    }
     renderMine(id);
   }
+
+  // แนบหลักฐาน (เบิกฉุกเฉิน)
+  $('advEmgFiles') && $('advEmgFiles').addEventListener('change', async e=>{
+    const files=[...(e.target.files||[])];
+    for(const f of files){
+      const d=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>res(null); r.readAsDataURL(f); });
+      if(d) ADV_EMG_PHOTOS.push(d);
+    }
+    e.target.value='';
+    $('advEmgThumbs').innerHTML=ADV_EMG_PHOTOS.map(u=>'<img src="'+u+'" style="width:58px;height:58px;object-fit:cover;border-radius:8px">').join('');
+  });
 
   $('advMax').onclick=()=>{ if(ADVQ){ $('advAmt').value=ADVQ.remaining; checkAmt(); } };
   $('advAmt').addEventListener('input', checkAmt);
@@ -678,17 +739,22 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
     if(!amt){ toast('err','ระบุจำนวนเงินที่ขอเบิก'); return; }
     const reason=$('advReason').value.trim();
     if(reason.length < ADVQ.config.min_reason_len){ toast('err','ระบุเหตุผลอย่างน้อย '+ADVQ.config.min_reason_len+' ตัวอักษร'); return; }
-    if(!confirm('ยืนยันส่งคำขอเบิก '+money(amt)+' บาท?\n\nยอดนี้จะถูกหักคืนจากเงินเดือนรอบถัดไปครั้งเดียวเต็มจำนวน')) return;
+    if(ADV_IS_EMG && ADVQ.config.emergency_require_evidence && !ADV_EMG_PHOTOS.length){ toast('err','เบิกฉุกเฉินต้องแนบหลักฐานอย่างน้อย 1 รูป'); return; }
+    const _lbl = ADV_IS_EMG ? 'ส่งคำขอเบิกฉุกเฉิน' : 'ส่งคำขอเบิก';
+    if(!confirm('ยืนยันส่งคำขอเบิก'+(ADV_IS_EMG?'ฉุกเฉิน':'')+' '+money(amt)+' บาท?\n\nยอดนี้จะถูกหักคืนจากเงินเดือนรอบถัดไปครั้งเดียวเต็มจำนวน')) return;
     const btn=$('advSubmit'); btn.disabled=true; btn.textContent='กำลังส่ง…';
     try{
       // หมายเหตุ: ถ้าเปิด require_face ในตั้งค่า ต้องยืนยันใบหน้าที่หน้าลงเวลา (ระบบจะแจ้งให้ทราบ)
       const r=await HR.submitAdvance({ empId:$('advEmp').value.trim(), amount:amt, reason,
-        reason_category:$('advCat').value||null, face_verified:false, kind:'normal' });
+        reason_category:$('advCat').value||null, face_verified:false,
+        kind: ADV_IS_EMG ? 'emergency' : 'normal',
+        photos: ADV_IS_EMG ? ADV_EMG_PHOTOS : null });
       toast('ok','ส่งคำขอแล้ว · เลขที่ '+r.req_no);
       $('advAmt').value=''; $('advReason').value='';
+      ADV_EMG_PHOTOS=[]; $('advEmgThumbs').innerHTML='';
       await loadQuota();
     }catch(e){ toast('err', e.message||'ส่งไม่สำเร็จ'); }
-    btn.disabled=false; btn.textContent='ส่งคำขอเบิก';
+    btn.disabled=false; btn.textContent=_lbl;
   };
 
   async function renderMine(id){
