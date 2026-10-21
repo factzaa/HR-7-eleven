@@ -720,7 +720,13 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <!-- ★ 21 ต.ค. 69 — ถังขยะใบสมัคร (เฉพาะสำนักงาน) -->
     <button class="btn btn-sec btn-sm" id="rc_trashbtn"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ถังขยะ <span id="rc_trashn" class="shsub-badge" style="display:none">0</span></button>
   </div>
+  <!-- ★ 21 ต.ค. 69 — แยกเป็น 2 แผง: ใบสมัคร (โฟลเดอร์ตามสถานะ) · ประวัติ (ตาราง) -->
+  <div class="shsub" id="rcsub">
+    <button class="shsub-b on" type="button" data-rcpan="folder"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> ใบสมัคร</button>
+    <button class="shsub-b" type="button" data-rcpan="hist"><svg class="ei" viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18"/></svg> ประวัติ (ตาราง)</button>
+  </div>
   <div id="rc_board"><div class="empty">กำลังโหลด…</div></div>
+  <div id="rc_hist" style="display:none"></div>
   <div id="rc_trash" style="display:none"></div>
 </div>
 
@@ -8923,8 +8929,8 @@ async function rcTrashCount(){
 }
 async function rcTrashShow(on){
   const box=$('rc_trash'), board=$('rc_board');
-  if(!on){ box.style.display='none'; board.style.display=''; return; }
-  board.style.display='none'; box.style.display='block';
+  if(!on){ box.style.display='none'; if(typeof RC_PAN!=='undefined'&&RC_PAN==='hist'){ $('rc_hist').style.display=''; } else board.style.display=''; return; }
+  board.style.display='none'; if($('rc_hist')) $('rc_hist').style.display='none'; box.style.display='block';
   box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   let r; try{ r=await post({ action:'hr_applicants_trash', ...authBody() }); }
   catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
@@ -8985,14 +8991,16 @@ async function loadRecruit(){
   if($('rc_branch') && !$('rc_branch').dataset.filled){
     $('rc_branch').innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join('');
     $('rc_branch').dataset.filled='1';
-    $('rc_branch').onchange=renderRcBoard;
-    $('rc_search').oninput=renderRcBoard;
+    const _rcRe=()=>{ if(RC_PAN==='hist') renderRcHistory(); else renderRcBoard(); };
+    $('rc_branch').onchange=_rcRe;
+    $('rc_search').oninput=_rcRe;
     $('rc_refresh').onclick=loadRecruit;
-    $('rc_position').onchange=renderRcBoard;
-    $('rc_status').onchange=renderRcBoard;
-    $('rc_from').onchange=renderRcBoard;
-    $('rc_to').onchange=renderRcBoard;
-    $('rc_clear').onclick=()=>{ $('rc_search').value=''; $('rc_position').value=''; $('rc_status').value=''; $('rc_branch').value=''; $('rc_from').value=''; $('rc_to').value=''; renderRcBoard(); };
+    $('rc_position').onchange=_rcRe;
+    $('rc_status').onchange=_rcRe;
+    $('rc_from').onchange=_rcRe;
+    $('rc_to').onchange=_rcRe;
+    $('rc_clear').onclick=()=>{ $('rc_search').value=''; $('rc_position').value=''; $('rc_status').value=''; $('rc_branch').value=''; $('rc_from').value=''; $('rc_to').value=''; _rcRe(); };
+    document.querySelectorAll('#rcsub .shsub-b').forEach(b=>b.onclick=()=>rcPan(b.dataset.rcpan));
     if($('rc_trashbtn')) $('rc_trashbtn').onclick=()=>rcTrashShow($('rc_trash').style.display==='none');
   }
   // ถังขยะเป็นสิทธิ์ของสำนักงาน — โหมด ผจก. ซ่อนปุ่มไปเลย
@@ -9011,14 +9019,26 @@ async function loadRecruit(){
   }
   renderRcBoard();
 }
-function renderRcBoard(){
-  const box=$('rc_board'); if(!box) return;
+// ★ 21 ต.ค. 69 — แผง "ใบสมัคร" เปลี่ยนจากกระดานคอลัมน์ยาว ๆ เป็นโฟลเดอร์ตามสถานะ (กดพับ/กางได้)
+//   ของเดิมเป็นคานบัง 5 คอลัมน์ พอ "รับเริ่มงาน" มี 49 ใบ "ไม่ผ่าน" 23 ใบ หน้าจอยาวมากจนหาอะไรไม่เจอ
+let RC_PAN='folder';
+let RC_OPEN={ new:true, reviewing:true, interview:true, hired:false, rejected:false };   // กลุ่มที่ยังทำงานอยู่กางไว้ · ประวัติพับไว้
+function rcPan(name){
+  RC_PAN=name;
+  document.querySelectorAll('#rcsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.rcpan===name));
+  $('rc_board').style.display = (name==='folder')?'':'none';
+  $('rc_hist').style.display  = (name==='hist')?'':'none';
+  $('rc_trash').style.display = 'none';
+  if(name==='hist') renderRcHistory(); else renderRcBoard();
+}
+// กรองร่วมของทั้งสองแผง
+function rcFiltered(){
   const q=($('rc_search')?$('rc_search').value:'').trim().toLowerCase();
   const bf=$('rc_branch')?$('rc_branch').value:'';
   const pf=$('rc_position')?$('rc_position').value:'';
   const from=$('rc_from')?$('rc_from').value:'';
   const to=$('rc_to')?$('rc_to').value:'';
-  const rows=RC_ROWS.filter(a=>{
+  return RC_ROWS.filter(a=>{
     if(bf && String(a.branch_id)!==String(bf)) return false;
     if(pf && String(a.position||'')!==String(pf)) return false;
     const d=(a.created_at||'').slice(0,10);
@@ -9027,16 +9047,130 @@ function renderRcBoard(){
     if(q && !((a.full_name+' '+(a.phone||'')+' '+(a.position||'')+' '+(a.nickname||'')).toLowerCase().includes(q))) return false;
     return true;
   });
+}
+// เอกสารครบไหม (4 อย่างที่ถือว่าจำเป็น)
+function rcDocs(a){
+  const need=[['รูปถ่าย',a.photo_url],['บัตรประชาชน',a.idcard_url],['ทะเบียนบ้าน',a.house_url],['วุฒิการศึกษา',a.edu_url]];
+  const miss=need.filter(x=>!x[1]).map(x=>x[0]);
+  return { ok:need.length-miss.length, total:need.length, miss };
+}
+function renderRcBoard(){
+  const box=$('rc_board'); if(!box) return;
+  const rows=rcFiltered();
   const sf=$('rc_status')?$('rc_status').value:'';
   const stages=sf?RC_STAGES.filter(s=>s.key===sf):RC_STAGES;
-  box.innerHTML='<div class="kanban">'+stages.map(st=>{
+  box.innerHTML=stages.map(st=>{
     const cards=rows.filter(a=>a.status===st.key);
-    return '<div class="kanban-col">'
-      +'<div style="font-weight:700;font-size:13.5px;padding:4px 6px 8px;border-bottom:2px solid '+st.color+'">'+st.label+' <span style="color:var(--muted);font-weight:500">('+cards.length+')</span></div>'
-      +(cards.length?cards.map(a=>rcCard(a)).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 6px;text-align:center">—</div>')
-      +'</div>';
-  }).join('')+'</div>';
+    const open=(sf===st.key)||RC_OPEN[st.key];
+    return '<details data-rcfold="'+st.key+'"'+(open?' open':'')+' style="margin-bottom:10px;background:var(--card);border:1px solid var(--line);border-left:4px solid '+st.color+';border-radius:14px">'
+      +'<summary style="cursor:pointer;list-style:none;padding:12px 15px;display:flex;align-items:center;gap:9px">'
+        +'<svg class="ei" viewBox="0 0 24 24" style="flex:none;color:'+st.color+'"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'
+        +'<b style="font-size:14.5px">'+esc(st.label)+'</b>'
+        +'<span style="color:var(--muted);font-size:13px">'+cards.length+' ใบ</span>'
+        +(cards.filter(a=>!a.seen).length?('<span style="background:#dc2626;color:#fff;font-size:10.5px;border-radius:999px;padding:1px 7px">ใหม่ '+cards.filter(a=>!a.seen).length+'</span>'):'')
+      +'</summary>'
+      +'<div style="padding:0 12px 12px">'
+      +(cards.length
+        ? '<div class="rc-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:9px">'+cards.map(a=>rcCard(a)).join('')+'</div>'
+        : '<div style="color:var(--muted);font-size:12.5px;padding:8px 2px">— ไม่มีใบสมัครในกลุ่มนี้ —</div>')
+      +'</div></details>';
+  }).join('');
   box.querySelectorAll('[data-rcopen]').forEach(c=>c.onclick=()=>openApplicant(c.dataset.rcopen));
+  // จำว่าพับ/กางกลุ่มไหนไว้ จะได้ไม่เด้งกลับทุกครั้งที่กรอง
+  box.querySelectorAll('[data-rcfold]').forEach(d=>d.addEventListener('toggle',()=>{ RC_OPEN[d.dataset.rcfold]=d.open; }));
+}
+// ---------- ประวัติ: ตารางเดียว กรองตามสถานะ ----------
+let RC_HIST_ST='hired';
+function rcHistRows(){
+  const rows=rcFiltered();
+  if(RC_HIST_ST==='all') return rows.slice();
+  if(RC_HIST_ST==='closed') return rows.filter(a=>a.status==='hired'||a.status==='rejected');
+  return rows.filter(a=>a.status===RC_HIST_ST);
+}
+function renderRcHistory(){
+  const box=$('rc_hist'); if(!box) return;
+  const opts=[['hired','รับเริ่มงาน'],['rejected','ไม่ผ่าน'],['closed','รับเริ่มงาน + ไม่ผ่าน'],['all','ทุกสถานะ']];
+  const rows=rcHistRows().slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+  const nActive=rows.filter(a=>a.status==='hired'&&a.emp_active===true).length;
+  const nLeft=rows.filter(a=>a.status==='hired'&&a.emp_active===false).length;
+  let h='<div class="card" style="margin-bottom:10px"><div class="card-b" style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">'
+    +'<b style="font-size:13px">แสดง</b>'
+    +'<select id="rch_st" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px">'
+      +opts.map(o=>'<option value="'+o[0]+'"'+(RC_HIST_ST===o[0]?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select>'
+    +'<span class="muted" style="font-size:12.5px">'+rows.length+' รายการ'
+      +((RC_HIST_ST==='hired'||RC_HIST_ST==='closed')?(' · ยังทำงานอยู่ '+nActive+' · ออกแล้ว '+nLeft):'')
+      +' · ใช้ตัวกรองสาขา/ตำแหน่ง/ช่วงวันที่ด้านบนร่วมด้วยได้</span>'
+    +'<button class="btn btn-sec btn-sm" id="rch_csv" style="margin-left:auto"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 4 5-4"/><path d="M4 20h16"/></svg> CSV</button>'
+    +'</div></div>';
+  if(!rows.length){ box.innerHTML=h+'<div class="empty">ไม่มีรายการตามตัวกรองนี้</div>'; rcHistWire(); return; }
+  const td='padding:7px 9px;font-size:12.5px;vertical-align:top';
+  const th='padding:9px;font-size:12.5px;white-space:nowrap;text-align:left';
+  h+='<div class="card" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;min-width:1180px">'
+    +'<thead><tr style="background:var(--bg)">'
+      +'<th style="'+th+'">ชื่อ</th><th style="'+th+'">ตำแหน่ง</th><th style="'+th+'">สาขาที่สมัคร</th>'
+      +'<th style="'+th+'">เบอร์โทร</th><th style="'+th+'">วันที่สมัคร</th><th style="'+th+'">สถานะ</th>'
+      +'<th style="'+th+'">นัดสัมภาษณ์ / ผล</th><th style="'+th+'">รหัสพนักงาน</th><th style="'+th+'">วันเริ่มงาน</th>'
+      +'<th style="'+th+'">ตอนนี้</th><th style="'+th+'">เหตุผลที่ไม่ผ่าน</th><th style="'+th+'">วันปิดใบ</th><th style="'+th+'">เอกสาร</th>'
+    +'</tr></thead><tbody>'
+    +rows.map(a=>{
+      const st=RC_STAGES.find(x=>x.key===a.status)||{label:a.status,color:'#6b7280'};
+      const d=rcDocs(a);
+      const now = a.status!=='hired' ? '<span style="color:var(--muted)">—</span>'
+        : (a.emp_active===true ? '<span style="color:#16a34a;font-weight:600">ยังทำงานอยู่</span>'
+          : a.emp_active===false ? ('<span style="color:#b91c1c;font-weight:600">ออกแล้ว</span>'+(a.emp_end_date?('<div style="color:var(--muted)">'+beDate(a.emp_end_date)+'</div>'):''))
+          : '<span style="color:var(--muted)">ไม่พบทะเบียน</span>');
+      const iv = a.interview_at
+        ? (beDateTime(a.interview_at)+(a.interview_note?('<div style="color:var(--muted)">'+esc(a.interview_note)+'</div>'):''))
+        : '<span style="color:var(--muted)">—</span>';
+      return '<tr style="border-top:1px solid var(--line)">'
+        +'<td style="'+td+'"><a href="#" data-rcopen2="'+esc(a.id)+'" style="font-weight:600;color:var(--accent);text-decoration:none">'+esc(a.full_name)+'</a>'
+          +(a.nickname?('<div style="color:var(--muted)">('+esc(a.nickname)+')</div>'):'')+'</td>'
+        +'<td style="'+td+'">'+esc(a.position||'—')+'</td>'
+        +'<td style="'+td+'">'+esc(a.branch_name||'—')+'</td>'
+        +'<td style="'+td+'">'+(a.phone?('<a href="tel:'+esc(a.phone)+'" style="color:#0369a1;text-decoration:none">'+esc(a.phone)+'</a>'):'—')+'</td>'
+        +'<td style="'+td+'white-space:nowrap">'+beDate(a.created_at)+'</td>'
+        +'<td style="'+td+'white-space:nowrap"><span style="color:'+st.color+';font-weight:600">'+esc(st.label)+'</span></td>'
+        +'<td style="'+td+'max-width:190px">'+iv+'</td>'
+        +'<td style="'+td+'" class="mono">'+esc(a.hired_emp_id||'—')+'</td>'
+        +'<td style="'+td+'white-space:nowrap">'+(a.start_date||a.emp_start_date?beDate(a.start_date||a.emp_start_date):'—')+'</td>'
+        +'<td style="'+td+'white-space:nowrap">'+now+'</td>'
+        +'<td style="'+td+'max-width:220px;white-space:normal">'+(a.reject_reason?esc(a.reject_reason):'<span style="color:var(--muted)">—</span>')+'</td>'
+        +'<td style="'+td+'white-space:nowrap">'+((a.status==='hired'||a.status==='rejected')&&a.updated_at?beDate(a.updated_at):'—')+'</td>'
+        +'<td style="'+td+'">'+(d.miss.length
+            ? '<span style="color:#b45309;font-weight:600">'+d.ok+'/'+d.total+'</span><div style="color:var(--muted)">ขาด '+esc(d.miss.join(', '))+'</div>'
+            : '<span style="color:#16a34a;font-weight:600">ครบ '+d.total+'/'+d.total+'</span>')+'</td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table></div>';
+  box.innerHTML=h;
+  rcHistWire();
+}
+function rcHistWire(){
+  const sel=$('rch_st'); if(sel) sel.onchange=()=>{ RC_HIST_ST=sel.value; renderRcHistory(); };
+  const csv=$('rch_csv'); if(csv) csv.onclick=rcHistCsv;
+  const box=$('rc_hist');
+  box.querySelectorAll('[data-rcopen2]').forEach(a=>a.onclick=(e)=>{ e.preventDefault(); openApplicant(a.dataset.rcopen2); });
+}
+function rcHistCsv(){
+  const rows=rcHistRows().slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+  if(!rows.length){ toast('err','ไม่มีรายการให้ดาวน์โหลด'); return; }
+  const head=['ชื่อ-สกุล','ชื่อเล่น','ตำแหน่ง','สาขาที่สมัคร','เบอร์โทร','วันที่สมัคร','สถานะ','วันนัดสัมภาษณ์','ผลสัมภาษณ์','รหัสพนักงาน','วันเริ่มงาน','สถานะปัจจุบัน','วันที่ออก','เหตุผลที่ไม่ผ่าน','วันปิดใบ','เอกสารที่ขาด'];
+  const line=a=>{ const d=rcDocs(a); return [
+    a.full_name, a.nickname||'', a.position||'', a.branch_name||'', a.phone||'',
+    (a.created_at||'').slice(0,10), rcStageLabel(a.status),
+    (a.interview_at||'').slice(0,16).replace('T',' '), a.interview_note||'',
+    a.hired_emp_id||'', (a.start_date||a.emp_start_date||'').slice(0,10),
+    a.status==='hired'?(a.emp_active===true?'ยังทำงานอยู่':a.emp_active===false?'ออกแล้ว':'ไม่พบทะเบียน'):'',
+    (a.emp_end_date||'').slice(0,10), a.reject_reason||'',
+    ((a.status==='hired'||a.status==='rejected')?(a.updated_at||'').slice(0,10):''),
+    d.miss.join(' / ') ]; };
+  const esc2=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lines=[head.join(',')].concat(rows.map(a=>line(a).map(esc2).join(',')));
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const el=document.createElement('a'); el.href=URL.createObjectURL(blob);
+  el.download='ประวัติผู้สมัคร_'+(new Date().toISOString().slice(0,10))+'.csv';
+  document.body.appendChild(el); el.click(); el.remove();
+  toast('ok','ดาวน์โหลด CSV แล้ว');
 }
 function rcCard(a){
   const nw=!a.seen?'<span style="background:#dc2626;color:#fff;font-size:10px;border-radius:999px;padding:1px 6px;margin-left:4px">ใหม่</span>':'';
