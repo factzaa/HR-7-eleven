@@ -7884,7 +7884,26 @@
     const [aR, brR] = await Promise.all([q, sb().from('branches').select('branch_id,name')]);
     if (aR.error) throw aR.error;
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
-    const rows = (aR.data || []).map(a => ({ ...a, branch_name: brName[a.branch_id] || a.branch_id || '—' }));
+    // ★ 21 ต.ค. 69 — คนที่รับเข้าทำงานแล้ว ดึงสถานะปัจจุบันมาด้วย (ยังทำงานอยู่ / ลาออกแล้ว)
+    //   ใช้ในหน้า "ประวัติ" จะได้ดูย้อนหลังได้ว่าคนที่รับเข้าไปอยู่ต่อหรือไม่
+    const hiredIds = [...new Set((aR.data || []).map(a => a.hired_emp_id).filter(Boolean))];
+    const empInfo = {};
+    if (hiredIds.length) {
+      const { data: eRows } = await sb().from('employees')
+        .select('emp_id,active,start_date,end_date,branch_id').in('emp_id', hiredIds);
+      (eRows || []).forEach(e => { empInfo[e.emp_id] = e; });
+    }
+    const rows = (aR.data || []).map(a => {
+      const e = a.hired_emp_id ? empInfo[a.hired_emp_id] : null;
+      return {
+        ...a,
+        branch_name: brName[a.branch_id] || a.branch_id || '—',
+        emp_active: e ? (e.active !== false) : null,
+        emp_start_date: e ? (e.start_date || null) : null,
+        emp_end_date: e ? (e.end_date || null) : null,
+        emp_branch_name: e ? (brName[e.branch_id] || e.branch_id || '') : '',
+      };
+    });
     const counts = { new: 0, reviewing: 0, interview: 0, hired: 0, rejected: 0, unseen: 0 };
     rows.forEach(r => { if (counts[r.status] != null) counts[r.status]++; if (!r.seen) counts.unseen++; });
     return { ok: true, rows, counts };
