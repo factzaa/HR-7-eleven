@@ -1798,6 +1798,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <button class="shsub-b" type="button" data-stkpan="chronic"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> ของหายซ้ำซาก</button>
     <button class="shsub-b" type="button" data-stkpan="swap"><svg class="ei" viewBox="0 0 24 24"><path d="M4 8h12l-3-3M20 16H8l3 3"/></svg> คีย์ผิดตัว</button>
     <button class="shsub-b" type="button" data-stkpan="pma"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> รายกลุ่มสินค้า</button>
+    <button class="shsub-b" type="button" data-stkpan="diff"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-4 3 3 4-6"/><path d="M7 20l4-2 3 1 4-3"/></svg> เทียบเดือน</button>
     <button class="shsub-b" type="button" data-stkpan="wo"><svg class="ei" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg> สินค้าตัดจ่าย</button>
     <button class="shsub-b" type="button" data-stkpan="profile"><svg class="ei" viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/></svg> โปรไฟล์สาขา</button>
     <button class="shsub-b" type="button" data-stkpan="upload" id="stksub_upload"><svg class="ei" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg> นำเข้าไฟล์</button>
@@ -1888,10 +1889,65 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
 
   <!-- ===== รายกลุ่มสินค้า ===== -->
   <div class="stkpan" id="stkpan_pma" style="display:none">
+    <div id="stk_pmamain">
+      <div class="card" style="padding:14px;margin-bottom:14px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">อันดับกลุ่มสินค้าที่ขาดมากที่สุด</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">รวมทั้งช่วงเดือนที่เลือก · ตัวเลขในแท่งคือสัดส่วนของยอดขาดทั้งหมด</div>
+        <div id="stk_pmabar"></div>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:14px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">เทียบรายเดือน — 5 กลุ่มที่ขาดมากที่สุด</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">ดูว่ากลุ่มไหนแย่ลงต่อเนื่อง กลุ่มไหนเป็นแค่เดือนเดียว</div>
+        <div id="stk_pmagrp"></div>
+      </div>
+      <div class="card" style="padding:14px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">ตารางอันดับ — กดแถวเพื่อดูว่าเป็นสินค้าตัวไหน</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">ช่อง <b>แนวโน้ม</b> เทียบครึ่งหลังกับครึ่งแรกของช่วงที่เลือก</div>
+        <div style="overflow-x:auto"><div id="stk_pma"><div class="empty">กำลังโหลด…</div></div></div>
+      </div>
+    </div>
+    <div id="stk_pmadrill" style="display:none">
+      <div class="toolbar">
+        <button class="btn btn-sec btn-sm" id="stk_pmaback" type="button">← กลับไปอันดับกลุ่ม</button>
+        <h3 id="stk_pmatitle" style="flex:1;font-size:15px;font-weight:600"></h3>
+        <button class="btn btn-sec btn-sm" id="stk_pmacsv" type="button">ดาวน์โหลด CSV</button>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:14px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:10px">10 สินค้าที่ขาดมากที่สุดในกลุ่มนี้</div>
+        <div id="stk_pmaitembar"></div>
+      </div>
+      <div style="overflow-x:auto"><div id="stk_pmaitems"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+  </div>
+
+  <!-- ===== เทียบเดือน ===== -->
+  <div class="stkpan" id="stkpan_diff" style="display:none">
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <div style="font-size:13px;line-height:1.6">เทียบ 2 เดือนลงลึกถึงตัวสินค้า — ตอบคำถามว่า "เดือนนี้แย่ลงเพราะตัวไหนกันแน่"
+        <span style="color:var(--muted)">· ตัวเลข <b>เปลี่ยนแปลง</b> ติดลบ = เดือนหลังขาดมากกว่าเดือนแรก</span></div>
+    </div>
+    <div class="toolbar">
+      <span style="font-size:13px;color:var(--muted)">เทียบเดือน</span>
+      <select id="stk_dfa" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+      <span style="font-size:13px;color:var(--muted)">กับ</span>
+      <select id="stk_dfb" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+      <button class="btn btn-pri btn-sm" id="stk_dfgo" type="button">เทียบ</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-sec btn-sm" id="stk_dfcsv" type="button">ดาวน์โหลด CSV</button>
+    </div>
+    <div id="stk_dfkpi" class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr))"></div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">เปลี่ยนแปลงรายกลุ่มสินค้า</div>
+      <div id="stk_dfpma"></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">สินค้าที่แย่ลงมากที่สุด</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">นี่คือรายชื่อที่ควรเอาไปตรวจจริงก่อน</div>
+      <div style="overflow-x:auto"><div id="stk_dfworse"><div class="empty">กดปุ่ม "เทียบ" เพื่อเริ่ม</div></div></div>
+    </div>
     <div class="card" style="padding:14px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px">มูลค่าที่ขาด แยกตามกลุ่มสินค้า (PMA)</div>
-      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">เรียงจากกลุ่มที่ขาดมากที่สุด · ช่อง <b>แนวโน้ม</b> เทียบครึ่งหลังกับครึ่งแรกของช่วงที่เลือก</div>
-      <div style="overflow-x:auto"><div id="stk_pma"><div class="empty">กำลังโหลด…</div></div></div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">สินค้าที่ดีขึ้นมากที่สุด</div>
+      <div style="overflow-x:auto"><div id="stk_dfbetter"></div></div>
     </div>
   </div>
 
@@ -13983,7 +14039,8 @@ function tsWire(){
 //
 // ต้องรัน supabase/stock_analysis_setup.sql ก่อน (ไม่รัน = ทุกหน้าขึ้นข้อความบอกให้รัน)
 // ============================================================
-const STK = { pan:'over', branch:'', from:'', to:'', uploads:[], chronic:[], wo:[], pma:[], risk:[], swap:[], swapTrend:[], prof:null };
+const STK = { pan:'over', branch:'', from:'', to:'', uploads:[], chronic:[], wo:[], pma:[], risk:[], swap:[], swapTrend:[],
+               auditTrend:[], audit_months:[], items:[], drillPma:'', drillName:'', diff:[], diffA:'', diffB:'', prof:null };
 const STK_RISK_LB = { theft:'ชิ้นเล็กหยิบง่าย', control:'ของควบคุมมูลค่าสูง', consume:'วัสดุสิ้นเปลือง',
                       fresh:'ของสด/หมดอายุ', drink:'เครื่องดื่ม', home:'ของใช้ในบ้าน', other:'อื่น ๆ' };
 const STK_RISK_HINT = {
@@ -14074,6 +14131,29 @@ async function stkInit(){
       รหัสที่ขาด:r.short_sku, ชื่อที่ขาด:r.short_name, จำนวนขาด:Number(r.short_qty).toFixed(0), มูลค่าขาด:Number(r.short_amt).toFixed(2),
       รหัสที่เกิน:r.over_sku, ชื่อที่เกิน:r.over_name, จำนวนเกิน:Number(r.over_qty).toFixed(0), มูลค่าเกิน:Number(r.over_amt).toFixed(2),
       อัตรา:Number(r.ratio).toFixed(0), ความคล้ายชื่อ:Number(r.similarity).toFixed(2), สุทธิ:Number(r.net_amt).toFixed(2) })));
+    $('stk_pmaback').onclick=stkPmaBack;
+    $('stk_pmacsv').onclick=()=>{
+      const mons=stkPmaAgg().mons;
+      stkCsv('สินค้าในกลุ่ม-'+(STK.drillPma||'')+'.csv', (STK.items||[]).map(x=>{
+        const o={ รหัสสินค้า:x.sku, ชื่อสินค้า:x.name, กลุ่ม:(x.pma||'')+' '+(x.pma_name||''),
+                  ลักษณะ:STK_RISK_LB[x.risk_type]||x.risk_type };
+        mons.forEach(m=>{ o[stkMonLb(m)]=Number((x.by_month||{})[m]||0).toFixed(2); });
+        o['ขาดกี่เดือน']=x.months_short; o['ขาดรวม']=Number(x.short_amt).toFixed(2);
+        o['จำนวนชิ้นที่ขาด']=Number(x.short_qty).toFixed(0);
+        o['เกินรวม']=Number(x.over_amt).toFixed(2); o['ตัดจ่าย']=Number(x.wo_amt).toFixed(2);
+        return o;
+      }));
+    };
+    $('stk_dfgo').onclick=()=>stkLoadDiff();
+    $('stk_dfa').onchange=()=>stkLoadDiff();
+    $('stk_dfb').onchange=()=>stkLoadDiff();
+    $('stk_dfcsv').onclick=()=>stkCsv('เทียบเดือน-'+(STK.diffA||'')+'-vs-'+(STK.diffB||'')+'.csv',
+      (STK.diff||[]).map(x=>({ รหัสสินค้า:x.sku, ชื่อสินค้า:x.name, กลุ่ม:(x.pma||'')+' '+(x.pma_name||''),
+        ลักษณะ:STK_RISK_LB[x.risk_type]||x.risk_type,
+        [stkMonLb(STK.diffA)]:Number(x.amt_a).toFixed(2), [stkMonLb(STK.diffB)]:Number(x.amt_b).toFixed(2),
+        เปลี่ยนแปลง:Number(x.diff).toFixed(2),
+        ['ชิ้น '+stkMonLb(STK.diffA)]:Number(x.qty_a).toFixed(0),
+        ['ชิ้น '+stkMonLb(STK.diffB)]:Number(x.qty_b).toFixed(0) })));
     $('stk_pf_save').onclick=stkProfSave;
     if($('stk_up_go'))      $('stk_up_go').onclick=stkUploadGo;
     if($('stk_up_refresh')) $('stk_up_refresh').onclick=()=>stkLoadUploads();
@@ -14089,9 +14169,11 @@ async function stkInit(){
 function stkPan(name){
   STK.pan=name;
   document.querySelectorAll('#stksub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.stkpan===name));
-  ['over','chronic','swap','pma','wo','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
+  ['over','chronic','swap','pma','diff','wo','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
+  if(name==='pma') stkPmaBack();                 // กลับมาแท็บนี้ใหม่ให้เริ่มที่อันดับกลุ่มเสมอ
   if(name==='chronic' && !STK.chronic.length) stkLoadChronic();
   else if(name==='swap' && !STK.swap.length) stkLoadSwap();
+  else if(name==='diff' && !STK.diff.length) stkLoadDiff();
   else if(name==='wo' && !STK.wo.length) stkLoadWo();
   else if(name==='profile') stkLoadProfile();
   else if(name==='upload') stkLoadUploads();
@@ -14100,10 +14182,11 @@ function stkReload(clear){
   STK.branch = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
   STK.from = $('stk_from')?$('stk_from').value:'';
   STK.to   = $('stk_to')?$('stk_to').value:'';
-  if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; }
+  if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; STK.diff=[]; STK.items=[]; }
   stkLoadOver();
   if(STK.pan==='chronic') stkLoadChronic();
   if(STK.pan==='swap') stkLoadSwap();
+  if(STK.pan==='diff') stkLoadDiff();
   if(STK.pan==='wo') stkLoadWo();
   if(STK.pan==='profile') stkLoadProfile();
   if(STK.pan==='upload') stkLoadUploads();
@@ -14120,6 +14203,7 @@ async function stkLoadOver(){
   const at=(r.audit_trend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
   const wt=(r.wo_trend||[]).slice().sort((a,b)=>a.period_ym<b.period_ym?-1:1);
   STK.pma=r.pma||[]; STK.risk=r.risk||[]; STK.swapTrend=r.swap_trend||[];
+  STK.auditTrend=at; STK.audit_months=at.map(x=>x.period_ym);
   const swMap={}; (r.swap_trend||[]).forEach(x=>{ swMap[x.period_ym]=x; });
 
   // ---- KPI: เดือนล่าสุดที่มีข้อมูล เทียบเดือนก่อน ----
@@ -14196,9 +14280,62 @@ function stkRenderRisk(){
       +'<td class="l" style="white-space:normal;color:var(--muted);font-size:12px">'+esc(STK_RISK_HINT[x.risk_type]||'')+'</td></tr>').join('')
     +'</tbody></table>';
 }
-function stkRenderPma(){
+// ---------- ชุดสีกราฟ (6 สี ไล่ความต่างให้แยกออกแม้ตาบอดสี และมีคู่สำหรับโหมดมืด) ----------
+const STK_HUE=['#2a78d6','#eb6834','#1baf7a','#8e5cc4','#b08400','#64748b'];
+const STK_HUE_DARK=['#3987e5','#d95926','#199e70','#a070d8','#c79a1a','#8b99a8'];
+function stkHue(i){ const dark=document.documentElement.getAttribute('data-theme')==='dark';
+  return (dark?STK_HUE_DARK:STK_HUE)[i%6]; }
+
+// กราฟแท่งแนวนอน — ใช้จัดอันดับ (ค่าทุกตัวเป็นบวกแล้ว)
+function stkBarH(rows, opt){
+  opt=opt||{};
+  if(!rows.length) return '<div class="empty">ไม่มีข้อมูล</div>';
+  const rowH=opt.rowH||26, LW=opt.labelW||230, W=760, PR=104, PT=6;   // PR เผื่อคอลัมน์ตัวเลขด้านขวา ไม่ให้ล้นกรอบ
+  const H=PT*2+rows.length*rowH;
+  const max=Math.max.apply(null, rows.map(r=>r.value))||1;
+  const tot=rows.reduce((s,r)=>s+r.value,0)||1;
+  const iw=W-LW-PR;
+  let g='';
+  const maxCh=Math.max(10, Math.floor((LW-12)/6.3));   // ตัดชื่อตามความกว้างป้ายจริง ไม่ให้ตัวหนังสือล้นออกนอกกราฟ
+  rows.forEach((r,i)=>{
+    const y=PT+i*rowH, w=Math.max(1, iw*r.value/max), col=r.color||stkHue(i);
+    const lb=String(r.label), lbs=lb.length>maxCh ? lb.slice(0,maxCh-1)+'…' : lb;
+    g+='<text x="'+(LW-8)+'" y="'+(y+rowH/2+4)+'" text-anchor="end" font-size="11.5" fill="var(--txt)">'+esc(lbs)+'<title>'+esc(lb)+'</title></text>'
+      +'<rect x="'+LW+'" y="'+(y+4)+'" width="'+w.toFixed(1)+'" height="'+(rowH-9)+'" rx="3" fill="'+col+'"'+(opt.click?' style="cursor:pointer"':'')+'/>'
+      +'<text x="'+(W-2)+'" y="'+(y+rowH/2+4)+'" text-anchor="end" font-size="11" fill="var(--muted)">'+stkN(r.value)+' ('+stkN(r.value/tot*100,1)+'%)</text>';
+  });
+  return '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:560px;height:auto;display:block" role="img" aria-label="'+esc(opt.aria||'กราฟจัดอันดับ')+'">'+g+'</svg></div>';
+}
+
+// กราฟแท่งกลุ่ม — แกนนอนเป็นเดือน แต่ละเดือนมีแท่งของแต่ละชุดข้อมูล
+function stkBarGroup(months, series, aria){
+  if(!months.length || !series.length) return '<div class="empty">ไม่มีข้อมูล</div>';
+  const W=760,H=240,PL=52,PR=10,PT=10,PB=28;
+  const iw=W-PL-PR, ih=H-PT-PB;
+  const max=Math.max.apply(null, series.flatMap(s=>s.values))||1;
+  const gw=iw/months.length, bw=Math.min(22,(gw-10)/series.length);
+  const y=v=>PT+ih*(1-v/max);
+  let g='';
+  for(let k=0;k<=3;k++){ const v=max*k/3;
+    g+='<line x1="'+PL+'" y1="'+y(v)+'" x2="'+(W-PR)+'" y2="'+y(v)+'" stroke="var(--line)" stroke-width="1"/>'
+      +'<text x="'+(PL-7)+'" y="'+(y(v)+4)+'" text-anchor="end" font-size="10.5" fill="var(--muted)">'+stkN(v)+'</text>'; }
+  months.forEach((m,i)=>{
+    const cx=PL+gw*i+gw/2;
+    g+='<text x="'+cx+'" y="'+(H-8)+'" text-anchor="middle" font-size="11" fill="var(--muted)">'+esc(stkMonLb(m))+'</text>';
+    series.forEach((s,si)=>{
+      const v=s.values[i]||0, h=Math.max(0, ih*v/max);
+      const x=cx-(series.length*bw)/2+si*bw;
+      if(h>0.5) g+='<rect x="'+x.toFixed(1)+'" y="'+y(v).toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+h.toFixed(1)+'" rx="2" fill="'+s.color+'"><title>'+esc(s.name+' · '+stkMonLb(m)+' · '+stkN(v)+' บ.')+'</title></rect>';
+    });
+  });
+  const legend='<div style="display:flex;flex-wrap:wrap;gap:12px;margin:0 0 8px;font-size:12.5px;color:var(--txt)">'
+    +series.map(s=>'<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:10px;border-radius:2px;background:'+s.color+'"></span>'+esc(s.name)+'</span>').join('')+'</div>';
+  return legend+'<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:560px;height:auto;display:block" role="img" aria-label="'+esc(aria||'กราฟเทียบรายเดือน')+'">'+g+'</svg></div>';
+}
+
+// รวมข้อมูล PMA × เดือน ให้อยู่ในรูปที่ตาราง/กราฟใช้ร่วมกันได้
+function stkPmaAgg(){
   const src=STK.pma||[];
-  if(!src.length){ $('stk_pma').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงเดือนที่เลือก</div>'; return; }
   const mons=Array.from(new Set(src.map(x=>x.period_ym))).sort();
   const g={};
   src.forEach(x=>{
@@ -14208,33 +14345,176 @@ function stkRenderPma(){
     o.tot+=Number(x.short_amt||0); o.sku+=Number(x.sku_n||0);
     if(!o.name) o.name=x.pma_name; if(!o.risk) o.risk=x.risk_type;
   });
+  return { mons, rows:Object.values(g).sort((a,b)=>a.tot-b.tot) };
+}
+function stkPmaTrend(o, mons){
+  if(mons.length<2) return '<span style="color:var(--muted)">—</span>';
   const half=Math.ceil(mons.length/2);
-  const rows=Object.values(g).sort((a,b)=>a.tot-b.tot);
-  const trend=(o)=>{
-    if(mons.length<2) return '<span style="color:var(--muted)">—</span>';
-    let a=0,b=0;
-    mons.forEach((m,i)=>{ (i<half?0:1) ? b+=(o.m[m]||0) : a+=(o.m[m]||0); });
-    const na=mons.slice(0,half).length, nb=mons.length-na;
-    const am=na?a/na:0, bm=nb?b/nb:0;
-    if(am===0 && bm===0) return '<span style="color:var(--muted)">—</span>';
-    if(am===0) return '<span style="color:var(--red)">เริ่มขาด</span>';
-    const ch=(bm-am)/Math.abs(am);
-    if(ch < -0.15) return '<span style="color:var(--red);font-weight:600">แย่ลง</span>';
-    if(ch >  0.15) return '<span style="color:var(--accent);font-weight:600">ดีขึ้น</span>';
-    return '<span style="color:var(--muted)">ทรงตัว</span>';
-  };
-  const tot=mons.map(m=>rows.reduce((s,o)=>s+(o.m[m]||0),0));
-  $('stk_pma').innerHTML='<table class="stk-tbl"><thead><tr><th class="l">กลุ่มสินค้า</th><th class="l">ลักษณะ</th>'
-    +mons.map(m=>'<th>'+esc(stkMonLb(m))+'</th>').join('')+'<th>รวม</th><th>แนวโน้ม</th></tr></thead><tbody>'
-    +rows.map(o=>'<tr><td class="l nm"><b>'+esc(o.pma)+'</b> '+esc(o.name||'')+'</td>'
-      +'<td class="l" style="font-size:12px;color:var(--muted)">'+esc(STK_RISK_LB[o.risk]||'')+'</td>'
-      +mons.map(m=>'<td'+(o.m[m]?' class="neg"':'')+'>'+(o.m[m]?stkN(o.m[m]):'—')+'</td>').join('')
-      +'<td class="neg"><b>'+stkN(o.tot)+'</b></td><td>'+trend(o)+'</td></tr>').join('')
-    +'</tbody><tfoot><tr><td class="l">รวมทุกกลุ่ม</td><td></td>'
-    +tot.map(v=>'<td class="neg">'+stkN(v)+'</td>').join('')
-    +'<td class="neg">'+stkN(tot.reduce((s,v)=>s+v,0))+'</td><td></td></tr></tfoot></table>';
+  let a=0,b=0;
+  mons.forEach((m,i)=>{ if(i<half) a+=(o.m[m]||0); else b+=(o.m[m]||0); });
+  const na=half, nb=mons.length-half;
+  const am=na?a/na:0, bm=nb?b/nb:0;
+  if(am===0 && bm===0) return '<span style="color:var(--muted)">—</span>';
+  if(am===0) return '<span style="color:var(--red)">เริ่มขาด</span>';
+  const ch=(bm-am)/Math.abs(am);
+  if(ch < -0.15) return '<span style="color:var(--red);font-weight:600">แย่ลง</span>';
+  if(ch >  0.15) return '<span style="color:var(--accent);font-weight:600">ดีขึ้น</span>';
+  return '<span style="color:var(--muted)">ทรงตัว</span>';
 }
 
+function stkRenderPma(){
+  const { mons, rows } = stkPmaAgg();
+  if(!rows.length){
+    $('stk_pma').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงเดือนที่เลือก</div>';
+    $('stk_pmabar').innerHTML=''; $('stk_pmagrp').innerHTML='';
+    return;
+  }
+  // --- กราฟอันดับ (12 กลุ่มแรก) ---
+  $('stk_pmabar').innerHTML=stkBarH(rows.slice(0,12).map((o,i)=>({
+    label:o.pma+' '+(o.name||''), value:Math.abs(o.tot), color:stkHue(i<6?i:5)
+  })), { aria:'อันดับกลุ่มสินค้าที่ขาดมากที่สุด' });
+
+  // --- กราฟเทียบรายเดือน: 5 กลุ่มแรก + อื่น ๆ ---
+  const top=rows.slice(0,5), rest=rows.slice(5);
+  const series=top.map((o,i)=>({ name:o.pma+' '+(o.name||''), color:stkHue(i),
+    values:mons.map(m=>Math.abs(o.m[m]||0)) }));
+  if(rest.length) series.push({ name:'กลุ่มอื่น ๆ รวมกัน', color:stkHue(5),
+    values:mons.map(m=>Math.abs(rest.reduce((s,o)=>s+(o.m[m]||0),0))) });
+  $('stk_pmagrp').innerHTML=stkBarGroup(mons, series, 'เทียบมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก');
+
+  // --- ตารางอันดับ (กดดูรายการสินค้าได้) ---
+  const grand=rows.reduce((s,o)=>s+o.tot,0)||-1;
+  const tot=mons.map(m=>rows.reduce((s,o)=>s+(o.m[m]||0),0));
+  $('stk_pma').innerHTML='<table class="stk-tbl"><thead><tr><th>#</th><th class="l">กลุ่มสินค้า</th><th class="l">ลักษณะ</th>'
+    +mons.map(m=>'<th>'+esc(stkMonLb(m))+'</th>').join('')+'<th>รวม</th><th>สัดส่วน</th><th>แนวโน้ม</th><th></th></tr></thead><tbody>'
+    +rows.map((o,i)=>'<tr data-stkpma="'+esc(o.pma)+'" style="cursor:pointer"><td>'+(i+1)+'</td>'
+      +'<td class="l nm"><b>'+esc(o.pma)+'</b> '+esc(o.name||'')+'</td>'
+      +'<td class="l" style="font-size:12px;color:var(--muted)">'+esc(STK_RISK_LB[o.risk]||'')+'</td>'
+      +mons.map(m=>'<td'+(o.m[m]?' class="neg"':'')+'>'+(o.m[m]?stkN(o.m[m]):'—')+'</td>').join('')
+      +'<td class="neg"><b>'+stkN(o.tot)+'</b></td>'
+      +'<td>'+stkN(o.tot/grand*100,1)+'%</td><td>'+stkPmaTrend(o,mons)+'</td>'
+      +'<td><span style="color:var(--accent);font-size:12px;white-space:nowrap">ดูสินค้า ›</span></td></tr>').join('')
+    +'</tbody><tfoot><tr><td></td><td class="l">รวมทุกกลุ่ม</td><td></td>'
+    +tot.map(v=>'<td class="neg">'+stkN(v)+'</td>').join('')
+    +'<td class="neg">'+stkN(tot.reduce((s,v)=>s+v,0))+'</td><td>100%</td><td></td><td></td></tr></tfoot></table>';
+  $('stk_pma').querySelectorAll('[data-stkpma]').forEach(tr=>{
+    tr.onclick=()=>{ const o=rows.find(x=>String(x.pma)===tr.dataset.stkpma); stkPmaDrill(tr.dataset.stkpma, o?o.name:''); };
+  });
+}
+
+// ---------- เจาะดูรายการสินค้าในกลุ่ม ----------
+async function stkPmaDrill(pma, name){
+  STK.drillPma=pma; STK.drillName=name||'';
+  $('stk_pmamain').style.display='none';
+  $('stk_pmadrill').style.display='';
+  $('stk_pmatitle').textContent='กลุ่ม '+pma+' '+(name||'')+' — รายการสินค้า';
+  $('stk_pmaitems').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  $('stk_pmaitembar').innerHTML='';
+  let r;
+  try{ r=await post({ action:'hr_stock_pma_items', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, pma }); }
+  catch(e){ $('stk_pmaitems').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
+  if(!r||!r.ok){ $('stk_pmaitems').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  STK.items=r.rows||[];
+  if(!STK.items.length){ $('stk_pmaitems').innerHTML='<div class="empty">ไม่มีรายการในกลุ่มนี้</div>'; return; }
+  const mons=stkPmaAgg().mons;
+  const short=STK.items.filter(x=>Number(x.short_amt)<0);
+  $('stk_pmaitembar').innerHTML=stkBarH(short.slice(0,10).map((x,i)=>({
+    label:x.sku+' '+(x.name||''), value:Math.abs(Number(x.short_amt)), color:stkHue(0)
+  })), { labelW:270, aria:'สินค้าที่ขาดมากที่สุดในกลุ่ม '+pma });
+  const sumShort=short.reduce((s,x)=>s+Number(x.short_amt||0),0)||-1;
+  $('stk_pmaitems').innerHTML='<table class="stk-tbl"><thead><tr><th>#</th><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th>'
+    +mons.map(m=>'<th>'+esc(stkMonLb(m))+'</th>').join('')
+    +'<th>ขาดกี่เดือน</th><th>ขาดรวม</th><th>ชิ้น</th><th>เกินรวม</th><th>ตัดจ่าย</th><th>สัดส่วนในกลุ่ม</th></tr></thead><tbody>'
+    +STK.items.map((x,i)=>{
+      const bm=x.by_month||{};
+      return '<tr><td>'+(i+1)+'</td><td class="l">'+esc(x.sku)+'</td>'
+      +'<td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+      +mons.map(m=>{ const v=Number(bm[m]||0);
+        return '<td'+(v<0?' class="neg"':'')+'>'+(v?stkN(v):'—')+'</td>'; }).join('')
+      +'<td'+(Number(x.months_short)>=mons.length&&mons.length>1?' style="color:var(--red);font-weight:700"':'')+'>'+esc(x.months_short)+'/'+mons.length+'</td>'
+      +'<td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.short_qty)+'</td>'
+      +'<td>'+(Number(x.over_amt)?stkN(x.over_amt):'—')+'</td>'
+      +'<td>'+(Number(x.wo_amt)?stkN(x.wo_amt,2):'—')+'</td>'
+      +'<td>'+(Number(x.short_amt)?stkN(Number(x.short_amt)/sumShort*100,1)+'%':'—')+'</td></tr>';
+    }).join('')
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แสดง '+STK.items.length+' รายการ · เรียงตามมูลค่าที่ขาด · ช่อง "ขาดกี่เดือน" สีแดงคือขาดทุกเดือนที่มีข้อมูล</div>';
+}
+function stkPmaBack(){ $('stk_pmadrill').style.display='none'; $('stk_pmamain').style.display=''; }
+
+// ---------- เทียบ 2 เดือน ----------
+function stkDiffFillMonths(){
+  const mons=(STK.audit_months||[]).slice().sort();
+  if(!mons.length) return;
+  const a=$('stk_dfa'), b=$('stk_dfb');
+  const opts=mons.map(m=>'<option value="'+esc(m)+'">'+esc(stkMonLb(m))+'</option>').join('');
+  const keepA=a.value, keepB=b.value;
+  a.innerHTML=opts; b.innerHTML=opts;
+  a.value = keepA && mons.indexOf(keepA)>=0 ? keepA : mons[Math.max(0,mons.length-2)];
+  b.value = keepB && mons.indexOf(keepB)>=0 ? keepB : mons[mons.length-1];
+}
+async function stkLoadDiff(){
+  stkDiffFillMonths();
+  const a=$('stk_dfa').value, b=$('stk_dfb').value;
+  if(!a||!b){ $('stk_dfworse').innerHTML='<div class="empty">ยังไม่มีข้อมูลเดือนให้เทียบ — นำเข้าไฟล์อย่างน้อย 2 เดือนก่อน</div>'; return; }
+  if(a===b){ $('stk_dfworse').innerHTML='<div class="empty">เลือกคนละเดือนจึงจะเทียบได้</div>'; return; }
+  $('stk_dfworse').innerHTML='<div class="empty">กำลังโหลด…</div>'; $('stk_dfbetter').innerHTML='';
+  let r;
+  try{ r=await post({ action:'hr_stock_month_diff', ...stkAuth(), branch:STK.branch||null, a, b }); }
+  catch(e){ $('stk_dfworse').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
+  if(!r||!r.ok){ $('stk_dfworse').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  STK.diff=r.rows||[]; STK.diffA=a; STK.diffB=b;
+
+  // KPI จากตารางแนวโน้มที่โหลดไว้แล้ว (ตัวเลขทั้งเดือน ไม่ใช่เฉพาะ 150 ตัวที่ดึงมา)
+  const tr=(STK.auditTrend||[]);
+  const ra=tr.find(x=>x.period_ym===a), rb=tr.find(x=>x.period_ym===b);
+  const dd=(va,vb)=>{ const d=vb-va; const c=d<0?'var(--red)':'var(--accent)';
+    return '<span style="color:'+c+'">'+(d<0?'▼ แย่ลง ':'▲ ดีขึ้น ')+stkN(Math.abs(d))+' บ.</span>'; };
+  $('stk_dfkpi').innerHTML = (ra&&rb)
+    ? '<div class="kpi bad"><div class="lbl">ยอดขาด '+esc(stkMonLb(a))+'</div><div class="val">'+stkN(ra.short_amt)+'<span class="sm"> บ.</span></div><div class="delta">'+stkN(ra.short_n)+' รายการ</div></div>'
+      +'<div class="kpi bad"><div class="lbl">ยอดขาด '+esc(stkMonLb(b))+'</div><div class="val">'+stkN(rb.short_amt)+'<span class="sm"> บ.</span></div><div class="delta">'+dd(Number(ra.short_amt),Number(rb.short_amt))+'</div></div>'
+      +'<div class="kpi warn"><div class="lbl">คลาดเคลื่อนรวม</div><div class="val">'+stkN(rb.abs_amt)+'<span class="sm"> บ.</span></div><div class="delta">จาก '+stkN(ra.abs_amt)+' ใน '+esc(stkMonLb(a))+'</div></div>'
+      +'<div class="kpi"><div class="lbl">SKU ที่ไม่ตรง</div><div class="val">'+stkN(rb.sku_n)+'</div><div class="delta">จาก '+stkN(ra.sku_n)+' ใน '+esc(stkMonLb(a))+'</div></div>'
+    : '';
+
+  // เปลี่ยนแปลงรายกลุ่ม — คำนวณจาก STK.pma ที่มีอยู่แล้ว
+  const g={};
+  (STK.pma||[]).forEach(x=>{
+    if(x.period_ym!==a && x.period_ym!==b) return;
+    const o=g[x.pma]||(g[x.pma]={pma:x.pma,name:x.pma_name,a:0,b:0});
+    if(x.period_ym===a) o.a+=Number(x.short_amt||0); else o.b+=Number(x.short_amt||0);
+  });
+  const gr=Object.values(g).map(o=>({...o,d:o.b-o.a})).sort((x,y)=>x.d-y.d);
+  if(!gr.length) $('stk_dfpma').innerHTML='<div class="empty">ไม่มีข้อมูลกลุ่มสินค้าในช่วงที่เลือก (ขยายช่วงเดือนด้านบนให้ครอบคลุม 2 เดือนนี้)</div>';
+  else {
+    const top=gr.slice(0,8);
+    $('stk_dfpma').innerHTML=stkBarGroup([a,b],
+      top.map((o,i)=>({ name:o.pma+' '+(o.name||''), color:stkHue(i<6?i:5), values:[Math.abs(o.a),Math.abs(o.b)] })),
+      'เทียบมูลค่าที่ขาดรายกลุ่มระหว่าง 2 เดือน')
+    +'<div style="overflow-x:auto;margin-top:10px"><table class="stk-tbl"><thead><tr><th class="l">กลุ่มสินค้า</th>'
+      +'<th>'+esc(stkMonLb(a))+'</th><th>'+esc(stkMonLb(b))+'</th><th>เปลี่ยนแปลง</th><th class="l"></th></tr></thead><tbody>'
+      +gr.map(o=>'<tr><td class="l nm"><b>'+esc(o.pma)+'</b> '+esc(o.name||'')+'</td>'
+        +'<td class="neg">'+stkN(o.a)+'</td><td class="neg">'+stkN(o.b)+'</td>'
+        +'<td style="color:'+(o.d<0?'var(--red)':'var(--accent)')+';font-weight:600">'+(o.d<0?'':'+')+stkN(o.d)+'</td>'
+        +'<td class="l" style="font-size:12px;color:var(--muted)">'+(o.d<0?'แย่ลง':(o.d>0?'ดีขึ้น':'เท่าเดิม'))+'</td></tr>').join('')
+      +'</tbody></table></div>';
+  }
+
+  const tbl=(rows,ttl)=>rows.length
+    ? '<table class="stk-tbl"><thead><tr><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th><th class="l">กลุ่ม</th><th class="l">ลักษณะ</th>'
+      +'<th>'+esc(stkMonLb(a))+'</th><th>'+esc(stkMonLb(b))+'</th><th>เปลี่ยนแปลง</th><th>ชิ้น '+esc(stkMonLb(b))+'</th></tr></thead><tbody>'
+      +rows.map(x=>'<tr><td class="l">'+esc(x.sku)+'</td><td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+        +'<td class="l nm" style="max-width:150px;font-size:12px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+        +'<td class="l" style="font-size:12px;color:var(--muted)">'+esc(STK_RISK_LB[x.risk_type]||'')+'</td>'
+        +'<td'+(Number(x.amt_a)<0?' class="neg"':'')+'>'+stkN(x.amt_a)+'</td>'
+        +'<td'+(Number(x.amt_b)<0?' class="neg"':'')+'>'+stkN(x.amt_b)+'</td>'
+        +'<td style="color:'+(Number(x.diff)<0?'var(--red)':'var(--accent)')+';font-weight:600">'+(Number(x.diff)<0?'':'+')+stkN(x.diff)+'</td>'
+        +'<td>'+stkN(x.qty_b)+'</td></tr>').join('')
+      +'</tbody></table>'
+    : '<div class="empty">'+esc(ttl)+'</div>';
+  $('stk_dfworse').innerHTML=tbl(STK.diff.filter(x=>Number(x.diff)<0).slice(0,40),'ไม่มีรายการที่แย่ลง');
+  $('stk_dfbetter').innerHTML=tbl(STK.diff.filter(x=>Number(x.diff)>0).slice(0,20),'ไม่มีรายการที่ดีขึ้น');
+}
 async function stkLoadChronic(){
   $('stk_chronic').innerHTML='<div class="empty">กำลังโหลด…</div>';
   let r;
