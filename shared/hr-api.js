@@ -540,6 +540,7 @@
         case 'hr_stock_watch_list':   return await hrStockWatchList(p.branch, p.status);
         case 'hr_stock_watch_add':    return await hrStockWatchAdd(p);
         case 'hr_stock_watch_close':  return await hrStockWatchClose(p.id, p);
+        case 'hr_stock_gp':           return await hrStockGp(p.branch, p.from, p.to);
         case 'hr_branch_profile':    return await hrBranchProfileGet(p.branch);
         case 'hr_branch_profile_save': return await hrBranchProfileSave(p.data, p);
         case 'hr_shirt_config_get':  return await hrShirtConfigGet(p);
@@ -11277,6 +11278,26 @@
     }).eq('id', id);
     if (error) throw error;
     return { ok: true };
+  }
+
+  // ★ 22 ต.ค. 69 — เฟส 3: ผลกระทบต่อ GP · ของที่ควรเลิกสั่ง · ของที่เกินซ้ำซาก
+  //   ต้องรัน supabase/stock_gp_setup.sql ก่อน (ไฟล์แยก เพิ่มเฉพาะฟังก์ชัน)
+  async function hrStockGp(branch, from, to) {
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const b = branch || null, f = from || null, t = to || null;
+    const [gp, drop, over] = await Promise.all([
+      sb().rpc('stock_gp_impact',       { p_branch: b, p_from: f, p_to: t }),
+      sb().rpc('stock_drop_candidates', { p_branch: b, p_from: f, p_to: t, p_min_months: 2, p_limit: 40 }),
+      sb().rpc('stock_over_chronic',    { p_branch: b, p_from: f, p_to: t, p_min_months: 2, p_limit: 40 }),
+    ]);
+    const bad = [gp, drop, over].find(x => x.error);
+    if (bad) {
+      // ยังไม่ได้รันไฟล์เฟส 3 → บอกให้รู้ว่าต้องทำอะไร แทนที่จะโยน error ดิบ
+      if (/function .*does not exist|could not find the function/i.test(bad.error.message || ''))
+        return { ok: false, error: 'ยังไม่ได้ติดตั้งฟังก์ชันของเฟส 3 — ให้รันไฟล์ stock_gp_setup.sql ใน Supabase ก่อน' };
+      throw bad.error;
+    }
+    return { ok: true, gp: gp.data || [], drop: drop.data || [], over: over.data || [] };
   }
 
   async function hrBranchProfileGet(branch) {
