@@ -127,15 +127,41 @@
   // วันทำงานของพนักงาน 1 คน → { total, byDate }
   //   att   : แถวลงเวลาของคนนั้น (check_in, shift_id, day_value · มี check_out จะเช็กชั่วโมงได้)
   //   schOk : แถวตารางเวรของคนนั้น ที่กรองเฉพาะกิจแล้ว
+  // ★ 22 ต.ค. 69 — คอลัมน์ "กะที่สอง" ในตารางลงเวลา (ควบกะแบบเว้นช่วง)
+  //   ตรวจครั้งเดียว ถ้ายังไม่ได้รัน attendance_dual_setup.sql ให้ใช้ชุดคอลัมน์เดิม ระบบจะไม่พัง
+  let _leg2Ok = null;
+  //   _LEG = สตริงต่อท้าย select · ว่างไว้ก่อนจนกว่าจะรู้ว่าฐานข้อมูลมีคอลัมน์กะที่สองจริง
+  let _LEG = '', _LEGPH = '';   // _LEGPH = คอลัมน์รูปถ่ายของกะที่สอง (ใช้เฉพาะหน้าบอร์ด)
+  async function hasLeg2() {
+    if (_leg2Ok !== null) return _leg2Ok;
+    try {
+      const r = await sb().from('attendance').select('check_in2').limit(1);
+      _leg2Ok = !r.error;
+      if (r.error) console.warn('[ลงเวลา] ยังไม่มีคอลัมน์กะที่สอง — ต้องรัน attendance_dual_setup.sql ก่อน');
+    } catch (e) { _leg2Ok = false; }
+    _LEG = _leg2Ok ? ',check_in2,check_out2,shift_id2,branch_id2,late_min2,ot_hours2,status2' : '';
+    _LEGPH = _leg2Ok ? ',photo_url2,checkout_photo_url2,face_match2,gps_accuracy2' : '';
+    return _leg2Ok;
+  }
+  // ต่อท้าย select ของตารางลงเวลาเมื่อฐานข้อมูลพร้อม
+  async function legCols(extra) {
+    return (await hasLeg2()) ? (',check_in2,check_out2,shift_id2' + (extra || '')) : '';
+  }
+
   function workDaysFor(att, schOk, dvOf, hrMap, isMgr) {
     const attDV = {}, actHr = {};
     (att || []).forEach(a => {
       if (!a.check_in) return;
-      attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id));
-      if (a.check_out) {
-        const h = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000;
-        if (h > 0 && h < 26) actHr[a.work_date] = Math.max(actHr[a.work_date] || 0, h);
-      }
+      // ★ 22 ต.ค. 69 — ควบกะแบบเว้นช่วง: กะที่สองอยู่ในแถวเดียวกัน (check_in2/shift_id2)
+      //   day_value ที่ HR ตั้งเองถือเป็นค่ารวมของทั้งวัน (ตั้งแล้วไม่บวกกะสองซ้ำ)
+      const dv = (a.day_value != null)
+        ? Number(a.day_value)
+        : (dvOf(a.shift_id) + (a.check_in2 ? dvOf(a.shift_id2) : 0));
+      attDV[a.work_date] = (attDV[a.work_date] || 0) + dv;
+      let h = 0;
+      if (a.check_out) { const x = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000; if (x > 0 && x < 26) h += x; }
+      if (a.check_in2 && a.check_out2) { const x = (new Date(a.check_out2).getTime() - new Date(a.check_in2).getTime()) / 3600000; if (x > 0 && x < 26) h += x; }
+      if (h > 0) actHr[a.work_date] = Math.max(actHr[a.work_date] || 0, h);
     });
     const sDV = {}, sCnt = {}, sHr = {};
     (schOk || []).forEach(s => {
@@ -234,6 +260,8 @@
 
   async function dispatch(p) {
     try {
+      // รู้ให้ได้ก่อนทุกครั้งว่าตารางลงเวลามีคอลัมน์กะที่สองหรือยัง (ตรวจจริงครั้งเดียว)
+      await hasLeg2();
       if (p && typeof p.action === 'string' && p.action.indexOf('hr_payroll_') === 0 && !_PAYROLL_OPEN[p.action]) {
         if (!(await _payrollGate(p.pay_pass))) return { ok: false, error: 'ต้องปลดล็อกหน้าเงินเดือนก่อน' };
       }
@@ -1759,7 +1787,7 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url,active,end_date'),
       sb().from('shifts').select('shift_id,name,code,start_time').order('start_time'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
-      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,face_match,gps_accuracy,photo_url,checkout_photo_url').eq('work_date', d),
+      sb().from('attendance').select('emp_id,check_in,check_out,late_min,status,branch_id,shift_id,face_match,gps_accuracy,photo_url,checkout_photo_url' + _LEG + _LEGPH).eq('work_date', d),
       sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').lte('start_date', d).gte('end_date', d),
     ]);
     if (schR.error) throw schR.error;
@@ -1771,9 +1799,18 @@
     const onLeave = {}; (lvR.data || []).forEach(l => { onLeave[l.emp_id] = l.type || 'ลา'; });
 
     // สถานะของแต่ละคน
-    function statusOf(empId) {
+    function statusOf(empId, shId) {
       if (onLeave[empId]) return { status: 'leave', leave_type: onLeave[empId] };
       const a = attBy[empId];
+      // ★ 22 ต.ค. 69 — ควบกะแบบเว้นช่วง: แถวเดียวเก็บสองกะ
+      //   บอร์ดต้องโชว์เวลาของ "กะที่กำลังดู" ไม่ใช่เวลากะแรกทั้งสองกะ
+      if (a && a.check_in2 && shId && a.shift_id2 === shId) {
+        return { status: a.late_min2 > 0 ? 'late' : 'present', auto_closed: a.status2 === 'AUTO_CLOSED',
+          check_in: fmtTime(a.check_in2), check_out: a.check_out2 ? fmtTime(a.check_out2) : '',
+          late_min: a.late_min2 || 0, att_branch: a.branch_id2 || a.branch_id,
+          face_match: a.face_match2, gps_accuracy: a.gps_accuracy2,
+          att_photo_in: a.photo_url2 || '', att_photo_out: a.checkout_photo_url2 || '', leg2: true };
+      }
       // ★ auto_closed = พนักงานลืมกดออกงาน ระบบปิดกะให้เองที่เวลาเลิกกะ และตัด OT เป็น 0
       //   เดิมหน้าเว็บไม่เคยอ่านคอลัมน์นี้เลย แถวเลยหน้าตาเหมือนคนกดออกเองทุกประการ
       if (a && a.check_in) return { status: a.late_min > 0 ? 'late' : 'present', auto_closed: a.status === 'AUTO_CLOSED', check_in: fmtTime(a.check_in), check_out: a.check_out ? fmtTime(a.check_out) : '', late_min: a.late_min || 0, att_branch: a.branch_id, face_match: a.face_match, gps_accuracy: a.gps_accuracy, att_photo_in: a.photo_url || '', att_photo_out: a.checkout_photo_url || '' };
@@ -1796,7 +1833,7 @@
       scheduledEmp.add(s.emp_id);
       const brId = s.branch_id || emp.branch_id || '—';
       const home = emp.branch_id || null;
-      const st = statusOf(s.emp_id);
+      const st = statusOf(s.emp_id, s.shift_id);
       ensure(brId, s.shift_id).push({
         emp_id: s.emp_id, name: emp.nickname || emp.name, full_name: emp.name, nickname: emp.nickname || '', photo_url: emp.photo_url || '',
         is_cover: !!(s.is_cover || (home && brId !== home)),
@@ -2107,6 +2144,9 @@
         early_out_min: r.early_out_min != null ? Number(r.early_out_min) : null,
         check_in: fmtTime(r.check_in), check_out: fmtTime(r.check_out),
         late_min: r.late_min || 0, ot_hours: r.ot_hours || 0,
+        // ★ กะที่สองของวันเดียวกัน (ควบกะแบบเว้นช่วง) — ว่างถ้าทำกะเดียว
+        check_in2: r.check_in2 ? fmtTime(r.check_in2) : '', check_out2: r.check_out2 ? fmtTime(r.check_out2) : '',
+        late_min2: r.late_min2 || 0, ot_hours2: r.ot_hours2 || 0,
         checkout_branch: r.checkout_branch_id ? (brName[r.checkout_branch_id] || r.checkout_branch_id) : '',
         checkout_note: r.checkout_note || '',
         cross_out: !!(r.checkout_branch_id && r.branch_id && r.checkout_branch_id !== r.branch_id),
@@ -2119,7 +2159,16 @@
     const _schDVsum = {}, _attDVsum = {};   // ผลรวม day_value ต่อ emp|date ของ "ตารางเวร" กับ "ลงเวลา"
     const _addSh = (emp, date, sid) => { if (!sid) return; const k = emp + '|' + date; (_dualSh[k] = _dualSh[k] || new Set()).add(sid); };
     (schR.data || []).forEach(s => { if (s.shift_id) { _addSh(s.emp_id, s.work_date, s.shift_id); const k = s.emp_id + '|' + s.work_date; _schDVsum[k] = (_schDVsum[k] || 0) + (_shDV[s.shift_id] != null ? _shDV[s.shift_id] : 1); } });
-    (data || []).forEach(r => { if (r.check_in && r.shift_id) { _addSh(r.emp_id, r.work_date, r.shift_id); const k = r.emp_id + '|' + r.work_date; _attDVsum[k] = (_attDVsum[k] || 0) + ((r.day_value != null) ? Number(r.day_value) : (_shDV[r.shift_id] != null ? _shDV[r.shift_id] : 1)); } });
+    (data || []).forEach(r => {
+      const k = r.emp_id + '|' + r.work_date;
+      const _dv = sid => (_shDV[sid] != null ? _shDV[sid] : 1);
+      if (r.check_in && r.shift_id) {
+        _addSh(r.emp_id, r.work_date, r.shift_id);
+        // day_value ที่ HR กรอกเอง = ค่าของ "ทั้งวัน" ครอบทุกกะ ไม่ต้องบวกกะสองซ้ำ
+        _attDVsum[k] = (_attDVsum[k] || 0) + ((r.day_value != null) ? Number(r.day_value) : (_dv(r.shift_id) + (r.check_in2 ? _dv(r.shift_id2) : 0)));
+      }
+      if (r.check_in2 && r.shift_id2) _addSh(r.emp_id, r.work_date, r.shift_id2);   // ★ กะที่สองในแถวเดียวกัน
+    });
     const _dualSet = new Set(), _dualNames = {};
     Object.keys(_dualSh).forEach(k => { if (_dualSh[k].size >= 2) { _dualSet.add(k); _dualNames[k] = [...(_dualSh[k])].map(id => _shName[id] || id).join('/'); } });
     rows.forEach(r => { const k = r.emp_id + '|' + r.work_date; r.dual_shift = _dualSet.has(k); r.dual_label = _dualNames[k] || ''; });
@@ -2161,14 +2210,20 @@
     rows.forEach(r => {
       const m = ensureM(r.emp_id);
       if (r.check_in) {
-        const dv = r.day_value || 1;
+        // ★ 22 ต.ค. 69 — ควบกะแบบเว้นช่วง: ใช้ผลรวม day_value ที่คิดกะที่สองแล้ว
+        //   (ต้องตรงกับ attByDate ของ workDaysFor ไม่งั้นส่วนเติมเครดิตด้านล่างจะหักกันหายไป)
+        const dv = _attDVsum[r.emp_id + '|' + r.work_date] || r.day_value || 1;
         m.days += dv;
         if (r.is_cover) { m.days_cover += dv; m.cover_by[r.branch_name] = (m.cover_by[r.branch_name] || 0) + 1; }
         else m.days_home += dv;
         if (r.early_out_min != null && r.early_out_min > earlyGrace) { m.early_out_days++; m.early_out_min += r.early_out_min; }
       }
       if (r.late_min > 0) { m.late_count++; m.late_total += r.late_min; }
-      if (Number(r.ot_hours) > 0) { m.ot += otAdj(r.ot_hours, otWhole); m.ot_days++; }
+      if (Number(r.ot_hours) > 0 || Number(r.ot_hours2) > 0) {
+        m.ot += otAdj(r.ot_hours, otWhole) + otAdj(r.ot_hours2, otWhole);
+        m.ot_days++;
+      }
+      if (Number(r.late_min2) > 0) { m.late_count++; m.late_total += r.late_min2; }   // ★ สายในกะที่สอง
     });
     // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงานจริง แต่ลงเวลาน้อยกว่าตาราง → เติมให้ครบตามควบ (เช่น สแกนครั้งเดียว = 1 → เติมเป็น 2)
     // ★ 21 ก.ย. 69 — ใช้กติกาเดียวกับเงินเดือน (workDaysFor): ตัดเวรเฉพาะกิจที่ไม่มีคนมา + ต้องจัด ≥2 กะ + ชั่วโมงจริง ≥75%
@@ -2278,7 +2333,7 @@
     try { const { data: wv } = await sb().from('discipline_waivers').select('emp_id,reason,waived_by').eq('cycle_start', cyc.start); (wv || []).forEach(w => { waiverBy[w.emp_id] = { reason: w.reason || '', by: w.waived_by || '' }; }); } catch (_e) { /* ยังไม่ได้รัน discipline_waivers.sql */ }
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
       sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
-      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,shift_id,early_out_min,day_value').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,shift_id,early_out_min,day_value' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
@@ -2304,15 +2359,16 @@
       const workedSet = new Set(myAtt.filter(a => a.check_in).map(a => a.work_date));
       // ★ 21 ก.ย. 69 — นับสายเฉพาะแถวที่สแกนเข้าจริง (ให้ตรงกับหน้าคะแนน/เงินเดือน)
       const late = myAtt.filter(a => a.check_in && a.late_min > 0);
-      const late_count = late.length;
-      const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
-      const ot_hours = Math.round(myAtt.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
+      const late2 = myAtt.filter(a => a.check_in2 && a.late_min2 > 0);   // ★ 22 ต.ค. 69 — สายในกะที่สอง
+      const late_count = late.length + late2.length;
+      const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0) + late2.reduce((s, a) => s + (a.late_min2 || 0), 0);
+      const ot_hours = Math.round(myAtt.reduce((s, a) => s + otAdj(a.ot_hours, otWhole) + otAdj(a.ot_hours2, otWhole), 0) * 10) / 10;
       const myLeaves = leaves.filter(l => l.emp_id === e.emp_id);
       const onLeave = (dateStr) => myLeaves.some(l => dateStr >= l.start_date && dateStr <= (l.end_date || l.start_date));
 
       // ถ่วงน้ำหนักวันด้วย day_value (ครึ่งวัน=0.5) — มีผลกับ "วันทำงาน/ขาด/วินัย"
       // ลำดับ: ค่าที่ปรับรายวันในแถวลงเวลา (เช่น ลาฉุกเฉินครึ่งวัน) → ค่าจากกะ → 1
-      const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });   // ควบกะ: บวกทุกกะในวัน
+      const attDV = {}; myAtt.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : (dvOf(a.shift_id) + (a.check_in2 ? dvOf(a.shift_id2) : 0))); });   // ควบกะ: บวกทุกกะในวัน (รวมกะที่สอง)
       // ★ 21 ก.ย. 69 — วันทำงานกติกาเดียวกับเงินเดือน (รวมเครดิตควบกะ) · เดิมหน้าวินัยไม่ให้เครดิตควบเลย น้อยกว่าหน้าอื่น 1 วัน
       const days_worked = workDaysFor(myAtt, _schOkByEmpD[e.emp_id], dvOf, _hrMapD, !!e.is_manager).total;
       // ออกก่อนเวลา (เกินผ่อนผัน) — เก็บจำนวนครั้ง + รวมนาที
@@ -3019,6 +3075,10 @@
       check_in: a ? hm(a.check_in) : '', check_out: a ? hm(a.check_out) : '',
       late_min: a ? (a.late_min || 0) : 0, ot_hours: a ? Number(a.ot_hours || 0) : 0,
       day_value: a && a.day_value != null ? Number(a.day_value) : null,
+      // ★ 22 ต.ค. 69 — กะที่สองของวันเดียวกัน (ควบกะแบบเว้นช่วง) ให้ HR แก้ไขได้ด้วย
+      shift_id2: (a && a.shift_id2) || '', shift_name2: (a && shName[a.shift_id2]) || '',
+      check_in2: a ? hm(a.check_in2) : '', check_out2: a ? hm(a.check_out2) : '',
+      late_min2: a ? (a.late_min2 || 0) : 0, ot_hours2: a ? Number(a.ot_hours2 || 0) : 0,
       status: a && a.check_in ? 'present' : 'none',   // มา / ยังไม่ลง
       has_att: !!a,
     });
@@ -3058,16 +3118,50 @@
   async function hrAttSave(d) {
     d = d || {};
     if (!d.emp_id || !d.work_date) return { ok: false, error: 'ไม่ระบุพนักงาน/วันที่' };
-    const toTs = (hhmm) => (hhmm && /^\d{1,2}:\d{2}$/.test(hhmm)) ? (d.work_date + 'T' + hhmm.padStart(5, '0') + ':00+07:00') : null;
+    const toTs = (hhmm, addDay) => {
+      if (!(hhmm && /^\d{1,2}:\d{2}$/.test(hhmm))) return null;
+      let day = d.work_date;
+      if (addDay) { const t = new Date(day + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + 1); day = t.toISOString().slice(0, 10); }
+      return day + 'T' + hhmm.padStart(5, '0') + ':00+07:00';
+    };
+    // เวลาออกน้อยกว่าเวลาเข้า = ออกข้ามวัน (กะดึก) ให้นับเป็นวันถัดไป ไม่งั้นชั่วโมงจะติดลบ
+    const mins = (hhmm) => { const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || ''); return m ? (Number(m[1]) * 60 + Number(m[2])) : null; };
+    const crossDay = (inT, outT) => { const a = mins(inT), b = mins(outT); return (a != null && b != null && b <= a); };
     const upd = {};
     if ('check_in' in d)  upd.check_in  = toTs(d.check_in);
-    if ('check_out' in d) upd.check_out = toTs(d.check_out);
+    if ('check_out' in d) upd.check_out = toTs(d.check_out, crossDay(d.check_in, d.check_out));
     if ('late_min' in d)  upd.late_min  = Math.max(0, parseInt(d.late_min, 10) || 0);
     if ('ot_hours' in d)  upd.ot_hours  = Math.max(0, Math.round((Number(d.ot_hours) || 0) * 100) / 100);
-    if ('day_value' in d && d.day_value != null && d.day_value !== '') upd.day_value = Number(d.day_value);
-    if (d.status === 'absent') { upd.check_in = null; upd.check_out = null; upd.late_min = 0; upd.ot_hours = 0; }
+    if ('day_value' in d) upd.day_value = (d.day_value == null || d.day_value === '') ? null : Number(d.day_value);
+    // ★ 22 ต.ค. 69 — กะที่สองของวันเดียวกัน (ควบกะแบบเว้นช่วง)
+    //   เข้า2 ว่าง = ลบกะที่สองทิ้งทั้งชุด เพื่อให้ HR ยกเลิกได้
+    if ('check_in2' in d || 'shift_id2' in d) {
+      const has2 = !!(d.check_in2 && /^\d{1,2}:\d{2}$/.test(d.check_in2));
+      if (!has2) {
+        Object.assign(upd, { check_in2: null, check_out2: null, shift_id2: null, late_min2: 0, ot_hours2: 0, status2: null });
+      } else {
+        upd.shift_id2 = d.shift_id2 || null;
+        // กะที่สองเริ่มหลังกะแรก ถ้าเวลาเข้า2 น้อยกว่าเข้า1 แปลว่าเข้าหลังเที่ยงคืน = วันถัดไป
+        const in2Cross = crossDay(d.check_in, d.check_in2);
+        upd.check_in2  = toTs(d.check_in2, in2Cross);
+        upd.check_out2 = d.check_out2
+          ? toTs(d.check_out2, in2Cross || crossDay(d.check_in2, d.check_out2))
+          : null;
+        upd.late_min2  = Math.max(0, parseInt(d.late_min2, 10) || 0);
+        upd.ot_hours2  = Math.max(0, Math.round((Number(d.ot_hours2) || 0) * 100) / 100);
+        upd.status2    = upd.check_out2 ? 'CLOSED' : 'OPEN';
+      }
+    }
+    if (d.status === 'absent') {
+      Object.assign(upd, { check_in: null, check_out: null, late_min: 0, ot_hours: 0,
+        check_in2: null, check_out2: null, shift_id2: null, late_min2: 0, ot_hours2: 0, status2: null });
+    }
     if (upd.late_min == null) upd.late_min = 0;   // NOT NULL
     if (upd.check_in) upd.status = 'CLOSED';
+    // ฐานข้อมูลยังไม่มีคอลัมน์กะที่สอง → ตัดออกก่อน ไม่ให้ทั้งคำสั่งพัง
+    if (!(await hasLeg2())) {
+      ['check_in2', 'check_out2', 'shift_id2', 'late_min2', 'ot_hours2', 'status2'].forEach(k => { delete upd[k]; });
+    }
     const { data: exist } = await sb().from('attendance').select('emp_id,branch_id,shift_id').eq('emp_id', d.emp_id).eq('work_date', d.work_date).maybeSingle();
     if (exist) {
       const { error } = await sb().from('attendance').update(upd).eq('emp_id', d.emp_id).eq('work_date', d.work_date);
@@ -4144,7 +4238,7 @@
       //   เดิม .eq('active', true) → คนลาออกหายจากคะแนน → หน้าเงินเดือน HR ได้เบี้ยวินัย 0 / สถิติว่าง ทั้งที่รอบนั้นยังต้องจ่าย
       //   (หน้าคะแนน/วินัยซ่อนคนที่ ended อยู่แล้ว ไม่รก)
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,start_date,end_date,is_manager,active').or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
-      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,day_value,shift_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,day_value,shift_id' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
@@ -4188,12 +4282,15 @@
         { kind: 'auto_late_30plus', test: m => m > 30 },
       ];
       let late_count = 0, late_total = 0;
+      // ★ 22 ต.ค. 69 — คิดสายรายกะ ไม่ใช่รายวัน เพราะควบกะอยู่แถวเดียวกันได้ 2 กะ
+      const myLate = [];
+      myAtt.forEach(a => { myLate.push(a.late_min || 0); if (a.check_in2) myLate.push(a.late_min2 || 0); });
       tiers.forEach(t => {
         const r = ruleByKind[t.kind]; if (!r) return;
-        const hits = myAtt.filter(a => t.test(a.late_min || 0));
+        const hits = myLate.filter(m => t.test(m));
         if (hits.length) { const sum = r.points * hits.length; autoDeduct += sum; items.push({ label: r.label, count: hits.length, points: sum, source: 'auto' }); }
       });
-      myAtt.forEach(a => { if ((a.late_min || 0) > 0) { late_count++; late_total += (a.late_min || 0); } });
+      myLate.forEach(m => { if (m > 0) { late_count++; late_total += m; } });
 
       // ขาดและไม่แจ้ง (จัดเวรไว้ + ผ่านไปแล้ว + ไม่มา + ไม่ลา) — ถ่วง day_value เหมือนหน้าวินัย
       const ra = ruleByKind['auto_absent_no_notify'];
@@ -7134,7 +7231,7 @@
       sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,start_date,end_date,is_manager,default_shift,photo_url,phone,position').eq('emp_id', p.emp_id).maybeSingle(),
       sb().from('branches').select('branch_id,name'),
       sb().from('shifts').select('shift_id,name,day_value,start_time,end_time'),
-      sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min,extend_until').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
+      sb().from('attendance').select('work_date,check_in,check_out,late_min,ot_hours,status,day_value,shift_id,early_out_min,extend_until' + _LEG).eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),
       sb().from('schedules').select('work_date,shift_id,note').eq('emp_id', p.emp_id).gte('work_date', start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('leaves').select('start_date,end_date,type,status').eq('emp_id', p.emp_id).eq('status', 'approved').lte('start_date', end).gte('end_date', start),
       // งานในกะของตัวเอง
@@ -7170,9 +7267,12 @@
     const onLeave = d => leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
     const workedSet = new Set(att.filter(a => a.check_in).map(a => a.work_date));
     const late = att.filter(a => a.check_in && a.late_min > 0);   // ★ 21 ก.ย. 69 — เฉพาะแถวที่สแกนจริง (ฐานเดียวกับหน้าคะแนน)
-    const late_count = late.length, late_total = late.reduce((s, a) => s + (a.late_min || 0), 0);
+    // ★ 22 ต.ค. 69 — สาย/OT ของกะที่สองนับด้วย (ควบกะแบบเว้นช่วง)
+    const late2 = att.filter(a => a.check_in2 && a.late_min2 > 0);
+    const late_count = late.length + late2.length;
+    const late_total = late.reduce((s, a) => s + (a.late_min || 0), 0) + late2.reduce((s, a) => s + (a.late_min2 || 0), 0);
     const otWhole = await getSettingBool('ot_whole_day');
-    const ot_hours = Math.round(att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
+    const ot_hours = Math.round(att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole) + otAdj(a.ot_hours2, otWhole), 0) * 10) / 10;
     // ออกก่อนเวลา (เกินเวลาผ่อนผัน) — เดิมเอกสารนี้ไม่มีเลย
     const earlyGrace = await getSettingNum('early_out_grace_min', 10);
     const earlyRows = att.filter(a => a.early_out_min != null && a.early_out_min > earlyGrace);
@@ -7187,7 +7287,7 @@
     const pastSched = Object.keys(schMap).filter(d => d < today
       && (!_eRow.start_date || d >= _eRow.start_date) && (!_eRow.end_date || d <= _eRow.end_date));
     // ★ ใช้ฐานเดียวกับหน้าวินัยเป๊ะ ๆ: มาทำงาน = ทุกวันที่มี check_in (รวมวันที่ไม่ได้จัดเวร เช่น ไปช่วยสาขาอื่น)
-    const attDV = {}; att.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id)); });   // ควบกะ: บวกทุกกะในวัน
+    const attDV = {}; att.forEach(a => { if (a.check_in) attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : (dvOf(a.shift_id) + (a.check_in2 ? dvOf(a.shift_id2) : 0))); });   // ควบกะ: บวกทุกกะในวัน (รวมกะที่สองในแถวเดียวกัน)
     const days_should = Math.round(pastSched.reduce((s, d) => s + dvOf(schMap[d]), 0) * 10) / 10;
     // ★ 21 ก.ย. 69 — วันทำงานกติกาเดียวกับเงินเดือน (รวมเครดิตควบกะ)
     const days_worked = workDaysFor(att, _schOkES, dvOf, shiftHoursMap(shR.data), !!_eRow.is_manager).total;
@@ -7418,7 +7518,7 @@
     //   แถวจะอยู่ที่สาขาปลายทาง → ถูกตัดทิ้ง ทำให้วันทำงานหาย/ตัวเลขเพี้ยน
     const qEmpBase = sb().from('employees').select('emp_id,name,nickname,branch_id,weekly_off,default_shift,start_date,end_date,is_manager').eq('active', true);
     const qEmp = branch ? qEmpBase.eq('branch_id', branch) : qEmpBase;
-    const qAtt = () => sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,branch_id,shift_id,day_value').gte('work_date', start).lte('work_date', endEff);
+    const qAtt = () => sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,branch_id,shift_id,day_value' + _LEG).gte('work_date', start).lte('work_date', endEff);
     const qSch = () => sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', start).lte('work_date', endEff);   // ★ note ไว้กรองเวรเฉพาะกิจ
     const qTask = () => sb().from('task_assignments').select('emp_id,status,sent_back_count,branch_id,reviewer,mgr_checked_at,work_date').gte('work_date', start).lte('work_date', end);
     const qShelf = sb().from('shelf_checks').select('emp_id,check_date,branch_id').gte('check_date', start).lte('check_date', end);
@@ -7469,9 +7569,10 @@
       const workedSet = new Set(workedRows.map(a => a.work_date));
       const onLeave = d => g.leaves.some(l => d >= l.start_date && d <= (l.end_date || l.start_date));
       const lateRows = g.att.filter(a => a.check_in && (a.late_min || 0) > 0);   // ★ เฉพาะแถวที่สแกนจริง
-      const late_count = lateRows.length;
-      const late_total = lateRows.reduce((s, a) => s + (a.late_min || 0), 0);
-      const ot_hours = Math.round(g.att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole), 0) * 10) / 10;
+      const lateRows2 = g.att.filter(a => a.check_in2 && (a.late_min2 || 0) > 0);   // ★ 22 ต.ค. 69 — สายในกะที่สอง
+      const late_count = lateRows.length + lateRows2.length;
+      const late_total = lateRows.reduce((s, a) => s + (a.late_min || 0), 0) + lateRows2.reduce((s, a) => s + (a.late_min2 || 0), 0);
+      const ot_hours = Math.round(g.att.reduce((s, a) => s + otAdj(a.ot_hours, otWhole) + otAdj(a.ot_hours2, otWhole), 0) * 10) / 10;
 
       // ★ ถ่วงน้ำหนักวันด้วย day_value (กะครึ่งวัน = 0.5) ให้ตรงกับหน้ารายงาน/คะแนน
       const schMap = {}; g.sched.forEach(s => { schMap[s.work_date] = s.shift_id; });
@@ -10375,7 +10476,7 @@
       //   ผลคือพอ HR ปิดใช้งานรหัสวันที่ลาออก แถวค่าจ้างงวดสุดท้ายหายและถูกลบทิ้งตอนคำนวณซ้ำ
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date,is_manager,active').or('active.eq.true,end_date.gte.' + cyc.start).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,day_value,shift_id,branch_id,status').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,day_value,shift_id,branch_id,status' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance,name'),
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
@@ -10394,19 +10495,30 @@
     const saCfg = cfg.shift_allowance || {};
     const shiftAllowBy = {};
     if (saCfg.enabled !== false) {
+      // ★ 22 ต.ค. 69 — จ่ายเบี้ยกะดึกตาม "กะที่ทำจริง" ทั้งสองกะของวันนั้น (ควบกะแบบเว้นช่วง)
+      //   เดิมดูแค่ shift_id → คนที่ทำกะดึกเป็นกะที่สอง ไม่ได้เบี้ยกะดึกเลย
+      const _payNight = (a, sid, brId) => {
+        if (!sid || a.status === 'TRAINING' || !nightSet.has(sid)) return;
+        const grp = grpOf[sid] || sid;
+        const isCtrl = leadMap[(brId || '') + '|' + a.work_date + '|' + grp] === a.emp_id;
+        shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
+      };
       (attR.data || []).forEach(a => {
-        if (a.check_in && a.status !== 'TRAINING' && nightSet.has(a.shift_id)) {   // ★ วันอบรม/ปฏิบัติงานนอกสถานที่ ไม่ได้เฝ้าร้านจริง จึงไม่จ่ายเบี้ยกะดึก
-          const grp = grpOf[a.shift_id] || a.shift_id;
-          const isCtrl = leadMap[(a.branch_id || '') + '|' + a.work_date + '|' + grp] === a.emp_id;
-          shiftAllowBy[a.emp_id] = (shiftAllowBy[a.emp_id] || 0) + (isCtrl ? Number(saCfg.controller_rate || 15) : Number(saCfg.staff_rate || 10));
-        }
+        if (a.check_in)  _payNight(a, a.shift_id,  a.branch_id);
+        if (a.check_in2) _payNight(a, a.shift_id2, a.branch_id2 || a.branch_id);
       });
     }
     const otWhole = await getSettingBool('ot_whole_day');
     const workedDV = {}, otByEmp = {};
     (attR.data || []).forEach(a => {
-      if (a.check_in) { const dv = a.day_value != null ? Number(a.day_value) : (dvMap[a.shift_id] != null ? dvMap[a.shift_id] : 1); const _wd = workedDV[a.emp_id] || (workedDV[a.emp_id] = {}); _wd[a.work_date] = (_wd[a.work_date] || 0) + dv; }   // ควบกะ: บวกทุกกะในวัน (2 กะ = 2 วัน)
-      otByEmp[a.emp_id] = (otByEmp[a.emp_id] || 0) + otAdj(a.ot_hours, otWhole);
+      // ★ 22 ต.ค. 69 — รวมกะที่สองของวันเดียวกัน (check_in2/shift_id2) เข้ามาด้วย
+      if (a.check_in) {
+        const _dv1 = dvMap[a.shift_id] != null ? dvMap[a.shift_id] : 1;
+        const _dv2 = a.check_in2 ? (dvMap[a.shift_id2] != null ? dvMap[a.shift_id2] : 1) : 0;
+        const dv = a.day_value != null ? Number(a.day_value) : (_dv1 + _dv2);
+        const _wd = workedDV[a.emp_id] || (workedDV[a.emp_id] = {}); _wd[a.work_date] = (_wd[a.work_date] || 0) + dv;
+      }
+      otByEmp[a.emp_id] = (otByEmp[a.emp_id] || 0) + otAdj(a.ot_hours, otWhole) + otAdj(a.ot_hours2, otWhole);
     });
     // ★ เครดิตควบกะที่ "สแกนไม่ครบ": วันควบ (จัดเวร ≥2 กะ) + มาทำงาน แต่ลงเวลาน้อยกว่าตาราง → ใช้ยอดตามตารางเวร (ให้ตรงกับหน้ารายงาน · ควบ=2)
     const empById = {}; (empR.data || []).forEach(e => { empById[e.emp_id] = e; });   // แผนที่พนักงาน (ใช้กันควบให้ ผจก.)
@@ -10431,9 +10543,11 @@
     _schOkPR.forEach(s => { if (s.shift_id) { const k = s.emp_id + '|' + s.work_date; _schHrPR[k] = (_schHrPR[k] || 0) + (_shHrPR[s.shift_id] || 0); } });   // ★ ไม่รวมเวรเฉพาะกิจที่ไม่มีคนมา
     const _actHrPR = {};  // ชั่วโมงทำงานจริงต่อวัน (จากเวลาเข้า-ออก)
     (attR.data || []).forEach(a => {
-      if (!a.check_in || !a.check_out) return;
-      const h = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000;
-      if (h > 0 && h < 26) { const _k = a.emp_id + '|' + a.work_date; _actHrPR[_k] = Math.max(_actHrPR[_k] || 0, h); }   // ★ ใช้ค่าสูงสุดของวัน (เหมือน workDaysFor) ไม่ใช่แถวสุดท้าย
+      if (!a.check_in) return;
+      let h = 0;
+      if (a.check_out) { const x = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000; if (x > 0 && x < 26) h += x; }
+      if (a.check_in2 && a.check_out2) { const x = (new Date(a.check_out2).getTime() - new Date(a.check_in2).getTime()) / 3600000; if (x > 0 && x < 26) h += x; }   // ★ รวมชั่วโมงกะที่สอง
+      if (h > 0) { const _k = a.emp_id + '|' + a.work_date; _actHrPR[_k] = Math.max(_actHrPR[_k] || 0, h); }   // ★ ใช้ค่าสูงสุดของวัน (เหมือน workDaysFor) ไม่ใช่แถวสุดท้าย
     });
     const dualWarnBy = {};   // ธงเตือน: วันที่จัดควบแต่ชั่วโมงจริงไม่ถึงเกณฑ์
     const _dualHrPR = {};    // เก็บชั่วโมงไว้โชว์ในหน้าตรวจ

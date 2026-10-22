@@ -44,6 +44,22 @@
   }
 
   // ---------- เช็กอิน ----------
+  // ★ 22 ต.ค. 69 — ตรวจครั้งเดียวว่าฐานข้อมูลมีคอลัมน์ "กะที่สอง" แล้วหรือยัง
+  //   ยังไม่ได้รัน attendance_dual_setup.sql → ระบบลงเวลาทำงานเหมือนเดิมทุกอย่าง ไม่พัง
+  let _leg2Ok = null;
+  async function _hasLeg2(){
+    if (_leg2Ok !== null) return _leg2Ok;
+    try{
+      const r = await sb.from('attendance').select('check_in2').limit(1);
+      _leg2Ok = !r.error;
+      if (r.error) console.warn('[ลงเวลา] ยังไม่มีคอลัมน์กะที่สอง — ต้องรัน attendance_dual_setup.sql ก่อน จึงจะลงเวลาควบกะแบบเว้นช่วงได้');
+    }catch(e){ _leg2Ok = false; }
+    return _leg2Ok;
+  }
+  const _L2SEL = ',check_in2,check_out2,shift_id2,branch_id2,extend_until2,auto_closed2,status2,late_min2,ot_hours2';
+  // ต่อท้าย select ด้วยคอลัมน์กะที่สองเมื่อฐานข้อมูลพร้อม (ยังไม่รัน SQL = คืนสตริงว่าง ระบบไม่พัง)
+  async function _legSel() { return (await _hasLeg2()) ? ',check_in2,check_out2,shift_id2,late_min2,ot_hours2' : ''; }
+
   async function checkIn({ empId, shiftId, branchId, lat, lng, accuracy, photoDataUrl, faceMatch, unscheduledOk }) {
     const today = bangkokDate();
     // ★★ หา "วันที่ของกะ" ให้ถูกก่อนทำอย่างอื่น (แก้ 27 ส.ค. 2569)
@@ -62,9 +78,12 @@
       const _early = Number(_stt.checkin_early_min || 180);
       const { data: _sc } = await sb.from('schedules').select('work_date,shift_id')
         .eq('emp_id', empId).in('work_date', [today, _yd]);
-      const _sToday = (_sc || []).find(s => s.work_date === today && s.shift_id);
-      const _sYday  = (_sc || []).find(s => s.work_date === _yd   && s.shift_id);
-      const _ids = [...new Set([_sToday && _sToday.shift_id, _sYday && _sYday.shift_id].filter(Boolean))];
+      // ★ 22 ต.ค. 69 — วันหนึ่งอาจจัดไว้หลายกะ (ควบกะ) ต้องดูทุกกะ ไม่ใช่กะแรกที่เจอ
+      //   เดิมใช้ .find() → วันควบที่กะแรกเป็นกะเช้า จะมองว่า "ตอนนี้ไม่อยู่ในหน้าต่างกะวันนี้"
+      //   แล้วอาจย้อนไปลงเป็นกะของเมื่อวานผิด ๆ
+      const _sTodayAll = (_sc || []).filter(s => s.work_date === today && s.shift_id);
+      const _sYday  = (_sc || []).find(s => s.work_date === _yd && s.shift_id);
+      const _ids = [...new Set([..._sTodayAll.map(s => s.shift_id), _sYday && _sYday.shift_id].filter(Boolean))];
       if (_ids.length) {
         const { data: _shs } = await sb.from('shifts').select('shift_id,start_time,end_time').in('shift_id', _ids);
         const _shm = {}; (_shs || []).forEach(s => { _shm[s.shift_id] = s; });
@@ -78,8 +97,7 @@
             ovn,
           };
         };
-        const _wT = _sToday ? _win(today, _sToday.shift_id) : null;
-        const _inToday = !!(_wT && _now >= _wT.from && _now <= _wT.to);
+        const _inToday = _sTodayAll.some(s => { const w = _win(today, s.shift_id); return !!(w && _now >= w.from && _now <= w.to); });
         if (!_inToday && _sYday) {
           const _wY = _win(_yd, _sYday.shift_id);
           if (_wY && _wY.ovn && _now < _wY.to) {
@@ -90,25 +108,48 @@
         }
       }
     } catch (_e) { /* หาไม่ได้ก็ใช้วันปฏิทินตามเดิม */ }
-    // กันเช็กอินซ้ำ: ถ้าวันนี้เคยเช็กอินแล้ว ไม่ให้เขียนทับ (ต้องให้ HR แก้)
-    const { data: ex } = await sb.from('attendance').select('check_in,check_out').eq('emp_id', empId).eq('work_date', workDate).maybeSingle();
+    // ★ 22 ต.ค. 69 — ควบกะแบบเว้นช่วง (เข้าเช้า → ออก → กลับมาเข้าดึกวันเดียวกัน)
+    //   เดิม: วันนั้นมีแถวแล้ว = เด้ง "เช็กอินไปแล้ววันนี้" เสมอ → กะที่สองลงเวลาไม่ได้เลย
+    //   ใหม่: ถ้ากะแรกปิดแล้ว + วันนั้นจัดเวรไว้ ≥2 กะ + ยังไม่ได้ลงกะที่สอง → ลงเป็น "กะที่สอง" ในแถวเดิม
+    //   (เก็บในแถวเดิมเพราะทั้งระบบอ่าน attendance ด้วย emp_id+work_date แบบแถวเดียว)
+    let leg2 = false, leg2Shift = null;
+    const _L2 = await _hasLeg2();
+    const { data: ex } = await sb.from('attendance')
+      .select('check_in,check_out,shift_id' + (_L2 ? ',check_in2,check_out2,shift_id2' : '')).eq('emp_id', empId).eq('work_date', workDate).maybeSingle();
     if (ex && ex.check_in) {
-      throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + (ex.check_out ? ' (และเช็กเอาต์แล้ว)' : '') + ' — หากต้องแก้ไข ติดต่อ HR');
+      if (!_L2) {
+        throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + (ex.check_out ? ' (และเช็กเอาต์แล้ว)' : '') + ' — หากต้องแก้ไข ติดต่อ HR');
+      }
+      if (ex.check_in2) {
+        throw new Error('วันนี้คุณลงเวลาครบ 2 กะแล้ว (กะแรก ' + _fmtTime(ex.check_in) + ' · กะที่สอง ' + _fmtTime(ex.check_in2) + ') — หากต้องแก้ไข ติดต่อ HR');
+      }
+      if (!ex.check_out) {
+        throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + ' และยังไม่ได้กดออกงาน — ถ้าจบกะแล้วให้กด "ออกงาน" ก่อน');
+      }
+      leg2Shift = await _secondShiftOf(empId, workDate, ex.shift_id);
+      if (!leg2Shift) {
+        throw new Error('คุณเช็กอินไปแล้ววันนี้ เวลา ' + _fmtTime(ex.check_in) + ' (และเช็กเอาต์แล้ว) — วันนี้ตารางเวรมีกะเดียว ถ้าต้องทำกะที่สองให้แจ้ง ผจก. จัดเวรเพิ่มก่อน');
+      }
+      leg2 = true;
     }
     // กันกดเข้างานทั้งที่ยังมีกะค้างไม่ได้กดออก (เช่น จบกะดึกเมื่อวาน แล้วเช้านี้กดเข้าแทนออก)
-    const { data: openRow } = await sb.from('attendance').select('work_date,check_in')
-      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+    const { data: openRows } = await sb.from('attendance').select('work_date,check_in,check_out' + (_L2 ? ',check_in2,check_out2' : ''))
+      .eq('emp_id', empId).not('check_in', 'is', null)
       .gte('work_date', _addDays(workDate, -2)).neq('work_date', workDate)
-      .order('check_in', { ascending: false }).limit(1).maybeSingle();
-    if (openRow && openRow.check_in) {
-      throw new Error('คุณยังมีกะที่ยังไม่ได้กดออกงาน (วันที่ ' + openRow.work_date + ' เข้างาน ' + _fmtTime(openRow.check_in) + ') — ถ้าจบกะแล้วให้กด "ออกงาน" ก่อน · หากกดผิดโปรดติดต่อ HR');
+      .order('check_in', { ascending: false }).limit(5);
+    // ★ แถวค้างเปิด = กะแรกยังไม่ปิด หรือ กะที่สองยังไม่ปิด
+    const openRow = (openRows || []).find(r => (r.check_in && !r.check_out) || (r.check_in2 && !r.check_out2));
+    if (openRow) {
+      const _oi = (openRow.check_in2 && !openRow.check_out2) ? openRow.check_in2 : openRow.check_in;
+      throw new Error('คุณยังมีกะที่ยังไม่ได้กดออกงาน (วันที่ ' + openRow.work_date + ' เข้างาน ' + _fmtTime(_oi) + ') — ถ้าจบกะแล้วให้กด "ออกงาน" ก่อน · หากกดผิดโปรดติดต่อ HR');
     }
     // หา "กะวันนี้" จากตารางเวรก่อน (authoritative) แล้วค่อย fallback กะประจำที่ส่งมา
     // กันบั๊ก: ถ้าใช้ default_shift อย่างเดียว คนที่จัดกะผ่านตารางเวร (default_shift ว่าง) จะคำนวณสายไม่ได้
     let useShift = shiftId || null;
-    const sched = await _schedOne(empId, workDate);
-    const hasSchedule = !!(sched && sched.shift_id);
-    if (hasSchedule) useShift = sched.shift_id;
+    const sched = leg2 ? null : await _schedOne(empId, workDate);
+    const hasSchedule = leg2 ? true : !!(sched && sched.shift_id);
+    if (leg2) useShift = leg2Shift;                 // กะที่สอง = กะที่เหลือของวันนั้น
+    else if (hasSchedule) useShift = sched.shift_id;
 
     // ★ ไม่มีตารางเวรของวันนี้เลย → เป็น "เข้างานนอกตาราง"
     //   ต้องให้พนักงานยืนยันก่อน (unscheduledOk) และบันทึกธงไว้ให้ HR ตรวจสอบ
@@ -127,14 +168,24 @@
     const nowIso = new Date().toISOString();
     const { data: lateMin } = await sb.rpc('calc_late_min', { p_shift_id: useShift, p_check_in: nowIso });
 
-    const { error } = await sb.from('attendance').upsert({
-      emp_id: empId, work_date: workDate, shift_id: useShift, branch_id: branchId,
-      check_in: nowIso, late_min: lateMin || 0,
-      photo_url, gps_lat: lat, gps_lng: lng, gps_accuracy: accuracy,
-      face_match: faceMatch, status: 'OPEN',
-      unscheduled: isUnscheduled,                 // ★ ธงเข้างานนอกตาราง (ให้ HR ตรวจสอบ)
-    }, { onConflict: 'emp_id,work_date' });
+    // ★ กะที่สองเขียนลงชุดคอลัมน์ลงท้ายด้วย 2 ในแถวเดิม (ไม่สร้างแถวใหม่)
+    const row2 = leg2
+      ? { shift_id2: useShift, branch_id2: branchId, check_in2: nowIso, late_min2: lateMin || 0,
+          photo_url2: photo_url, gps_lat2: lat, gps_lng2: lng, gps_accuracy2: accuracy,
+          face_match2: faceMatch, status2: 'OPEN', unscheduled2: false }
+      : { shift_id: useShift, branch_id: branchId, check_in: nowIso, late_min: lateMin || 0,
+          photo_url, gps_lat: lat, gps_lng: lng, gps_accuracy: accuracy,
+          face_match: faceMatch, status: 'OPEN', unscheduled: isUnscheduled };
+    const { error } = leg2
+      ? await sb.from('attendance').update(row2).eq('emp_id', empId).eq('work_date', workDate)
+      : await sb.from('attendance').upsert(Object.assign({ emp_id: empId, work_date: workDate }, row2), { onConflict: 'emp_id,work_date' });
     if (error) throw error;
+    if (leg2) {
+      try {
+        await sb.from('activity_log').insert({ action: 'ลงเวลากะที่สอง (ควบกะ)', emp_id: empId, actor: empId,
+          detail: 'วันที่ ' + workDate + ' เข้ากะที่สอง ' + (useShift || '-') + ' เวลา ' + _fmtTime(nowIso) + ' · สาขา ' + (branchId || '-') });
+      } catch (_e) { /* ข้าม */ }
+    }
     // ★ ระบบย้อนวันให้ (กะข้ามคืน สแกนหลังเที่ยงคืน) → บันทึกไว้ให้ HR เห็น
     if (workDate !== today) {
       try {
@@ -150,7 +201,7 @@
           detail: 'กดเข้างานวันที่ไม่มีตารางเวร (' + workDate + ') เวลา ' + _fmtTime(nowIso) + ' · สาขา ' + (branchId || '-'), actor: empId });
       } catch (_e) { /* ข้าม */ }
     }
-    return { late_min: lateMin || 0, shift_id: useShift, unscheduled: isUnscheduled };
+    return { late_min: lateMin || 0, shift_id: useShift, unscheduled: leg2 ? false : isUnscheduled, leg2 };
   }
 
   // ---------- คำแนะนำก่อนเช็กอิน: กันกดเข้างานผิด (นอกกะ / เพิ่งออกงาน) ----------
@@ -498,12 +549,24 @@
   async function checkOut({ empId, shiftId, checkoutBranchId, reason, photoDataUrl }) {
     const today = bangkokDate();
     // หาแถวที่ "ยังเปิดอยู่ล่าสุด" (เช็กอินแล้ว ยังไม่เช็กเอาต์) ภายใน 2 วัน — รองรับกะข้ามคืน (เข้าเมื่อวาน ออกวันนี้)
-    let { data: row } = await sb.from('attendance')
-      .select('work_date,check_in,shift_id,branch_id,extend_until')
-      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
+    // ★ 22 ต.ค. 69 — รองรับกะที่สองของวันเดียวกัน: ถ้ากะที่สองยังไม่ปิด ให้ปิดกะที่สองก่อน
+    const _L2 = await _hasLeg2();
+    const { data: _rows } = await sb.from('attendance')
+      .select('work_date,check_in,check_out,shift_id,branch_id,extend_until' + (_L2 ? ',check_in2,check_out2,shift_id2,branch_id2,extend_until2' : ''))
+      .eq('emp_id', empId).not('check_in', 'is', null)
       .gte('work_date', _addDays(today, -2))
-      .order('check_in', { ascending: false }).limit(1).maybeSingle();
-    if (!row || !row.check_in) return { ot_hours: 0, none: true };   // ไม่มีแถวที่ค้างเปิดอยู่
+      .order('check_in', { ascending: false }).limit(5);
+    const _open2 = (_rows || []).find(r => r.check_in2 && !r.check_out2);
+    const _open1 = (_rows || []).find(r => r.check_in && !r.check_out);
+    const L2 = !!_open2;
+    let row = _open2 || _open1 || null;
+    if (!row) return { ot_hours: 0, none: true };   // ไม่มีแถวที่ค้างเปิดอยู่
+    if (L2) {   // ทำงานกับกะที่สอง — ใช้ค่าของกะนั้นแทน
+      row = Object.assign({}, row, {
+        check_in: row.check_in2, shift_id: row.shift_id2,
+        branch_id: row.branch_id2 || row.branch_id, extend_until: row.extend_until2,
+      });
+    }
     // ★ 15 ก.ย. 69 — หัวหน้าผลัดยังไม่กดส่งผลัด → คนในผลัดยังออกงานไม่ได้
     const _blk = await _checkoutShiftGate(empId, row);
     if (_blk) return _blk;
@@ -518,9 +581,10 @@
     let upd_flag_stale = false;   // ★ แถวค้างข้ามวัน — ไม่คิด OT อัตโนมัติ
     const effShift = row.shift_id || shiftId;
     // ควบกะ: OT คิดจากเวลาเลิก "กะสุดท้าย" ที่จัดเวรไว้วันนั้น (รองรับข้ามคืน) ไม่ใช่กะที่เช็กอิน
+    //   แต่ถ้ากำลังปิด "กะที่สอง" ให้คิดจากกะที่สองตัวเดียว (กะแรกปิดไปแล้ว คนละช่วงเวลากัน)
     const { data: daySched } = await sb.from('schedules').select('shift_id').eq('emp_id', empId).eq('work_date', row.work_date);
     const schIds = [...new Set((daySched || []).map(s => s.shift_id).filter(Boolean))];
-    const consider = schIds.length ? schIds : (effShift ? [effShift] : []);
+    const consider = L2 ? (effShift ? [effShift] : []) : (schIds.length ? schIds : (effShift ? [effShift] : []));
     let ot = 0, earlyOutMin = null;
     if (consider.length) {
       const { data: shs } = await sb.from('shifts').select('shift_id,start_time,end_time,no_ot').in('shift_id', consider);
@@ -587,13 +651,16 @@
         } catch (_e) { /* ข้าม */ }
       }
     }
-    const upd = { check_out: nowIso, ot_hours: ot, early_out_min: earlyOutMin, status: upd_flag_stale ? 'CLOSED_LATE' : 'CLOSED', auto_closed: false, extend_until: null };
+    const upd = L2
+      ? { check_out2: nowIso, ot_hours2: ot, status2: upd_flag_stale ? 'CLOSED_LATE' : 'CLOSED', auto_closed2: false, extend_until2: null }
+      : { check_out: nowIso, ot_hours: ot, early_out_min: earlyOutMin, status: upd_flag_stale ? 'CLOSED_LATE' : 'CLOSED', auto_closed: false, extend_until: null };
     // รูปถ่ายตอนออกงาน (เซลฟี) — เก็บแยกจากรูปตอนเข้า
     if (photoDataUrl) {
-      try { upd.checkout_photo_url = await uploadPhoto('attendance-photos', `${empId}/${row.work_date}_out_${Date.now()}.jpg`, photoDataUrl); } catch (e) { /* ไม่ให้รูปพังการกดออก */ }
+      try { const _u = await uploadPhoto('attendance-photos', `${empId}/${row.work_date}_out_${Date.now()}.jpg`, photoDataUrl);
+            if (L2) upd.checkout_photo_url2 = _u; else upd.checkout_photo_url = _u; } catch (e) { /* ไม่ให้รูปพังการกดออก */ }
     }
-    if (checkoutBranchId) upd.checkout_branch_id = checkoutBranchId;
-    if (crossBranch) upd.checkout_note = String(reason).trim();
+    if (checkoutBranchId && !L2) upd.checkout_branch_id = checkoutBranchId;
+    if (crossBranch) { if (L2) upd.checkout_note2 = String(reason).trim(); else upd.checkout_note = String(reason).trim(); }
     const { error } = await sb.from('attendance')
       .update(upd)
       .eq('emp_id', empId).eq('work_date', row.work_date);
@@ -608,11 +675,17 @@
       const _t = new Date(untilIso).getTime();
       if (!isFinite(_t) || _t > _max) untilIso = new Date(_max).toISOString(); }
     const today = bangkokDate();
-    const { data: row } = await sb.from('attendance').select('work_date,check_in')
-      .eq('emp_id', empId).not('check_in', 'is', null).is('check_out', null)
-      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+    // ★ 22 ต.ค. 69 — กะที่สองที่เปิดค้างก็ต้องเลื่อนเวลาปิดอัตโนมัติได้ (แถวนั้น check_out ของกะแรกไม่ว่าง)
+    const _L2 = await _hasLeg2();
+    const { data: _rows } = await sb.from('attendance')
+      .select('work_date,check_in,check_out' + (_L2 ? ',check_in2,check_out2' : ''))
+      .eq('emp_id', empId).not('check_in', 'is', null)
+      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(5);
+    const _o2 = (_rows || []).find(r => r.check_in2 && !r.check_out2);
+    const row = _o2 || (_rows || []).find(r => r.check_in && !r.check_out) || null;
     if (!row || !row.check_in) return { none: true };
-    const { error } = await sb.from('attendance').update({ extend_until: untilIso, auto_closed: false })
+    const { error } = await sb.from('attendance')
+      .update(_o2 ? { extend_until2: untilIso, auto_closed2: false } : { extend_until: untilIso, auto_closed: false })
       .eq('emp_id', empId).eq('work_date', row.work_date);
     if (error) throw error;
     return { ok: true, work_date: row.work_date };
@@ -622,10 +695,20 @@
   async function getCheckoutState(empId) {
     if (!empId) return { none: true };
     const today = bangkokDate();
-    const { data: row } = await sb.from('attendance').select('work_date,check_in,check_out,shift_id,auto_closed,extend_until')
+    const _L2 = await _hasLeg2();
+    const { data: _rs } = await sb.from('attendance')
+      .select('work_date,check_in,check_out,shift_id,auto_closed,extend_until' + (_L2 ? ',check_in2,check_out2,shift_id2,auto_closed2,extend_until2' : ''))
       .eq('emp_id', empId).not('check_in', 'is', null)
-      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(1).maybeSingle();
+      .gte('work_date', _addDays(today, -2)).order('check_in', { ascending: false }).limit(5);
+    let row = (_rs || [])[0] || null;
     if (!row) return { none: true };
+    // ★ 22 ต.ค. 69 — ถ้ากะที่สองของวันนั้นเปิดค้างอยู่ ให้รายงานกะที่สองแทน (หน้าพนักงานจะได้โชว์ปุ่มออกงานถูกกะ)
+    const _o2 = (_rs || []).find(r => r.check_in2 && !r.check_out2);
+    const isLeg2 = !!_o2;
+    if (isLeg2) row = Object.assign({}, _o2, {
+      check_in: _o2.check_in2, check_out: _o2.check_out2, shift_id: _o2.shift_id2,
+      auto_closed: _o2.auto_closed2, extend_until: _o2.extend_until2, leg2: true,
+    });
     let shift = null;
     if (row.shift_id) { const { data: sh } = await sb.from('shifts').select('shift_id,name,start_time,end_time').eq('shift_id', row.shift_id).maybeSingle(); shift = sh || null; }
     // ★ 21 ก.ย. 69 — คำขอควบกะของแถวนี้ (ถ้ามี) + กะที่ควบต่อได้
@@ -636,7 +719,7 @@
       dual = dr || null;
       if (!row.check_out) dual_candidates = await _dualCandidates(empId, row, shift);
     } catch (_e) { /* ยังไม่ได้รัน dual-requests SQL */ }
-    return { row, shift, dual, dual_candidates };
+    return { row, shift, dual, dual_candidates, leg2: isLeg2 };
   }
 
   // กะที่ "ต่อจากกะนี้ได้จริง" · ไม่ซ้ำกับเวรที่มีอยู่แล้ว
@@ -737,7 +820,7 @@
     const endEff = cyc.end < today ? cyc.end : today;
     const [empR, attR, schR, lvR, shR] = await Promise.all([
       sb.from('employees').select('emp_id,name,nickname,default_shift,branch_id,weekly_off,photo_url,start_date,end_date,is_manager').eq('emp_id', empId).maybeSingle(),
-      sb.from('attendance').select('work_date,check_in,check_out,late_min,status,day_value,shift_id').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
+      sb.from('attendance').select('work_date,check_in,check_out,late_min,status,day_value,shift_id' + (await _legSel())).eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('schedules').select('work_date,shift_id,note').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('start_date,end_date,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('shifts').select('shift_id,day_value,start_time,end_time'),
@@ -759,7 +842,9 @@
     const schOk = _dropPhantom(schR.data, att, empId);
     const schedMap = _schedMapFor(schOk, emp, today);
     const abs = _absentOf(schedMap, worked, onLeave, dvOf);
-    const late = att.filter(a => a.check_in && a.late_min > 0);
+    // ★ 22 ต.ค. 69 — สายในกะที่สองของวันเดียวกันก็คือสาย 1 ครั้ง
+    const late = att.filter(a => a.check_in && a.late_min > 0)
+      .concat(att.filter(a => a.check_in2 && a.late_min2 > 0).map(a => Object.assign({}, a, { late_min: a.late_min2 })));
     return {
       today, cyc, emp, att, worked, onLeave, dvOf, schedMap,
       todayRow: att.find(a => a.work_date === today),
@@ -1117,8 +1202,13 @@
     const attDV = {}, actHr = {};
     (att || []).forEach(a => {
       if (!a.check_in) return;
-      attDV[a.work_date] = (attDV[a.work_date] || 0) + (a.day_value != null ? Number(a.day_value) : dvOf(a.shift_id));
-      if (a.check_out) { const h = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000; if (h > 0 && h < 26) actHr[a.work_date] = Math.max(actHr[a.work_date] || 0, h); }
+      // ★ 22 ต.ค. 69 — ควบกะแบบเว้นช่วง: กะที่สองอยู่แถวเดียวกัน — สูตรเดียวกับฝั่ง HR
+      attDV[a.work_date] = (attDV[a.work_date] || 0)
+        + (a.day_value != null ? Number(a.day_value) : (dvOf(a.shift_id) + (a.check_in2 ? dvOf(a.shift_id2) : 0)));
+      let _h = 0;
+      if (a.check_out) { const x = (new Date(a.check_out).getTime() - new Date(a.check_in).getTime()) / 3600000; if (x > 0 && x < 26) _h += x; }
+      if (a.check_in2 && a.check_out2) { const x = (new Date(a.check_out2).getTime() - new Date(a.check_in2).getTime()) / 3600000; if (x > 0 && x < 26) _h += x; }
+      if (_h > 0) actHr[a.work_date] = Math.max(actHr[a.work_date] || 0, _h);
     });
     const sDV = {}, sCnt = {}, sHr = {};
     (schOk || []).forEach(s => { if (!s.shift_id) return; const d = s.work_date; sDV[d] = (sDV[d] || 0) + dvOf(s.shift_id); (sCnt[d] = sCnt[d] || new Set()).add(s.shift_id); sHr[d] = (sHr[d] || 0) + ((hrMap && hrMap[s.shift_id]) || 0); });
@@ -1427,7 +1517,7 @@
     const endEff = cyc.end < today ? cyc.end : today;
 
     const [attR, shR, scCfgR, scRulesR, scBandsR, scEvR, capR, reqR, win, empFull, schR, lvR, _stA] = await Promise.all([
-      sb.from('attendance').select('work_date,check_in,check_out,late_min,day_value,shift_id')
+      sb.from('attendance').select('work_date,check_in,check_out,late_min,day_value,shift_id' + (await _legSel()))
         .eq('emp_id', emp.emp_id).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('shifts').select('shift_id,day_value,start_time,end_time'),
       sb.from('score_config').select('start_score').eq('id', 1).maybeSingle(),
@@ -2268,6 +2358,26 @@
   //   ผล: ระบบคิดว่า "วันนี้ไม่มีกะ" → _assertHasShift() เด้ง กดงานรับส่งผลัดไม่ได้
   //        และสาขาตกไปใช้ emp.branch_id (สาขาประจำ) แทนสาขาที่ไปช่วยจริง
   //   ใหม่: ดึงทุกแถว แล้วเลือกแถวที่ถูกต้องที่สุด — ยึด "ใบลงเวลาจริงของวันนั้น" ก่อนเสมอ
+  // ★ 22 ต.ค. 69 — หากะที่สองของวันนั้น (กะที่จัดเวรไว้ แต่ยังไม่ได้ใช้ในกะแรก)
+  //   เลือกตัวที่เวลาเริ่มใกล้ตอนนี้ที่สุด เผื่อวันนั้นจัดไว้มากกว่า 2 กะ
+  async function _secondShiftOf(empId, workDate, usedShift){
+    try{
+      const rows = (await sb.from('schedules').select('shift_id')
+        .eq('emp_id', empId).eq('work_date', workDate)).data || [];
+      const ids = [...new Set(rows.map(r => r.shift_id).filter(Boolean))].filter(id => id !== usedShift);
+      if (!ids.length) return null;
+      if (ids.length === 1) return ids[0];
+      const shs = (await sb.from('shifts').select('shift_id,start_time').in('shift_id', ids)).data || [];
+      const st = {}; shs.forEach(x => { st[x.shift_id] = _hm2m(String(x.start_time || '').slice(0, 5)); });
+      const now = _nowBkkMin();
+      return ids.slice().sort((a, b) => {
+        const da = Math.abs((st[a] !== undefined ? st[a] : 0) - now);
+        const db = Math.abs((st[b] !== undefined ? st[b] : 0) - now);
+        return da - db;
+      })[0];
+    }catch(e){ return null; }
+  }
+
   async function _schedOne(empId, workDate){
     if(!empId || !workDate) return null;
     try{
