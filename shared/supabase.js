@@ -82,8 +82,8 @@
       //   เดิมใช้ .find() → วันควบที่กะแรกเป็นกะเช้า จะมองว่า "ตอนนี้ไม่อยู่ในหน้าต่างกะวันนี้"
       //   แล้วอาจย้อนไปลงเป็นกะของเมื่อวานผิด ๆ
       const _sTodayAll = (_sc || []).filter(s => s.work_date === today && s.shift_id);
-      const _sYday  = (_sc || []).find(s => s.work_date === _yd && s.shift_id);
-      const _ids = [...new Set([..._sTodayAll.map(s => s.shift_id), _sYday && _sYday.shift_id].filter(Boolean))];
+      const _sYdayAll = (_sc || []).filter(s => s.work_date === _yd && s.shift_id);
+      const _ids = [...new Set([..._sTodayAll.map(s => s.shift_id), ..._sYdayAll.map(s => s.shift_id)].filter(Boolean))];
       if (_ids.length) {
         const { data: _shs } = await sb.from('shifts').select('shift_id,start_time,end_time').in('shift_id', _ids);
         const _shm = {}; (_shs || []).forEach(s => { _shm[s.shift_id] = s; });
@@ -98,12 +98,21 @@
           };
         };
         const _inToday = _sTodayAll.some(s => { const w = _win(today, s.shift_id); return !!(w && _now >= w.from && _now <= w.to); });
-        if (!_inToday && _sYday) {
-          const _wY = _win(_yd, _sYday.shift_id);
-          if (_wY && _wY.ovn && _now < _wY.to) {
-            const { data: _exY } = await sb.from('attendance').select('check_in')
+        if (!_inToday && _sYdayAll.length) {
+          // ★ 22 ต.ค. 69 — เลือก "กะข้ามคืนของเมื่อวานที่ยังไม่เลยเวลาเลิก" — ไม่ใช่กะแรกที่เจอ
+          //   เดิมใช้ .find() → วันควบ (เช้า+ดึก) มักหยิบกะเช้ามา ซึ่งไม่ข้ามคืน → ย้อนวันไม่ได้
+          const _cY = _sYdayAll.map(s => ({ sid: s.shift_id, w: _win(_yd, s.shift_id) }))
+            .filter(x => x.w && x.w.ovn && _now < x.w.to)
+            .sort((a, b) => a.w.from - b.w.from)[0];
+          if (_cY) {
+            const _L2b = await _hasLeg2();
+            const { data: _exY } = await sb.from('attendance')
+              .select('check_in,check_out,shift_id' + (_L2b ? ',check_in2' : ''))
               .eq('emp_id', empId).eq('work_date', _yd).maybeSingle();
-            if (!_exY) { workDate = _yd; ovBackfill = _sYday.shift_id; }   // ★ ลงเป็นกะของเมื่อวาน
+            // ยังไม่มีแถวของเมื่อวาน → ลงเป็นกะของเมื่อวานตามเดิม
+            // มีแถวแล้วแต่เป็นคนละกะ และกะที่สองยังว่าง → ลงเป็นกะที่สองของเมื่อวาน (ควบกะข้ามเที่ยงคืน)
+            const _freeLeg2 = !!(_L2b && _exY && _exY.check_in && !_exY.check_in2 && _exY.shift_id !== _cY.sid);
+            if (!_exY || _freeLeg2) { workDate = _yd; ovBackfill = _cY.sid; }   // ★ ลงเป็นกะของเมื่อวาน
           }
         }
       }
