@@ -604,7 +604,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_analytics"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg></span>วิเคราะห์</button>
   <button class="tab" id="tab_salesDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg></span>ยอดขาย (ไลน์)</button>
   <button class="tab" id="tab_auditDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></span>ตรวจร้าน QSSI</button>
-  <button class="tab" id="tab_stock"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg></span>วิเคราะห์สต็อก</button>
+  <button class="tab" id="tab_stock"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg></span>บันทึกผลและวิเคราะห์ผล Audit / ตัดจ่าย</button>
   <button class="tab" id="tab_handover"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 8l4-4 4 4M8 4v9"/><path d="M20 16l-4 4-4-4M16 20v-9"/></svg></span>ส่ง/รับผลัด</button>
   <button class="tab" id="tab_taskset"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M8 14l2 2 4-4"/></svg></span>ตั้งค่างานในกะ</button>
   <button class="tab" id="tab_special"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg></span>งานพิเศษ</button>
@@ -14419,7 +14419,9 @@ function stkBarH(rows, opt){
   const rowH=opt.rowH||26, LW=opt.labelW||230, W=760, PR=104, PT=6;   // PR เผื่อคอลัมน์ตัวเลขด้านขวา ไม่ให้ล้นกรอบ
   const H=PT*2+rows.length*rowH;
   const max=Math.max.apply(null, rows.map(r=>r.value))||1;
-  const tot=rows.reduce((s,r)=>s+r.value,0)||1;
+  // ★ 22 ต.ค. 69 — % ต้องคิดจากยอดรวม "ทุกกลุ่ม" ไม่ใช่เฉพาะแถวที่โชว์ในกราฟ
+  //   ไม่งั้นกราฟโชว์ 16.4% แต่ตารางข้างล่างโชว์ 11.2% สำหรับตัวเลขเดียวกัน
+  const tot=(opt.total!=null && opt.total>0) ? opt.total : (rows.reduce((s,r)=>s+r.value,0)||1);
   const iw=W-LW-PR;
   let g='';
   const maxCh=Math.max(10, Math.floor((LW-12)/6.3));   // ตัดชื่อตามความกว้างป้ายจริง ไม่ให้ตัวหนังสือล้นออกนอกกราฟ
@@ -14559,8 +14561,9 @@ function stkRenderPma(){
     values:mons.map(m=>Math.abs(o.m[m]||0)) }));
   if(rest.length) series.push({ name:'กลุ่มอื่น ๆ รวมกัน', color:stkHue(5), dash:true,
     values:mons.map(m=>Math.abs(rest.reduce((s,o)=>s+(o.m[m]||0),0))) });
+  const grandAbs=Math.abs(rows.reduce((s,o)=>s+o.tot,0));
   const rankBar=()=>stkBarH(rows.slice(0,12).map((o,i)=>({ label:o.pma+' '+(o.name||''), value:Math.abs(o.tot), color:stkHue(i<6?i:5) })),
-                            { aria:'อันดับกลุ่มสินค้าที่ขาดมากที่สุด' });
+                            { aria:'อันดับกลุ่มสินค้าที่ขาดมากที่สุด', total:grandAbs });
   $('stk_pmagrp').innerHTML=stkModeBtn('stk_pmagrp')
     + (STK.chartMode==='bar' ? rankBar()
         : (mons.length<2
@@ -14633,7 +14636,8 @@ function stkRenderDrillChart(){
   if(STK.chartMode==='bar'){
     box.innerHTML = stkModeBtn('stk_pmatrend')
       + stkBarH(short.slice(0,10).map(x=>({ label:x.sku+' '+(x.name||''), value:Math.abs(Number(x.short_amt)), color:stkHue(0) })),
-                { labelW:270, aria:'สินค้าที่ขาดมากที่สุดในกลุ่ม' });
+                { labelW:270, aria:'สินค้าที่ขาดมากที่สุดในกลุ่ม',
+                  total:Math.abs(short.reduce((s,x)=>s+Number(x.short_amt||0),0)) });
     stkWireMode('stk_pmatrend'); return;
   }
   if(mons.length<2){
@@ -15247,7 +15251,7 @@ async function stkWatchCreate(){
         source:'chronic', amt_at_set:Number(x.short_amt)||0 })),
       task:{ title:'เฝ้าระวังสินค้า — '+stkMonLb(period),
         detail:$('stk_wnote').value||'', deadline: dl? new Date(dl).toISOString():null,
-        hr_note:'สร้างจากหน้าวิเคราะห์สต็อก', emp_ids:emps } });
+        hr_note:'สร้างจากหน้าบันทึกผลและวิเคราะห์ผล Audit / ตัดจ่าย', emp_ids:emps } });
     if(!r||!r.ok) throw new Error((r&&r.error)||'ไม่สำเร็จ');
     $('stk_wmsg').innerHTML='<span style="color:var(--accent);font-weight:600">ตั้งเฝ้าระวัง '+r.saved+' รายการ · มอบหมายให้ '+r.assigned+' คนแล้ว</span>';
     toast('ok','มอบหมายงานเฝ้าระวังแล้ว');
