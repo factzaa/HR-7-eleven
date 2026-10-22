@@ -1908,19 +1908,22 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
         <div style="overflow-x:auto"><div id="stk_pma"><div class="empty">กำลังโหลด…</div></div></div>
       </div>
     </div>
-    <div id="stk_pmadrill" style="display:none">
-      <div class="toolbar">
-        <button class="btn btn-sec btn-sm" id="stk_pmaback" type="button">← กลับไปอันดับกลุ่ม</button>
-        <h3 id="stk_pmatitle" style="flex:1;font-size:15px;font-weight:600"></h3>
-        <button class="btn btn-sec btn-sm" id="stk_pmacsv" type="button">ดาวน์โหลด CSV</button>
-      </div>
-      <div class="card" style="padding:14px;margin-bottom:14px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:4px">สินค้าที่ขาดมากที่สุดในกลุ่มนี้</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px"><b>เส้น</b> = แนวโน้มรายเดือนของ 6 ตัวแรก — เส้นที่สูงต่อเนื่องทุกเดือนคือปัญหาเชิงระบบ เส้นที่พุ่งเดือนเดียวคือเหตุเฉพาะกิจ · <b>แท่ง</b> = อันดับ 10 ตัวแรกรวมทั้งช่วง</div>
-        <div id="stk_pmatrend"></div>
-      </div>
-      <div style="overflow-x:auto"><div id="stk_pmaitems"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+
+  <!-- ===== หน้ารายละเอียด (ใช้ร่วมกันทุกจุดที่กดดูรายการได้) ===== -->
+  <div class="stkpan" id="stkpan_drill" style="display:none">
+    <div class="toolbar">
+      <button class="btn btn-sec btn-sm" id="stk_pmaback" type="button">← กลับ</button>
+      <h3 id="stk_pmatitle" style="flex:1;font-size:15px;font-weight:600"></h3>
+      <button class="btn btn-sec btn-sm" id="stk_pmacsv" type="button">ดาวน์โหลด CSV</button>
     </div>
+    <div id="stk_drillsub" style="font-size:12.5px;color:var(--muted);margin:-4px 0 12px"></div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div id="stk_drillcap" style="font-size:14px;font-weight:600;margin-bottom:4px">สินค้าที่ขาดมากที่สุด</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px"><b>เส้น</b> = แนวโน้มรายเดือนของ 6 ตัวแรก — เส้นที่สูงต่อเนื่องทุกเดือนคือปัญหาเชิงระบบ เส้นที่พุ่งเดือนเดียวคือเหตุเฉพาะกิจ · <b>แท่ง</b> = อันดับ 10 ตัวแรกรวมทั้งช่วง</div>
+      <div id="stk_pmatrend"></div>
+    </div>
+    <div style="overflow-x:auto"><div id="stk_pmaitems"><div class="empty">กำลังโหลด…</div></div></div>
   </div>
 
   <!-- ===== เทียบเดือน ===== -->
@@ -14131,7 +14134,7 @@ function tsWire(){
 // ============================================================
 const STK = { pan:'over', branch:'', from:'', to:'', uploads:[], chronic:[], wo:[], pma:[], risk:[], swap:[], swapTrend:[],
                auditTrend:[], audit_months:[], items:[], drillPma:'', drillName:'', diff:[], diffA:'', diffB:'', prof:null,
-               woTrend:[], cand:[], gp:[], gpDrop:[], gpOver:[], chartMode:(function(){ try{ return localStorage.getItem('stk_chartmode')||'line'; }catch(e){ return 'line'; } })() };
+               woTrend:[], cand:[], gp:[], gpDrop:[], gpOver:[], drill:null, drillMons:[], panBack:'pma', woFrom:null, woTo:null, chartMode:(function(){ try{ return localStorage.getItem('stk_chartmode')||'line'; }catch(e){ return 'line'; } })() };
 const STK_RISK_LB = { theft:'ชิ้นเล็กหยิบง่าย', control:'ของควบคุมมูลค่าสูง', consume:'วัสดุสิ้นเปลือง',
                       fresh:'ของสด/หมดอายุ', drink:'เครื่องดื่ม', home:'ของใช้ในบ้าน', other:'อื่น ๆ' };
 const STK_RISK_HINT = {
@@ -14265,9 +14268,8 @@ async function stkInit(){
 }
 function stkPan(name){
   STK.pan=name;
-  document.querySelectorAll('#stksub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.stkpan===name));
-  ['over','chronic','swap','pma','diff','wo','gp','nida','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
-  if(name==='pma') stkPmaBack();                 // กลับมาแท็บนี้ใหม่ให้เริ่มที่อันดับกลุ่มเสมอ
+  document.querySelectorAll('#stksub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.stkpan===(name==='drill'?(STK.panBack||'pma'):name)));
+  ['over','chronic','swap','pma','drill','diff','wo','gp','nida','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
   if(name==='chronic' && !STK.chronic.length) stkLoadChronic();
   else if(name==='swap' && !STK.swap.length) stkLoadSwap();
   else if(name==='diff' && !STK.diff.length) stkLoadDiff();
@@ -14281,7 +14283,7 @@ async function stkReload(clear){
   STK.branch = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
   STK.from = $('stk_from')?$('stk_from').value:'';
   STK.to   = $('stk_to')?$('stk_to').value:'';
-  if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; STK.diff=[]; STK.items=[]; STK.gp=[]; }
+  if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; STK.diff=[]; STK.items=[]; STK.gp=[]; STK.woFrom=null; STK.woTo=null; }
   // ★ ต้องรอให้เสร็จก่อน — หน้า "เทียบเดือน" เอารายชื่อเดือนที่เลือกได้มาจากผลของ stkLoadOver
   await stkLoadOver();
   if(STK.pan==='chronic') stkLoadChronic();
@@ -14325,24 +14327,25 @@ async function stkLoadOver(){
   const expl = sw1 ? Number(sw1.explained_amt||0) : 0;             // มูลค่าฝั่งขาดที่อธิบายได้ด้วยคู่คีย์ผิดตัว
   const realShort = a1 ? Number(a1.short_amt||0) + expl : 0;       // ขาด (ติดลบ) + ที่อธิบายได้ = ขาดที่เหลืออธิบายไม่ได้
   $('stk_kpi').innerHTML=
-    '<div class="kpi bad"><div class="lbl">ขาดสุทธิ · '+esc(a1?stkMonLb(a1.period_ym):'—')+'</div>'
+    '<div class="kpi bad" data-stkgo="chronic" style="cursor:pointer" title="กดเพื่อดูของที่ขาดซ้ำซาก"><div class="lbl">ขาดสุทธิ · '+esc(a1?stkMonLb(a1.period_ym):'—')+' ›</div>'
       +'<div class="val">'+(a1?stkN(a1.net_amt):'—')+'<span class="sm"> บ.</span></div>'
       +'<div class="delta">'+(a1&&a0?dlt(Number(a1.net_amt),Number(a0.net_amt),true):'')+'</div></div>'
-    +'<div class="kpi warn"><div class="lbl">คลาดเคลื่อนรวม (ขาด+เกิน)</div>'
+    +'<div class="kpi warn" data-stkgo="pma" style="cursor:pointer" title="กดเพื่อดูรายกลุ่มสินค้า"><div class="lbl">คลาดเคลื่อนรวม (ขาด+เกิน) ›</div>'
       +'<div class="val">'+(a1?stkN(a1.abs_amt):'—')+'<span class="sm"> บ.</span></div>'
       +'<div class="delta">'+(a1?stkN(a1.sku_n)+' SKU ที่ไม่ตรง':'')+' '+(a1&&a0?dlt(Number(a1.abs_amt),Number(a0.abs_amt),false):'')+'</div></div>'
-    +'<div class="kpi"><div class="lbl">คีย์ผิดตัว (อธิบายได้)</div>'
+    +'<div class="kpi" data-stkgo="swap" style="cursor:pointer" title="กดเพื่อดูคู่คีย์ผิดตัว"><div class="lbl">คีย์ผิดตัว (อธิบายได้) ›</div>'
       +'<div class="val">'+(sw1?stkN(expl):'—')+'<span class="sm"> บ.</span></div>'
       +'<div class="delta">'+(sw1?stkN(sw1.pair_n)+' คู่ · รับผิดหน่วย '+stkN(sw1.unit_n)+' · ขายผิดตัว '+stkN(sw1.variant_n):'ยังไม่มีข้อมูล')+'</div></div>'
-    +'<div class="kpi bad"><div class="lbl">ขาดที่ยังอธิบายไม่ได้</div>'
+    +'<div class="kpi bad" data-stkgo="chronic" style="cursor:pointer" title="กดเพื่อดูของที่ขาดซ้ำซาก"><div class="lbl">ขาดที่ยังอธิบายไม่ได้ ›</div>'
       +'<div class="val">'+(a1?stkN(realShort):'—')+'<span class="sm"> บ.</span></div>'
       +'<div class="delta">'+(a1&&expl?'จากยอดขาด '+stkN(a1.short_amt)+' หักคู่ที่จับได้แล้ว':'ยอดขาดก่อนหักคู่คีย์ผิดตัว')+'</div></div>'
-    +'<div class="kpi"><div class="lbl">ตัดจ่ายสุทธิ · '+esc(w1?stkMonLb(w1.period_ym):'—')+'</div>'
+    +'<div class="kpi" data-stkgo="wo" style="cursor:pointer" title="กดเพื่อดูรายการสินค้าตัดจ่าย"><div class="lbl">ตัดจ่ายสุทธิ · '+esc(w1?stkMonLb(w1.period_ym):'—')+' ›</div>'
       +'<div class="val">'+(w1?stkN(w1.amt_net):'—')+'<span class="sm"> บ.</span></div>'
       +'<div class="delta">'+(w1?'วัสดุสิ้นเปลือง '+stkN(w1.amt_consume)+' บ.':'')+'</div></div>'
     +'<div class="kpi"><div class="lbl">เดือนที่มีข้อมูล</div>'
       +'<div class="val">'+at.length+'<span class="sm"> / '+wt.length+'</span></div>'
       +'<div class="delta">Audit / ตัดจ่าย'+(at.length<3?' · ยังน้อย แนวโน้มจะแม่นขึ้นเมื่อครบ 3 เดือน':'')+'</div></div>';
+  $('stk_kpi').querySelectorAll('[data-stkgo]').forEach(c=>c.onclick=()=>stkPan(c.dataset.stkgo));
 
   // ---- ตาราง Audit รายเดือน ----
   if(!at.length) $('stk_atrend').innerHTML='<div class="empty">ยังไม่มีไฟล์ Audit</div>';
@@ -14353,22 +14356,33 @@ async function stkLoadOver(){
     +at.map(x=>{
       const s=swMap[x.period_ym], e=s?Number(s.explained_amt||0):0;
       const pct=Number(x.short_amt)?(e/Math.abs(Number(x.short_amt))*100):0;
-      return '<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td><td>'+stkN(x.sku_n)+'</td><td>'+stkN(x.short_n)+'</td><td>'+stkN(x.over_n)+'</td>'
+      return '<tr data-stkmon="'+esc(x.period_ym)+'" style="cursor:pointer" title="กดเพื่อดูรายการสินค้าของเดือนนี้"><td class="l">'+esc(stkMonLb(x.period_ym))+' ›</td><td>'+stkN(x.sku_n)+'</td><td>'+stkN(x.short_n)+'</td><td>'+stkN(x.over_n)+'</td>'
       +'<td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.over_amt)+'</td><td class="neg">'+stkN(x.net_amt)+'</td><td>'+stkN(x.abs_amt)+'</td>'
       +'<td>'+(s?stkN(e)+' <span style="color:var(--muted);font-size:11px">('+stkN(pct,0)+'%)</span>':'—')+'</td>'
       +'<td class="neg">'+(s?stkN(Number(x.short_amt)+e):'—')+'</td></tr>';
     }).join('')
-    +'</tbody></table>';
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">กดที่แถวเดือนเพื่อดูว่าเดือนนั้นเป็นสินค้าตัวไหนบ้าง</div>';
+  $('stk_atrend').querySelectorAll('[data-stkmon]').forEach(tr=>tr.onclick=()=>{
+    const m=tr.dataset.stkmon;
+    stkOpenDrill({ from:m, to:m, back:'over', title:'รายการสินค้าที่คลาดเคลื่อน · '+stkMonLb(m),
+      sub:'ทุกกลุ่มสินค้า เฉพาะเดือน '+stkMonLb(m), cap:'สินค้าที่ขาดมากที่สุดในเดือนนี้' });
+  });
 
   // ---- ตารางตัดจ่ายรายเดือน ----
   if(!wt.length) $('stk_wtrend').innerHTML='<div class="empty">ยังไม่มีไฟล์สินค้าตัดจ่าย</div>';
   else $('stk_wtrend').innerHTML='<table class="stk-tbl"><thead><tr>'
     +'<th class="l">เดือน</th><th>รายการ</th><th>เสื่อมคุณภาพ (สาขา)</th><th>เสื่อมคุณภาพ (คลัง)</th>'
     +'<th>วัสดุสิ้นเปลือง</th><th>ชดเชยคืน</th><th>รวมสุทธิ</th></tr></thead><tbody>'
-    +wt.map(x=>'<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td><td>'+stkN(x.row_n)+'</td>'
+    +wt.map(x=>'<tr data-stkwomon="'+esc(x.period_ym)+'" style="cursor:pointer" title="กดเพื่อดูรายการตัดจ่ายของเดือนนี้"><td class="l">'+esc(stkMonLb(x.period_ym))+' ›</td><td>'+stkN(x.row_n)+'</td>'
       +'<td>'+stkN(x.amt_branch,2)+'</td><td>'+stkN(x.amt_dc,2)+'</td><td>'+stkN(x.amt_consume,2)+'</td>'
       +'<td>'+stkN(x.amt_credit,2)+'</td><td><b>'+stkN(x.amt_net,2)+'</b></td></tr>').join('')
-    +'</tbody></table>';
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">กดที่แถวเดือนเพื่อดูรายการสินค้าที่ตัดจ่ายในเดือนนั้น</div>';
+  $('stk_wtrend').querySelectorAll('[data-stkwomon]').forEach(tr=>tr.onclick=()=>{
+    STK.woFrom=tr.dataset.stkwomon; STK.woTo=tr.dataset.stkwomon;   // จำกัดแท็บตัดจ่ายไว้ที่เดือนนี้
+    stkPan('wo'); stkLoadWo();
+  });
 
   stkRenderOverChart();
   stkRenderRisk();
@@ -14401,10 +14415,16 @@ function stkRenderRisk(){
   const rows=(STK.risk||[]).slice().sort((a,b)=>Number(a.short_amt)-Number(b.short_amt));
   if(!rows.length){ $('stk_risk').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงเดือนที่เลือก</div>'; return; }
   $('stk_risk').innerHTML='<table class="stk-tbl"><thead><tr><th class="l">ลักษณะ</th><th>SKU</th><th>มูลค่าขาด</th><th>มูลค่าเกิน</th><th>ตัดจ่าย</th><th class="l">มาตรการที่ตรงกับลักษณะนี้</th></tr></thead><tbody>'
-    +rows.map(x=>'<tr><td class="l"><b>'+esc(STK_RISK_LB[x.risk_type]||x.risk_type)+'</b></td>'
+    +rows.map(x=>'<tr data-stkrisk="'+esc(x.risk_type)+'" style="cursor:pointer" title="กดเพื่อดูรายการสินค้าในลักษณะนี้"><td class="l"><b>'+esc(STK_RISK_LB[x.risk_type]||x.risk_type)+'</b> ›</td>'
       +'<td>'+stkN(x.sku_n)+'</td><td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.over_amt)+'</td><td>'+stkN(x.wo_amt)+'</td>'
       +'<td class="l" style="white-space:normal;color:var(--muted);font-size:12px">'+esc(STK_RISK_HINT[x.risk_type]||'')+'</td></tr>').join('')
-    +'</tbody></table>';
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">กดที่แถวเพื่อดูว่าลักษณะนั้นมีสินค้าตัวไหนบ้าง</div>';
+  $('stk_risk').querySelectorAll('[data-stkrisk]').forEach(tr=>tr.onclick=()=>{
+    const k=tr.dataset.stkrisk;
+    stkOpenDrill({ risk:k, back:'over', title:'สินค้าในลักษณะ "'+(STK_RISK_LB[k]||k)+'"',
+      sub:STK_RISK_HINT[k]||'', cap:'สินค้าที่ขาดมากที่สุดในลักษณะนี้' });
+  });
 }
 // ---------- ชุดสีกราฟ (6 สี ไล่ความต่างให้แยกออกแม้ตาบอดสี และมีคู่สำหรับโหมดมืด) ----------
 const STK_HUE=['#2a78d6','#eb6834','#1baf7a','#8e5cc4','#b08400','#64748b'];
@@ -14428,9 +14448,12 @@ function stkBarH(rows, opt){
   rows.forEach((r,i)=>{
     const y=PT+i*rowH, w=Math.max(1, iw*r.value/max), col=r.color||stkHue(i);
     const lb=String(r.label), lbs=lb.length>maxCh ? lb.slice(0,maxCh-1)+'…' : lb;
-    g+='<text x="'+(LW-8)+'" y="'+(y+rowH/2+4)+'" text-anchor="end" font-size="11.5" fill="var(--txt)">'+esc(lbs)+'<title>'+esc(lb)+'</title></text>'
-      +'<rect x="'+LW+'" y="'+(y+4)+'" width="'+w.toFixed(1)+'" height="'+(rowH-9)+'" rx="3" fill="'+col+'"'+(opt.click?' style="cursor:pointer"':'')+'/>'
-      +'<text x="'+(W-2)+'" y="'+(y+rowH/2+4)+'" text-anchor="end" font-size="11" fill="var(--muted)">'+stkN(r.value)+' ('+stkN(r.value/tot*100,1)+'%)</text>';
+    // ★ 22 ต.ค. 69 — กดแท่ง (หรือแถวทั้งแถว) เพื่อเปิดรายละเอียดได้
+    const hit = r.key!=null ? ' data-barkey="'+esc(String(r.key))+'" style="cursor:pointer"' : '';
+    if(r.key!=null) g+='<rect x="0" y="'+y+'" width="'+W+'" height="'+rowH+'" fill="transparent"'+hit+'><title>'+esc('กดเพื่อดูรายการสินค้า · '+lb)+'</title></rect>';
+    g+='<text x="'+(LW-8)+'" y="'+(y+rowH/2+4)+'" text-anchor="end" font-size="11.5" fill="var(--txt)" pointer-events="none">'+esc(lbs)+'<title>'+esc(lb)+'</title></text>'
+      +'<rect x="'+LW+'" y="'+(y+4)+'" width="'+w.toFixed(1)+'" height="'+(rowH-9)+'" rx="3" fill="'+col+'" pointer-events="none"/>'
+      +'<text x="'+(W-2)+'" y="'+(y+rowH/2+4)+'" text-anchor="end" font-size="11" fill="var(--muted)" pointer-events="none">'+stkN(r.value)+' ('+stkN(r.value/tot*100,1)+'%)</text>';
   });
   return '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:560px;height:auto;display:block" role="img" aria-label="'+esc(opt.aria||'กราฟจัดอันดับ')+'">'+g+'</svg></div>';
 }
@@ -14489,8 +14512,14 @@ function stkWireMode(box){
     try{ localStorage.setItem('stk_chartmode', STK.chartMode); }catch(e){}
     stkRenderPma();
     if(STK.pan==='over') stkRenderOverChart();
-    if($('stk_pmadrill') && $('stk_pmadrill').style.display!=='none' && STK.drillPma) stkRenderDrillChart();
+    if(STK.pan==='drill' && (STK.items||[]).length) stkRenderDrillChart();
   });
+}
+
+// ผูกการกดแท่งกราฟ — fn(key) ถูกเรียกพร้อมค่า key ของแถวนั้น
+function stkWireBars(boxId, fn){
+  const el=$(boxId); if(!el) return;
+  el.querySelectorAll('[data-barkey]').forEach(r=>{ r.onclick=()=>fn(r.getAttribute('data-barkey')); });
 }
 
 // กราฟแท่งกลุ่ม — แกนนอนเป็นเดือน แต่ละเดือนมีแท่งของแต่ละชุดข้อมูล
@@ -14562,7 +14591,7 @@ function stkRenderPma(){
   if(rest.length) series.push({ name:'กลุ่มอื่น ๆ รวมกัน', color:stkHue(5), dash:true,
     values:mons.map(m=>Math.abs(rest.reduce((s,o)=>s+(o.m[m]||0),0))) });
   const grandAbs=Math.abs(rows.reduce((s,o)=>s+o.tot,0));
-  const rankBar=()=>stkBarH(rows.slice(0,12).map((o,i)=>({ label:o.pma+' '+(o.name||''), value:Math.abs(o.tot), color:stkHue(i<6?i:5) })),
+  const rankBar=()=>stkBarH(rows.slice(0,12).map((o,i)=>({ label:o.pma+' '+(o.name||''), value:Math.abs(o.tot), color:stkHue(i<6?i:5), key:o.pma })),
                             { aria:'อันดับกลุ่มสินค้าที่ขาดมากที่สุด', total:grandAbs });
   $('stk_pmagrp').innerHTML=stkModeBtn('stk_pmagrp')
     + (STK.chartMode==='bar' ? rankBar()
@@ -14570,6 +14599,9 @@ function stkRenderPma(){
             ? '<div class="empty">มีข้อมูลเดือนเดียว ยังลากเส้นแนวโน้มไม่ได้ — แสดงอันดับให้แทน</div>'+rankBar()
             : stkLineChart(mons, series, { aria:'แนวโน้มมูลค่าที่ขาดรายเดือนของกลุ่มสินค้าหลัก' })));
   stkWireMode('stk_pmagrp');
+  stkWireBars('stk_pmagrp', (pma)=>{ const o=rows.find(x=>String(x.pma)===String(pma));
+    stkOpenDrill({ pma:String(pma), back:'pma', title:'กลุ่ม '+pma+' '+((o&&o.name)||'')+' — รายการสินค้า',
+      sub:'รวมทั้งช่วงเดือนที่กรองไว้', cap:'สินค้าที่ขาดมากที่สุดในกลุ่มนี้' }); });
 
   // --- ตารางอันดับ (กดดูรายการสินค้าได้) ---
   const grand=rows.reduce((s,o)=>s+o.tot,0)||-1;
@@ -14587,50 +14619,76 @@ function stkRenderPma(){
     +tot.map(v=>'<td class="neg">'+stkN(v)+'</td>').join('')
     +'<td class="neg">'+stkN(tot.reduce((s,v)=>s+v,0))+'</td><td>100%</td><td></td><td></td></tr></tfoot></table>';
   $('stk_pma').querySelectorAll('[data-stkpma]').forEach(tr=>{
-    tr.onclick=()=>{ const o=rows.find(x=>String(x.pma)===tr.dataset.stkpma); stkPmaDrill(tr.dataset.stkpma, o?o.name:''); };
+    tr.onclick=()=>{ const o=rows.find(x=>String(x.pma)===tr.dataset.stkpma);
+      stkOpenDrill({ pma:tr.dataset.stkpma, back:'pma',
+        title:'กลุ่ม '+tr.dataset.stkpma+' '+((o&&o.name)||'')+' — รายการสินค้า',
+        sub:'รวมทั้งช่วงเดือนที่กรองไว้', cap:'สินค้าที่ขาดมากที่สุดในกลุ่มนี้' }); };
   });
 }
 
-// ---------- เจาะดูรายการสินค้าในกลุ่ม ----------
-async function stkPmaDrill(pma, name){
-  STK.drillPma=pma; STK.drillName=name||'';
-  $('stk_pmamain').style.display='none';
-  $('stk_pmadrill').style.display='';
-  $('stk_pmatitle').textContent='กลุ่ม '+pma+' '+(name||'')+' — รายการสินค้า';
+// ---------- หน้ารายละเอียด (ใช้ร่วมกันทุกจุดที่กดดูรายการได้) ----------
+//  spec = { pma, risk, from, to, title, sub, back }
+//    pma   = กรองเฉพาะกลุ่มสินค้านั้น
+//    risk  = กรองตามลักษณะความเสี่ยง (ชิ้นเล็กหยิบง่าย / วัสดุสิ้นเปลือง / ...)
+//    from,to = จำกัดช่วงเดือน (ใส่เดือนเดียวกัน = ดูเฉพาะเดือนนั้น)
+//    back  = แท็บย่อยที่จะกลับไปเมื่อกดปุ่มย้อน
+async function stkOpenDrill(spec){
+  spec=spec||{};
+  STK.drill=spec;
+  STK.drillPma=spec.pma||'';
+  STK.panBack=spec.back||STK.pan;
+  stkPan('drill');
+  $('stk_pmatitle').textContent=spec.title||'รายละเอียด';
+  $('stk_drillsub').textContent=spec.sub||'';
+  $('stk_drillcap').textContent=spec.cap||'สินค้าที่ขาดมากที่สุดในรายการนี้';
+  $('stk_pmaback').textContent='← กลับไป'+(STK_PAN_LB[STK.panBack]||'หน้าก่อน');
   $('stk_pmaitems').innerHTML='<div class="empty">กำลังโหลด…</div>';
   $('stk_pmatrend').innerHTML='';
   let r;
-  try{ r=await post({ action:'hr_stock_pma_items', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, pma }); }
+  try{ r=await post({ action:'hr_stock_pma_items', ...stkAuth(),
+        branch:STK.branch||null, from:spec.from||STK.from||null, to:spec.to||STK.to||null,
+        pma:spec.pma||null, risk:spec.risk||null }); }
   catch(e){ $('stk_pmaitems').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
   if(!r||!r.ok){ $('stk_pmaitems').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
   STK.items=r.rows||[];
-  if(!STK.items.length){ $('stk_pmaitems').innerHTML='<div class="empty">ไม่มีรายการในกลุ่มนี้</div>'; return; }
-  const mons=stkPmaAgg().mons;
-  const short=STK.items.filter(x=>Number(x.short_amt)<0);
+  if(!STK.items.length){ $('stk_pmaitems').innerHTML='<div class="empty">ไม่มีรายการตามเงื่อนไขนี้</div>'; return; }
+  // เดือนที่จะแสดงเป็นคอลัมน์ — ถ้าเจาะเดือนเดียวก็มีคอลัมน์เดียว
+  const all=stkPmaAgg().mons;
+  const mons=(spec.from&&spec.to&&spec.from===spec.to) ? [spec.from]
+           : all.filter(m=>(!spec.from||m>=spec.from)&&(!spec.to||m<=spec.to));
+  STK.drillMons=mons.length?mons:all;
   stkRenderDrillChart();
+  const short=STK.items.filter(x=>Number(x.short_amt)<0);
   const sumShort=short.reduce((s,x)=>s+Number(x.short_amt||0),0)||-1;
+  const MM=STK.drillMons;
   $('stk_pmaitems').innerHTML='<table class="stk-tbl"><thead><tr><th>#</th><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th>'
-    +mons.map(m=>'<th>'+esc(stkMonLb(m))+'</th>').join('')
-    +'<th>ขาดกี่เดือน</th><th>ขาดรวม</th><th>ชิ้น</th><th>เกินรวม</th><th>ตัดจ่าย</th><th>สัดส่วนในกลุ่ม</th></tr></thead><tbody>'
+    +(spec.pma?'':'<th class="l">กลุ่ม</th>')
+    +MM.map(m=>'<th>'+esc(stkMonLb(m))+'</th>').join('')
+    +'<th>ขาดกี่เดือน</th><th>ขาดรวม</th><th>ชิ้น</th><th>เกินรวม</th><th>ตัดจ่าย</th><th>สัดส่วน</th></tr></thead><tbody>'
     +STK.items.map((x,i)=>{
       const bm=x.by_month||{};
       return '<tr><td>'+(i+1)+'</td><td class="l">'+esc(x.sku)+'</td>'
       +'<td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
-      +mons.map(m=>{ const v=Number(bm[m]||0);
+      +(spec.pma?'':'<td class="l nm" style="max-width:150px;font-size:12px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>')
+      +MM.map(m=>{ const v=Number(bm[m]||0);
         return '<td'+(v<0?' class="neg"':'')+'>'+(v?stkN(v):'—')+'</td>'; }).join('')
-      +'<td'+(Number(x.months_short)>=mons.length&&mons.length>1?' style="color:var(--red);font-weight:700"':'')+'>'+esc(x.months_short)+'/'+mons.length+'</td>'
+      +'<td'+(Number(x.months_short)>=MM.length&&MM.length>1?' style="color:var(--red);font-weight:700"':'')+'>'+esc(x.months_short)+'/'+MM.length+'</td>'
       +'<td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.short_qty)+'</td>'
       +'<td>'+(Number(x.over_amt)?stkN(x.over_amt):'—')+'</td>'
       +'<td>'+(Number(x.wo_amt)?stkN(x.wo_amt,2):'—')+'</td>'
       +'<td>'+(Number(x.short_amt)?stkN(Number(x.short_amt)/sumShort*100,1)+'%':'—')+'</td></tr>';
     }).join('')
     +'</tbody></table>'
-    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แสดง '+STK.items.length+' รายการ · เรียงตามมูลค่าที่ขาด · ช่อง "ขาดกี่เดือน" สีแดงคือขาดทุกเดือนที่มีข้อมูล</div>';
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">แสดง '+STK.items.length+' รายการ · เรียงตามมูลค่าที่ขาด'
+    +(MM.length>1?' · ช่อง "ขาดกี่เดือน" สีแดงคือขาดทุกเดือนที่มีข้อมูล':'')+'</div>';
 }
+// ชื่อแท็บย่อย ใช้เขียนบนปุ่มย้อนกลับให้รู้ว่าจะกลับไปไหน
+const STK_PAN_LB={ over:'ภาพรวม', chronic:'ของหายซ้ำซาก', swap:'คีย์ผิดตัว', pma:'รายกลุ่มสินค้า',
+                   diff:'เทียบเดือน', wo:'สินค้าตัดจ่าย', gp:'ผลต่อ GP', nida:'นิดาวิเคราะห์' };
 // กราฟสินค้าในกลุ่ม — เส้น: แนวโน้มรายเดือน 6 ตัวแรก · แท่ง: อันดับ 10 ตัวแรกรวมทั้งช่วง
 function stkRenderDrillChart(){
   const box=$('stk_pmatrend'); if(!box) return;
-  const mons=stkPmaAgg().mons;
+  const mons=STK.drillMons||stkPmaAgg().mons;
   const short=(STK.items||[]).filter(x=>Number(x.short_amt)<0);
   if(!short.length){ box.innerHTML='<div class="empty">ไม่มีสินค้าที่ขาดในกลุ่มนี้</div>'; return; }
   if(STK.chartMode==='bar'){
@@ -14651,7 +14709,7 @@ function stkRenderDrillChart(){
     + stkLineChart(mons, lines, { aria:'แนวโน้มมูลค่าที่ขาดรายเดือนของสินค้าในกลุ่ม' });
   stkWireMode('stk_pmatrend');
 }
-function stkPmaBack(){ $('stk_pmadrill').style.display='none'; $('stk_pmamain').style.display=''; }
+function stkPmaBack(){ stkPan(STK.panBack||'pma'); }
 
 // ---------- เทียบ 2 เดือน ----------
 function stkDiffFillMonths(){
@@ -14881,13 +14939,21 @@ async function stkLoadSwap(){
 async function stkLoadWo(){
   $('stk_wo').innerHTML='<div class="empty">กำลังโหลด…</div>';
   let r;
-  try{ r=await post({ action:'hr_stock_wo_top', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null, section:$('stk_wsec').value||null }); }
+  const wf=STK.woFrom||STK.from||null, wt2=STK.woTo||STK.to||null;
+  try{ r=await post({ action:'hr_stock_wo_top', ...stkAuth(), branch:STK.branch||null, from:wf, to:wt2, section:$('stk_wsec').value||null }); }
   catch(e){ $('stk_wo').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(e.message||e)+'</div>'; return; }
   if(!r||!r.ok){ $('stk_wo').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
   STK.wo=r.rows||[];
-  if(!STK.wo.length){ $('stk_wo').innerHTML='<div class="empty">ยังไม่มีข้อมูลสินค้าตัดจ่ายในช่วงเดือนที่เลือก</div>'; return; }
+  const onlyMon = STK.woFrom && STK.woTo && STK.woFrom===STK.woTo;
+  const banner = onlyMon
+    ? '<div class="card" style="padding:10px 12px;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      +'<span style="font-size:13px">กรองเฉพาะเดือน <b>'+esc(stkMonLb(STK.woFrom))+'</b></span>'
+      +'<button class="btn btn-sec btn-sm" type="button" id="stk_woclear">ดูทุกเดือนในช่วงที่กรองไว้</button></div>'
+    : '';
+  const wire=()=>{ const b=$('stk_woclear'); if(b) b.onclick=()=>{ STK.woFrom=null; STK.woTo=null; stkLoadWo(); }; };
+  if(!STK.wo.length){ $('stk_wo').innerHTML=banner+'<div class="empty">ยังไม่มีข้อมูลสินค้าตัดจ่ายในช่วงเดือนที่เลือก</div>'; wire(); return; }
   const tot=STK.wo.reduce((s,x)=>s+Number(x.amount||0),0);
-  $('stk_wo').innerHTML='<table class="stk-tbl"><thead><tr>'
+  $('stk_wo').innerHTML=banner+'<table class="stk-tbl"><thead><tr>'
     +'<th class="l">รหัส</th><th class="l">ชื่อสินค้า</th><th class="l">กลุ่ม</th><th class="l">ลักษณะ</th>'
     +'<th>กี่เดือน</th><th>จำนวน</th><th>มูลค่า</th><th>ล่าสุด</th></tr></thead><tbody>'
     +STK.wo.map(x=>'<tr><td class="l">'+esc(x.sku)+'</td><td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
@@ -14896,6 +14962,7 @@ async function stkLoadWo(){
       +'<td>'+esc(x.months_n)+'</td><td>'+stkN(x.qty)+'</td><td><b>'+stkN(x.amount,2)+'</b></td>'
       +'<td>'+esc(stkMonLb(x.last_period))+'</td></tr>').join('')
     +'</tbody><tfoot><tr><td class="l">รวมที่แสดง</td><td></td><td></td><td></td><td></td><td></td><td>'+stkN(tot,2)+'</td><td></td></tr></tfoot></table>';
+  wire();
 }
 
 // ============================================================
@@ -14951,7 +15018,7 @@ async function stkLoadGp(){
     +'<th>ตัดจ่ายสุทธิ</th><th>% ยอดขาย</th></tr></thead><tbody>'
     +STK.gp.map(x=>{
       const noSales=!Number(x.sales);
-      return '<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td>'
+      return '<tr data-stkgpmon="'+esc(x.period_ym)+'" style="cursor:pointer" title="กดเพื่อดูรายการสินค้าของเดือนนี้"><td class="l">'+esc(stkMonLb(x.period_ym))+' ›</td>'
       +'<td>'+(noSales?'<span style="color:var(--muted)">ไม่มียอด</span>':stkN(x.sales))+'</td>'
       +'<td'+(!noSales && Number(x.sale_days)<27?' style="color:#a06515"':'')+'>'+stkN(x.sale_days)+'</td>'
       +'<td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.swap_explained)+'</td>'
@@ -14960,7 +15027,12 @@ async function stkLoadGp(){
       +'<td>'+stkN(x.wo_net,2)+'</td><td>'+(noSales?'—':stkN(x.pct_wo,2)+'%')+'</td></tr>';
     }).join('')
     +'</tbody></table>'
-    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">ช่อง "วันที่มียอด" เป็นสีส้มคือเดือนนั้นบันทึกยอดขายไม่ครบเดือน เปอร์เซ็นต์จะสูงเกินจริง</div>';
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">ช่อง "วันที่มียอด" เป็นสีส้มคือเดือนนั้นบันทึกยอดขายไม่ครบเดือน เปอร์เซ็นต์จะสูงเกินจริง · กดที่แถวเดือนเพื่อดูรายการสินค้าของเดือนนั้น</div>';
+  $('stk_gptab').querySelectorAll('[data-stkgpmon]').forEach(tr=>tr.onclick=()=>{
+    const m=tr.dataset.stkgpmon;
+    stkOpenDrill({ from:m, to:m, back:'gp', title:'รายการสินค้าที่คลาดเคลื่อน · '+stkMonLb(m),
+      sub:'ทุกกลุ่มสินค้า เฉพาะเดือน '+stkMonLb(m), cap:'สินค้าที่ขาดมากที่สุดในเดือนนี้' });
+  });
 
   // ---- ของที่ควรเลิกสั่ง ----
   $('stk_gpdrop').innerHTML = !STK.gpDrop.length
