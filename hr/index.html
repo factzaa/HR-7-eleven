@@ -1800,6 +1800,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <button class="shsub-b" type="button" data-stkpan="pma"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> รายกลุ่มสินค้า</button>
     <button class="shsub-b" type="button" data-stkpan="diff"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-4 3 3 4-6"/><path d="M7 20l4-2 3 1 4-3"/></svg> เทียบเดือน</button>
     <button class="shsub-b" type="button" data-stkpan="wo"><svg class="ei" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg> สินค้าตัดจ่าย</button>
+    <button class="shsub-b" type="button" data-stkpan="gp"><svg class="ei" viewBox="0 0 24 24"><path d="M12 2v20"/><path d="M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 2.8 5 3.3 5 1.4 5 3.3-2.2 3-5 3-5-1.1-5-3"/></svg> ผลต่อ GP</button>
     <button class="shsub-b" type="button" data-stkpan="nida"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> นิดาวิเคราะห์</button>
     <button class="shsub-b" type="button" data-stkpan="profile"><svg class="ei" viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/></svg> โปรไฟล์สาขา</button>
     <button class="shsub-b" type="button" data-stkpan="upload" id="stksub_upload"><svg class="ei" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg> นำเข้าไฟล์</button>
@@ -1967,6 +1968,42 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
       <button class="btn btn-sec btn-sm" id="stk_wcsv" type="button">ดาวน์โหลด CSV</button>
     </div>
     <div style="overflow-x:auto"><div id="stk_wo"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+
+  <!-- ===== ผลต่อ GP (เฟส 3 ส่วนที่ข้อมูลปัจจุบันรองรับ) ===== -->
+  <div class="stkpan" id="stkpan_gp" style="display:none">
+    <div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid var(--accent)">
+      <div style="font-size:13px;line-height:1.65">
+        <b>ของที่หายและของที่ทิ้ง คิดเป็นกี่เปอร์เซ็นต์ของยอดขาย</b> — ตัวนี้คือสิ่งที่กินกำไรขั้นต้นโดยตรง และเทียบข้ามเดือนข้ามสาขาได้<br>
+        <span style="color:#a06515"><b>หน่วยเงินคนละแบบ อย่าเอามาบวกกัน</b></span>
+        <span style="color:var(--muted)">— Audit เป็นราคาขายรวมภาษี (หารกับยอดขายได้ตรง ๆ) ส่วนตัดจ่ายเป็นต้นทุนไม่รวมภาษี ระบบจึงแยกเป็น 2 เปอร์เซ็นต์ ไม่รวมเป็นตัวเดียว</span><br>
+        <span style="color:var(--muted)">ยอดขายดึงจากที่บันทึกไว้ในระบบ (sales_daily) ถ้าเดือนไหนยอดขายไม่ครบ เปอร์เซ็นต์เดือนนั้นจะสูงเกินจริง ให้ดูช่อง "วันที่มียอด" ประกอบ</span>
+      </div>
+    </div>
+    <div id="stk_gpkpi" class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr))"></div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">แนวโน้ม % ที่รั่วไหลต่อยอดขาย</div>
+      <div id="stk_gpchart"></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">ตารางรายเดือน</div>
+      <div style="overflow-x:auto"><div id="stk_gptab"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">สินค้าที่ควรพิจารณาเลิกสั่งหรือลดจำนวน</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">ของเสื่อมคุณภาพที่ถูกตัดจ่ายซ้ำหลายเดือน = สั่งเกินหรือขายไม่ทันเป็นประจำ · ลดจำนวนสั่งคือกำไรที่ได้คืนทันที ไม่ต้องรอให้ใครทำอะไรเพิ่ม</div>
+      <div style="overflow-x:auto"><div id="stk_gpdrop"></div></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">สินค้าที่นับได้ "เกิน" ซ้ำซาก</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">เกินซ้ำโดยไม่มีคู่คีย์ผิดตัวมารับ มักแปลว่ารับเข้าเกินหรือคีย์รับผิด → เงินจมอยู่ในสต็อกโดยไม่รู้ตัว (ตัวที่อธิบายได้ด้วยการสลับรหัสถูกคัดออกแล้ว)</div>
+      <div style="overflow-x:auto"><div id="stk_gpover"></div></div>
+    </div>
+    <div class="card" style="padding:12px 14px">
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.65"><b>สิ่งที่หน้านี้ยังตอบไม่ได้</b> — "สินค้าตัวไหนขายดีกับลูกค้ากลุ่มไหน" ตอบไม่ได้ครับ
+        เพราะยอดขายที่ระบบเก็บเป็นยอดรวมรายวันรายผลัด ไม่มียอดขายแยกรายตัวสินค้า
+        ถ้ามีรายงานยอดขายราย SKU จาก CP ALL เพิ่มเข้ามา จะต่อยอดเรื่องคัดเลือกสินค้าให้ตรงกลุ่มเป้าหมายได้เต็มรูปแบบ</div>
+    </div>
   </div>
 
   <!-- ===== นิดาวิเคราะห์ + งานเฝ้าระวัง ===== -->
@@ -14094,7 +14131,7 @@ function tsWire(){
 // ============================================================
 const STK = { pan:'over', branch:'', from:'', to:'', uploads:[], chronic:[], wo:[], pma:[], risk:[], swap:[], swapTrend:[],
                auditTrend:[], audit_months:[], items:[], drillPma:'', drillName:'', diff:[], diffA:'', diffB:'', prof:null,
-               woTrend:[], cand:[], chartMode:(function(){ try{ return localStorage.getItem('stk_chartmode')||'line'; }catch(e){ return 'line'; } })() };
+               woTrend:[], cand:[], gp:[], gpDrop:[], gpOver:[], chartMode:(function(){ try{ return localStorage.getItem('stk_chartmode')||'line'; }catch(e){ return 'line'; } })() };
 const STK_RISK_LB = { theft:'ชิ้นเล็กหยิบง่าย', control:'ของควบคุมมูลค่าสูง', consume:'วัสดุสิ้นเปลือง',
                       fresh:'ของสด/หมดอายุ', drink:'เครื่องดื่ม', home:'ของใช้ในบ้าน', other:'อื่น ๆ' };
 const STK_RISK_HINT = {
@@ -14229,12 +14266,13 @@ async function stkInit(){
 function stkPan(name){
   STK.pan=name;
   document.querySelectorAll('#stksub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.stkpan===name));
-  ['over','chronic','swap','pma','diff','wo','nida','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
+  ['over','chronic','swap','pma','diff','wo','gp','nida','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
   if(name==='pma') stkPmaBack();                 // กลับมาแท็บนี้ใหม่ให้เริ่มที่อันดับกลุ่มเสมอ
   if(name==='chronic' && !STK.chronic.length) stkLoadChronic();
   else if(name==='swap' && !STK.swap.length) stkLoadSwap();
   else if(name==='diff' && !STK.diff.length) stkLoadDiff();
   else if(name==='wo' && !STK.wo.length) stkLoadWo();
+  else if(name==='gp' && !(STK.gp||[]).length) stkLoadGp();
   else if(name==='nida'){ stkLoadNida(); stkWatchEmps(); }
   else if(name==='profile') stkLoadProfile();
   else if(name==='upload') stkLoadUploads();
@@ -14243,12 +14281,13 @@ async function stkReload(clear){
   STK.branch = MGR_MODE ? MGR_BRANCH : ($('stk_branch')?$('stk_branch').value:'');
   STK.from = $('stk_from')?$('stk_from').value:'';
   STK.to   = $('stk_to')?$('stk_to').value:'';
-  if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; STK.diff=[]; STK.items=[]; }
+  if(clear){ STK.chronic=[]; STK.wo=[]; STK.swap=[]; STK.diff=[]; STK.items=[]; STK.gp=[]; }
   // ★ ต้องรอให้เสร็จก่อน — หน้า "เทียบเดือน" เอารายชื่อเดือนที่เลือกได้มาจากผลของ stkLoadOver
   await stkLoadOver();
   if(STK.pan==='chronic') stkLoadChronic();
   if(STK.pan==='swap') stkLoadSwap();
   if(STK.pan==='diff') stkLoadDiff();
+  if(STK.pan==='gp') stkLoadGp();
   if(STK.pan==='nida'){ stkLoadNida(); stkWatchEmps(); }
   if(STK.pan==='wo') stkLoadWo();
   if(STK.pan==='profile') stkLoadProfile();
@@ -14856,6 +14895,98 @@ async function stkLoadWo(){
 }
 
 // ============================================================
+// เฟส 3 (ส่วนที่ข้อมูลปัจจุบันรองรับ) — ผลกระทบต่อ GP · ของที่ควรเลิกสั่ง · ของที่เกินซ้ำซาก
+//
+// หน่วยเงินคนละแบบ: Audit = ราคาขายรวมภาษี · ตัดจ่าย = ต้นทุนไม่รวมภาษี · ยอดขาย = ราคาขายรวมภาษี
+//   จึงแยกเป็น 2 เปอร์เซ็นต์ ไม่รวมเป็นตัวเดียว เพราะรวมแล้วได้ตัวเลขที่ผิด
+// ============================================================
+async function stkLoadGp(){
+  const boxes=['stk_gptab','stk_gpdrop','stk_gpover'];
+  boxes.forEach(id=>{ const el=$(id); if(el) el.innerHTML='<div class="empty">กำลังโหลด…</div>'; });
+  let r;
+  try{ r=await post({ action:'hr_stock_gp', ...stkAuth(), branch:STK.branch||null, from:STK.from||null, to:STK.to||null }); }
+  catch(e){ stkErr(boxes,'โหลดไม่สำเร็จ: '+(e.message||e)); $('stk_gpkpi').innerHTML=''; $('stk_gpchart').innerHTML=''; return; }
+  if(!r||!r.ok){ stkErr(boxes,(r&&r.error)||'โหลดไม่สำเร็จ'); $('stk_gpkpi').innerHTML=''; $('stk_gpchart').innerHTML=''; return; }
+  STK.gp=r.gp||[]; STK.gpDrop=r.drop||[]; STK.gpOver=r.over||[];
+
+  // ---- KPI เดือนล่าสุดที่มีทั้งยอดขายและผลตรวจนับ ----
+  const withSales=STK.gp.filter(x=>Number(x.sales)>0);
+  const g1=withSales[withSales.length-1]||null, g0=withSales[withSales.length-2]||null;
+  const dlt=(cur,prev)=>{ if(prev==null||!isFinite(prev)||!prev) return '';
+    const d=cur-prev; return '<span style="color:'+(d>0?'var(--red)':'var(--accent)')+'">'+(d>0?'▲':'▼')+' '+stkN(Math.abs(d),2)+' จุด</span> จากเดือนก่อน'; };
+  $('stk_gpkpi').innerHTML = g1
+    ? '<div class="kpi bad"><div class="lbl">ของหายจริง · '+esc(stkMonLb(g1.period_ym))+'</div>'
+        +'<div class="val">'+stkN(g1.pct_short,2)+'<span class="sm">% ของยอดขาย</span></div>'
+        +'<div class="delta">'+(g0?dlt(Number(g1.pct_short),Number(g0.pct_short)):'')+'</div></div>'
+      +'<div class="kpi warn"><div class="lbl">สินค้าตัดจ่าย (ต้นทุน)</div>'
+        +'<div class="val">'+stkN(g1.pct_wo,2)+'<span class="sm">% ของยอดขาย</span></div>'
+        +'<div class="delta">'+(g0?dlt(Number(g1.pct_wo),Number(g0.pct_wo)):'')+'</div></div>'
+      +'<div class="kpi bad"><div class="lbl">มูลค่าของหายจริง</div>'
+        +'<div class="val">'+stkN(g1.real_short)+'<span class="sm"> บ.</span></div>'
+        +'<div class="delta">หักคู่คีย์ผิดตัว '+stkN(g1.swap_explained)+' บ. ออกแล้ว</div></div>'
+      +'<div class="kpi"><div class="lbl">ยอดขายเดือนนั้น</div>'
+        +'<div class="val">'+stkN(g1.sales)+'<span class="sm"> บ.</span></div>'
+        +'<div class="delta">จาก '+stkN(g1.sale_days)+' วันที่มียอดบันทึกไว้</div></div>'
+    : '';
+
+  // ---- กราฟ % รั่วไหล ----
+  if(withSales.length<2) $('stk_gpchart').innerHTML='<div class="empty">ต้องมีอย่างน้อย 2 เดือนที่มีทั้งยอดขายและผลตรวจนับ จึงจะเห็นแนวโน้ม</div>';
+  else {
+    const mons=withSales.map(x=>x.period_ym);
+    $('stk_gpchart').innerHTML=stkLineChart(mons, [
+      { name:'ของหายจริง (% ของยอดขาย)', color:stkHue(1), values:withSales.map(x=>Number(x.pct_short)||0) },
+      { name:'สินค้าตัดจ่าย (% ของยอดขาย · ต้นทุน)', color:stkHue(2), dash:true, values:withSales.map(x=>Number(x.pct_wo)||0) },
+    ], { aria:'แนวโน้มเปอร์เซ็นต์ที่รั่วไหลต่อยอดขาย', h:230 })
+      .replace('ยอดขาดแสดงเป็นค่าบวก (ยิ่งสูงยิ่งแย่)','ตัวเลขเป็นเปอร์เซ็นต์ของยอดขาย ยิ่งสูงยิ่งแย่ · สองเส้นคนละหน่วยเงิน อย่าเอามาบวกกัน');
+  }
+
+  // ---- ตารางรายเดือน ----
+  if(!STK.gp.length) $('stk_gptab').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงเดือนที่เลือก</div>';
+  else $('stk_gptab').innerHTML='<table class="stk-tbl"><thead><tr><th class="l">เดือน</th><th>ยอดขาย</th><th>วันที่มียอด</th>'
+    +'<th>ขาด (ดิบ)</th><th>คีย์ผิดตัว</th><th>ของหายจริง</th><th>% ยอดขาย</th>'
+    +'<th>ตัดจ่ายสุทธิ</th><th>% ยอดขาย</th></tr></thead><tbody>'
+    +STK.gp.map(x=>{
+      const noSales=!Number(x.sales);
+      return '<tr><td class="l">'+esc(stkMonLb(x.period_ym))+'</td>'
+      +'<td>'+(noSales?'<span style="color:var(--muted)">ไม่มียอด</span>':stkN(x.sales))+'</td>'
+      +'<td'+(!noSales && Number(x.sale_days)<27?' style="color:#a06515"':'')+'>'+stkN(x.sale_days)+'</td>'
+      +'<td class="neg">'+stkN(x.short_amt)+'</td><td>'+stkN(x.swap_explained)+'</td>'
+      +'<td class="neg"><b>'+stkN(x.real_short)+'</b></td>'
+      +'<td'+(Number(x.pct_short)>=2?' class="neg"':'')+'>'+(noSales?'—':stkN(x.pct_short,2)+'%')+'</td>'
+      +'<td>'+stkN(x.wo_net,2)+'</td><td>'+(noSales?'—':stkN(x.pct_wo,2)+'%')+'</td></tr>';
+    }).join('')
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">ช่อง "วันที่มียอด" เป็นสีส้มคือเดือนนั้นบันทึกยอดขายไม่ครบเดือน เปอร์เซ็นต์จะสูงเกินจริง</div>';
+
+  // ---- ของที่ควรเลิกสั่ง ----
+  $('stk_gpdrop').innerHTML = !STK.gpDrop.length
+    ? '<div class="empty">ไม่มีสินค้าที่ตัดจ่ายซ้ำหลายเดือนในช่วงที่เลือก</div>'
+    : '<table class="stk-tbl"><thead><tr><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th><th class="l">กลุ่ม</th>'
+      +'<th>ทิ้งกี่เดือน</th><th>จำนวนที่ทิ้ง</th><th>มูลค่ารวม</th><th>เฉลี่ย/เดือน</th><th class="l">อ่านได้ว่า</th></tr></thead><tbody>'
+      +STK.gpDrop.map(x=>{
+        const every=Number(x.months_n)>=Number(x.months_total) && Number(x.months_total)>1;
+        return '<tr><td class="l">'+esc(x.sku)+'</td><td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+        +'<td class="l nm" style="max-width:150px;font-size:12px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+        +'<td'+(every?' style="color:var(--red);font-weight:700"':'')+'>'+esc(x.months_n)+'/'+esc(x.months_total)+'</td>'
+        +'<td>'+stkN(x.qty)+'</td><td><b>'+stkN(x.amount,2)+'</b></td><td>'+stkN(x.avg_per_month,2)+'</td>'
+        +'<td class="l" style="font-size:12px;color:'+(every?'var(--red)':'var(--muted)')+';white-space:normal">'
+        +(every?'ทิ้งทุกเดือนที่มีข้อมูล — ลดจำนวนสั่งได้เลย':'ทิ้งบ่อย ควรทบทวนจำนวนสั่ง')+'</td></tr>';
+      }).join('')+'</tbody></table>';
+
+  // ---- ของที่เกินซ้ำซาก ----
+  $('stk_gpover').innerHTML = !STK.gpOver.length
+    ? '<div class="empty">ไม่มีสินค้าที่นับได้เกินซ้ำซากโดยอธิบายไม่ได้</div>'
+    : '<table class="stk-tbl"><thead><tr><th class="l">รหัส</th><th class="l">ชื่อสินค้า</th><th class="l">กลุ่ม</th>'
+      +'<th>เกินกี่เดือน</th><th>มูลค่าเกิน</th><th>สุทธิ</th><th>อธิบายด้วยคู่ได้</th></tr></thead><tbody>'
+      +STK.gpOver.map(x=>'<tr><td class="l">'+esc(x.sku)+'</td><td class="l nm" title="'+esc(x.name||'')+'">'+esc(x.name||'')+'</td>'
+        +'<td class="l nm" style="max-width:160px;font-size:12px">'+esc((x.pma||'')+' '+(x.pma_name||''))+'</td>'
+        +'<td>'+esc(x.months_over)+'/'+esc(x.months_total)+'</td>'
+        +'<td>'+stkN(x.over_amt)+'</td><td>'+stkN(x.net_amt)+'</td>'
+        +'<td>'+(Number(x.paired_months)?esc(x.paired_months)+' เดือน':'<span style="color:var(--red)">ไม่มีเลย</span>')+'</td></tr>').join('')
+      +'</tbody></table>';
+}
+
+// ============================================================
 // เฟส 2 — บทวิเคราะห์ของนิดา + งานเฝ้าระวัง
 //
 // หลักที่ยึด: นิดาได้เห็นเฉพาะตัวเลขที่ระบบคำนวณมาแล้ว ไม่ได้เห็นชื่อพนักงาน
@@ -14880,6 +15011,20 @@ async function stkBuildFacts(period){
   }catch(e){}
   let prof=null;
   try{ const r=await post({ action:'hr_branch_profile', ...stkAuth(), branch:br }); if(r&&r.ok) prof=r.row||null; }catch(e){}
+  // ผลต่อ GP — ให้นิดาพูดเป็น % ของยอดขายได้ ซึ่งเป็นภาษาที่เจ้าของร้านใช้ตัดสินใจจริง
+  let gp=null, gpDrop=[];
+  try{
+    const r=await post({ action:'hr_stock_gp', ...stkAuth(), branch:br, from:STK.from||null, to:STK.to||null });
+    if(r&&r.ok){
+      gp=(r.gp||[]).filter(x=>Number(x.sales)>0).map(x=>({ เดือน:stkMonLb(x.period_ym),
+        ยอดขาย:Math.round(x.sales), วันที่มียอด:Number(x.sale_days),
+        ของหายจริง:Math.round(x.real_short), เปอร์เซ็นต์ของหายต่อยอดขาย:Number(x.pct_short),
+        ตัดจ่ายสุทธิต้นทุน:Math.round(x.wo_net), เปอร์เซ็นต์ตัดจ่ายต่อยอดขาย:Number(x.pct_wo) }));
+      gpDrop=(r.drop||[]).slice(0,10).map(x=>({ รหัส:x.sku, ชื่อ:x.name,
+        กลุ่ม:(x.pma||'')+' '+(x.pma_name||''), ทิ้งกี่เดือน:x.months_n+'/'+x.months_total,
+        จำนวนที่ทิ้ง:Math.round(x.qty), มูลค่ารวม:Math.round(x.amount) }));
+    }
+  }catch(e){}
   // คู่คีย์ผิดตัวเด่น ๆ ของเดือนที่วิเคราะห์
   let swapTop=[];
   try{
@@ -14925,6 +15070,8 @@ async function stkBuildFacts(period){
       กี่เดือน:Number(x.months_n), จำนวน:Math.round(x.qty), มูลค่า:Math.round(x.amount) })),
     แยกตามลักษณะความเสี่ยง:(STK.risk||[]).map(x=>({ ลักษณะ:STK_RISK_LB[x.risk_type]||x.risk_type,
       ขาด:Math.round(x.short_amt), เกิน:Math.round(x.over_amt), ตัดจ่าย:Math.round(x.wo_amt) })),
+    ผลต่อยอดขาย: gp && gp.length ? gp : 'ยังไม่มียอดขายบันทึกไว้ในเดือนที่ตรงกัน จึงคิดเปอร์เซ็นต์ไม่ได้',
+    สินค้าที่ทิ้งซ้ำหลายเดือน: gpDrop,
     โปรไฟล์สาขา: prof ? {
       กลุ่มลูกค้าหลัก:prof.customer_groups||[], สภาพแวดล้อม:prof.surroundings||[],
       ช่วงที่หนาแน่น:prof.peak_hours||[], มีAllCafe:prof.has_allcafe!==false,
@@ -14940,7 +15087,11 @@ function stkNidaPrompt(facts){
   +'2. อ้างได้เฉพาะตัวเลขที่อยู่ใน JSON ข้างบน ห้ามสร้างตัวเลขใหม่ ห้ามเดาตัวเลขที่ไม่มี ถ้าข้อมูลไม่พอให้บอกตรง ๆ ว่าไม่พอ\n'
   +'3. "คีย์ผิดตัว" คือของที่ไม่ได้หายจริง (ตัวหนึ่งขาด อีกตัวเกินหักกันลงตัว) ต้องแยกออกจากของหายจริงเสมอ\n'
   +'4. "วัสดุสิ้นเปลือง" เช่น แก้ว ถุง หลอด เป็นของที่ร้านใช้เอง ไม่ใช่ของหาย ให้เสนอเป็นเรื่องขั้นตอนการตัดจ่าย ไม่ใช่เรื่องเฝ้าระวัง\n'
-  +'5. "ของสด/หมดอายุ" แก้ด้วยปริมาณการสั่งและ FIFO ไม่ใช่เรื่องการเฝ้าระวังเช่นกัน\n\n'
+  +'5. "ของสด/หมดอายุ" แก้ด้วยปริมาณการสั่งและ FIFO ไม่ใช่เรื่องการเฝ้าระวังเช่นกัน\n'
+  +'6. หน่วยเงินคนละแบบ: Audit เป็นราคาขายรวมภาษี · ตัดจ่ายเป็นต้นทุนไม่รวมภาษี · ยอดขายเป็นราคาขายรวมภาษี '
+  +'ห้ามเอาเปอร์เซ็นต์สองตัวมาบวกกันเป็นตัวเดียว ให้พูดแยกกัน\n'
+  +'7. ถ้ามีข้อมูล "ผลต่อยอดขาย" ให้ใช้เป็นแกนหลักในการบอกว่าเรื่องนี้ใหญ่แค่ไหน เพราะเจ้าของร้านตัดสินใจจากเปอร์เซ็นต์ต่อยอดขาย\n'
+  +'8. "สินค้าที่ทิ้งซ้ำหลายเดือน" ให้เสนอเป็นเรื่องลดจำนวนสั่ง ซึ่งเป็นกำไรที่ได้คืนทันที ไม่ใช่เรื่องการเฝ้าระวัง\n\n'
   +'เขียนเป็นภาษาไทย ให้ผู้จัดการสาขาอ่านแล้วลงมือต่อได้ทันที ความยาวประมาณ 450–650 คำ ใช้หัวข้อตามนี้เป๊ะ ๆ\n\n'
   +'สรุปสั้น\n(3 บรรทัด — ตัวเลขสำคัญที่สุดของเดือนนี้ และของหายจริงหลังหักคีย์ผิดตัวแล้วเท่าไร)\n\n'
   +'เปลี่ยนไปจากเดือนก่อนอย่างไร\n(ดีขึ้นหรือแย่ลงตรงไหน อ้างตัวเลขเทียบกัน)\n\n'
