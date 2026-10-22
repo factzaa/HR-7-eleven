@@ -532,7 +532,7 @@
         case 'hr_stock_chronic':     return await hrStockChronic(p.branch, p.from, p.to, p.min_months);
         case 'hr_stock_wo_top':      return await hrStockWoTop(p.branch, p.from, p.to, p.section);
         case 'hr_stock_swap':        return await hrStockSwap(p.branch, p.from, p.to, p.pair_kind);
-        case 'hr_stock_pma_items':   return await hrStockPmaItems(p.branch, p.from, p.to, p.pma, p.limit);
+        case 'hr_stock_pma_items':   return await hrStockPmaItems(p.branch, p.from, p.to, p.pma, p.limit, p.risk);
         case 'hr_stock_month_diff':  return await hrStockMonthDiff(p.branch, p.a, p.b);
         // ★ 22 ต.ค. 69 — เฟส 2: บทวิเคราะห์ของนิดา + งานเฝ้าระวัง
         case 'hr_stock_insight_get':  return await hrStockInsightGet(p.branch, p.period);
@@ -11157,13 +11157,18 @@
   }
 
   // รายการสินค้าในกลุ่ม PMA (กดจากตารางอันดับกลุ่ม) — pma ว่าง = ทุกกลุ่ม
-  async function hrStockPmaItems(branch, from, to, pma, limit) {
+  async function hrStockPmaItems(branch, from, to, pma, limit, risk) {
     if (!(await stockReady())) return STOCK_NOTREADY;
     const { data, error } = await sb().rpc('stock_pma_items', {
       p_branch: branch || null, p_from: from || null, p_to: to || null,
       p_pma: pma || null, p_limit: Math.min(Number(limit) || 300, 500),
+      p_risk: risk || null,
     });
-    if (error) throw error;
+    if (error) {
+      if (/function .*does not exist|could not find the function/i.test(error.message || ''))
+        return { ok: false, error: 'ยังไม่ได้อัปเดตฟังก์ชันสำหรับกดดูรายละเอียด — ให้รันไฟล์ stock_drill_setup.sql ใน Supabase ก่อน' };
+      throw error;
+    }
     return { ok: true, rows: data || [] };
   }
 
