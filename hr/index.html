@@ -11015,11 +11015,25 @@ function aeRender(mode){
   const list = q ? AE_ROWS.filter(x=>((x.emp_name||'')+' '+(x.emp_id||'')).toLowerCase().includes(q)) : AE_ROWS;
   if(!list.length){ box.innerHTML='<div class="empty" style="padding:18px">ไม่พบพนักงานตามคำค้น</div>'; return; }
   const col1 = mode==='range' ? 'วันที่' : 'พนักงาน';
-  const head='<tr><th>'+col1+'</th><th>กะ</th><th>เข้า</th><th>ออก</th><th>สาย(นาที)</th><th>OT(ชม.)</th><th>สถานะ</th><th></th></tr>';
+  const head='<tr><th>'+col1+'</th><th>กะ</th><th>เข้า</th><th>ออก</th><th>สาย(นาที)</th><th>OT(ชม.)</th><th>นับ(วัน)</th><th>สถานะ</th><th></th></tr>';
+  // ★ 22 ต.ค. 69 — กะที่สองของวันเดียวกัน (ควบกะแบบเว้นช่วง) แก้ไขได้เหมือนกะแรก
+  const shOpts=(sel)=>'<option value="">— ไม่มีกะที่สอง —</option>'
+    +(DATA.shifts||[]).map(s=>'<option value="'+esc(s.shift_id)+'"'+(String(sel||'')===String(s.shift_id)?' selected':'')+'>'+esc(s.name||s.shift_id)+'</option>').join('');
   const body=list.map((x)=>{ const i=AE_ROWS.indexOf(x);
     const c1 = mode==='range' ? beDate(x.work_date) : (esc(x.emp_name)+' <span style="color:var(--muted);font-size:11px">'+esc(x.emp_id)+'</span>');
-    const inp=(k,val,type,w)=>'<input data-ae="'+i+'|'+k+'" type="'+type+'" value="'+esc(val)+'" style="width:'+w+';padding:6px 7px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13px">';
-    const stSel='<select data-ae="'+i+'|status" style="padding:6px 7px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13px"><option value="present"'+(x.status==='present'?' selected':'')+'>มา</option><option value="absent"'+(x.status!=='present'?' selected':'')+'>ขาด/ยังไม่ลง</option></select>';
+    const INST='padding:6px 7px;border:1.5px solid var(--line2);border-radius:7px;font:inherit;font-size:13px';
+    const inp=(k,val,type,w)=>'<input data-ae="'+i+'|'+k+'" type="'+type+'" value="'+esc(val)+'" style="width:'+w+';'+INST+'">';
+    const stSel='<select data-ae="'+i+'|status" style="'+INST+'"><option value="present"'+(x.status==='present'?' selected':'')+'>มา</option><option value="absent"'+(x.status!=='present'?' selected':'')+'>ขาด/ยังไม่ลง</option></select>';
+    const has2=!!(x.check_in2||x.shift_id2);
+    const row2='<tr data-ae2row="'+i+'"'+(has2?'':' style="display:none"')+'>'
+      +'<td style="font-size:11.5px;color:var(--muted);padding-left:14px">↳ กะที่สอง</td>'
+      +'<td><select data-ae="'+i+'|shift_id2" style="'+INST+';max-width:120px">'+shOpts(x.shift_id2)+'</select></td>'
+      +'<td>'+inp('check_in2',x.check_in2||'','time','92px')+'</td>'
+      +'<td>'+inp('check_out2',x.check_out2||'','time','92px')+'</td>'
+      +'<td>'+inp('late_min2',x.late_min2||0,'number','66px')+'</td>'
+      +'<td>'+inp('ot_hours2',x.ot_hours2||0,'number','66px')+'</td>'
+      +'<td colspan="3" style="font-size:11.5px;color:var(--muted)">ออกข้ามวันใส่เวลาตามจริง ระบบคิดเป็นวันถัดไปให้เอง</td>'
+      +'</tr>';
     return '<tr>'
       +'<td>'+c1+'</td>'
       +'<td style="font-size:12px">'+esc(x.shift_name||x.shift_id||'-')+'</td>'
@@ -11027,24 +11041,34 @@ function aeRender(mode){
       +'<td>'+inp('check_out',x.check_out||'','time','92px')+'</td>'
       +'<td>'+inp('late_min',x.late_min||0,'number','66px')+'</td>'
       +'<td>'+inp('ot_hours',x.ot_hours||0,'number','66px')+'</td>'
+      +'<td>'+inp('day_value',x.day_value==null?'':x.day_value,'number','62px')+'</td>'
       +'<td>'+stSel+'</td>'
-      +'<td><button class="btn btn-pri btn-sm" data-aesave="'+i+'">บันทึก</button></td>'
-      +'</tr>';
+      +'<td style="white-space:nowrap"><button class="btn btn-pri btn-sm" data-aesave="'+i+'">บันทึก</button>'
+        +(has2?'':' <button class="btn btn-sec btn-sm" data-ae2add="'+i+'" title="เพิ่มกะที่สองของวันเดียวกัน">+ กะ 2</button>')+'</td>'
+      +'</tr>'+row2;
   }).join('');
   box.innerHTML='<div class="card"><div class="tablewrap"><table style="font-size:13px"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>'
-    +'<div style="font-size:12px;color:var(--muted);margin-top:8px">แก้ค่าในช่องแล้วกด "บันทึก" รายแถว · ตั้ง "ขาด/ยังไม่ลง" จะล้างเวลาเข้า-ออกและสาย · เวลาเป็นรูปแบบ 24 ชม.</div></div>';
+    +'<div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.7">แก้ค่าในช่องแล้วกด "บันทึก" รายแถว · ตั้ง "ขาด/ยังไม่ลง" จะล้างเวลาเข้า-ออกและสาย · เวลาเป็นรูปแบบ 24 ชม.'
+    +'<br><b>นับ(วัน)</b> = จำนวนวันทำงานที่จะนับให้วันนี้ · เว้นว่างไว้ให้ระบบคิดเองจาก day_value ของกะ (ควบ 2 กะ = 2)'
+    +'<br><b>+ กะ 2</b> = วันที่ทำสองกะแบบเว้นช่วง (เข้าเช้า–ออก–กลับมาเข้าดึก) ให้ใส่กะที่สองในแถวย่อย ระบบจะนับวันและ OT ให้ทั้งสองกะ</div></div>';
   box.querySelectorAll('[data-aesave]').forEach(b=>b.onclick=()=>aeSave(Number(b.dataset.aesave),b));
+  box.querySelectorAll('[data-ae2add]').forEach(b=>b.onclick=()=>{
+    const r2=box.querySelector('[data-ae2row="'+b.dataset.ae2add+'"]'); if(r2) r2.style.display='';
+    b.style.display='none';
+  });
 }
 async function aeSave(i,btn){
   const x=AE_ROWS[i]; if(!x) return;
   const get=k=>{ const el=document.querySelector('[data-ae="'+i+'|'+k+'"]'); return el?el.value:undefined; };
   const data={ emp_id:x.emp_id, work_date:x.work_date, shift_id:x.shift_id,
     status:get('status'), check_in:get('check_in')||'', check_out:get('check_out')||'',
-    late_min:get('late_min'), ot_hours:get('ot_hours') };
+    late_min:get('late_min'), ot_hours:get('ot_hours'), day_value:get('day_value'),
+    shift_id2:get('shift_id2')||'', check_in2:get('check_in2')||'', check_out2:get('check_out2')||'',
+    late_min2:get('late_min2'), ot_hours2:get('ot_hours2') };
   btn.disabled=true; const old=btn.textContent; btn.textContent='…';
   const r=await post({ action:'hr_att_save', password:pwd, data });
   btn.disabled=false; btn.textContent=old;
-  if(r&&r.ok){ toast('ok','บันทึกแล้ว'); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
+  if(r&&r.ok){ toast('ok','บันทึกแล้ว'); aeLoad(); } else toast('err',(r&&r.error)||'ไม่สำเร็จ');
 }
 
 // ===== QSSI · แถบแท็บย่อย =====
