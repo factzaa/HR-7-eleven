@@ -50,7 +50,11 @@
   /* ★ 31 ต.ค. 69 — ด่านรหัสพนักงานหน้าแรก
      ซ่อนทุกอย่างไว้ก่อนตั้งแต่ก่อนวาดหน้า (class อยู่บน <html> ในไฟล์เลย)
      เพื่อไม่ให้เมนูแวบขึ้นมาให้เห็นแม้เสี้ยววินาที */
-  html.gate-locked body > *:not(#gateOv){visibility:hidden !important}
+  /* ★ ต้องเว้นกล่อง PIN (#hrPinOv จาก session.js) ไว้ด้วย
+     ไม่งั้นกล่องจะโดนซ่อน ระบบรอกด PIN อยู่แต่คนกดมองไม่เห็น → ค้างตรง "กำลังตรวจสอบ" ตลอดไป */
+  html.gate-locked body > *:not(#gateOv):not(#hrPinOv):not(#hrViewBadge){visibility:hidden !important}
+  /* กล่อง PIN ต้องอยู่เหนือด่าน (ด่าน z-index 100030 · เดิมกล่อง PIN 100010) */
+  html.gate-locked #hrPinOv{z-index:100040}
   html.gate-locked{overflow:hidden}
   #gateOv{position:fixed;inset:0;z-index:100030;background:linear-gradient(170deg,#00703c,#024f2c);
     display:none;align-items:center;justify-content:center;padding:20px}
@@ -300,7 +304,23 @@
       err.textContent = 'เชื่อมต่อไม่ได้ — ตรวจอินเทอร์เน็ตของร้านแล้วลองใหม่';
       return;
     }
-    if (!emp){ busy(false); err.textContent = 'ไม่พบรหัสพนักงานนี้'; try{ inp.select(); }catch(e){} return; }
+    // ★ ไม่ใช่รหัสพนักงาน → ลองเทียบกับรหัสผ่าน HR
+    //   สำนักงาน (HR) ไม่มีรหัสพนักงาน ถ้าไม่มีทางนี้จะเข้าหน้าแรกไม่ได้เลย
+    //   ผ่านแล้วแค่เปิดเมนู ไม่ได้ล็อกอินหน้า HR ให้ — ต้องใส่รหัสอีกครั้งที่หน้านั้น
+    //   (เครื่องสาขาใช้ร่วมกัน ถ้าล็อกอินค้างไว้ คนถัดไปหยิบเครื่องจะเข้า HR ได้เลย)
+    if (!emp){
+      var hrOk = false;
+      try{
+        if (window.HR && HR.sb && HR.sb.rpc){
+          var r = await HR.sb.rpc('hr_check_password', { p_password: id });
+          hrOk = (r && r.data === true);
+        }
+      }catch(e){ hrOk = false; }
+      busy(false);
+      if (hrOk){ unlock(); return; }
+      err.textContent = 'รหัสไม่ถูกต้อง';
+      try{ inp.select(); }catch(e){} return;
+    }
     if (emp.active === false){ busy(false); err.textContent = 'รหัสนี้ถูกปิดใช้งาน — ติดต่อ HR'; return; }
 
     // ยังไม่มีระบบ PIN → ไม่ขวางทางคนทำงาน (กติกาเดียวกับหน้าขอลา)
