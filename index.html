@@ -68,6 +68,8 @@
   #gateBox input{width:100%;padding:14px;border:1.5px solid #cbd5e1;border-radius:12px;font:inherit;font-size:19px;
     text-align:center;letter-spacing:3px;background:#f8fafc}
   #gateBox input:focus{outline:none;border-color:#00703c;background:#fff}
+  #gateKb{display:block;margin:7px 0 0 auto;padding:5px 10px;border:1px solid #d7dbe0;border-radius:999px;
+    background:#f6f7f9;color:#475569;font:inherit;font-size:12px;cursor:pointer}
   #gateErr{font-size:12.5px;color:#dc2626;min-height:19px;margin:7px 0 2px;line-height:1.5}
   #gateGo{width:100%;padding:13px;border:0;border-radius:12px;background:#00703c;color:#fff;font:inherit;
     font-size:15px;font-weight:700;cursor:pointer;margin-top:4px}
@@ -89,6 +91,7 @@
       <h2>ระบบบริหารบุคลากร</h2>
       <p>ใส่รหัสพนักงานของคุณเพื่อเข้าใช้งาน</p>
       <input id="gateId" type="text" inputmode="numeric" autocomplete="off" placeholder="รหัสพนักงาน">
+      <button id="gateKb" type="button">⌨ ใช้แป้นตัวอักษร</button>
       <div id="gateErr"></div>
       <button id="gateGo" type="button">เข้าใช้งาน</button>
     </div>
@@ -275,6 +278,8 @@
   var err  = document.getElementById('gateErr');
   var go   = document.getElementById('gateGo');
 
+  function busy(b){ go.disabled = b; go.textContent = b ? 'กำลังตรวจสอบ…' : 'เข้าใช้งาน'; }
+
   function unlock(){
     try{ sessionStorage.setItem(SKEY, '1'); }catch(e){}
     html.classList.remove('gate-locked');
@@ -282,12 +287,38 @@
     try{ window.dispatchEvent(new Event('gate:open')); }catch(e){}
   }
 
-  // ผ่านไปแล้วในรอบเปิดแอปนี้ → กดย้อนกลับมาไม่ต้องใส่ซ้ำ
-  var passed = false;
-  try{ passed = sessionStorage.getItem(SKEY) === '1'; }catch(e){}
-  if (passed) { unlock(); return; }
+  function relock(){
+    try{ sessionStorage.removeItem(SKEY); }catch(e){}
+    window.GATE_OPEN = false;
+    try{ inp.value = ''; err.textContent = ''; busy(false); }catch(e){}
+    html.classList.add('gate-locked');
+    setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 150);
+  }
 
-  function busy(b){ go.disabled = b; go.textContent = b ? 'กำลังตรวจสอบ…' : 'เข้าใช้งาน'; }
+  // ★ กดย้อนกลับจากหน้าอื่นในแอป = ไม่ต้องใส่ซ้ำ · เปิดแอปใหม่ = ต้องใส่ใหม่
+  //   ดูจาก referrer: มาจากหน้าในแอปเดียวกัน → ถือว่ายังอยู่ในรอบเดิม
+  //   เปิดแอปจากไอคอน referrer จะว่าง → ถามรหัสใหม่เสมอ
+  var sameApp = false;
+  try{
+    if (document.referrer){
+      sameApp = (new URL(document.referrer).origin === location.origin);
+    }
+  }catch(e){ sameApp = false; }
+  var passed = false;
+  try{ passed = sameApp && sessionStorage.getItem(SKEY) === '1'; }catch(e){}
+  if (!sameApp) { try{ sessionStorage.removeItem(SKEY); }catch(e){} }
+
+  // ★ สลับไปแอปอื่นแล้วกลับมา (หน้ายังค้างอยู่) → ล็อกใหม่
+  //   หน่วงสั้น ๆ 3 วินาทีไม่นับ (เผลอปัดหน้าจอ / กดสลับแอปแล้วกลับทันที)
+  var hiddenAt = 0;
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden){ hiddenAt = Date.now(); return; }
+    var away = hiddenAt ? (Date.now() - hiddenAt) : 0;
+    hiddenAt = 0;
+    if (away > 3000 && !html.classList.contains('gate-locked')) relock();
+  });
+
+  if (passed) { unlock(); return; }
 
   async function submit(){
     var id = String(inp.value || '').trim();
@@ -331,6 +362,20 @@
     if (!ok){ err.textContent = 'ยังยืนยัน PIN ไม่สำเร็จ'; return; }
     unlock();
   }
+
+  // ★ สลับแป้นตัวเลข ↔ แป้นเต็ม
+  //   บางเครื่องขึ้นแป้นตัวเลขล้วน ไม่มีปุ่ม ABC ให้กด — คนที่ใช้รหัสผ่าน HR จึงพิมพ์ไม่ได้
+  //   เปลี่ยน inputmode เฉย ๆ ไม่มีผล ต้อง blur แล้ว focus ใหม่คีย์บอร์ดถึงจะสลับ
+  var kb = document.getElementById('gateKb');
+  function setKb(mode){
+    inp.setAttribute('inputmode', mode);
+    kb.textContent = (mode === 'numeric') ? '\u2328 \u0e43\u0e0a\u0e49\u0e41\u0e1b\u0e49\u0e19\u0e15\u0e31\u0e27\u0e2d\u0e31\u0e01\u0e29\u0e23' : '\ud83d\udd22 \u0e43\u0e0a\u0e49\u0e41\u0e1b\u0e49\u0e19\u0e15\u0e31\u0e27\u0e40\u0e25\u0e02';
+    try{ inp.blur(); }catch(e){}
+    setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 30);
+  }
+  kb.addEventListener('click', function(){
+    setKb(inp.getAttribute('inputmode') === 'numeric' ? 'text' : 'numeric');
+  });
 
   go.addEventListener('click', submit);
   inp.addEventListener('keydown', function(e){ if (e.key === 'Enter') submit(); });
