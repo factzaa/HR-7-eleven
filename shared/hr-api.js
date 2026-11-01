@@ -10969,27 +10969,42 @@
       // ★ แก้ 15 ก.ย. 69 — เดิมตี deducted=true จาก query ใหม่ทั้งหมด ไม่ได้ดูว่าสลิปหักไปจริงเท่าไร
       //   ถ้า ผจก. ใส่ advance_override = 0 (ตกลงเลื่อนไปหักเดือนหน้า) หนี้ก้อนนั้นจะถูกล้างทิ้งฟรี ๆ
       //   ตอนนี้: ตัดยอดหักจริงจาก payroll_items ของรอบนี้ แล้วหักได้ไม่เกินยอดนั้น
-      let _paidCap = 0;
+      // ★ 1 พ.ย. 69 — แก้หักเงินเบิกซ้ำสองรอบ
+      //   บั๊กเดิม: _paidCap เป็นยอดหักรวม "ทั้งบริษัท" แต่เอาไปครอบลูปที่ไล่ใบเบิกของทุกคนรวมกัน
+      //   และ query ไม่มี order by → ลำดับแถวไม่แน่นอน
+      //   ถ้ามีใครสักคนถูกปรับยอดหักลง (advance_override) หรือมีใบเบิกแต่ไม่มีสลิปในรอบนั้น
+      //   ยอดรวมจะน้อยกว่าใบที่ถึงกำหนด → ใบท้ายแถวไม่ถูกตีธง ทั้งที่สลิปของเจ้าตัวหักไปแล้ว
+      //   → รอบถัดไปโดนหักอีกครั้ง (เคสจริง: 0874787 หัก 600 รอบ ก.ย. แล้วโดนหักซ้ำรอบ ต.ค.)
+      //   ใหม่: คิดเพดานหัก "รายคน" จากสลิปของคนนั้นเอง และเรียงใบเก่าก่อน
+      let _capByEmp = null;   // null = อ่านสลิปไม่ได้ → ใช้พฤติกรรมเดิม (หักทุกใบที่ถึงกำหนด)
       try {
-        const { data: _pi } = await sb().from('payroll_items').select('advance_deduct').eq('run_id', run.id);
-        _paidCap = (_pi || []).reduce((a, x) => a + (Number(x.advance_deduct) || 0), 0);
-      } catch (_e2) { _paidCap = -1; }   // อ่านไม่ได้ → ใช้พฤติกรรมเดิม
+        const { data: _pi } = await sb().from('payroll_items').select('emp_id,advance_deduct').eq('run_id', run.id);
+        _capByEmp = {};
+        (_pi || []).forEach(x => { _capByEmp[x.emp_id] = (_capByEmp[x.emp_id] || 0) + (Number(x.advance_deduct) || 0); });
+      } catch (_e2) { _capByEmp = null; }
       // 1) หักใบที่ถึงกำหนด (ไม่ถูกเลื่อน) — ทำเครื่องหมาย "หักแล้ว"
-      let dueQ = sb().from('advance_requests').select('id,amount,approved_amount')
-        .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0');
+      //    ★ เรียงใบเก่าก่อนเสมอ หนี้เก่าสุดจะได้ถูกหักก่อน ไม่ขึ้นกับลำดับที่ฐานข้อมูลคืนมา
+      let dueQ = sb().from('advance_requests').select('id,emp_id,amount,approved_amount,cycle_month,created_at')
+        .eq('status', 'paid').eq('deducted', false).or('defer_rounds.is.null,defer_rounds.lte.0')
+        .order('cycle_month', { ascending: true }).order('created_at', { ascending: true });
       dueQ = carry ? dueQ.lte('cycle_month', runMonth) : dueQ.eq('cycle_month', runMonth);
       const { data: dueRows } = await dueQ;
       let ids = (dueRows || []).map(r => r.id);
-      if (_paidCap >= 0) {
-        // เก็บเฉพาะใบที่ยอดรวมยังไม่เกินที่สลิปหักจริง — ที่เหลือปล่อยค้างไว้หักรอบหน้า
-        let run_sum = 0; const keep = [];
+      if (_capByEmp) {
+        // เก็บเฉพาะใบที่ยอดสะสม "ของคนนั้น" ยังไม่เกินที่สลิปของคนนั้นหักจริง
+        const used = {}; const keep = []; const over = {};
         for (const r of (dueRows || [])) {
           const amt = Number(r.approved_amount != null ? r.approved_amount : r.amount) || 0;
-          if (run_sum + amt <= _paidCap + 0.5) { run_sum += amt; keep.push(r.id); }
+          const cap = Number(_capByEmp[r.emp_id] || 0);
+          const u = Number(used[r.emp_id] || 0);
+          if (u + amt <= cap + 0.5) { used[r.emp_id] = u + amt; keep.push(r.id); }
+          else { over[r.emp_id] = (over[r.emp_id] || 0) + amt; }
         }
-        if (keep.length !== ids.length) {
+        const overEmps = Object.keys(over);
+        if (overEmps.length) {
           try { await logAct('เงินเบิกค้างหักข้ามรอบ', null,
-            'รอบ ' + cyc.start + ' สลิปหักจริง ' + _paidCap + ' บาท — ใบที่ยังไม่ถูกหัก ' + (ids.length - keep.length) + ' ใบ ยกไปรอบถัดไป', 'ระบบเงินเดือน'); } catch (_e3) {}
+            'รอบ ' + cyc.start + ' — ' + overEmps.length + ' คนมีใบเบิกเกินยอดที่สลิปหักจริง ยกไปรอบถัดไป: '
+            + overEmps.map(function (e) { return e + ' (' + over[e] + ')'; }).join(', '), 'ระบบเงินเดือน'); } catch (_e3) {}
         }
         ids = keep;
       }
