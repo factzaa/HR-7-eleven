@@ -97,7 +97,9 @@ function classifyMsg(t: string): { category: string; msg_class: string } {
   const isHand = /รับผลัด|ส่งผลัด|รับ-?ส่งผลัด|ส่งเวร|รับเวร|ล้าง.*ส่งผลัด/.test(t);
   const isPhoto = /^(\S+\s+)?(รูป|สติกเกอร์)$/.test(tt);
   let category = "general";
-  if (/แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า/.test(t)) category = "sales";
+  // ★ 2 พ.ย. 69 — บางสาขาส่งเป็น "ยอดขาย=" / "รวม=" เฉย ๆ ไม่มีคำว่า "แจ้งยอดขาย"
+  //   ของเดิมจึงจัดเป็น general → ไม่เข้าตารางยอดขายเลย แล้วโดนทวงว่า "ยังไม่ได้รับยอดขาย"
+  if (/แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า|ยอดขาย\s*=|สรุปสิ้นวัน/.test(t)) category = "sales";
   else if (isAudit) category = "audit";
   else if (isAnn) category = "announce";
   else if (isTask) category = "task";
@@ -116,7 +118,13 @@ function classifyMsg(t: string): { category: string; msg_class: string } {
 }
 
 // ---------- ตัวแยกยอดขาย (เหมือนฝั่ง hr-api) — ให้ยอดขายสดลงตาราง sales_daily อัตโนมัติ ----------
-const _snum = (s: string) => { const t = String(s).replace(/[, ]/g, "").replace(/%/g, ""); const v = parseFloat(t); return isNaN(v) ? null : v; };
+// ★ 22 ก.ย. 2569: "17,851,74" → 17851.74 · "21.052" → 21052 (เหมือนฝั่ง hr-api)
+const _snum = (s: string) => { let t = String(s).replace(/\s/g, "").replace(/%/g, "");
+  if (/^\d{1,3}(,\d{3})+,\d{2}$/.test(t)) t = t.replace(/,(\d{2})$/, ".$1");
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+  t = t.replace(/,/g, ""); const v = parseFloat(t); return isNaN(v) ? null : v; };
+function _salesSanity(s: any) { const pc = (+s.sales_product || 0) + (+s.sales_card || 0); const st = s.sales_total;
+  if (pc > 0 && st != null && (st > pc * 3 || st < pc / 3)) { s.extra = s.extra || {}; s.extra.total_raw = st; s.sales_total = Math.round(pc * 100) / 100; } }
 const _stripLabel = (l: string) => String(l).replace(/^[\s\d]+[.．)]\s*/, "").replace(/[\u{1F000}-\u{1FAFF}]/gu, "").replace(/[《》「」\[\]☀-➿️🌅🌆🌇🥇🥈🥉]/gu, "").trim();
 function _isShift(l: string): string | null { const s = _stripLabel(l).replace(/\s/g, ""); if (/สิ้นวัน|สิ้นสุดวัน|ปิดยอด/.test(s)) return "สิ้นวัน"; if (/ผลัดเช้า/.test(s)) return "เช้า"; if (/ผลัดบ่าย/.test(s)) return "บ่าย"; if (/ผลัด(ดึก|กลางคืน)/.test(s)) return "ดึก"; return null; }
 function _salesAssign(o: any, label: string, valPart: string) {
@@ -129,7 +137,13 @@ function _salesAssign(o: any, label: string, valPart: string) {
     else if (label.includes("บัตร")) o.sales_card = n[0];
     else if (label.includes("รวม")) o.sales_total = n[0];
     else if (label.includes("สินค้า")) o.sales_product = n[0];
+    // ★ "ยอดขาย=" ลอย ๆ ไม่มีคำขยาย — เดิมตกทุกเงื่อนไขแล้วไม่ถูกเก็บเลย
+    else if (n.length >= 3) { o.sales_product = n[0]; o.sales_card = n[1]; o.sales_total = n[2]; }
+    else o.sales_product = n[0];
   }
+  // ★ บรรทัด "บัตร=" / "รวม=" ที่ยืนเดี่ยว (ใต้บรรทัดยอดขาย) — เดิมตกไปอยู่ใน extra ทั้งคู่
+  else if (/^บัตร/.test(label)) o.sales_card = n[0];
+  else if (/^รวม/.test(label)) o.sales_total = n[0];
   else if (/^ลูกค้า/.test(label)) o.customers = n[0];
   else if (label.includes("ต่อหัว")) o.per_head = n[0];
   else if (hasL("cafe") || label.includes("คาเฟ่")) { o.allcafe_cups = n[0]; o.allcafe_baht = n[1]; }
@@ -155,7 +169,7 @@ function extractSales(text: string): any[] {
     _salesAssign(cur, _stripLabel(label), valPart);
   }
   const rows = Object.values(shifts).filter((s: any) => s.sales_total != null || s.sales_product != null || s.target_total != null);
-  rows.forEach((s: any) => { if (s.sales_total == null && s.sales_product != null) s.sales_total = s.sales_product; });
+  rows.forEach((s: any) => { if (s.sales_total == null && s.sales_product != null) s.sales_total = s.sales_product; _salesSanity(s); });
   return rows;
 }
 function salesDate(text: string, fallbackIso: string): string | null {
