@@ -4881,7 +4881,8 @@
     const isTask = (/สร้างอัลบั้ม/.test(t) && /ส่งงาน|ผลัด/.test(t)) || /ส่งงาน|ล้างห้องน้ำ|เช็ค.?temp|temp\s?card|ตรวจเชลฟ์|จัดเชลฟ์/i.test(t);
     const isHand = /รับผลัด|ส่งผลัด|รับ-?ส่งผลัด|ส่งเวร|รับเวร|ล้าง.*ส่งผลัด/.test(t);
     const isPhoto = /^(\S+\s+)?(รูป|สติกเกอร์)$/.test(tt);
-    if (isSales || /แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า/.test(t)) category = 'sales';
+    // ★ 2 พ.ย. 69 — ต้องตรงกับ line-webhook: บางสาขาส่ง "ยอดขาย=" / "สรุปสิ้นวัน" เฉย ๆ
+    if (isSales || /แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า|ยอดขาย\s*=|สรุปสิ้นวัน/.test(t)) category = 'sales';
     else if (isAudit) category = 'audit';
     else if (isAnn) category = 'announce';
     else if (isTask) category = 'task';
@@ -5016,7 +5017,7 @@
     let updated = 0;
     const { data: nulls } = await sb().from('line_messages').select('id,text').is('category', null).limit(5000);
     if (nulls && nulls.length) {
-      const updates = nulls.map(m => { const cl = _classify(m.text || '', /แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า/.test(m.text || '')); return { id: m.id, category: cl.category, msg_class: cl.msg_class }; });
+      const updates = nulls.map(m => { const cl = _classify(m.text || '', /แจ้งยอดขาย|ยอดรวม\s*=|ยอดขายสินค้า|ยอดขาย\s*=|สรุปสิ้นวัน/.test(m.text || '')); return { id: m.id, category: cl.category, msg_class: cl.msg_class }; });
       for (let i = 0; i < updates.length; i += 500) { const chunk = updates.slice(i, i + 500); const { error: e2 } = await sb().from('line_messages').upsert(chunk, { onConflict: 'id' }); if (!e2) updated += chunk.length; }
     }
 
