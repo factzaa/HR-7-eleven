@@ -4817,7 +4817,13 @@
       else if (label.includes('บัตร')) o.sales_card = n[0];
       else if (label.includes('รวม')) o.sales_total = n[0];
       else if (label.includes('สินค้า')) o.sales_product = n[0];
+      // ★ 2 พ.ย. 69 — "ยอดขาย=" ลอย ๆ ไม่มีคำขยาย เดิมตกทุกเงื่อนไขแล้วไม่ถูกเก็บเลย
+      else if (n.length >= 3) { o.sales_product = n[0]; o.sales_card = n[1]; o.sales_total = n[2]; }
+      else o.sales_product = n[0];
     }
+    // ★ บรรทัด "บัตร=" / "รวม=" ที่ยืนเดี่ยว — เดิมตกไปอยู่ใน extra
+    else if (/^บัตร/.test(label)) o.sales_card = n[0];
+    else if (/^รวม/.test(label)) o.sales_total = n[0];
     else if (/^ลูกค้า/.test(label)) o.customers = n[0];
     else if (label.includes('ต่อหัว')) o.per_head = n[0];
     else if (hasL('cafe') || label.includes('คาเฟ่')) { o.allcafe_cups = n[0]; o.allcafe_baht = n[1]; }
