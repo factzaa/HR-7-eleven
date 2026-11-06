@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เช็กลิสต์รับตรวจ SCA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#17324D; --ink-soft:#4B6175; --paper:#EEF3F5; --card:#FFFFFF; --line:#D5DFE5;
+  --tag:#FFD23F; --tag-soft:#FFF4C7; --teal:#14807C; --teal-soft:#DDF1EF;
+  --red:#C8342B; --red-soft:#FBE7E5; --blue-soft:#E2ECF5; --on-ink:#FFFFFF; --ill-bg:#E7F0F3;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ink:#E6EEF4; --ink-soft:#A7B8C6; --paper:#0F1E2B; --card:#182B3B; --line:#2C4356;
+    --tag:#FFD23F; --tag-soft:#3D3513; --teal:#4CC2BC; --teal-soft:#123A3C;
+    --red:#FF8A80; --red-soft:#43211F; --blue-soft:#20384B; --on-ink:#0F1E2B; --ill-bg:#22394B;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.65 "Anuphan","Noto Sans Thai","Sukhumvit Set","Leelawadee UI",Tahoma,sans-serif;overflow-wrap:anywhere}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+.wrap{max-width:820px;margin:0 auto;padding:0 16px}
+.hero{background:#17324D;color:#fff}
+.hero .wrap{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:end;padding-top:28px}
+.hero h1{margin:0 0 6px;font-size:clamp(1.75rem,6vw,2.6rem);line-height:1.2;font-weight:700}
+.hero p{margin:0 0 24px;max-width:30em;color:#D6E2EB}
+.hero svg{width:clamp(120px,30vw,220px);height:auto;display:block}
+.bar{position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--line);padding:10px 0}
+.seg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px}
+.seg::-webkit-scrollbar{display:none}
+.seg button{flex:none;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 13px;font-weight:500;min-height:42px}
+.seg button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.seg + .seg{margin-top:6px}
+.shift button[aria-pressed=true]{background:var(--tag);border-color:var(--tag);color:#17324D}
+main.wrap{padding:20px 16px 40px}
+.head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.head h2{margin:0;font-size:1.5rem;line-height:1.3}
+.count{font-weight:600;color:var(--ink-soft)}
+.progress{height:12px;background:var(--line);border-radius:6px;overflow:hidden;margin:8px 0 16px}
+.progress i{display:block;height:100%;width:0;background:var(--teal);transition:width .25s}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.rule{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:.88rem;line-height:1.4}
+.rule b{display:block;font-size:1.3rem;line-height:1.15}
+.rule.none{opacity:.6}
+.filter{margin-bottom:14px}
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 18px;padding:0;list-style:none}
+.flow li{display:flex;gap:8px;align-items:center;font-size:.86rem;line-height:1.35;background:var(--blue-soft);border-radius:8px;padding:8px}
+.flow svg{width:34px;height:34px;flex:none}
+.item{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;position:relative}
+.item.done{border-color:var(--teal)}
+summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:68px 1fr auto;gap:12px;align-items:center;padding:12px}
+summary::-webkit-details-marker{display:none}
+.ill{width:68px;height:68px;border-radius:10px;background:var(--ill-bg);padding:7px}
+.ill svg{width:100%;height:100%;display:block}
+.no{font-size:.86rem;font-weight:600;color:var(--ink-soft)}
+.title{font-weight:600;font-size:1.06rem;line-height:1.35}
+.sub{font-size:.84rem;color:var(--ink-soft)}
+.grade{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;font-weight:700;font-size:1.15rem;border:2px solid currentColor}
+.grade.A{color:var(--red)} .grade.B{color:var(--teal)} .grade.C{color:var(--ink-soft)}
+.body{padding:0 14px 14px}
+.checks{list-style:none;margin:0 0 12px;padding:0;border-top:1px solid var(--line)}
+.checks li{border-bottom:1px solid var(--line)}
+.checks label{display:grid;grid-template-columns:26px 1fr;gap:10px;padding:10px 0;cursor:pointer;align-items:start}
+.checks input{width:22px;height:22px;margin:2px 0 0;accent-color:var(--teal)}
+.note{border-radius:8px;padding:9px 12px;margin-top:8px;font-size:.94rem;line-height:1.55}
+.note b{display:block;font-size:.84rem}
+.sample{background:var(--blue-soft)} .car{background:var(--red-soft)} .car b{color:var(--red)} .tip{background:var(--tag-soft)}
+.psao{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 12px}
+.psao div{text-align:center;font-size:.8rem;line-height:1.3;background:var(--ill-bg);border-radius:8px;padding:8px 4px}
+.psao svg{width:42px;height:42px;display:block;margin:0 auto 4px}
+.psao b{display:block;font-size:.84rem}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.actions button{background:none;border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-height:42px}
+footer.wrap{color:var(--ink-soft);font-size:.85rem;padding-bottom:32px}
+.empty{padding:20px;text-align:center;color:var(--ink-soft)}
+
+.purpose{margin:0 0 4px;font-weight:500}
+.who{margin:0 0 10px;font-size:.88rem;color:var(--ink-soft)}
+.sec{display:flex;align-items:center;gap:8px;margin:18px 0 8px;font-size:1.02rem;line-height:1.35;font-weight:700}
+.sec svg{width:30px;height:30px;flex:none}
+.checks .main{display:block}
+.checks .how{display:block;font-size:.86rem;line-height:1.5;color:var(--ink-soft);margin-top:2px}
+.checks input:checked + .txt .main{color:var(--ink-soft);text-decoration:line-through}
+.checks .group{font-weight:600;font-size:.9rem;padding:10px 0 6px;background:none}
+.plain{margin:2px 0 0;padding-left:18px}
+.plain li{margin:3px 0}
+.pass{background:var(--teal-soft)} .pass b{color:var(--teal)}
+.caution{background:var(--ill-bg)}
+.legend{font-size:.84rem;line-height:1.5;color:var(--ink-soft);margin:0 0 12px}
+.toolbar{display:flex;justify-content:flex-end;margin-bottom:10px}
+.toolbar button{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-height:42px}
+@media (max-width:520px){
+  .flow{grid-template-columns:repeat(2,1fr)}
+  summary{grid-template-columns:56px 1fr 36px;gap:10px;padding:10px}
+  .ill{width:56px;height:56px;padding:5px}
+  .grade{width:34px;height:34px;font-size:1rem}
+  .psao{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  body{background:#fff;color:#000}
+  .hero,.bar,.actions,.filter,.toolbar{display:none}
+  body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .item{border-color:#999}
+  summary{break-after:avoid}
+  .checks li,.note{break-inside:avoid}
+}
+</style>
+<style>
+/* ★ 6 พ.ย. 69 — หน้าใส่รหัสพนักงานก่อนเข้าดูเช็กลิสต์ */
+.gate{max-width:420px;margin:28px auto;padding:0 16px}
+.gate .box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.gate label{display:block;font-weight:600;margin-bottom:6px}
+.gate input{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:9px;
+  font:inherit;background:var(--card);color:var(--ink);min-height:46px}
+.gate .hint{font-size:.86rem;color:var(--ink-soft);margin-top:8px;line-height:1.5}
+.gate button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:9px;
+  background:var(--teal);color:#fff;font-weight:700;min-height:48px}
+.gate .err{color:var(--red);font-size:.9rem;margin-top:10px;min-height:1.2em}
+.who{display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.who b{display:block}
+.who .sub{font-size:.85rem;color:var(--ink-soft)}
+.who button{border:1px solid var(--line);background:var(--paper);border-radius:8px;
+  padding:8px 12px;font-weight:600;min-height:40px}
+.hide{display:none !important}
+.saving{opacity:.5}
+@media print{.gate,.who,.bar{display:none !important}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-target" viewBox="0 0 64 64"><circle cx="30" cy="34" r="24" fill="var(--card)" stroke="var(--ink)" stroke-width="3"/><circle cx="30" cy="34" r="15" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><circle cx="30" cy="34" r="6" fill="var(--red)"/><path d="M30 34 54 10" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/><path d="M50 6h8v8l-5 3-6-6z" fill="var(--teal)" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/></symbol>
+<symbol id="i-fix" viewBox="0 0 64 64"><rect x="11" y="10" width="42" height="48" rx="5" fill="var(--card)" stroke="var(--ink)" stroke-width="3"/><rect x="22" y="5" width="20" height="10" rx="3" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><path d="M42 31a11 11 0 1 0 1 8" fill="none" stroke="var(--teal)" stroke-width="4" stroke-linecap="round"/><path d="M45 23v9h-9" fill="none" stroke="var(--teal)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-people" viewBox="0 0 64 64"><circle cx="15" cy="24" r="7" fill="var(--teal)"/><path d="M3 50c0-11 6-17 12-17s12 6 12 17z" fill="var(--teal)"/><circle cx="49" cy="24" r="7" fill="var(--teal)"/><path d="M37 50c0-11 6-17 12-17s12 6 12 17z" fill="var(--teal)"/><circle cx="32" cy="20" r="9" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><path d="M16 56c0-14 7-22 16-22s16 8 16 22z" fill="var(--tag)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/></symbol>
+<symbol id="i-train" viewBox="0 0 64 64"><path d="M6 24c9-3 18-2 26 3 8-5 17-6 26-3v30c-9-3-18-2-26 3-8-5-17-6-26-3z" fill="var(--card)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="M32 27v30" stroke="var(--ink)" stroke-width="3"/><path d="M32 4 12 13l20 9 20-9z" fill="var(--tag)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="M13 36c5-1 9 0 13 2M13 44c5-1 9 0 13 2M51 36c-5-1-9 0-13 2" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" fill="none"/></symbol>
+<symbol id="i-tool" viewBox="0 0 64 64"><rect x="9" y="5" width="32" height="54" rx="4" fill="var(--card)" stroke="var(--ink)" stroke-width="3"/><path d="M9 24h32" stroke="var(--ink)" stroke-width="3"/><path d="M15 12v6M15 31v10" stroke="var(--teal)" stroke-width="4" stroke-linecap="round"/><path d="m58 18-8 8-6-6 8-8a11 11 0 0 0-14 14L26 38a4.500 4.500 0 0 0 6 6l12-12a11 11 0 0 0 14-14z" transform="translate(4 12) scale(.88)" fill="var(--tag)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/></symbol>
+<symbol id="i-pest" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="var(--card)" stroke="var(--red)" stroke-width="5"/><ellipse cx="32" cy="36" rx="9" ry="13" fill="var(--ink)"/><circle cx="32" cy="20" r="5.500" fill="var(--ink)"/><path d="M23 30 13 25M23 38H12M24 46l-9 6M41 30l10-5M41 38h11M40 46l9 6M29 16l-4-6M35 16l4-6" stroke="var(--ink)" stroke-width="2.500" stroke-linecap="round"/><path d="m13 13 38 38" stroke="var(--red)" stroke-width="5"/></symbol>
+<symbol id="i-shield" viewBox="0 0 64 64"><path d="M32 4 55 12v18c0 15-9 25-23 30C18 55 9 45 9 30V12z" fill="var(--teal)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="m21 31 8 8 15-16" fill="none" stroke="#fff" stroke-width="5.500" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-order" viewBox="0 0 64 64"><path d="M4 9h9l7 32h31l6-23H16" fill="none" stroke="var(--ink)" stroke-width="3.500" stroke-linecap="round" stroke-linejoin="round"/><path d="m18 19 38 0-5 21H22z" fill="var(--tag)"/><path d="M4 9h9l7 32h31l6-23H16" fill="none" stroke="var(--ink)" stroke-width="3.500" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25" cy="52" r="5" fill="var(--teal)" stroke="var(--ink)" stroke-width="3"/><circle cx="47" cy="52" r="5" fill="var(--teal)" stroke="var(--ink)" stroke-width="3"/></symbol>
+<symbol id="i-shelf" viewBox="0 0 64 64"><path d="M6 5v55M58 5v55M6 26h52M6 48h52" stroke="var(--ink)" stroke-width="3.500" stroke-linecap="round"/><rect x="11" y="11" width="12" height="15" fill="var(--tag)" stroke="var(--ink)" stroke-width="2"/><rect x="25" y="14" width="10" height="12" fill="var(--teal)" stroke="var(--ink)" stroke-width="2"/><rect x="38" y="10" width="14" height="16" fill="var(--card)" stroke="var(--ink)" stroke-width="2"/><rect x="11" y="34" width="16" height="14" fill="var(--teal)" stroke="var(--ink)" stroke-width="2"/><rect x="30" y="31" width="10" height="17" fill="var(--card)" stroke="var(--ink)" stroke-width="2"/><rect x="43" y="36" width="10" height="12" fill="var(--tag)" stroke="var(--ink)" stroke-width="2"/></symbol>
+<symbol id="i-recall" viewBox="0 0 64 64"><path d="M26 24 44 15l18 9v22l-18 10-18-10z" transform="translate(-4 2)" fill="var(--tag)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="m22 26 18 9 18-9M40 35v23" fill="none" stroke="var(--ink)" stroke-width="3"/><path d="M24 12H12a8 8 0 0 0 0 16h4" transform="translate(0 2)" fill="none" stroke="var(--red)" stroke-width="4.500" stroke-linecap="round"/><path d="m21 8 6 6-6 6" fill="none" stroke="var(--red)" stroke-width="4.500" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-talk" viewBox="0 0 64 64"><path d="M6 25v14l8 2 28 13V10L14 23z" fill="var(--tag)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="m15 41 4 15h9l-4-11" fill="var(--card)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="M49 24c3 5 3 11 0 16M55 18c6 8 6 20 0 28" fill="none" stroke="var(--teal)" stroke-width="4" stroke-linecap="round"/></symbol>
+<symbol id="i-focus" viewBox="0 0 64 64"><path d="M6 8h24l28 28-22 22L6 30z" fill="var(--tag)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><circle cx="17" cy="19" r="4" fill="var(--paper)" stroke="var(--ink)" stroke-width="3"/><path d="m37 23 3.500 8 8.500 1-6.500 5.500 2 8.500-7.500-4.500-7.500 4.500 2-8.500-6.500-5.500 8.500-1z" fill="var(--red)"/></symbol>
+<symbol id="i-fresh" viewBox="0 0 64 64"><path d="M16 22 24 7h20l8 15v36H16z" fill="var(--card)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="M16 22h36" stroke="var(--ink)" stroke-width="3"/><rect x="22" y="29" width="24" height="10" fill="var(--tag)" stroke="var(--ink)" stroke-width="2"/><path d="M25 34h18" stroke="var(--ink)" stroke-width="2.500" stroke-dasharray="3 2"/><path d="m24 48 6 5 14-12" fill="none" stroke="var(--teal)" stroke-width="4.500" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-poster" viewBox="0 0 64 64"><rect x="12" y="4" width="40" height="46" rx="2" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><path d="M19 13h26" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/><path d="m32 19 3.500 8h8.500l-7 5 3 9-8-5.500-8 5.500 3-9-7-5h8.500z" fill="var(--red)"/><path d="m22 50-6 11M42 50l6 11" stroke="var(--ink)" stroke-width="3.500" stroke-linecap="round"/></symbol>
+<symbol id="i-smile" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><circle cx="23" cy="26" r="3.500" fill="var(--ink)"/><circle cx="41" cy="26" r="3.500" fill="var(--ink)"/><path d="M19 37c5 11 21 11 26 0" fill="none" stroke="var(--ink)" stroke-width="3.500" stroke-linecap="round"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 64 64"><path d="M37 4 12 37h17l-4 23 27-35H35z" fill="var(--tag)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/></symbol>
+<symbol id="i-list" viewBox="0 0 64 64"><rect x="10" y="5" width="44" height="54" rx="5" fill="var(--card)" stroke="var(--ink)" stroke-width="3"/><path d="m17 19 4 4 6-8M17 34l4 4 6-8M17 49l4 4 6-8" fill="none" stroke="var(--teal)" stroke-width="3.500" stroke-linecap="round" stroke-linejoin="round"/><path d="M33 20h14M33 35h14M33 50h14" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/></symbol>
+<symbol id="i-gift" viewBox="0 0 64 64"><rect x="9" y="26" width="46" height="33" fill="var(--teal)" stroke="var(--ink)" stroke-width="3"/><rect x="5" y="16" width="54" height="12" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><path d="M32 16v43" stroke="var(--ink)" stroke-width="5"/><path d="M32 16c-5-13-20-13-17-4 1 3 8 4 17 4zm0 0c5-13 20-13 17-4-1 3-8 4-17 4z" fill="var(--card)" stroke="var(--ink)" stroke-width="3"/></symbol>
+<symbol id="i-cashier" viewBox="0 0 64 64"><rect x="5" y="39" width="54" height="20" rx="3" fill="var(--teal)" stroke="var(--ink)" stroke-width="3"/><path d="M13 39 19 20h26l6 19z" fill="var(--card)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><rect x="23" y="5" width="18" height="15" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><path d="M24 26h4M31 26h4M38 26h3M23 32h4M30 32h4M37 32h4M22 49h20" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/></symbol>
+<symbol id="i-survey" viewBox="0 0 64 64"><rect x="11" y="9" width="42" height="50" rx="5" fill="var(--card)" stroke="var(--ink)" stroke-width="3"/><rect x="22" y="4" width="20" height="10" rx="3" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><path d="M19 25h26M19 34h26M19 43h16" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/><circle cx="46" cy="49" r="7" fill="var(--teal)"/><path d="m43 49 2 2 4-4" fill="none" stroke="#fff" stroke-width="2.500"/></symbol>
+<symbol id="i-eye" viewBox="0 0 64 64"><path d="M4 32C13 18 22 12 32 12s19 6 28 20c-9 14-18 20-28 20S13 46 4 32z" fill="var(--card)" stroke="var(--ink)" stroke-width="3.500" stroke-linejoin="round"/><circle cx="32" cy="32" r="12" fill="var(--teal)" stroke="var(--ink)" stroke-width="3"/><circle cx="32" cy="32" r="4.500" fill="var(--ink)"/></symbol>
+<symbol id="i-book" viewBox="0 0 64 64"><rect x="10" y="7" width="44" height="50" rx="4" fill="var(--tag)" stroke="var(--ink)" stroke-width="3"/><path d="M19 7v50" stroke="var(--ink)" stroke-width="3"/><path d="M27 21h19M27 30h19M27 39h12" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/></symbol>
+<symbol id="i-dice" viewBox="0 0 64 64"><circle cx="27" cy="27" r="19" fill="var(--card)" stroke="var(--ink)" stroke-width="3.500"/><path d="m41 41 16 16" stroke="var(--ink)" stroke-width="6" stroke-linecap="round"/><path d="M19 27h16M27 19v16" stroke="var(--teal)" stroke-width="4" stroke-linecap="round"/></symbol>
+<symbol id="i-stamp" viewBox="0 0 64 64"><path d="M25 9a7 7 0 0 1 14 0c0 9-3 12-3 20h-8c0-8-3-11-3-20z" fill="var(--red)" stroke="var(--ink)" stroke-width="3"/><path d="M10 29h44l3 12H7z" fill="var(--red)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="M12 50h40" stroke="var(--red)" stroke-width="5" stroke-linecap="round"/></symbol>
+</defs></svg>
+
+<header class="hero"><div class="wrap">
+  <div>
+    <h1>เช็กลิสต์รับตรวจ SCA</h1>
+    <p>ดูว่าแต่ละตำแหน่งผู้ตรวจจะดูอะไร ต้องเตรียมหลักฐานแบบไหน และพลาดตรงไหนถึงโดน CARs</p>
+  </div>
+  <svg viewBox="0 0 240 150" role="img" aria-label="ภาพร้านสะดวกซื้อกับผู้ตรวจถือกระดานบันทึก">
+    <rect x="16" y="46" width="146" height="104" fill="#EEF3F5"/>
+    <path d="M8 46 22 14h134l14 32z" fill="#FFD23F"/>
+    <path d="M36 14 28 46M60 14l-6 32M84 14l-2 32M108 14l2 32M132 14l6 32" stroke="#17324D" stroke-width="3"/>
+    <rect x="28" y="62" width="60" height="58" fill="#BFE4E2" stroke="#17324D" stroke-width="3"/>
+    <path d="M28 82h60M28 101h60" stroke="#17324D" stroke-width="3"/>
+    <rect x="35" y="68" width="10" height="14" fill="#C8342B"/><rect x="50" y="71" width="12" height="11" fill="#FFD23F"/><rect x="68" y="66" width="10" height="16" fill="#14807C"/>
+    <rect x="35" y="88" width="14" height="13" fill="#FFD23F"/><rect x="54" y="86" width="9" height="15" fill="#14807C"/><rect x="68" y="89" width="13" height="12" fill="#C8342B"/>
+    <rect x="102" y="62" width="46" height="88" fill="#17324D" stroke="#fff" stroke-width="3"/>
+    <circle cx="140" cy="108" r="3" fill="#FFD23F"/>
+    <circle cx="198" cy="66" r="14" fill="#FFD23F"/>
+    <path d="M172 150v-40c0-15 11-27 26-27s26 12 26 27v40z" fill="#14807C"/>
+    <rect x="176" y="100" width="34" height="42" rx="3" fill="#fff" stroke="#17324D" stroke-width="3"/>
+    <rect x="186" y="95" width="14" height="9" rx="2" fill="#FFD23F" stroke="#17324D" stroke-width="2"/>
+    <path d="m182 113 3 3 5-6M182 125l3 3 5-6M195 114h10M195 126h10" fill="none" stroke="#17324D" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</div></header>
+
+
+<div class="gate" id="step_id">
+  <div class="box">
+    <label for="empId">รหัสพนักงาน</label>
+    <input id="empId" type="text" inputmode="numeric" autocomplete="off" placeholder="เช่น 0657379">
+    <div class="hint">ใส่รหัสเพื่อเปิดเช็กลิสต์ของสาขาคุณ · การติ๊กจะถูกเก็บรวมให้ทั้งสาขาเห็น</div>
+    <button type="button" id="goBtn">เข้าใช้งาน</button>
+    <div class="err" id="gateErr"></div>
+  </div>
+</div>
+
+<div id="step_list" class="hide">
+<div class="wrap"><div class="who">
+  <div style="flex:1"><b id="whoNm">—</b><div class="sub" id="whoSub"></div></div>
+  <button type="button" id="changeBtn">เปลี่ยนคน</button>
+</div></div>
+<div class="bar"><div class="wrap">
+  <div class="seg shift" id="shifts" role="group" aria-label="เลือกผลัด"></div>
+  <div class="seg" id="roles" role="group" aria-label="เลือกตำแหน่ง"></div>
+</div></div>
+
+<main class="wrap" id="main"></main>
+<footer class="wrap">เรียบเรียงจากแบบตรวจ SCA ที่ระบุปรับปรุงเมื่อ 14 ต.ค. 2569 (หน้าแคชเชียร์ระบุ ต.ค. 68) บางหน้าของต้นฉบับสแกนไม่ชัด จึงควรเทียบตัวเลขเกณฑ์กับเอกสารจริงก่อนใช้งาน</footer>
+</div><!-- /step_list -->
+
+<script>
+// ============================================================
+// เช็กลิสต์รับตรวจ SCA
+//
+// ★ 6 พ.ย. 69 — เนื้อหาแบบตรวจย้ายไปอยู่ในฐานข้อมูลแล้ว ไม่ฝังในไฟล์นี้
+//   เพราะ repo เป็นสาธารณะ ใครก็โหลดไฟล์ดิบอ่านได้โดยไม่ต้องผ่านรหัส
+//   ตอนนี้ต้องใส่รหัสพนักงานที่ยังทำงานอยู่ก่อน จึงจะดึงเนื้อหาได้
+//   (ดู supabase/sca_setup.sql — ฟังก์ชัน sca_checklist)
+//
+// ★ การติ๊กย้ายไปเก็บที่ระบบ แยกตามสาขาและรอบเดือน
+//   ผู้จัดการจึงเห็นได้ว่าสาขาเตรียมถึงไหน ใครติ๊ก เมื่อไหร่
+//   เปลี่ยนเครื่องหรือเปลี่ยนคนเปิด ข้อมูลไม่หายเหมือนตอนเก็บใน localStorage
+// ============================================================
+let ROLES = {};          // เติมจากฐานข้อมูลหลังใส่รหัส
+let EMP = null;          // พนักงานที่เปิดอยู่
+let CYCLE = '';          // รอบเดือน YYYY-MM
+const TICKS = new Set(); // กุญแจบรรทัดที่ติ๊กแล้ว
+
+const $g = s => document.getElementById(s);
+
+// แปลงข้อมูลจากฐานข้อมูลให้เป็นรูปเดิมที่โค้ด render ใช้อยู่
+// (grp→g, full_name→full, is_voe→voe) โค้ดส่วนแสดงผลจึงไม่ต้องแก้เลย
+function buildRoles(p) {
+  const out = {};
+  (p.roles || []).forEach(r => {
+    out[r.role] = {
+      name: r.name, full: r.full_name || r.name,
+      night: !!r.night, voe: !!r.is_voe,
+      rules: r.rules || null, items: []
+    };
+  });
+  (p.items || []).forEach(it => {
+    const r = out[it.role];
+    if (!r) return;
+    r.items.push({
+      id: it.id, n: it.n, d: it.d, g: it.grp, icon: it.icon, title: it.title,
+      purpose: it.purpose, who: it.who, psao: !!it.psao,
+      points: it.points || [], output: it.output, evid: it.evid,
+      sample: it.sample, car: it.car, tip: it.tip, caution: it.caution
+    });
+  });
+  TICKS.clear();
+  (p.ticks || []).forEach(t => TICKS.add(t.join('|')));   // [shift, role, item_id, kind, idx]
+  return out;
+}
+
+async function startWith(id) {
+  const b = $g('goBtn'), err = $g('gateErr');
+  err.textContent = '';
+  if (!id) { err.textContent = 'ใส่รหัสพนักงานก่อน'; return; }
+  b.disabled = true; b.textContent = 'กำลังตรวจสอบ…';
+  try {
+    // ยืนยันตัวตนให้ผ่านก่อน แล้วค่อยดึงเนื้อหา — แบบเดียวกับหน้า QSSI
+    const e0 = await window.HR.lookupEmployee(id);
+    if (!e0) throw new Error('ไม่พบรหัสพนักงานนี้');
+    if (e0.active === false) throw new Error('รหัสนี้ถูกปิดใช้งาน');
+    if (!(await HRSession.pinGate(e0))) { b.disabled = false; b.textContent = 'เข้าใช้งาน'; return; }
+
+    const p = await window.HR.getScaChecklist(id);
+    ROLES = buildRoles(p);
+    EMP = p.emp; CYCLE = p.cycle;
+    if (!Object.keys(ROLES).length) throw new Error('ยังไม่มีข้อมูลแบบตรวจในระบบ — ต้องรัน supabase/sca_setup.sql และไฟล์ข้อมูลก่อน');
+    if (!ROLES[role]) role = Object.keys(ROLES)[0];
+
+    try { HRSession.setEmp(EMP.emp_id); } catch (e) {}
+    $g('whoNm').textContent = EMP.nickname || EMP.name || EMP.emp_id;
+    $g('whoSub').textContent = 'รหัส ' + EMP.emp_id + ' · สาขา ' + (EMP.branch_id || '-') + ' · รอบเดือน ' + CYCLE;
+    $g('step_id').classList.add('hide');
+    $g('step_list').classList.remove('hide');
+    render();
+  } catch (e) {
+    err.textContent = e.message || 'เปิดไม่สำเร็จ';
+  }
+  b.disabled = false; b.textContent = 'เข้าใช้งาน';
+}
+
+let shift='day', role='mgr', filter='all', openAll=false, mem={};
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return mem[k]||null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}mem[k]=v},del(k){try{localStorage.removeItem(k)}catch(e){}delete mem[k]}};
+const $=s=>document.querySelector(s);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const svg=n=>`<svg aria-hidden="true"><use href="#i-${n}"/></svg>`;
+// ★ กุญแจติ๊กอิง it.id แทนเลขข้อ เพราะเลขข้ออาจขยับเมื่อแบบตรวจเปลี่ยนฉบับ แต่ id คงที่
+const shiftOf=()=>ROLES[role].voe?'all':shift;
+const key=(it,k)=>`${shiftOf()}|${role}|${it.id}|${k[0]}|${k.slice(1)}`;
+const isOn=k=>TICKS.has(k);
+const evs=it=>(it.evid||[]).filter(e=>Array.isArray(e));
+const tickKeys=it=>[...it.points.map((_,i)=>'p'+i),...evs(it).map((_,i)=>'e'+i)];
+
+function go(){render();const top=$('#main').getBoundingClientRect().top+scrollY-$('.bar').offsetHeight;if(scrollY>top)scrollTo(0,top)}
+
+function btn(label,pressed,fn){const b=el('button',null,label);b.type='button';b.setAttribute('aria-pressed',pressed);b.onclick=fn;return b}
+
+function renderBars(){
+  const s=$('#shifts');s.replaceChildren(
+    btn('ผลัดปกติ',shift==='day',()=>{shift='day';go()}),
+    btn('ผลัดดึก',shift==='night',()=>{shift='night';if(!ROLES[role].night)role='asst';go()}));
+  const r=$('#roles');r.replaceChildren(...Object.entries(ROLES).filter(([,v])=>shift==='day'||v.night).map(([k,v])=>btn(v.name,role===k,()=>{role=k;filter='all';go()})));
+}
+
+function progress(){
+  let done=0,total=0;
+  ROLES[role].items.forEach(it=>tickKeys(it).forEach(k=>{total++;if(isOn(key(it,k)))done++}));
+  $('#count').textContent=`เตรียมแล้ว ${done}/${total}`;
+  $('#fill').style.width=(total?done/total*100:0)+'%';
+}
+
+function secHead(icon,text){const h=el('h4','sec');h.innerHTML=svg(icon);h.append(document.createTextNode(text));return h}
+function bullets(arr){const u=el('ul','plain');arr.forEach(t=>u.append(el('li',null,t)));return u}
+function note(c,h,arr){const n=el('div','note '+c);n.append(el('b',null,h),bullets(arr));return n}
+
+function renderItem(it,first){
+  const d=el('details','item');
+  d.open=openAll||first;
+  const num=shift==='night'&&it.d?it.d:it.n;
+  const s=el('summary');
+  s.innerHTML=`<div class="ill">${svg(it.icon)}</div>`;
+  const t=el('div');
+  if(it.g)t.append(el('div','no',`ข้อ ${num}`));
+  t.append(el('div','title',it.title));
+  const tally=el('div','sub');t.append(tally);
+  s.append(t);
+  if(it.g){const g=el('div','grade '+it.g,it.g);g.setAttribute('aria-label','ประเภท '+it.g);s.append(g)}else s.append(el('span'));
+  d.append(s);
+  const b=el('div','body');
+  b.append(el('p','purpose',it.purpose));
+  if(it.who)b.append(el('p','who',it.who));
+  if(it.psao){const p=el('div','psao');p.innerHTML=[['smile','Polite Manner','ประทับใจ'],['bolt','Speed','ฉับไว'],['list','Accuracy','ครบถ้วน'],['gift','Offer values','คุ้มค่า']].map(([i,a,c])=>`<div>${svg(i)}<b>${a}</b>${c}</div>`).join('');b.append(p)}
+  const keys=tickKeys(it);
+  const upd=()=>{const n=keys.filter(k=>isOn(key(it,k))).length;tally.textContent=`เตรียมแล้ว ${n}/${keys.length}`;d.classList.toggle('done',n===keys.length)};
+  const tick=(k,build)=>{const li=el('li'),l=el('label'),inp=el('input');inp.type='checkbox';inp.checked=isOn(key(it,k));inp.onchange=async()=>{
+      const kk=key(it,k), on=inp.checked;
+      on?TICKS.add(kk):TICKS.delete(kk); upd(); progress();      // ขยับจอก่อน ไม่ให้สะดุด
+      li.classList.add('saving');
+      try{ await window.HR.saveScaTick(EMP.emp_id,{shift:shiftOf(),role,item_id:it.id,kind:k[0],idx:+k.slice(1),done:on}); }
+      catch(e){ on?TICKS.delete(kk):TICKS.add(kk); inp.checked=!on; upd(); progress(); alert('บันทึกไม่สำเร็จ: '+(e.message||'เครือข่ายมีปัญหา')); }
+      li.classList.remove('saving');
+    };const w=el('span','txt');build(w);l.append(inp,w);li.append(l);return li};
+  b.append(secHead('eye',ROLES[role].voe?'สิ่งที่ต้องเตรียมตอบ':'ผู้ตรวจจะดูอะไร'));  // ★ แก้ 6 พ.ย. 69 — ธง voe อยู่ที่ตำแหน่ง ไม่ได้อยู่ที่ข้อ
+  const u1=el('ul','checks');it.points.forEach((c,i)=>u1.append(tick('p'+i,w=>w.append(el('span','main',c)))));b.append(u1);
+  if(it.output)b.append(note('pass','ผ่านเมื่อเห็นผลลัพธ์นี้',it.output));
+  if(it.evid){
+    b.append(secHead('book','ต้องเตรียมอะไร แบบไหน'));
+    const u2=el('ul','checks');let ei=0;
+    it.evid.forEach(e=>{
+      if(!Array.isArray(e)){u2.append(el('li','group',e.h));return}
+      u2.append(tick('e'+(ei++),w=>{w.append(el('span','main',e[0]));if(e[1])w.append(el('span','how','แนวเตรียม: '+e[1]))}));
+    });
+    b.append(u2);
+  }
+  if(it.sample){b.append(secHead('dice','ผู้ตรวจจะสุ่มอะไร'));b.append(note('sample','ตัวอย่างที่ต้องพร้อมให้ดู',it.sample))}
+  if(it.car){b.append(secHead('stamp','พลาดตรงไหนถึงโดน CARs'));b.append(note('car','พิจารณาออก CARs เมื่อ',it.car))}
+  if(it.tip)b.append(note('tip','ออกเป็นข้อเสนอแนะ',it.tip));
+  if(it.caution)b.append(note('caution','ข้อควรระวัง',it.caution));
+  d.append(b);upd();return d;
+}
+
+function render(){
+  renderBars();
+  const R=ROLES[role],m=$('#main');m.replaceChildren();
+  const h=el('div','head');h.append(el('h2',null,R.full));const c=el('span','count');c.id='count';h.append(c);m.append(h);
+  const p=el('div','progress');const f=el('i');f.id='fill';p.append(f);m.append(p);
+  if(R.rules){
+    const rs=el('div','rules');
+    ['A','B','C'].forEach(g=>{const r=el('div','rule'+(R.rules[g]?'':' none'));r.append(el('b',null,g),document.createTextNode(R.rules[g]||'ไม่มีข้อประเภทนี้'));rs.append(r)});
+    m.append(rs);
+    const fl=el('div','seg filter');fl.setAttribute('role','group');fl.setAttribute('aria-label','กรองประเภทข้อตรวจ');
+    fl.append(btn('ทั้งหมด',filter==='all',()=>{filter='all';render()}));
+    ['A','B','C'].filter(g=>R.rules[g]).forEach(g=>fl.append(btn('เฉพาะ '+g,filter===g,()=>{filter=g;render()})));
+    m.append(fl);
+    const flow=el('ul','flow');
+    flow.innerHTML=`<li>${svg('eye')}<span>ผู้ตรวจจะดูอะไร</span></li><li>${svg('book')}<span>ต้องเตรียมอะไร แบบไหน</span></li><li>${svg('dice')}<span>ผู้ตรวจจะสุ่มอะไร</span></li><li>${svg('stamp')}<span>พลาดตรงไหนถึงโดน CARs</span></li>`;
+    m.append(flow);
+    m.append(el('p','legend','หัวข้อ หลักฐาน เกณฑ์สุ่ม และ CARs มาจากแบบตรวจ ส่วนข้อความ "แนวเตรียม" เป็นคำแนะนำที่เรียบเรียงเพิ่ม ไม่ใช่ข้อกำหนดของแบบตรวจ'));
+  }
+  const tb=el('div','toolbar');const ex=el('button',null,openAll?'พับทุกข้อ':'กางทุกข้อ');ex.type='button';ex.onclick=()=>{openAll=!openAll;render()};tb.append(ex);m.append(tb);
+  R.items.filter(it=>filter==='all'||it.g===filter).sort((a,b)=>({A:0,B:1,C:2}[a.g]??0)-({A:0,B:1,C:2}[b.g]??0)||a.n-b.n).forEach((it,i)=>m.append(renderItem(it,i===0)));
+  const a=el('div','actions');
+  const pr=el('button',null,'พิมพ์หน้านี้');pr.type='button';pr.onclick=()=>window.print();
+  const rs=el('button',null,'ล้างการติ๊กของหน้านี้');rs.type='button';let armed=false;rs.onclick=()=>{if(!armed){armed=true;rs.textContent='กดอีกครั้งเพื่อล้างการติ๊ก';return}(async()=>{ rs.disabled=true; rs.textContent='กำลังล้าง…';
+    try{ await window.HR.clearScaTicks(EMP.emp_id,shiftOf(),role);
+         R.items.forEach(it=>tickKeys(it).forEach(k=>TICKS.delete(key(it,k)))); }
+    catch(e){ alert('ล้างไม่สำเร็จ: '+(e.message||'เครือข่ายมีปัญหา')); }
+    rs.disabled=false; render(); })()};
+  a.append(pr,rs);m.append(a);
+  progress();
+}
+addEventListener('beforeprint',()=>document.querySelectorAll('details').forEach(d=>d.open=true));
+
+// ── เริ่มทำงาน: รอใส่รหัสพนักงานก่อน ไม่ render ทันทีเหมือนเดิม ──────────
+$g('goBtn').onclick=()=>startWith($g('empId').value.trim());
+$g('empId').addEventListener('keydown',e=>{if(e.key==='Enter')$g('goBtn').click()});
+$g('changeBtn').onclick=()=>{
+  ROLES={}; EMP=null; TICKS.clear(); $g('empId').value='';
+  try{HRSession.clearEmp();}catch(e){}
+  $g('step_list').classList.add('hide'); $g('step_id').classList.remove('hide');
+  $g('empId').focus();
+};
+// จำคนล่าสุดไว้ ไม่ต้องพิมพ์รหัสซ้ำทุกครั้ง (ยังต้องผ่าน PIN อยู่ดี)
+(function(){ try{ const last=HRSession.getEmp&&HRSession.getEmp(); if(last) $g('empId').value=last; }catch(e){} })();
+</script>
+</body>
+</html>
