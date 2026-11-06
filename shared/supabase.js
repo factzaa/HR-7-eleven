@@ -3597,6 +3597,44 @@
     return { ok:true, id:folder.id };
   }
 
+  // ---------- เช็กลิสต์รับตรวจ SCA ----------
+  // ★ 6 พ.ย. 69 — เนื้อหาแบบตรวจอยู่ในฐานข้อมูล ไม่ฝังในหน้าเว็บ เพราะ repo เป็นสาธารณะ
+  //   ทั้งสามฟังก์ชันจึงเรียกผ่าน RPC ที่ตรวจรหัสพนักงานก่อน ไม่ได้ select ตารางตรง ๆ
+  //   (ดู supabase/sca_setup.sql — ตาราง sca_items ปิดสิทธิ์ของ anon ไว้)
+  function _scaThrow(r, err){
+    if(err) throw new Error(err.message||'เชื่อมต่อฐานข้อมูลไม่ได้');
+    if(!r) throw new Error('ไม่ได้รับข้อมูลจากระบบ');
+    if(r.ok===false) throw new Error(r.error||'ทำรายการไม่สำเร็จ');
+    return r;
+  }
+  async function getScaChecklist(empId, cycle){
+    const { data, error } = await sb.rpc('sca_checklist', {
+      p_emp_id: String(empId||'').trim(), p_cycle: cycle||null });
+    return _scaThrow(data, error);
+  }
+  async function saveScaTick(empId, d){
+    d = d || {};
+    const { data, error } = await sb.rpc('sca_tick', {
+      p_emp_id: String(empId||'').trim(),
+      p_shift:  String(d.shift||'day'),
+      p_role:   String(d.role||''),
+      p_item_id: Number(d.item_id),
+      p_kind:   String(d.kind||'p'),
+      p_idx:    Number(d.idx)||0,
+      p_done:   !!d.done });
+    return _scaThrow(data, error);
+  }
+  async function clearScaTicks(empId, shift, role){
+    const { data, error } = await sb.rpc('sca_clear', {
+      p_emp_id: String(empId||'').trim(), p_shift: String(shift||'day'), p_role: String(role||'') });
+    return _scaThrow(data, error);
+  }
+  async function getScaProgress(empId, cycle){
+    const { data, error } = await sb.rpc('sca_progress', {
+      p_emp_id: String(empId||'').trim(), p_cycle: cycle||null });
+    return _scaThrow(data, error);
+  }
+
   // ---------- งานพิเศษ: ดูแลเชลฟ์ประจำเดือน (พนักงาน) ----------
   async function getMyShelves(empId){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
@@ -4411,7 +4449,8 @@
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
-    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
+    getScaChecklist, saveScaTick, clearScaTicks, getScaProgress, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow,
     shirtConfig, shirtMyState, shirtMyOrders, shirtSubmit, shirtCancel, shirtSizeList, shirtPriceOf };
 })();
