@@ -3634,6 +3634,33 @@
       p_emp_id: String(empId||'').trim(), p_cycle: cycle||null });
     return _scaThrow(data, error);
   }
+  // ★ 6 พ.ย. 69 — ทางเข้าของฝ่ายบุคคล
+  //   HR ไม่มีรหัสพนักงาน จึงยืนยันด้วยรหัสผ่าน และต้องระบุสาขาเอง
+  //   (การติ๊กผูกกับสาขาเสมอ ส่วน HR ไม่ได้สังกัดสาขาใดสาขาหนึ่ง)
+  async function getScaBranchesHr(password){
+    const { data, error } = await sb.rpc('sca_branches_hr', { p_password: String(password||'') });
+    return _scaThrow(data, error);
+  }
+  async function getScaChecklistHr(password, branchId, cycle){
+    const { data, error } = await sb.rpc('sca_checklist_hr', {
+      p_password: String(password||''), p_branch_id: String(branchId||''), p_cycle: cycle||null });
+    return _scaThrow(data, error);
+  }
+  async function saveScaTickHr(password, branchId, d){
+    d = d || {};
+    const { data, error } = await sb.rpc('sca_tick_hr', {
+      p_password: String(password||''), p_branch_id: String(branchId||''),
+      p_shift: String(d.shift||'day'), p_role: String(d.role||''),
+      p_item_id: Number(d.item_id), p_kind: String(d.kind||'p'),
+      p_idx: Number(d.idx)||0, p_done: !!d.done });
+    return _scaThrow(data, error);
+  }
+  async function clearScaTicksHr(password, branchId, shift, role){
+    const { data, error } = await sb.rpc('sca_clear_hr', {
+      p_password: String(password||''), p_branch_id: String(branchId||''),
+      p_shift: String(shift||'day'), p_role: String(role||'') });
+    return _scaThrow(data, error);
+  }
 
   // ---------- งานพิเศษ: ดูแลเชลฟ์ประจำเดือน (พนักงาน) ----------
   async function getMyShelves(empId){
@@ -4450,7 +4477,8 @@
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
-    getScaChecklist, saveScaTick, clearScaTicks, getScaProgress, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
+    getScaChecklist, saveScaTick, clearScaTicks, getScaProgress,
+    getScaBranchesHr, getScaChecklistHr, saveScaTickHr, clearScaTicksHr, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow,
     shirtConfig, shirtMyState, shirtMyOrders, shirtSubmit, shirtCancel, shirtSizeList, shirtPriceOf };
 })();
