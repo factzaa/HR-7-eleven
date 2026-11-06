@@ -121,7 +121,16 @@ footer.wrap{color:var(--ink-soft);font-size:.85rem;padding-bottom:32px}
 .gate .hint{font-size:.86rem;color:var(--ink-soft);margin-top:8px;line-height:1.5}
 .gate button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:9px;
   background:var(--teal);color:#fff;font-weight:700;min-height:48px}
+.gate select{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:9px;
+  font:inherit;background:var(--card);color:var(--ink);min-height:46px}
 .gate .err{color:var(--red);font-size:.9rem;margin-top:10px;min-height:1.2em}
+/* ปุ่มกลับหน้าแรก — อยู่บนแถบหัวเสมอ ทั้งก่อนและหลังใส่รหัส */
+.hero .wrap{position:relative}
+.home{position:absolute;top:0;right:16px;display:inline-block;text-decoration:none;
+  color:#fff;border:1.5px solid rgba(255,255,255,.55);border-radius:9px;
+  padding:7px 13px;font-weight:600;font-size:14px;min-height:38px}
+.home:hover{background:rgba(255,255,255,.12)}
+@media (max-width:560px){.hero svg{display:none}.hero .wrap{grid-template-columns:1fr}}
 .who{display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);
   border-radius:10px;padding:10px 12px;margin-bottom:12px}
 .who b{display:block}
@@ -130,7 +139,7 @@ footer.wrap{color:var(--ink-soft);font-size:.85rem;padding-bottom:32px}
   padding:8px 12px;font-weight:600;min-height:40px}
 .hide{display:none !important}
 .saving{opacity:.5}
-@media print{.gate,.who,.bar{display:none !important}}
+@media print{.gate,.who,.bar,.home{display:none !important}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
@@ -165,7 +174,7 @@ footer.wrap{color:var(--ink-soft);font-size:.85rem;padding-bottom:32px}
 <symbol id="i-stamp" viewBox="0 0 64 64"><path d="M25 9a7 7 0 0 1 14 0c0 9-3 12-3 20h-8c0-8-3-11-3-20z" fill="var(--red)" stroke="var(--ink)" stroke-width="3"/><path d="M10 29h44l3 12H7z" fill="var(--red)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="M12 50h40" stroke="var(--red)" stroke-width="5" stroke-linecap="round"/></symbol>
 </defs></svg>
 
-<header class="hero"><div class="wrap">
+<header class="hero"><div class="wrap"><a class="home" href="../">← หน้าแรก</a>
   <div>
     <h1>เช็กลิสต์รับตรวจ SCA</h1>
     <p>ดูว่าแต่ละตำแหน่งผู้ตรวจจะดูอะไร ต้องเตรียมหลักฐานแบบไหน และพลาดตรงไหนถึงโดน CARs</p>
@@ -192,10 +201,21 @@ footer.wrap{color:var(--ink-soft);font-size:.85rem;padding-bottom:32px}
 <div class="gate" id="step_id">
   <div class="box">
     <label for="empId">รหัสพนักงาน</label>
-    <input id="empId" type="text" inputmode="numeric" autocomplete="off" placeholder="เช่น 0657379">
-    <div class="hint">ใส่รหัสเพื่อเปิดเช็กลิสต์ของสาขาคุณ · การติ๊กจะถูกเก็บรวมให้ทั้งสาขาเห็น</div>
+    <input id="empId" type="text" inputmode="text" autocomplete="off" placeholder="เช่น 0657379">
+    <div class="hint">ใส่รหัสเพื่อเปิดเช็กลิสต์ของสาขาคุณ · การติ๊กจะถูกเก็บรวมให้ทั้งสาขาเห็น<br>
+      ฝ่ายบุคคลใส่รหัสผ่าน HR ในช่องเดียวกันนี้ได้ แล้วค่อยเลือกสาขา</div>
     <button type="button" id="goBtn">เข้าใช้งาน</button>
     <div class="err" id="gateErr"></div>
+  </div>
+</div>
+
+<div class="gate hide" id="step_branch">
+  <div class="box">
+    <label for="brSel">เลือกสาขา</label>
+    <select id="brSel"></select>
+    <div class="hint">เข้าในฐานะฝ่ายบุคคล · การติ๊กจะบันทึกชื่อว่า "HR สำนักงาน"</div>
+    <button type="button" id="brGo">เปิดเช็กลิสต์</button>
+    <div class="err" id="brErr"></div>
   </div>
 </div>
 
@@ -231,6 +251,19 @@ let EMP = null;          // พนักงานที่เปิดอยู�
 let CYCLE = '';          // รอบเดือน YYYY-MM
 const TICKS = new Set(); // กุญแจบรรทัดที่ติ๊กแล้ว
 
+// ★ 6 พ.ย. 69 — ทางเข้าของฝ่ายบุคคล
+//   HR สำนักงานไม่มีรหัสพนักงาน ถ้ารับแต่รหัสพนักงานก็เข้าไม่ได้เลย
+//   จึงรับรหัสผ่าน HR ในช่องเดียวกัน (กติกาเดียวกับประตูหน้าแรก)
+//   และเพราะ HR ไม่ได้สังกัดสาขา การติ๊กผูกกับสาขาเสมอ จึงต้องเลือกสาขาก่อน
+let HRPW = '';           // ว่าง = เข้าด้วยรหัสพนักงาน · มีค่า = เข้าในฐานะ HR
+let HRBRANCH = '';
+
+// เรียก API ให้ถูกทางตามว่าเข้ามาแบบไหน
+const apiTick  = d      => HRPW ? window.HR.saveScaTickHr(HRPW, HRBRANCH, d)
+                                : window.HR.saveScaTick(EMP.emp_id, d);
+const apiClear = (s, r) => HRPW ? window.HR.clearScaTicksHr(HRPW, HRBRANCH, s, r)
+                                : window.HR.clearScaTicks(EMP.emp_id, s, r);
+
 const $g = s => document.getElementById(s);
 
 // แปลงข้อมูลจากฐานข้อมูลให้เป็นรูปเดิมที่โค้ด render ใช้อยู่
@@ -259,30 +292,65 @@ function buildRoles(p) {
   return out;
 }
 
+// เปิดเช็กลิสต์จาก payload ที่ได้มา (ใช้ร่วมกันทั้งทางพนักงานและทาง HR)
+function openList(p) {
+  ROLES = buildRoles(p);
+  EMP = p.emp; CYCLE = p.cycle;
+  if (!Object.keys(ROLES).length) throw new Error('ยังไม่มีข้อมูลแบบตรวจในระบบ — ต้องรัน supabase/sca_setup.sql และไฟล์ข้อมูลก่อน');
+  if (!ROLES[role]) role = Object.keys(ROLES)[0];
+  $g('whoNm').textContent = EMP.nickname || EMP.name || EMP.emp_id || 'HR';
+  $g('whoSub').textContent = (EMP.emp_id ? 'รหัส ' + EMP.emp_id + ' · ' : 'ฝ่ายบุคคล · ')
+    + 'สาขา ' + (EMP.branch_name || EMP.branch_id || '-') + ' · รอบเดือน ' + CYCLE;
+  $g('step_id').classList.add('hide');
+  $g('step_branch').classList.add('hide');
+  $g('step_list').classList.remove('hide');
+  render();
+}
+
+// HR ผ่านรหัสแล้ว → ให้เลือกสาขาก่อน เพราะการติ๊กผูกกับสาขาเสมอ
+async function showBranchPicker() {
+  const r = await window.HR.getScaBranchesHr(HRPW);
+  const sel = $g('brSel');
+  sel.replaceChildren(...(r.branches || []).map(b => {
+    const o = document.createElement('option');
+    o.value = b.branch_id; o.textContent = b.branch_id + ' · ' + (b.name || '');
+    return o;
+  }));
+  if (!sel.options.length) throw new Error('ไม่พบรายชื่อสาขา');
+  $g('step_id').classList.add('hide');
+  $g('step_branch').classList.remove('hide');
+}
+
 async function startWith(id) {
   const b = $g('goBtn'), err = $g('gateErr');
   err.textContent = '';
-  if (!id) { err.textContent = 'ใส่รหัสพนักงานก่อน'; return; }
+  if (!id) { err.textContent = 'ใส่รหัสพนักงาน หรือรหัสผ่าน HR'; return; }
   b.disabled = true; b.textContent = 'กำลังตรวจสอบ…';
   try {
     // ยืนยันตัวตนให้ผ่านก่อน แล้วค่อยดึงเนื้อหา — แบบเดียวกับหน้า QSSI
     const e0 = await window.HR.lookupEmployee(id);
-    if (!e0) throw new Error('ไม่พบรหัสพนักงานนี้');
+
+    // ไม่ใช่รหัสพนักงาน → ลองเทียบกับรหัสผ่าน HR ก่อนจะบอกว่าผิด
+    if (!e0) {
+      let hrOk = false;
+      try {
+        const r = await window.HR.sb.rpc('hr_check_password', { p_password: id });
+        hrOk = (r && r.data === true);
+      } catch (e) { hrOk = false; }
+      if (!hrOk) throw new Error('ไม่พบรหัสพนักงานนี้ และไม่ใช่รหัสผ่าน HR');
+      HRPW = id; HRBRANCH = '';
+      await showBranchPicker();
+      b.disabled = false; b.textContent = 'เข้าใช้งาน';
+      return;
+    }
+
     if (e0.active === false) throw new Error('รหัสนี้ถูกปิดใช้งาน');
     if (!(await HRSession.pinGate(e0))) { b.disabled = false; b.textContent = 'เข้าใช้งาน'; return; }
 
+    HRPW = ''; HRBRANCH = '';
     const p = await window.HR.getScaChecklist(id);
-    ROLES = buildRoles(p);
-    EMP = p.emp; CYCLE = p.cycle;
-    if (!Object.keys(ROLES).length) throw new Error('ยังไม่มีข้อมูลแบบตรวจในระบบ — ต้องรัน supabase/sca_setup.sql และไฟล์ข้อมูลก่อน');
-    if (!ROLES[role]) role = Object.keys(ROLES)[0];
-
-    try { HRSession.setEmp(EMP.emp_id); } catch (e) {}
-    $g('whoNm').textContent = EMP.nickname || EMP.name || EMP.emp_id;
-    $g('whoSub').textContent = 'รหัส ' + EMP.emp_id + ' · สาขา ' + (EMP.branch_id || '-') + ' · รอบเดือน ' + CYCLE;
-    $g('step_id').classList.add('hide');
-    $g('step_list').classList.remove('hide');
-    render();
+    try { HRSession.setEmp(p.emp.emp_id); } catch (e) {}
+    openList(p);
   } catch (e) {
     err.textContent = e.message || 'เปิดไม่สำเร็จ';
   }
@@ -346,7 +414,7 @@ function renderItem(it,first){
       const kk=key(it,k), on=inp.checked;
       on?TICKS.add(kk):TICKS.delete(kk); upd(); progress();      // ขยับจอก่อน ไม่ให้สะดุด
       li.classList.add('saving');
-      try{ await window.HR.saveScaTick(EMP.emp_id,{shift:shiftOf(),role,item_id:it.id,kind:k[0],idx:+k.slice(1),done:on}); }
+      try{ await apiTick({shift:shiftOf(),role,item_id:it.id,kind:k[0],idx:+k.slice(1),done:on}); }
       catch(e){ on?TICKS.delete(kk):TICKS.add(kk); inp.checked=!on; upd(); progress(); alert('บันทึกไม่สำเร็จ: '+(e.message||'เครือข่ายมีปัญหา')); }
       li.classList.remove('saving');
     };const w=el('span','txt');build(w);l.append(inp,w);li.append(l);return li};
@@ -392,7 +460,7 @@ function render(){
   const a=el('div','actions');
   const pr=el('button',null,'พิมพ์หน้านี้');pr.type='button';pr.onclick=()=>window.print();
   const rs=el('button',null,'ล้างการติ๊กของหน้านี้');rs.type='button';let armed=false;rs.onclick=()=>{if(!armed){armed=true;rs.textContent='กดอีกครั้งเพื่อล้างการติ๊ก';return}(async()=>{ rs.disabled=true; rs.textContent='กำลังล้าง…';
-    try{ await window.HR.clearScaTicks(EMP.emp_id,shiftOf(),role);
+    try{ await apiClear(shiftOf(),role);
          R.items.forEach(it=>tickKeys(it).forEach(k=>TICKS.delete(key(it,k)))); }
     catch(e){ alert('ล้างไม่สำเร็จ: '+(e.message||'เครือข่ายมีปัญหา')); }
     rs.disabled=false; render(); })()};
@@ -404,11 +472,19 @@ addEventListener('beforeprint',()=>document.querySelectorAll('details').forEach(
 // ── เริ่มทำงาน: รอใส่รหัสพนักงานก่อน ไม่ render ทันทีเหมือนเดิม ──────────
 $g('goBtn').onclick=()=>startWith($g('empId').value.trim());
 $g('empId').addEventListener('keydown',e=>{if(e.key==='Enter')$g('goBtn').click()});
+$g('brGo').onclick=async()=>{
+  const b=$g('brGo'), err=$g('brErr'); err.textContent='';
+  b.disabled=true; b.textContent='กำลังเปิด…';
+  try{ HRBRANCH=$g('brSel').value; openList(await window.HR.getScaChecklistHr(HRPW,HRBRANCH)); }
+  catch(e){ err.textContent=e.message||'เปิดไม่สำเร็จ'; }
+  b.disabled=false; b.textContent='เปิดเช็กลิสต์';
+};
 $g('changeBtn').onclick=()=>{
   ROLES={}; EMP=null; TICKS.clear(); $g('empId').value='';
+  HRPW=''; HRBRANCH='';            // ★ ทิ้งรหัสผ่าน HR ทันทีที่ออก ไม่ค้างไว้ให้คนถัดไป
   try{HRSession.clearEmp();}catch(e){}
-  $g('step_list').classList.add('hide'); $g('step_id').classList.remove('hide');
-  $g('empId').focus();
+  $g('step_list').classList.add('hide'); $g('step_branch').classList.add('hide');
+  $g('step_id').classList.remove('hide'); $g('empId').focus();
 };
 // จำคนล่าสุดไว้ ไม่ต้องพิมพ์รหัสซ้ำทุกครั้ง (ยังต้องผ่าน PIN อยู่ดี)
 (function(){ try{ const last=HRSession.getEmp&&HRSession.getEmp(); if(last) $g('empId').value=last; }catch(e){} })();
