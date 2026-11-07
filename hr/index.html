@@ -3538,11 +3538,16 @@ function mrNav(d){
         <div class="photo-row">
           <div class="photo-prev" id="f_photo_prev"><span>?</span></div>
           <div class="photo-act">
-            <label class="btn btn-sec" for="f_photo_input">เลือกรูป / ถ่ายรูป</label>
-            <input id="f_photo_input" type="file" accept="image/*" capture="user" style="display:none">
+            <!-- ★ 7 พ.ย. 69 — เดิมเป็นช่องเดียวที่ใส่ capture="user" ทำให้มือถือ/iPad
+                 เปิดกล้องหน้าทันที เลือกรูปจากเครื่องไม่ได้เลย ทั้งที่ปุ่มเขียนว่า "เลือกรูป"
+                 แยกเป็นสองปุ่มแบบเดียวกับหน้ารับส่งผลัดและงานผู้จัดการ -->
+            <label class="btn btn-sec" for="f_photo_pick">เลือกรูป</label>
+            <input id="f_photo_pick" type="file" accept="image/*" style="display:none">
+            <label class="btn btn-sec" for="f_photo_cam">ถ่ายรูป</label>
+            <input id="f_photo_cam" type="file" accept="image/*" capture="environment" style="display:none">
             <button type="button" class="btn btn-sec" id="f_photo_crop" style="display:none">ปรับตำแหน่ง / ครอป</button>
             <button type="button" class="btn btn-danger" id="f_photo_remove" style="display:none">ลบรูป</button>
-            <div class="hint">รูปจะถูกครอปเป็นสี่เหลี่ยม · กด "ปรับตำแหน่ง" เพื่อเลื่อน/ซูมได้ภายหลัง</div>
+            <div class="hint">"เลือกรูป" = หยิบจากคลังรูปหรือไฟล์ในเครื่อง · "ถ่ายรูป" = เปิดกล้อง<br>รูปจะถูกครอปเป็นสี่เหลี่ยม · กด "ปรับตำแหน่ง" เพื่อเลื่อน/ซูมได้ภายหลัง</div>
           </div>
         </div>
       </div>
@@ -4834,6 +4839,9 @@ async function openCrop(src){
     cropCenter(); cropApplyTransform();
   };
   img.onerror = () => toast('err','โหลดรูปไม่สำเร็จ — ถ้าเป็นรูปเก่า ลองเลือกรูปใหม่แล้วครอป');
+  // ★ 7 พ.ย. 69 — ถ้า src เดิมเหมือนเป๊ะ เบราว์เซอร์จะไม่ยิง onload ซ้ำ กล่องครอปจะไม่เปิด
+  //   (เจอตอนกด "ปรับตำแหน่ง" ซ้ำ หรือเลือกไฟล์เดิมอีกรอบหลังกดยกเลิก) → ล้าง src ก่อน
+  if (img.getAttribute('src') === loadSrc) img.removeAttribute('src');
   img.src = loadSrc;
 }
 function cropClamp(){
@@ -4879,11 +4887,16 @@ function cropToDataUrl(){
   $('cropCancel').onclick = $('cropClose').onclick = ()=>$('cropOverlay').classList.remove('show');
 })();
 
-$('f_photo_input').addEventListener('change', async e=>{
-  const file = e.target.files && e.target.files[0]; if(!file) return;
-  try{ const u = await fileToDataUrl(file); openCrop(u); }
-  catch(err){ toast('err','อ่านรูปไม่สำเร็จ'); }
-  e.target.value = '';
+// ★ 7 พ.ย. 69 — ผูกทั้งปุ่มเลือกรูปและปุ่มถ่ายรูป ทำงานเหมือนกันทั้งคู่
+['f_photo_pick','f_photo_cam'].forEach(id=>{
+  const el = $(id); if(!el) return;
+  el.addEventListener('change', async e=>{
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';            // ★ ล้างก่อน ไม่งั้นเลือกไฟล์เดิมซ้ำจะไม่เกิด change อีก
+    if(!file) return;
+    try{ const u = await fileToDataUrl(file); openCrop(u); }
+    catch(err){ toast('err','อ่านรูปไม่สำเร็จ'); }
+  });
 });
 $('f_photo_crop').onclick = ()=>{ openCrop(photoState.newBase64 || photoState.url); };
 $('f_photo_remove').onclick = ()=>{ photoState = { url:'', newBase64:'' }; setPhotoPreview(); };
