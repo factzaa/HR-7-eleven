@@ -10968,7 +10968,7 @@ function dualDT(iso){ if(!iso) return '—'; try{ return new Date(iso).toLocaleS
 async function loadDualReq(){
   const box=$('dualPanel'); if(!box) return;
   let r; try{ r=await post({ action:'hr_dual_list', password:pwd, ...authBody() }); }catch(e){ box.innerHTML=''; return; }
-  if(!r||!r.ok){ box.innerHTML = (r&&r.error&&/dual-requests/.test(r.error)) ? '<div class="card" style="padding:12px 14px;margin-bottom:12px;color:#b45309;font-size:13px">⚠ ระบบขอควบกะยังไม่พร้อม — ต้องรัน <b>supabase/dual-requests-2569-09-21.sql</b> ก่อน</div>' : ''; return; }
+  if(!r||!r.ok){ box.innerHTML = (r&&r.error&&/dual_requests/.test(r.error)) ? '<div class="card" style="padding:12px 14px;margin-bottom:12px;color:#b45309;font-size:13px">⚠ ระบบขอควบกะยังไม่พร้อม — ต้องรัน <b>supabase/dual_requests.sql</b> ก่อน</div>' : ''; return; }
   const pend=r.rows.filter(x=>x.status==='pending');
   const hist=r.rows.filter(x=>x.status!=='pending').slice(0,30);
   _setNavBadge($('tab_attnedit'), pend.length);
