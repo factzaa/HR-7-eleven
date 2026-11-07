@@ -9768,7 +9768,9 @@
     let q = sb().from('dual_requests').select('*').order('requested_at', { ascending: false }).limit(200);
     if (p.status) q = q.eq('status', p.status);
     const [rR, brR, shR] = await Promise.all([q, sb().from('branches').select('branch_id,name'), sb().from('shifts').select('shift_id,name,start_time,end_time,day_value,no_ot')]);
-    if (rR.error) return { ok: false, error: 'ยังไม่ได้รัน supabase/dual-requests-2569-09-21.sql' };
+    // ★ 7 พ.ย. 69 — ชื่อไฟล์เดิมชี้ไปยังไฟล์ที่ไม่เคยมีอยู่ใน repo (dual-requests-2569-09-21.sql)
+    //   โค้ดฝั่งหน้าเว็บเขียนไว้ตั้งแต่ 21 ก.ย. แต่ไฟล์สร้างตารางไม่เคยถูกคอมมิต → รันตามไม่ได้
+    if (rR.error) return { ok: false, error: 'ยังไม่ได้รัน supabase/dual_requests.sql' };
     const rows = rR.data || [];
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const shBy = {}; (shR.data || []).forEach(x => { shBy[x.shift_id] = x; });
