@@ -1996,13 +1996,26 @@
       if (dup) return { ok: false, error: 'รหัสใหม่ ' + newId + ' มีพนักงานอื่นใช้อยู่แล้ว' };
     }
     const { data, error } = await sb().rpc('transfer_emp', { p_old: oldId, p_new: sameId ? oldId : newId, p_branch: branch || null });
-    // ★ ข้อความ error เดิมเดาว่า "ยังไม่ได้ติดตั้ง transfer_emp.sql" เสมอ ทั้งที่ติดตั้งแล้ว
-    //   เคสจริงคือ FK ของตารางลูกไม่ได้เป็น ON UPDATE CASCADE → แก้ด้วย fix-transfer-emp-2569-09-21.sql
+    // ★ 7 พ.ย. 69 — ข้อความ error เดิมเดาว่า "ยังไม่ได้ติดตั้ง transfer_emp.sql" กับทุกเคสที่ไม่ใช่ FK
+    //   ของจริงที่เจอคือ timeout: หน้าเว็บยิงในฐานะ role anon ซึ่งตั้ง statement_timeout ไว้ 3 วินาที
+    //   แต่ฟังก์ชันต้องไล่ 54 ตาราง (เดิมมีไม่กี่ตาราง) หลายตารางไม่มีดัชนี emp_id จึงต้องอ่านทั้งตาราง
+    //   → แก้ด้วย supabase/fix-transfer-emp-timeout-2569-11-07.sql (ใส่ดัชนี + เขียนฟังก์ชันใหม่ให้เร็ว)
+    //   ตอน timeout ทรานแซกชันย้อนกลับทั้งหมด ข้อมูลไม่ค้างครึ่ง ๆ กลาง ๆ จึงกดซ้ำได้ปลอดภัย
     if (error) {
       const m = String(error.message || error);
-      return { ok: false, error: /foreign key/i.test(m)
-        ? ('ย้ายไม่สำเร็จ — ยังไม่ได้รัน supabase/fix-transfer-emp-2569-09-21.sql (ตารางลูกยังไม่ได้ตั้ง ON UPDATE CASCADE) · ' + m)
-        : ('เรียกฟังก์ชันไม่สำเร็จ — ติดตั้ง transfer_emp.sql แล้วหรือยัง? (' + m + ')') };
+      const code = String(error.code || '');
+      let why;
+      if (code === '57014' || /statement timeout|canceling statement/i.test(m)) {
+        why = 'ย้ายไม่สำเร็จ — ฐานข้อมูลใช้เวลาเกิน 3 วินาทีเลยถูกตัด (ข้อมูลไม่เสีย ย้อนกลับหมดแล้ว) '
+            + '· ต้องรัน supabase/fix-transfer-emp-timeout-2569-11-07.sql ก่อน';
+      } else if (code === 'PGRST202' || /could not find the function|does not exist/i.test(m)) {
+        why = 'ย้ายไม่สำเร็จ — ยังไม่ได้ติดตั้งฟังก์ชัน transfer_emp ในฐานข้อมูล';
+      } else if (/foreign key/i.test(m)) {
+        why = 'ย้ายไม่สำเร็จ — ยังไม่ได้รัน supabase/fix-transfer-emp-2569-09-21.sql (ตารางลูกยังไม่ได้ตั้ง ON UPDATE CASCADE)';
+      } else {
+        why = 'ย้ายไม่สำเร็จ';
+      }
+      return { ok: false, error: why + ' · ' + m };
     }
     if (typeof data === 'string' && data.indexOf('ERROR') === 0) return { ok: false, error: data.replace(/^ERROR:\s*/, '') };
     const finalId = sameId ? oldId : newId;
