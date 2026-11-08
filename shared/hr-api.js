@@ -478,6 +478,10 @@
         // ★ 8 พ.ย. 69 — ส่ง p (ที่มี mgr_emp/mgr_pin) ต่อไปด้วย เพื่อบังคับสโคปสาขาให้ ผจก. ที่ฝั่งนี้
         case 'hr_emp_summary':       return await hrEmpSummary(p.data, p);
         case 'hr_emp_cards':         return await hrEmpCards(p.data, p);
+        // ★ 8 พ.ย. 69 — พนักงานดีเด่นประจำเดือน (ยืนยัน/ยกเลิก = HR เท่านั้น)
+        case 'hr_star_award':        return await hrStarAward(p.data, p);
+        case 'hr_star_revoke':       return await hrStarRevoke(p.data, p);
+        case 'hr_star_history':      return await hrStarHistory(p.data);
         case 'hr_emp_thumbs':        return await hrEmpThumbs(p.data);
         case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
@@ -7108,6 +7112,25 @@
   // ============================================================
   const CARD_MIN_SHIFTS = 5;    // ทำงานน้อยกว่านี้ในรอบ = ยังไม่ติดเหรียญ (กันตัดสินเร็วเกินไป)
   const CARD_MIN_TASKS  = 10;   // งานในกะน้อยกว่านี้ = ไม่ให้เหรียญ "งานเนี้ยบ"
+  // ============================================================
+  // พนักงานดีเด่นประจำเดือน + เบี้ยพนักงานคุณภาพ          ★ 8 พ.ย. 69
+  //   · คัดสาขาละ 1-2 คนต่อรอบ (รอบเงินเดือน 21-20 · เก็บเป็นเดือนของวันสิ้นรอบ)
+  //   · ใช้หัวข้อประเมินชุดเดียวกับหน้าสรุปรายบุคคล — คะแนนรวมคิดที่ hrEmpCards (rank_score)
+  //   · ระบบจัดอันดับให้ แต่คนกดยืนยันคือ HR เท่านั้น
+  //   · ได้เบี้ย 500 บาท เข้าสลิปรอบนั้นอัตโนมัติ (ดู hrPayrollRun — รายการ src:'star')
+  // ============================================================
+  const STAR_PER_BRANCH = 2;          // เพดานต่อสาขาต่อรอบ (ฐานข้อมูลบังคับซ้ำอีกชั้นด้วย trigger)
+  const STAR_LABEL = 'เบี้ยพนักงานคุณภาพ';   // ชื่อรายการบนสลิปเงินเดือน
+  function starCycleKey(which) { return cycleRange(cycleBack(which)).end.slice(0, 7); }
+  async function starAmount() { return await getSettingNum('star_award_amount', 500); }
+  async function starAwardsOf(cycleKey) {
+    try {
+      const { data, error } = await sb().from('star_awards').select('*').eq('cycle', cycleKey);
+      if (error) return { missing: true, rows: [] };     // ยังไม่ได้รัน star_awards.sql
+      return { missing: false, rows: data || [] };
+    } catch (_e) { return { missing: true, rows: [] }; }
+  }
+
   async function hrEmpCards(p, auth) {
     p = p || {};
     // ★ 8 พ.ย. 69 — ผจก.สาขา เปิดแท็บนี้ได้แล้ว แต่ต้องเห็นเฉพาะพนักงานสาขาตัวเอง
@@ -7215,6 +7238,27 @@
         else { tone = 'ok'; foot = 'วินัย ' + (sc != null ? sc : '—') + (lateN === 0 ? ' · ไม่สายเลย' : (' · สาย ' + lateN + ' กะ')); }
       } else if (shifts > 0) { tone = 'none'; foot = 'ทำงาน ' + shifts + ' กะในรอบนี้'; }
 
+      // ---- ★ 8 พ.ย. 69 — คะแนนรวมสำหรับคัด "พนักงานดีเด่นประจำเดือน" ----
+      //   คิดจากหัวข้อประเมินชุดเดียวกับหน้าสรุปรายบุคคลเท่านั้น
+      //   ด้านไหนไม่มีข้อมูลให้ข้ามไป แล้วเฉลี่ยจากน้ำหนักที่เหลือ (ไม่ใช่ให้ 0 ซึ่งจะลงโทษคนที่ยังไม่มีข้อมูล)
+      const axes = [];
+      if (!thin && shifts > 0) axes.push({ k: 'time',   w: 25, v: Math.max(0, 100 - (lateN / shifts) * 300) });
+      if (!thin)               axes.push({ k: 'attend', w: 25, v: Math.max(0, 100 - absN * 50) });
+      if (t.total >= CARD_MIN_TASKS) axes.push({ k: 'quality', w: 20, v: (1 - t.back / t.total) * 100 });
+      if (sc != null && full > 0)    axes.push({ k: 'disc',    w: 20, v: Math.min(100, sc / full * 100) });
+      if (myEx.length)         axes.push({ k: 'know',   w: 10, v: exFirstAll ? 100 : (myEx.filter(a => a.passed === true).length / myEx.length) * 100 });
+      axes.push({ k: 'help', w: 10, v: Math.min(100, help / 5 * 100) });
+      const wsum = axes.reduce((s, a) => s + a.w, 0);
+      const rank_score = wsum ? Math.round(axes.reduce((s, a) => s + a.v * a.w, 0) / wsum * 10) / 10 : null;
+
+      // ---- ประตูขั้นต่ำ: ไม่ผ่านข้อใดข้อหนึ่ง = ไม่เข้าชิง (ไม่ใช่แค่คะแนนน้อย) ----
+      const block = [];
+      if (thin) block.push('ทำงานในรอบนี้เพียง ' + shifts + ' กะ (ต้องอย่างน้อย ' + CARD_MIN_SHIFTS + ')');
+      if (absN > 0) block.push('ขาดงาน ' + absN + ' วัน');
+      if (!thin && shifts > 0 && (lateN / shifts) > 0.02) block.push('สาย ' + lateN + '/' + shifts + ' กะ');
+      if (sc == null || sc < full) block.push('คะแนนวินัยไม่เต็ม (' + (sc == null ? '—' : sc) + '/' + full + ')');
+      if (t.back > 0) block.push('งานในกะถูกตีกลับ ' + t.back + ' ใบ');
+
       return {
         emp_id: e.emp_id, name: e.name || e.emp_id, nickname: e.nickname || '',
         branch_id: e.branch_id || '', branch_name: brName[e.branch_id] || e.branch_id || '—',
@@ -7227,6 +7271,8 @@
         shifts, late_count: lateN, absent_count: absN,
         tasks_total: t.total, tasks_back: t.back,
         medals, star: medals.length >= 3, tone, foot, thin,
+        help_count: help, exam_total: myEx.length, exam_pass_all: exFirstAll,
+        rank_score, eligible: block.length === 0, block_reasons: block,
       };
     }).sort((a, b) => (b.medals.length - a.medals.length) || String(a.name).localeCompare(String(b.name), 'th'));
 
@@ -7235,11 +7281,94 @@
       count: rows.filter(r => r.branch_id === b.branch_id).length,
     })).filter(b => b.count > 0);
 
+    // ★ 8 พ.ย. 69 — ติดธง "พนักงานดีเด่นประจำเดือน" ลงบัตร + สรุปสถานะรายสาขา
+    const cycleKey = cyc.end.slice(0, 7);
+    const aw = await starAwardsOf(cycleKey);
+    const awBy = {}; aw.rows.forEach(a => { awBy[a.emp_id] = a; });
+    rows.forEach(r => { const a = awBy[r.emp_id]; r.star_award = a ? { amount: Number(a.amount || 0), note: a.note || '', awarded_by: a.awarded_by || '', awarded_at: a.awarded_at } : null; });
+
+    const starByBranch = branches.map(b => {
+      const won = rows.filter(r => r.branch_id === b.branch_id && r.star_award);
+      const cand = rows.filter(r => r.branch_id === b.branch_id && r.eligible && !r.star_award)
+                       .sort((x, y) => (y.rank_score || 0) - (x.rank_score || 0));
+      return {
+        branch_id: b.branch_id, name: b.name,
+        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, amount: r.star_award.amount, rank_score: r.rank_score })),
+        slots_left: Math.max(0, STAR_PER_BRANCH - won.length),
+        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, rank_score: r.rank_score, medals: r.medals })),
+        // ★ ไม่มีใครผ่านเกณฑ์เลย = ไม่ต้องฝืนเลือก ขึ้นเตือนให้เห็นแทน
+        none: won.length === 0 && cand.length === 0,
+      };
+    });
+
     return {
-      ok: true, cycle: which, range: { start: cyc.start, end: cyc.end },
+      ok: true, cycle: which, cycle_key: cycleKey, range: { start: cyc.start, end: cyc.end },
       branches, rows,
+      star: { per_branch: STAR_PER_BRANCH, by_branch: starByBranch, table_missing: aw.missing },
       stats: { total: rows.length, star: rows.filter(r => r.star).length, watch: rows.filter(r => r.tone === 'bad' || r.tone === 'warn').length },
     };
+  }
+
+  // มอบรางวัล — HR เท่านั้น (ผจก. ดูได้ แต่กดยืนยันไม่ได้)
+  async function hrStarAward(p, auth) {
+    p = p || {};
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'ยืนยันพนักงานดีเด่นได้เฉพาะสำนักงาน (HR)' };
+    const empId = String(p.emp_id || '').trim();
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const cycleKey = p.cycle_key || starCycleKey(p.which != null ? p.which : 'current');
+
+    const { data: e } = await sb().from('employees').select('emp_id,name,nickname,branch_id').eq('emp_id', empId).maybeSingle();
+    if (!e) return { ok: false, error: 'ไม่พบพนักงาน' };
+
+    // กันมอบให้คนที่ไม่ผ่านเกณฑ์ — คิดจากชุดเดียวกับที่หน้าจอแสดง ไม่เชื่อค่าที่ส่งมาจากหน้าเว็บ
+    const cards = await hrEmpCards({ cycle: p.which != null ? p.which : 'current' }, auth);
+    const row = (cards.rows || []).find(r => r.emp_id === empId);
+    if (!row) return { ok: false, error: 'ไม่พบพนักงานในรอบนี้' };
+    if (!row.eligible && p.force !== true) {
+      return { ok: false, error: 'ยังไม่ผ่านเกณฑ์: ' + (row.block_reasons || []).join(' · ') };
+    }
+
+    const amount = (p.amount != null && p.amount !== '') ? Number(p.amount) : await starAmount();
+    const ins = await sb().from('star_awards').insert({
+      cycle: cycleKey, branch_id: e.branch_id || '', emp_id: empId,
+      emp_name: e.nickname || e.name || empId, amount,
+      rank_score: row.rank_score, reasons: row.medals || [],
+      note: (p.note || '').trim() || null, awarded_by: me.name,
+    });
+    if (ins.error) {
+      const m = String(ins.error.message || ins.error);
+      if (/star_awards/.test(m) && /does not exist|schema cache/i.test(m)) return { ok: false, error: 'ยังไม่ได้รัน supabase/star_awards.sql' };
+      if (/duplicate key/i.test(m)) return { ok: false, error: 'คนนี้ได้รับเลือกในรอบนี้ไปแล้ว' };
+      return { ok: false, error: m };     // รวมข้อความเพดาน 2 คนต่อสาขาจาก trigger
+    }
+    await logAct('ยืนยันพนักงานดีเด่นประจำเดือน', empId,
+      cycleKey + ' · ' + (e.nickname || e.name || empId) + ' · สาขา ' + (e.branch_id || '—') + ' · เบี้ย ' + amount + ' บาท');
+    return { ok: true, cycle_key: cycleKey, amount };
+  }
+
+  async function hrStarRevoke(p, auth) {
+    p = p || {};
+    const me = await _termActor(auth);
+    if (me.role !== 'hr') return { ok: false, error: 'ยกเลิกได้เฉพาะสำนักงาน (HR)' };
+    const empId = String(p.emp_id || '').trim();
+    const cycleKey = p.cycle_key || starCycleKey(p.which != null ? p.which : 'current');
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const r = await sb().from('star_awards').delete().eq('cycle', cycleKey).eq('emp_id', empId);
+    if (r.error) return { ok: false, error: String(r.error.message || r.error) };
+    await logAct('ยกเลิกพนักงานดีเด่นประจำเดือน', empId, cycleKey + (p.note ? (' · ' + p.note) : ''));
+    return { ok: true };
+  }
+
+  // ประวัติรางวัลของคนหนึ่ง (ใช้ในหน้าสรุปรายบุคคล)
+  async function hrStarHistory(p) {
+    const empId = String((p && p.emp_id) || '').trim();
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    try {
+      const { data, error } = await sb().from('star_awards').select('*').eq('emp_id', empId).order('cycle', { ascending: false }).limit(24);
+      if (error) return { ok: true, rows: [], table_missing: true };
+      return { ok: true, rows: data || [] };
+    } catch (_e) { return { ok: true, rows: [], table_missing: true }; }
   }
   async function hrEmpSummary(p, auth) {
     p = p || {};
@@ -10665,6 +10794,13 @@
         if (amt > 0) maintByEmp[r.emp_id] = (maintByEmp[r.emp_id] || 0) + amt;
       });
     } catch (_e) { /* ยังไม่มีระบบซ่อม */ }
+    // ★ 8 พ.ย. 69 — เบี้ยพนักงานคุณภาพของรอบนี้ (พนักงานดีเด่นที่ HR ยืนยันแล้ว)
+    //   ผูกกับรอบด้วย star_awards.cycle โดยตรง จึงไม่มีทางเข้าสลิปผิดรอบหรือจ่ายซ้ำ
+    const starByEmp = {};
+    try {
+      const { data: stRows } = await sb().from('star_awards').select('emp_id,amount').eq('cycle', cyc.end.slice(0, 7));
+      (stRows || []).forEach(r => { const a = Number(r.amount) || 0; if (a > 0) starByEmp[r.emp_id] = a; });
+    } catch (_e) { /* ยังไม่ได้รัน star_awards.sql */ }
     // ★ ค่าที่ ผจก.ระดับสูงกรอกในหน้าตรวจ (payroll_review) — ดึงมาผสมเข้าเงินเดือน
     let reviewMap = {};
     try {
@@ -10728,7 +10864,7 @@
       const advAmt = (rv.advance_override != null) ? Number(rv.advance_override) : (advByEmp[e.emp_id] || 0);
       // เบี้ยพิเศษ/หักสินค้าเสื่อม/หักอื่นๆ จากหน้าตรวจ — ทำเครื่องหมาย src='rv' เพื่อรีเฟรชได้ทุกครั้ง (คงรายการที่ HR ใส่เอง)
       const RES_ADD = 'เบี้ยพิเศษ', RES_D1 = 'สินค้าเสื่อม';
-      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.src !== 'maint' && a.src !== 'shirt' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)' && a.label !== 'ค่าซ่อมบำรุงรถ' && a.label !== 'Delivery';
+      const notRv = a => a.src !== 'rv' && a.src !== 'shift' && a.src !== 'inst' && a.src !== 'fuel' && a.src !== 'maint' && a.src !== 'shirt' && a.src !== 'star' && a.label !== RES_ADD && a.label !== RES_D1 && a.label !== 'หักอื่นๆ' && a.label !== 'ค่ากะดึก' && a.label !== 'ค่าน้ำมัน (เบิก)' && a.label !== 'ค่าซ่อมบำรุงรถ' && a.label !== 'Delivery' && a.label !== STAR_LABEL;
       let additions = (Array.isArray(ex.additions) ? ex.additions : []).filter(notRv);
       if (Number(rv.add_special) > 0) additions.push({ label: RES_ADD, amount: _pr2(Number(rv.add_special)), src: 'rv' });
       if (Number(rv.delivery) > 0) additions.push({ label: 'Delivery', amount: _pr2(Number(rv.delivery)), src: 'rv' });
@@ -10737,6 +10873,9 @@
       if (shiftAmt > 0) additions.push({ label: 'ค่ากะดึก', amount: _pr2(shiftAmt), src: 'shift' });
       // ค่าซ่อมบำรุงรถ (อนุมัติแล้ว) → รายได้จ่ายพร้อมเงินเดือน
       if (Number(maintByEmp[e.emp_id]) > 0) additions.push({ label: 'ค่าซ่อมบำรุงรถ', amount: _pr2(Number(maintByEmp[e.emp_id])), src: 'maint' });
+      // ★ 8 พ.ย. 69 — เบี้ยพนักงานคุณภาพ (พนักงานดีเด่นประจำเดือน) — HR ยืนยันแล้วเข้าสลิปรอบนั้นเอง
+      //   src:'star' → รีเฟรชทุกครั้งที่กดคำนวณใหม่ · ถ้า HR ยกเลิกรางวัล รอบถัดไปที่คำนวณจะหายไปเอง
+      if (Number(starByEmp[e.emp_id]) > 0) additions.push({ label: STAR_LABEL, amount: _pr2(Number(starByEmp[e.emp_id])), src: 'star' });
       let deductions = (Array.isArray(ex.deductions) ? ex.deductions : []).filter(notRv);
       if (Number(rv.ded_damaged) > 0) deductions.push({ label: RES_D1, amount: _pr2(Number(rv.ded_damaged)), src: 'rv' });
       if (Number(rv.ded_other) > 0) deductions.push({ label: String(rv.ded_other_note || '').trim() || 'หักอื่นๆ', amount: _pr2(Number(rv.ded_other)), src: 'rv' });
