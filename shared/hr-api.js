@@ -7293,9 +7293,9 @@
                        .sort((x, y) => (y.rank_score || 0) - (x.rank_score || 0));
       return {
         branch_id: b.branch_id, name: b.name,
-        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, amount: r.star_award.amount, rank_score: r.rank_score })),
+        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, amount: r.star_award.amount, rank_score: r.rank_score })),
         slots_left: Math.max(0, STAR_PER_BRANCH - won.length),
-        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, rank_score: r.rank_score, medals: r.medals })),
+        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, rank_score: r.rank_score, medals: r.medals })),
         // ★ ไม่มีใครผ่านเกณฑ์เลย = ไม่ต้องฝืนเลือก ขึ้นเตือนให้เห็นแทน
         none: won.length === 0 && cand.length === 0,
       };
@@ -7304,7 +7304,10 @@
     return {
       ok: true, cycle: which, cycle_key: cycleKey, range: { start: cyc.start, end: cyc.end },
       branches, rows,
-      star: { per_branch: STAR_PER_BRANCH, by_branch: starByBranch, table_missing: aw.missing },
+      // ★ 8 พ.ย. 69 — closed = รอบนี้จบแล้วหรือยัง · ยืนยันพนักงานดีเด่นได้เฉพาะรอบที่จบแล้ว
+      //   ระหว่างรอบ ข้อมูลยังไหลเข้าทุกวัน คนที่นำอยู่วันนี้พรุ่งนี้สายครั้งเดียวก็หลุดได้
+      //   ถ้ายืนยันกลางรอบแล้วเขาขาดงานทีหลัง ธงกับเบี้ย 500 จะค้างอยู่ทั้งที่ไม่ผ่านเกณฑ์แล้ว
+      star: { per_branch: STAR_PER_BRANCH, by_branch: starByBranch, table_missing: aw.missing, closed: cyc.end < today },
       stats: { total: rows.length, star: rows.filter(r => r.star).length, watch: rows.filter(r => r.tone === 'bad' || r.tone === 'warn').length },
     };
   }
@@ -7317,6 +7320,13 @@
     const empId = String(p.emp_id || '').trim();
     if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
     const cycleKey = p.cycle_key || starCycleKey(p.which != null ? p.which : 'current');
+
+    // ★ 8 พ.ย. 69 — ยืนยันได้เฉพาะ "รอบที่จบแล้ว" — บังคับที่นี่ ไม่ใช่แค่ซ่อนปุ่ม
+    //   รอบปิดวันที่ 20 · ยืนยันได้ตั้งแต่วันที่ 21 ไปจนก่อนปิดเงินเดือน เบี้ยจะลงสลิปรอบนั้นพอดี
+    const _cyc = cycleRange(cycleBack(p.which != null ? p.which : 'current'));
+    if (_cyc.end >= bkkToday()) {
+      return { ok: false, error: 'รอบนี้ยังไม่จบ (ถึง ' + _cyc.end + ') — ยืนยันพนักงานดีเด่นได้หลังรอบจบ เพราะคะแนนยังเปลี่ยนได้ทุกวัน' };
+    }
 
     const { data: e } = await sb().from('employees').select('emp_id,name,nickname,branch_id').eq('emp_id', empId).maybeSingle();
     if (!e) return { ok: false, error: 'ไม่พบพนักงาน' };
