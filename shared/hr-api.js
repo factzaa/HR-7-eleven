@@ -7293,7 +7293,7 @@
                        .sort((x, y) => (y.rank_score || 0) - (x.rank_score || 0));
       return {
         branch_id: b.branch_id, name: b.name,
-        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, amount: r.star_award.amount, rank_score: r.rank_score })),
+        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, medals: r.medals, amount: r.star_award.amount, rank_score: r.rank_score })),
         slots_left: Math.max(0, STAR_PER_BRANCH - won.length),
         candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, rank_score: r.rank_score, medals: r.medals })),
         // ★ ไม่มีใครผ่านเกณฑ์เลย = ไม่ต้องฝืนเลือก ขึ้นเตือนให้เห็นแทน
