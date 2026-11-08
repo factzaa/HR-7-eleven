@@ -16837,34 +16837,52 @@ function ecStarPanel(D){
       +'<br>รายชื่อด้านล่างคือ<b>อันดับ ณ ตอนนี้</b> ไว้ดูแนวโน้มเฉย ๆ · พอรอบจบแล้วสลับช่อง “รอบ” ด้านบนเป็น <b>รอบก่อนหน้า</b> ปุ่มยืนยันจะขึ้นมาเอง</div>';
   }
 
+  // ★ 8 พ.ย. 69 — จัดเป็น "แท่นลำดับ" ที่มีช่องเท่าจำนวนสิทธิ์ของสาขาพอดี (ไม่ใช่โชว์ 5 อันดับแล้วบอกว่าเหลือ 2 สิทธิ์ ซึ่งอ่านแล้วขัดกันเอง)
+  //   แต่ละช่อง = 1 สิทธิ์ · ได้รางวัลแล้ว / ผู้นำอันดับนั้น / ยังไม่มีคนผ่านเกณฑ์
+  //   คนที่เหลือต่อจากนั้นลงไปอยู่แถว "สำรอง" เผื่อคนข้างบนหลุดเกณฑ์ก่อนรอบจบ
+  const N = (st.per_branch||2);
   list.forEach(b=>{
     h+='<div class="sp-br"><div class="sp-brname">สาขา '+esc(b.name)+'</div>';
-    if(b.awarded.length){
-      h+='<div class="sp-won">'+b.awarded.map(a=>
-        '<span class="sp-chip">'+face(a,38)
-        +'<span class="sp-chiptx"><b>'+esc(a.nickname||a.name)+'</b>'
-          +'<small>คะแนนรวม '+esc(String(a.rank_score==null?'—':a.rank_score))+' · เบี้ย '+esc(String(a.amount))+' บาท</small></span>'
-        +(MGR_MODE?'':'<button class="sp-x" data-starrevoke="'+esc(a.emp_id)+'" title="ยกเลิกรางวัล">&times;</button>')
-        +'</span>').join('')+'</div>';
+    if(b.none && !b.awarded.length){
+      h+='<div class="sp-none">⚠ เดือนนี้ไม่มีพนักงานดีเด่นในสาขานี้ — ไม่มีใครผ่านเกณฑ์ขั้นต่ำ (มาครบ · ไม่สาย · วินัยเต็ม · งานไม่ถูกตีกลับ)</div></div>';
+      return;
     }
-    if(b.none){
-      h+='<div class="sp-none">⚠ เดือนนี้ไม่มีพนักงานดีเด่นในสาขานี้ — ไม่มีใครผ่านเกณฑ์ขั้นต่ำ (มาครบ · ไม่สาย · วินัยเต็ม · งานไม่ถูกตีกลับ)</div>';
-    } else if(b.slots_left>0 && b.candidates.length){
-      h+='<div class="sp-cand"><div class="sp-lbl">'+(closed?'ผู้เข้าเกณฑ์':'อันดับ ณ ตอนนี้')
-        +' เรียงตามคะแนนรวม (เหลืออีก '+b.slots_left+' สิทธิ์)</div>';
-      b.candidates.forEach((c,i)=>{
-        h+='<div class="sp-row"><span class="sp-n">'+(i+1)+'</span>'
-          +face(c,44)
-          +'<span class="sp-nm">'+esc(c.nickname||c.name)
-            +'<small>'+esc(c.position||'พนักงานร้าน')+(c.shifts?(' · '+c.shifts+' กะ'):'')+'</small></span>'
-          +'<span class="sp-md">'+(c.medals||[]).map(med).join('')+'</span>'
-          +'<span class="sp-sc">'+esc(String(c.rank_score==null?'—':c.rank_score))+'</span>'
-          +(canAct?'<button class="btn btn-pri btn-sm" data-staraward="'+esc(c.emp_id)+'">ยืนยัน</button>':'')
-          +'</div>';
-      });
-      h+='</div>';
-    } else if(b.slots_left===0){
-      h+='<div class="sp-full">ครบ '+(D.star.per_branch)+' คนแล้วสำหรับรอบนี้</div>';
+    // เรียงคนลงแท่น: ผู้ได้รางวัลก่อน แล้วค่อยผู้นำอันดับถัดไป
+    const slots=[];
+    b.awarded.forEach(a=>slots.push({...a, won:true}));
+    b.candidates.forEach(c=>{ if(slots.length<N) slots.push({...c, won:false}); });
+    const reserves = b.candidates.slice(Math.max(0, N - b.awarded.length));
+
+    // วางใน DOM ตามลำดับอันดับเสมอ (1,2,3) — การสลับให้อันดับ 1 อยู่กลางทำด้วย CSS order
+    //   จะได้ไม่พลาดตอนจอแคบที่ CSS ยกเลิก order แล้วกลับไปใช้ลำดับใน DOM
+    h+='<div class="sp-podium'+(N>=3?' sp-three':'')+'">';
+    for(let idx=0; idx<N; idx++){
+      const s=slots[idx], rank=idx+1;
+      const sz = rank===1?104:86;
+      h+='<div class="sp-pod sp-pod-'+rank+(s?(s.won?' won':''):' empty')+'">';
+      if(s){
+        h+=(s.won?'<span class="sp-ribbon">ดีเด่น</span>':'')
+          +face(s,sz)
+          +'<div class="sp-pnm">'+esc(s.nickname||s.name)+'</div>'
+          +'<div class="sp-ppos">'+esc(s.position||'พนักงานร้าน')+(s.shifts?(' · '+s.shifts+' กะ'):'')+'</div>'
+          +'<div class="sp-pmd">'+(s.medals||[]).map(med).join('')+'</div>'
+          +'<div class="sp-psc">'+esc(String(s.rank_score==null?'—':s.rank_score))+'</div>'
+          +(s.won
+             ? ('<div class="sp-pamt">เบี้ย '+esc(String(s.amount))+' บาท</div>'
+                +(MGR_MODE?'':'<button class="sp-undo" data-starrevoke="'+esc(s.emp_id)+'">ยกเลิกรางวัล</button>'))
+             : (canAct?('<button class="btn btn-pri btn-sm sp-ok" data-staraward="'+esc(s.emp_id)+'">ยืนยันรางวัล</button>')
+                      :'<div class="sp-pwait">'+(closed?'รอ HR ยืนยัน':'ยังไม่จบรอบ')+'</div>'));
+      } else {
+        h+='<div class="sp-pempty">ยังไม่มีผู้ผ่านเกณฑ์</div>';
+      }
+      h+='<div class="sp-base"><span>'+rank+'</span></div></div>';
+    }
+    h+='</div>';
+    if(reserves.length){
+      h+='<div class="sp-res"><span class="sp-reslbl">สำรอง</span>'
+        +reserves.map((c,i)=>'<span class="sp-reschip">'+face(c,26)
+          +esc(c.nickname||c.name)+' <b>'+esc(String(c.rank_score==null?'—':c.rank_score))+'</b></span>').join('')
+        +'</div>';
     }
     h+='</div>';
   });
@@ -21580,6 +21598,45 @@ body.mgr-mode #v_mgrIdBtn{display:inline-flex !important}
 .sp-none{font-size:12.5px;color:#b45309;background:#fffbeb;border:1px dashed #f59e0b;border-radius:9px;padding:8px 11px;line-height:1.6}
 .sp-full{font-size:12px;color:var(--muted)}
 .sp-lbl{font-size:11.5px;color:var(--muted);margin-bottom:5px}
+/* ★ 8 พ.ย. 69 — แท่นลำดับ: มีช่องเท่าจำนวนสิทธิ์ของสาขาพอดี */
+.sp-podium{display:flex;align-items:flex-end;justify-content:center;gap:14px;flex-wrap:wrap;padding:6px 0 0}
+.sp-pod{flex:1 1 150px;max-width:230px;min-width:140px;display:flex;flex-direction:column;align-items:center;
+  text-align:center;position:relative;background:#fff;border:1.5px solid #fde68a;border-radius:14px 14px 0 0;
+  padding:14px 10px 0;box-shadow:0 2px 8px rgba(180,83,9,.08)}
+.sp-pod.won{border-color:#f59e0b;background:linear-gradient(180deg,#fffbeb,#fff)}
+.sp-pod.empty{border-style:dashed;background:#fafaf9}
+/* 3 ที่ขึ้นไป = อันดับ 1 อยู่กลางแบบแท่นรับรางวัลจริง · 2 ที่ = เรียง 1 ซ้าย 2 ขวา ตามการอ่าน */
+.sp-podium.sp-three .sp-pod-1{order:2}
+.sp-podium.sp-three .sp-pod-2{order:1}
+.sp-podium.sp-three .sp-pod-3{order:3}
+.sp-ribbon{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#b45309,#f59e0b);
+  color:#fff;font-size:10.5px;font-weight:800;padding:3px 12px;border-radius:999px;white-space:nowrap;
+  box-shadow:0 2px 5px rgba(0,0,0,.2)}
+.sp-pod .sp-face{margin-bottom:8px;border-width:3px}
+.sp-pnm{font-size:16px;font-weight:800;line-height:1.25}
+.sp-ppos{font-size:11.5px;color:var(--muted);margin-top:2px}
+.sp-pmd{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin:7px 0 4px;min-height:18px}
+.sp-psc{font-size:21px;font-weight:800;color:#065f46;font-variant-numeric:tabular-nums;line-height:1.1}
+.sp-pamt{font-size:11.5px;color:#92400e;margin-top:2px}
+.sp-pwait{font-size:11.5px;color:var(--muted);margin:8px 0 2px}
+.sp-pempty{font-size:12.5px;color:var(--muted);padding:26px 4px}
+.sp-ok{margin:9px 0 2px}
+.sp-undo{margin:7px 0 2px;border:1px solid #fcd34d;background:#fef3c7;color:#92400e;font:inherit;font-size:11.5px;
+  padding:4px 11px;border-radius:999px;cursor:pointer}
+.sp-base{margin-top:10px;width:100%;border-radius:0;background:linear-gradient(180deg,#fcd34d,#f59e0b);
+  display:flex;align-items:center;justify-content:center;color:#7c2d12;font-weight:800;font-size:15px}
+.sp-pod-1 .sp-base{height:46px}
+.sp-pod-2 .sp-base{height:32px}
+.sp-pod-3 .sp-base{height:24px;font-size:13px}
+.sp-pod.empty .sp-base{background:linear-gradient(180deg,#e7e5e4,#d6d3d1);color:#78716c}
+.sp-res{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:11px;padding-top:9px;border-top:1px dashed #fcd34d}
+.sp-reslbl{font-size:11px;color:var(--muted);font-weight:700}
+.sp-reschip{display:inline-flex;align-items:center;gap:6px;background:#fafaf9;border:1px solid var(--line2);
+  border-radius:999px;padding:3px 10px 3px 3px;font-size:12px;color:#57534e}
+.sp-reschip b{color:#065f46}
+@media(max-width:560px){ .sp-pod{flex:1 1 100%;max-width:none;border-radius:14px;padding-bottom:10px}
+  .sp-podium.sp-three .sp-pod-1,.sp-podium.sp-three .sp-pod-2,.sp-podium.sp-three .sp-pod-3{order:0}
+  .sp-base{display:none} }
 .sp-row{display:flex;align-items:center;gap:9px;padding:5px 0;border-top:1px solid #f5f5f4;flex-wrap:wrap}
 .sp-n{width:18px;height:18px;border-radius:50%;background:#e7e5e4;color:#57534e;font-size:11px;font-weight:700;
   display:inline-flex;align-items:center;justify-content:center;flex:none}
