@@ -475,8 +475,9 @@
         case 'hr_task_log':          return await hrTaskLog(p.filter);
         case 'hr_open_tasks':        return await hrOpenTasks();
         case 'hr_task_close_group':  return await hrTaskCloseGroup(p.data);
-        case 'hr_emp_summary':       return await hrEmpSummary(p.data);
-        case 'hr_emp_cards':         return await hrEmpCards(p.data);
+        // ★ 8 พ.ย. 69 — ส่ง p (ที่มี mgr_emp/mgr_pin) ต่อไปด้วย เพื่อบังคับสโคปสาขาให้ ผจก. ที่ฝั่งนี้
+        case 'hr_emp_summary':       return await hrEmpSummary(p.data, p);
+        case 'hr_emp_cards':         return await hrEmpCards(p.data, p);
         case 'hr_emp_thumbs':        return await hrEmpThumbs(p.data);
         case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
@@ -7107,8 +7108,13 @@
   // ============================================================
   const CARD_MIN_SHIFTS = 5;    // ทำงานน้อยกว่านี้ในรอบ = ยังไม่ติดเหรียญ (กันตัดสินเร็วเกินไป)
   const CARD_MIN_TASKS  = 10;   // งานในกะน้อยกว่านี้ = ไม่ให้เหรียญ "งานเนี้ยบ"
-  async function hrEmpCards(p) {
+  async function hrEmpCards(p, auth) {
     p = p || {};
+    // ★ 8 พ.ย. 69 — ผจก.สาขา เปิดแท็บนี้ได้แล้ว แต่ต้องเห็นเฉพาะพนักงานสาขาตัวเอง
+    //   บังคับที่นี่ ไม่ใช่แค่ซ่อนฝั่งหน้าเว็บ (หน้าเว็บเรียก API ตรงได้)
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'รหัส ผจก. หรือ PIN ไม่ถูกต้อง' };
+    const onlyBranch = (me.role === 'mgr') ? me.branch_id : null;
     const which = (p.cycle === 'previous') ? 'previous' : 'current';
     const cyc = cycleRange(cycleBack(which));
     const today = bkkToday();
@@ -7145,6 +7151,9 @@
         return v ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'v=' + v) : u;
       } catch (_e) { return ''; }
     };
+
+    // ★ 8 พ.ย. 69 — ตัดคนนอกสาขาทิ้งตั้งแต่ตรงนี้ ก่อนเอาไปปั้นบัตร
+    if (onlyBranch) empR.data = (empR.data || []).filter(e => String(e.branch_id || '') === String(onlyBranch));
 
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
     const scMap = {}; ((scoreR && scoreR.employees) || []).forEach(s => { scMap[s.emp_id] = s; });
@@ -7232,9 +7241,19 @@
       stats: { total: rows.length, star: rows.filter(r => r.star).length, watch: rows.filter(r => r.tone === 'bad' || r.tone === 'warn').length },
     };
   }
-  async function hrEmpSummary(p) {
+  async function hrEmpSummary(p, auth) {
     p = p || {};
     if (!p.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    // ★ 8 พ.ย. 69 — ผจก. เปิดสรุปได้เฉพาะพนักงานสาขาตัวเอง (กันการยิง emp_id ข้ามสาขาเข้ามาตรง ๆ)
+    const _actor = await _termActor(auth);
+    if (_actor.role === 'invalid') return { ok: false, error: 'รหัส ผจก. หรือ PIN ไม่ถูกต้อง' };
+    if (_actor.role === 'mgr') {
+      const { data: tgt } = await sb().from('employees').select('branch_id').eq('emp_id', p.emp_id).maybeSingle();
+      if (!tgt) return { ok: false, error: 'ไม่พบพนักงาน' };
+      if (String(tgt.branch_id || '') !== String(_actor.branch_id)) {
+        return { ok: false, error: 'ดูได้เฉพาะพนักงานสาขาตัวเอง' };
+      }
+    }
     const today = bkkToday();
     let start, end, rangeLabel;
     if (p.cycle === 'current' || p.cycle === 'previous') {
