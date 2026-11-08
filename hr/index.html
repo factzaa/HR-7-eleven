@@ -16767,6 +16767,8 @@ function ecCardHTML(r){
   return '<button type="button" class="ec-card" data-emp="'+esc(r.emp_id)+'" data-br="'+esc(r.branch_id||'')+'"'
     + ' data-hay="'+esc(hay)+'" data-star="'+(r.star?1:0)+'" data-watch="'+((r.tone==='bad'||r.tone==='warn')?1:0)+'">'
     + (r.star?'<span class="ec-star" title="โดดเด่นภาพรวม">&#9733;</span>':'')
+    /* ★ 8 พ.ย. 69 — ธงพนักงานดีเด่นประจำเดือน (HR ยืนยันแล้วเท่านั้น คนละอย่างกับดาวโดดเด่น) */
+    + (r.star_award?('<span class="ec-flag" title="พนักงานดีเด่นประจำเดือน · เบี้ยพนักงานคุณภาพ '+esc(String(r.star_award.amount))+' บาท">พนักงานดีเด่น</span>'):'')
     + '<span class="ec-stripe"><i></i><i></i><i></i></span>'
     + '<span class="ec-head"><span class="ec-hole"></span><span class="ec-brand">7-Eleven<small>'+esc(r.branch_name)+'</small></span>'
       + (r.is_manager?'<span class="ec-sev">ผจก.</span>':'') + '</span>'
@@ -16806,6 +16808,64 @@ function ecApplyFilter(){
   const em=box.querySelector('.ec-empty'); if(em) em.style.display=shown?'none':'';
   box.querySelectorAll('[data-ecf]').forEach(el=>el.classList.toggle('on', el.getAttribute('data-ecf')===EC_FILTER));
 }
+// ============================================================
+// ★ 8 พ.ย. 69 — แผง "พนักงานดีเด่นประจำเดือน"
+//   สาขาละไม่เกิน 2 คนต่อรอบ · ระบบจัดอันดับให้จากหัวข้อประเมินเดียวกับหน้าสรุปรายบุคคล
+//   HR เป็นคนกดยืนยัน · ผจก. เห็นของสาขาตัวเองแบบอ่านอย่างเดียว
+//   ไม่มีใครผ่านเกณฑ์ = ขึ้นเตือน ไม่ต้องฝืนเลือก
+// ============================================================
+function ecStarPanel(D){
+  const st=D.star; if(!st) return '';
+  if(st.table_missing) return '<div class="es-starpanel warn"><b>⚠ ระบบพนักงานดีเด่นยังไม่พร้อม</b> — ต้องรัน <b>supabase/star_awards.sql</b> ก่อน</div>';
+  let list=st.by_branch||[];
+  if(MGR_MODE) list=list.filter(b=>String(b.branch_id)===String(MGR_BRANCH));
+  if(!list.length) return '';
+  const cyc=D.cycle_key||'';
+  const med=(m)=>ecMd(m.key,(EC_MDNAME[m.key]||m.label)+' — '+(m.why||''));
+
+  let h='<div class="es-starpanel"><div class="sp-head"><h3>🏅 พนักงานดีเด่นประจำเดือน</h3>'
+    +'<span class="sp-cyc">รอบ '+esc(beDate(D.range.start)+' – '+beDate(D.range.end))+'</span></div>';
+
+  list.forEach(b=>{
+    h+='<div class="sp-br"><div class="sp-brname">สาขา '+esc(b.name)+'</div>';
+    if(b.awarded.length){
+      h+='<div class="sp-won">'+b.awarded.map(a=>
+        '<span class="sp-chip"><b>'+esc(a.nickname||a.name)+'</b> · คะแนนรวม '+esc(String(a.rank_score==null?'—':a.rank_score))
+        +' · เบี้ย '+esc(String(a.amount))+' บาท'
+        +(MGR_MODE?'':'<button class="sp-x" data-starrevoke="'+esc(a.emp_id)+'" title="ยกเลิกรางวัล">&times;</button>')
+        +'</span>').join('')+'</div>';
+    }
+    if(b.none){
+      h+='<div class="sp-none">⚠ เดือนนี้ไม่มีพนักงานดีเด่นในสาขานี้ — ไม่มีใครผ่านเกณฑ์ขั้นต่ำ (มาครบ · ไม่สาย · วินัยเต็ม · งานไม่ถูกตีกลับ)</div>';
+    } else if(b.slots_left>0 && b.candidates.length){
+      h+='<div class="sp-cand"><div class="sp-lbl">ผู้เข้าเกณฑ์ เรียงตามคะแนนรวม (เหลืออีก '+b.slots_left+' สิทธิ์)</div>';
+      b.candidates.forEach((c,i)=>{
+        h+='<div class="sp-row"><span class="sp-n">'+(i+1)+'</span>'
+          +'<span class="sp-nm">'+esc(c.nickname||c.name)+'</span>'
+          +'<span class="sp-md">'+(c.medals||[]).map(med).join('')+'</span>'
+          +'<span class="sp-sc">'+esc(String(c.rank_score==null?'—':c.rank_score))+'</span>'
+          +(MGR_MODE?'':'<button class="btn btn-pri btn-sm" data-staraward="'+esc(c.emp_id)+'">ยืนยัน</button>')
+          +'</div>';
+      });
+      h+='</div>';
+    } else if(b.slots_left===0){
+      h+='<div class="sp-full">ครบ '+(D.star.per_branch)+' คนแล้วสำหรับรอบนี้</div>';
+    }
+    h+='</div>';
+  });
+  h+='<div class="sp-foot">คัดจากหัวข้อประเมินในหน้าสรุปรายบุคคลเท่านั้น — ตรงเวลา 25 · มาครบตามเวร 25 · คุณภาพงานในกะ 20 · วินัย 20 · ความรู้ 10 · ช่วยทีม 10'
+    +(MGR_MODE?'<br>สำนักงาน (HR) เป็นผู้ยืนยันรางวัล':'<br>ยืนยันแล้ว เบี้ยพนักงานคุณภาพจะขึ้นในสลิปเงินเดือนรอบนี้ให้เอง — กดคำนวณเงินเดือนรอบนี้ใหม่หลังยืนยัน')+'</div></div>';
+  return h;
+}
+async function ecStarAct(empId, act){
+  const D=EC_DATA; if(!D) return;
+  if(act==='revoke' && !confirm('ยกเลิกรางวัลพนักงานดีเด่นของคนนี้?')) return;
+  const r=await post({ action: act==='award'?'hr_star_award':'hr_star_revoke', ...authBody(),
+    data:{ emp_id:empId, cycle_key:D.cycle_key, which:(($('es_mode')&&$('es_mode').value==='previous')?'previous':'current') } });
+  if(!r||!r.ok){ toast('err',(r&&r.error)||'ไม่สำเร็จ'); return; }
+  toast('ok', act==='award'?'ยืนยันพนักงานดีเด่นแล้ว':'ยกเลิกแล้ว');
+  loadEmpCards(true);
+}
 function renderEmpCards(){
   const D=EC_DATA; if(!D) return;
   const byBr={}; D.rows.forEach(r=>{ (byBr[r.branch_id||'']||(byBr[r.branch_id||'']=[])).push(r); });
@@ -16821,6 +16881,7 @@ function renderEmpCards(){
     +'<span class="ec-chip" data-ecf="watch">&#9888; ต้องดูแล <span class="n">'+D.stats.watch+'</span></span>'
     +'<button class="ec-chip" id="ec_reload" title="ดึงข้อมูลใหม่จากเซิร์ฟเวอร์" style="cursor:pointer">&#8635;</button>'
     +'</div>';
+  h+=ecStarPanel(D);
   h+='<div class="ec-empty empty" style="display:none">ไม่พบพนักงานตามเงื่อนไข</div>';
 
   const secHTML=(name, list)=>{
@@ -16849,7 +16910,10 @@ function renderEmpCards(){
   if(qi){ qi.oninput=()=>{ EC_Q=qi.value; clearTimeout(qi._t); qi._t=setTimeout(ecApplyFilter,140); }; }
   $('es_cards').querySelectorAll('[data-ecf]').forEach(el=>{ el.onclick=()=>{ EC_FILTER=el.getAttribute('data-ecf'); ecApplyFilter(); }; });
   $('es_cards').querySelectorAll('.ec-card').forEach(el=>{ el.onclick=()=>openEmpCard(el.getAttribute('data-emp')); });
-  $('ec_reload') && ($('ec_reload').onclick=()=>{ try{ sessionStorage.removeItem('ec_cards_'+EC_DATA.cycle); }catch(_e){} loadEmpCards(true); });
+  $('ec_reload') && ($('ec_reload').onclick=()=>{ try{ sessionStorage.removeItem(ecCacheKey(EC_DATA.cycle)); }catch(_e){} loadEmpCards(true); });
+  // ★ 8 พ.ย. 69 — ปุ่มยืนยัน/ยกเลิกพนักงานดีเด่น (โผล่เฉพาะโหมด HR)
+  $('es_cards').querySelectorAll('[data-staraward]').forEach(el=>{ el.onclick=e=>{ e.stopPropagation(); ecStarAct(el.getAttribute('data-staraward'),'award'); }; });
+  $('es_cards').querySelectorAll('[data-starrevoke]').forEach(el=>{ el.onclick=e=>{ e.stopPropagation(); ecStarAct(el.getAttribute('data-starrevoke'),'revoke'); }; });
   ecApplyFilter();
 }
 function openEmpCard(empId){
@@ -17045,10 +17109,26 @@ function renderEmpAnalysis(r){
     +'</div>';
   return h;
 }
+// ★ 8 พ.ย. 69 — ป้าย "พนักงานดีเด่นประจำเดือน" บนหัวหน้าสรุปรายบุคคล
+//   อ่านจากข้อมูลบัตรที่โหลดไว้แล้ว (EC_DATA) จึงไม่ต้องยิง API เพิ่ม
+function esStarBanner(empId){
+  if(!empId || !EC_DATA || !EC_DATA.rows) return '';
+  const row=EC_DATA.rows.find(x=>String(x.emp_id)===String(empId));
+  if(!row || !row.star_award) return '';
+  const a=row.star_award;
+  return '<div class="es-starbadge">🏅 <b>พนักงานดีเด่นประจำเดือน</b>'
+    +' <span>รอบ '+esc(beDate(EC_DATA.range.start)+' – '+beDate(EC_DATA.range.end))+'</span>'
+    +' <span>เบี้ยพนักงานคุณภาพ '+esc(String(a.amount))+' บาท</span>'
+    +(a.awarded_by?(' <span class="by">ยืนยันโดย '+esc(a.awarded_by)+'</span>'):'')
+    +(a.note?('<div class="nt">'+esc(a.note)+'</div>'):'')
+    +'</div>';
+}
 function renderEmpSum(r){
   const e=r.emp, a=r.attendance, d=r.discipline, t=r.tasks, sp=r.special, det=r.details;
   const g=new Date(r.range.generated); const genTxt=g.toLocaleDateString('th-TH')+' '+g.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
-  let h=renderEmpAnalysis(r);
+  // ★ 8 พ.ย. 69 — ป้ายพนักงานดีเด่นประจำเดือน (ขึ้นทั้งบนจอและในเอกสารที่พิมพ์)
+  let h=esStarBanner(e && e.emp_id);
+  h+=renderEmpAnalysis(r);
   h+='<div class="no-print" style="margin:4px 0 12px"><button class="btn btn-sec btn-sm" id="es_toggle">▸ ดูเอกสาร A4 (ฉบับพิมพ์/เซ็นรับทราบ)</button></div>';
   h+='<div id="es_docwrap" class="es-docwrap" style="display:none"><div class="es-report">';
   h+='<div class="es-head"><div><div class="es-title">สรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
@@ -21457,6 +21537,43 @@ body.mgr-mode #v_toggleBtn,
 body.mgr-mode #empRows [data-del],
 body.mgr-mode #empCards [data-del]{display:none !important}
 body.mgr-mode #v_mgrIdBtn{display:inline-flex !important}
+/* ★ 8 พ.ย. 69 — ธงพนักงานดีเด่นประจำเดือน + แผงคัดเลือก */
+.ec-card{position:relative}
+.ec-flag{position:absolute;top:0;left:0;z-index:4;background:linear-gradient(135deg,#b45309,#f59e0b);color:#fff;
+  font-size:10px;font-weight:800;letter-spacing:.2px;padding:3px 9px 3px 7px;border-radius:12px 0 12px 0;
+  box-shadow:0 2px 5px rgba(0,0,0,.22);pointer-events:none}
+.es-starpanel{border:1.5px solid #fcd34d;background:linear-gradient(180deg,#fffbeb,#fff);border-radius:14px;padding:13px 15px;margin:0 0 14px}
+.es-starpanel.warn{border-color:#fca5a5;background:#fef2f2;color:#991b1b;font-size:13px}
+.es-starpanel .sp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.es-starpanel .sp-head h3{margin:0;font-size:15px;font-weight:800;color:#92400e;flex:1}
+.es-starpanel .sp-cyc{font-size:12px;color:var(--muted)}
+.sp-br{border-top:1px dashed #fcd34d;padding:9px 0 3px}
+.sp-br:first-of-type{border-top:0}
+.sp-brname{font-size:12.5px;font-weight:700;color:#78350f;margin-bottom:6px}
+.sp-won{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:7px}
+.sp-chip{display:inline-flex;align-items:center;gap:7px;background:#fef3c7;border:1px solid #f59e0b;border-radius:999px;
+  padding:4px 6px 4px 12px;font-size:12.5px;color:#78350f}
+.sp-x{border:0;background:#fde68a;color:#92400e;width:19px;height:19px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1}
+.sp-none{font-size:12.5px;color:#b45309;background:#fffbeb;border:1px dashed #f59e0b;border-radius:9px;padding:8px 11px;line-height:1.6}
+.sp-full{font-size:12px;color:var(--muted)}
+.sp-lbl{font-size:11.5px;color:var(--muted);margin-bottom:5px}
+.sp-row{display:flex;align-items:center;gap:9px;padding:5px 0;border-top:1px solid #f5f5f4;flex-wrap:wrap}
+.sp-n{width:18px;height:18px;border-radius:50%;background:#e7e5e4;color:#57534e;font-size:11px;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;flex:none}
+.sp-nm{font-size:13.5px;font-weight:600;min-width:90px}
+.sp-md{display:flex;gap:3px;flex:1;flex-wrap:wrap}
+.sp-sc{font-size:13px;font-weight:800;color:#065f46;font-variant-numeric:tabular-nums}
+.sp-foot{font-size:11px;color:var(--muted);line-height:1.7;margin-top:9px;padding-top:8px;border-top:1px dashed #fcd34d}
+@media(max-width:520px){ .sp-nm{min-width:0;flex:1} .sp-md{flex-basis:100%;order:5} }
+.es-starbadge{display:flex;align-items:center;gap:10px;flex-wrap:wrap;max-width:820px;margin:0 auto 12px;
+  border:1.5px solid #f59e0b;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-radius:12px;
+  padding:10px 15px;font-size:13px;color:#78350f}
+.es-starbadge b{font-size:14.5px}
+.es-starbadge span{font-size:12px;color:#92400e}
+.es-starbadge .by{color:var(--muted)}
+.es-starbadge .nt{flex-basis:100%;font-size:12px;color:#92400e;border-top:1px dashed #f59e0b;padding-top:6px;line-height:1.6}
+@media print{ .es-starbadge{break-inside:avoid;border:1pt solid #b45309;background:#fff} }
+
 /* ★ 8 พ.ย. 69 — แท็บ "สรุปรายบุคคล" สำหรับ ผจก.: ดูอย่างเดียว เห็นเฉพาะสาขาตัวเอง
    ซ่อนทุกจุดที่เขียนข้อมูลกลับเข้าระบบ (เซิร์ฟเวอร์กันซ้ำอีกชั้น ไม่ได้พึ่ง CSS อย่างเดียว)
    ส่วนปุ่มพิมพ์เอกสาร/ออกบัตรพนักงาน ยังใช้ได้ตามปกติ เพราะไม่เปลี่ยนข้อมูล */
