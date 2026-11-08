@@ -16820,31 +16820,46 @@ function ecStarPanel(D){
   let list=st.by_branch||[];
   if(MGR_MODE) list=list.filter(b=>String(b.branch_id)===String(MGR_BRANCH));
   if(!list.length) return '';
-  const cyc=D.cycle_key||'';
   const med=(m)=>ecMd(m.key,(EC_MDNAME[m.key]||m.label)+' — '+(m.why||''));
+  // ★ 8 พ.ย. 69 — ปุ่มยืนยันโผล่เฉพาะ "รอบที่จบแล้ว" (เซิร์ฟเวอร์บังคับซ้ำอีกชั้น)
+  //   ระหว่างรอบ คะแนนยังขยับทุกวัน ถ้ายืนยันไปก่อนแล้วเขาขาดงานทีหลัง
+  //   ธงกับเบี้ย 500 จะค้างอยู่ทั้งที่ไม่ผ่านเกณฑ์แล้ว
+  const closed = st.closed === true;
+  const canAct = !MGR_MODE && closed;
+  const face=(c,sz)=>'<span class="sp-face" style="width:'+sz+'px;height:'+sz+'px;font-size:'+Math.round(sz*0.42)+'px">'
+    +(c.photo_url?('<img src="'+esc(c.photo_url)+'" alt="" loading="lazy" decoding="async">')
+                 :esc(String(c.nickname||c.name||'?').trim().slice(0,1)))+'</span>';
 
   let h='<div class="es-starpanel"><div class="sp-head"><h3>🏅 พนักงานดีเด่นประจำเดือน</h3>'
     +'<span class="sp-cyc">รอบ '+esc(beDate(D.range.start)+' – '+beDate(D.range.end))+'</span></div>';
+  if(!closed){
+    h+='<div class="sp-open">⏳ <b>รอบนี้ยังไม่จบ</b> (ถึง '+esc(beDate(D.range.end))+') — คะแนนยังเปลี่ยนได้ทุกวัน จึงยังยืนยันไม่ได้'
+      +'<br>รายชื่อด้านล่างคือ<b>อันดับ ณ ตอนนี้</b> ไว้ดูแนวโน้มเฉย ๆ · พอรอบจบแล้วสลับช่อง “รอบ” ด้านบนเป็น <b>รอบก่อนหน้า</b> ปุ่มยืนยันจะขึ้นมาเอง</div>';
+  }
 
   list.forEach(b=>{
     h+='<div class="sp-br"><div class="sp-brname">สาขา '+esc(b.name)+'</div>';
     if(b.awarded.length){
       h+='<div class="sp-won">'+b.awarded.map(a=>
-        '<span class="sp-chip"><b>'+esc(a.nickname||a.name)+'</b> · คะแนนรวม '+esc(String(a.rank_score==null?'—':a.rank_score))
-        +' · เบี้ย '+esc(String(a.amount))+' บาท'
+        '<span class="sp-chip">'+face(a,38)
+        +'<span class="sp-chiptx"><b>'+esc(a.nickname||a.name)+'</b>'
+          +'<small>คะแนนรวม '+esc(String(a.rank_score==null?'—':a.rank_score))+' · เบี้ย '+esc(String(a.amount))+' บาท</small></span>'
         +(MGR_MODE?'':'<button class="sp-x" data-starrevoke="'+esc(a.emp_id)+'" title="ยกเลิกรางวัล">&times;</button>')
         +'</span>').join('')+'</div>';
     }
     if(b.none){
       h+='<div class="sp-none">⚠ เดือนนี้ไม่มีพนักงานดีเด่นในสาขานี้ — ไม่มีใครผ่านเกณฑ์ขั้นต่ำ (มาครบ · ไม่สาย · วินัยเต็ม · งานไม่ถูกตีกลับ)</div>';
     } else if(b.slots_left>0 && b.candidates.length){
-      h+='<div class="sp-cand"><div class="sp-lbl">ผู้เข้าเกณฑ์ เรียงตามคะแนนรวม (เหลืออีก '+b.slots_left+' สิทธิ์)</div>';
+      h+='<div class="sp-cand"><div class="sp-lbl">'+(closed?'ผู้เข้าเกณฑ์':'อันดับ ณ ตอนนี้')
+        +' เรียงตามคะแนนรวม (เหลืออีก '+b.slots_left+' สิทธิ์)</div>';
       b.candidates.forEach((c,i)=>{
         h+='<div class="sp-row"><span class="sp-n">'+(i+1)+'</span>'
-          +'<span class="sp-nm">'+esc(c.nickname||c.name)+'</span>'
+          +face(c,44)
+          +'<span class="sp-nm">'+esc(c.nickname||c.name)
+            +'<small>'+esc(c.position||'พนักงานร้าน')+(c.shifts?(' · '+c.shifts+' กะ'):'')+'</small></span>'
           +'<span class="sp-md">'+(c.medals||[]).map(med).join('')+'</span>'
           +'<span class="sp-sc">'+esc(String(c.rank_score==null?'—':c.rank_score))+'</span>'
-          +(MGR_MODE?'':'<button class="btn btn-pri btn-sm" data-staraward="'+esc(c.emp_id)+'">ยืนยัน</button>')
+          +(canAct?'<button class="btn btn-pri btn-sm" data-staraward="'+esc(c.emp_id)+'">ยืนยัน</button>':'')
           +'</div>';
       });
       h+='</div>';
@@ -16854,7 +16869,8 @@ function ecStarPanel(D){
     h+='</div>';
   });
   h+='<div class="sp-foot">คัดจากหัวข้อประเมินในหน้าสรุปรายบุคคลเท่านั้น — ตรงเวลา 25 · มาครบตามเวร 25 · คุณภาพงานในกะ 20 · วินัย 20 · ความรู้ 10 · ช่วยทีม 10'
-    +(MGR_MODE?'<br>สำนักงาน (HR) เป็นผู้ยืนยันรางวัล':'<br>ยืนยันแล้ว เบี้ยพนักงานคุณภาพจะขึ้นในสลิปเงินเดือนรอบนี้ให้เอง — กดคำนวณเงินเดือนรอบนี้ใหม่หลังยืนยัน')+'</div></div>';
+    +(MGR_MODE?'<br>สำนักงาน (HR) เป็นผู้ยืนยันรางวัล หลังรอบจบแล้ว'
+              :'<br>ยืนยันได้หลังรอบจบเท่านั้น · ยืนยันแล้ว เบี้ยพนักงานคุณภาพจะขึ้นในสลิปเงินเดือนรอบนั้นให้เอง — กดคำนวณเงินเดือนรอบนั้นใหม่หลังยืนยัน')+'</div></div>';
   return h;
 }
 async function ecStarAct(empId, act){
@@ -21551,8 +21567,15 @@ body.mgr-mode #v_mgrIdBtn{display:inline-flex !important}
 .sp-br:first-of-type{border-top:0}
 .sp-brname{font-size:12.5px;font-weight:700;color:#78350f;margin-bottom:6px}
 .sp-won{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:7px}
-.sp-chip{display:inline-flex;align-items:center;gap:7px;background:#fef3c7;border:1px solid #f59e0b;border-radius:999px;
-  padding:4px 6px 4px 12px;font-size:12.5px;color:#78350f}
+.sp-chip{display:inline-flex;align-items:center;gap:9px;background:#fef3c7;border:1px solid #f59e0b;border-radius:999px;
+  padding:4px 8px 4px 4px;font-size:12.5px;color:#78350f}
+.sp-chiptx{display:flex;flex-direction:column;line-height:1.35}
+.sp-chiptx small{font-size:11px;color:#92400e;opacity:.9}
+.sp-face{flex:none;border-radius:50%;overflow:hidden;background:#e7e5e4;color:#78716c;font-weight:800;
+  display:inline-flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.sp-face img{width:100%;height:100%;object-fit:cover;display:block}
+.sp-open{font-size:12.5px;color:#92400e;background:#fffbeb;border:1px dashed #f59e0b;border-radius:9px;
+  padding:9px 12px;line-height:1.7;margin-bottom:4px}
 .sp-x{border:0;background:#fde68a;color:#92400e;width:19px;height:19px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1}
 .sp-none{font-size:12.5px;color:#b45309;background:#fffbeb;border:1px dashed #f59e0b;border-radius:9px;padding:8px 11px;line-height:1.6}
 .sp-full{font-size:12px;color:var(--muted)}
@@ -21560,7 +21583,8 @@ body.mgr-mode #v_mgrIdBtn{display:inline-flex !important}
 .sp-row{display:flex;align-items:center;gap:9px;padding:5px 0;border-top:1px solid #f5f5f4;flex-wrap:wrap}
 .sp-n{width:18px;height:18px;border-radius:50%;background:#e7e5e4;color:#57534e;font-size:11px;font-weight:700;
   display:inline-flex;align-items:center;justify-content:center;flex:none}
-.sp-nm{font-size:13.5px;font-weight:600;min-width:90px}
+.sp-nm{font-size:13.5px;font-weight:600;min-width:90px;display:flex;flex-direction:column;line-height:1.35}
+.sp-nm small{font-size:11px;font-weight:400;color:var(--muted)}
 .sp-md{display:flex;gap:3px;flex:1;flex-wrap:wrap}
 .sp-sc{font-size:13px;font-weight:800;color:#065f46;font-variant-numeric:tabular-nums}
 .sp-foot{font-size:11px;color:var(--muted);line-height:1.7;margin-top:9px;padding-top:8px;border-top:1px dashed #fcd34d}
