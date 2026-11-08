@@ -3768,7 +3768,10 @@ function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : 
 // ★ 24 ก.ย. 69 — เพิ่ม 'recruit': ผจก. ดูใบสมัครงานได้ แต่เห็นเฉพาะคนที่สมัครสาขาตัวเอง (เซิร์ฟเวอร์บังคับอีกชั้น)
 // ★ 6 ต.ค. 69 — เปิดหน้ายอดขายให้ ผจก.สาขา (salesDash) — ดูได้เฉพาะสาขาตัวเอง ล็อกไว้ใน loadSalesDash()
 // ★ 10 ต.ค. 69 — เปิดเมนูคู่มือให้ ผจก. — เห็นเฉพาะส่วน "อ่านคู่มือ" · ส่วนนำเข้า/บทเรียน/ข้อสอบซ้อม ถูกซ่อน
-const MGR_TABS = ['shirt','mgrtasks','dashboard','stock','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit'];
+// ★ 8 พ.ย. 69 — เปิดเมนู "สรุปรายบุคคล" (empsum) ให้ ผจก. — ดูอย่างเดียว เห็นเฉพาะพนักงานสาขาตัวเอง
+//   เซิร์ฟเวอร์กรองสาขาให้เอง (hrEmpCards/hrEmpSummary) ไม่ได้พึ่งการซ่อนฝั่งหน้าเว็บอย่างเดียว
+//   ปุ่มที่เขียนข้อมูล (บวกคะแนน · ให้นิดาแนะนำคะแนน · ช่องบันทึกของ HR) ถูกซ่อน · พิมพ์เอกสาร/ออกบัตรยังใช้ได้
+const MGR_TABS = ['shirt','mgrtasks','dashboard','stock','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit','empsum'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -16732,18 +16735,21 @@ function esShowDetail(){
 }
 // ★ 24 ก.ย. 69 — เก็บผลไว้ในเครื่อง 10 นาที · เข้าแท็บนี้ซ้ำจะขึ้นทันทีไม่ต้องรอโหลดใหม่
 const EC_TTL=10*60*1000;
+// ★ 8 พ.ย. 69 — แยกคีย์แคชตามโหมด: เครื่องสาขาเครื่องเดียวอาจเปิดทั้งหน้า HR และหน้า ผจก.
+//   ถ้าใช้คีย์เดียวกัน ผจก. อาจได้บัตรของทุกสาขาจากแคชที่ HR ทิ้งไว้
+function ecCacheKey(cyc){ return 'ec_cards_'+(MGR_MODE?('mgr_'+MGR_BRANCH+'_'):'')+cyc; }
 function ecCacheGet(cyc){
-  try{ const o=JSON.parse(sessionStorage.getItem('ec_cards_'+cyc)||'null');
+  try{ const o=JSON.parse(sessionStorage.getItem(ecCacheKey(cyc))||'null');
     if(o && o.t && (Date.now()-o.t)<EC_TTL && o.d) return o.d; }catch(_e){}
   return null;
 }
-function ecCacheSet(cyc,d){ try{ sessionStorage.setItem('ec_cards_'+cyc, JSON.stringify({t:Date.now(),d})); }catch(_e){} }
+function ecCacheSet(cyc,d){ try{ sessionStorage.setItem(ecCacheKey(cyc), JSON.stringify({t:Date.now(),d})); }catch(_e){} }
 async function loadEmpCards(force){
   const cyc=($('es_mode')&&$('es_mode').value==='previous')?'previous':'current';
   if(EC_DATA && EC_DATA.cycle===cyc && !force){ renderEmpCards(); return; }
   if(!force){ const c=ecCacheGet(cyc); if(c){ EC_DATA=c; renderEmpCards(); return; } }
   $('es_cards').innerHTML='<div class="empty">กำลังโหลดบัตรพนักงาน…</div>';
-  let r; try{ r=await post({action:'hr_emp_cards',password:pwd,data:{cycle:cyc}}); }
+  let r; try{ r=await post({action:'hr_emp_cards', ...authBody(), data:{cycle:cyc}}); }
   catch(e){ $('es_cards').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
   if(!r||!r.ok){ $('es_cards').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
   EC_DATA=r; ecCacheSet(cyc,r); renderEmpCards();
@@ -16855,7 +16861,10 @@ function openEmpCard(empId){
 
 function initEmpSum(){
   if(DATA && DATA.rows && $('es_emp') && !$('es_emp').dataset.filled){
-    ES_EMP_ALL=DATA.rows.filter(e=>e.active!==false).map(e=>({emp_id:e.emp_id,name:e.name}));
+    // ★ 8 พ.ย. 69 — ผจก. เลือกได้เฉพาะลูกน้องสาขาตัวเอง (เซิร์ฟเวอร์ตีกลับอีกชั้นถ้ายิงข้ามสาขา)
+    ES_EMP_ALL=DATA.rows.filter(e=>e.active!==false)
+      .filter(e=>!MGR_MODE || String(e.branch_id)===String(MGR_BRANCH))
+      .map(e=>({emp_id:e.emp_id,name:e.name}));
     fillSelect($('es_emp'), ES_EMP_ALL.map(e=>[e.emp_id, e.emp_id+' · '+e.name]), '— เลือกพนักงาน —');
     $('es_emp').dataset.filled='1';
     esLoadStatus();
@@ -16902,7 +16911,7 @@ async function genEmpSum(){
   const emp=$('es_emp').value; if(!emp){ toast('err','เลือกพนักงานก่อน'); return; }
   esShowDetail();
   const mode=$('es_mode').value;
-  const req={ action:'hr_emp_summary', password:pwd, data:{ emp_id:emp } };
+  const req={ action:'hr_emp_summary', ...authBody(), data:{ emp_id:emp } };
   if(mode==='custom'){ const s=$('es_start').value, e=$('es_end').value; if(!s||!e){ toast('err','เลือกช่วงวันที่ให้ครบ'); return; } req.data.start=s; req.data.end=e; }
   else req.data.cycle=mode;
   $('es_body').innerHTML='<div class="empty">กำลังสร้างสรุป…</div>'; $('es_print').style.display='none';
@@ -21448,6 +21457,14 @@ body.mgr-mode #v_toggleBtn,
 body.mgr-mode #empRows [data-del],
 body.mgr-mode #empCards [data-del]{display:none !important}
 body.mgr-mode #v_mgrIdBtn{display:inline-flex !important}
+/* ★ 8 พ.ย. 69 — แท็บ "สรุปรายบุคคล" สำหรับ ผจก.: ดูอย่างเดียว เห็นเฉพาะสาขาตัวเอง
+   ซ่อนทุกจุดที่เขียนข้อมูลกลับเข้าระบบ (เซิร์ฟเวอร์กันซ้ำอีกชั้น ไม่ได้พึ่ง CSS อย่างเดียว)
+   ส่วนปุ่มพิมพ์เอกสาร/ออกบัตรพนักงาน ยังใช้ได้ตามปกติ เพราะไม่เปลี่ยนข้อมูล */
+body.mgr-mode #es_ai,
+body.mgr-mode #es_bonus,
+body.mgr-mode #es_ai_box,
+body.mgr-mode #es_apply_bonus{display:none !important}
+body.mgr-mode #es_body .es-wbox{display:none !important}
 #asstFab img{width:100%;height:100%;object-fit:contain;pointer-events:none;position:relative;z-index:2}
 #asstFab .fbadge{position:absolute;top:2px;right:0;z-index:3;background:#ea580c;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
 #asstFab::before,#asstFab::after{content:none;}
