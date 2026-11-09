@@ -7121,6 +7121,7 @@
   // ============================================================
   const STAR_PER_BRANCH = 2;          // เพดานต่อสาขาต่อรอบ (ฐานข้อมูลบังคับซ้ำอีกชั้นด้วย trigger)
   const STAR_LABEL = 'เบี้ยพนักงานคุณภาพ';   // ชื่อรายการบนสลิปเงินเดือน
+  const STAR_MAX_LATE = 1;            // สายได้ไม่เกินกี่ครั้งต่อรอบถึงยังเข้าชิงได้ (0 = ห้ามสายเลย)
   function starCycleKey(which) { return cycleRange(cycleBack(which)).end.slice(0, 7); }
   async function starAmount() { return await getSettingNum('star_award_amount', 500); }
   async function starAwardsOf(cycleKey) {
@@ -7280,7 +7281,11 @@
       const block = [];
       if (thin) block.push('ทำงานในรอบนี้เพียง ' + shifts + ' กะ (ต้องอย่างน้อย ' + CARD_MIN_SHIFTS + ')');
       if (absN > 0) block.push('ขาดงาน ' + absN + ' วัน');
-      if (!thin && shifts > 0 && (lateN / shifts) > 0.02) block.push('สาย ' + lateN + '/' + shifts + ' กะ');
+      // ★ 9 พ.ย. 69 — ผ่อนจาก "ห้ามสายเลย" เป็น "สายได้ไม่เกิน 1 ครั้งต่อรอบ"
+      //   ของเดิมเขียนเป็น 2% ของกะ ซึ่งอ่านแล้วเหมือนผ่อนให้ แต่รอบหนึ่ง 15-25 กะ
+      //   2% = 0.3-0.5 กะ แปลว่าสายครั้งเดียวก็ตกทันที คนจึงผ่านเกณฑ์น้อยมาก
+      //   หมายเหตุ: ครั้งที่ยอมให้ยังหักคะแนนด้าน "ตรงเวลา" อยู่ คนไม่สายเลยจึงยังนำอยู่ดี
+      if (!thin && lateN > STAR_MAX_LATE) block.push('สาย ' + lateN + ' ครั้ง (ยอมให้ไม่เกิน ' + STAR_MAX_LATE + ')');
       if (sc == null || sc < full) block.push('คะแนนวินัยไม่เต็ม (' + (sc == null ? '—' : sc) + '/' + full + ')');
       if (t.back > 0) block.push('งานในกะถูกตีกลับ ' + t.back + ' ใบ');
 
