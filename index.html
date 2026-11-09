@@ -1104,6 +1104,10 @@ if('serviceWorker' in navigator){window.addEventListener('load',function(){navig
             await Promise.all(rs.map(function(r){ return r.update().catch(function(){}); })); } } catch(e){}
       try { if (window.caches) { var ks = await caches.keys();
             await Promise.all(ks.map(function(k){ return caches.delete(k); })); } } catch(e){}
+      // ล้างแคชข้อมูลในแอป แต่เก็บคีย์ล็อกอิน/ด่านรหัสไว้
+      try { var KEEP={hr_pwd:1,mgr_branch:1,mgr_emp:1,mgr_pin:1,login_mode:1,gate_ok:1,app_reload:1}, drop=[];
+            for (var i=0;i<sessionStorage.length;i++){ var k=sessionStorage.key(i); if(k && !KEEP[k]) drop.push(k); }
+            drop.forEach(function(k){ try{ sessionStorage.removeItem(k); }catch(e){} }); } catch(e){}
       try { sessionStorage.setItem('app_reload', String(Date.now())); } catch(e){}
       location.replace(location.href);
     } catch(e) {
