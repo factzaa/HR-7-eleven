@@ -4492,9 +4492,22 @@
         await Promise.all(keys.map(k => caches.delete(k)));
       }
     } catch (e) { }
-    // 3) บอกด่านรหัสหน้าแรกว่า "นี่คือการรีเฟรชจากในแอป ไม่ใช่เปิดแอปใหม่" จะได้ไม่ถามรหัสซ้ำ
+    // 3) ★ 9 พ.ย. 69 — ล้าง "แคชข้อมูลในแอป" ที่เก็บไว้ใน sessionStorage ด้วย
+    //   ของพวกนี้รอดจากการรีเฟรชโดยตั้งใจ (เพื่อไม่ต้องล็อกอินใหม่) แต่ทำให้กดอัปเดตแล้ว
+    //   ยังเห็นข้อมูลชุดเดิม เช่น บัตรพนักงานที่แคชไว้ 10 นาที → อัปเดตโค้ดแล้วแต่ตัวเลขไม่ขยับ
+    //   ลบเฉพาะคีย์ที่เป็น "ข้อมูลที่ดึงมาแคชไว้" · คีย์ล็อกอินกับด่านรหัสไม่แตะ
+    try {
+      var KEEP = { hr_pwd: 1, mgr_branch: 1, mgr_emp: 1, mgr_pin: 1, login_mode: 1, gate_ok: 1, app_reload: 1 };
+      var drop = [];
+      for (var i = 0; i < sessionStorage.length; i++) {
+        var k = sessionStorage.key(i);
+        if (k && !KEEP[k]) drop.push(k);
+      }
+      drop.forEach(function (k) { try { sessionStorage.removeItem(k); } catch (e) { } });
+    } catch (e) { }
+    // 4) บอกด่านรหัสหน้าแรกว่า "นี่คือการรีเฟรชจากในแอป ไม่ใช่เปิดแอปใหม่" จะได้ไม่ถามรหัสซ้ำ
     try { sessionStorage.setItem('app_reload', String(Date.now())); } catch (e) { }
-    // 4) โหลดใหม่ (replace เพื่อไม่ให้ปุ่มย้อนกลับพาไปหน้าเดิมที่ยังเป็นของเก่า)
+    // 5) โหลดใหม่ (replace เพื่อไม่ให้ปุ่มย้อนกลับพาไปหน้าเดิมที่ยังเป็นของเก่า)
     location.replace(location.href);
   }
 
