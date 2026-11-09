@@ -7143,7 +7143,7 @@
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
 
-    const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR] = await Promise.all([
+    const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR, shcR, qaR, gdR, spR, mtR] = await Promise.all([
       hrScoreGet(which),
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url,is_manager,position,start_date,end_date,active,default_shift'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
@@ -7151,6 +7151,15 @@
       fetchPaged(() => sb().from('exam_attempts').select('emp_id,exam_id,attempt_no,passed,percent').gte('submitted_at', cyc.start).lte('submitted_at', cyc.end + 'T23:59:59')),
       sb().from('shift_leads').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('shift_controllers').select('emp_id,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
+      // ★ 9 พ.ย. 69 — ความรับผิดชอบเสริมอีก 5 อย่าง ที่หน้าสรุปรายบุคคลนับอยู่แล้วแต่หน้านี้ไม่เคยนับ
+      //   ของเดิมคิด "ช่วยทีม" จากหัวหน้าผลัด/ผู้คุมผลัดเท่านั้น → คนที่ดูแลเชลฟ์/ทำ QA/รับสินค้าขยัน
+      //   แต่ไม่เคยได้เป็นหัวหน้าผลัด ได้ 0 เต็ม ๆ ทั้งที่รับงานเสริมเยอะ
+      //   ตารางพวกนี้เล็กและมีดัชนี emp_id แล้ว (ดู fix-transfer-emp-timeout) จึงไม่กระทบเพดาน 3 วินาที
+      sb().from('shelf_checks').select('emp_id,check_date').gte('check_date', cyc.start).lte('check_date', endEff),
+      sb().from('qa_items').select('emp_id,created_at').gte('created_at', cyc.start).lte('created_at', endEff + 'T23:59:59'),
+      sb().from('goods_receipts').select('done_by,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
+      sb().from('special_task_assignees').select('emp_id,submitted_at').gte('submitted_at', cyc.start).lte('submitted_at', endEff + 'T23:59:59'),
+      sb().from('mgr_tasks').select('assignee_emp,emp_submitted_at').gte('emp_submitted_at', cyc.start).lte('emp_submitted_at', endEff + 'T23:59:59'),
     ]);
     if (empR.error) throw empR.error;
 
@@ -7196,9 +7205,23 @@
       if (!cur || Number(a.attempt_no || 1) < Number(cur.attempt_no || 1)) o[k] = a;
       if (cur && a.passed) cur.everPass = true;
     });
-    // ช่วยทีม — หัวหน้าผลัด/ผู้คุมผลัด
+    // ช่วยทีม — หัวหน้าผลัด/ผู้คุมผลัด (ใช้กับ "เหรียญช่วยทีม" ตามนิยามเดิม ไม่เปลี่ยน)
     const helpN = {};
     ((leadR.data || []).concat(ctrlR.data || [])).forEach(x => { helpN[x.emp_id] = (helpN[x.emp_id] || 0) + 1; });
+
+    // ★ 9 พ.ย. 69 — ความรับผิดชอบเสริม (ใช้คิดคะแนนพนักงานดีเด่น) — นับให้ตรงกับหน้าสรุปรายบุคคล
+    //   หัวหน้าผลัด · ผู้คุมผลัด · ตรวจเชลฟ์ · QA · รับสินค้า · งานพิเศษ · งานที่ ผจก. มอบ
+    //   ต่างจากหน้าสรุปตรงที่นับเฉพาะในรอบ — รางวัลนี้ตัดสินรายเดือน จะใช้ยอดสะสมทั้งชีวิตไม่ได้
+    //   ไม่งั้นคนเข้าใหม่สู้คนเก่าไม่ได้เลยทั้งที่รอบนี้ขยันกว่า
+    const assistN = {};
+    const bump = (id, n) => { if (id) assistN[id] = (assistN[id] || 0) + (n || 1); };
+    (leadR.data  || []).forEach(x => bump(x.emp_id));
+    (ctrlR.data  || []).forEach(x => bump(x.emp_id));
+    ((shcR && shcR.data) || []).forEach(x => bump(x.emp_id));
+    ((qaR  && qaR.data)  || []).forEach(x => bump(x.emp_id));
+    ((gdR  && gdR.data)  || []).forEach(x => bump(x.done_by));
+    ((spR  && spR.data)  || []).forEach(x => bump(x.emp_id));
+    ((mtR  && mtR.data)  || []).forEach(x => bump(x.assignee_emp));
 
     const rows = (empR.data || []).filter(e => {
       if (e.active === false) return false;
@@ -7213,6 +7236,7 @@
       const myEx = ex[e.emp_id] ? Object.keys(ex[e.emp_id]).map(k => ex[e.emp_id][k]) : [];
       const exFirstAll = myEx.length > 0 && myEx.every(a => a.passed === true);
       const help = Number(helpN[e.emp_id] || 0);
+      const assist = Number(assistN[e.emp_id] || 0);
       const full = Number(s.start != null ? s.start : 100);
       const sc = (s.score != null) ? Number(s.score) : null;
 
@@ -7247,7 +7271,8 @@
       if (t.total >= CARD_MIN_TASKS) axes.push({ k: 'quality', w: 20, v: (1 - t.back / t.total) * 100 });
       if (sc != null && full > 0)    axes.push({ k: 'disc',    w: 20, v: Math.min(100, sc / full * 100) });
       if (myEx.length)         axes.push({ k: 'know',   w: 10, v: exFirstAll ? 100 : (myEx.filter(a => a.passed === true).length / myEx.length) * 100 });
-      axes.push({ k: 'help', w: 10, v: Math.min(100, help / 5 * 100) });
+      // ★ 9 พ.ย. 69 — ใช้ assist (7 อย่าง) แทน help (2 อย่าง) · เต็ม 100 ที่ 8 ครั้งในรอบ
+      axes.push({ k: 'assist', w: 10, v: Math.min(100, assist / 8 * 100) });
       const wsum = axes.reduce((s, a) => s + a.w, 0);
       const rank_score = wsum ? Math.round(axes.reduce((s, a) => s + a.v * a.w, 0) / wsum * 10) / 10 : null;
 
@@ -7271,7 +7296,7 @@
         shifts, late_count: lateN, absent_count: absN,
         tasks_total: t.total, tasks_back: t.back,
         medals, star: medals.length >= 3, tone, foot, thin,
-        help_count: help, exam_total: myEx.length, exam_pass_all: exFirstAll,
+        help_count: help, assist_count: assist, exam_total: myEx.length, exam_pass_all: exFirstAll,
         rank_score, eligible: block.length === 0, block_reasons: block,
       };
     }).sort((a, b) => (b.medals.length - a.medals.length) || String(a.name).localeCompare(String(b.name), 'th'));
@@ -7293,9 +7318,9 @@
                        .sort((x, y) => (y.rank_score || 0) - (x.rank_score || 0));
       return {
         branch_id: b.branch_id, name: b.name,
-        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, medals: r.medals, amount: r.star_award.amount, rank_score: r.rank_score })),
+        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, medals: r.medals, amount: r.star_award.amount, rank_score: r.rank_score })),
         slots_left: Math.max(0, STAR_PER_BRANCH - won.length),
-        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, rank_score: r.rank_score, medals: r.medals })),
+        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, rank_score: r.rank_score, medals: r.medals })),
         // ★ ไม่มีใครผ่านเกณฑ์เลย = ไม่ต้องฝืนเลือก ขึ้นเตือนให้เห็นแทน
         none: won.length === 0 && cand.length === 0,
       };
