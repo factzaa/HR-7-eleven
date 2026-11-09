@@ -577,6 +577,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <span id="mgrBadge" style="display:none;font-size:13px;font-weight:600;color:#0369a1;background:#e0f2fe;padding:6px 12px;border-radius:999px"></span>
     <button class="hicon" id="themeBtn" title="ตั้งค่าธีมและสี"><svg class="ei sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg><svg class="ei moon" viewBox="0 0 24 24"><path d="M21 12.8A8 8 0 1 1 11.2 3a6.2 6.2 0 0 0 9.8 9.8z"/></svg></button>
     <button class="hicon" id="pushBtn" title="แจ้งเตือน: ปิด"><svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg></button>
+    <button class="hicon" id="updBtn" title="อัปเดตแอป — ดึงเวอร์ชันล่าสุดโดยไม่ต้องปิดแอปแล้วล็อกอินใหม่"><svg class="ei" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
     <a class="hicon" id="homeBtn" href="../" title="หน้าแรก"><svg class="ei" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg></a>
     <button class="hicon" id="logoutBtn" title="ออกจากระบบ"><svg class="ei" viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></button>
     <div class="uchip" id="uchip"><span class="uav">ฝ</span><span class="uinfo"><b>ฝ่ายบุคคล</b><i>สำนักงานใหญ่</i></span></div>
@@ -3827,6 +3828,13 @@ async function tryLogin(p){
 }
 $('loginBtn').onclick = ()=>tryLogin($('pwd').value.trim());
 $('pwd').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(e.target.value.trim()); });
+// ★ 9 พ.ย. 69 — ปุ่มอัปเดตแอป: ล้าง cache + โหลดใหม่ในแท็บเดิม ไม่ต้องปิดแอปแล้วล็อกอินใหม่
+$('updBtn') && ($('updBtn').onclick = async ()=>{
+  const b=$('updBtn'); if(b.dataset.busy==='1') return; b.dataset.busy='1'; b.style.opacity='.5';
+  try{ toast('ok','กำลังดึงเวอร์ชันล่าสุด…'); }catch(_e){}
+  try{ await window.HR.hardRefresh(); }
+  catch(_e){ b.dataset.busy=''; b.style.opacity=''; try{ toast('err','อัปเดตไม่สำเร็จ ลองปิดแอปแล้วเปิดใหม่'); }catch(_x){} }
+});
 $('logoutBtn').onclick = ()=>{
   const wasMgr = MGR_MODE;
   pwd='';
@@ -16862,12 +16870,25 @@ function ecStarPanel(D){
       h+='<div class="sp-pod sp-pod-'+rank+(s?(s.won?' won':''):' empty')+'">';
       if(s){
         h+=(s.won?'<span class="sp-ribbon">ดีเด่น</span>':'')
+          +'<button type="button" class="sp-open" data-staropen="'+esc(s.emp_id)+'" title="เปิดสรุปรายบุคคลเต็ม">'
           +face(s,sz)
-          +'<div class="sp-pnm">'+esc(s.nickname||s.name)+'</div>'
+          +'<div class="sp-pnm">'+esc(s.nickname||s.name)+'</div></button>'
           +'<div class="sp-ppos">'+esc(s.position||'พนักงานร้าน')+(s.shifts?(' · '+s.shifts+' กะ'):'')
             +(s.assist_count?(' · งานเสริม '+s.assist_count):'')+'</div>'
           +'<div class="sp-pmd">'+(s.medals||[]).map(med).join('')+'</div>'
           +'<div class="sp-psc">'+esc(String(s.rank_score==null?'—':s.rank_score))+'</div>'
+          // ★ 9 พ.ย. 69 — กดดูที่มาของคะแนนรายด้าน เพื่อชี้แจงพนักงานได้ว่าได้/ไม่ได้เพราะอะไร
+          +((s.rank_axes&&s.rank_axes.length)
+             ? ('<button type="button" class="sp-why" data-starwhy="'+esc(s.emp_id)+'">ทำไมถึงได้คะแนนนี้ ▾</button>'
+                +'<div class="sp-whybox" id="spwhy_'+esc(s.emp_id)+'" style="display:none">'
+                + s.rank_axes.map(a=>'<div class="sp-wrow"><span class="sp-wlb">'+esc(a.label)+'</span>'
+                    +'<span class="sp-wbar"><i style="width:'+Math.max(2,Math.min(100,a.pct))+'%"></i></span>'
+                    +'<span class="sp-wsc">'+esc(String(a.got))+'<small>/'+esc(String(a.full))+'</small></span>'
+                    +'<span class="sp-wwhy">'+esc(a.why||'')+'</span></div>').join('')
+                +'<div class="sp-wsum">รวม <b>'+esc(String(s.rank_score))+'</b> คะแนน'
+                +'<button type="button" class="sp-wfull" data-staropen="'+esc(s.emp_id)+'">เปิดสรุปรายบุคคลเต็ม →</button></div>'
+                +'</div>')
+             : '')
           +(s.won
              ? ('<div class="sp-pamt">เบี้ย '+esc(String(s.amount))+' บาท</div>'
                 +(MGR_MODE?'':'<button class="sp-undo" data-starrevoke="'+esc(s.emp_id)+'">ยกเลิกรางวัล</button>'))
@@ -16950,6 +16971,15 @@ function renderEmpCards(){
   // ★ 8 พ.ย. 69 — ปุ่มยืนยัน/ยกเลิกพนักงานดีเด่น (โผล่เฉพาะโหมด HR)
   $('es_cards').querySelectorAll('[data-staraward]').forEach(el=>{ el.onclick=e=>{ e.stopPropagation(); ecStarAct(el.getAttribute('data-staraward'),'award'); }; });
   $('es_cards').querySelectorAll('[data-starrevoke]').forEach(el=>{ el.onclick=e=>{ e.stopPropagation(); ecStarAct(el.getAttribute('data-starrevoke'),'revoke'); }; });
+  // ★ 9 พ.ย. 69 — กดรูป/ชื่อ = เปิดสรุปรายบุคคลเต็ม · กด "ทำไมถึงได้" = กางที่มาของคะแนนรายด้าน
+  $('es_cards').querySelectorAll('[data-staropen]').forEach(el=>{ el.onclick=e=>{ e.stopPropagation(); openEmpCard(el.getAttribute('data-staropen')); }; });
+  $('es_cards').querySelectorAll('[data-starwhy]').forEach(el=>{ el.onclick=e=>{
+    e.stopPropagation();
+    const box=$('spwhy_'+el.getAttribute('data-starwhy')); if(!box) return;
+    const open = box.style.display==='none';
+    box.style.display = open ? '' : 'none';
+    el.textContent = open ? 'ซ่อนที่มาของคะแนน ▴' : 'ทำไมถึงได้คะแนนนี้ ▾';
+  }; });
   ecApplyFilter();
 }
 function openEmpCard(empId){
@@ -21631,6 +21661,27 @@ body.mgr-mode #v_mgrIdBtn{display:inline-flex !important}
 .sp-pod-2 .sp-base{height:32px}
 .sp-pod-3 .sp-base{height:24px;font-size:13px}
 .sp-pod.empty .sp-base{background:linear-gradient(180deg,#e7e5e4,#d6d3d1);color:#78716c}
+/* ★ 9 พ.ย. 69 — กดรูป/ชื่อเปิดสรุปเต็ม + กล่องที่มาของคะแนน */
+.sp-pod .sp-open{border:0;background:none;padding:0;cursor:pointer;font:inherit;color:inherit;
+  display:flex;flex-direction:column;align-items:center;width:100%;border-radius:12px}
+.sp-pod .sp-open:hover .sp-pnm{text-decoration:underline}
+.sp-pod .sp-open:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.sp-why{margin-top:7px;border:1px solid var(--line2);background:#fff;color:#57534e;font:inherit;font-size:11.5px;
+  padding:4px 11px;border-radius:999px;cursor:pointer}
+.sp-why:hover{background:#fafaf9}
+.sp-whybox{width:100%;margin-top:8px;text-align:left;background:#fffdf5;border:1px solid #fde68a;border-radius:10px;padding:8px 10px}
+.sp-wrow{display:grid;grid-template-columns:auto 1fr auto;gap:5px 8px;align-items:center;padding:4px 0;border-top:1px solid #fef3c7}
+.sp-wrow:first-child{border-top:0}
+.sp-wlb{font-size:11.5px;font-weight:600;color:#57534e;white-space:nowrap}
+.sp-wbar{height:6px;border-radius:99px;background:#e7e5e4;overflow:hidden}
+.sp-wbar i{display:block;height:100%;background:linear-gradient(90deg,#f59e0b,#16a34a)}
+.sp-wsc{font-size:12px;font-weight:800;color:#065f46;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sp-wsc small{font-weight:500;color:var(--muted)}
+.sp-wwhy{grid-column:1/-1;font-size:11px;color:var(--muted);line-height:1.5}
+.sp-wsum{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+  margin-top:7px;padding-top:7px;border-top:1px dashed #fcd34d;font-size:12px;color:#78350f}
+.sp-wsum b{font-size:15px;color:#065f46}
+.sp-wfull{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;cursor:pointer;text-decoration:underline;padding:0}
 .sp-res{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:11px;padding-top:9px;border-top:1px dashed #fcd34d}
 .sp-reslbl{font-size:11px;color:var(--muted);font-weight:700}
 .sp-reschip{display:inline-flex;align-items:center;gap:6px;background:#fafaf9;border:1px solid var(--line2);
