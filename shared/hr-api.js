@@ -7124,12 +7124,14 @@
   const STAR_MAX_LATE = 1;            // สายได้ไม่เกินกี่ครั้งต่อรอบถึงยังเข้าชิงได้ (0 = ห้ามสายเลย)
   const STAR_MAX_BACK = 1;            // งานในกะถูกตีกลับได้อย่างน้อยกี่ใบ (ขั้นต่ำ ไม่ว่าทำงานมากน้อย)
   const STAR_BACK_RATIO = 0.01;       // ...หรือไม่เกินกี่ส่วนของงานที่ทำ (1%) แล้วแต่ว่าอันไหนมากกว่า
-  // ★ 9 พ.ย. 69 — ต้องทำงานเต็มรอบถึงเข้าชิงได้
+  // ★ 9 พ.ย. 69 — ต้องผ่านงานมาพอสมควรถึงเข้าชิงได้
   //   ของเดิมใช้ CARD_MIN_SHIFTS = 5 กะ ซึ่งต่ำเกินไปสำหรับรางวัล:
   //   พนักงานใหม่ที่เพิ่งทำ 6-8 วัน ยังไม่สาย ยังไม่ขาด ยังไม่มีงานตีกลับ
   //   จึงได้คะแนนเต็มทุกด้านและขึ้นที่ 1 แซงคนที่ทำทั้งเดือน — ไม่เป็นธรรม
-  //   เกณฑ์ใหม่: 26 วันทำงานต่อรอบ (เต็มเวลาแบบร้าน หยุด 4-5 วัน/เดือน)
-  const STAR_MIN_SHIFTS = 26;         // วันทำงานขั้นต่ำต่อรอบถึงเข้าชิงได้ (นับเมื่อรอบจบ)
+  //   เกณฑ์: ต้องมี "วันทำงานสะสม" มาแล้วอย่างน้อย 26 วัน — นับทั้งหมดที่เคยทำ ไม่ใช่เฉพาะรอบนี้
+  //   (เคยลองนับเฉพาะในรอบ แต่ผิดเจตนา: คนเก่าที่ตารางให้ทำ 24 วันจะตกไปด้วย
+  //    ทั้งที่มาครบทุกเวรตามตาราง · เกณฑ์นี้ไว้กรอง "คนใหม่" ไม่ใช่ "คนที่ตารางให้ทำน้อย")
+  const STAR_MIN_SHIFTS = 26;         // วันทำงานสะสมขั้นต่ำถึงเข้าชิงได้
   function starCycleKey(which) { return cycleRange(cycleBack(which)).end.slice(0, 7); }
   async function starAmount() { return await getSettingNum('star_award_amount', 500); }
   async function starAwardsOf(cycleKey) {
@@ -7152,16 +7154,13 @@
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
 
-    // ★ 9 พ.ย. 69 — เกณฑ์วันทำงานขั้นต่ำของ "พนักงานดีเด่น" เทียบตามสัดส่วนวันที่ผ่านไปแล้ว
-    //   ถ้าใช้ 26 วันตรง ๆ ระหว่างรอบ จะไม่มีใครผ่านเลยจนเกือบสิ้นเดือน แท่นอันดับจะว่างทั้งเดือน
-    //   จึงคิดตามสัดส่วน: ผ่านไป 20 จาก 31 วัน → ต้องมีแล้ว ceil(26×20/31) = 17 วัน
-    //   พอรอบจบ ตัวหารเต็ม เกณฑ์จึงกลับเป็น 26 วันเต็มตามที่ตั้งใจ
+    // ★ 9 พ.ย. 69 — ขอบเขตย้อนหลังสำหรับนับ "วันทำงานสะสม" (ดู STAR_MIN_SHIFTS)
+    //   ไม่ดึงทั้งตาราง เพราะตารางลงเวลาโตขึ้นทุกเดือน จะกินเวลาเกินเพดาน 3 วินาทีในอนาคต
+    //   400 วันพอเหลือเฟือ: คนที่ยังทำงานอยู่และเคยทำถึง 26 วัน ย่อมมีครบในช่วงนี้
     const _d = (s) => Date.parse(String(s) + 'T00:00:00Z');
-    const cycDays = Math.max(1, Math.round((_d(cyc.end) - _d(cyc.start)) / 86400000) + 1);
-    const elapsedDays = Math.max(1, Math.min(cycDays, Math.round((_d(endEff) - _d(cyc.start)) / 86400000) + 1));
-    const starMinNow = Math.max(CARD_MIN_SHIFTS, Math.ceil(STAR_MIN_SHIFTS * elapsedDays / cycDays));
+    const everFrom = new Date(_d(endEff) - 400 * 86400000).toISOString().slice(0, 10);
 
-    const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR, shcR, qaR, gdR, spR, mtR] = await Promise.all([
+    const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR, shcR, qaR, gdR, spR, mtR, everR] = await Promise.all([
       hrScoreGet(which),
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url,is_manager,position,start_date,end_date,active,default_shift'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
@@ -7178,8 +7177,18 @@
       sb().from('goods_receipts').select('done_by,work_date').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('special_task_assignees').select('emp_id,submitted_at').gte('submitted_at', cyc.start).lte('submitted_at', endEff + 'T23:59:59'),
       sb().from('mgr_tasks').select('assignee_emp,emp_submitted_at').gte('emp_submitted_at', cyc.start).lte('emp_submitted_at', endEff + 'T23:59:59'),
+      // ★ 9 พ.ย. 69 — วันทำงานสะสมของแต่ละคน (ไม่ใช่เฉพาะรอบนี้) ใช้คัดคนที่ยังใหม่เกินไปออกจากการเข้าชิง
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date').gte('work_date', everFrom).lte('work_date', endEff)),
     ]);
     if (empR.error) throw empR.error;
+
+    // นับเป็น "วัน" ไม่ใช่ "แถว" — ลงเวลาสองกะในวันเดียวต้องนับเป็นวันเดียว
+    const everSet = {};
+    (everR || []).forEach(a => {
+      const k = String(a.emp_id || '');
+      if (!k) return;
+      (everSet[k] || (everSet[k] = new Set())).add(String(a.work_date));
+    });
 
     // ★ รูปย่อที่มีอยู่จริงใน storage — ใช้แทนรูปเต็มบนบัตร (โหลดเร็วกว่าหลายเท่า)
     const thumbHave = new Set();
@@ -7253,6 +7262,7 @@
       const s = scMap[e.emp_id] || {};
       const shifts = Number(s.days_worked || 0);
       const thin = shifts < CARD_MIN_SHIFTS;
+      const everN = (everSet[String(e.emp_id)] || { size: 0 }).size;   // ★ วันทำงานสะสม
       const lateN = Number(s.late_count || 0), absN = Number(s.absent_count || 0);
       const t = tk[e.emp_id] || { total: 0, back: 0 };
       const myEx = ex[e.emp_id] ? Object.keys(ex[e.emp_id]).map(k => ex[e.emp_id][k]) : [];
@@ -7315,12 +7325,9 @@
 
       // ---- ประตูขั้นต่ำ: ไม่ผ่านข้อใดข้อหนึ่ง = ไม่เข้าชิง (ไม่ใช่แค่คะแนนน้อย) ----
       const block = [];
-      // ★ 9 พ.ย. 69 — ต้องทำงานเต็มรอบ (26 วัน) ถึงเข้าชิงได้ · ระหว่างรอบเทียบตามสัดส่วนวันที่ผ่านไป
-      if (shifts < starMinNow) {
-        block.push(cyc.end < today
-          ? ('ทำงานในรอบนี้ ' + shifts + ' วัน (เกณฑ์ ' + STAR_MIN_SHIFTS + ' วัน)')
-          : ('ทำงานแล้ว ' + shifts + ' วัน (ถึงวันนี้ต้องได้ ' + starMinNow + ' วัน · ทั้งรอบ ' + STAR_MIN_SHIFTS + ' วัน)'));
-      }
+      if (thin) block.push('ทำงานในรอบนี้เพียง ' + shifts + ' กะ (ต้องอย่างน้อย ' + CARD_MIN_SHIFTS + ')');
+      // ★ 9 พ.ย. 69 — ต้องมีวันทำงานสะสมมาแล้ว 26 วัน (ทั้งหมดที่เคยทำ ไม่ใช่เฉพาะรอบนี้)
+      if (everN < STAR_MIN_SHIFTS) block.push('เพิ่งเริ่มงาน · ทำงานมาแล้วรวม ' + everN + ' วัน (เกณฑ์ ' + STAR_MIN_SHIFTS + ' วัน)');
       if (absN > 0) block.push('ขาดงาน ' + absN + ' วัน');
       // ★ 9 พ.ย. 69 — ผ่อนจาก "ห้ามสายเลย" เป็น "สายได้ไม่เกิน 1 ครั้งต่อรอบ"
       //   ของเดิมเขียนเป็น 2% ของกะ ซึ่งอ่านแล้วเหมือนผ่อนให้ แต่รอบหนึ่ง 15-25 กะ
@@ -7345,7 +7352,7 @@
         is_manager: e.is_manager === true,
         is_new: !!(e.start_date && String(e.start_date) >= cyc.start),
         score: sc, score_full: full, band_label: s.band_label || '', band_color: s.band_color || '',
-        shifts, late_count: lateN, absent_count: absN,
+        shifts, late_count: lateN, absent_count: absN, days_ever: everN,
         tasks_total: t.total, tasks_back: t.back,
         medals, star: medals.length >= 3, tone, foot, thin,
         help_count: help, assist_count: assist, exam_total: myEx.length, exam_pass_all: exFirstAll,
@@ -7370,9 +7377,9 @@
                        .sort((x, y) => (y.rank_score || 0) - (x.rank_score || 0));
       return {
         branch_id: b.branch_id, name: b.name,
-        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, medals: r.medals, amount: r.star_award.amount, rank_score: r.rank_score, rank_axes: r.rank_axes })),
+        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, days_ever: r.days_ever, assist_count: r.assist_count, medals: r.medals, amount: r.star_award.amount, rank_score: r.rank_score, rank_axes: r.rank_axes })),
         slots_left: Math.max(0, STAR_PER_BRANCH - won.length),
-        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, rank_score: r.rank_score, rank_axes: r.rank_axes, medals: r.medals })),
+        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, days_ever: r.days_ever, assist_count: r.assist_count, rank_score: r.rank_score, rank_axes: r.rank_axes, medals: r.medals })),
         // ★ ไม่มีใครผ่านเกณฑ์เลย = ไม่ต้องฝืนเลือก ขึ้นเตือนให้เห็นแทน
         none: won.length === 0 && cand.length === 0,
       };
@@ -7385,7 +7392,7 @@
       //   ระหว่างรอบ ข้อมูลยังไหลเข้าทุกวัน คนที่นำอยู่วันนี้พรุ่งนี้สายครั้งเดียวก็หลุดได้
       //   ถ้ายืนยันกลางรอบแล้วเขาขาดงานทีหลัง ธงกับเบี้ย 500 จะค้างอยู่ทั้งที่ไม่ผ่านเกณฑ์แล้ว
       star: { per_branch: STAR_PER_BRANCH, by_branch: starByBranch, table_missing: aw.missing, closed: cyc.end < today,
-              min_shifts: STAR_MIN_SHIFTS, min_shifts_now: starMinNow, cycle_days: cycDays, elapsed_days: elapsedDays },
+              min_shifts: STAR_MIN_SHIFTS },
       stats: { total: rows.length, star: rows.filter(r => r.star).length, watch: rows.filter(r => r.tone === 'bad' || r.tone === 'warn').length },
     };
   }
