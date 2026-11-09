@@ -7122,6 +7122,8 @@
   const STAR_PER_BRANCH = 2;          // เพดานต่อสาขาต่อรอบ (ฐานข้อมูลบังคับซ้ำอีกชั้นด้วย trigger)
   const STAR_LABEL = 'เบี้ยพนักงานคุณภาพ';   // ชื่อรายการบนสลิปเงินเดือน
   const STAR_MAX_LATE = 1;            // สายได้ไม่เกินกี่ครั้งต่อรอบถึงยังเข้าชิงได้ (0 = ห้ามสายเลย)
+  const STAR_MAX_BACK = 1;            // งานในกะถูกตีกลับได้อย่างน้อยกี่ใบ (ขั้นต่ำ ไม่ว่าทำงานมากน้อย)
+  const STAR_BACK_RATIO = 0.01;       // ...หรือไม่เกินกี่ส่วนของงานที่ทำ (1%) แล้วแต่ว่าอันไหนมากกว่า
   function starCycleKey(which) { return cycleRange(cycleBack(which)).end.slice(0, 7); }
   async function starAmount() { return await getSettingNum('star_award_amount', 500); }
   async function starAwardsOf(cycleKey) {
@@ -7194,8 +7196,12 @@
     // งานในกะ — นับต่อคน
     const tk = {};
     (taR || []).forEach(t => {
-      const o = tk[t.emp_id] || (tk[t.emp_id] = { total: 0, back: 0 });
-      o.total++; if (Number(t.sent_back_count || 0) > 0) o.back++;
+      const o = tk[t.emp_id] || (tk[t.emp_id] = { total: 0, back: 0, open: 0 });
+      o.total++;
+      if (Number(t.sent_back_count || 0) > 0) o.back++;
+      // ★ 9 พ.ย. 69 — "ยังค้างแก้" คนละเรื่องกับ "เคยถูกตีกลับแล้วแก้จบ"
+      //   ค้างแก้ = ปัญหาที่ยังไม่จบ · เคยตีกลับแล้วแก้แล้ว = ทำงานตามระบบจนเรียบร้อย
+      if (String(t.status || '') === 'sent_back') o.open++;
     });
     // แบบทดสอบ — ผ่านตั้งแต่ครั้งแรกหรือไม่ (ดูครั้งที่ 1 ของแต่ละชุด)
     const ex = {};
@@ -7301,8 +7307,14 @@
       //   2% = 0.3-0.5 กะ แปลว่าสายครั้งเดียวก็ตกทันที คนจึงผ่านเกณฑ์น้อยมาก
       //   หมายเหตุ: ครั้งที่ยอมให้ยังหักคะแนนด้าน "ตรงเวลา" อยู่ คนไม่สายเลยจึงยังนำอยู่ดี
       if (!thin && lateN > STAR_MAX_LATE) block.push('สาย ' + lateN + ' ครั้ง (ยอมให้ไม่เกิน ' + STAR_MAX_LATE + ')');
+      // ★ 9 พ.ย. 69 — ของเดิมบังคับ "ต้องไม่เคยถูกตีกลับเลย" ซึ่งลงโทษคนรับงานเยอะ
+      //   คนทำ 411 ใบ ตีกลับใบเดียว (0.24%) โดนตัดสิทธิ์ ทั้งที่คะแนนคุณภาพด้านนั้นได้ 99.8
+      //   เปลี่ยนเป็นสัดส่วน: ยอมให้ 1 ใบ หรือ 1% ของงานที่ทำ แล้วแต่ว่าอันไหนมากกว่า
+      //   แต่ "ใบที่ยังค้างแก้" ยังตัดสิทธิ์เสมอ — นั่นคือปัญหาที่ยังไม่จบ ไม่ใช่ความผิดพลาดที่แก้แล้ว
+      const backAllow = Math.max(STAR_MAX_BACK, Math.floor(t.total * STAR_BACK_RATIO));
+      if (t.open > 0) block.push('ยังมีงานค้างแก้ ' + t.open + ' ใบ');
+      else if (t.back > backAllow) block.push('งานในกะถูกตีกลับ ' + t.back + '/' + t.total + ' ใบ (ยอมให้ไม่เกิน ' + backAllow + ')');
       if (sc == null || sc < full) block.push('คะแนนวินัยไม่เต็ม (' + (sc == null ? '—' : sc) + '/' + full + ')');
-      if (t.back > 0) block.push('งานในกะถูกตีกลับ ' + t.back + ' ใบ');
 
       return {
         emp_id: e.emp_id, name: e.name || e.emp_id, nickname: e.nickname || '',
