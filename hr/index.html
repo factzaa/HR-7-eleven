@@ -16864,7 +16864,8 @@ function ecStarPanel(D){
         h+=(s.won?'<span class="sp-ribbon">ดีเด่น</span>':'')
           +face(s,sz)
           +'<div class="sp-pnm">'+esc(s.nickname||s.name)+'</div>'
-          +'<div class="sp-ppos">'+esc(s.position||'พนักงานร้าน')+(s.shifts?(' · '+s.shifts+' กะ'):'')+'</div>'
+          +'<div class="sp-ppos">'+esc(s.position||'พนักงานร้าน')+(s.shifts?(' · '+s.shifts+' กะ'):'')
+            +(s.assist_count?(' · งานเสริม '+s.assist_count):'')+'</div>'
           +'<div class="sp-pmd">'+(s.medals||[]).map(med).join('')+'</div>'
           +'<div class="sp-psc">'+esc(String(s.rank_score==null?'—':s.rank_score))+'</div>'
           +(s.won
@@ -16886,7 +16887,8 @@ function ecStarPanel(D){
     }
     h+='</div>';
   });
-  h+='<div class="sp-foot">คัดจากหัวข้อประเมินในหน้าสรุปรายบุคคลเท่านั้น — ตรงเวลา 25 · มาครบตามเวร 25 · คุณภาพงานในกะ 20 · วินัย 20 · ความรู้ 10 · ช่วยทีม 10'
+  h+='<div class="sp-foot">คัดจากหัวข้อประเมินในหน้าสรุปรายบุคคลเท่านั้น — ตรงเวลา 25 · มาครบตามเวร 25 · คุณภาพงานในกะ 20 · วินัย 20 · ความรู้ 10 · ความรับผิดชอบเสริม 10'
+    +'<br><span style="opacity:.85">ความรับผิดชอบเสริม = หัวหน้าผลัด · ผู้คุมผลัด · ตรวจเชลฟ์ · QA · รับสินค้า · งานพิเศษ · งานที่ ผจก. มอบ (นับเฉพาะในรอบ)</span>'
     +(MGR_MODE?'<br>สำนักงาน (HR) เป็นผู้ยืนยันรางวัล หลังรอบจบแล้ว'
               :'<br>ยืนยันได้หลังรอบจบเท่านั้น · ยืนยันแล้ว เบี้ยพนักงานคุณภาพจะขึ้นในสลิปเงินเดือนรอบนั้นให้เอง — กดคำนวณเงินเดือนรอบนั้นใหม่หลังยืนยัน')+'</div></div>';
   return h;
