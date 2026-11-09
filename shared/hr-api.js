@@ -7266,16 +7266,31 @@
       // ---- ★ 8 พ.ย. 69 — คะแนนรวมสำหรับคัด "พนักงานดีเด่นประจำเดือน" ----
       //   คิดจากหัวข้อประเมินชุดเดียวกับหน้าสรุปรายบุคคลเท่านั้น
       //   ด้านไหนไม่มีข้อมูลให้ข้ามไป แล้วเฉลี่ยจากน้ำหนักที่เหลือ (ไม่ใช่ให้ 0 ซึ่งจะลงโทษคนที่ยังไม่มีข้อมูล)
+      //   ★ 9 พ.ย. 69 — เก็บ "ที่มาของคะแนน" รายด้านไว้ด้วย เพื่อให้ HR กดดูแล้วชี้แจงพนักงานได้ว่าได้เพราะอะไร
       const axes = [];
-      if (!thin && shifts > 0) axes.push({ k: 'time',   w: 25, v: Math.max(0, 100 - (lateN / shifts) * 300) });
-      if (!thin)               axes.push({ k: 'attend', w: 25, v: Math.max(0, 100 - absN * 50) });
-      if (t.total >= CARD_MIN_TASKS) axes.push({ k: 'quality', w: 20, v: (1 - t.back / t.total) * 100 });
-      if (sc != null && full > 0)    axes.push({ k: 'disc',    w: 20, v: Math.min(100, sc / full * 100) });
-      if (myEx.length)         axes.push({ k: 'know',   w: 10, v: exFirstAll ? 100 : (myEx.filter(a => a.passed === true).length / myEx.length) * 100 });
+      const exPassFirst = myEx.filter(a => a.passed === true).length;
+      if (!thin && shifts > 0) axes.push({ k: 'time',   label: 'ตรงต่อเวลา',          w: 25, v: Math.max(0, 100 - (lateN / shifts) * 300),
+        why: lateN === 0 ? ('ไม่สายเลยทั้งรอบ (' + shifts + ' กะ)') : ('สาย ' + lateN + ' จาก ' + shifts + ' กะ') });
+      if (!thin)               axes.push({ k: 'attend', label: 'มาครบตามเวร',        w: 25, v: Math.max(0, 100 - absN * 50),
+        why: absN === 0 ? ('ไม่ขาดงานเลย · ทำงาน ' + shifts + ' กะ') : ('ขาดงาน ' + absN + ' วัน') });
+      if (t.total >= CARD_MIN_TASKS) axes.push({ k: 'quality', label: 'คุณภาพงานในกะ', w: 20, v: (1 - t.back / t.total) * 100,
+        why: 'งานในกะ ' + t.total + ' ใบ · ถูกตีกลับ ' + t.back + ' ใบ' });
+      if (sc != null && full > 0)    axes.push({ k: 'disc',    label: 'วินัย',          w: 20, v: Math.min(100, sc / full * 100),
+        why: 'คะแนนวินัย ' + sc + '/' + full });
+      if (myEx.length)         axes.push({ k: 'know',   label: 'ความรู้ (แบบทดสอบ)', w: 10, v: exFirstAll ? 100 : (exPassFirst / myEx.length) * 100,
+        why: 'สอบผ่านตั้งแต่ครั้งแรก ' + exPassFirst + '/' + myEx.length + ' ชุด' });
       // ★ 9 พ.ย. 69 — ใช้ assist (7 อย่าง) แทน help (2 อย่าง) · เต็ม 100 ที่ 8 ครั้งในรอบ
-      axes.push({ k: 'assist', w: 10, v: Math.min(100, assist / 8 * 100) });
+      axes.push({ k: 'assist', label: 'ความรับผิดชอบเสริม', w: 10, v: Math.min(100, assist / 8 * 100),
+        why: assist ? ('รับงานเสริม ' + assist + ' ครั้ง (เต็มที่ 8)') : 'ยังไม่เคยรับงานนอกกะในรอบนี้' });
       const wsum = axes.reduce((s, a) => s + a.w, 0);
       const rank_score = wsum ? Math.round(axes.reduce((s, a) => s + a.v * a.w, 0) / wsum * 10) / 10 : null;
+      // แปลงเป็น "ได้กี่คะแนนจากเต็มกี่คะแนน" ให้อ่านแล้วบวกเองได้ตรง ๆ
+      const rank_axes = axes.map(a => ({
+        k: a.k, label: a.label, why: a.why,
+        pct: Math.round(a.v * 10) / 10,
+        full: Math.round(a.w / wsum * 1000) / 10,
+        got:  Math.round(a.v * a.w / wsum * 10) / 10,
+      }));
 
       // ---- ประตูขั้นต่ำ: ไม่ผ่านข้อใดข้อหนึ่ง = ไม่เข้าชิง (ไม่ใช่แค่คะแนนน้อย) ----
       const block = [];
@@ -7302,7 +7317,7 @@
         tasks_total: t.total, tasks_back: t.back,
         medals, star: medals.length >= 3, tone, foot, thin,
         help_count: help, assist_count: assist, exam_total: myEx.length, exam_pass_all: exFirstAll,
-        rank_score, eligible: block.length === 0, block_reasons: block,
+        rank_score, rank_axes, eligible: block.length === 0, block_reasons: block,
       };
     }).sort((a, b) => (b.medals.length - a.medals.length) || String(a.name).localeCompare(String(b.name), 'th'));
 
@@ -7323,9 +7338,9 @@
                        .sort((x, y) => (y.rank_score || 0) - (x.rank_score || 0));
       return {
         branch_id: b.branch_id, name: b.name,
-        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, medals: r.medals, amount: r.star_award.amount, rank_score: r.rank_score })),
+        awarded: won.map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, medals: r.medals, amount: r.star_award.amount, rank_score: r.rank_score, rank_axes: r.rank_axes })),
         slots_left: Math.max(0, STAR_PER_BRANCH - won.length),
-        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, rank_score: r.rank_score, medals: r.medals })),
+        candidates: cand.slice(0, 5).map(r => ({ emp_id: r.emp_id, name: r.name, nickname: r.nickname, photo_url: r.photo_url, position: r.position, shifts: r.shifts, assist_count: r.assist_count, rank_score: r.rank_score, rank_axes: r.rank_axes, medals: r.medals })),
         // ★ ไม่มีใครผ่านเกณฑ์เลย = ไม่ต้องฝืนเลือก ขึ้นเตือนให้เห็นแทน
         none: won.length === 0 && cand.length === 0,
       };

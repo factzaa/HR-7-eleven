@@ -4471,8 +4471,35 @@
     return { ok: true };
   }
 
+  // ============================================================
+  // ★ 9 พ.ย. 69 — ปุ่ม "อัปเดตแอป" (hard refresh)
+  //   บน iPad/มือถือ เวลามีเวอร์ชันใหม่ต้องปัดแอปทิ้งแล้วเปิดใหม่ ซึ่งต้องล็อกอินใหม่ทุกครั้ง
+  //   ตัวนี้บังคับโหลดของใหม่ในแท็บเดิม — sessionStorage ไม่หาย จึงไม่ต้องล็อกอินใหม่
+  //   ลำดับ: สั่ง service worker ไปเช็กไฟล์ใหม่ → ล้าง cache ทุกก้อน → โหลดหน้าใหม่
+  // ============================================================
+  async function hardRefresh() {
+    // 1) ให้ service worker ไปดึง sw.js ใหม่ (ถ้าเปลี่ยน จะติดตั้งตัวใหม่แล้ว skipWaiting เอง)
+    try {
+      if (navigator.serviceWorker) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.update().catch(() => {})));
+      }
+    } catch (e) { /* เบราว์เซอร์ไม่รองรับก็ข้ามไป ยังล้าง cache กับโหลดใหม่ได้ */ }
+    // 2) ล้าง cache ทุกก้อน — ของเก่าที่ค้างบน iOS หายหมด
+    try {
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch (e) { }
+    // 3) บอกด่านรหัสหน้าแรกว่า "นี่คือการรีเฟรชจากในแอป ไม่ใช่เปิดแอปใหม่" จะได้ไม่ถามรหัสซ้ำ
+    try { sessionStorage.setItem('app_reload', String(Date.now())); } catch (e) { }
+    // 4) โหลดใหม่ (replace เพื่อไม่ให้ปุ่มย้อนกลับพาไปหน้าเดิมที่ยังเป็นของเก่า)
+    location.replace(location.href);
+  }
+
   // export
-  window.HR = { sb, loadConfig, uploadPhoto,
+  window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
