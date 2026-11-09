@@ -7124,6 +7124,12 @@
   const STAR_MAX_LATE = 1;            // สายได้ไม่เกินกี่ครั้งต่อรอบถึงยังเข้าชิงได้ (0 = ห้ามสายเลย)
   const STAR_MAX_BACK = 1;            // งานในกะถูกตีกลับได้อย่างน้อยกี่ใบ (ขั้นต่ำ ไม่ว่าทำงานมากน้อย)
   const STAR_BACK_RATIO = 0.01;       // ...หรือไม่เกินกี่ส่วนของงานที่ทำ (1%) แล้วแต่ว่าอันไหนมากกว่า
+  // ★ 9 พ.ย. 69 — ต้องทำงานเต็มรอบถึงเข้าชิงได้
+  //   ของเดิมใช้ CARD_MIN_SHIFTS = 5 กะ ซึ่งต่ำเกินไปสำหรับรางวัล:
+  //   พนักงานใหม่ที่เพิ่งทำ 6-8 วัน ยังไม่สาย ยังไม่ขาด ยังไม่มีงานตีกลับ
+  //   จึงได้คะแนนเต็มทุกด้านและขึ้นที่ 1 แซงคนที่ทำทั้งเดือน — ไม่เป็นธรรม
+  //   เกณฑ์ใหม่: 26 วันทำงานต่อรอบ (เต็มเวลาแบบร้าน หยุด 4-5 วัน/เดือน)
+  const STAR_MIN_SHIFTS = 26;         // วันทำงานขั้นต่ำต่อรอบถึงเข้าชิงได้ (นับเมื่อรอบจบ)
   function starCycleKey(which) { return cycleRange(cycleBack(which)).end.slice(0, 7); }
   async function starAmount() { return await getSettingNum('star_award_amount', 500); }
   async function starAwardsOf(cycleKey) {
@@ -7145,6 +7151,15 @@
     const cyc = cycleRange(cycleBack(which));
     const today = bkkToday();
     const endEff = cyc.end < today ? cyc.end : today;
+
+    // ★ 9 พ.ย. 69 — เกณฑ์วันทำงานขั้นต่ำของ "พนักงานดีเด่น" เทียบตามสัดส่วนวันที่ผ่านไปแล้ว
+    //   ถ้าใช้ 26 วันตรง ๆ ระหว่างรอบ จะไม่มีใครผ่านเลยจนเกือบสิ้นเดือน แท่นอันดับจะว่างทั้งเดือน
+    //   จึงคิดตามสัดส่วน: ผ่านไป 20 จาก 31 วัน → ต้องมีแล้ว ceil(26×20/31) = 17 วัน
+    //   พอรอบจบ ตัวหารเต็ม เกณฑ์จึงกลับเป็น 26 วันเต็มตามที่ตั้งใจ
+    const _d = (s) => Date.parse(String(s) + 'T00:00:00Z');
+    const cycDays = Math.max(1, Math.round((_d(cyc.end) - _d(cyc.start)) / 86400000) + 1);
+    const elapsedDays = Math.max(1, Math.min(cycDays, Math.round((_d(endEff) - _d(cyc.start)) / 86400000) + 1));
+    const starMinNow = Math.max(CARD_MIN_SHIFTS, Math.ceil(STAR_MIN_SHIFTS * elapsedDays / cycDays));
 
     const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR, shcR, qaR, gdR, spR, mtR] = await Promise.all([
       hrScoreGet(which),
@@ -7300,7 +7315,12 @@
 
       // ---- ประตูขั้นต่ำ: ไม่ผ่านข้อใดข้อหนึ่ง = ไม่เข้าชิง (ไม่ใช่แค่คะแนนน้อย) ----
       const block = [];
-      if (thin) block.push('ทำงานในรอบนี้เพียง ' + shifts + ' กะ (ต้องอย่างน้อย ' + CARD_MIN_SHIFTS + ')');
+      // ★ 9 พ.ย. 69 — ต้องทำงานเต็มรอบ (26 วัน) ถึงเข้าชิงได้ · ระหว่างรอบเทียบตามสัดส่วนวันที่ผ่านไป
+      if (shifts < starMinNow) {
+        block.push(cyc.end < today
+          ? ('ทำงานในรอบนี้ ' + shifts + ' วัน (เกณฑ์ ' + STAR_MIN_SHIFTS + ' วัน)')
+          : ('ทำงานแล้ว ' + shifts + ' วัน (ถึงวันนี้ต้องได้ ' + starMinNow + ' วัน · ทั้งรอบ ' + STAR_MIN_SHIFTS + ' วัน)'));
+      }
       if (absN > 0) block.push('ขาดงาน ' + absN + ' วัน');
       // ★ 9 พ.ย. 69 — ผ่อนจาก "ห้ามสายเลย" เป็น "สายได้ไม่เกิน 1 ครั้งต่อรอบ"
       //   ของเดิมเขียนเป็น 2% ของกะ ซึ่งอ่านแล้วเหมือนผ่อนให้ แต่รอบหนึ่ง 15-25 กะ
@@ -7364,7 +7384,8 @@
       // ★ 8 พ.ย. 69 — closed = รอบนี้จบแล้วหรือยัง · ยืนยันพนักงานดีเด่นได้เฉพาะรอบที่จบแล้ว
       //   ระหว่างรอบ ข้อมูลยังไหลเข้าทุกวัน คนที่นำอยู่วันนี้พรุ่งนี้สายครั้งเดียวก็หลุดได้
       //   ถ้ายืนยันกลางรอบแล้วเขาขาดงานทีหลัง ธงกับเบี้ย 500 จะค้างอยู่ทั้งที่ไม่ผ่านเกณฑ์แล้ว
-      star: { per_branch: STAR_PER_BRANCH, by_branch: starByBranch, table_missing: aw.missing, closed: cyc.end < today },
+      star: { per_branch: STAR_PER_BRANCH, by_branch: starByBranch, table_missing: aw.missing, closed: cyc.end < today,
+              min_shifts: STAR_MIN_SHIFTS, min_shifts_now: starMinNow, cycle_days: cycDays, elapsed_days: elapsedDays },
       stats: { total: rows.length, star: rows.filter(r => r.star).length, watch: rows.filter(r => r.tone === 'bad' || r.tone === 'warn').length },
     };
   }
