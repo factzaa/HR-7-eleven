@@ -4478,11 +4478,15 @@
   //   ลำดับ: สั่ง service worker ไปเช็กไฟล์ใหม่ → ล้าง cache ทุกก้อน → โหลดหน้าใหม่
   // ============================================================
   async function hardRefresh() {
-    // 1) ให้ service worker ไปดึง sw.js ใหม่ (ถ้าเปลี่ยน จะติดตั้งตัวใหม่แล้ว skipWaiting เอง)
+    // 1) ★ 10 พ.ย. 69 — "ถอด" service worker ตัวเดิมออกก่อน ไม่ใช่แค่สั่ง update()
+    //   ของเดิมสั่ง update() แล้วรีโหลดทันที เป็นการแข่งกับเวลา: ตัวใหม่ยังติดตั้งไม่เสร็จ
+    //   ตัวเก่าก็ชิงตอบจากแคชไปแล้ว บนเครื่องเร็วมักทัน แต่บน iPad แทบไม่เคยทัน
+    //   ผลคือกดปุ่มอัปเดตกี่ครั้งก็ยังได้โค้ดเวอร์ชันเดิม ทั้งที่ของใหม่ขึ้นเซิร์ฟเวอร์แล้ว
+    //   ถอดออกไปเลยปลอดภัย เพราะทุกหน้าลงทะเบียน sw ใหม่เองตอนโหลด (ดูท้ายไฟล์ index.html)
     try {
       if (navigator.serviceWorker) {
         const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.update().catch(() => {})));
+        await Promise.all(regs.map(r => r.unregister().catch(() => {})));
       }
     } catch (e) { /* เบราว์เซอร์ไม่รองรับก็ข้ามไป ยังล้าง cache กับโหลดใหม่ได้ */ }
     // 2) ล้าง cache ทุกก้อน — ของเก่าที่ค้างบน iOS หายหมด
@@ -4508,7 +4512,13 @@
     // 4) บอกด่านรหัสหน้าแรกว่า "นี่คือการรีเฟรชจากในแอป ไม่ใช่เปิดแอปใหม่" จะได้ไม่ถามรหัสซ้ำ
     try { sessionStorage.setItem('app_reload', String(Date.now())); } catch (e) { }
     // 5) โหลดใหม่ (replace เพื่อไม่ให้ปุ่มย้อนกลับพาไปหน้าเดิมที่ยังเป็นของเก่า)
-    location.replace(location.href);
+    //   ★ ต่อท้าย ?u=<เวลา> ด้วย — Safari บน iOS มีแคช HTTP ของตัวเองอีกชั้นนอกเหนือจาก sw
+    //   ถ้า URL เหมือนเดิมเป๊ะ มันหยิบหน้าเดิมมาให้ได้อีก ขอด้วย URL ใหม่จึงชัวร์กว่า
+    try {
+      var _u = new URL(location.href);
+      _u.searchParams.set('u', String(Date.now()));
+      location.replace(_u.toString());
+    } catch (e) { location.replace(location.href); }
   }
 
   // export
