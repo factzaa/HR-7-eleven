@@ -482,6 +482,11 @@
         case 'hr_star_award':        return await hrStarAward(p.data, p);
         case 'hr_star_revoke':       return await hrStarRevoke(p.data, p);
         case 'hr_star_history':      return await hrStarHistory(p.data);
+        // ★ 10 พ.ย. 69 — ประเมินผลทดลองงาน (ผจก.ให้คะแนน · HR ตัดสิน)
+        case 'hr_probation_list':    return await hrProbationList(p.data, p);
+        case 'hr_probation_get':     return await hrProbationGet(p.data, p);
+        case 'hr_probation_mgr':     return await hrProbationMgr(p.data, p);
+        case 'hr_probation_decide':  return await hrProbationDecide(p.data, p);
         case 'hr_emp_thumbs':        return await hrEmpThumbs(p.data);
         case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
@@ -7465,6 +7470,280 @@
       return { ok: true, rows: data || [] };
     } catch (_e) { return { ok: true, rows: [], table_missing: true }; }
   }
+  // ============================================================
+  // ประเมินผลทดลองงานพนักงานใหม่                      ★ 10 พ.ย. 69
+  //   · ผจก.สาขาให้คะแนน 5 หัวข้อที่ระบบวัดเองไม่ได้ · HR เป็นคนกดตัดสิน
+  //   · ข้อมูลที่ระบบวัดได้ (วันทำงาน สาย ขาด วินัย งานในกะ แบบทดสอบ) ดึงมาให้เอง
+  //   · ตอนตัดสินจะเก็บ "ภาพนิ่ง" ของตัวเลขไว้ด้วย เพราะตัวเลขสดเปลี่ยนทุกวัน
+  //     ถ้ามีข้อโต้แย้งภายหลังต้องตอบได้ว่าตอนตัดสินเห็นอะไร
+  //   ★ ใบเตือนกับการไม่ผ่านทดลองงานเป็นคนละเรื่องกัน:
+  //     ใบเตือนมีไว้สร้างฐานเลิกจ้างโดยไม่จ่ายค่าชดเชยของคนที่ผ่าน 120 วันแล้ว
+  //     ส่วนคนที่ยังไม่ถึง 120 วัน ไม่ต้องมีใบเตือนก็ไม่ผ่านทดลองงานได้
+  //     สิ่งที่ต้องมีคือหลักฐานการประเมิน + การบอกกล่าวล่วงหน้า — เมนูนี้เก็บให้ทั้งสองอย่าง
+  // ============================================================
+  const PROB_AXES = [
+    { k: 'ready',   label: 'ความพร้อมปฏิบัติงาน', hint: 'มาถึงแล้วพร้อมเข้ากะทันที · เครื่องแบบเรียบร้อย' },
+    { k: 'learn',   label: 'การเรียนรู้งาน',       hint: 'รับงานใหม่ได้เร็ว · ไม่ต้องบอกซ้ำ' },
+    { k: 'service', label: 'การบริการลูกค้า',      hint: 'ทักทาย · แก้ปัญหาหน้าร้านได้' },
+    { k: 'team',    label: 'การเข้ากับทีม',        hint: 'สื่อสารดี · ช่วยงานเพื่อนร่วมกะ' },
+    { k: 'trust',   label: 'ความน่าไว้วางใจ',      hint: 'ฝากงานได้ · ซื่อสัตย์เรื่องเงินและของ' },
+  ];
+  const PROB_MAX = 5;   // ให้คะแนนหัวข้อละ 1-5
+
+  async function probSettings() {
+    return {
+      days:   await getSettingNum('probation_days', 90),
+      notice: await getSettingNum('probation_notice_days', 30),
+    };
+  }
+
+  // รวบรวมข้อมูลที่ระบบวัดได้ ของพนักงานกลุ่มทดลองงาน (ยิงทีเดียวทั้งกลุ่ม ไม่ยิงรายคน)
+  async function probStats(ids, fromDate, today) {
+    const out = {};
+    ids.forEach(id => { out[id] = { days: 0, late_count: 0, late_total: 0, absent: 0, tasks: 0, back: 0, open: 0, exam: 0, exam_pass: 0, acts: [], warns: 0 }; });
+    if (!ids.length) return out;
+    const [attR, schR, lvR, taR, exR, daR, wnR] = await Promise.all([
+      sb().from('attendance').select('emp_id,work_date,late_min').in('emp_id', ids).gte('work_date', fromDate).lte('work_date', today),
+      sb().from('schedules').select('emp_id,work_date').in('emp_id', ids).gte('work_date', fromDate).lt('work_date', today),
+      sb().from('leaves').select('emp_id,start_date,end_date').in('emp_id', ids),
+      sb().from('task_assignments').select('emp_id,status,sent_back_count').in('emp_id', ids).gte('work_date', fromDate).lte('work_date', today),
+      sb().from('exam_attempts').select('emp_id,exam_id,attempt_no,passed').in('emp_id', ids).gte('submitted_at', fromDate),
+      sb().from('disc_actions').select('emp_id,action_type,level_name,reason,performed_at,status').in('emp_id', ids).gte('performed_at', fromDate),
+      sb().from('warnings').select('emp_id,warning_id,level_name,issue_date,reason').in('emp_id', ids).gte('issue_date', fromDate),
+    ]);
+    const worked = {};
+    (attR.data || []).forEach(a => {
+      const o = out[a.emp_id]; if (!o) return;
+      (worked[a.emp_id] || (worked[a.emp_id] = new Set())).add(String(a.work_date));
+      const m = Number(a.late_min || 0);
+      if (m > 0) { o.late_count++; o.late_total += m; }
+    });
+    Object.keys(worked).forEach(id => { if (out[id]) out[id].days = worked[id].size; });
+    const lv = {};
+    (lvR.data || []).forEach(l => { (lv[l.emp_id] || (lv[l.emp_id] = [])).push(l); });
+    (schR.data || []).forEach(s => {
+      const o = out[s.emp_id]; if (!o) return;
+      const d = String(s.work_date);
+      if ((worked[s.emp_id] || new Set()).has(d)) return;
+      const onLeave = (lv[s.emp_id] || []).some(l => d >= String(l.start_date) && d <= String(l.end_date || l.start_date));
+      if (!onLeave) o.absent++;
+    });
+    (taR.data || []).forEach(t => {
+      const o = out[t.emp_id]; if (!o) return;
+      o.tasks++;
+      if (Number(t.sent_back_count || 0) > 0) o.back++;
+      if (String(t.status || '') === 'sent_back') o.open++;
+    });
+    const exSeen = {};
+    (exR.data || []).forEach(e => {
+      const o = out[e.emp_id]; if (!o) return;
+      const k = e.emp_id + '|' + e.exam_id;
+      if (!exSeen[k]) { exSeen[k] = true; o.exam++; if (e.passed === true && Number(e.attempt_no || 1) === 1) o.exam_pass++; }
+    });
+    (daR.data || []).forEach(a => {
+      const o = out[a.emp_id]; if (!o) return;
+      if (String(a.status || '') === 'cancelled') return;
+      o.acts.push({ type: a.action_type, name: a.level_name || a.action_type, at: String(a.performed_at || '').slice(0, 10), reason: a.reason || '' });
+    });
+    (wnR.data || []).forEach(w => { const o = out[w.emp_id]; if (o) o.warns++; });
+    Object.keys(out).forEach(id => out[id].acts.sort((a, b) => String(a.at).localeCompare(String(b.at))));
+    return out;
+  }
+
+  function probRow(e, rv, stats, cfg, today, scoreBy) {
+    const start = String(e.start_date);
+    const due = rv && rv.extend_to ? String(rv.extend_to) : addDays(start, cfg.days);
+    const sev = addDays(start, 120);      // เส้นค่าชดเชยตามกฎหมาย — คนละเส้นกับวันครบทดลองงาน
+    const st = stats[e.emp_id] || {};
+    const sc = scoreBy[e.emp_id] || {};
+    const dleft = Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
+    return {
+      emp_id: e.emp_id, name: e.name || e.emp_id, nickname: e.nickname || '',
+      branch_id: e.branch_id || '', position: e.position || '',
+      photo_url: e.photo_url || '',
+      start_date: start, due_date: due, severance_date: sev,
+      days_left: dleft, overdue: dleft < 0,
+      extended: !!(rv && rv.extend_to),
+      days: st.days || 0, late_count: st.late_count || 0, late_total: st.late_total || 0,
+      absent: st.absent || 0,
+      tasks: st.tasks || 0, tasks_back: st.back || 0, tasks_open: st.open || 0,
+      exam: st.exam || 0, exam_pass_first: st.exam_pass || 0,
+      score: sc.score != null ? sc.score : null, score_full: sc.start != null ? sc.start : 100,
+      band_label: sc.band_label || '',
+      acts: st.acts || [], warn_count: st.warns || 0,
+      mgr_done: !!(rv && rv.mgr_at), mgr_total: rv ? rv.mgr_total : null,
+      mgr_scores: rv ? rv.mgr_scores : null, mgr_comment: rv ? rv.mgr_comment : '',
+      mgr_by: rv ? rv.mgr_by : '', mgr_at: rv ? rv.mgr_at : null,
+      decision: rv ? rv.decision : null, decision_reason: rv ? rv.decision_reason : '',
+      decided_by: rv ? rv.decided_by : '', decided_at: rv ? rv.decided_at : null,
+      notice_date: rv ? rv.notice_date : null, last_day: rv ? rv.last_day : null,
+    };
+  }
+
+  async function hrProbationList(p, auth) {
+    p = p || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'รหัส ผจก. หรือ PIN ไม่ถูกต้อง' };
+    const today = bkkToday();
+    const cfg = await probSettings();
+    // เผื่อหางไว้ 60 วัน จะได้เห็นคนที่เพิ่งครบกำหนดแต่ยังไม่ได้ตัดสิน และคนที่ถูกขยายเวลา
+    const from = addDays(today, -(cfg.days + 60));
+    const [empR, rvR, scR] = await Promise.all([
+      sb().from('employees').select('emp_id,name,nickname,branch_id,position,photo_url,active,start_date,end_date').gte('start_date', from),
+      sb().from('probation_reviews').select('*'),
+      hrScoreGet('current'),
+    ]);
+    if (empR.error) throw empR.error;
+    const rvBy = {};
+    if (!rvR.error) (rvR.data || []).forEach(r => { rvBy[r.emp_id] = r; });
+    const scoreBy = {};
+    ((scR && scR.employees) || []).forEach(x => { scoreBy[x.emp_id] = x; });
+
+    let emps = (empR.data || []).filter(e => e.start_date && e.active !== false);
+    if (me.role === 'mgr') emps = emps.filter(e => String(e.branch_id || '') === String(me.branch_id));
+    const ids = emps.map(e => e.emp_id);
+    const earliest = ids.length ? emps.map(e => String(e.start_date)).sort()[0] : today;
+    const stats = await probStats(ids, earliest, today);
+
+    const rows = emps.map(e => probRow(e, rvBy[e.emp_id], stats, cfg, today, scoreBy))
+      // ยังไม่ตัดสิน = เรื่องที่ต้องทำ ขึ้นก่อนเสมอ · ในกลุ่มเดียวกันเรียงตามวันที่ใกล้ครบกำหนด
+      .filter(r => !(r.decision && r.days_left < -60))
+      .sort((a, b) => (a.decision ? 1 : 0) - (b.decision ? 1 : 0) || a.days_left - b.days_left);
+
+    return {
+      ok: true, today,
+      role: me.role, branch_id: me.branch_id || null,
+      period_days: cfg.days, notice_days: cfg.notice,
+      axes: PROB_AXES, axis_max: PROB_MAX,
+      table_missing: !!rvR.error,
+      rows,
+      stats: {
+        total: rows.length,
+        waiting_mgr: rows.filter(r => !r.decision && !r.mgr_done).length,
+        waiting_hr: rows.filter(r => !r.decision && r.mgr_done).length,
+        overdue: rows.filter(r => !r.decision && r.overdue).length,
+      },
+    };
+  }
+
+  async function hrProbationGet(p, auth) {
+    p = p || {};
+    const empId = String(p.emp_id || '').trim();
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const r = await hrProbationList({}, auth);
+    if (!r.ok) return r;
+    const row = r.rows.find(x => String(x.emp_id) === empId);
+    // ผจก.ยิง emp_id ข้ามสาขาเข้ามาตรง ๆ จะไม่เจอ เพราะ list กรองตามสาขาไปแล้ว
+    if (!row) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้ในรายการทดลองงานที่ดูได้' };
+    return { ok: true, today: r.today, period_days: r.period_days, notice_days: r.notice_days, axes: PROB_AXES, axis_max: PROB_MAX, role: r.role, row };
+  }
+
+  // ① ผจก.ให้คะแนน — ผจก.ทำได้เฉพาะสาขาตัวเอง · HR ก็กรอกแทนได้
+  async function hrProbationMgr(p, auth) {
+    p = p || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'รหัส ผจก. หรือ PIN ไม่ถูกต้อง' };
+    const empId = String(p.emp_id || '').trim();
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const { data: e } = await sb().from('employees').select('emp_id,name,branch_id,start_date').eq('emp_id', empId).maybeSingle();
+    if (!e) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้' };
+    if (!e.start_date) return { ok: false, error: 'พนักงานคนนี้ยังไม่ได้บันทึกวันเริ่มงาน — ใส่วันเริ่มงานก่อนจึงประเมินได้' };
+    if (me.role === 'mgr' && String(e.branch_id || '') !== String(me.branch_id)) {
+      return { ok: false, error: 'ประเมินได้เฉพาะพนักงานสาขาตัวเอง' };
+    }
+    const sc = p.scores || {};
+    const vals = [];
+    for (const a of PROB_AXES) {
+      const v = Number(sc[a.k]);
+      if (!isFinite(v) || v < 1 || v > PROB_MAX) return { ok: false, error: 'ให้คะแนนหัวข้อ "' + a.label + '" ด้วย (1-' + PROB_MAX + ')' };
+      vals.push(v);
+    }
+    const total = Math.round(vals.reduce((s, v) => s + v, 0) / (PROB_AXES.length * PROB_MAX) * 1000) / 10;
+    const cfg = await probSettings();
+    const row = {
+      emp_id: e.emp_id, emp_name: e.name, branch_id: e.branch_id || null,
+      start_date: e.start_date, period_days: cfg.days, due_date: addDays(String(e.start_date), cfg.days),
+      mgr_scores: sc, mgr_total: total,
+      mgr_comment: String(p.comment || '').trim() || null,
+      mgr_by: p.by || me.name, mgr_at: new Date().toISOString(),
+    };
+    const { error } = await sb().from('probation_reviews').upsert(row, { onConflict: 'emp_id' });
+    if (error) return { ok: false, error: error.message + ' (ถ้าเพิ่งเปิดใช้ ต้องรัน probation_reviews.sql)' };
+    return { ok: true, mgr_total: total };
+  }
+
+  // ② HR ตัดสิน — ผจก.กดไม่ได้ (บังคับที่เซิร์ฟเวอร์ ไม่ใช่แค่ซ่อนปุ่ม)
+  async function hrProbationDecide(p, auth) {
+    p = p || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'รหัส ผจก. หรือ PIN ไม่ถูกต้อง' };
+    if (me.role !== 'hr') return { ok: false, error: 'ผลทดลองงานต้องให้สำนักงาน (HR) เป็นผู้ตัดสิน' };
+    const empId = String(p.emp_id || '').trim();
+    const dec = String(p.decision || '').trim();
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    if (!['pass', 'fail', 'extend'].includes(dec)) return { ok: false, error: 'ผลการตัดสินต้องเป็น ผ่าน / ไม่ผ่าน / ขยายเวลา' };
+    const reason = String(p.reason || '').trim();
+    if (!reason) return { ok: false, error: 'ต้องระบุเหตุผลประกอบผลการตัดสิน' };
+
+    const g = await hrProbationGet({ emp_id: empId }, auth);
+    if (!g.ok) return g;
+    const row = g.row;
+    const cfg = await probSettings();
+
+    const upd = {
+      emp_id: empId, emp_name: row.name, branch_id: row.branch_id || null,
+      start_date: row.start_date, period_days: cfg.days,
+      due_date: addDays(String(row.start_date), cfg.days),
+      decision: dec, decision_reason: reason,
+      decided_by: p.by || me.name, decided_at: new Date().toISOString(),
+      status: 'decided',
+      // ภาพนิ่งของตัวเลข ณ วันตัดสิน — ตัวเลขสดเปลี่ยนทุกวัน ต้องตอบได้ว่าตอนนั้นเห็นอะไร
+      snapshot: {
+        at: bkkToday(),
+        days: row.days, late_count: row.late_count, late_total: row.late_total, absent: row.absent,
+        tasks: row.tasks, tasks_back: row.tasks_back, tasks_open: row.tasks_open,
+        score: row.score, score_full: row.score_full, band_label: row.band_label,
+        exam: row.exam, exam_pass_first: row.exam_pass_first,
+        warn_count: row.warn_count, acts: row.acts,
+        mgr_total: row.mgr_total, mgr_scores: row.mgr_scores, mgr_by: row.mgr_by,
+      },
+    };
+    if (dec === 'extend') {
+      const to = String(p.extend_to || '').trim();
+      if (!to) return { ok: false, error: 'ขยายเวลาทดลองงานต้องระบุวันครบกำหนดใหม่' };
+      if (to <= row.due_date) return { ok: false, error: 'วันครบกำหนดใหม่ต้องหลังวันครบกำหนดเดิม (' + row.due_date + ')' };
+      upd.extend_to = to;
+      upd.status = 'open';           // ยังไม่จบ ต้องกลับมาตัดสินอีกครั้ง
+    }
+    if (dec === 'fail') {
+      // ★ การบอกกล่าวล่วงหน้า 1 รอบจ่ายค่าจ้าง — ไม่บอกล่วงหน้าต้องจ่ายค่าสินจ้างแทน
+      //   ระบบจึงบังคับให้ระบุวันแจ้งกับวันทำงานวันสุดท้าย ไม่ปล่อยให้ลืม
+      const nd = String(p.notice_date || bkkToday());
+      const ld = String(p.last_day || '').trim();
+      if (!ld) return { ok: false, error: 'ต้องระบุวันทำงานวันสุดท้าย (นับจากวันแจ้งไปอีกอย่างน้อย ' + cfg.notice + ' วัน)' };
+      if (ld < nd) return { ok: false, error: 'วันทำงานวันสุดท้ายต้องไม่อยู่ก่อนวันที่แจ้ง' };
+      upd.notice_date = nd;
+      upd.last_day = ld;
+    }
+    const { error } = await sb().from('probation_reviews').upsert(upd, { onConflict: 'emp_id' });
+    if (error) return { ok: false, error: error.message + ' (ถ้าเพิ่งเปิดใช้ ต้องรัน probation_reviews.sql)' };
+
+    // แจ้งพนักงานในกล่องแจ้งเตือน (ตารางเดียวกับที่ใช้แจ้งผลวินัย)
+    try {
+      const T = { pass: 'ผ่านการทดลองงาน', fail: 'ไม่ผ่านการทดลองงาน', extend: 'ขยายเวลาทดลองงาน' };
+      await sb().from('emp_notifications').insert({
+        emp_id: empId, kind: dec === 'pass' ? 'info' : 'warn',
+        title: T[dec], body: reason.slice(0, 300),
+        ref: 'probation:' + empId, created_by: upd.decided_by,
+      });
+    } catch (_e) { /* ตารางแจ้งเตือนยังไม่มีก็ข้าม */ }
+
+    const notice_short = (dec === 'fail' && upd.notice_date && upd.last_day)
+      ? (Math.round((Date.parse(upd.last_day + 'T00:00:00Z') - Date.parse(upd.notice_date + 'T00:00:00Z')) / 86400000) < cfg.notice)
+      : false;
+    return { ok: true, decision: dec, notice_short, notice_days: cfg.notice };
+  }
+
   async function hrEmpSummary(p, auth) {
     p = p || {};
     if (!p.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
