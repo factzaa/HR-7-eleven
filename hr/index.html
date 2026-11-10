@@ -17159,19 +17159,25 @@ function pbOpenMgr(empId){
   });
   h+='<div style="margin:10px 0 4px"><label style="font-size:12px;color:var(--muted);font-weight:700">ความเห็นเพิ่มเติม (ไม่บังคับ)</label>'
     +'<textarea id="pb_comment" rows="2" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.mgr_comment||'')+'</textarea></div>'
+    +'<div id="pb_err2" style="display:none;margin-top:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.7"></div>'
     +'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'
     +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
     +'<button class="btn btn-pri" id="pb_save">บันทึกคะแนน</button></div>';
   openModal('ผจก.ให้คะแนนทดลองงาน', h);
+  const pbErr2=(m)=>{ const e=$('pb_err2'); if(!e) return; e.style.display=m?'':'none'; e.textContent=m||''; };
   $('pb_save').onclick=async()=>{
     const scores={}; let missing='';
     (PB.axes||[]).forEach(a=>{ const el=document.querySelector('input[name="pbax_'+a.k+'"]:checked');
       if(!el){ if(!missing) missing=a.label; } else scores[a.k]=Number(el.value); });
-    if(missing){ toast('err','ยังไม่ได้ให้คะแนนหัวข้อ "'+missing+'"'); return; }
-    $('pb_save').disabled=true;
-    const res=await post(Object.assign({ action:'hr_probation_mgr', data:{ emp_id:empId, scores, comment:$('pb_comment').value } }, authBody()));
-    $('pb_save').disabled=false;
-    if(!res||!res.ok){ toast('err',(res&&res.error)||'บันทึกไม่สำเร็จ'); return; }
+    if(missing){ pbErr2('ยังไม่ได้ให้คะแนนหัวข้อ "'+missing+'"'); return; }
+    pbErr2('');
+    $('pb_save').disabled=true; $('pb_save').textContent='กำลังบันทึก…';
+    let res=null, thrown='';
+    try{ res=await post(Object.assign({ action:'hr_probation_mgr', data:{ emp_id:empId, scores, comment:$('pb_comment').value } }, authBody())); }
+    catch(e){ thrown=(e&&e.message)||String(e); console.error('[probation mgr]', e); }
+    $('pb_save').disabled=false; $('pb_save').textContent='บันทึกคะแนน';
+    if(thrown){ pbErr2('บันทึกไม่สำเร็จ: '+thrown); return; }
+    if(!res||!res.ok){ pbErr2('บันทึกไม่สำเร็จ: '+((res&&res.error)||'ไม่ทราบสาเหตุ')); return; }
     closeModal(); toast('ok','บันทึกคะแนนแล้ว ('+res.mgr_total+'%)'); loadProbation();
   };
 }
@@ -17202,26 +17208,35 @@ function pbOpenDecide(empId){
       +'</div></div>'
     +'<div style="margin-top:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">เหตุผล (บังคับ — จะขึ้นบนหนังสือแจ้งผล)</label>'
     +'<textarea id="pb_reason" rows="3" placeholder="เช่น มาสาย 3 ครั้งใน 6 วันแรก ตักเตือนด้วยวาจาแล้วยังไม่ปรับปรุง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.decision_reason||'')+'</textarea></div>'
+    // ★ 10 พ.ย. 69 — ขึ้นข้อความผิดพลาดค้างไว้ในกล่อง ไม่ใช้ toast ที่หายไปใน 3 วินาที
+    //   เวลาเซิร์ฟเวอร์ปฏิเสธ ต้องอ่านได้ว่าเพราะอะไร ไม่ใช่เห็นแค่ว่า "กดแล้วไม่เกิดอะไร"
+    +'<div id="pb_err" style="display:none;margin-top:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.7"></div>'
     +'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'
     +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
     +'<button class="btn btn-pri" id="pb_go">บันทึกผล</button></div>';
   openModal('ตัดสินผลทดลองงาน', h);
+  const pbErr=(m)=>{ const e=$('pb_err'); if(!e) return; e.style.display=m?'':'none'; e.textContent=m||''; };
   document.querySelectorAll('input[name="pb_dec"]').forEach(el=>el.onchange=()=>{
     $('pb_extwrap').style.display  = el.value==='extend' ? '' : 'none';
     $('pb_failwrap').style.display = el.value==='fail'   ? '' : 'none';
   });
   $('pb_go').onclick=async()=>{
+    pbErr('');
     const sel=document.querySelector('input[name="pb_dec"]:checked');
-    if(!sel){ toast('err','เลือกผลการตัดสินก่อน'); return; }
+    if(!sel){ pbErr('เลือกผลการตัดสินก่อน (ผ่าน / ขยายเวลา / ไม่ผ่าน)'); return; }
     const reason=$('pb_reason').value.trim();
-    if(!reason){ toast('err','ต้องระบุเหตุผล'); return; }
+    if(!reason){ pbErr('ต้องระบุเหตุผล — ข้อความนี้จะขึ้นบนหนังสือแจ้งผล'); return; }
     const d={ emp_id:empId, decision:sel.value, reason };
     if(sel.value==='extend') d.extend_to=$('pb_extto').value;
     if(sel.value==='fail'){ d.notice_date=$('pb_notice').value; d.last_day=$('pb_lastday').value; }
-    $('pb_go').disabled=true;
-    const res=await post(Object.assign({ action:'hr_probation_decide', data:d }, authBody()));
-    $('pb_go').disabled=false;
-    if(!res||!res.ok){ toast('err',(res&&res.error)||'บันทึกไม่สำเร็จ'); return; }
+    $('pb_go').disabled=true; $('pb_go').textContent='กำลังบันทึก…';
+    let res=null, thrown='';
+    // ★ ถ้าโยน error ออกมา ปุ่มต้องกลับมากดได้เสมอ ไม่งั้นจะค้างจนกดอะไรไม่ได้เลย
+    try{ res=await post(Object.assign({ action:'hr_probation_decide', data:d }, authBody())); }
+    catch(e){ thrown=(e&&e.message)||String(e); console.error('[probation decide]', e); }
+    $('pb_go').disabled=false; $('pb_go').textContent='บันทึกผล';
+    if(thrown){ pbErr('บันทึกไม่สำเร็จ: '+thrown); return; }
+    if(!res||!res.ok){ pbErr('บันทึกไม่สำเร็จ: '+((res&&res.error)||'ไม่ทราบสาเหตุ')); return; }
     closeModal();
     toast('ok','บันทึกผลแล้ว — ระบบแจ้งพนักงานในแอปให้เรียบร้อย');
     if(res.notice_short) setTimeout(()=>toast('err','⚠ แจ้งล่วงหน้าไม่ถึง '+res.notice_days+' วัน — อาจต้องจ่ายค่าสินจ้างแทนการบอกกล่าว'), 1200);
