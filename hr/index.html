@@ -601,6 +601,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_shirt"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M8 3l4 2 4-2 5 3-2.5 4L17 9v11H7V9l-1.5 1L3 6z"/></svg></span>เบิกซื้อเสื้อ</button>
   <button class="tab" id="tab_rider"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8"/><path d="M10 9l-1-3H7"/></svg></span>เบิกซ่อมรถ (ไรเดอร์)</button>
   <button class="tab" id="tab_empsum"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>สรุปรายบุคคล</button>
+  <button class="tab" id="tab_probation"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>ประเมินทดลองงาน</button>
   <button class="tab" id="tab_mgreval"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M9 13l-1.5 8 4.5-3 4.5 3-1.5-8"/></svg></span>ประเมิน ผจก.</button>
   <button class="tab" id="tab_analytics"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 4-6"/></svg></span>วิเคราะห์</button>
   <button class="tab" id="tab_salesDash"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg></span>ยอดขาย (ไลน์)</button>
@@ -849,6 +850,21 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 </div>
 
 <!-- ประเมินผู้จัดการสาขา (เห็นเฉพาะ HR) -->
+<!-- ★ 10 พ.ย. 69 — ประเมินผลทดลองงานพนักงานใหม่ (ผจก.ให้คะแนน · HR ตัดสิน) -->
+<div id="view_probation" class="container" style="display:none">
+  <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center">
+    <div style="font-weight:800;font-size:17px">ประเมินผลทดลองงาน</div>
+    <span id="pb_sum" class="muted" style="font-size:13px"></span>
+    <span style="flex:1"></span>
+    <select id="pb_filter" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <option value="open">ยังไม่ตัดสิน</option>
+      <option value="all">ทั้งหมด</option>
+      <option value="done">ตัดสินแล้ว</option>
+    </select>
+    <button class="btn btn-sec" id="pb_reload">รีเฟรช</button>
+  </div>
+  <div id="pb_body" style="margin-top:12px"></div>
+</div>
 <div id="view_mgreval" class="container" style="display:none">
   <div class="toolbar" style="flex-wrap:wrap;gap:8px">
     <h3 style="flex:1;font-size:16px;font-weight:700;min-width:180px"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> ประเมินผลงานผู้จัดการสาขา</h3>
@@ -1345,8 +1361,39 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   #es_body > .card{padding:13px!important}
   #es_body .an-axes{gap:9px}
 }
+  /* ★ 10 พ.ย. 69 — หน้าประเมินทดลองงาน */
+  .pb-card{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px;background:var(--card,#fff)}
+  .pb-card.pb-late{border-color:#fdba74;background:#fffbf5}
+  .pb-head{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+  .pb-name{font-weight:800;font-size:16px}
+  .pb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-top:11px}
+  .pb-tile{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  .pb-tile.bad{border-color:#fecaca;background:#fef2f2}
+  .pb-tl{font-size:11.5px;color:var(--muted);font-weight:700}
+  .pb-tv{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:1px}
+  .pb-ts{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .pb-acts{margin-top:10px;font-size:12.5px;line-height:1.8}
+  .pb-mgr{margin-top:10px;font-size:12.5px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:8px 11px;line-height:1.8}
+  .pb-ax{display:inline-block;margin:0 8px 0 0;padding:1px 8px;background:#fff;border:1px solid #bae6fd;border-radius:999px;font-size:11.5px}
+  .pb-dec{margin-top:10px;font-size:13px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:9px 12px;line-height:1.7}
+  .pb-btns{margin-top:11px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .pb-row{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .pb-scale{display:flex;gap:4px;flex-shrink:0}
+  .pb-scale label{cursor:pointer}
+  .pb-scale input{position:absolute;opacity:0;width:0;height:0}
+  .pb-scale span{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1.5px solid var(--line2);border-radius:9px;font-weight:700;font-size:14px}
+  .pb-scale input:checked + span{background:#0369a1;border-color:#0369a1;color:#fff}
+  .pb-scale input:focus-visible + span{outline:2px solid #0369a1;outline-offset:2px}
+  .pb-choice{display:flex;gap:8px;flex-wrap:wrap}
+  .pb-choice label{cursor:pointer;flex:1;min-width:110px}
+  .pb-choice input{position:absolute;opacity:0;width:0;height:0}
+  .pb-choice span{display:block;text-align:center;padding:10px;border:1.5px solid var(--line2);border-radius:10px;font-weight:700;font-size:14px}
+  .pb-choice input:checked + span{background:#0369a1;border-color:#0369a1;color:#fff}
+  .pb-choice input:focus-visible + span{outline:2px solid #0369a1;outline-offset:2px}
+@media (max-width:520px){ .pb-row{flex-direction:column;align-items:flex-start;gap:6px} }
 @media(max-width:480px){
   #view_empsum .container,#view_empsum{padding-left:10px;padding-right:10px}
+
   .an-head img,.an-head > div:first-child{width:46px!important;height:46px!important}
 }
 /* แถบเครื่องมือด้านบน: บนมือถือให้แต่ละช่องเต็มแถว ไม่เบียดกัน */
@@ -3772,7 +3819,7 @@ function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : 
 // ★ 8 พ.ย. 69 — เปิดเมนู "สรุปรายบุคคล" (empsum) ให้ ผจก. — ดูอย่างเดียว เห็นเฉพาะพนักงานสาขาตัวเอง
 //   เซิร์ฟเวอร์กรองสาขาให้เอง (hrEmpCards/hrEmpSummary) ไม่ได้พึ่งการซ่อนฝั่งหน้าเว็บอย่างเดียว
 //   ปุ่มที่เขียนข้อมูล (บวกคะแนน · ให้นิดาแนะนำคะแนน · ช่องบันทึกของ HR) ถูกซ่อน · พิมพ์เอกสาร/ออกบัตรยังใช้ได้
-const MGR_TABS = ['shirt','mgrtasks','dashboard','stock','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit','empsum'];
+const MGR_TABS = ['shirt','mgrtasks','dashboard','stock','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit','empsum','probation'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -13171,7 +13218,7 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','mgreval','analytics','salesDash','auditDash','stock','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
+const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','probation','mgreval','analytics','salesDash','auditDash','stock','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -13199,6 +13246,7 @@ showTab = function(name){
   else if(name==='shirt') loadShirt();
   else if(name==='rider') loadRider();
   else if(name==='empsum') initEmpSum();
+  else if(name==='probation') loadProbation();
   else if(name==='mgreval') loadMgrEval();
   else if(name==='analytics') loadAnalytics();
   else if(name==='handover'){ loadTaskTab(); }
@@ -15703,7 +15751,7 @@ async function stkUploadGo(){
 
 const NAV_GROUPS=[
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>', label:'ภาพรวม',     tabs:['dashboard','mgrdash','board','analytics','salesDash','auditDash','stock'] },
-  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','mgreval','recruit'] },
+  { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 6.5a3 3 0 0 1 0 5.8"/><path d="M20 19c0-2.2-1.3-4-3.2-4.7"/></svg>', label:'พนักงาน',    tabs:['employees','empsum','probation','mgreval','recruit'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 13l2 2 4-4"/></svg>', label:'งาน & ตรวจ', tabs:['mgrtasks','mgrdailyrev','handover','taskset','special','qa','shelf','exams','lineFeed'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>', label:'เวลา/ลา/กะ', tabs:['report','attnedit','shiftexit','schedule','leaves'] },
   { icon:'<svg class="tic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>', label:'วินัย',       tabs:['discipline','score','terminate'] },
@@ -16991,6 +17039,194 @@ function openEmpCard(empId){
   if(sel){ if(![...sel.options].some(o=>String(o.value)===String(empId))){ const o=document.createElement('option'); o.value=empId; o.textContent=empId; sel.appendChild(o); } sel.value=empId; }
   esShowDetail();
   genEmpSum();
+}
+
+// ============================================================
+// ประเมินผลทดลองงานพนักงานใหม่                      ★ 10 พ.ย. 69
+//   ผจก. = ให้คะแนน 5 หัวข้อของสาขาตัวเอง · HR = กดตัดสินผ่าน/ไม่ผ่าน/ขยายเวลา
+//   ปุ่มตัดสินซ่อนในโหมด ผจก. แต่เซิร์ฟเวอร์ก็ปฏิเสธซ้ำอีกชั้น (ยิง API ตรงได้)
+// ============================================================
+let PB = null;
+const PB_DEC = { pass:'ผ่านทดลองงาน', fail:'ไม่ผ่านทดลองงาน', extend:'ขยายเวลาทดลองงาน' };
+
+async function loadProbation(){
+  const body = $('pb_body'); if(!body) return;
+  if(!body.dataset.wired){
+    body.dataset.wired = '1';
+    if($('pb_filter')) $('pb_filter').onchange = renderProbation;
+    if($('pb_reload')) $('pb_reload').onclick  = loadProbation;
+  }
+  body.innerHTML = '<div class="muted" style="padding:20px">กำลังโหลด…</div>';
+  const r = await post(Object.assign({ action:'hr_probation_list', data:{} }, authBody()));
+  if(!r || !r.ok){ body.innerHTML = '<div class="es-starpanel warn">โหลดไม่สำเร็จ — '+esc((r&&r.error)||'')+'</div>'; return; }
+  if(r.table_missing){
+    body.innerHTML = '<div class="es-starpanel warn"><b>⚠ เมนูนี้ยังไม่พร้อม</b> — ต้องรัน <b>supabase/probation_reviews.sql</b> บน Supabase ก่อน</div>';
+    return;
+  }
+  PB = r;
+  renderProbation();
+}
+function pbDays(n){ return n<0 ? ('เลยกำหนดมา '+Math.abs(n)+' วัน') : (n===0 ? 'ครบกำหนดวันนี้' : ('อีก '+n+' วัน')); }
+
+function renderProbation(){
+  const body=$('pb_body'); if(!body||!PB) return;
+  const f=($('pb_filter')&&$('pb_filter').value)||'open';
+  let rows=PB.rows||[];
+  if(f==='open') rows=rows.filter(r=>!r.decision);
+  else if(f==='done') rows=rows.filter(r=>!!r.decision);
+
+  const s=PB.stats||{};
+  const sum=$('pb_sum');
+  if(sum) sum.textContent='ทดลองงาน '+PB.period_days+' วัน · รอ ผจก.ประเมิน '+(s.waiting_mgr||0)
+    +' · รอ HR ตัดสิน '+(s.waiting_hr||0)+(s.overdue?(' · เลยกำหนด '+s.overdue):'');
+
+  if(!rows.length){
+    body.innerHTML='<div class="sp-none" style="margin:0">ไม่มีพนักงานในรายการนี้ — พนักงานจะขึ้นมาเองเมื่อมีวันเริ่มงานอยู่ในช่วงทดลองงาน</div>';
+    return;
+  }
+  let h='';
+  rows.forEach(r=>{
+    const warn = r.overdue && !r.decision;
+    const col = r.decision==='pass' ? '#15803d' : (r.decision==='fail' ? '#b91c1c' : (warn ? '#b45309' : 'var(--muted)'));
+    h+='<div class="pb-card'+(warn?' pb-late':'')+'">'
+      +'<div class="pb-head">'
+        +'<div><div class="pb-name">'+esc(r.nickname||r.name)+' <span class="muted" style="font-weight:500;font-size:13px">· '+esc(r.name)+' · '+esc(r.emp_id)+'</span></div>'
+        +'<div class="muted" style="font-size:12.5px">'+esc(branchName(r.branch_id))+' · เริ่มงาน '+esc(beDate(r.start_date))+'</div></div>'
+        +'<div style="text-align:right"><div style="font-weight:800;color:'+col+'">'
+        +(r.decision?esc(PB_DEC[r.decision]||r.decision):esc(pbDays(r.days_left)))+'</div>'
+        +'<div class="muted" style="font-size:12px">ครบทดลองงาน '+esc(beDate(r.due_date))+(r.extended?' (ขยายแล้ว)':'')+'</div>'
+        +'<div class="muted" style="font-size:12px">ครบ 120 วัน '+esc(beDate(r.severance_date))+'</div></div>'
+      +'</div>'
+      // ---- ข้อมูลที่ระบบวัดได้เอง ----
+      +'<div class="pb-grid">'
+        +pbTile('วันทำงาน', r.days+' วัน')
+        // ★ สายครั้งเดียวใน 68 วันไม่ใช่ปัญหา — ตีแดงเมื่อถี่จริงเท่านั้น (ตั้งแต่ 3 ครั้ง หรือเกิน 10% ของวันทำงาน)
+        +pbTile('มาสาย', r.late_count+' ครั้ง', r.late_total?(r.late_total+' นาที'):'', r.late_count>=3 || (r.days>0 && r.late_count/r.days>0.1))
+        +pbTile('ขาดงาน', r.absent+' วัน', '', r.absent>0)
+        +pbTile('คะแนนวินัย', (r.score==null?'—':r.score+'/'+r.score_full), r.band_label, r.score!=null&&r.score<r.score_full)
+        +pbTile('งานในกะ', r.tasks+' ใบ', (r.tasks_back?('ตีกลับ '+r.tasks_back):'')+(r.tasks_open?(' · ค้าง '+r.tasks_open):''), r.tasks_open>0)
+        +pbTile('แบบทดสอบ', r.exam?(r.exam_pass_first+'/'+r.exam+' ผ่านครั้งแรก'):'ยังไม่ได้สอบ')
+      +'</div>';
+    // ---- ประวัติตักเตือน ----
+    if((r.acts||[]).length || r.warn_count){
+      h+='<div class="pb-acts"><b>ประวัติการตักเตือน</b>';
+      (r.acts||[]).forEach(a=>{ h+='<div>• '+esc(beDate(a.at))+' — '+esc(a.name)+(a.reason?(' : '+esc(String(a.reason).slice(0,90))):'')+'</div>'; });
+      if(r.warn_count) h+='<div>• ใบเตือนที่ออกแล้ว '+r.warn_count+' ใบ</div>';
+      h+='</div>';
+    } else {
+      h+='<div class="pb-acts muted">ยังไม่มีประวัติการตักเตือนในช่วงทดลองงาน</div>';
+    }
+    // ---- คะแนนจาก ผจก. ----
+    if(r.mgr_done){
+      h+='<div class="pb-mgr"><b>ผจก.ประเมินแล้ว '+esc(String(r.mgr_total))+'%</b> <span class="muted">โดย '+esc(r.mgr_by||'')+'</span>';
+      (PB.axes||[]).forEach(a=>{ const v=(r.mgr_scores||{})[a.k]; h+='<span class="pb-ax">'+esc(a.label)+' '+esc(String(v==null?'—':v))+'/'+PB.axis_max+'</span>'; });
+      if(r.mgr_comment) h+='<div style="margin-top:5px">“'+esc(r.mgr_comment)+'”</div>';
+      h+='</div>';
+    }
+    if(r.decision){
+      h+='<div class="pb-dec"><b>'+esc(PB_DEC[r.decision]||r.decision)+'</b> · '+esc(r.decided_by||'')
+        +'<div style="margin-top:3px">'+esc(r.decision_reason||'')+'</div>'
+        +((r.decision==='fail'&&r.last_day)?('<div class="muted" style="margin-top:3px">แจ้งเมื่อ '+esc(beDate(r.notice_date))+' · วันทำงานวันสุดท้าย '+esc(beDate(r.last_day))+'</div>'):'')
+        +'</div>';
+    }
+    // ---- ปุ่ม ----
+    h+='<div class="pb-btns">'
+      +'<button class="btn btn-sec btn-sm" data-pbsum="'+esc(r.emp_id)+'">ดูสรุปรายบุคคล</button>'
+      +'<button class="btn btn-sec btn-sm" data-pbmgr="'+esc(r.emp_id)+'">'+(r.mgr_done?'แก้คะแนน ผจก.':'ผจก.ให้คะแนน')+'</button>'
+      +(MGR_MODE?'':('<button class="btn btn-pri btn-sm" data-pbdec="'+esc(r.emp_id)+'">'+(r.decision?'แก้ผลการตัดสิน':'ตัดสินผลทดลองงาน')+'</button>'))
+      +'</div></div>';
+  });
+  body.innerHTML=h;
+  body.querySelectorAll('[data-pbsum]').forEach(b=>b.onclick=()=>{ if(typeof openEmpCard==='function') openEmpCard(b.dataset.pbsum); });
+  body.querySelectorAll('[data-pbmgr]').forEach(b=>b.onclick=()=>pbOpenMgr(b.dataset.pbmgr));
+  body.querySelectorAll('[data-pbdec]').forEach(b=>b.onclick=()=>pbOpenDecide(b.dataset.pbdec));
+}
+function pbTile(label, val, sub, bad){
+  return '<div class="pb-tile'+(bad?' bad':'')+'"><div class="pb-tl">'+esc(label)+'</div><div class="pb-tv">'+esc(val)+'</div>'
+    +(sub?('<div class="pb-ts">'+esc(sub)+'</div>'):'')+'</div>';
+}
+
+// ---------- ① ผจก.ให้คะแนน ----------
+function pbOpenMgr(empId){
+  const r=(PB.rows||[]).find(x=>String(x.emp_id)===String(empId)); if(!r) return;
+  const cur=r.mgr_scores||{};
+  let h='<div style="font-weight:800;font-size:16px;margin-bottom:10px">'+esc(r.nickname||r.name)+' <span class="muted" style="font-size:13px;font-weight:500">· '+esc(r.emp_id)+'</span></div>'
+    +'<div class="muted" style="font-size:12.5px;margin-bottom:12px">ให้คะแนนเฉพาะหัวข้อที่ระบบวัดเองไม่ได้ — ตัวเลขอย่างวันทำงาน สาย ขาด คะแนนวินัย ระบบดึงมาให้แล้วในหน้าก่อนหน้า</div>';
+  (PB.axes||[]).forEach(a=>{
+    h+='<div class="pb-row"><div><div style="font-weight:700">'+esc(a.label)+'</div><div class="muted" style="font-size:12px">'+esc(a.hint)+'</div></div><div class="pb-scale">';
+    for(let v=1;v<=PB.axis_max;v++) h+='<label><input type="radio" name="pbax_'+a.k+'" value="'+v+'"'+(Number(cur[a.k])===v?' checked':'')+'><span>'+v+'</span></label>';
+    h+='</div></div>';
+  });
+  h+='<div style="margin:10px 0 4px"><label style="font-size:12px;color:var(--muted);font-weight:700">ความเห็นเพิ่มเติม (ไม่บังคับ)</label>'
+    +'<textarea id="pb_comment" rows="2" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.mgr_comment||'')+'</textarea></div>'
+    +'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'
+    +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
+    +'<button class="btn btn-pri" id="pb_save">บันทึกคะแนน</button></div>';
+  openModal('ผจก.ให้คะแนนทดลองงาน', h);
+  $('pb_save').onclick=async()=>{
+    const scores={}; let missing='';
+    (PB.axes||[]).forEach(a=>{ const el=document.querySelector('input[name="pbax_'+a.k+'"]:checked');
+      if(!el){ if(!missing) missing=a.label; } else scores[a.k]=Number(el.value); });
+    if(missing){ toast('err','ยังไม่ได้ให้คะแนนหัวข้อ "'+missing+'"'); return; }
+    $('pb_save').disabled=true;
+    const res=await post(Object.assign({ action:'hr_probation_mgr', data:{ emp_id:empId, scores, comment:$('pb_comment').value } }, authBody()));
+    $('pb_save').disabled=false;
+    if(!res||!res.ok){ toast('err',(res&&res.error)||'บันทึกไม่สำเร็จ'); return; }
+    closeModal(); toast('ok','บันทึกคะแนนแล้ว ('+res.mgr_total+'%)'); loadProbation();
+  };
+}
+
+// ---------- ② HR ตัดสิน ----------
+function pbOpenDecide(empId){
+  const r=(PB.rows||[]).find(x=>String(x.emp_id)===String(empId)); if(!r) return;
+  const today=PB.today;
+  const defLast=(function(){ const d=new Date(today+'T00:00:00'); d.setDate(d.getDate()+(PB.notice_days||30)); return d.toISOString().slice(0,10); })();
+  const defExt=(function(){ const d=new Date(r.due_date+'T00:00:00'); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
+  let h='<div style="font-weight:800;font-size:16px;margin-bottom:2px">'+esc(r.nickname||r.name)+' <span class="muted" style="font-size:13px;font-weight:500">· '+esc(r.emp_id)+'</span></div>'
+    +'<div class="muted" style="font-size:12.5px;margin-bottom:10px">ทำงาน '+r.days+' วัน · สาย '+r.late_count+' ครั้ง ('+r.late_total+' นาที) · ขาด '+r.absent+' วัน · วินัย '+(r.score==null?'—':r.score+'/'+r.score_full)
+    +(r.mgr_done?(' · ผจก.ให้ '+r.mgr_total+'%'):' · ผจก.ยังไม่ได้ให้คะแนน')+'</div>';
+  if(!r.mgr_done) h+='<div class="sp-open" style="margin-bottom:10px">⚠ ผจก.ยังไม่ได้ให้คะแนน — ตัดสินได้ แต่เอกสารจะไม่มีความเห็นของผู้บังคับบัญชาประกอบ</div>';
+  h+='<div class="pb-choice">'
+    +'<label><input type="radio" name="pb_dec" value="pass"><span>ผ่านทดลองงาน</span></label>'
+    +'<label><input type="radio" name="pb_dec" value="extend"><span>ขยายเวลา</span></label>'
+    +'<label><input type="radio" name="pb_dec" value="fail"><span>ไม่ผ่าน</span></label>'
+    +'</div>'
+    +'<div id="pb_extwrap" style="display:none;margin-top:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">ครบกำหนดใหม่</label><br>'
+    +'<input id="pb_extto" type="date" value="'+defExt+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
+    +'<div id="pb_failwrap" style="display:none;margin-top:10px">'
+      +'<div class="sp-open" style="margin-bottom:8px">การไม่ผ่านทดลองงานต้อง<b>บอกกล่าวล่วงหน้า 1 รอบการจ่ายค่าจ้าง</b> ถ้าไม่บอกล่วงหน้าต้องจ่ายค่าสินจ้างแทน'
+      +'<br>และถ้าเก็บไว้จนเกิน 120 วัน (ครบ '+esc(beDate(r.severance_date))+') จึงเลิกจ้าง จะต้องจ่ายค่าชดเชยตามกฎหมาย</div>'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      +'<div><label style="font-size:12px;color:var(--muted);font-weight:700">วันที่แจ้ง</label><br><input id="pb_notice" type="date" value="'+today+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
+      +'<div><label style="font-size:12px;color:var(--muted);font-weight:700">วันทำงานวันสุดท้าย</label><br><input id="pb_lastday" type="date" value="'+defLast+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
+      +'</div></div>'
+    +'<div style="margin-top:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">เหตุผล (บังคับ — จะขึ้นบนหนังสือแจ้งผล)</label>'
+    +'<textarea id="pb_reason" rows="3" placeholder="เช่น มาสาย 3 ครั้งใน 6 วันแรก ตักเตือนด้วยวาจาแล้วยังไม่ปรับปรุง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.decision_reason||'')+'</textarea></div>'
+    +'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'
+    +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
+    +'<button class="btn btn-pri" id="pb_go">บันทึกผล</button></div>';
+  openModal('ตัดสินผลทดลองงาน', h);
+  document.querySelectorAll('input[name="pb_dec"]').forEach(el=>el.onchange=()=>{
+    $('pb_extwrap').style.display  = el.value==='extend' ? '' : 'none';
+    $('pb_failwrap').style.display = el.value==='fail'   ? '' : 'none';
+  });
+  $('pb_go').onclick=async()=>{
+    const sel=document.querySelector('input[name="pb_dec"]:checked');
+    if(!sel){ toast('err','เลือกผลการตัดสินก่อน'); return; }
+    const reason=$('pb_reason').value.trim();
+    if(!reason){ toast('err','ต้องระบุเหตุผล'); return; }
+    const d={ emp_id:empId, decision:sel.value, reason };
+    if(sel.value==='extend') d.extend_to=$('pb_extto').value;
+    if(sel.value==='fail'){ d.notice_date=$('pb_notice').value; d.last_day=$('pb_lastday').value; }
+    $('pb_go').disabled=true;
+    const res=await post(Object.assign({ action:'hr_probation_decide', data:d }, authBody()));
+    $('pb_go').disabled=false;
+    if(!res||!res.ok){ toast('err',(res&&res.error)||'บันทึกไม่สำเร็จ'); return; }
+    closeModal();
+    toast('ok','บันทึกผลแล้ว — ระบบแจ้งพนักงานในแอปให้เรียบร้อย');
+    if(res.notice_short) setTimeout(()=>toast('err','⚠ แจ้งล่วงหน้าไม่ถึง '+res.notice_days+' วัน — อาจต้องจ่ายค่าสินจ้างแทนการบอกกล่าว'), 1200);
+    loadProbation();
+  };
 }
 
 function initEmpSum(){
