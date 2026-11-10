@@ -858,6 +858,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center">
     <div style="font-weight:800;font-size:17px">ประเมินผลทดลองงาน</div>
     <span id="pb_sum" class="muted" style="font-size:13px"></span>
+    <span id="pb_ver" class="muted" style="font-size:12px;opacity:.8"></span>
     <span style="flex:1"></span>
     <select id="pb_filter" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
       <option value="open">ยังไม่ตัดสิน</option>
@@ -17049,6 +17050,19 @@ function openEmpCard(empId){
 //   ผจก. = ให้คะแนน 5 หัวข้อของสาขาตัวเอง · HR = กดตัดสินผ่าน/ไม่ผ่าน/ขยายเวลา
 //   ปุ่มตัดสินซ่อนในโหมด ผจก. แต่เซิร์ฟเวอร์ก็ปฏิเสธซ้ำอีกชั้น (ยิง API ตรงได้)
 // ============================================================
+// อ่านเวอร์ชันแอปจากชื่อแคชของ service worker (เช่น hr7-eleven-v271)
+async function showAppVer(elId){
+  const el=$(elId); if(!el) return;
+  let v='—';
+  try{
+    if(window.caches){
+      const keys=await caches.keys();
+      const hit=keys.map(k=>(String(k).match(/hr7-eleven-v(\d+)/)||[])[1]).filter(Boolean).sort((a,b)=>b-a)[0];
+      if(hit) v='v'+hit;
+    }
+  }catch(e){}
+  el.textContent='เวอร์ชันแอปบนเครื่องนี้ '+v;
+}
 let PB = null;
 const PB_DEC = { pass:'ผ่านทดลองงาน', fail:'ไม่ผ่านทดลองงาน', extend:'ขยายเวลาทดลองงาน' };
 
@@ -17082,6 +17096,9 @@ function renderProbation(){
   const sum=$('pb_sum');
   if(sum) sum.textContent='ทดลองงาน '+PB.period_days+' วัน · รอ ผจก.ประเมิน '+(s.waiting_mgr||0)
     +' · รอ HR ตัดสิน '+(s.waiting_hr||0)+(s.overdue?(' · เลยกำหนด '+s.overdue):'');
+  // ★ 10 พ.ย. 69 — โชว์เวอร์ชันที่เครื่องนี้ใช้อยู่จริง ไว้เช็กว่ากดอัปเดตแล้วได้ของใหม่หรือยัง
+  //   เวลาแจ้งปัญหาจะได้บอกได้ทันทีว่าอยู่เวอร์ชันไหน ไม่ต้องเดา
+  showAppVer('pb_ver');
 
   if(!rows.length){
     body.innerHTML='<div class="sp-none" style="margin:0">ไม่มีพนักงานในรายการนี้ — พนักงานจะขึ้นมาเองเมื่อมีวันเริ่มงานอยู่ในช่วงทดลองงาน</div>';
