@@ -7502,17 +7502,21 @@
     const out = {};
     ids.forEach(id => { out[id] = { days: 0, late_count: 0, late_total: 0, absent: 0, tasks: 0, back: 0, open: 0, exam: 0, exam_pass: 0, acts: [], warns: 0 }; });
     if (!ids.length) return out;
+    // ★ 10 พ.ย. 69 — ต้องดึงแบบแบ่งหน้า ห้ามยิงรวดเดียว
+    //   ฐานข้อมูลคืนผลสูงสุด 1000 แถวต่อครั้ง · พนักงานทดลองงาน 20 คน × 150 วัน เกิน 1000 แถวสบาย ๆ
+    //   แถวที่เกินถูกตัดทิ้งเงียบ ๆ แล้ววันที่หายไปจะถูกนับเป็น "ขาดงาน" ทั้งที่มาทำงานจริง
+    //   (เคสจริง: หยก มาทำงาน 93 วัน ไม่ขาดเลย แต่หน้าจอขึ้น ทำงาน 69 วัน ขาด 24 วัน)
     const [attR, schR, lvR, taR, exR, daR, wnR] = await Promise.all([
-      sb().from('attendance').select('emp_id,work_date,late_min').in('emp_id', ids).gte('work_date', fromDate).lte('work_date', today),
-      sb().from('schedules').select('emp_id,work_date').in('emp_id', ids).gte('work_date', fromDate).lt('work_date', today),
-      sb().from('leaves').select('emp_id,start_date,end_date').in('emp_id', ids),
-      sb().from('task_assignments').select('emp_id,status,sent_back_count').in('emp_id', ids).gte('work_date', fromDate).lte('work_date', today),
-      sb().from('exam_attempts').select('emp_id,exam_id,attempt_no,passed').in('emp_id', ids).gte('submitted_at', fromDate),
-      sb().from('disc_actions').select('emp_id,action_type,level_name,reason,performed_at,status').in('emp_id', ids).gte('performed_at', fromDate),
-      sb().from('warnings').select('emp_id,warning_id,level_name,issue_date,reason').in('emp_id', ids).gte('issue_date', fromDate),
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date,late_min').in('emp_id', ids).gte('work_date', fromDate).lte('work_date', today)),
+      fetchPaged(() => sb().from('schedules').select('emp_id,work_date').in('emp_id', ids).gte('work_date', fromDate).lt('work_date', today)),
+      fetchPaged(() => sb().from('leaves').select('emp_id,start_date,end_date').in('emp_id', ids)),
+      fetchPaged(() => sb().from('task_assignments').select('emp_id,status,sent_back_count').in('emp_id', ids).gte('work_date', fromDate).lte('work_date', today)),
+      fetchPaged(() => sb().from('exam_attempts').select('emp_id,exam_id,attempt_no,passed').in('emp_id', ids).gte('submitted_at', fromDate)),
+      fetchPaged(() => sb().from('disc_actions').select('emp_id,action_type,level_name,reason,performed_at,status').in('emp_id', ids).gte('performed_at', fromDate)),
+      fetchPaged(() => sb().from('warnings').select('emp_id,warning_id,level_name,issue_date,reason').in('emp_id', ids).gte('issue_date', fromDate)),
     ]);
     const worked = {};
-    (attR.data || []).forEach(a => {
+    (attR || []).forEach(a => {
       const o = out[a.emp_id]; if (!o) return;
       (worked[a.emp_id] || (worked[a.emp_id] = new Set())).add(String(a.work_date));
       const m = Number(a.late_min || 0);
@@ -7520,32 +7524,32 @@
     });
     Object.keys(worked).forEach(id => { if (out[id]) out[id].days = worked[id].size; });
     const lv = {};
-    (lvR.data || []).forEach(l => { (lv[l.emp_id] || (lv[l.emp_id] = [])).push(l); });
-    (schR.data || []).forEach(s => {
+    (lvR || []).forEach(l => { (lv[l.emp_id] || (lv[l.emp_id] = [])).push(l); });
+    (schR || []).forEach(s => {
       const o = out[s.emp_id]; if (!o) return;
       const d = String(s.work_date);
       if ((worked[s.emp_id] || new Set()).has(d)) return;
       const onLeave = (lv[s.emp_id] || []).some(l => d >= String(l.start_date) && d <= String(l.end_date || l.start_date));
       if (!onLeave) o.absent++;
     });
-    (taR.data || []).forEach(t => {
+    (taR || []).forEach(t => {
       const o = out[t.emp_id]; if (!o) return;
       o.tasks++;
       if (Number(t.sent_back_count || 0) > 0) o.back++;
       if (String(t.status || '') === 'sent_back') o.open++;
     });
     const exSeen = {};
-    (exR.data || []).forEach(e => {
+    (exR || []).forEach(e => {
       const o = out[e.emp_id]; if (!o) return;
       const k = e.emp_id + '|' + e.exam_id;
       if (!exSeen[k]) { exSeen[k] = true; o.exam++; if (e.passed === true && Number(e.attempt_no || 1) === 1) o.exam_pass++; }
     });
-    (daR.data || []).forEach(a => {
+    (daR || []).forEach(a => {
       const o = out[a.emp_id]; if (!o) return;
       if (String(a.status || '') === 'cancelled') return;
       o.acts.push({ type: a.action_type, name: a.level_name || a.action_type, at: String(a.performed_at || '').slice(0, 10), reason: a.reason || '' });
     });
-    (wnR.data || []).forEach(w => { const o = out[w.emp_id]; if (o) o.warns++; });
+    (wnR || []).forEach(w => { const o = out[w.emp_id]; if (o) o.warns++; });
     Object.keys(out).forEach(id => out[id].acts.sort((a, b) => String(a.at).localeCompare(String(b.at))));
     return out;
   }
