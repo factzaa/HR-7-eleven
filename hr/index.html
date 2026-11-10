@@ -331,7 +331,10 @@
   .warning-doc .sig{display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:36px; padding-top:14px;}
   .warning-doc .sig div{border-top:1px dashed #999; padding-top:6px; font-size:13px; color:var(--muted); text-align:center;}
 
-  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); padding:13px 20px; border-radius:11px; font-size:14.5px; font-weight:500; z-index:99; box-shadow:0 6px 20px rgba(0,0,0,.15); display:none; max-width:90vw;}
+  /* ★ 10 พ.ย. 69 — z-index ต้องสูงกว่าโมดัลทุกตัว (กล่องอเนกประสงค์ใช้ 9999)
+     ของเดิมเป็น 99 ข้อความเตือนจึงไปอยู่ใต้ฉากหลังของโมดัล มองไม่เห็นเลย
+     ผลคือเวลากรอกไม่ครบแล้วกดบันทึก ผู้ใช้เห็นแค่ "กดแล้วไม่มีอะไรเกิดขึ้น" */
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); padding:13px 20px; border-radius:11px; font-size:14.5px; font-weight:500; z-index:100010; box-shadow:0 6px 20px rgba(0,0,0,.15); display:none; max-width:90vw;}
   .toast.show{display:block; animation:fadeUp .25s ease;}
   .toast.ok{background:var(--green); color:#fff;} .toast.err{background:var(--red); color:#fff;}
   @keyframes fadeUp{from{opacity:0; transform:translate(-50%, 8px);} to{opacity:1; transform:translate(-50%, 0);}}
