@@ -857,17 +857,17 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 <div id="view_probation" class="container" style="display:none">
   <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center">
     <div style="font-weight:800;font-size:17px">ประเมินผลทดลองงาน</div>
-    <span id="pb_sum" class="muted" style="font-size:13px"></span>
-    <span id="pb_ver" class="muted" style="font-size:12px;opacity:.8"></span>
+    <span id="prb_sum" class="muted" style="font-size:13px"></span>
+    <span id="prb_ver" class="muted" style="font-size:12px;opacity:.8"></span>
     <span style="flex:1"></span>
-    <select id="pb_filter" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <select id="prb_filter" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
       <option value="open">ยังไม่ตัดสิน</option>
       <option value="all">ทั้งหมด</option>
       <option value="done">ตัดสินแล้ว</option>
     </select>
-    <button class="btn btn-sec" id="pb_reload">รีเฟรช</button>
+    <button class="btn btn-sec" id="prb_reload">รีเฟรช</button>
   </div>
-  <div id="pb_body" style="margin-top:12px"></div>
+  <div id="prb_body" style="margin-top:12px"></div>
 </div>
 <div id="view_mgreval" class="container" style="display:none">
   <div class="toolbar" style="flex-wrap:wrap;gap:8px">
@@ -17067,11 +17067,11 @@ let PB = null;
 const PB_DEC = { pass:'ผ่านทดลองงาน', fail:'ไม่ผ่านทดลองงาน', extend:'ขยายเวลาทดลองงาน' };
 
 async function loadProbation(){
-  const body = $('pb_body'); if(!body) return;
+  const body = $('prb_body'); if(!body) return;
   if(!body.dataset.wired){
     body.dataset.wired = '1';
-    if($('pb_filter')) $('pb_filter').onchange = renderProbation;
-    if($('pb_reload')) $('pb_reload').onclick  = loadProbation;
+    if($('prb_filter')) $('prb_filter').onchange = renderProbation;
+    if($('prb_reload')) $('prb_reload').onclick  = loadProbation;
   }
   body.innerHTML = '<div class="muted" style="padding:20px">กำลังโหลด…</div>';
   const r = await post(Object.assign({ action:'hr_probation_list', data:{} }, authBody()));
@@ -17086,19 +17086,19 @@ async function loadProbation(){
 function pbDays(n){ return n<0 ? ('เลยกำหนดมา '+Math.abs(n)+' วัน') : (n===0 ? 'ครบกำหนดวันนี้' : ('อีก '+n+' วัน')); }
 
 function renderProbation(){
-  const body=$('pb_body'); if(!body||!PB) return;
-  const f=($('pb_filter')&&$('pb_filter').value)||'open';
+  const body=$('prb_body'); if(!body||!PB) return;
+  const f=($('prb_filter')&&$('prb_filter').value)||'open';
   let rows=PB.rows||[];
   if(f==='open') rows=rows.filter(r=>!r.decision);
   else if(f==='done') rows=rows.filter(r=>!!r.decision);
 
   const s=PB.stats||{};
-  const sum=$('pb_sum');
+  const sum=$('prb_sum');
   if(sum) sum.textContent='ทดลองงาน '+PB.period_days+' วัน · รอ ผจก.ประเมิน '+(s.waiting_mgr||0)
     +' · รอ HR ตัดสิน '+(s.waiting_hr||0)+(s.overdue?(' · เลยกำหนด '+s.overdue):'');
   // ★ 10 พ.ย. 69 — โชว์เวอร์ชันที่เครื่องนี้ใช้อยู่จริง ไว้เช็กว่ากดอัปเดตแล้วได้ของใหม่หรือยัง
   //   เวลาแจ้งปัญหาจะได้บอกได้ทันทีว่าอยู่เวอร์ชันไหน ไม่ต้องเดา
-  showAppVer('pb_ver');
+  showAppVer('prb_ver');
 
   if(!rows.length){
     body.innerHTML='<div class="sp-none" style="margin:0">ไม่มีพนักงานในรายการนี้ — พนักงานจะขึ้นมาเองเมื่อมีวันเริ่มงานอยู่ในช่วงทดลองงาน</div>';
@@ -17174,28 +17174,28 @@ function pbOpenMgr(empId){
     +'<div class="muted" style="font-size:12.5px;margin-bottom:12px">ให้คะแนนเฉพาะหัวข้อที่ระบบวัดเองไม่ได้ — ตัวเลขอย่างวันทำงาน สาย ขาด คะแนนวินัย ระบบดึงมาให้แล้วในหน้าก่อนหน้า</div>';
   (PB.axes||[]).forEach(a=>{
     h+='<div class="pb-row"><div><div style="font-weight:700">'+esc(a.label)+'</div><div class="muted" style="font-size:12px">'+esc(a.hint)+'</div></div><div class="pb-scale">';
-    for(let v=1;v<=PB.axis_max;v++) h+='<label><input type="radio" name="pbax_'+a.k+'" value="'+v+'"'+(Number(cur[a.k])===v?' checked':'')+'><span>'+v+'</span></label>';
+    for(let v=1;v<=PB.axis_max;v++) h+='<label><input type="radio" name="prbax_'+a.k+'" value="'+v+'"'+(Number(cur[a.k])===v?' checked':'')+'><span>'+v+'</span></label>';
     h+='</div></div>';
   });
   h+='<div style="margin:10px 0 4px"><label style="font-size:12px;color:var(--muted);font-weight:700">ความเห็นเพิ่มเติม (ไม่บังคับ)</label>'
-    +'<textarea id="pb_comment" rows="2" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.mgr_comment||'')+'</textarea></div>'
-    +'<div id="pb_err2" style="display:none;margin-top:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.7"></div>'
+    +'<textarea id="prb_comment" rows="2" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.mgr_comment||'')+'</textarea></div>'
+    +'<div id="prb_err2" style="display:none;margin-top:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.7"></div>'
     +'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'
     +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
-    +'<button class="btn btn-pri" id="pb_save">บันทึกคะแนน</button></div>';
+    +'<button class="btn btn-pri" id="prb_save">บันทึกคะแนน</button></div>';
   openModal('ผจก.ให้คะแนนทดลองงาน', h);
-  const pbErr2=(m)=>{ const e=$('pb_err2'); if(!e) return; e.style.display=m?'':'none'; e.textContent=m||''; };
-  $('pb_save').onclick=async()=>{
+  const pbErr2=(m)=>{ const e=$('prb_err2'); if(!e) return; e.style.display=m?'':'none'; e.textContent=m||''; };
+  $('prb_save').onclick=async()=>{
     const scores={}; let missing='';
-    (PB.axes||[]).forEach(a=>{ const el=document.querySelector('input[name="pbax_'+a.k+'"]:checked');
+    (PB.axes||[]).forEach(a=>{ const el=document.querySelector('input[name="prbax_'+a.k+'"]:checked');
       if(!el){ if(!missing) missing=a.label; } else scores[a.k]=Number(el.value); });
     if(missing){ pbErr2('ยังไม่ได้ให้คะแนนหัวข้อ "'+missing+'"'); return; }
     pbErr2('');
-    $('pb_save').disabled=true; $('pb_save').textContent='กำลังบันทึก…';
+    $('prb_save').disabled=true; $('prb_save').textContent='กำลังบันทึก…';
     let res=null, thrown='';
-    try{ res=await post(Object.assign({ action:'hr_probation_mgr', data:{ emp_id:empId, scores, comment:$('pb_comment').value } }, authBody())); }
+    try{ res=await post(Object.assign({ action:'hr_probation_mgr', data:{ emp_id:empId, scores, comment:$('prb_comment').value } }, authBody())); }
     catch(e){ thrown=(e&&e.message)||String(e); console.error('[probation mgr]', e); }
-    $('pb_save').disabled=false; $('pb_save').textContent='บันทึกคะแนน';
+    $('prb_save').disabled=false; $('prb_save').textContent='บันทึกคะแนน';
     if(thrown){ pbErr2('บันทึกไม่สำเร็จ: '+thrown); return; }
     if(!res||!res.ok){ pbErr2('บันทึกไม่สำเร็จ: '+((res&&res.error)||'ไม่ทราบสาเหตุ')); return; }
     closeModal(); toast('ok','บันทึกคะแนนแล้ว ('+res.mgr_total+'%)'); loadProbation();
@@ -17213,29 +17213,31 @@ function pbOpenDecide(empId){
     +(r.mgr_done?(' · ผจก.ให้ '+r.mgr_total+'%'):' · ผจก.ยังไม่ได้ให้คะแนน')+'</div>';
   if(!r.mgr_done) h+='<div class="sp-open" style="margin-bottom:10px">⚠ ผจก.ยังไม่ได้ให้คะแนน — ตัดสินได้ แต่เอกสารจะไม่มีความเห็นของผู้บังคับบัญชาประกอบ</div>';
   h+='<div class="pb-choice">'
-    +'<label><input type="radio" name="pb_dec" value="pass"><span>ผ่านทดลองงาน</span></label>'
-    +'<label><input type="radio" name="pb_dec" value="extend"><span>ขยายเวลา</span></label>'
-    +'<label><input type="radio" name="pb_dec" value="fail"><span>ไม่ผ่าน</span></label>'
+    +'<label><input type="radio" name="prb_dec" value="pass"><span>ผ่านทดลองงาน</span></label>'
+    +'<label><input type="radio" name="prb_dec" value="extend"><span>ขยายเวลา</span></label>'
+    +'<label><input type="radio" name="prb_dec" value="fail"><span>ไม่ผ่าน</span></label>'
     +'</div>'
-    +'<div id="pb_extwrap" style="display:none;margin-top:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">ครบกำหนดใหม่</label><br>'
-    +'<input id="pb_extto" type="date" value="'+defExt+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
-    +'<div id="pb_failwrap" style="display:none;margin-top:10px">'
+    +'<div id="prb_extwrap" style="display:none;margin-top:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">ครบกำหนดใหม่</label><br>'
+    +'<input id="prb_extto" type="date" value="'+defExt+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
+    +'<div id="prb_failwrap" style="display:none;margin-top:10px">'
       +'<div class="sp-open" style="margin-bottom:8px">การไม่ผ่านทดลองงานต้อง<b>บอกกล่าวล่วงหน้า 1 รอบการจ่ายค่าจ้าง</b> ถ้าไม่บอกล่วงหน้าต้องจ่ายค่าสินจ้างแทน'
       +'<br>และถ้าเก็บไว้จนเกิน 120 วัน (ครบ '+esc(beDate(r.severance_date))+') จึงเลิกจ้าง จะต้องจ่ายค่าชดเชยตามกฎหมาย</div>'
       +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
-      +'<div><label style="font-size:12px;color:var(--muted);font-weight:700">วันที่แจ้ง</label><br><input id="pb_notice" type="date" value="'+today+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
-      +'<div><label style="font-size:12px;color:var(--muted);font-weight:700">วันทำงานวันสุดท้าย</label><br><input id="pb_lastday" type="date" value="'+defLast+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
+      +'<div><label style="font-size:12px;color:var(--muted);font-weight:700">วันที่แจ้ง</label><br><input id="prb_notice" type="date" value="'+today+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
+      +'<div><label style="font-size:12px;color:var(--muted);font-weight:700">วันทำงานวันสุดท้าย</label><br><input id="prb_lastday" type="date" value="'+defLast+'" style="padding:8px;border:1.5px solid var(--line2);border-radius:9px;font:inherit"></div>'
       +'</div></div>'
     +'<div style="margin-top:10px"><label style="font-size:12px;color:var(--muted);font-weight:700">เหตุผล (บังคับ — จะขึ้นบนหนังสือแจ้งผล)</label>'
-    +'<textarea id="pb_reason" rows="3" placeholder="เช่น มาสาย 3 ครั้งใน 6 วันแรก ตักเตือนด้วยวาจาแล้วยังไม่ปรับปรุง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.decision_reason||'')+'</textarea></div>'
+    +'<textarea id="prb_reason" rows="3" placeholder="เช่น มาสาย 3 ครั้งใน 6 วันแรก ตักเตือนด้วยวาจาแล้วยังไม่ปรับปรุง" style="width:100%;padding:9px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;resize:vertical">'+esc(r.decision_reason||'')+'</textarea></div>'
     // ★ 10 พ.ย. 69 — ขึ้นข้อความผิดพลาดค้างไว้ในกล่อง ไม่ใช้ toast ที่หายไปใน 3 วินาที
     //   เวลาเซิร์ฟเวอร์ปฏิเสธ ต้องอ่านได้ว่าเพราะอะไร ไม่ใช่เห็นแค่ว่า "กดแล้วไม่เกิดอะไร"
-    +'<div id="pb_err" style="display:none;margin-top:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.7"></div>'
+    +'<div id="prb_err" style="display:none;margin-top:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.7"></div>'
     +'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'
     +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
-    +'<button class="btn btn-pri" id="pb_go">บันทึกผล</button></div>';
+    +'<button class="btn btn-pri" id="prb_go">บันทึกผล</button></div>';
   openModal('ตัดสินผลทดลองงาน', h);
-  const pbErr=(m)=>{ const e=$('pb_err'); if(!e) return; e.style.display=m?'':'none'; e.textContent=m||''; };
+  const pbErr=(m)=>{ const e=$('prb_err'); if(!e) return;
+    e.style.display=m?'':'none'; e.textContent=m||'';
+    e.style.background='#fef2f2'; e.style.borderColor='#fecaca'; e.style.color='#b91c1c'; };
   // ★ 10 พ.ย. 69 — ร่างเหตุผลให้ล่วงหน้าจากตัวเลขจริง แก้ไขทับได้
   //   ของเดิมปล่อยช่องว่างแล้วบังคับให้พิมพ์เอง · คนใช้งานจริงกดบันทึกทันทีโดยไม่ทันสังเกต
   //   แล้วระบบก็ปฏิเสธเงียบ ๆ กลายเป็น "กดแล้วไม่มีอะไรเกิดขึ้น"
@@ -17249,30 +17251,35 @@ function pbOpenDecide(empId){
     fail:   'ไม่ผ่านการประเมินทดลองงาน — '+pbFacts,
   };
   let pbTouched = false;
-  const ta = $('pb_reason');
+  const ta = $('prb_reason');
   if(ta){ ta.addEventListener('input', ()=>{ pbTouched = true; }); }
   const pbFill = (v)=>{ if(!ta || pbTouched) return; ta.value = pbDraft[v] || ''; };
-  document.querySelectorAll('input[name="pb_dec"]').forEach(el=>el.onchange=()=>{
-    $('pb_extwrap').style.display  = el.value==='extend' ? '' : 'none';
-    $('pb_failwrap').style.display = el.value==='fail'   ? '' : 'none';
+  document.querySelectorAll('input[name="prb_dec"]').forEach(el=>el.onchange=()=>{
+    $('prb_extwrap').style.display  = el.value==='extend' ? '' : 'none';
+    $('prb_failwrap').style.display = el.value==='fail'   ? '' : 'none';
     pbFill(el.value);
     pbErr('');
   });
-  $('pb_go').onclick=async()=>{
+  // ★ 10 พ.ย. 69 — ผูกปุ่มให้ทนที่สุด หลังเจอว่าบน iPad แตะแล้วไม่มีอะไรเกิดขึ้นเลย
+  //   ① ผูกทั้ง click และ touchend ② ดักซ้ำที่กล่องโมดัล เผื่อปุ่มไม่ได้รับ event เอง
+  //   ③ พอแตะปุ๊บขึ้นข้อความทันที จะได้รู้ว่าแตะติดหรือไม่ติด ไม่ต้องเดากันอีก
+  const pbGo = $('prb_go');
+  let pbBusy = false;
+  const pbSave = async()=>{
     pbErr('');
-    const sel=document.querySelector('input[name="pb_dec"]:checked');
+    const sel=document.querySelector('input[name="prb_dec"]:checked');
     if(!sel){ pbErr('เลือกผลการตัดสินก่อน (ผ่าน / ขยายเวลา / ไม่ผ่าน)'); return; }
-    const reason=$('pb_reason').value.trim();
+    const reason=$('prb_reason').value.trim();
     if(!reason){ pbErr('ต้องระบุเหตุผล — ข้อความนี้จะขึ้นบนหนังสือแจ้งผล'); return; }
     const d={ emp_id:empId, decision:sel.value, reason };
-    if(sel.value==='extend') d.extend_to=$('pb_extto').value;
-    if(sel.value==='fail'){ d.notice_date=$('pb_notice').value; d.last_day=$('pb_lastday').value; }
-    $('pb_go').disabled=true; $('pb_go').textContent='กำลังบันทึก…';
+    if(sel.value==='extend') d.extend_to=$('prb_extto').value;
+    if(sel.value==='fail'){ d.notice_date=$('prb_notice').value; d.last_day=$('prb_lastday').value; }
+    $('prb_go').disabled=true; $('prb_go').textContent='กำลังบันทึก…';
     let res=null, thrown='';
     // ★ ถ้าโยน error ออกมา ปุ่มต้องกลับมากดได้เสมอ ไม่งั้นจะค้างจนกดอะไรไม่ได้เลย
     try{ res=await post(Object.assign({ action:'hr_probation_decide', data:d }, authBody())); }
     catch(e){ thrown=(e&&e.message)||String(e); console.error('[probation decide]', e); }
-    $('pb_go').disabled=false; $('pb_go').textContent='บันทึกผล';
+    $('prb_go').disabled=false; $('prb_go').textContent='บันทึกผล';
     if(thrown){ pbErr('บันทึกไม่สำเร็จ: '+thrown); return; }
     if(!res||!res.ok){ pbErr('บันทึกไม่สำเร็จ: '+((res&&res.error)||'ไม่ทราบสาเหตุ')); return; }
     closeModal();
@@ -17280,6 +17287,17 @@ function pbOpenDecide(empId){
     if(res.notice_short) setTimeout(()=>toast('err','⚠ แจ้งล่วงหน้าไม่ถึง '+res.notice_days+' วัน — อาจต้องจ่ายค่าสินจ้างแทนการบอกกล่าว'), 1200);
     loadProbation();
   };
+  const pbFire = (ev)=>{
+    // บน iOS แตะครั้งเดียวได้ touchend แล้วตามด้วย click — กัน click ที่ตามมาไม่ให้ยิงซ้ำ
+    if(ev && ev.type==='touchend' && ev.cancelable) ev.preventDefault();
+    if(pbBusy) return;
+    pbBusy = true;
+    Promise.resolve(pbSave()).catch(err=>{
+      pbErr('บันทึกไม่สำเร็จ: '+((err&&err.message)||String(err)));
+      console.error('[probation decide]', err);
+    }).then(()=>{ setTimeout(()=>{ pbBusy=false; }, 600); });
+  };
+  if(pbGo){ pbGo.addEventListener('click', pbFire); pbGo.addEventListener('touchend', pbFire); }
 }
 
 function initEmpSum(){
