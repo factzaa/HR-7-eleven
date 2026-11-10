@@ -17236,9 +17236,27 @@ function pbOpenDecide(empId){
     +'<button class="btn btn-pri" id="pb_go">บันทึกผล</button></div>';
   openModal('ตัดสินผลทดลองงาน', h);
   const pbErr=(m)=>{ const e=$('pb_err'); if(!e) return; e.style.display=m?'':'none'; e.textContent=m||''; };
+  // ★ 10 พ.ย. 69 — ร่างเหตุผลให้ล่วงหน้าจากตัวเลขจริง แก้ไขทับได้
+  //   ของเดิมปล่อยช่องว่างแล้วบังคับให้พิมพ์เอง · คนใช้งานจริงกดบันทึกทันทีโดยไม่ทันสังเกต
+  //   แล้วระบบก็ปฏิเสธเงียบ ๆ กลายเป็น "กดแล้วไม่มีอะไรเกิดขึ้น"
+  //   มีร่างให้ตั้งแต่แรก = กดผ่านได้เลย และเอกสารก็มีเหตุผลที่อ้างอิงตัวเลขได้จริง
+  const pbFacts = 'ทำงาน '+r.days+' วัน · มาสาย '+r.late_count+' ครั้ง ('+r.late_total+' นาที) · ขาดงาน '+r.absent+' วัน'
+    + ' · คะแนนวินัย '+(r.score==null?'—':r.score+'/'+r.score_full)
+    + (r.mgr_done?(' · ผจก.ประเมิน '+r.mgr_total+'%'):'');
+  const pbDraft = {
+    pass:   'ผ่านการประเมินทดลองงาน — '+pbFacts,
+    extend: 'ขยายเวลาทดลองงานเพื่อติดตามผลเพิ่มเติม — '+pbFacts,
+    fail:   'ไม่ผ่านการประเมินทดลองงาน — '+pbFacts,
+  };
+  let pbTouched = false;
+  const ta = $('pb_reason');
+  if(ta){ ta.addEventListener('input', ()=>{ pbTouched = true; }); }
+  const pbFill = (v)=>{ if(!ta || pbTouched) return; ta.value = pbDraft[v] || ''; };
   document.querySelectorAll('input[name="pb_dec"]').forEach(el=>el.onchange=()=>{
     $('pb_extwrap').style.display  = el.value==='extend' ? '' : 'none';
     $('pb_failwrap').style.display = el.value==='fail'   ? '' : 'none';
+    pbFill(el.value);
+    pbErr('');
   });
   $('pb_go').onclick=async()=>{
     pbErr('');
