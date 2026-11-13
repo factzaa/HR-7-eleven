@@ -487,6 +487,7 @@
         case 'hr_probation_get':     return await hrProbationGet(p.data, p);
         case 'hr_probation_mgr':     return await hrProbationMgr(p.data, p);
         case 'hr_probation_decide':  return await hrProbationDecide(p.data, p);
+        case 'hr_probation_notify':  return await hrProbationNotify(p.data, p);
         case 'hr_emp_thumbs':        return await hrEmpThumbs(p.data);
         case 'hr_analytics':         return await hrAnalytics(p.data);
         case 'hr_special_create':    return await hrSpecialCreate(p.data);
@@ -2643,8 +2644,11 @@
     d = d || {};
     if (!d.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
     if (!d.reason || !String(d.reason).trim()) return { ok: false, error: 'ต้องระบุสาเหตุ' };
-    const type = ['verbal', 'written', 'warning', 'coaching', 'note'].includes(d.action_type) ? d.action_type : 'verbal';
-    const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม' };
+    // ★ 13 พ.ย. 69 — เพิ่มชนิด 'probation' = แจ้งผลประเมินทดลองงานให้พนักงานกดรับทราบ
+    //   ไม่อยู่ใน STEP_RANK จึงไม่ติดบันไดวินัย (วาจา → ลายลักษณ์ → ใบเตือน)
+    //   เพราะเป็นการ "แจ้งให้ทราบ" ไม่ใช่การลงโทษทางวินัย
+    const type = ['verbal', 'written', 'warning', 'coaching', 'note', 'probation'].includes(d.action_type) ? d.action_type : 'verbal';
+    const ACT_LABEL = { verbal: 'ตักเตือนด้วยวาจา', written: 'ตักเตือนลายลักษณ์อักษร', warning: 'ออกใบเตือน', coaching: 'คุยปรับพฤติกรรม', note: 'บันทึกเพิ่มเติม', probation: 'แจ้งผลการประเมินทดลองงาน' };
 
     const { data: emp } = await sb().from('employees').select('emp_id,name,branch_id').eq('emp_id', String(d.emp_id)).maybeSingle();
     if (!emp) return { ok: false, error: 'ไม่พบพนักงานรหัสนี้' };
@@ -7500,7 +7504,7 @@
   // รวบรวมข้อมูลที่ระบบวัดได้ ของพนักงานกลุ่มทดลองงาน (ยิงทีเดียวทั้งกลุ่ม ไม่ยิงรายคน)
   async function probStats(ids, fromDate, today) {
     const out = {};
-    ids.forEach(id => { out[id] = { days: 0, late_count: 0, late_total: 0, absent: 0, tasks: 0, back: 0, open: 0, exam: 0, exam_pass: 0, acts: [], warns: 0 }; });
+    ids.forEach(id => { out[id] = { days: 0, late_count: 0, late_total: 0, absent: 0, tasks: 0, back: 0, open: 0, exam: 0, exam_pass: 0, acts: [], warns: 0, notify: null }; });
     if (!ids.length) return out;
     // ★ 10 พ.ย. 69 — ต้องดึงแบบแบ่งหน้า ห้ามยิงรวดเดียว
     //   ฐานข้อมูลคืนผลสูงสุด 1000 แถวต่อครั้ง · พนักงานทดลองงาน 20 คน × 150 วัน เกิน 1000 แถวสบาย ๆ
@@ -7547,6 +7551,13 @@
     (daR || []).forEach(a => {
       const o = out[a.emp_id]; if (!o) return;
       if (String(a.status || '') === 'cancelled') return;
+      // ★ 13 พ.ย. 69 — การ "แจ้งผลประเมิน" ไม่ใช่การตักเตือน แยกเก็บไว้ต่างหาก
+      //   ไม่ให้ไปปนอยู่ในประวัติการตักเตือน ซึ่งจะทำให้อ่านผิดว่าโดนลงโทษ
+      if (a.action_type === 'probation') {
+        const at = String(a.performed_at || '');
+        if (!o.notify || at > o.notify.at) o.notify = { at, ack: !!a.ack_at, signed: !!a.doc_at };
+        return;
+      }
       o.acts.push({ type: a.action_type, name: a.level_name || a.action_type, at: String(a.performed_at || '').slice(0, 10), reason: a.reason || '' });
     });
     (wnR || []).forEach(w => { const o = out[w.emp_id]; if (o) o.warns++; });
@@ -7575,6 +7586,9 @@
       score: sc.score != null ? sc.score : null, score_full: sc.start != null ? sc.start : 100,
       band_label: sc.band_label || '',
       acts: st.acts || [], warn_count: st.warns || 0,
+      notified_at: st.notify ? st.notify.at : null,
+      notify_ack: !!(st.notify && st.notify.ack),
+      notify_signed: !!(st.notify && st.notify.signed),
       mgr_done: !!(rv && rv.mgr_at), mgr_total: rv ? rv.mgr_total : null,
       mgr_scores: rv ? rv.mgr_scores : null, mgr_comment: rv ? rv.mgr_comment : '',
       mgr_by: rv ? rv.mgr_by : '', mgr_at: rv ? rv.mgr_at : null,
@@ -7609,7 +7623,7 @@
     const earliest = ids.length ? emps.map(e => String(e.start_date)).sort()[0] : today;
     const stats = await probStats(ids, earliest, today);
 
-    const rows = emps.map(e => probRow(e, rvBy[e.emp_id], stats, cfg, today, scoreBy))
+    const rows = emps.map(e => { const r = probRow(e, rvBy[e.emp_id], stats, cfg, today, scoreBy); r.notify_draft = probNotifyDraft(r); return r; })
       // ยังไม่ตัดสิน = เรื่องที่ต้องทำ ขึ้นก่อนเสมอ · ในกลุ่มเดียวกันเรียงตามวันที่ใกล้ครบกำหนด
       .filter(r => !(r.decision && r.days_left < -60))
       .sort((a, b) => (a.decision ? 1 : 0) - (b.decision ? 1 : 0) || a.days_left - b.days_left);
@@ -7746,6 +7760,58 @@
       ? (Math.round((Date.parse(upd.last_day + 'T00:00:00Z') - Date.parse(upd.notice_date + 'T00:00:00Z')) / 86400000) < cfg.notice)
       : false;
     return { ok: true, decision: dec, notice_short, notice_days: cfg.notice };
+  }
+
+  // ③ ส่งผลประเมินเข้าแอปพนักงานให้กดรับทราบ      ★ 13 พ.ย. 69
+  //   แยกจากการ "ตัดสิน" โดยตั้งใจ — ส่งให้รับทราบได้ก่อนโดยยังไม่ชี้ขาดผ่าน/ไม่ผ่าน
+  //   เพราะถ้าแจ้งว่าไม่ผ่านไปก่อนคุย จะกลายเป็นการบอกเลิกจ้างฝ่ายเดียว
+  //   ใช้ตาราง disc_actions ตัวเดิม พนักงานจึงเจอด่านกดรับทราบในหน้ารับส่งผลัดได้ทันที
+  async function hrProbationNotify(p, auth) {
+    p = p || {};
+    const me = await _termActor(auth);
+    if (me.role === 'invalid') return { ok: false, error: 'รหัส ผจก. หรือ PIN ไม่ถูกต้อง' };
+    if (me.role !== 'hr') return { ok: false, error: 'ส่งผลประเมินได้เฉพาะสำนักงาน (HR)' };
+    const empId = String(p.emp_id || '').trim();
+    if (!empId) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const body = String(p.body || '').trim();
+    if (!body) return { ok: false, error: 'ต้องมีเนื้อหาที่จะแจ้ง' };
+
+    const g = await hrProbationGet({ emp_id: empId }, auth);
+    if (!g.ok) return g;
+    const r = g.row;
+    return await hrDiscActionAdd({
+      emp_id: empId,
+      action_type: 'probation',
+      level_name: 'แจ้งผลการประเมินทดลองงาน',
+      reason: body,
+      detail: String(p.detail || '').trim() || null,
+      score: r.score, band_label: r.band_label,
+      late_count: r.late_count, late_total: r.late_total, absent_count: r.absent,
+      need_ack: true,
+      performed_by: p.by || me.name,
+      performed_role: 'hr',
+    });
+  }
+
+  // ร่างข้อความแจ้งผลจากตัวเลขจริง — หน้าเว็บเอาไปแสดงให้ HR แก้ก่อนส่ง
+  function probNotifyDraft(r) {
+    const L = [];
+    L.push('แจ้งผลการประเมินการปฏิบัติงานในช่วงทดลองงาน');
+    L.push('');
+    L.push('ช่วงที่ประเมิน: ตั้งแต่วันเริ่มงาน ' + r.start_date + ' ถึงปัจจุบัน');
+    L.push('วันทำงาน ' + r.days + ' วัน · มาสาย ' + r.late_count + ' ครั้ง (' + r.late_total + ' นาที) · ขาดงาน ' + r.absent + ' วัน');
+    if (r.score != null) L.push('คะแนนวินัยคงเหลือ ' + r.score + '/' + r.score_full + (r.band_label ? (' · ' + r.band_label) : ''));
+    if (r.tasks) L.push('งานในกะ ' + r.tasks + ' รายการ · ถูกตีกลับ ' + r.tasks_back + ' รายการ');
+    if ((r.acts || []).length) {
+      L.push('');
+      L.push('ประวัติการตักเตือนในช่วงทดลองงาน');
+      r.acts.forEach(a => L.push('• ' + a.at + ' ' + a.name + (a.reason ? (' : ' + a.reason) : '')));
+    }
+    L.push('');
+    L.push('การกดรับทราบนี้เป็นการยืนยันว่าได้รับทราบข้อมูลข้างต้นแล้วเท่านั้น');
+    L.push('ไม่ถือเป็นการยอมรับผลการประเมิน และไม่ถือเป็นการตกลงเลิกสัญญาจ้าง');
+    L.push('หากมีข้อเท็จจริงเพิ่มเติม สามารถชี้แจงได้ในการเข้าพบกับฝ่ายบุคคล');
+    return L.join('\n');
   }
 
   async function hrEmpSummary(p, auth) {
