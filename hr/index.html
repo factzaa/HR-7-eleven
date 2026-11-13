@@ -1379,6 +1379,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   .pb-acts{margin-top:10px;font-size:12.5px;line-height:1.8}
   .pb-mgr{margin-top:10px;font-size:12.5px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:8px 11px;line-height:1.8}
   .pb-ax{display:inline-block;margin:0 8px 0 0;padding:1px 8px;background:#fff;border:1px solid #bae6fd;border-radius:999px;font-size:11.5px}
+  .pb-noti{margin-top:10px;font-size:12.5px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:8px 11px;line-height:1.7}
   .pb-dec{margin-top:10px;font-size:13px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:9px 12px;line-height:1.7}
   .pb-btns{margin-top:11px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
   .pb-row{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
@@ -17143,6 +17144,14 @@ function renderProbation(){
       if(r.mgr_comment) h+='<div style="margin-top:5px">“'+esc(r.mgr_comment)+'”</div>';
       h+='</div>';
     }
+    // ★ 13 พ.ย. 69 — สถานะการแจ้งผลให้พนักงานรับทราบ (คนละเรื่องกับการตัดสิน)
+    if(r.notified_at){
+      h+='<div class="pb-noti">'+(r.notify_ack
+        ? '✓ พนักงานกดรับทราบผลประเมินแล้ว'
+        : '⏳ ส่งผลประเมินเข้าแอปแล้ว — รอพนักงานกดรับทราบ')
+        +' <span class="muted">· ส่งเมื่อ '+esc(beDateTime(r.notified_at))+'</span>'
+        +(r.notify_signed?' · เซ็นรับทราบแล้ว':'')+'</div>';
+    }
     if(r.decision){
       h+='<div class="pb-dec"><b>'+esc(PB_DEC[r.decision]||r.decision)+'</b> · '+esc(r.decided_by||'')
         +'<div style="margin-top:3px">'+esc(r.decision_reason||'')+'</div>'
@@ -17153,6 +17162,7 @@ function renderProbation(){
     h+='<div class="pb-btns">'
       +'<button class="btn btn-sec btn-sm" data-pbsum="'+esc(r.emp_id)+'">ดูสรุปรายบุคคล</button>'
       +'<button class="btn btn-sec btn-sm" data-pbmgr="'+esc(r.emp_id)+'">'+(r.mgr_done?'แก้คะแนน ผจก.':'ผจก.ให้คะแนน')+'</button>'
+      +(MGR_MODE?'':('<button class="btn btn-sec btn-sm" data-pbnoti="'+esc(r.emp_id)+'">'+(r.notified_at?'ส่งผลประเมินอีกครั้ง':'ส่งผลให้พนักงานรับทราบ')+'</button>'))
       +(MGR_MODE?'':('<button class="btn btn-pri btn-sm" data-pbdec="'+esc(r.emp_id)+'">'+(r.decision?'แก้ผลการตัดสิน':'ตัดสินผลทดลองงาน')+'</button>'))
       +'</div></div>';
   });
@@ -17160,6 +17170,7 @@ function renderProbation(){
   body.querySelectorAll('[data-pbsum]').forEach(b=>b.onclick=()=>{ if(typeof openEmpCard==='function') openEmpCard(b.dataset.pbsum); });
   body.querySelectorAll('[data-pbmgr]').forEach(b=>b.onclick=()=>pbOpenMgr(b.dataset.pbmgr));
   body.querySelectorAll('[data-pbdec]').forEach(b=>b.onclick=()=>pbOpenDecide(b.dataset.pbdec));
+  body.querySelectorAll('[data-pbnoti]').forEach(b=>b.onclick=()=>pbOpenNotify(b.dataset.pbnoti));
 }
 function pbTile(label, val, sub, bad){
   return '<div class="pb-tile'+(bad?' bad':'')+'"><div class="pb-tl">'+esc(label)+'</div><div class="pb-tv">'+esc(val)+'</div>'
@@ -17200,6 +17211,42 @@ function pbOpenMgr(empId){
     if(!res||!res.ok){ pbErr2('บันทึกไม่สำเร็จ: '+((res&&res.error)||'ไม่ทราบสาเหตุ')); return; }
     closeModal(); toast('ok','บันทึกคะแนนแล้ว ('+res.mgr_total+'%)'); loadProbation();
   };
+}
+
+// ---------- ส่งผลประเมินเข้าแอปพนักงานให้กดรับทราบ ----------
+//   แยกจากการตัดสินโดยตั้งใจ · ส่งได้ก่อนโดยยังไม่ชี้ขาดผ่าน/ไม่ผ่าน
+function pbOpenNotify(empId){
+  const r=(PB.rows||[]).find(x=>String(x.emp_id)===String(empId)); if(!r) return;
+  let h='<div style="font-weight:800;font-size:16px;margin-bottom:2px">'+esc(r.nickname||r.name)+' <span class="muted" style="font-size:13px;font-weight:500">· '+esc(r.emp_id)+'</span></div>'
+    +'<div class="muted" style="font-size:12.5px;margin-bottom:10px">ข้อความนี้จะเข้าแอปของพนักงาน และต้องกดรับทราบก่อนใช้หน้ารับส่งผลัดได้</div>'
+    +(r.notified_at?('<div class="sp-open" style="margin-bottom:10px">เคยส่งไปแล้วเมื่อ '+esc(beDateTime(r.notified_at))+(r.notify_ack?' · พนักงานกดรับทราบแล้ว':' · ยังไม่กดรับทราบ')+'<br>ส่งซ้ำจะเป็นรายการใหม่ที่ต้องกดรับทราบอีกครั้ง</div>'):'')
+    +'<div style="margin-bottom:8px"><label style="font-size:12px;color:var(--muted);font-weight:700">ข้อความที่จะส่ง (แก้ได้)</label>'
+    +'<textarea id="prb_msg" rows="14" style="width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px;line-height:1.7;resize:vertical">'+esc(r.notify_draft||'')+'</textarea></div>'
+    +'<div id="prb_nerr" style="display:none;margin-top:6px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.7"></div>'
+    +'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'
+    +'<button class="btn btn-sec" onclick="closeModal()">ยกเลิก</button>'
+    +'<button class="btn btn-pri" id="prb_send">ส่งเข้าแอปพนักงาน</button></div>';
+  openModal('ส่งผลประเมินให้พนักงานรับทราบ', h);
+  const nerr=(m)=>{ const e=$('prb_nerr'); if(!e) return; e.style.display=m?'':'none'; e.textContent=m||''; };
+  const btn=$('prb_send');
+  let busy=false;
+  const send=async()=>{
+    nerr('');
+    const body=$('prb_msg').value.trim();
+    if(!body){ nerr('ข้อความว่างไม่ได้'); return; }
+    btn.disabled=true; btn.textContent='กำลังส่ง…';
+    let res=null, thrown='';
+    try{ res=await post(Object.assign({ action:'hr_probation_notify', data:{ emp_id:empId, body } }, authBody())); }
+    catch(e){ thrown=(e&&e.message)||String(e); console.error('[probation notify]', e); }
+    btn.disabled=false; btn.textContent='ส่งเข้าแอปพนักงาน';
+    if(thrown){ nerr('ส่งไม่สำเร็จ: '+thrown); return; }
+    if(!res||!res.ok){ nerr('ส่งไม่สำเร็จ: '+((res&&res.error)||'ไม่ทราบสาเหตุ')); return; }
+    closeModal(); toast('ok','ส่งเข้าแอปพนักงานแล้ว — รอพนักงานกดรับทราบ'); loadProbation();
+  };
+  const fire=(ev)=>{ if(ev&&ev.type==='touchend'&&ev.cancelable) ev.preventDefault();
+    if(busy) return; busy=true;
+    Promise.resolve(send()).catch(e=>nerr('ส่งไม่สำเร็จ: '+((e&&e.message)||String(e)))).then(()=>{ setTimeout(()=>{busy=false;},600); }); };
+  if(btn){ btn.addEventListener('click',fire); btn.addEventListener('touchend',fire); }
 }
 
 // ---------- ② HR ตัดสิน ----------
