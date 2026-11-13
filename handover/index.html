@@ -432,8 +432,8 @@ function branchName(id){ return BRANCHES[id]||id||'(ไม่มีสาขา�
 // ต้องอ่านและกดรับทราบก่อนใช้งาน (เก็บเวลา + อุปกรณ์เป็นหลักฐาน)
 // ======================================================================
 let DISC_QUEUE=[], DISC_IDX=0, DISC_RESOLVE=null;
-const DISC_LABEL={ verbal:'ตักเตือนด้วยวาจา', written:'ตักเตือนลายลักษณ์อักษร', warning:'ใบเตือน', coaching:'คุยปรับพฤติกรรม', note:'บันทึกเพิ่มเติม' };
-const DISC_COLOR={ verbal:['#fef3c7','#92400e'], written:['#ffedd5','#c2410c'], warning:['#fee2e2','#b91c1c'], coaching:['#e0f2fe','#0369a1'], note:['#f1f5f9','#334155'] };
+const DISC_LABEL={ verbal:'ตักเตือนด้วยวาจา', written:'ตักเตือนลายลักษณ์อักษร', warning:'ใบเตือน', coaching:'คุยปรับพฤติกรรม', note:'บันทึกเพิ่มเติม', probation:'แจ้งผลการประเมินทดลองงาน' };
+const DISC_COLOR={ verbal:['#fef3c7','#92400e'], written:['#ffedd5','#c2410c'], warning:['#fee2e2','#b91c1c'], coaching:['#e0f2fe','#0369a1'], note:['#f1f5f9','#334155'], probation:['#e0e7ff','#3730a3'] };
 
 function ensureDiscOverlay(){
   if(document.getElementById('discOverlay')) return;
@@ -470,7 +470,10 @@ function discRender(){
   bd.style.background=c[0]; bd.style.color=c[1];
   // บันไดวินัยสะสม — ให้พนักงานเห็นว่าอยู่ขั้นไหน + ครบ 3 ใบ = พิจารณาเลิกจ้าง
   const ld=document.getElementById('discLadder');
-  if(ld && window.HR && window.HR.myDisciplineLadder){
+  // ★ 13 พ.ย. 69 — แจ้งผลประเมินทดลองงานไม่ใช่การลงโทษทางวินัย
+  //   ถ้าขึ้นบันได "วาจา → ลายลักษณ์ → ใบเตือน" ด้วย พนักงานจะเข้าใจผิดว่าโดนลงโทษ
+  if(ld && a.action_type==='probation'){ ld.style.display='none'; }
+  else if(ld && window.HR && window.HR.myDisciplineLadder){
     ld.style.display='none';
     window.HR.myDisciplineLadder(EMP.emp_id).then(m=>{
       if(!m) return;
