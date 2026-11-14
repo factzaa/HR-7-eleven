@@ -851,6 +851,35 @@ async function openM1(){
 let LBOARD=null;
 // ★ ส่งผลัด (15 ก.ย. 69) — หัวหน้าผลัดยืนยันว่างานพร้อมให้ผลัดถัดไปตรวจ
 var IS_LEAD=false, SHIFT_SENT=false, SS_STATE=null;
+// ปุ่มลัดในช่อง "หมายเหตุถึงผลัดถัดไป" — แตะแล้วเติมหัวข้อให้ พิมพ์ต่อได้เลย
+var SS_NOTE_NONE='ไม่มีเรื่องฝาก';
+var SS_CHIPS=[
+  { label:'✓ ไม่มีเรื่องฝาก', text:SS_NOTE_NONE, none:true },
+  { label:'ของขาด',        text:'ของขาด: ' },
+  { label:'อุปกรณ์เสีย',    text:'อุปกรณ์เสีย/ใช้ไม่ได้: ' },
+  { label:'งานค้างต่อ',     text:'งานที่ต้องทำต่อ: ' },
+  { label:'ลูกค้าฝากไว้',   text:'ลูกค้าฝากของ/ฝากเรื่องไว้: ' },
+  { label:'เงิน/ยอด',      text:'เรื่องเงิน/ยอดขาย: ' },
+];
+function wireSsChips(){
+  var box=document.getElementById('ss_chips'); if(!box) return;
+  box.querySelectorAll('[data-sschip]').forEach(function(b){
+    b.onclick=function(){
+      var c=SS_CHIPS[Number(b.getAttribute('data-sschip'))]; if(!c) return;
+      var ta=document.getElementById('ss_note'); if(!ta) return;
+      if(c.none){ ta.value=SS_NOTE_NONE; }                       // กดแล้วแทนที่ทั้งช่อง = ยืนยันว่าไม่มีจริง ๆ
+      else {
+        var cur=String(ta.value||'').trim();
+        if(cur===SS_NOTE_NONE) cur='';                           // เปลี่ยนใจจาก "ไม่มี" เป็นมีเรื่องฝาก
+        ta.value=(cur?(cur+'\n'):'')+c.text;
+      }
+      try{ sessionStorage.setItem('ss_note_draft',ta.value); }catch(_e){}
+      ta.focus();
+      try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(_e){}
+    };
+  });
+}
+
 function shiftSendHTML(st){
   if(!st || !st.has_shift) return '';
   if(st.submitted){
@@ -875,8 +904,18 @@ function shiftSendHTML(st){
     +(st.pending.length>8?('<br><span class="muted">…และอีก '+(st.pending.length-8)+' รายการ</span>'):'')+'</div>';
   if(!st.is_lead) h+='<div class="muted" style="font-size:12.5px">ส่งผลัดได้เฉพาะหัวหน้าผลัด'
     +(st.lead?(' (' + esc(st.lead.emp_name||st.lead.emp_id) + ')'):' — ยังไม่มีใครรับเป็นหัวหน้าผลัด')+'</div>';
+  // ★ 14 พ.ย. 69 — 60 วันที่ผ่านมา ส่งผลัด 427 ครั้ง แต่ฝากข้อความแค่ 13 ครั้ง
+  //   ปัญหาคือพิมพ์บนมือถือตอนใกล้เลิกกะมันขี้เกียจ — ใส่ปุ่มลัดให้แตะแล้วพิมพ์ต่อ
+  //   และปุ่ม "ไม่มีเรื่องฝาก" ให้ระบุชัด ๆ ช่องว่างจะได้แปลว่า "ลืม" ไม่ใช่ "ไม่มีอะไร"
   else h+='<div style="margin:2px 0 8px">'
       +'<div style="font-size:12.5px;font-weight:600;margin-bottom:4px">หมายเหตุถึงผลัดถัดไป <span class="muted" style="font-weight:400">(ไม่บังคับ)</span></div>'
+      +'<div id="ss_chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+      + SS_CHIPS.map(function(c,i){
+          return '<button type="button" class="ssChip" data-sschip="'+i+'" style="font:inherit;font-size:12px;font-weight:600;'
+            +'padding:5px 11px;border:1.5px solid '+(c.none?'#86efac':'#d6d9e0')+';border-radius:999px;cursor:pointer;'
+            +'background:'+(c.none?'#f0fdf4':'#fff')+';color:'+(c.none?'#166534':'#475569')+'">'+esc(c.label)+'</button>';
+        }).join('')
+      +'</div>'
       +'<textarea id="ss_note" rows="3" placeholder="เช่น ตู้แช่ช่อง 2 เย็นไม่พอ แจ้งช่างแล้วรอเข้าพรุ่งนี้ · ของ Food ขาด 3 รายการ สั่งเพิ่มแล้ว · ลูกค้าฝากของไว้หน้าเคาน์เตอร์" style="width:100%;padding:8px 10px;border:1.5px solid #d6d9e0;border-radius:9px;font:inherit;font-size:13.5px;resize:vertical"></textarea>'
       +'<div class="muted" style="font-size:11.5px;margin-top:3px">ข้อความนี้จะขึ้นให้ผลัดถัดไปเห็นในแอป และส่งเข้าไลน์กลุ่มพร้อมรายงานสิ้นผลัด</div>'
       +'</div>'
@@ -936,6 +975,7 @@ async function refreshSendCard(){
     try{ _sn.value=sessionStorage.getItem('ss_note_draft')||''; }catch(_e){}
     _sn.oninput=function(){ try{ sessionStorage.setItem('ss_note_draft',_sn.value); }catch(_e){} };
   }
+  wireSsChips();
   wireShiftSend();
 }
 function wireShiftSend(){
@@ -944,6 +984,12 @@ function wireShiftSend(){
     var st=SS_STATE; if(!st||!st.lead) return;
     if(st.pending.length){ toast('err','ยังมีงานค้างอยู่'); return; }
     var ssNote=(($('ss_note')||{}).value||'').trim();
+    // ★ 14 พ.ย. 69 — เคยมีคนพิมพ์รหัสพนักงานลงช่องนี้ (2 ใน 13 ข้อความที่เคยฝาก)
+    //   ผลัดถัดไปเปิดมาเจอตัวเลขเปล่า ๆ ไม่รู้เรื่อง — ถามก่อนว่าตั้งใจจริงไหม
+    if(/^\d{6,10}$/.test(ssNote)
+       && !confirm('ช่อง "หมายเหตุถึงผลัดถัดไป" มีแต่ตัวเลข "'+ssNote+'"\n\n'
+                  +'ถ้าตั้งใจกรอกรหัสพนักงาน ช่องนี้ไม่ใช่ช่องนั้นนะ — ช่องนี้คือข้อความที่ผลัดถัดไปจะอ่าน\n\n'
+                  +'กด OK เพื่อส่งแบบนี้ · กด Cancel เพื่อกลับไปแก้')) return;
     var code=prompt('ยืนยันส่งผลัด\n\nส่งงาน '+st.done+'/'+st.total+' งาน'
       +(ssNote?('\nหมายเหตุถึงผลัดถัดไป: '+ssNote.slice(0,120)):'\n(ไม่ได้เขียนหมายเหตุถึงผลัดถัดไป)')
       +(st.closed.length?(' · ปิดงาน '+st.closed.length+' งาน'):'')
