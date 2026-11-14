@@ -860,6 +860,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <span id="prb_sum" class="muted" style="font-size:13px"></span>
     <span id="prb_ver" class="muted" style="font-size:12px;opacity:.8"></span>
     <span style="flex:1"></span>
+    <div class="ec-search" style="max-width:250px"><svg class="ei" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="text" id="prb_q" placeholder="ค้นหาชื่อ ชื่อเล่น หรือรหัส"></div>
+    <select id="prb_branch" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <option value="">ทุกสาขา</option>
+    </select>
     <select id="prb_filter" style="padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
       <option value="open">ยังไม่ตัดสิน</option>
       <option value="all">ทั้งหมด</option>
@@ -1152,6 +1157,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <div style="flex:1">
       <div style="font-size:13.5px; color:var(--muted)">รอบที่ประเมิน <b id="d_cycleinfo">—</b></div>
     </div>
+    <div class="ec-search" style="max-width:260px"><svg class="ei" viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="text" id="d_q" placeholder="ค้นหาชื่อ ชื่อเล่น หรือรหัส"></div>
+    <select id="d_branch" style="padding:8px 12px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px;">
+      <option value="">ทุกสาขา</option>
+    </select>
     <select id="d_cycle" style="padding:8px 12px; border:1.5px solid var(--line2); border-radius:9px; font:inherit; font-size:14px;">
       <option value="current">รอบปัจจุบัน</option>
       <option value="previous">รอบที่แล้ว</option>
@@ -5375,6 +5385,20 @@ $('r_export').onclick = ()=>{
 
 // ========== DISCIPLINE ==========
 let DISC = null;
+// เติมรายชื่อสาขาลงตัวกรองครั้งเดียว (ใช้สาขาที่มีพนักงานอยู่จริงในรอบนั้น)
+function dFillBranches(rows){
+  const sel=$('d_branch'); if(!sel) return;
+  if(MGR_MODE){ const w=sel.closest('.toolbar')?sel:null; sel.style.display='none'; return; }
+  const seen={}; (rows||[]).forEach(x=>{ const b=String(x.branch_id||''); if(b) seen[b]=(seen[b]||0)+1; });
+  const keys=Object.keys(seen).sort();
+  const sig=keys.join(',');
+  if(sel.dataset.sig===sig) return;              // ไม่ต้องสร้างใหม่ทุกครั้งที่เรนเดอร์
+  sel.dataset.sig=sig;
+  const keep=sel.value;
+  sel.innerHTML='<option value="">ทุกสาขา</option>'
+    + keys.map(b=>'<option value="'+esc(b)+'">'+esc(branchName(b))+' ('+seen[b]+')</option>').join('');
+  if(keep && keys.indexOf(keep)>-1) sel.value=keep;
+}
 async function loadDiscipline(){
   $('d_body').innerHTML = '<div class="empty">กำลังโหลด…</div>';
   const r = await post({ action:'hr_discipline', ...authBody(), cycle:$('d_cycle').value });
@@ -5389,6 +5413,14 @@ async function loadDiscipline(){
 function renderDiscipline(){
   let e = DISC.employees;
   if(MGR_MODE && MGR_BRANCH) e = e.filter(x=>String(x.branch_id)===String(MGR_BRANCH));   // ผจก. เห็นเฉพาะสาขาตัวเอง
+  // ★ 14 พ.ย. 69 — กรองสาขา + ค้นหาชื่อ (ของเดิมมีแต่รายชื่อยาวทั้งร้าน หาคนเดียวลำบาก)
+  dFillBranches(e);
+  const _br = (($('d_branch')||{}).value || '');
+  const _q  = String((($('d_q')||{}).value || '')).trim().toLowerCase();
+  const _total = e.length;
+  if(_br) e = e.filter(x=>String(x.branch_id||'')===_br);
+  if(_q)  e = e.filter(x=>[x.emp_name, x.nickname, x.emp_id].some(v=>String(v||'').toLowerCase().indexOf(_q)>-1));
+  const _shown = e.length;
   $('d_cycleinfo').textContent = beDate(DISC.cycle.startStr) + ' ถึง ' + beDate(DISC.cycle.endStr) + ' · ระดับตัดสินจาก "คะแนนวินัย"';
 
   // สรุปหัวตาราง: ต้องดำเนินการกี่คน / ค้างรับทราบกี่คน
@@ -5795,6 +5827,11 @@ async function discDocComplete(id, empId){
 }
 $('d_cycle').addEventListener('change', loadDiscipline);
 $('d_refresh').onclick = loadDiscipline;
+// ★ 14 พ.ย. 69 — กรองสาขา/ค้นหาชื่อ ทำที่ฝั่งหน้าเว็บล้วน ไม่ต้องยิงเซิร์ฟเวอร์ใหม่
+$('d_branch') && $('d_branch').addEventListener('change', ()=>{ if(DISC) renderDiscipline(); });
+$('d_q') && $('d_q').addEventListener('input', function(){
+  clearTimeout(this._t); this._t=setTimeout(()=>{ if(DISC) renderDiscipline(); }, 140);
+});
 
 async function loadWarningsTable(){
   const r = await post({ action:'hr_warnings_list', password:pwd });
@@ -17065,6 +17102,20 @@ async function showAppVer(elId){
   el.textContent='เวอร์ชันแอปบนเครื่องนี้ '+v;
 }
 let PB = null;
+// เติมรายชื่อสาขาลงตัวกรองของหน้าประเมินทดลองงาน
+function prbFillBranches(rows){
+  const sel=$('prb_branch'); if(!sel) return;
+  if(MGR_MODE){ sel.style.display='none'; return; }   // ผจก.เห็นสาขาเดียวอยู่แล้ว
+  const seen={}; (rows||[]).forEach(r=>{ const b=String(r.branch_id||''); if(b) seen[b]=(seen[b]||0)+1; });
+  const keys=Object.keys(seen).sort();
+  const sig=keys.join(',');
+  if(sel.dataset.sig===sig) return;
+  sel.dataset.sig=sig;
+  const keep=sel.value;
+  sel.innerHTML='<option value="">ทุกสาขา</option>'
+    + keys.map(b=>'<option value="'+esc(b)+'">'+esc(branchName(b))+' ('+seen[b]+')</option>').join('');
+  if(keep && keys.indexOf(keep)>-1) sel.value=keep;
+}
 const PB_DEC = { pass:'ผ่านทดลองงาน', fail:'ไม่ผ่านทดลองงาน', extend:'ขยายเวลาทดลองงาน' };
 
 async function loadProbation(){
@@ -17073,6 +17124,8 @@ async function loadProbation(){
     body.dataset.wired = '1';
     if($('prb_filter')) $('prb_filter').onchange = renderProbation;
     if($('prb_reload')) $('prb_reload').onclick  = loadProbation;
+    if($('prb_branch')) $('prb_branch').onchange = renderProbation;
+    if($('prb_q')) $('prb_q').oninput = function(){ clearTimeout(this._t); this._t=setTimeout(renderProbation,140); };
   }
   body.innerHTML = '<div class="muted" style="padding:20px">กำลังโหลด…</div>';
   const r = await post(Object.assign({ action:'hr_probation_list', data:{} }, authBody()));
@@ -17092,11 +17145,18 @@ function renderProbation(){
   let rows=PB.rows||[];
   if(f==='open') rows=rows.filter(r=>!r.decision);
   else if(f==='done') rows=rows.filter(r=>!!r.decision);
+  // ★ 14 พ.ย. 69 — กรองสาขา + ค้นหาชื่อ
+  prbFillBranches(PB.rows||[]);
+  const fbr=(($('prb_branch')||{}).value||'');
+  const fq=String((($('prb_q')||{}).value||'')).trim().toLowerCase();
+  if(fbr) rows=rows.filter(r=>String(r.branch_id||'')===fbr);
+  if(fq)  rows=rows.filter(r=>[r.name,r.nickname,r.emp_id].some(v=>String(v||'').toLowerCase().indexOf(fq)>-1));
 
   const s=PB.stats||{};
   const sum=$('prb_sum');
   if(sum) sum.textContent='ทดลองงาน '+PB.period_days+' วัน · รอ ผจก.ประเมิน '+(s.waiting_mgr||0)
-    +' · รอ HR ตัดสิน '+(s.waiting_hr||0)+(s.overdue?(' · เลยกำหนด '+s.overdue):'');
+    +' · รอ HR ตัดสิน '+(s.waiting_hr||0)+(s.overdue?(' · เลยกำหนด '+s.overdue):'')
+    +((fbr||fq)?('  — แสดง '+rows.length+' คน'):'');
   // ★ 10 พ.ย. 69 — โชว์เวอร์ชันที่เครื่องนี้ใช้อยู่จริง ไว้เช็กว่ากดอัปเดตแล้วได้ของใหม่หรือยัง
   //   เวลาแจ้งปัญหาจะได้บอกได้ทันทีว่าอยู่เวอร์ชันไหน ไม่ต้องเดา
   showAppVer('prb_ver');
