@@ -17077,9 +17077,18 @@ function renderEmpCards(){
   ecApplyFilter();
 }
 function openEmpCard(empId){
+  // ★ 14 พ.ย. 69 — เรียกจากแท็บอื่นได้ (ปุ่ม "ดูสรุปรายบุคคล" ในหน้าประเมินทดลองงาน)
+  //   เดิมฟังก์ชันนี้แค่เลือกคนแล้วสั่งวาดสรุป แต่ไม่ได้สลับแท็บ
+  //   กดจากหน้าทดลองงาน → วาดลงหน้า empsum ที่ยัง display:none อยู่ = เหมือนปุ่มตาย
+  //   และถ้ายังไม่เคยเปิดแท็บนี้เลย ปุ่ม ย้อนกลับ/พิมพ์ ก็ยังไม่ถูก wire ด้วย
+  const view=$('view_empsum');
+  const hidden = !view || view.style.display==='none';
+  if(hidden && typeof showTab==='function') showTab('empsum');     // showTab เรียก initEmpSum() ให้เอง
+  else if(typeof initEmpSum==='function') initEmpSum();
   const sel=$('es_emp');
   if(sel){ if(![...sel.options].some(o=>String(o.value)===String(empId))){ const o=document.createElement('option'); o.value=empId; o.textContent=empId; sel.appendChild(o); } sel.value=empId; }
   esShowDetail();
+  try{ window.scrollTo(0,0); }catch(e){}
   genEmpSum();
 }
 
