@@ -2356,7 +2356,7 @@
     let waiverBy = {};
     try { const { data: wv } = await sb().from('discipline_waivers').select('emp_id,reason,waived_by').eq('cycle_start', cyc.start); (wv || []).forEach(w => { waiverBy[w.emp_id] = { reason: w.reason || '', by: w.waived_by || '' }; }); } catch (_e) { /* ยังไม่ได้รัน discipline_waivers.sql */ }
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
-      sb().from('employees').select('emp_id,name,photo_url,weekly_off,start_date,end_date,branch_id,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
+      sb().from('employees').select('emp_id,name,nickname,photo_url,weekly_off,start_date,end_date,branch_id,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
       sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,shift_id,early_out_min,day_value' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -2414,7 +2414,7 @@
       absent = Math.round(absent * 10) / 10;
       const lv = disciplineLevel(late_count, absent, discRules);   // เกณฑ์นับครั้ง (เก็บไว้อ้างอิง)
       return {
-        emp_id: e.emp_id, emp_name: e.name, photo_url: e.photo_url || '', branch_id: e.branch_id || '',
+        emp_id: e.emp_id, emp_name: e.name, nickname: e.nickname || '', photo_url: e.photo_url || '', branch_id: e.branch_id || '',
         late_count, late_total, ot_hours, absent,
         late_dates: late.map(a => a.work_date), absent_dates: pastSched.filter(d => !workedSet.has(d) && !onLeave(d)),
         early_out_count, early_out_hours: Math.round((early_out_min / 60) * 10) / 10,
