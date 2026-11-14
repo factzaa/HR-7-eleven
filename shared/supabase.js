@@ -515,11 +515,22 @@
       const { data } = await sb.from('shift_submits').select('*')
         .eq('branch_id', branch || '').eq('work_date', pv.work_date).eq('shift_id', pv.shift_id)
         .not('note', 'is', null).order('submitted_at', { ascending: false }).limit(3);
-      return (data || [])
+      const out = (data || [])
         .filter(r => String(r.note || '').trim())
         .slice(0, limit)
-        .map(r => ({ note: String(r.note).trim(), shift_id: r.shift_id, shift_name: pv.name, work_date: r.work_date,
+        .map(r => ({ id: r.id, note: String(r.note).trim(), shift_id: r.shift_id, shift_name: pv.name, work_date: r.work_date,
                      emp_name: r.emp_name || '', submitted_at: r.submitted_at }));
+      // ★ 14 พ.ย. 69 — ใบตอบรับ: คนผลัดถัดไปเปิดแอปแล้วเห็นข้อความนี้จริง
+      //   ส่วนกลางจะได้ตรวจได้ว่าข้อความถึงมือคนรับหรือตกหล่น
+      //   เปิดซ้ำไม่ทับเวลาเดิม (ignoreDuplicates) · ตารางยังไม่ได้สร้างก็ไม่ทำให้หน้าพัง
+      if (out.length) {
+        try {
+          await sb.from('shift_note_reads').upsert(
+            out.map(x => ({ submit_id: x.id, emp_id: String(emp.emp_id), emp_name: emp.nickname || emp.name || '' })),
+            { onConflict: 'submit_id,emp_id', ignoreDuplicates: true });
+        } catch (_e) { /* ไม่สำคัญพอที่จะทำให้พนักงานเห็นข้อความไม่ได้ */ }
+      }
+      return out;
     }catch(e){ return []; }
   }
 

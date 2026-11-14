@@ -478,6 +478,7 @@
         case 'hr_task_grade':        return await hrTaskGrade(p);
         case 'hr_day_review_save':   return await hrDayReviewSave(p);
         case 'hr_day_review_delete': return await hrDayReviewDelete(p);
+        case 'hr_shift_notes':       return await hrShiftNotes(p);
         case 'hr_hq_settings_get':   return await hrHqSettingsGet(p);
         case 'hr_hq_settings_save':  return await hrHqSettingsSave(p);
         case 'hr_open_tasks':        return await hrOpenTasks();
@@ -6388,6 +6389,19 @@
       hqSettings(),
     ]);
 
+    // ★ 14 พ.ย. 69 — ข้อความฝากผลัดของวันนั้น (และของเมื่อวาน ไว้หาข้อความที่ผลัดเช้ารับมา)
+    let subs = [];
+    try {
+      subs = await fetchPaged(() => {
+        let q = sb().from('shift_submits').select('id,work_date,branch_id,shift_id,emp_name,note,submitted_at')
+          .gte('work_date', _dShift(date, -1)).lte('work_date', date);
+        if (onlyBranch) q = q.eq('branch_id', onlyBranch);
+        return q.order('submitted_at');
+      });
+    } catch (e) { subs = []; }
+    const subBy = {};
+    subs.forEach(s => { subBy[String(s.work_date) + '|' + String(s.branch_id || '') + '|' + String(s.shift_id || '')] = s; });
+
     const defBy = {}; defs.forEach(d => { defBy[d.id] = d; });
     const empBy = {}; emps.forEach(e => { empBy[String(e.emp_id)] = e; });
     const brBy  = {}; brs.forEach(b => { brBy[String(b.branch_id)] = b.name; });
@@ -6497,6 +6511,18 @@
       const gs = g.tasks.map(r => r.hq_score).filter(v => v != null);
       g.avg_task = gs.length ? Math.round((gs.reduce((a, b) => a + b, 0) / gs.length) * 100) / 100 : null;
       g.suggest  = g.avg_task != null ? Math.max(1, Math.min(5, Math.round(g.avg_task))) : null;
+
+      // ข้อความฝากผลัด: ที่ผลัดนี้ฝากต่อไป (out) และที่รับมาจากผลัดก่อนหน้า (in)
+      const out = subBy[date + '|' + String(g.branch_id || '') + '|' + g.shift_id] || null;
+      g.note_out = out ? Object.assign({ shift_name: g.shift_name, by: out.emp_name || '', at: out.submitted_at },
+                                       _noteInfo(out.note)) : null;
+      const pv = _prevMainShift(shBy ? Object.keys(shBy).map(k => shBy[k]) : [], g.shift_id, date);
+      const inn = pv ? (subBy[pv.work_date + '|' + String(g.branch_id || '') + '|' + pv.shift_id] || null) : null;
+      const innInfo = inn ? _noteInfo(inn.note) : null;
+      g.note_in = (innInfo && innInfo.has_note)
+        ? Object.assign({ shift_name: pv.name || pv.shift_id, by: inn.emp_name || '', at: inn.submitted_at,
+                          work_date: pv.work_date }, innInfo)
+        : null;
       return g;
     });
 
@@ -7099,6 +7125,113 @@
       closed_ack_note: (p.note || null), closed_ack_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
     return { ok: true };
+  }
+
+  // ============================================================
+  // ข้อความ "ฝากถึงผลัดถัดไป"                           ★ 14 พ.ย. 69
+  //   หัวหน้าผลัดพิมพ์ไว้ตอนกดส่งผลัด (shift_submits.note)
+  //   เดิมส่วนกลางเห็นได้เฉพาะของวันนี้ ย้อนหลังไม่ได้เลย — อันนี้ดูย้อนหลังได้
+  //   และบอกด้วยว่าผลัดถัดไปเปิดอ่านหรือยัง (shift_note_reads)
+  // ============================================================
+  const SHIFT_NOTE_NONE = 'ไม่มีเรื่องฝาก';   // ข้อความมาตรฐานเมื่อหัวหน้าผลัดกดยืนยันว่าไม่มีอะไรฝาก
+
+  // บวก/ลบวันแบบวันที่ไทย — ต้องชดเชย +7 ชม. ก่อน toISOString()
+  // ไม่งั้นเที่ยงคืนไทยจะกลายเป็น 17:00 ของ "เมื่อวาน" ในเวลา UTC แล้วได้วันผิดไป 1 วัน
+  function _dShift(dateStr, days) {
+    const t = Date.parse(dateStr + 'T00:00:00+07:00') + days * 86400000 + 7 * 3600000;
+    return new Date(t).toISOString().slice(0, 10);
+  }
+  // ผลัดหลักก่อนหน้า: เรียงผลัดหลักตามเวลาเข้างาน · ตัวแรกของวัน = ตัวสุดท้ายของเมื่อวาน
+  function _prevMainShift(shifts, shiftId, workDate) {
+    const mains = (shifts || []).filter(s => s.main_shift && String(s.main_shift) === String(s.shift_id))
+      .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
+    if (!mains.length) return null;
+    const i = mains.findIndex(s => String(s.shift_id) === String(shiftId));
+    if (i < 0) return null;
+    return i === 0
+      ? { shift_id: mains[mains.length - 1].shift_id, name: mains[mains.length - 1].name, work_date: _dShift(workDate, -1) }
+      : { shift_id: mains[i - 1].shift_id, name: mains[i - 1].name, work_date: workDate };
+  }
+  function _noteInfo(raw) {
+    const note = String(raw == null ? '' : raw).trim();
+    return {
+      note,
+      has_note: !!note,
+      is_none: note === SHIFT_NOTE_NONE,
+      // เคสที่เจอจริง: พิมพ์รหัสพนักงานลงช่องฝากข้อความ
+      looks_id: /^\d{6,10}$/.test(note),
+    };
+  }
+
+  async function hrShiftNotes(p) {
+    const a = await _tsActor(p);
+    if (a.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    const branch = (a.role === 'mgr') ? a.branch_id : String(p.branch || '');
+    const ok = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+    const end = ok(p.end) ? p.end : bkkToday();
+    const start = ok(p.start) ? p.start : _dShift(end, -13);
+
+    const [subs, brs, shs] = await Promise.all([
+      fetchPaged(() => {
+        let q = sb().from('shift_submits')
+          .select('id,work_date,branch_id,shift_id,emp_id,emp_name,total,done,closed,note,submitted_at')
+          .gte('work_date', start).lte('work_date', end);
+        if (branch) q = q.eq('branch_id', branch);
+        return q.order('work_date', { ascending: false }).order('submitted_at', { ascending: false });
+      }),
+      fetchPaged(() => sb().from('branches').select('branch_id,name').order('branch_id')),
+      fetchPaged(() => sb().from('shifts').select('shift_id,name,start_time,main_shift,checkout_lock').order('start_time')),
+    ]);
+
+    // ใบตอบรับของข้อความเหล่านี้ (ตารางอาจยังไม่ได้สร้าง → ถือว่าไม่มีใครอ่าน ไม่ให้หน้าจอล่ม)
+    let reads = [];
+    const ids = subs.filter(s => String(s.note || '').trim()).map(s => s.id);
+    if (ids.length) {
+      try {
+        for (let i = 0; i < ids.length; i += 300) {
+          const part = ids.slice(i, i + 300);
+          const { data } = await sb().from('shift_note_reads')
+            .select('submit_id,emp_id,emp_name,read_at').in('submit_id', part);
+          reads = reads.concat(data || []);
+        }
+      } catch (e) { reads = []; }
+    }
+    const readBy = {}; reads.forEach(r => { (readBy[r.submit_id] = readBy[r.submit_id] || []).push(r); });
+
+    const brName = {}; brs.forEach(b => { brName[b.branch_id] = b.name; });
+    const shName = {}; shs.forEach(s => { shName[s.shift_id] = s.name; });
+
+    const q = String(p.q || '').trim().toLowerCase();
+    let rows = subs.map(s => {
+      const ni = _noteInfo(s.note);
+      const rd = (readBy[s.id] || []).slice().sort((x, y) => String(x.read_at).localeCompare(String(y.read_at)));
+      return Object.assign({}, s, ni, {
+        branch_name: brName[s.branch_id] || s.branch_id || '—',
+        shift_name: shName[s.shift_id] || s.shift_id || '—',
+        reads: rd, read_count: rd.length,
+        first_read_at: rd.length ? rd[0].read_at : null,
+      });
+    });
+    if (p.shift) rows = rows.filter(r => String(r.shift_id || '') === String(p.shift));
+    if (q) rows = rows.filter(r => [r.note, r.emp_name, r.emp_id, r.branch_name].some(v => String(v || '').toLowerCase().indexOf(q) > -1));
+
+    const withNote = rows.filter(r => r.has_note && !r.is_none);
+    const stats = {
+      shifts: rows.length,
+      with_note: withNote.length,
+      none: rows.filter(r => r.is_none).length,
+      blank: rows.filter(r => !r.has_note).length,
+      unread: withNote.filter(r => !r.read_count).length,
+      looks_id: rows.filter(r => r.looks_id).length,
+    };
+    // ผลัดหลักที่อยู่ใน "วงจรรับส่งผลัด" จริง — เรียงตามเวลาเข้างาน (เช้า → บ่าย → ดึก)
+    //   ตัดกะที่ตั้งไว้ว่าไม่ต้องรอส่งผลัดออก (Delivery, กะ ผจก.) ไม่งั้นสายโซ่จะเพี้ยน
+    const cycle = shs.filter(s => s.main_shift && String(s.main_shift) === String(s.shift_id) && s.checkout_lock !== false)
+      .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')))
+      .map(s => ({ shift_id: s.shift_id, name: s.name, start_time: s.start_time }));
+
+    return { ok: true, start, end, branch, role: a.role, rows, stats,
+             branches: brs, shifts: shs, cycle, none_text: SHIFT_NOTE_NONE };
   }
 
   async function hrShiftSubmits(p) {
