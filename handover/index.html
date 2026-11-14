@@ -538,6 +538,94 @@ async function ensureDiscAcked(emp){
 }
 
 // ======================================================================
+// ผลตรวจงานในกะจากส่วนกลาง                              ★ 14 พ.ย. 69
+//   ส่วนกลางดูงานที่เราได้รับมอบในวันนั้น ให้คะแนน 1–5 และเขียนคอมเมนต์
+//   ต้องกดรับทราบก่อนถึงจะเข้าเมนูได้ (เหมือนประตูวินัย/ประกาศ)
+// ======================================================================
+let HQ_QUEUE=[], HQ_IDX=0, HQ_RESOLVE=null;
+const HQ_LBL={5:'ดีเยี่ยม',4:'ดี',3:'ผ่านเกณฑ์',2:'ต้องปรับปรุง',1:'ไม่ผ่าน'};
+const HQ_COL={5:'#16a34a',4:'#16a34a',3:'#0891b2',2:'#ea580c',1:'#dc2626'};
+
+function ensureHqOverlay(){
+  if(document.getElementById('hqOverlay')) return;
+  const o=document.createElement('div'); o.id='hqOverlay';
+  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.96);z-index:100001;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px';
+  o.innerHTML=
+    '<div style="max-width:520px;width:100%;background:var(--card,#fff);border-radius:16px;padding:18px;margin:auto;box-shadow:0 10px 40px rgba(0,0,0,.4)">'
+    +'<div id="hqStep" style="font-size:12.5px;color:#64748b;font-weight:600;margin-bottom:6px"></div>'
+    +'<div style="font-size:18px;font-weight:800;line-height:1.4;margin-bottom:4px">ผลตรวจงานในกะจากส่วนกลาง</div>'
+    +'<div id="hqDay" style="font-size:13px;color:#64748b;margin-bottom:12px"></div>'
+    +'<div id="hqScore" style="display:flex;gap:10px;align-items:center;margin-bottom:12px"></div>'
+    +'<div id="hqMsg" style="font-size:15px;line-height:1.65;white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:12px"></div>'
+    +'<div id="hqTasks" style="font-size:13.5px;line-height:1.7;margin-bottom:12px"></div>'
+    +'<div id="hqDed" style="display:none;font-size:13.5px;font-weight:700;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:9px 12px;margin-bottom:12px"></div>'
+    +'<textarea id="hqNote" rows="2" placeholder="อยากชี้แจงอะไรเพิ่มไหม (ไม่ใส่ก็ได้)" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #cbd5e1;border-radius:10px;font:inherit;font-size:14px;margin-bottom:10px"></textarea>'
+    +'<div id="hqErr" style="display:none;color:#dc2626;font-size:13.5px;font-weight:600;margin-bottom:10px"></div>'
+    +'<button id="hqAckBtn" style="width:100%;padding:14px;border:0;border-radius:12px;background:#16a34a;color:#fff;font-size:16px;font-weight:800;cursor:pointer">✓ รับทราบแล้ว</button>'
+    +'<div style="text-align:center;font-size:12px;color:#94a3b8;margin-top:10px">ต้องกดรับทราบก่อนจึงจะใช้งานหน้ารับส่งผลัดได้</div>'
+    +'</div>';
+  document.body.appendChild(o);
+  document.getElementById('hqAckBtn').onclick=hqDoAck;
+}
+
+function hqRender(){
+  const r=HQ_QUEUE[HQ_IDX]; if(!r) return;
+  const $$=id=>document.getElementById(id);
+  $$('hqStep').textContent = HQ_QUEUE.length>1 ? ('รายการที่ '+(HQ_IDX+1)+' จาก '+HQ_QUEUE.length) : '';
+  $$('hqDay').textContent  = 'วันที่ '+((typeof beDate==='function')?beDate(r.work_date):r.work_date)
+    + ' · งานที่ได้รับ '+(r.tasks_total||0)+' ชิ้น'
+    + ' · ตรวจโดย '+(r.reviewer||'สำนักงาน');
+  $$('hqScore').innerHTML = (r.score!=null)
+    ? '<div style="width:58px;height:58px;border-radius:14px;display:flex;align-items:center;justify-content:center;'
+      +'font-size:24px;font-weight:800;color:#fff;background:'+(HQ_COL[r.score]||'#64748b')+'">'+r.score+'</div>'
+      +'<div><div style="font-weight:800;font-size:16px">'+esc(HQ_LBL[r.score]||'')+'</div>'
+      +'<div style="font-size:12.5px;color:#64748b">คะแนนงานในกะวันนี้ '+r.score+' จาก 5</div></div>'
+    : '<div style="font-size:14px;color:#64748b">ส่วนกลางฝากข้อความถึงคุณ</div>';
+  $$('hqMsg').textContent = r.comment || '(ไม่มีข้อความเพิ่มเติม)';
+  const ts=(r.tasks||[]).filter(t=>t.hq_comment||t.hq_score!=null);
+  $$('hqTasks').innerHTML = ts.length
+    ? '<div style="font-weight:700;margin-bottom:4px">ความเห็นรายงาน</div>'
+      + ts.map(t=>'<div style="padding:6px 0;border-top:1px solid #e2e8f0">'
+        +'<b>'+esc(t.title||'')+'</b>'+(t.hq_score!=null?(' · '+t.hq_score+'/5'):'')
+        +(t.hq_comment?('<div style="color:#475569">'+esc(t.hq_comment)+'</div>'):'')+'</div>').join('')
+    : '';
+  const ded=$$('hqDed');
+  if(r.deduct>0){ ded.style.display='block'; ded.textContent='หักคะแนนวินัยเดือนนี้ '+r.deduct+' คะแนน'; }
+  else ded.style.display='none';
+  $$('hqNote').value=''; $$('hqErr').style.display='none';
+  const btn=$$('hqAckBtn'); btn.disabled=false; btn.textContent='✓ รับทราบแล้ว';
+  const o=$$('hqOverlay'); o.style.display='flex'; o.scrollTop=0;
+}
+
+async function hqDoAck(){
+  const r=HQ_QUEUE[HQ_IDX]; if(!r) return;
+  const btn=document.getElementById('hqAckBtn'), err=document.getElementById('hqErr');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  const res=await window.HR.ackHqReview(r.id, EMP.emp_id, document.getElementById('hqNote').value.trim());
+  if(!res.ok){
+    err.textContent=res.error||'บันทึกไม่สำเร็จ'; err.style.display='block';
+    btn.disabled=false; btn.textContent='✓ รับทราบแล้ว';
+    return;
+  }
+  HQ_IDX++;
+  if(HQ_IDX>=HQ_QUEUE.length){
+    document.getElementById('hqOverlay').style.display='none';
+    const done=HQ_RESOLVE; HQ_RESOLVE=null;
+    toast('ok','บันทึกการรับทราบแล้ว');
+    if(done) done(true);
+  } else hqRender();
+}
+
+async function ensureHqAcked(emp){
+  let pend=[];
+  try{ pend=await window.HR.getPendingHqReviews(emp.emp_id); }catch(e){ return true; }
+  if(!pend.length) return true;
+  ensureHqOverlay();
+  HQ_QUEUE=pend; HQ_IDX=0;
+  return new Promise(res=>{ HQ_RESOLVE=res; hqRender(); });
+}
+
+// ======================================================================
 // ประตูรับทราบประกาศ — ต้องอ่าน+กดรับทราบก่อนเข้าเมนูรับส่งผลัด
 //   important  = กดรับทราบ
 //   mandatory  = กดรับทราบ + ตอบคำถามยืนยันความเข้าใจให้ถูก
@@ -713,6 +801,8 @@ $('goBtn').onclick=async()=>{
     await ensureDiscAcked(emp);
     // ★ ประตูที่ 2: ประกาศ (ข้อความ) — ต้องอ่าน+รับทราบให้ครบก่อนถึงจะเข้าเมนูได้
     await ensureAnnouncementsAcked(emp);
+    // ★ ประตูที่ 3: ผลตรวจงานในกะจากส่วนกลาง (คะแนน + คอมเมนต์)
+    await ensureHqAcked(emp);
     // ★ ประกาศรูปภาพ — สไลด์ลอยขึ้นมา เลื่อนซ้าย-ขวาได้ ไม่ต้องกดรับทราบ (วันละครั้ง)
     try{ if(window.ANN) await window.ANN.show(emp); }catch(_e){}
     show('step_menu');
