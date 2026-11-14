@@ -1444,6 +1444,37 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   .dy-done.wait{background:#fffbeb;border-color:#fde68a;color:#92400e}
   .dy-ded{font-size:12.5px;display:inline-flex;gap:5px;align-items:center}
   .dy-ded input{width:60px;padding:5px 7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:center}
+  .dy-note{margin-top:10px;font-size:12.5px;line-height:1.7;border-radius:10px;padding:8px 11px;white-space:pre-wrap}
+  .dy-note.out{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+  .dy-note.in{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+  .dy-note b{font-weight:700}
+
+  /* ★ 14 พ.ย. 69 — ข้อความฝากถึงผลัดถัดไป (รายการ + ไทม์ไลน์การส่งต่อ) */
+  .sn-day{margin-bottom:14px}
+  .sn-dayh{font-size:13px;font-weight:800;color:#0f766e;margin-bottom:5px}
+  .sn-row{border:1px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:8px;background:var(--card,#fff)}
+  .sn-head{font-size:13px;margin-bottom:4px}
+  .sn-msg{font-size:13.5px;line-height:1.7;white-space:pre-wrap;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:9px;padding:8px 11px}
+  .sn-none{font-size:12.5px;color:var(--muted)}
+  .sn-blank{font-size:12.5px;color:#b45309}
+  .sn-warn{font-size:11.5px;color:#b91c1c;font-weight:700;margin-top:4px}
+  .sn-read{font-size:11.5px;margin-top:5px}
+  .sn-read.ok{color:#166534}
+  .sn-read.wait{color:#b45309}
+  .sn-br{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:14px;background:var(--card,#fff)}
+  .sn-brh{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:14px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  .sn-kpi{font-size:11.5px;font-weight:700;color:var(--muted);background:#f1f5f9;border-radius:999px;padding:2px 9px}
+  .sn-kpi.bad{background:#fee2e2;color:#b91c1c}
+  .sn-tlday{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px dashed var(--line)}
+  .sn-tldate{font-size:11.5px;font-weight:700;color:var(--muted);min-width:78px;padding-top:7px}
+  .sn-tlrow{display:flex;gap:8px;flex-wrap:wrap;flex:1;min-width:0}
+  .sn-lk{flex:1 1 180px;min-width:0;border:1.5px solid;border-radius:11px;padding:7px 10px}
+  .sn-lk[data-snlink]{cursor:pointer}
+  .sn-lkh{font-size:13px;font-weight:700}
+  .sn-arrow{opacity:.55}
+  .sn-lks{font-size:11.5px;opacity:.9;margin-top:1px;line-height:1.6}
+  .sn-lkr{font-size:11px;margin-top:3px;color:var(--muted)}
+  .sn-lkmsg{margin-top:6px;font-size:12.5px;line-height:1.7;white-space:pre-wrap;background:rgba(255,255,255,.75);border-radius:8px;padding:7px 9px;color:var(--txt)}
 @media (max-width:520px){
   .pb-row{flex-direction:column;align-items:flex-start;gap:6px}
   .dy-sc button{width:38px;height:38px;font-size:14px}
@@ -1674,6 +1705,8 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <button class="shsub-b" type="button" data-hvpan="handover"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รายงานรูปงานในกะ</button>
     <!-- ★ 11 ต.ค. 69 — แท็บใหม่: ข้อมูลส่ง/รับผลัดของจริง (ตาราง handovers) — งานค้าง/ปัญหาที่ผลัดก่อนฝากไว้
          แท็บ "รายงานรับส่งผลัด" เดิมคือรายงานรูปงานในกะ คนละเรื่องกัน จึงแยกออกมา -->
+    <!-- ★ 14 พ.ย. 69 — ข้อความที่หัวหน้าผลัดฝากถึงผลัดถัดไป ดูย้อนหลังได้ -->
+    <button class="shsub-b" type="button" data-hvpan="notes"><svg class="ei" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> ข้อความฝากผลัด <span id="sn_pend" class="shsub-badge" style="display:none">0</span></button>
     <button class="shsub-b" type="button" data-hvpan="ho"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg> รับส่งผลัด</button>
     <button class="shsub-b" type="button" data-hvpan="log"><svg class="ei" viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg> Log ย้อนหลัง</button>
   </div>
@@ -1721,6 +1754,26 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
   <div id="dye_sum" style="font-size:12.5px;color:var(--muted);margin:0 4px 10px"></div>
   <div id="dye_body"><div class="empty">เลือกวันที่แล้วกดรีเฟรช</div></div>
   </div><!-- /hvpan_byemp -->
+
+  <!-- ★ 14 พ.ย. 69 — ข้อความฝากถึงผลัดถัดไป: ย้อนหลังได้ · รู้ว่าผลัดถัดไปเปิดอ่านหรือยัง -->
+  <div class="shpan" id="hvpan_notes" style="display:none">
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+    <h3 style="flex:1; font-size:15px; font-weight:600">ข้อความฝากถึงผลัดถัดไป</h3>
+    <input id="sn_q" type="search" placeholder="ค้นหาข้อความ หรือชื่อคนฝาก" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:180px">
+    <select id="sn_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <select id="sn_shift" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <input id="sn_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <span style="color:var(--muted);font-size:13px">ถึง</span>
+    <input id="sn_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <button class="btn btn-pri btn-sm" id="sn_go">ดูข้อความ</button>
+  </div>
+  <div style="display:flex;gap:6px;margin:0 4px 8px">
+    <button class="btn btn-sec btn-sm" id="sn_vtl">ไทม์ไลน์การส่งต่อ</button>
+    <button class="btn btn-sec btn-sm" id="sn_vls">รายการข้อความ</button>
+  </div>
+  <div id="sn_sum" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 4px 10px"></div>
+  <div id="sn_body"><div class="empty">กำลังโหลด…</div></div>
+  </div><!-- /hvpan_notes -->
 
   <div class="shpan" id="hvpan_log" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">Log งาน (ตรวจสอบย้อนหลัง)</h3>
@@ -3254,6 +3307,15 @@ function mrNav(d){
 
 <!-- สรุปลงเวลา (แก้ไขได้) -->
 <div id="view_shiftexit" class="container" style="display:none">
+  <!-- ★ 14 พ.ย. 69 — เดิมหน้านี้โหลดแต่ของ "วันนี้" ย้อนหลังไม่ได้เลย -->
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+    <h3 style="flex:1;font-size:15px;font-weight:600">ส่งผลัด &amp; สิทธิออกงานฉุกเฉิน</h3>
+    <button class="btn btn-sec btn-sm" id="sx_prev" title="ย้อนไป 1 วัน">‹ ก่อนหน้า</button>
+    <input id="sx_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <button class="btn btn-sec btn-sm" id="sx_next" title="ถัดไป 1 วัน">ถัดไป ›</button>
+    <button class="btn btn-sec btn-sm" id="sx_today">วันนี้</button>
+    <select id="sx_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+  </div>
   <div id="mt_exit"></div>
 </div>
 
@@ -12770,23 +12832,55 @@ async function loadClosedTasks(){
 // ===================================================================
 // สิทธิออกงานฉุกเฉิน — ผจก. ปลดล็อกให้พนักงานสแกนออกได้ทั้งที่ยังไม่ส่งผลัด
 // ===================================================================
+// ★ 14 พ.ย. 69 — เลือกวันที่/สาขาได้ ดูย้อนหลังได้ (เดิมล็อกไว้ที่วันนี้อย่างเดียว)
+function sxWire(){
+  const d=$('sx_date'); if(!d || d.dataset.wired==='1') return;
+  d.dataset.wired='1';
+  if(!d.value) d.value=bkkTodayStr();
+  const bump=n=>{ d.value=snDay(d.value,n); loadExitOverrides(); };
+  d.onchange=loadExitOverrides;
+  $('sx_prev') && ($('sx_prev').onclick=()=>bump(-1));
+  $('sx_next') && ($('sx_next').onclick=()=>bump(1));
+  $('sx_today')&& ($('sx_today').onclick=()=>{ d.value=bkkTodayStr(); loadExitOverrides(); });
+  const b=$('sx_branch');
+  if(b){
+    if(MGR_MODE) b.style.display='none';
+    else {
+      b.innerHTML='<option value="">ทุกสาขา</option>'
+        +(DATA.branches||[]).map(x=>'<option value="'+esc(x.branch_id)+'">'+esc(x.name)+'</option>').join('');
+      b.onchange=loadExitOverrides;
+    }
+  }
+}
 async function loadExitOverrides(){
   const box=$('mt_exit'); if(!box) return;
+  sxWire();
+  const day=(($('sx_date')||{}).value||bkkTodayStr());
+  const br =MGR_MODE?MGR_BRANCH:((($('sx_branch')||{}).value)||'');
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const [rs, rl] = await Promise.all([
-    post({ action:'hr_shift_submits', ...authBody() }),
-    post({ action:'hr_checkout_override_list', ...authBody() }),
+    post({ action:'hr_shift_submits', ...authBody(), date:day, branch:br }),
+    post({ action:'hr_checkout_override_list', ...authBody(), date:day, branch:br }),
   ]);
   const subs=(rs&&rs.ok&&rs.rows)||[], ovs=(rl&&rl.ok&&rl.rows)||[];
+  const isToday = day===bkkTodayStr();
   box.innerHTML='<div class="card" style="border-left:3px solid #0369a1">'
-    +'<div class="card-h"><h3>ส่งผลัด &amp; สิทธิออกงานฉุกเฉิน</h3></div>'
+    +'<div class="card-h"><h3>ส่งผลัด &amp; สิทธิออกงานฉุกเฉิน <span class="muted" style="font-weight:500;font-size:13px">· '+esc(beDate(day))+(isToday?' (วันนี้)':'')+'</span></h3></div>'
     +'<div class="card-b" style="padding-top:0">'
     +'<div style="font-size:12.5px;line-height:1.75;margin-bottom:8px">'
-      +(subs.length?subs.map(x=>'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> กะ '+esc(x.shift_id)+' ส่งผลัดแล้ว '+fmtDT(x.submitted_at)+' <span class="muted">· '+esc(x.emp_name||'')+' · งาน '+x.done+'/'+x.total+(x.closed?(' · ปิดงาน '+x.closed):'')+'</span>'+(x.note?('<div style="margin:3px 0 6px 20px;padding:6px 9px;background:var(--orange-soft);border-radius:7px;color:var(--txt);white-space:pre-wrap">📝 ฝากถึงผลัดถัดไป: '+esc(x.note)+'</div>'):'')).join('<br>')
-        :'<span class="muted">วันนี้ยังไม่มีกะไหนกดส่งผลัด — พนักงานในกะที่ยังไม่ส่งจะยังสแกนออกงานไม่ได้</span>')
+      +(subs.length?subs.map(x=>'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> กะ '+esc(x.shift_id)+' ส่งผลัดแล้ว '+fmtDT(x.submitted_at)+' <span class="muted">· '+esc(x.emp_name||'')+' · งาน '+x.done+'/'+x.total+(x.closed?(' · ปิดงาน '+x.closed):'')+'</span>'
+          +(String(x.note||'').trim()
+             ? '<div style="margin:3px 0 6px 20px;padding:6px 9px;background:var(--orange-soft);border-radius:7px;color:var(--txt);white-space:pre-wrap">📝 ฝากถึงผลัดถัดไป: '+esc(x.note)+'</div>'
+             : '<div style="margin:3px 0 6px 20px;font-size:11.5px;color:var(--muted)">— ไม่ได้ฝากข้อความถึงผลัดถัดไป</div>')
+        ).join('<br>')
+        :'<span class="muted">'+(isToday?'วันนี้':esc(beDate(day)))+'ยังไม่มีกะไหนกดส่งผลัด'+(isToday?' — พนักงานในกะที่ยังไม่ส่งจะยังสแกนออกงานไม่ได้':'')+'</span>')
     +'</div>'
     +'<div style="border-top:1px dashed var(--line);padding-top:9px">'
-    +'<div style="font-size:12px;color:var(--muted);margin-bottom:5px">ปลดล็อกให้พนักงานออกงานก่อน (ใช้เมื่อจำเป็นจริง — บันทึกชื่อผู้อนุมัติไว้)</div>'
-    +'<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">'
+    // ปลดล็อกออกงานใช้ได้เฉพาะวันปัจจุบัน — เปิดดูวันย้อนหลังจึงซ่อนช่องกรอก กันอนุมัติผิดวัน
+    +(isToday
+      ? '<div style="font-size:12px;color:var(--muted);margin-bottom:5px">ปลดล็อกให้พนักงานออกงานก่อน (ใช้เมื่อจำเป็นจริง — บันทึกชื่อผู้อนุมัติไว้)</div>'
+      : '<div style="font-size:12px;color:var(--muted);margin-bottom:5px">กำลังดูย้อนหลัง — การปลดล็อกออกงานทำได้เฉพาะวันปัจจุบัน (กดปุ่ม “วันนี้” ด้านบน)</div>')
+    +'<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center'+(isToday?'':';display:none')+'">'
       +'<input type="text" id="ovr_emp" placeholder="รหัสพนักงาน" inputmode="numeric" style="width:130px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
       +'<input type="text" id="ovr_why" placeholder="เหตุผล (อย่างน้อย 10 ตัวอักษร)" style="flex:1;min-width:190px;padding:7px;border:1.5px solid var(--line2);border-radius:8px">'
       +'<button class="btn btn-pri btn-sm" id="ovr_go">อนุมัติออกงาน</button>'
@@ -20650,11 +20744,220 @@ async function loadTaskTab(){
   }
 }
 function handoverTab(name){
-  ['intask','byemp','assign','ho','handover','log'].forEach(k=>{ const p=$('hvpan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
+  ['intask','byemp','assign','notes','ho','handover','log'].forEach(k=>{ const p=$('hvpan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
   document.querySelectorAll('#hvsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.hvpan===name));
   // ★ 11 ต.ค. 69 — โหลดข้อมูลรับส่งผลัดตอนเปิดแท็บ (เดิมมีแต่ฟังก์ชัน ไม่มีใครเรียก)
   if(name==='ho') loadHandover();
   if(name==='byemp') dyeInit();
+  if(name==='notes') snInit();
+}
+
+// ============================================================
+// ข้อความฝากถึงผลัดถัดไป                               ★ 14 พ.ย. 69
+//   หัวหน้าผลัดพิมพ์ไว้ตอนกดส่งผลัด — เดิมส่วนกลางเห็นได้เฉพาะของวันนี้
+//   หน้านี้ดูย้อนหลังได้ กรองสาขา/กะ/ค้นหา และบอกว่าผลัดถัดไปเปิดอ่านหรือยัง
+// ============================================================
+let SN=null, SN_VIEW='tl';          // tl = ไทม์ไลน์การส่งต่อ · ls = รายการข้อความ
+const SN_OPEN={};                   // รอยต่อไหนกางอ่านข้อความอยู่
+function snInit(){
+  const s=$('sn_start'), e=$('sn_end');
+  if(!e.value) e.value=bkkTodayStr();
+  if(!s.value) s.value=snDay(e.value,-13);
+  if($('sn_body').dataset.wired!=='1'){
+    $('sn_body').dataset.wired='1';
+    $('sn_go').onclick=loadShiftNotes;
+    s.onchange=loadShiftNotes; e.onchange=loadShiftNotes;
+    $('sn_branch').onchange=loadShiftNotes;
+    $('sn_shift').onchange=renderShiftNotes;
+    let tm=null; $('sn_q').oninput=()=>{ clearTimeout(tm); tm=setTimeout(renderShiftNotes,140); };
+    $('sn_vtl').onclick=()=>{ SN_VIEW='tl'; renderShiftNotes(); };
+    $('sn_vls').onclick=()=>{ SN_VIEW='ls'; renderShiftNotes(); };
+    const b=$('sn_branch');
+    if(MGR_MODE) b.style.display='none';
+    else b.innerHTML='<option value="">ทุกสาขา</option>'
+      +(DATA.branches||[]).map(x=>'<option value="'+esc(x.branch_id)+'">'+esc(x.name)+'</option>').join('');
+  }
+  loadShiftNotes();
+}
+async function loadShiftNotes(){
+  $('sn_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post(Object.assign({ action:'hr_shift_notes',
+    start:$('sn_start').value, end:$('sn_end').value,
+    branch:(MGR_MODE?MGR_BRANCH:(($('sn_branch')||{}).value||'')) }, authBody()));
+  if(!r.ok){ $('sn_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; $('sn_sum').innerHTML=''; return; }
+  SN=r;
+  const sel=$('sn_shift');
+  if(sel && sel.dataset.filled!=='1'){
+    sel.dataset.filled='1';
+    sel.innerHTML='<option value="">ทุกกะ</option>'
+      +(r.shifts||[]).map(s=>'<option value="'+esc(s.shift_id)+'">'+esc(s.name||s.shift_id)+'</option>').join('');
+  }
+  const bd=$('sn_pend');
+  if(bd){ const n=(r.stats||{}).unread||0; if(n){ bd.style.display=''; bd.textContent=n; } else bd.style.display='none'; }
+  renderShiftNotes();
+}
+function renderShiftNotes(){
+  if(!SN) return;
+  const fsh=(($('sn_shift')||{}).value||'');
+  const fq=String((($('sn_q')||{}).value||'')).trim().toLowerCase();
+  let rows=SN.rows||[];
+  if(fsh) rows=rows.filter(r=>String(r.shift_id||'')===fsh);
+  if(fq)  rows=rows.filter(r=>[r.note,r.emp_name,r.emp_id,r.branch_name].some(v=>String(v||'').toLowerCase().indexOf(fq)>-1));
+
+  const st=SN.stats||{};
+  const chip=(lab,n,cls,tip)=>'<span class="pill '+cls+'"'+(tip?(' title="'+esc(tip)+'"'):'')+'>'+lab+' '+n+'</span>';
+  $('sn_sum').innerHTML=
+      '<span style="font-size:12.5px;color:var(--muted);align-self:center">'+esc(beDate(SN.start))+' – '+esc(beDate(SN.end))+' · ส่งผลัด '+st.shifts+' ครั้ง</span>'
+    + chip('มีข้อความฝาก',st.with_note,'ok')
+    + chip('ระบุว่าไม่มีเรื่องฝาก',st.none,'muted','หัวหน้าผลัดกดยืนยันว่าไม่มีอะไรฝาก')
+    + chip('ไม่ได้ระบุเลย',st.blank,'warn','ปล่อยช่องว่าง — แยกไม่ออกว่าไม่มีเรื่องฝาก หรือลืมกรอก')
+    + (st.unread?chip('ผลัดถัดไปยังไม่ได้เปิดอ่าน',st.unread,'bad'):'')
+    + (st.looks_id?chip('กรอกเป็นเลขรหัส',st.looks_id,'bad','น่าจะพิมพ์รหัสพนักงานผิดช่อง'):'');
+
+  $('sn_vtl').classList.toggle('btn-pri', SN_VIEW==='tl');
+  $('sn_vls').classList.toggle('btn-pri', SN_VIEW==='ls');
+
+  if(SN_VIEW==='tl'){ renderNoteTimeline(); return; }
+
+  if(!rows.length){ $('sn_body').innerHTML='<div class="empty">ไม่มีการส่งผลัดในช่วงที่เลือก</div>'; return; }
+
+  // จัดกลุ่มตามวัน
+  const byDay={}; rows.forEach(r=>{ (byDay[r.work_date]=byDay[r.work_date]||[]).push(r); });
+  const days=Object.keys(byDay).sort().reverse();
+  $('sn_body').innerHTML=days.map(d=>{
+    const list=byDay[d].slice().sort((a,b)=>String(a.submitted_at||'').localeCompare(String(b.submitted_at||'')));
+    return '<div class="sn-day"><div class="sn-dayh">'+esc(beDate(d))+'</div>'
+      + list.map(snRow).join('') + '</div>';
+  }).join('');
+}
+
+// ============================================================
+// ไทม์ไลน์การส่งต่อผลัด — ดูว่าสายการสื่อสารขาดตรงไหน  ★ 14 พ.ย. 69
+//   1 "รอยต่อ" = ผลัดหนึ่งส่งต่อให้ผลัดถัดไป (เช้า→บ่าย→ดึก→เช้าวันรุ่งขึ้น)
+//   สถานะรอยต่อ: มีข้อความ / ระบุว่าไม่มีเรื่องฝาก / ส่งผลัดแต่ไม่กรอก / ไม่ได้ส่งผลัดเลย
+// ============================================================
+const SN_LINK={
+  msg:  { c:'#16a34a', bg:'#f0fdf4', bd:'#bbf7d0', label:'มีข้อความฝาก' },
+  none: { c:'#64748b', bg:'#f8fafc', bd:'#e2e8f0', label:'ระบุว่าไม่มีเรื่องฝาก' },
+  blank:{ c:'#b45309', bg:'#fffbeb', bd:'#fde68a', label:'ส่งผลัดแต่ไม่กรอกช่องฝาก' },
+  gone: { c:'#b91c1c', bg:'#fef2f2', bd:'#fecaca', label:'ไม่ได้กดส่งผลัด — สายขาด' },
+};
+// บวก/ลบวันแบบวันที่ไทย — ชดเชย +7 ชม. ก่อน toISOString()
+// ไม่งั้นเที่ยงคืนไทยกลายเป็น 17:00 ของเมื่อวานในเวลา UTC แล้วได้วันผิดไป 1 วัน
+function snDay(d,n){
+  const t=Date.parse(String(d)+'T00:00:00+07:00')+n*86400000+7*3600000;
+  return new Date(t).toISOString().slice(0,10);
+}
+
+// สร้างสายโซ่รอยต่อของแต่ละสาขา เรียงตามเวลาจริง
+function snChain(branchId){
+  const cyc=(SN.cycle||[]); if(!cyc.length) return [];
+  const by={}; (SN.rows||[]).forEach(r=>{ if(String(r.branch_id||'')===String(branchId)) by[r.work_date+'|'+r.shift_id]=r; });
+  const days=[]; for(let d=SN.start; d<=SN.end; d=snDay(d,1)) days.push(d);
+  const nodes=[];
+  days.forEach(d=>cyc.forEach(s=>nodes.push({ work_date:d, shift_id:s.shift_id, shift_name:s.name, row:by[d+'|'+s.shift_id]||null })));
+  const links=[];
+  for(let i=0;i<nodes.length-1;i++){
+    const a=nodes[i], b=nodes[i+1], r=a.row;
+    const kind = !r ? 'gone' : (r.is_none ? 'none' : (r.has_note ? 'msg' : 'blank'));
+    links.push({ from:a, to:b, kind, row:r,
+      key: branchId+'|'+a.work_date+'|'+a.shift_id });
+  }
+  return links;
+}
+function renderNoteTimeline(){
+  const brs = MGR_MODE ? [{ branch_id:MGR_BRANCH, name:branchName(MGR_BRANCH) }]
+    : ((($('sn_branch')||{}).value)
+        ? (SN.branches||[]).filter(b=>String(b.branch_id)===String($('sn_branch').value))
+        : (SN.branches||[]));
+  if(!brs.length){ $('sn_body').innerHTML='<div class="empty">ไม่มีสาขาให้แสดง</div>'; return; }
+  const fsh=(($('sn_shift')||{}).value||'');
+  const fq=String((($('sn_q')||{}).value||'')).trim().toLowerCase();
+  const ordIdx={}; (SN.cycle||[]).forEach((c,i)=>{ ordIdx[c.shift_id]=i; });
+
+  $('sn_body').innerHTML=brs.map(b=>{
+    let links=snChain(b.branch_id);
+    if(!links.length) return '';
+    // สถิติคิดจากสายเต็มเสมอ — ตัวกรองมีไว้ค้นข้อความ ไม่ควรทำให้ % เพี้ยน
+    const total=links.length;
+    const spoke=links.filter(l=>l.kind==='msg'||l.kind==='none').length;
+    const msgs=links.filter(l=>l.kind==='msg');
+    const readN=msgs.filter(l=>l.row&&l.row.read_count).length;
+    let run=0, worst=0;
+    links.forEach(l=>{ if(l.kind==='gone'||l.kind==='blank'){ run++; worst=Math.max(worst,run); } else run=0; });
+    const pct=total?Math.round(spoke/total*100):0;
+    const pctCol = pct>=80?'#16a34a' : pct>=50?'#b45309' : '#b91c1c';
+
+    if(fsh) links=links.filter(l=>l.from.shift_id===fsh);
+    if(fq)  links=links.filter(l=>l.row && [l.row.note,l.row.emp_name,l.row.emp_id].some(v=>String(v||'').toLowerCase().indexOf(fq)>-1));
+
+    const byDay={}; links.forEach(l=>{ (byDay[l.from.work_date]=byDay[l.from.work_date]||[]).push(l); });
+    const days=Object.keys(byDay).sort().reverse();
+
+    return '<div class="sn-br">'
+      + '<div class="sn-brh"><b>'+esc(b.name||b.branch_id)+'</b>'
+      +   '<span class="sn-kpi" style="color:'+pctCol+'">ส่งต่อถึงกัน '+pct+'%</span>'
+      +   '<span class="sn-kpi">รอยต่อ '+total+'</span>'
+      +   '<span class="sn-kpi">มีข้อความ '+msgs.length+(msgs.length?(' · เปิดอ่านแล้ว '+readN+'/'+msgs.length):'')+'</span>'
+      +   (worst>1?('<span class="sn-kpi bad">ขาดติดกันยาวสุด '+worst+' รอยต่อ</span>'):'')
+      + '</div>'
+      + (days.length?days.map(d=>
+          '<div class="sn-tlday"><div class="sn-tldate">'+esc(beDate(d))+'</div>'
+          // เรียงตามลำดับผลัดจริง (เช้า → บ่าย → ดึก) ไม่ใช่เรียงตามตัวอักษรของรหัสกะ
+          + '<div class="sn-tlrow">'+byDay[d]
+              .sort((x,y)=>(ordIdx[x.from.shift_id]==null?99:ordIdx[x.from.shift_id])
+                          -(ordIdx[y.from.shift_id]==null?99:ordIdx[y.from.shift_id]))
+              .map(snLink).join('')+'</div></div>'
+        ).join('')
+        : '<div class="empty" style="margin:6px 0">ไม่มีรอยต่อตรงตัวกรองที่เลือก</div>')
+      + '</div>';
+  }).join('')||'<div class="empty">ไม่มีข้อมูลในช่วงที่เลือก</div>';
+
+  $('sn_body').querySelectorAll('[data-snlink]').forEach(el=>el.onclick=()=>{
+    const k=el.getAttribute('data-snlink'); SN_OPEN[k]=!SN_OPEN[k]; renderShiftNotes();
+  });
+}
+function snLink(l){
+  const s=SN_LINK[l.kind]||SN_LINK.gone;
+  const open=!!SN_OPEN[l.key];
+  const r=l.row;
+  const head='<div class="sn-lkh"><b>'+esc(l.from.shift_name)+'</b> <span class="sn-arrow">→</span> '+esc(l.to.shift_name)
+    + (l.to.work_date!==l.from.work_date?' <span class="muted">(วันถัดไป)</span>':'')
+    + '</div>';
+  let sub='<div class="sn-lks">'+esc(s.label)
+    + (r?(' · โดย '+esc(r.emp_name||r.emp_id||'')+' '+dyeTime(r.submitted_at)):'')
+    + '</div>';
+  if(l.kind==='msg'){
+    sub+='<div class="sn-lkr">'+(r.read_count
+      ? '✓ ผลัดถัดไปเปิดอ่านแล้ว ('+esc(r.reads.map(x=>x.emp_name||x.emp_id).join(', '))+')'
+      : '<span style="color:#b91c1c">ยังไม่มีใครเปิดอ่าน</span>')+'</div>';
+  }
+  const body=(open&&l.kind==='msg')
+    ? '<div class="sn-lkmsg">'+esc(r.note)+(r.looks_id?'<div class="sn-warn">กรอกมาเป็นตัวเลขล้วน น่าจะพิมพ์รหัสพนักงานผิดช่อง</div>':'')+'</div>'
+    : '';
+  return '<div class="sn-lk" style="background:'+s.bg+';border-color:'+s.bd+';color:'+s.c+'"'
+    + (l.kind==='msg'?(' data-snlink="'+esc(l.key)+'" title="กดเพื่ออ่านข้อความ"'):'')
+    + '>'+head+sub+body+'</div>';
+}
+function snRow(r){
+  const when=r.submitted_at?dyeTime(r.submitted_at):'—';
+  let msg;
+  if(r.is_none)      msg='<div class="sn-none">หัวหน้าผลัดยืนยันว่า<b> ไม่มีเรื่องฝาก</b></div>';
+  else if(!r.has_note) msg='<div class="sn-blank">ไม่ได้กรอกช่องฝากข้อความ</div>';
+  else msg='<div class="sn-msg">'+esc(r.note)+'</div>'
+    + (r.looks_id?'<div class="sn-warn">กรอกมาเป็นตัวเลขล้วน น่าจะพิมพ์รหัสพนักงานผิดช่อง</div>':'');
+
+  let read='';
+  if(r.has_note && !r.is_none){
+    read = r.read_count
+      ? '<div class="sn-read ok">✓ ผลัดถัดไปเปิดอ่านแล้ว '+r.read_count+' คน · ครั้งแรก '+esc(beDateTime(r.first_read_at))
+        +'<div class="muted" style="font-size:11px">'+esc(r.reads.map(x=>x.emp_name||x.emp_id).join(', '))+'</div></div>'
+      : '<div class="sn-read wait">ยังไม่มีใครของผลัดถัดไปเปิดอ่าน</div>';
+  }
+  return '<div class="sn-row">'
+    + '<div class="sn-head"><b>ผลัด'+esc(r.shift_name)+'</b> <span class="muted">'+esc(r.branch_name)+' · ส่ง '+when
+    +   ' · โดย '+esc(r.emp_name||r.emp_id||'—')+' · งาน '+r.done+'/'+r.total+(r.closed?(' · ปิดงาน '+r.closed):'')+'</span></div>'
+    + msg + read + '</div>';
 }
 
 // ============================================================
@@ -20872,6 +21175,20 @@ function dyeCard(g){
     ? '<span class="dy-pill '+(rv.score<=2?'bad':(rv.score>=4?'ok':'warn'))+'">สรุป '+rv.score+'/5'+(rv.ack_at?' ✓':'')+'</span>'
     : '';
 
+  // ข้อความฝากผลัด: ที่รับมาจากผลัดก่อน และที่ผลัดนี้ฝากต่อ
+  let notes='';
+  if(g.note_in && g.note_in.has_note && !g.note_in.is_none){
+    notes+='<div class="dy-note in"><b>รับมาจากผลัด'+esc(g.note_in.shift_name||'')+'</b>'
+      +(g.note_in.by?(' <span style="font-weight:400">· '+esc(g.note_in.by)+'</span>'):'')+'\n'+esc(g.note_in.note)+'</div>';
+  }
+  if(g.note_out){
+    notes+= g.note_out.has_note && !g.note_out.is_none
+      ? '<div class="dy-note out"><b>ฝากต่อให้ผลัดถัดไป</b>\n'+esc(g.note_out.note)+'</div>'
+      : (g.note_out.is_none
+          ? '<div class="dy-note out" style="background:#f8fafc;border-color:var(--line);color:var(--muted)">ผลัดนี้ระบุว่า<b> ไม่มีเรื่องฝาก</b>ถึงผลัดถัดไป</div>'
+          : '<div class="dy-note out">ผลัดนี้ส่งผลัดแล้วแต่<b> ไม่ได้ฝากข้อความ</b>ถึงผลัดถัดไป</div>');
+  }
+
   return '<div class="dy-card">'
     + '<div class="dy-head">'
     +   '<div><div class="dy-name">'+esc(g.nickname||g.name)
@@ -20882,6 +21199,7 @@ function dyeCard(g){
     + '</div>'
     + '<div class="dy-pills">'+pills.join('')+'</div>'
     + tl
+    + notes
     + body
     + sum
     + '</div>';
