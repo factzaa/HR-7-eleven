@@ -473,6 +473,13 @@
         case 'hr_poster_upload':     return await hrPosterUpload(p.data_url);
         case 'hr_task_delete':       return await hrTaskDelete(p.id);
         case 'hr_task_log':          return await hrTaskLog(p.filter);
+        // ★ 14 พ.ย. 69 — งานรายคนต่อวัน + คะแนน/คอมเมนต์จากส่วนกลาง
+        case 'hr_day_tasks':         return await hrDayTasks(p);
+        case 'hr_task_grade':        return await hrTaskGrade(p);
+        case 'hr_day_review_save':   return await hrDayReviewSave(p);
+        case 'hr_day_review_delete': return await hrDayReviewDelete(p);
+        case 'hr_hq_settings_get':   return await hrHqSettingsGet(p);
+        case 'hr_hq_settings_save':  return await hrHqSettingsSave(p);
         case 'hr_open_tasks':        return await hrOpenTasks();
         case 'hr_task_close_group':  return await hrTaskCloseGroup(p.data);
         // ★ 8 พ.ย. 69 — ส่ง p (ที่มี mgr_emp/mgr_pin) ต่อไปด้วย เพื่อบังคับสโคปสาขาให้ ผจก. ที่ฝั่งนี้
@@ -6273,6 +6280,360 @@
 
     return { ok: true, date: d, rows, counts, unassigned };
   }
+
+  // ============================================================
+  // ★ 14 พ.ย. 69 — "งานรายคน" ในหน้ารับส่งผลัด
+  //   ส่วนกลางต้องตอบได้ว่า: วันนั้นใครได้งานกี่ชิ้น งานอะไร อยู่ขั้นตอนไหนของ 9 ขั้นตอน
+  //   ทำถูกตามคู่มือไหม (ส่งวิธีทำ/เกณฑ์ตรวจ/อ้างอิงคู่มือไปด้วย) และส่งงานตอนไหนของกะ
+  //   แล้วให้คะแนน + คอมเมนต์ได้ 2 ระดับ: ต่องาน และสรุปรายคนต่อวัน
+  //   ตารางงานไม่มีคอลัมน์เวลาตามคู่มือ (เจ้าของเลือก "ยังไม่ตั้งเวลา") จึงวัดจาก
+  //   เวลาเข้า–ออกกะจริงของคนนั้นแทน: ส่งนอกช่วงกะ / ส่งรวบท้ายกะ
+  // ============================================================
+  const HQ_LABEL = { 5: 'ดีเยี่ยม', 4: 'ดี', 3: 'ผ่านเกณฑ์', 2: 'ต้องปรับปรุง', 1: 'ไม่ผ่าน' };
+  // 9 ขั้นตอนการทำงานในผลัด — ชุดเดียวกับที่หน้า HR และหน้าพนักงานใช้ (task_defs.step)
+  const TASK_STEPS = {
+    1: 'เตรียมความพร้อมก่อนรับผลัด',
+    2: 'การรับผลัด',
+    3: 'ดำเนินการขายและให้บริการ',
+    4: 'การจัดการสินค้า',
+    5: 'การจัดการคุณภาพสินค้าอาหารและเครื่องดื่ม (QA)',
+    6: 'Shift Survey ตรวจสอบเงินสดระหว่างผลัด',
+    7: 'การปิดผลัดและส่งผลัด',
+    8: 'On-line ข้อมูลการขายและส่งเอกสารสิ้นวัน',
+    9: 'การนำเงินฝากธนาคาร',
+  };
+  const HQ_BURST_WINDOW = 30;   // นาที — หน้าต่างที่ถือว่า "ส่งรวบทีเดียว"
+
+  async function hqSettings() {
+    const out = { auto: true, threshold: 2, points: 5 };
+    try {
+      const { data } = await sb().from('app_settings').select('key,value')
+        .in('key', ['hq_grade_auto', 'hq_grade_threshold', 'hq_grade_points']);
+      (data || []).forEach(r => {
+        if (r.key === 'hq_grade_auto')      out.auto      = String(r.value) === '1';
+        if (r.key === 'hq_grade_threshold') out.threshold = Math.max(1, Math.min(5, parseInt(r.value, 10) || 2));
+        if (r.key === 'hq_grade_points')    out.points    = Math.max(0, Math.min(50, parseInt(r.value, 10) || 0));
+      });
+    } catch (e) { /* ค่าตั้งอ่านไม่ได้ก็ใช้ค่าเริ่มต้น */ }
+    return out;
+  }
+  async function hrHqSettingsGet(p) {
+    const actor = await _tsActor(p);
+    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    return { ok: true, settings: await hqSettings(), role: actor.role, labels: HQ_LABEL };
+  }
+  async function hrHqSettingsSave(p) {
+    const actor = await _tsActor(p);
+    if (actor.role !== 'hr') return { ok: false, error: 'แก้ค่าตั้งการให้คะแนน ทำได้เฉพาะฝั่งส่วนกลาง' };
+    const d = p.data || {};
+    const rows = [
+      { key: 'hq_grade_auto',      value: d.auto ? '1' : '0' },
+      { key: 'hq_grade_threshold', value: String(Math.max(1, Math.min(5, parseInt(d.threshold, 10) || 2))) },
+      { key: 'hq_grade_points',    value: String(Math.max(0, Math.min(50, parseInt(d.points, 10) || 0))) },
+    ];
+    const { error } = await sb().from('app_settings').upsert(rows, { onConflict: 'key' });
+    if (error) throw error;
+    return { ok: true, settings: await hqSettings() };
+  }
+
+  // "HH:MM:SS" ของกะ + วันทำงาน → เวลาจริงแบบ epoch ms (โซนไทย)
+  // กะดึกข้ามเที่ยงคืน: end <= start ให้บวกไปอีกวัน
+  function _hqShiftWindow(workDate, sh) {
+    if (!workDate || !sh || !sh.start_time || !sh.end_time) return null;
+    const mk = (t, addDay) => {
+      const m = String(t).match(/^(\d{1,2}):(\d{2})/); if (!m) return null;
+      return Date.parse(workDate + 'T' + String(m[1]).padStart(2, '0') + ':' + m[2] + ':00+07:00')
+        + (addDay ? 86400000 : 0);
+    };
+    const s = mk(sh.start_time, false); if (s == null) return null;
+    let e = mk(sh.end_time, false);     if (e == null) return null;
+    if (e <= s) e = mk(sh.end_time, true);
+    return { start: s, end: e };
+  }
+
+  async function hrDayTasks(p) {
+    const actor = await _tsActor(p);
+    if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
+    const date = String(p.date || '').match(/^\d{4}-\d{2}-\d{2}$/) ? p.date : bkkToday();
+    const onlyBranch = (actor.role === 'mgr') ? actor.branch_id : (p.branch ? String(p.branch) : '');
+
+    const [tasks, defs, emps, brs, shs, attn, revs, settings] = await Promise.all([
+      fetchPaged(() => {
+        let q = sb().from('task_assignments')
+          .select('id,work_date,emp_id,emp_name,branch_id,task_def_id,title,shift_id,status,'
+                + 'submitted_at,reviewed_at,reviewer,review_note,emp_note,photos,photo_url,require_photo,'
+                + 'sent_back_count,needs_mgr,mgr_result,closed_reason,closed_at,'
+                + 'hq_score,hq_comment,hq_by,hq_at')
+          .eq('work_date', date);
+        if (onlyBranch) q = q.eq('branch_id', onlyBranch);
+        return q.order('id');
+      }),
+      fetchPaged(() => sb().from('task_defs')
+        .select('id,title,step,sort,min_photos,require_photo,how_to,criteria,photo_hint,source_ref,'
+              + 'qssi_cat,who_label,link_kind,qss_table,freq,mgr_review,needs_manual,manual_note').order('sort')),
+      fetchPaged(() => sb().from('employees').select('emp_id,name,nickname,branch_id,default_shift,active').order('emp_id')),
+      fetchPaged(() => sb().from('branches').select('branch_id,name').order('branch_id')),
+      fetchPaged(() => sb().from('shifts').select('shift_id,name,start_time,end_time,main_shift').order('start_time')),
+      fetchPaged(() => {
+        let q = sb().from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in,check_out,late_min,status')
+          .eq('work_date', date);
+        if (onlyBranch) q = q.eq('branch_id', onlyBranch);
+        return q.order('emp_id');
+      }),
+      fetchPaged(() => {
+        let q = sb().from('shift_day_reviews').select('*').eq('work_date', date);
+        if (onlyBranch) q = q.eq('branch_id', onlyBranch);
+        return q.order('emp_id');
+      }),
+      hqSettings(),
+    ]);
+
+    const defBy = {}; defs.forEach(d => { defBy[d.id] = d; });
+    const empBy = {}; emps.forEach(e => { empBy[String(e.emp_id)] = e; });
+    const brBy  = {}; brs.forEach(b => { brBy[String(b.branch_id)] = b.name; });
+    const shBy  = {}; shs.forEach(s => { shBy[String(s.shift_id)] = s; });
+    const attBy = {}; attn.forEach(a => { attBy[String(a.emp_id)] = a; });
+    const revBy = {}; revs.forEach(r => { revBy[String(r.emp_id) + '|' + String(r.shift_id || '')] = r; });
+
+    // จัดกลุ่ม: 1 การ์ด = พนักงาน 1 คน · 1 กะ
+    const groups = {};
+    tasks.forEach(t => {
+      const eid = String(t.emp_id || '');
+      const sid = String(t.shift_id || '');
+      const k = eid + '|' + sid;
+      if (!groups[k]) {
+        const e = empBy[eid] || {};
+        const sh = shBy[sid] || null;
+        const att = attBy[eid] || null;
+        groups[k] = {
+          key: k, emp_id: eid,
+          name: e.name || t.emp_name || eid,
+          nickname: e.nickname || '',
+          branch_id: t.branch_id || e.branch_id || '',
+          branch_name: brBy[String(t.branch_id || e.branch_id || '')] || (t.branch_id || '—'),
+          shift_id: sid,
+          shift_name: sh ? (sh.name || sid) : (sid || 'ไม่ระบุกะ'),
+          shift_start: sh ? sh.start_time : null,
+          shift_end:   sh ? sh.end_time   : null,
+          check_in:  att ? att.check_in  : null,
+          check_out: att ? att.check_out : null,
+          late_min:  att ? (att.late_min || 0) : null,
+          attn_status: att ? att.status : null,
+          tasks: [], steps: {},
+          total: 0, done: 0, open: 0, back: 0, graded: 0, no_photo: 0,
+          outside: 0, burst_max: 0, first_at: null, last_at: null,
+          review: revBy[k] || null,
+        };
+      }
+      const g = groups[k];
+      const df = defBy[t.task_def_id] || {};
+      const step = df.step != null ? Number(df.step) : 0;
+      const minPhotos = df.min_photos != null ? Number(df.min_photos) : (t.require_photo ? 1 : 0);
+      const ph = Array.isArray(t.photos) && t.photos.length ? t.photos : (t.photo_url ? [t.photo_url] : []);
+      const row = {
+        id: t.id, task_def_id: t.task_def_id, title: t.title || df.title || '',
+        step, step_name: TASK_STEPS[step] || '',
+        sort: df.sort != null ? Number(df.sort) : 9999,
+        status: t.status || 'todo',
+        submitted_at: t.submitted_at || null, reviewed_at: t.reviewed_at || null,
+        reviewer: t.reviewer || '', review_note: t.review_note || '', emp_note: t.emp_note || '',
+        photos: ph, photo_count: ph.length, min_photos: minPhotos,
+        sent_back_count: t.sent_back_count || 0,
+        closed_reason: t.closed_reason || null,
+        // รายละเอียดจากคู่มือ — ไว้ให้ส่วนกลางเทียบว่าทำถูกไหม
+        how_to: df.how_to || '', criteria: df.criteria || '', photo_hint: df.photo_hint || '',
+        source_ref: df.source_ref || '', who_label: df.who_label || '',
+        qssi_cat: df.qssi_cat || '', link_kind: df.link_kind || '', qss_table: df.qss_table || null,
+        freq: df.freq || 'daily', needs_manual: !!df.needs_manual, manual_note: df.manual_note || '',
+        // คะแนนจากส่วนกลาง
+        hq_score: t.hq_score != null ? Number(t.hq_score) : null,
+        hq_comment: t.hq_comment || '', hq_by: t.hq_by || '', hq_at: t.hq_at || null,
+        // เวลา (เติมด้านล่างเมื่อรู้กรอบกะแล้ว)
+        mins_in: null, mins_to_end: null, outside: false,
+      };
+      g.tasks.push(row);
+      g.total++;
+      g.steps[step] = (g.steps[step] || 0) + 1;
+      if (row.status === 'approved') g.done++;
+      if (row.status === 'todo' || row.status === 'submitted') g.open++;
+      if (row.status === 'sent_back') g.back++;
+      if (row.hq_score != null) g.graded++;
+      if (minPhotos > 0 && ph.length < minPhotos && row.status !== 'todo') g.no_photo++;
+    });
+
+    // เวลา: เทียบกับช่วงกะจริง (ลงเวลาเข้า–ออก ถ้าไม่มีก็ใช้เวลาตามตารางกะ)
+    const out = Object.keys(groups).map(k => {
+      const g = groups[k];
+      const win = _hqShiftWindow(date, shBy[g.shift_id]) || null;
+      const t0 = g.check_in  ? Date.parse(g.check_in)  : (win ? win.start : null);
+      const t1 = g.check_out ? Date.parse(g.check_out) : (win ? win.end   : null);
+      const stamps = [];
+      g.tasks.forEach(r => {
+        if (!r.submitted_at) return;
+        const ts = Date.parse(r.submitted_at);
+        if (!isFinite(ts)) return;
+        stamps.push(ts);
+        if (t0 != null) r.mins_in     = Math.round((ts - t0) / 60000);
+        if (t1 != null) r.mins_to_end = Math.round((t1 - ts) / 60000);
+        // ส่งก่อนเข้างาน หรือหลังออกงานเกิน 15 นาที = อยู่นอกช่วงกะ
+        if (t0 != null && ts < t0 - 60000) r.outside = true;
+        if (t1 != null && ts > t1 + 15 * 60000) r.outside = true;
+        if (r.outside) g.outside++;
+      });
+      stamps.sort((a, b) => a - b);
+      g.first_at = stamps.length ? new Date(stamps[0]).toISOString() : null;
+      g.last_at  = stamps.length ? new Date(stamps[stamps.length - 1]).toISOString() : null;
+      // ส่งรวบทีเดียว: จำนวนงานมากสุดที่ส่งภายในหน้าต่าง 30 นาทีเดียวกัน
+      let burst = 0;
+      for (let i = 0; i < stamps.length; i++) {
+        let n = 0;
+        for (let j = i; j < stamps.length && stamps[j] - stamps[i] <= HQ_BURST_WINDOW * 60000; j++) n++;
+        if (n > burst) burst = n;
+      }
+      g.burst_max = burst;
+      g.submitted_count = stamps.length;
+      g.tasks.sort((a, b) => (a.step - b.step) || (a.sort - b.sort) || (a.id - b.id));
+      // ค่าเฉลี่ยคะแนนต่องานที่ให้ไว้ — ใช้เสนอคะแนนสรุปรายวัน
+      const gs = g.tasks.map(r => r.hq_score).filter(v => v != null);
+      g.avg_task = gs.length ? Math.round((gs.reduce((a, b) => a + b, 0) / gs.length) * 100) / 100 : null;
+      g.suggest  = g.avg_task != null ? Math.max(1, Math.min(5, Math.round(g.avg_task))) : null;
+      return g;
+    });
+
+    out.sort((a, b) => String(a.branch_id).localeCompare(String(b.branch_id))
+      || String(a.shift_id).localeCompare(String(b.shift_id))
+      || String(a.name).localeCompare(String(b.name), 'th'));
+
+    const stats = {
+      people: out.length,
+      tasks: out.reduce((n, g) => n + g.total, 0),
+      graded: out.reduce((n, g) => n + g.graded, 0),
+      reviewed: out.filter(g => g.review && g.review.score != null).length,
+      waiting_ack: out.filter(g => g.review && g.review.reviewed_at && !g.review.ack_at).length,
+      open: out.reduce((n, g) => n + g.open, 0),
+    };
+    return { ok: true, date, role: actor.role, branch: onlyBranch, rows: out, stats,
+             steps: TASK_STEPS, labels: HQ_LABEL, settings, burst_window: HQ_BURST_WINDOW,
+             branches: brs, shifts: shs };
+  }
+
+  // ให้คะแนน + คอมเมนต์ "ต่องาน"
+  async function hrTaskGrade(p) {
+    const actor = await _tsActor(p);
+    if (actor.role !== 'hr') return { ok: false, error: 'การให้คะแนนจากส่วนกลาง ทำได้เฉพาะฝั่งสำนักงาน' };
+    const d = p.data || {};
+    const id = Number(d.id); if (!id) return { ok: false, error: 'ไม่พบงานนี้' };
+    const clear = (d.score === '' || d.score == null) && !String(d.comment || '').trim();
+    const score = clear ? null : Math.max(1, Math.min(5, parseInt(d.score, 10) || 0)) || null;
+    const upd = {
+      hq_score: score,
+      hq_comment: clear ? null : (String(d.comment || '').slice(0, 1000) || null),
+      hq_by: clear ? null : (actor.name || 'สำนักงาน (HR)'),
+      hq_at: clear ? null : new Date().toISOString(),
+    };
+    const { error } = await sb().from('task_assignments').update(upd).eq('id', id);
+    if (error) throw error;
+    return { ok: true, cleared: clear };
+  }
+
+  // ให้คะแนนสรุป "รายคนต่อวัน" + คอมเมนต์ถึงพนักงาน (+ หักคะแนนวินัยถ้าต่ำกว่าเกณฑ์)
+  async function hrDayReviewSave(p) {
+    const actor = await _tsActor(p);
+    if (actor.role !== 'hr') return { ok: false, error: 'การให้คะแนนจากส่วนกลาง ทำได้เฉพาะฝั่งสำนักงาน' };
+    const d = p.data || {};
+    const emp_id = String(d.emp_id || ''); if (!emp_id) return { ok: false, error: 'ไม่พบพนักงาน' };
+    const work_date = String(d.work_date || '').match(/^\d{4}-\d{2}-\d{2}$/) ? d.work_date : bkkToday();
+    const shift_id = String(d.shift_id || '');
+    const score = (d.score === '' || d.score == null) ? null : Math.max(1, Math.min(5, parseInt(d.score, 10) || 0)) || null;
+    const comment = String(d.comment || '').trim().slice(0, 2000);
+    if (score == null && !comment) return { ok: false, error: 'ใส่คะแนนหรือคอมเมนต์อย่างน้อยหนึ่งอย่าง' };
+
+    const set = await hqSettings();
+    // หักกี่คะแนน: ถ้าหน้าจอส่งมาก็ใช้ค่านั้น (ส่วนกลางปรับได้) ไม่ส่งมาก็ใช้ค่าตั้ง
+    let deduct = (d.deduct === '' || d.deduct == null)
+      ? ((set.auto && score != null && score <= set.threshold) ? set.points : 0)
+      : Math.max(0, Math.min(50, parseInt(d.deduct, 10) || 0));
+
+    // สแนปช็อตตัวเลขงานของวันนั้น
+    const myTasks = await fetchPaged(() => sb().from('task_assignments')
+      .select('id,status,hq_score,shift_id').eq('work_date', work_date).eq('emp_id', emp_id).order('id'));
+    const mine = myTasks.filter(t => String(t.shift_id || '') === shift_id);
+    const gs = mine.map(t => t.hq_score).filter(v => v != null);
+    const emp = await sb().from('employees').select('emp_id,name,nickname,branch_id').eq('emp_id', emp_id).maybeSingle();
+    const e = (emp && emp.data) || {};
+    const nowIso = new Date().toISOString();
+
+    const prev = await sb().from('shift_day_reviews').select('id,score_event_id,ack_at')
+      .eq('emp_id', emp_id).eq('work_date', work_date).eq('shift_id', shift_id).maybeSingle();
+    const prevRow = (prev && prev.data) || null;
+
+    const row = {
+      work_date, emp_id, shift_id,
+      emp_name: e.name || String(d.emp_name || ''),
+      branch_id: e.branch_id || String(d.branch_id || '') || null,
+      score, comment: comment || null,
+      tasks_total: mine.length,
+      tasks_graded: gs.length,
+      tasks_open: mine.filter(t => (t.status || 'todo') === 'todo' || t.status === 'submitted').length,
+      tasks_back: mine.filter(t => t.status === 'sent_back').length,
+      avg_task: gs.length ? Math.round((gs.reduce((a, b) => a + b, 0) / gs.length) * 100) / 100 : null,
+      deduct,
+      reviewer: actor.name || 'สำนักงาน (HR)',
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+      // แก้คะแนน/คอมเมนต์ใหม่ = ต้องให้พนักงานรับทราบอีกครั้ง
+      ack_at: null, ack_note: null, ack_device: null,
+    };
+
+    // ----- คะแนนวินัย: ลบเหตุเดิมก่อนเสมอ แล้วลงใหม่ถ้ายังต้องหัก -----
+    //   ถ้าไม่ลบ แก้คะแนนไปมาจะกลายเป็นหักซ้ำหลายรอบในเดือนเดียว
+    if (prevRow && prevRow.score_event_id) {
+      try { await sb().from('score_events').delete().eq('id', prevRow.score_event_id); } catch (_e) { }
+    }
+    let score_event_id = null;
+    if (deduct > 0) {
+      const label = 'งานในกะไม่ได้มาตรฐาน (ส่วนกลางตรวจและให้คะแนน)';
+      const note = (score != null ? ('คะแนนงานในกะ ' + score + '/5 · ' + (HQ_LABEL[score] || '')) : 'คอมเมนต์จากส่วนกลาง')
+        + (comment ? (' — ' + comment.slice(0, 200)) : '');
+      const ins = await sb().from('score_events').insert({
+        emp_id, event_date: work_date, rule_key: 'hq_day_low', label,
+        points: -Math.abs(deduct), note, created_by: actor.name || 'HR',
+      }).select('id').maybeSingle();
+      score_event_id = (ins && ins.data && ins.data.id) || null;
+    }
+    row.score_event_id = score_event_id;
+
+    let savedId = null;
+    if (prevRow) {
+      const { error } = await sb().from('shift_day_reviews').update(row).eq('id', prevRow.id);
+      if (error) throw error;
+      savedId = prevRow.id;
+    } else {
+      const { data: ins, error } = await sb().from('shift_day_reviews').insert(row).select('id').maybeSingle();
+      if (error) throw error;
+      savedId = (ins && ins.id) || null;
+    }
+
+    await logAct('ให้คะแนนงานในกะ', emp_id,
+      work_date + ' · ' + (score != null ? (score + '/5') : 'ไม่ให้คะแนน') + (deduct > 0 ? (' · หักวินัย ' + deduct) : ''));
+    return { ok: true, id: savedId, deduct, row };
+  }
+
+  // ลบผลตรวจของวันนั้น (ลงผิดคน/ผิดวัน) — คืนคะแนนวินัยที่หักไปด้วย
+  async function hrDayReviewDelete(p) {
+    const actor = await _tsActor(p);
+    if (actor.role !== 'hr') return { ok: false, error: 'ลบผลตรวจ ทำได้เฉพาะฝั่งสำนักงาน' };
+    const id = Number(p.id); if (!id) return { ok: false, error: 'ไม่พบรายการ' };
+    const cur = await sb().from('shift_day_reviews').select('id,emp_id,work_date,score_event_id').eq('id', id).maybeSingle();
+    const r = (cur && cur.data) || null;
+    if (!r) return { ok: false, error: 'ไม่พบรายการ' };
+    if (r.score_event_id) { try { await sb().from('score_events').delete().eq('id', r.score_event_id); } catch (_e) { } }
+    const { error } = await sb().from('shift_day_reviews').delete().eq('id', id);
+    if (error) throw error;
+    await logAct('ลบผลตรวจงานในกะ', r.emp_id, String(r.work_date || ''));
+    return { ok: true };
+  }
+
   async function hrTaskReview(id, status, note, markup) {
     const { data: t } = await sb().from('task_assignments').select('emp_id,title,sent_back_count,needs_mgr,shift_id,checked_by_emp,checked_by_name,checked_by_shift').eq('id', id).maybeSingle();
     const nowIso = new Date().toISOString();

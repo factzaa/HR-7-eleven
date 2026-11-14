@@ -944,6 +944,51 @@
     } catch (e) { console.error('pending announcements', e); return []; }
   }
 
+  // ---------- ผลตรวจงานในกะจากส่วนกลาง: คะแนน + คอมเมนต์ที่ต้องกดรับทราบ ----------
+  // ★ 14 พ.ย. 69 — ส่วนกลางตรวจงานรายคนต่อวันแล้วให้คะแนน 1–5 + คอมเมนต์
+  //   พนักงานต้องเห็นและกดรับทราบ · ดึงคอมเมนต์รายงานของวันนั้นมาแสดงด้วย
+  //   จะได้รู้ว่าโดนติเพราะงานชิ้นไหน ไม่ใช่รู้แค่ว่าคะแนนตก
+  async function getPendingHqReviews(empId) {
+    try {
+      const { data } = await sb.from('shift_day_reviews')
+        .select('id,work_date,shift_id,branch_id,score,comment,deduct,reviewer,reviewed_at,'
+              + 'tasks_total,tasks_graded,tasks_open,tasks_back,avg_task')
+        .eq('emp_id', String(empId)).is('ack_at', null).not('reviewed_at', 'is', null)
+        .order('work_date', { ascending: true }).limit(20);
+      const rows = data || [];
+      if (!rows.length) return [];
+      // คอมเมนต์รายงานของวันเดียวกัน
+      const dates = [...new Set(rows.map(r => r.work_date))];
+      const { data: ts } = await sb.from('task_assignments')
+        .select('work_date,shift_id,title,hq_score,hq_comment')
+        .eq('emp_id', String(empId)).in('work_date', dates).not('hq_at', 'is', null);
+      const byDay = {};
+      (ts || []).forEach(t => {
+        const k = String(t.work_date) + '|' + String(t.shift_id || '');
+        (byDay[k] = byDay[k] || []).push(t);
+      });
+      return rows.map(r => Object.assign({}, r, {
+        tasks: byDay[String(r.work_date) + '|' + String(r.shift_id || '')] || [],
+      }));
+    } catch (e) { console.error('pending hq reviews', e); return []; }
+  }
+
+  async function ackHqReview(id, empId, note) {
+    try {
+      const { data: row } = await sb.from('shift_day_reviews').select('id,emp_id').eq('id', id).maybeSingle();
+      if (!row) return { ok: false, error: 'ไม่พบรายการนี้' };
+      if (String(row.emp_id) !== String(empId)) return { ok: false, error: 'รายการนี้ไม่ใช่ของคุณ' };
+      const { error } = await sb.from('shift_day_reviews').update({
+        ack_at: new Date().toISOString(),
+        ack_note: (note || '').slice(0, 500) || null,
+        ack_device: (navigator.userAgent || '').slice(0, 120),
+      }).eq('id', id);
+      if (error) throw error;
+      try { await sb.from('activity_log').insert({ action: 'รับทราบผลตรวจงานในกะ', emp_id: String(empId), detail: (note || '').slice(0, 200), actor: String(empId) }); } catch (_e) { }
+      return { ok: true };
+    } catch (e) { console.error('ack hq review', e); return { ok: false, error: 'บันทึกไม่สำเร็จ' }; }
+  }
+
   // ---------- เคสวินัย: การดำเนินการที่พนักงานต้องกดรับทราบ ----------
   async function getPendingDiscAcks(empId) {
     try {
@@ -4525,7 +4570,7 @@
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
     getScaChecklist, saveScaTick, clearScaTicks, getScaProgress,
     getScaBranchesHr, getScaChecklistHr, saveScaTickHr, clearScaTicksHr, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
