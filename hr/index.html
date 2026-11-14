@@ -1405,7 +1405,50 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   .pb-choice span{display:block;text-align:center;padding:10px;border:1.5px solid var(--line2);border-radius:10px;font-weight:700;font-size:14px}
   .pb-choice input:checked + span{background:#0369a1;border-color:#0369a1;color:#fff}
   .pb-choice input:focus-visible + span{outline:2px solid #0369a1;outline-offset:2px}
-@media (max-width:520px){ .pb-row{flex-direction:column;align-items:flex-start;gap:6px} }
+
+  /* ★ 14 พ.ย. 69 — งานรายคนต่อวัน (แท็บ "งานรายคน" ในหน้ารับส่งผลัด) */
+  .dy-card{border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin-bottom:12px;background:var(--card,#fff)}
+  .dy-head{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+  .dy-name{font-weight:800;font-size:15.5px}
+  .dy-meta{font-size:12px;color:var(--muted);line-height:1.7;margin-top:1px}
+  .dy-pills{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+  .dy-pill{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:#f1f5f9;color:#475569;white-space:nowrap}
+  .dy-pill.warn{background:#fef3c7;color:#92400e}
+  .dy-pill.bad{background:#fee2e2;color:#b91c1c}
+  .dy-pill.ok{background:#dcfce7;color:#166534}
+  /* แถบเวลาของกะ: จุด = เวลาที่ส่งงานแต่ละชิ้น เห็นได้ทันทีว่ากระจายหรือรวบท้ายกะ */
+  .dy-tl{position:relative;height:24px;margin:10px 0 2px;background:linear-gradient(#f1f5f9,#f1f5f9) center/100% 6px no-repeat;border-radius:6px}
+  .dy-tl i{position:absolute;top:5px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:#0369a1}
+  .dy-tl i.out{background:#dc2626}
+  .dy-tl b{position:absolute;top:16px;font-size:10px;color:var(--muted);font-weight:600}
+  .dy-tl b.r{right:0}
+  .dy-step{margin-top:11px;border-top:1px solid var(--line);padding-top:8px}
+  .dy-steph{font-size:12px;font-weight:800;color:#0f766e}
+  .dy-task{padding:8px 0;border-bottom:1px solid var(--line)}
+  .dy-task:last-child{border-bottom:0}
+  .dy-ttop{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .dy-ttl{font-weight:600;font-size:13.5px;flex:1;min-width:140px}
+  .dy-tsub{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:2px}
+  .dy-more{font-size:12px;line-height:1.8;background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:8px 11px;margin-top:6px}
+  .dy-more b{display:block;margin-top:5px}
+  .dy-more ul{margin:2px 0 0;padding-left:17px}
+  .dy-grade{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px}
+  .dy-grade input[type=text]{flex:1;min-width:150px;padding:6px 9px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;font-size:12.5px}
+  .dy-sc{display:inline-flex;gap:3px}
+  .dy-sc button{width:30px;height:30px;border:1.5px solid var(--line2);border-radius:8px;background:var(--card,#fff);font:inherit;font-weight:700;font-size:13px;cursor:pointer;color:var(--txt)}
+  .dy-sc button.on{background:#0369a1;border-color:#0369a1;color:#fff}
+  .dy-sum{margin-top:12px;border-top:2px solid var(--line);padding-top:10px}
+  .dy-sum h4{margin:0 0 7px;font-size:13px;font-weight:800}
+  .dy-sum textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;line-height:1.7}
+  .dy-done{margin-top:8px;font-size:12.5px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:9px;padding:7px 10px;line-height:1.7}
+  .dy-done.wait{background:#fffbeb;border-color:#fde68a;color:#92400e}
+  .dy-ded{font-size:12.5px;display:inline-flex;gap:5px;align-items:center}
+  .dy-ded input{width:60px;padding:5px 7px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:center}
+@media (max-width:520px){
+  .pb-row{flex-direction:column;align-items:flex-start;gap:6px}
+  .dy-sc button{width:38px;height:38px;font-size:14px}
+  .dy-grade input[type=text]{flex:1 1 100%}
+}
 @media(max-width:480px){
   #view_empsum .container,#view_empsum{padding-left:10px;padding-right:10px}
 
@@ -1625,6 +1668,8 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
 <div id="view_handover" class="container" style="display:none">
   <div class="shsub" id="hvsub">
     <button class="shsub-b on" type="button" data-hvpan="intask"><svg class="ei" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg> งานในกะ (รอตรวจ) <span id="hvsub_pend" class="shsub-badge" style="display:none">0</span></button>
+    <!-- ★ 14 พ.ย. 69 — แท็บใหม่: ดูงานเป็น "รายคน" ของวันนั้น พร้อมให้คะแนน+คอมเมนต์จากส่วนกลาง -->
+    <button class="shsub-b" type="button" data-hvpan="byemp"><svg class="ei" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 9h5M16 13h5M16 17h3"/></svg> งานรายคน <span id="dye_pend" class="shsub-badge" style="display:none">0</span></button>
     <button class="shsub-b" type="button" data-hvpan="assign"><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg> มอบหมายงาน</button>
     <button class="shsub-b" type="button" data-hvpan="handover"><svg class="ei" viewBox="0 0 24 24"><path d="M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg> รายงานรูปงานในกะ</button>
     <!-- ★ 11 ต.ค. 69 — แท็บใหม่: ข้อมูลส่ง/รับผลัดของจริง (ตาราง handovers) — งานค้าง/ปัญหาที่ผลัดก่อนฝากไว้
@@ -1651,6 +1696,31 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">งานในกะ</h3><div id="tk_counts" style="display:flex;gap:6px;flex-wrap:wrap"></div><select id="tk_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><select id="tk_shift" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select><input id="tk_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"><button class="btn btn-sec btn-sm" id="tk_refresh">รีเฟรช</button></div>
   <div id="tk_body"><div class="empty">กำลังโหลด…</div></div>
   </div><!-- /hvpan_intask -->
+
+  <!-- ★ 14 พ.ย. 69 — งานรายคนต่อวัน: ใครได้งานกี่ชิ้น งานอะไร อยู่ขั้นตอนไหน ส่งตอนไหนของกะ
+       แล้วให้คะแนน+คอมเมนต์จากส่วนกลางได้ทั้งต่องานและสรุปรายวัน -->
+  <div class="shpan" id="hvpan_byemp" style="display:none">
+  <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">งานรายคน — ตรวจและให้คะแนนจากส่วนกลาง</h3>
+    <input id="dye_q" type="search" placeholder="ค้นหาชื่อ ชื่อเล่น หรือรหัส" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px;min-width:170px">
+    <select id="dye_branch" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <select id="dye_shift" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px"></select>
+    <input id="dye_date" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <button class="btn btn-sec btn-sm" id="dye_refresh">รีเฟรช</button>
+    <button class="btn btn-sec btn-sm" id="dye_set" title="ตั้งเกณฑ์หักคะแนนวินัย"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></button>
+  </div>
+  <div id="dye_setbox" class="card" style="display:none;padding:12px 14px;margin:0 4px 10px">
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:6px">เกณฑ์หักคะแนนวินัยจากคะแนนงานในกะ</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:13px">
+      <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="dye_auto"> เสนอหักคะแนนให้อัตโนมัติ</label>
+      <label>คะแนนสรุปรายวัน ≤ <select id="dye_thr" style="padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
+      <label>หัก <input type="number" id="dye_pts" min="0" max="50" style="width:64px;padding:5px 8px;border:1.5px solid var(--line2);border-radius:8px;font:inherit;text-align:center"> คะแนน</label>
+      <button class="btn btn-pri btn-sm" id="dye_setsave">บันทึกเกณฑ์</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">ระบบจะ<b>เสนอ</b>ค่านี้ให้ตอนให้คะแนน — ยังแก้จำนวนที่หักเองได้ทุกครั้ง · การหักจะไปโผล่ในเมนู “คะแนนวินัย” ของเดือนนั้น</div>
+  </div>
+  <div id="dye_sum" style="font-size:12.5px;color:var(--muted);margin:0 4px 10px"></div>
+  <div id="dye_body"><div class="empty">เลือกวันที่แล้วกดรีเฟรช</div></div>
+  </div><!-- /hvpan_byemp -->
 
   <div class="shpan" id="hvpan_log" style="display:none">
   <div class="toolbar"><h3 style="flex:1; font-size:15px; font-weight:600">Log งาน (ตรวจสอบย้อนหลัง)</h3>
@@ -20580,10 +20650,366 @@ async function loadTaskTab(){
   }
 }
 function handoverTab(name){
-  ['intask','assign','ho','handover','log'].forEach(k=>{ const p=$('hvpan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
+  ['intask','byemp','assign','ho','handover','log'].forEach(k=>{ const p=$('hvpan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
   document.querySelectorAll('#hvsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.hvpan===name));
   // ★ 11 ต.ค. 69 — โหลดข้อมูลรับส่งผลัดตอนเปิดแท็บ (เดิมมีแต่ฟังก์ชัน ไม่มีใครเรียก)
   if(name==='ho') loadHandover();
+  if(name==='byemp') dyeInit();
+}
+
+// ============================================================
+// งานรายคนต่อวัน + คะแนน/คอมเมนต์จากส่วนกลาง          ★ 14 พ.ย. 69
+//   ตอบคำถาม: วันนั้นใครได้งานกี่ชิ้น งานอะไร อยู่ขั้นตอนไหนของ 9 ขั้นตอน
+//   ทำถูกตามคู่มือไหม (กางดูวิธีทำ/เกณฑ์ตรวจ/เลขหน้าคู่มือได้) ส่งงานตอนไหนของกะ
+//   แล้วให้คะแนน 1–5 + คอมเมนต์ได้ทั้งต่องานและสรุปรายวัน (พนักงานต้องกดรับทราบ)
+//   ยังไม่ได้ตั้ง "เวลาตามคู่มือ" ของแต่ละงานไว้ในระบบ จึงวัดจากเวลาเข้า–ออกกะจริง:
+//   ส่งนอกช่วงกะ / ส่งรวบทีเดียวท้ายกะ
+// ============================================================
+let DYE=null;                 // ผลล่าสุดจาก API
+const DYE_SC={};              // คะแนนที่เลือกค้างไว้บนหน้าจอ (ยังไม่กดบันทึก)
+const DYE_OPEN={};            // การ์ดใครกางรายละเอียดอยู่
+const DYE_LBL={5:'ดีเยี่ยม',4:'ดี',3:'ผ่านเกณฑ์',2:'ต้องปรับปรุง',1:'ไม่ผ่าน'};
+
+// บังคับโซนเวลาไทยเสมอ — เครื่องที่ตั้งโซนผิดจะได้ไม่อ่านเวลากะเพี้ยนไปทั้งหน้า
+function dyeTime(t){
+  if(!t) return '—';
+  try{ return new Date(t).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})+' น.'; }
+  catch(e){ return '—'; }
+}
+function dyeHM(t){ const s=String(t||''); const m=s.match(/^(\d{1,2}):(\d{2})/); return m?(m[1].padStart(2,'0')+':'+m[2]):'—'; }
+function dyeDur(min){
+  const n=Math.abs(Math.round(min||0));
+  return n<60 ? (n+' นาที') : (Math.floor(n/60)+' ชม.'+(n%60?(' '+(n%60)+' นาที'):''));
+}
+function dyeStatus(s){
+  return s==='approved' ? '<span class="pill ok">ผ่าน</span>'
+    : s==='submitted'   ? '<span class="pill warn">รอตรวจ</span>'
+    : s==='sent_back'   ? '<span class="pill bad">ตีกลับ</span>'
+    : '<span class="pill muted">ยังไม่ทำ</span>';
+}
+
+function dyeInit(){
+  if(!$('dye_date').value) $('dye_date').value=bkkTodayStr();
+  if($('dye_body').dataset.wired!=='1'){
+    $('dye_body').dataset.wired='1';
+    $('dye_refresh').onclick=loadDayTasks;
+    $('dye_date').onchange=loadDayTasks;
+    $('dye_branch').onchange=renderDayTasks;
+    $('dye_shift').onchange=renderDayTasks;
+    let tm=null;
+    $('dye_q').oninput=()=>{ clearTimeout(tm); tm=setTimeout(renderDayTasks,140); };
+    const sb=$('dye_set'), box=$('dye_setbox');
+    if(sb) sb.onclick=()=>{ box.style.display = box.style.display==='none' ? '' : 'none'; };
+    if(MGR_MODE && sb) sb.style.display='none';
+    const ss=$('dye_setsave');
+    if(ss) ss.onclick=async()=>{
+      const r=await post(Object.assign({ action:'hr_hq_settings_save',
+        data:{ auto:$('dye_auto').checked, threshold:$('dye_thr').value, points:$('dye_pts').value } }, authBody()));
+      if(r.ok){ DYE && (DYE.settings=r.settings); toast('ok','บันทึกเกณฑ์แล้ว'); $('dye_setbox').style.display='none'; renderDayTasks(); }
+      else toast('err', r.error||'บันทึกไม่สำเร็จ');
+    };
+  }
+  loadDayTasks();
+}
+
+async function loadDayTasks(){
+  $('dye_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post(Object.assign({ action:'hr_day_tasks', date:$('dye_date').value }, authBody()));
+  if(!r.ok){ $('dye_body').innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; $('dye_sum').textContent=''; return; }
+  DYE=r;
+  // ค่าตั้งเกณฑ์หักคะแนน
+  const st=r.settings||{};
+  if($('dye_auto')) $('dye_auto').checked = st.auto!==false;
+  if($('dye_thr'))  $('dye_thr').value   = String(st.threshold||2);
+  if($('dye_pts'))  $('dye_pts').value   = String(st.points==null?5:st.points);
+  // ตัวเลือกสาขา/กะ — เติมจากข้อมูลจริงของวันนั้น
+  dyeFill('dye_branch', 'ทุกสาขา', r.rows, g=>[g.branch_id, g.branch_name]);
+  dyeFill('dye_shift',  'ทุกกะ',   r.rows, g=>[g.shift_id,  g.shift_name]);
+  if(MGR_MODE && $('dye_branch')) $('dye_branch').style.display='none';
+  const bd=$('dye_pend');
+  if(bd){ const n=(r.stats||{}).waiting_ack||0; if(n){ bd.style.display=''; bd.textContent=n; } else bd.style.display='none'; }
+  renderDayTasks();
+}
+
+// เติม <option> จากข้อมูลจริง พร้อมจำนวนคน · ไม่รีเซ็ตค่าที่เลือกไว้ถ้ารายการเดิม
+function dyeFill(id, allLabel, rows, pick){
+  const sel=$(id); if(!sel) return;
+  const seen={}, name={};
+  (rows||[]).forEach(g=>{ const [k,n]=pick(g); const key=String(k||''); if(!key) return; seen[key]=(seen[key]||0)+1; name[key]=n||key; });
+  const keys=Object.keys(seen).sort();
+  const sig=keys.join(',');
+  if(sel.dataset.sig===sig) return;
+  sel.dataset.sig=sig;
+  const keep=sel.value;
+  sel.innerHTML='<option value="">'+esc(allLabel)+'</option>'
+    + keys.map(k=>'<option value="'+esc(k)+'">'+esc(name[k])+' ('+seen[k]+')</option>').join('');
+  if(keep && keys.indexOf(keep)>-1) sel.value=keep;
+}
+
+function renderDayTasks(){
+  if(!DYE) return;
+  const fbr=(($('dye_branch')||{}).value||'');
+  const fsh=(($('dye_shift')||{}).value||'');
+  const fq=String((($('dye_q')||{}).value||'')).trim().toLowerCase();
+  let rows=DYE.rows||[];
+  if(fbr) rows=rows.filter(g=>String(g.branch_id||'')===fbr);
+  if(fsh) rows=rows.filter(g=>String(g.shift_id||'')===fsh);
+  if(fq)  rows=rows.filter(g=>[g.name,g.nickname,g.emp_id].some(v=>String(v||'').toLowerCase().indexOf(fq)>-1));
+
+  const s=DYE.stats||{};
+  $('dye_sum').innerHTML='วันที่ '+esc(beDate(DYE.date))+' · พนักงาน '+(s.people||0)+' คน · งานทั้งหมด '+(s.tasks||0)+' ชิ้น'
+    + ' · ให้คะแนนรายงานแล้ว '+(s.graded||0)+' ชิ้น · สรุปแล้ว '+(s.reviewed||0)+' คน'
+    + ((s.waiting_ack||0)?(' · <b style="color:#b45309">รอพนักงานกดรับทราบ '+s.waiting_ack+' คน</b>'):'')
+    + ((fbr||fsh||fq)?('  — แสดง '+rows.length+' คน'):'');
+
+  if(!rows.length){
+    $('dye_body').innerHTML=(DYE.rows||[]).length
+      ? '<div class="empty">ไม่มีใครตรงตัวกรองที่เลือก</div>'
+      : '<div class="empty">วันที่เลือกยังไม่มีการมอบงานให้ใคร</div>';
+    return;
+  }
+  $('dye_body').innerHTML=rows.map(dyeCard).join('');
+  dyeWire();
+}
+
+// คีย์การ์ดคือ "รหัสพนักงาน|กะ" — ขีดตั้งใช้เป็น id ใน CSS selector ไม่ได้ จึงแปลงก่อน
+function dyeKid(k){ return String(k||'').replace(/[^A-Za-z0-9_-]/g,'_'); }
+
+function dyeCard(g){
+  const rv=g.review||{};
+  const kq=esc(g.key);
+  const kid=dyeKid(g.key);
+  const open=!!DYE_OPEN[g.key];
+
+  // --- หัวการ์ด ---
+  const shiftLine=esc(g.shift_name)
+    + ((g.shift_start&&g.shift_end)?(' '+dyeHM(g.shift_start)+'–'+dyeHM(g.shift_end)):'');
+  const inOut='เข้า '+dyeTime(g.check_in)
+    + (g.late_min?(' <span style="color:#b91c1c">สาย '+g.late_min+' นาที</span>'):'')
+    + ' · ออก '+(g.check_out?dyeTime(g.check_out):'<span style="color:#b45309">ยังไม่กดออก</span>');
+
+  // --- ชิปสรุป ---
+  const pills=[];
+  pills.push('<span class="dy-pill">งาน '+g.total+' ชิ้น</span>');
+  if(g.done)  pills.push('<span class="dy-pill ok">ผ่าน '+g.done+'</span>');
+  if(g.open)  pills.push('<span class="dy-pill warn">ค้าง '+g.open+'</span>');
+  if(g.back)  pills.push('<span class="dy-pill bad">ตีกลับ '+g.back+'</span>');
+  if(g.no_photo) pills.push('<span class="dy-pill bad">รูปไม่ครบเกณฑ์ '+g.no_photo+'</span>');
+  if(g.outside)  pills.push('<span class="dy-pill bad">ส่งนอกช่วงกะ '+g.outside+'</span>');
+  if(g.burst_max>=3) pills.push('<span class="dy-pill warn">ส่งรวบ '+g.burst_max+' ชิ้นใน '+(DYE.burst_window||30)+' นาที</span>');
+  if(g.graded) pills.push('<span class="dy-pill">ให้คะแนนแล้ว '+g.graded+'/'+g.total+'</span>');
+
+  // --- แถบเวลาของกะ ---
+  let tl='';
+  const dots=g.tasks.filter(t=>t.submitted_at && t.mins_in!=null && t.mins_to_end!=null);
+  if(dots.length){
+    tl='<div class="dy-tl">'
+      + dots.map(t=>{
+          const span=t.mins_in+t.mins_to_end;
+          const pc=span>0?Math.max(0,Math.min(100,(t.mins_in/span)*100)):0;
+          return '<i class="'+(t.outside?'out':'')+'" style="left:'+pc.toFixed(1)+'%" title="'+esc(t.title)+' — '+dyeTime(t.submitted_at)+'"></i>';
+        }).join('')
+      + '<b>'+(g.check_in?dyeTime(g.check_in):dyeHM(g.shift_start))+'</b>'
+      + '<b class="r">'+(g.check_out?dyeTime(g.check_out):dyeHM(g.shift_end))+'</b>'
+      + '</div>';
+  }
+
+  // --- งานแยกตามขั้นตอน 1–9 ---
+  let body='';
+  if(open){
+    const byStep={};
+    g.tasks.forEach(t=>{ (byStep[t.step]=byStep[t.step]||[]).push(t); });
+    body=Object.keys(byStep).map(Number).sort((a,b)=>a-b).map(stp=>{
+      const nm=(DYE.steps||{})[stp]||'ไม่ระบุขั้นตอน';
+      return '<div class="dy-step"><div class="dy-steph">ขั้นตอนที่ '+(stp||'—')+' · '+esc(nm)
+        +' <span style="color:var(--muted);font-weight:600">('+byStep[stp].length+' งาน)</span></div>'
+        + byStep[stp].map(t=>dyeTask(g,t)).join('')
+        +'</div>';
+    }).join('');
+  }
+
+  // --- กล่องสรุปรายวัน ---
+  let sum='';
+  if(open){
+    const cur=DYE_SC['s'+g.key]!=null ? DYE_SC['s'+g.key] : (rv.score!=null?rv.score:null);
+    const sug=g.suggest;
+    const set=DYE.settings||{};
+    const dedSug=(set.auto!==false && cur!=null && cur<=(set.threshold||2))?(set.points==null?5:set.points):0;
+    if(MGR_MODE){
+      sum='<div class="dy-sum"><h4>ผลตรวจจากส่วนกลาง</h4>'
+        + (rv.score!=null||rv.comment
+            ? '<div class="dy-more">คะแนน '+(rv.score!=null?(rv.score+'/5 · '+esc(DYE_LBL[rv.score]||'')):'—')
+              +(rv.comment?('<b>คอมเมนต์</b>'+esc(rv.comment)):'')
+              +(rv.deduct?('<b>หักคะแนนวินัย</b>'+rv.deduct+' คะแนน'):'')+'</div>'
+            : '<div class="dy-more">ส่วนกลางยังไม่ได้ตรวจของวันนี้</div>')
+        +'</div>';
+    } else {
+      sum='<div class="dy-sum"><h4>สรุปวันนี้ → ส่งให้พนักงานรับทราบ</h4>'
+        + '<div class="dy-grade">'
+        +   dyeScale('s'+g.key, cur)
+        +   (sug!=null?'<span style="font-size:11.5px;color:var(--muted)">ค่าเฉลี่ยคะแนนรายงาน '+g.avg_task+' → เสนอ '+sug+'</span>':'')
+        + '</div>'
+        + '<textarea id="dyc_'+kid+'" rows="2" placeholder="คอมเมนต์ถึงพนักงาน — พนักงานจะเห็นข้อความนี้และต้องกดรับทราบ">'+esc(rv.comment||'')+'</textarea>'
+        + '<div class="dy-grade" style="margin-top:8px;justify-content:space-between">'
+        +   '<label class="dy-ded">หักคะแนนวินัย <input type="number" min="0" max="50" id="dyd_'+kid+'" value="'+(rv.reviewed_at?(rv.deduct||0):dedSug)+'"> คะแนน</label>'
+        +   '<span style="display:flex;gap:6px">'
+        +     (rv.id?'<button class="btn btn-danger btn-sm" data-dydel="'+rv.id+'">ลบผลตรวจ</button>':'')
+        +     '<button class="btn btn-pri btn-sm" data-dysave="'+kq+'">บันทึกและส่งให้รับทราบ</button>'
+        +   '</span>'
+        + '</div>';
+      if(rv.reviewed_at){
+        sum+='<div class="dy-done'+(rv.ack_at?'':' wait')+'">'
+          + (rv.ack_at ? ('✓ พนักงานกดรับทราบแล้ว '+esc(beDateTime(rv.ack_at))) : '⏳ ส่งเข้าแอปแล้ว — รอพนักงานกดรับทราบ')
+          + ' <span class="muted">· ตรวจโดย '+esc(rv.reviewer||'')+' '+esc(beDateTime(rv.reviewed_at))+'</span>'
+          + (rv.deduct?(' · หักคะแนนวินัย '+rv.deduct):'')
+          + '</div>';
+      }
+      sum+='</div>';
+    }
+  }
+
+  const rvTag = rv.score!=null
+    ? '<span class="dy-pill '+(rv.score<=2?'bad':(rv.score>=4?'ok':'warn'))+'">สรุป '+rv.score+'/5'+(rv.ack_at?' ✓':'')+'</span>'
+    : '';
+
+  return '<div class="dy-card">'
+    + '<div class="dy-head">'
+    +   '<div><div class="dy-name">'+esc(g.nickname||g.name)
+    +     ' <span style="font-weight:500;font-size:12.5px;color:var(--muted)">· '+esc(g.name)+' · '+esc(g.emp_id)+'</span></div>'
+    +     '<div class="dy-meta">'+esc(g.branch_name)+' · '+shiftLine+'<br>'+inOut+'</div></div>'
+    +   '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+rvTag
+    +     '<button class="btn btn-sec btn-sm" data-dyopen="'+kq+'">'+(open?'ย่อ':'ดูงานทั้งหมด')+'</button></div>'
+    + '</div>'
+    + '<div class="dy-pills">'+pills.join('')+'</div>'
+    + tl
+    + body
+    + sum
+    + '</div>';
+}
+
+// ปุ่มคะแนน 1–5 (ไม่ใช้ radio เพื่อไม่ต้องตั้งชื่อ name ให้ชนกัน)
+function dyeScale(key, cur){
+  let h='<span class="dy-sc" data-dyscale="'+esc(key)+'">';
+  for(let i=1;i<=5;i++) h+='<button type="button" data-dyv="'+i+'"'+(cur===i?' class="on"':'')+' title="'+esc(DYE_LBL[i])+'">'+i+'</button>';
+  h+='</span>';
+  if(cur!=null) h+='<span style="font-size:11.5px;color:var(--muted)">'+esc(DYE_LBL[cur]||'')+'</span>';
+  return h;
+}
+
+function dyeTask(g,t){
+  const cur=DYE_SC['t'+t.id]!=null ? DYE_SC['t'+t.id] : (t.hq_score!=null?t.hq_score:null);
+  const li=s=>String(s||'').split('\n').map(x=>x.replace(/^[•\-\s]+/,'').trim()).filter(Boolean)
+    .map(x=>'<li>'+esc(x)+'</li>').join('');
+
+  // เวลาส่งเทียบกับกะ
+  let when='ยังไม่ส่ง';
+  if(t.submitted_at){
+    when=dyeTime(t.submitted_at)
+      + (t.mins_in!=null?(' · หลังเข้ากะ '+dyeDur(t.mins_in)):'')
+      + (t.mins_to_end!=null && t.mins_to_end>=0 ? (' · ก่อนออกกะ '+dyeDur(t.mins_to_end)) : '')
+      + (t.mins_to_end!=null && t.mins_to_end<0  ? (' · <b style="color:#b91c1c">หลังออกกะ '+dyeDur(t.mins_to_end)+'</b>') : '');
+    if(t.outside) when+=' <span class="dy-pill bad">นอกช่วงกะ</span>';
+  }
+
+  // รายละเอียดจากคู่มือ — กางเองเมื่อกด
+  const det='<details class="dy-more"><summary style="cursor:pointer;font-weight:700">รายละเอียดงานตามคู่มือ</summary>'
+    + (t.source_ref?('<b>อ้างอิงคู่มือ</b>'+esc(t.source_ref)):'')
+    + (t.how_to?('<b>วิธีทำ</b><ul>'+li(t.how_to)+'</ul>'):'')
+    + (t.criteria?('<b>เกณฑ์การตรวจสอบ</b><ul>'+li(t.criteria)+'</ul>'):'')
+    + (t.photo_hint?('<b>วิธีถ่ายรูป / หลักฐาน</b>'+esc(t.photo_hint)):'')
+    + (t.who_label?('<b>ผู้รับผิดชอบตามคู่มือ</b>'+esc(t.who_label)):'')
+    + (t.min_photos?('<b>ต้องแนบรูป</b>อย่างน้อย '+t.min_photos+' รูป (ส่งมา '+t.photo_count+' รูป)'):'')
+    + (t.needs_manual?('<b style="color:#b45309">ยังไม่มีในคู่มือฉบับใหม่</b>'+esc(t.manual_note||'')):'')
+    + ((!t.source_ref&&!t.how_to&&!t.criteria)?'งานนี้ยังไม่ได้ใส่วิธีทำ/เกณฑ์ไว้ในระบบ — เพิ่มได้ที่แท็บ “ตั้งค่างาน”':'')
+    + '</details>';
+
+  const imgs=t.photos.length
+    ? '<div style="display:flex;gap:6px;overflow-x:auto;padding:5px 0 2px;-webkit-overflow-scrolling:touch">'
+      + t.photos.map(u=>sampleThumbHTML(t.task_def_id,u,62)).join('') + '</div>'
+    : '';
+
+  const grade = MGR_MODE
+    ? (t.hq_score!=null||t.hq_comment
+        ? '<div class="dy-tsub">ส่วนกลางให้ '+(t.hq_score!=null?(t.hq_score+'/5'):'—')+(t.hq_comment?(' · “'+esc(t.hq_comment)+'”'):'')+'</div>'
+        : '')
+    : '<div class="dy-grade">'+dyeScale('t'+t.id, cur)
+      + '<input type="text" id="dyt_'+t.id+'" value="'+esc(t.hq_comment||'')+'" placeholder="คอมเมนต์ถึงงานชิ้นนี้ (ไม่ใส่ก็ได้)">'
+      + '<button class="btn btn-sec btn-sm" data-dytsave="'+t.id+'">บันทึก</button></div>'
+      + (t.hq_at?('<div class="dy-tsub">ให้คะแนนโดย '+esc(t.hq_by||'')+' '+esc(beDateTime(t.hq_at))+'</div>'):'');
+
+  return '<div class="dy-task">'
+    + '<div class="dy-ttop"><span class="dy-ttl">'+esc(t.title)+'</span>'+dyeStatus(t.status)
+    +   (t.hq_score!=null?('<span class="dy-pill '+(t.hq_score<=2?'bad':(t.hq_score>=4?'ok':'warn'))+'">'+t.hq_score+'/5</span>'):'')
+    + '</div>'
+    + '<div class="dy-tsub">'+when
+    +   (t.sent_back_count?(' · ถูกตีกลับ '+t.sent_back_count+' ครั้ง'):'')
+    +   (t.review_note?('<br>ผู้ตรวจในสาขา: '+esc(t.review_note)):'')
+    +   (t.emp_note?('<br>หมายเหตุพนักงาน: '+esc(t.emp_note)):'')
+    +   (t.closed_reason?('<br>ปิดงานด้วยเหตุ: '+esc(t.closed_reason)):'')
+    + '</div>'
+    + imgs + det + grade
+    + '</div>';
+}
+
+function dyeWire(){
+  const body=$('dye_body');
+  body.querySelectorAll('[data-dyopen]').forEach(b=>b.onclick=()=>{
+    const k=b.getAttribute('data-dyopen');
+    DYE_OPEN[k]=!DYE_OPEN[k];
+    renderDayTasks();
+  });
+  body.querySelectorAll('[data-dyscale]').forEach(w=>{
+    const key=w.getAttribute('data-dyscale');
+    w.querySelectorAll('[data-dyv]').forEach(btn=>btn.onclick=()=>{
+      const v=Number(btn.getAttribute('data-dyv'));
+      DYE_SC[key] = (DYE_SC[key]===v) ? null : v;     // แตะซ้ำ = ยกเลิก
+      w.querySelectorAll('[data-dyv]').forEach(x=>x.classList.toggle('on', Number(x.getAttribute('data-dyv'))===DYE_SC[key]));
+      // คะแนนสรุปเปลี่ยน → เสนอจำนวนหักใหม่ให้ (ถ้ายังไม่เคยตรวจ)
+      if(key[0]==='s'){
+        const k=key.slice(1), el=$('dyd_'+dyeKid(k));
+        const g=(DYE.rows||[]).find(x=>x.key===k);
+        const set=DYE.settings||{};
+        if(el && g && !(g.review&&g.review.reviewed_at)){
+          const v2=DYE_SC[key];
+          el.value = (set.auto!==false && v2!=null && v2<=(set.threshold||2)) ? (set.points==null?5:set.points) : 0;
+        }
+      }
+    });
+  });
+  body.querySelectorAll('[data-dytsave]').forEach(b=>b.onclick=async()=>{
+    const id=Number(b.getAttribute('data-dytsave'));
+    b.disabled=true;
+    const r=await post(Object.assign({ action:'hr_task_grade',
+      data:{ id, score:(DYE_SC['t'+id]==null?'':DYE_SC['t'+id]), comment:($('dyt_'+id)||{}).value||'' } }, authBody()));
+    b.disabled=false;
+    if(!r.ok){ toast('err', r.error||'บันทึกไม่สำเร็จ'); return; }
+    toast('ok', r.cleared?'ล้างคะแนนงานนี้แล้ว':'บันทึกคะแนนงานแล้ว');
+    delete DYE_SC['t'+id];
+    loadDayTasks();
+  });
+  body.querySelectorAll('[data-dysave]').forEach(b=>b.onclick=async()=>{
+    const k=b.getAttribute('data-dysave');
+    const g=(DYE.rows||[]).find(x=>x.key===k); if(!g) return;
+    const kid=dyeKid(k);
+    const score=DYE_SC['s'+k]!=null?DYE_SC['s'+k]:((g.review&&g.review.score!=null)?g.review.score:'');
+    const comment=(($('dyc_'+kid)||{}).value||'').trim();
+    if(score==='' && !comment){ toast('err','ใส่คะแนนหรือคอมเมนต์อย่างน้อยหนึ่งอย่าง'); return; }
+    b.disabled=true;
+    const r=await post(Object.assign({ action:'hr_day_review_save',
+      data:{ emp_id:g.emp_id, work_date:DYE.date, shift_id:g.shift_id, branch_id:g.branch_id, emp_name:g.name,
+             score, comment, deduct:(($('dyd_'+kid)||{}).value||0) } }, authBody()));
+    b.disabled=false;
+    if(!r.ok){ toast('err', r.error||'บันทึกไม่สำเร็จ'); return; }
+    toast('ok','ส่งผลตรวจให้พนักงานแล้ว'+(r.deduct?(' · หักคะแนนวินัย '+r.deduct):''));
+    delete DYE_SC['s'+k];
+    loadDayTasks();
+  });
+  body.querySelectorAll('[data-dydel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบผลตรวจของวันนี้? คะแนนวินัยที่หักไปจะถูกคืนให้ด้วย')) return;
+    const r=await post(Object.assign({ action:'hr_day_review_delete', id:Number(b.getAttribute('data-dydel')) }, authBody()));
+    if(!r.ok){ toast('err', r.error||'ลบไม่สำเร็จ'); return; }
+    toast('ok','ลบผลตรวจแล้ว'); loadDayTasks();
+  });
 }
 function renderAssign(){
   const shift=$('ta_shift').value;
