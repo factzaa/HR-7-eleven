@@ -16819,7 +16819,20 @@ const EC_MDNAME={time:'ตรงเวลา',full:'มาครบ',work:'ง�
 function ecMd(k,title){ return '<span class="ec-md ec-m-'+k+'" title="'+esc(title||EC_MDNAME[k]||'')+'"><svg viewBox="0 0 24 24">'+EC_ICON[k]+'</svg></span>'; }
 function ecPosClass(r){ if(r.is_manager||/ผู้จัดการ/.test(r.position||'')) return 'mgr'; if(/หัวหน้า|อาวุโส|ผู้ช่วย/.test(r.position||'')) return 'lead'; if(r.is_new) return 'new'; return ''; }
 function ecInitial(r){ const n=String(r.nickname||r.name||'?').trim(); return n.slice(0,2); }
+// ★ 14 พ.ย. 69 — จำว่าเปิดสรุปรายบุคคลมาจากแท็บไหน เพื่อให้ปุ่มย้อนกลับพาไปที่เดิมได้
+//   (เปิดจากหน้าประเมินทดลองงาน แล้วกดย้อนกลับ ต้องกลับไปหน้าประเมิน ไม่ใช่หน้าบัตรพนักงาน)
+let ES_FROM='';
+function esTabLabel(name){
+  const b=$('tab_'+name); if(!b) return '';
+  return String(b.textContent||'').replace(/\s+/g,' ').trim();
+}
+function esSetBackLabel(){
+  const b=$('es_back'); if(!b) return;
+  const lb=ES_FROM?esTabLabel(ES_FROM):'';
+  b.innerHTML='&larr; '+esc(lb?('กลับหน้า'+lb):'กลับหน้าบัตรพนักงาน');
+}
 function esShowCards(){
+  ES_FROM='';                                      // กลับถึงหน้าบัตรแล้ว = ไม่มีที่ให้ย้อนต่อ
   $('es_cards').style.display=''; $('es_body').style.display='none';
   $('es_back') && ($('es_back').style.display='none');
   $('es_print') && ($('es_print').style.display='none');
@@ -16830,6 +16843,7 @@ function esShowDetail(){
   $('es_cards').style.display='none'; $('es_body').style.display='';
   $('es_back') && ($('es_back').style.display='');
   $('es_selwrap') && ($('es_selwrap').style.display='');
+  esSetBackLabel();
 }
 // ★ 24 ก.ย. 69 — เก็บผลไว้ในเครื่อง 10 นาที · เข้าแท็บนี้ซ้ำจะขึ้นทันทีไม่ต้องรอโหลดใหม่
 const EC_TTL=10*60*1000;
@@ -17083,7 +17097,14 @@ function openEmpCard(empId){
   //   และถ้ายังไม่เคยเปิดแท็บนี้เลย ปุ่ม ย้อนกลับ/พิมพ์ ก็ยังไม่ถูก wire ด้วย
   const view=$('view_empsum');
   const hidden = !view || view.style.display==='none';
-  if(hidden && typeof showTab==='function') showTab('empsum');     // showTab เรียก initEmpSum() ให้เอง
+  if(hidden){
+    // จำแท็บที่กำลังเปิดอยู่ไว้ก่อนสลับ — ปุ่มย้อนกลับจะพากลับไปที่นั่น
+    ES_FROM = (typeof ALL_TABS!=='undefined'?ALL_TABS:[]).find(n=>{
+      const v=$('view_'+n); return v && v.style.display!=='none' && n!=='empsum';
+    }) || '';
+    if(typeof showTab==='function') showTab('empsum');             // showTab เรียก initEmpSum() ให้เอง
+    else if(typeof initEmpSum==='function') initEmpSum();
+  }
   else if(typeof initEmpSum==='function') initEmpSum();
   const sel=$('es_emp');
   if(sel){ if(![...sel.options].some(o=>String(o.value)===String(empId))){ const o=document.createElement('option'); o.value=empId; o.textContent=empId; sel.appendChild(o); } sel.value=empId; }
@@ -17436,7 +17457,11 @@ function initEmpSum(){
       if($('es_cards').style.display!=='none') loadEmpCards();   // ★ สลับรอบตอนอยู่หน้าบัตร → โหลดบัตรใหม่
     };
     $('es_gen').onclick=genEmpSum;
-    $('es_back') && ($('es_back').onclick=()=>{ esShowCards(); });
+    // ★ 14 พ.ย. 69 — เปิดมาจากแท็บอื่น → ย้อนกลับไปแท็บนั้น ไม่ใช่หน้าบัตรพนักงาน
+    $('es_back') && ($('es_back').onclick=()=>{
+      if(ES_FROM && typeof showTab==='function'){ const t=ES_FROM; esShowCards(); showTab(t); return; }
+      esShowCards();
+    });
     $('es_print').onclick=()=>{
       esFitDocPages();                       // ★ ย่อหน้าแรกให้จบใน 1 หน้า A4 ก่อนสั่งพิมพ์
       document.body.classList.add('print-es');
