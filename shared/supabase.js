@@ -3099,16 +3099,54 @@
     const defs = await _taskDefsFor(branch, workDate, shift);
     return (defs||[]).find(d => String(d.link_kind||'') === 'รับสินค้า') || null;
   }
-  async function _goodsCtx(empId){
+  // ผลัดหลักที่อยู่ใน "วงจรงานผลัด" จริง (ตัดกะ ผจก. / Delivery ที่ไม่ต้องรอส่งผลัดออก)
+  async function _cycleShifts(){
+    const { data }=await sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift,checkout_lock').order('start_time');
+    return (data||[]).filter(s=>s.main_shift && String(s.main_shift)===String(s.shift_id) && s.checkout_lock!==false);
+  }
+  // ผลัดที่ครอบเวลาตอนนี้ (เวลาไทย) — ใช้เดาให้ ผจก. ว่ากำลังทำแทนผลัดไหน
+  function _shiftNow(list){
+    const now=new Date(Date.now()+7*3600000);
+    const mins=now.getUTCHours()*60+now.getUTCMinutes();
+    const m=t=>{ const q=String(t||'').match(/(\d{1,2}):(\d{2})/); return q?(+q[1]*60 + +q[2]):null; };
+    for(const s of list){
+      const a=m(s.start_time), b=m(s.end_time); if(a==null||b==null) continue;
+      if(b>a ? (mins>=a && mins<b) : (mins>=a || mins<b)) return s.shift_id;   // รองรับกะข้ามเที่ยงคืน
+    }
+    return (list[0]||{}).shift_id||'';
+  }
+
+  // ★ 15 พ.ย. 69 — กะ ผจก. (MNG) ไม่ได้อยู่ในวงจรงานผลัด งานรับสินค้าจึงไม่เคยผูกกับกะนี้
+  //   เดิม ผจก. เปิดหน้ารับสินค้าแล้วเจอ "กะนี้ไม่มีงานรับสินค้าในรายการงาน" เข้าใช้ไม่ได้เลย
+  //   ใหม่: ถ้ากะตัวเองไม่มีงานนี้ ให้ ผจก. ทำแทนผลัดที่มีงาน โดยเลือกผลัดได้
+  async function _goodsCtx(empId, shiftOverride){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const {workDate,branch,group:shift}=await _shiftCtx(emp);
-    const def = (branch && shift) ? await _goodsDef(branch, workDate, shift) : null;
+    const {workDate,branch,group:ownShift}=await _shiftCtx(emp);
+    let shift=ownShift;
+    let def = (branch && shift) ? await _goodsDef(branch, workDate, shift) : null;
+    let altShifts=[], actingFor=null;
+    if(emp.is_manager && branch){
+      const cyc=await _cycleShifts();
+      for(const s of cyc){
+        if(String(s.shift_id)===String(ownShift)) continue;
+        if(await _goodsDef(branch, workDate, s.shift_id)) altShifts.push({ shift_id:s.shift_id, name:s.name });
+      }
+      const want = (shiftOverride && altShifts.some(s=>String(s.shift_id)===String(shiftOverride))) ? String(shiftOverride) : null;
+      if(want || !def){
+        const pick = want || (altShifts.length ? _shiftNow(cyc.filter(s=>altShifts.some(a=>a.shift_id===s.shift_id))) : '');
+        if(pick){
+          const d=await _goodsDef(branch, workDate, pick);
+          if(d){ shift=pick; def=d; actingFor=(altShifts.find(s=>String(s.shift_id)===String(pick))||{}).name||pick; }
+        }
+      }
+    }
     let asg = null;
     if(def) asg = await _findAsg(branch, workDate, shift, def.id);
     const lead=(await sb.from('shift_leads').select('emp_id,emp_name').eq('work_date',workDate).eq('branch_id',branch||'').eq('shift_id',shift||'').maybeSingle()).data;
     const isLead = !!(lead && lead.emp_id === emp.emp_id);
     const isMine = !!(asg && asg.emp_id === emp.emp_id);
-    return { emp, branch, workDate, shift, def, asg, lead, isLead,
+    return { emp, branch, workDate, shift, own_shift:ownShift, def, asg, lead, isLead,
+      alt_shifts:altShifts, acting_for:actingFor,
       canEdit: !!(def && (isMine || isLead || emp.is_manager)) };
   }
   // ===== ตารางอ้างอิง QSS Standard (อ่านอย่างเดียว) =====
@@ -3133,8 +3171,8 @@
     });
     return { table_no:t, shift:sh, total:rows.length, all_total:all.length, groups:order.map(function(k){ return byKey[k]; }) };
   }
-  async function getGoodsReceiving(empId){
-    const c = await _goodsCtx(empId);
+  async function getGoodsReceiving(empId, shiftOverride){
+    const c = await _goodsCtx(empId, shiftOverride);
     const { emp, branch, workDate, shift } = c;
     const [whR, todayR]=await Promise.all([
       sb.from('warehouses').select('*').eq('active',true).order('sort').order('id'),
@@ -3149,15 +3187,17 @@
       other_shifts: all.filter(r => String(r.shift_id||'') !== String(shift||'') && !r.no_delivery),
       no_delivery: mine.some(r => !!r.no_delivery),
       def_id: c.def ? c.def.id : null,
+      own_shift: c.own_shift, alt_shifts: c.alt_shifts||[], acting_for: c.acting_for||null,
+      is_manager: !!c.emp.is_manager,
       task_status: c.asg ? String(c.asg.status||'todo') : null,
       assignee: c.asg ? (c.asg.emp_name || c.asg.emp_id || '') : '',
       can_edit: c.canEdit, is_lead: c.isLead };
   }
-  async function submitGoodsReceipt({ empId, id, warehouse_id, ref_no, crates_in, crates_return, in_photos, note }){
+  async function submitGoodsReceipt({ empId, id, warehouse_id, ref_no, crates_in, crates_return, in_photos, note, shift_id }){
     const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
-    const {workDate,branch}=await _shiftCtx(emp);
     // ★ 15 ก.ย. 69 — สิทธิ์มาจากงานที่ได้รับมอบในผลัด แทนกติกา "ผู้คุมผลัด 1 คน/สาขา/วัน"
-    const _gc = await _goodsCtx(emp.emp_id);
+    const _gc = await _goodsCtx(emp.emp_id, shift_id);
+    const workDate=_gc.workDate, branch=_gc.branch;
     if(!_gc.def) throw new Error('กะนี้ไม่มีงานรับสินค้าในรายการงาน — แจ้งผู้จัดการเปิดงานนี้ใน "ตั้งค่ากะ" ก่อน');
     if(!_gc.canEdit) throw new Error('งานรับสินค้าผลัดนี้มอบให้ ' + (_gc.asg ? (_gc.asg.emp_name||_gc.asg.emp_id) : 'คนอื่น') + ' — ถ้าต้องการทำเอง ให้หัวหน้าผลัดมอบงานนี้ให้คุณก่อน');
     const _gShift = _gc.shift || null;
@@ -3315,8 +3355,8 @@
   // ★ 15 ก.ย. 69 — ปิดงานรับสินค้าของผลัด
   //   no_delivery = true  → บันทึกว่า "ผลัดนี้ไม่มีสินค้าจัดส่ง" แล้วปิดงาน
   //   no_delivery = false → ต้องมีใบรับสินค้าอย่างน้อย 1 ใบในผลัดนี้ก่อน
-  async function goodsConfirm({ empId, no_delivery }){
-    const c = await _goodsCtx(empId);
+  async function goodsConfirm({ empId, no_delivery, shift_id }){
+    const c = await _goodsCtx(empId, shift_id);
     if(!c.def) throw new Error('กะนี้ไม่มีงานรับสินค้าในรายการงาน — แจ้งผู้จัดการเปิดงานนี้ใน "ตั้งค่ากะ" ก่อน');
     if(!c.canEdit) throw new Error('งานรับสินค้าผลัดนี้มอบให้ ' + (c.asg ? (c.asg.emp_name||c.asg.emp_id) : 'คนอื่น') + ' — ถ้าต้องการทำเอง ให้หัวหน้าผลัดมอบงานนี้ให้คุณก่อน');
     const { emp, branch, workDate, shift, def } = c;
