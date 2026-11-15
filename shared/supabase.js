@@ -3284,25 +3284,32 @@
              canEdit:c.canEdit, role:c.role, lead:c.lead, crate_types:types, rows };
   }
 
-  async function submitCrateCount({ empId, warehouse_id, by_type, reason, photos, note }){
+  async function submitCrateCount({ empId, warehouse_id, counted, by_type, reason, photos, note }){
     const c=await _crateCtx(empId);
     if(!c.canEdit) throw new Error('บันทึกผลนับลังได้เฉพาะหัวหน้าผลัดหรือผู้จัดการร้าน'
       + (c.lead?(' — หัวหน้าผลัดตอนนี้คือ '+(c.lead.emp_name||c.lead.emp_id)):''));
     const wid=Number(warehouse_id); if(!wid) throw new Error('เลือกคลังก่อน');
-    const types=await _crateTypes();
-    const bt={}; let counted=0;
-    types.forEach(t=>{ const n=Math.max(0, parseInt((by_type||{})[t])||0); bt[t]=n; counted+=n; });
+    // ★ 15 พ.ย. 69 — นับเป็นจำนวนรวมของคลังนั้นช่องเดียว
+    //   (เลือกคลังไปแล้ว ลังในคลังเดียวกันเป็นชนิดเดียวกันอยู่แล้ว จึงไม่ต้องแยกช่องอีก)
+    //   ยังรับ by_type ไว้เผื่อข้อมูลเก่า/การเรียกแบบเดิม
+    let bt=null, cnt;
+    if(counted==null && by_type && typeof by_type==='object'){
+      bt={}; cnt=0;
+      Object.keys(by_type).forEach(t=>{ const n=Math.max(0, parseInt(by_type[t])||0); bt[t]=n; cnt+=n; });
+    } else {
+      cnt=Math.max(0, parseInt(counted)||0);
+    }
     const expected=await _whBalanceEndOf(c.branch, wid, c.workDate);
-    const diff=counted-expected;
+    const diff=cnt-expected;
     const why=String(reason||'').trim();
     if(diff!==0 && why.length<5)
-      throw new Error('นับได้ '+counted+' แต่ระบบมี '+expected+' ('+(diff>0?'เกิน ':'ขาด ')+Math.abs(diff)+' ลัง) — ต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร');
+      throw new Error('นับได้ '+cnt+' แต่ระบบมี '+expected+' ('+(diff>0?'เกิน ':'ขาด ')+Math.abs(diff)+' ลัง) — ต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร');
     const urls=[];
     for(const p of (photos||[])){ if(!p) continue;
       if(typeof p==='string'&&/^https?:/i.test(p)) urls.push(p);
       else urls.push(await uploadPhoto('employee-docs','crate/'+(c.branch||'x')+'_'+wid+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
     const row={ branch_id:c.branch, warehouse_id:wid, count_date:c.workDate,
-      counted, by_type:bt, expected, diff, reason:why||null, note:(note||'').trim()||null,
+      counted:cnt, by_type:bt, expected, diff, reason:why||null, note:(note||'').trim()||null,
       photos:urls.length?urls:null, shift_id:c.shift||null,
       counted_by:c.emp.emp_id, counted_name:c.emp.nickname||c.emp.name, counted_role:c.role,
       updated_at:new Date().toISOString() };
@@ -3311,8 +3318,8 @@
     // ยอดคงค้างถูกตั้งใหม่ → "ควรคืน/ส่วนต่าง" ของใบรับสินค้าหลังจากนี้เปลี่ยนตาม
     try{ await sb.rpc('recalc_goods_chain', { p_branch:c.branch, p_wh:wid }); }catch(e){ console.warn('recalc_goods_chain', e); }
     try{ await sb.from('activity_log').insert({ action:'นับลังคงค้าง', emp_id:String(c.emp.emp_id),
-      detail:'คลัง #'+wid+' นับได้ '+counted+' · ระบบ '+expected+' · ส่วนต่าง '+diff, actor:c.emp.nickname||c.emp.name }); }catch(e){}
-    return { ok:true, counted, expected, diff };
+      detail:'คลัง #'+wid+' นับได้ '+cnt+' · ระบบ '+expected+' · ส่วนต่าง '+diff, actor:c.emp.nickname||c.emp.name }); }catch(e){}
+    return { ok:true, counted:cnt, expected, diff };
   }
 
   // ปิดงาน "นับลังคงค้าง" ของผลัด — ต้องนับครบทุกคลังที่เปิดใช้อยู่
