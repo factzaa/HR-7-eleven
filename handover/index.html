@@ -1959,19 +1959,14 @@ function renderCrateBox(){
 
   const cur=rows.find(r=>String(r.warehouse_id)===String(CC_WH))||rows[0]||null;
   const t=cur?cur.today:null;
-  const types=CC.crate_types||[];
   h+='<div class="card"><h3 class="sec" style="margin-top:0">บันทึกผลนับ'+(t?' (แก้ไขของวันนี้)':'')+'</h3>'
     +'<label>คลัง</label><select id="cc_wh">'
       +rows.map(r=>'<option value="'+r.warehouse_id+'"'+(String(r.warehouse_id)===String(CC_WH)?' selected':'')+'>'
         +esc((r.code?('['+r.code+'] '):'')+r.name)+' — ระบบมี '+r.expected+' ลัง'+(r.today?' (นับแล้ว)':'')+'</option>').join('')
       +'</select>'
-    +'<div style="font-size:12.5px;color:var(--muted);margin:9px 0 3px">นับแยกตามประเภทลัง</div>'
-    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
-      +types.map(ty=>'<div><label style="font-size:12.5px">'+esc(ty)+'</label>'
-        +'<input class="ccTy" data-ccty="'+esc(ty)+'" type="number" min="0" inputmode="numeric" value="'
-        +((t&&t.by_type&&t.by_type[ty]!=null)?t.by_type[ty]:'')+'" placeholder="0" '
-        +'style="width:100%;box-sizing:border-box;min-width:0;font-size:18px;padding:8px;text-align:center"></div>').join('')
-    +'</div>'
+    +'<label style="margin-top:9px">จำนวนลังที่นับได้ (ลัง)</label>'
+    +'<input id="cc_n" type="number" min="0" inputmode="numeric" value="'+((t&&t.counted!=null)?t.counted:'')+'" '
+      +'placeholder="0" style="width:100%;box-sizing:border-box;font-size:24px;padding:12px;text-align:center;font-weight:700">'
     +'<div id="cc_sum" style="font-size:14px;font-weight:700;margin-top:9px"></div>'
     +'<label style="margin-top:8px">เหตุผลที่ไม่ตรง <span class="muted" style="font-weight:400">(บังคับเมื่อไม่ตรงกับระบบ)</span></label>'
     +'<input id="cc_reason" type="text" placeholder="เช่น ลังตกค้างหลังร้านไม่ได้ลงระบบ / คืนไปแล้วแต่ยังไม่ได้บันทึก" value="'+esc((t&&t.reason)||'')+'">'
@@ -1994,11 +1989,11 @@ function renderCrateBox(){
   wireCrate();
 }
 function ccSum(){
-  let n=0; document.querySelectorAll('.ccTy').forEach(i=>{ n += Math.max(0, parseInt(i.value)||0); });
+  const n=Math.max(0, parseInt(($('cc_n')||{}).value)||0);
   const r=(CC.rows||[]).find(x=>String(x.warehouse_id)===String(CC_WH));
   const exp=r?r.expected:0, d=n-exp;
   const el=$('cc_sum'); if(!el) return;
-  el.innerHTML='นับได้รวม '+n+' ลัง · ระบบมี '+exp+' ลัง — '
+  el.innerHTML='นับได้ '+n+' ลัง · ระบบมี '+exp+' ลัง — '
     +(d===0?'<span style="color:#16a34a">ตรงกัน</span>'
       :(d>0?'<span style="color:#b91c1c">ลังเกิน '+d+'</span>':'<span style="color:#b91c1c">ลังขาด '+Math.abs(d)+'</span>'));
   const rs=$('cc_reason'); if(rs) rs.style.borderColor = d===0 ? '' : '#f59e0b';
@@ -2012,7 +2007,7 @@ function ccThumbs(){
 }
 function wireCrate(){
   const sel=$('cc_wh'); if(sel) sel.onchange=()=>{ CC_WH=sel.value; CC_PHOTOS=[]; renderCrateBox(); };
-  document.querySelectorAll('.ccTy').forEach(i=>{ i.oninput=ccSum; });
+  const nf=$('cc_n'); if(nf) nf.oninput=ccSum;
   ccSum();
   const cam=$('cc_cam');
   if(cam) cam.onchange=async()=>{
@@ -2026,10 +2021,11 @@ function wireCrate(){
   ccThumbs();
   const sv=$('cc_save');
   if(sv) sv.onclick=async()=>{
-    const by={}; document.querySelectorAll('.ccTy').forEach(i=>{ by[i.dataset.ccty]=i.value; });
+    const n=($('cc_n')||{}).value;
+    if(String(n).trim()===''){ toast('err','กรอกจำนวนลังที่นับได้ก่อน'); return; }
     sv.disabled=true; sv.innerHTML='<span class="spin"></span>';
     try{
-      const r=await window.HR.submitCrateCount({ empId:EMP.emp_id, warehouse_id:CC_WH, by_type:by,
+      const r=await window.HR.submitCrateCount({ empId:EMP.emp_id, warehouse_id:CC_WH, counted:n,
         reason:($('cc_reason')||{}).value||'', photos:CC_PHOTOS });
       toast('ok','บันทึกผลนับแล้ว'+((r.diff||0)!==0?(' · '+(r.diff>0?'ลังเกิน ':'ลังขาด ')+Math.abs(r.diff)+' ลัง'):' · ตรงกับระบบ'));
       CC_PHOTOS=[]; await loadCrateBox();
