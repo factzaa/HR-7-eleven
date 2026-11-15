@@ -351,6 +351,7 @@
         case 'hr_wh_delete':      return await hrWhDelete(p.id);
         case 'hr_goods_list':     return await hrGoodsList(p.filter);
         case 'hr_goods_audit':    return await hrGoodsAudit(p.filter);
+        case 'hr_crate_counts':      return await hrCrateCounts(p);
         case 'hr_goods_opening_list': return await hrGoodsOpeningList();
         case 'hr_goods_opening_save': return await hrGoodsOpeningSave(p.data);
         case 'hr_goods_recalc':   return await hrGoodsRecalc(p.filter);
@@ -3733,8 +3734,84 @@
       g.outstanding += (o.opening || 0);
       g.opening = (o.opening || 0);
     });
+
+    // ★ 15 พ.ย. 69 — ถ้ามี "ใบนับลัง" ให้ยอดคงค้างเริ่มนับใหม่จากจำนวนที่นับได้จริง
+    //   (ต้องตรงกับ _whOutstanding ฝั่งพนักงาน และ recalc_goods_chain ใน SQL)
+    try {
+      let cQ = sb().from('goods_crate_counts').select('branch_id,warehouse_id,count_date,counted,expected,diff,counted_name,reason');
+      if (f.branch_id) cQ = cQ.eq('branch_id', f.branch_id);
+      if (f.warehouse_id) cQ = cQ.eq('warehouse_id', f.warehouse_id);
+      if (f.end) cQ = cQ.lte('count_date', f.end);
+      const counts = await fetchPaged(() => cQ.order('count_date'));
+      const lastBy = {};
+      counts.forEach(c => {
+        const key = (c.branch_id || '') + '|' + c.warehouse_id;
+        if (!lastBy[key] || String(c.count_date) > String(lastBy[key].count_date)) lastBy[key] = c;
+      });
+      const today = bkkToday();
+      Object.keys(lastBy).forEach(key => {
+        const c = lastBy[key];
+        let g = groups[key];
+        if (!g) { const w = whMap[c.warehouse_id] || {}; g = groups[key] = { branch_id: c.branch_id, branch_name: brName[c.branch_id] || c.branch_id || '—', warehouse_id: c.warehouse_id, warehouse_name: w.name || ('คลัง #' + c.warehouse_id), warehouse_code: w.code || '', outstanding: 0, range_in: 0, range_return: 0, range_docs: 0, range_diff_docs: 0, range_diff_sum: 0 }; }
+        // ยอด = จำนวนที่นับได้ + Σ(ลังเข้า − ลังคืน) ของใบที่ "หลัง" วันที่นับ
+        let after = 0;
+        (gr.data || []).forEach(r => {
+          if (String(r.branch_id || '') !== String(c.branch_id) || String(r.warehouse_id) !== String(c.warehouse_id)) return;
+          if (String(r.work_date) <= String(c.count_date)) return;
+          after += (r.crates_in || 0) - (r.crates_return || 0);
+        });
+        g.outstanding = (c.counted || 0) + after;
+        g.last_count = { count_date: c.count_date, counted: c.counted, expected: c.expected, diff: c.diff,
+                         by: c.counted_name || '', reason: c.reason || '' };
+        g.days_since = Math.round((Date.parse(today + 'T00:00:00+07:00') - Date.parse(c.count_date + 'T00:00:00+07:00')) / 86400000);
+      });
+    } catch (e) { /* ยังไม่ได้สร้างตารางใบนับลัง → ใช้วิธีคิดแบบเดิม */ }
+
     const rows = Object.values(groups).sort((a, b) => (a.branch_name || '').localeCompare(b.branch_name || '', 'th') || (a.warehouse_name || '').localeCompare(b.warehouse_name || '', 'th'));
+    rows.forEach(g => { if (g.days_since == null) g.days_since = null; g.never_counted = !g.last_count; });
     return { ok: true, rows };
+  }
+
+  // รายการใบนับลัง (ฝั่งสำนักงาน) — ดูย้อนหลังว่าใครนับ เจอส่วนต่างเท่าไร เพราะอะไร
+  async function hrCrateCounts(p) {
+    p = p || {};
+    const ok = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+    const end = ok(p.end) ? p.end : bkkToday();
+    const start = ok(p.start) ? p.start : (() => {
+      const t = Date.parse(end + 'T00:00:00+07:00') - 89 * 86400000 + 7 * 3600000;
+      return new Date(t).toISOString().slice(0, 10);
+    })();
+    let rows = [];
+    try {
+      rows = await fetchPaged(() => {
+        let q = sb().from('goods_crate_counts').select('*').gte('count_date', start).lte('count_date', end);
+        if (p.branch) q = q.eq('branch_id', p.branch);
+        if (p.warehouse_id) q = q.eq('warehouse_id', Number(p.warehouse_id));
+        return q.order('count_date', { ascending: false }).order('warehouse_id');
+      });
+    } catch (e) {
+      return { ok: false, error: 'ยังไม่ได้สร้างตารางใบนับลัง — รัน supabase/goods_crate_count.sql ก่อน' };
+    }
+    const [brR, whR] = await Promise.all([
+      sb().from('branches').select('branch_id,name'),
+      sb().from('warehouses').select('id,code,name'),
+    ]);
+    const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
+    const whMap = {}; (whR.data || []).forEach(w => { whMap[w.id] = w; });
+    const out = rows.map(r => Object.assign({}, r, {
+      branch_name: brName[r.branch_id] || r.branch_id || '—',
+      warehouse_name: (whMap[r.warehouse_id] || {}).name || ('คลัง #' + r.warehouse_id),
+      warehouse_code: (whMap[r.warehouse_id] || {}).code || '',
+    }));
+    const stats = {
+      docs: out.length,
+      matched: out.filter(r => (r.diff || 0) === 0).length,
+      over: out.filter(r => (r.diff || 0) > 0).length,
+      short: out.filter(r => (r.diff || 0) < 0).length,
+      over_sum: out.filter(r => (r.diff || 0) > 0).reduce((s, r) => s + r.diff, 0),
+      short_sum: out.filter(r => (r.diff || 0) < 0).reduce((s, r) => s + Math.abs(r.diff), 0),
+    };
+    return { ok: true, start, end, rows: out, stats, branches: brR.data || [], warehouses: whR.data || [] };
   }
   // ---------- ยอดคงค้างตั้งต้น (Opening balance) ----------
   async function hrGoodsOpeningList() {

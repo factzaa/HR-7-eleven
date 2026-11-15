@@ -3065,14 +3065,31 @@
     const { error }=await sb.from('shift_controllers').delete().eq('branch_id',branch).eq('work_date',workDate); if(error) throw error;
     return { ok:true };
   }
-  // ยอดคงค้างต่อคลัง (running balance) = Σลังเข้า − Σลังคืน ก่อนวันที่กำหนด
+  // ยอดคงค้างต่อคลัง ณ "ก่อน" วันที่กำหนด
+  // ★ 15 พ.ย. 69 — เดิมคิดจากยอดตั้งต้น + Σ(ลังเข้า − ลังคืน) อย่างเดียว ปรับยอดไม่ได้เลย
+  //   ใหม่: ถ้ามี "ใบนับลัง" ก่อนหน้านั้น ให้เริ่มนับจากจำนวนที่นับได้จริงในใบล่าสุดแทนยอดตั้งต้น
+  //   (ต้องตรงกับฟังก์ชัน recalc_goods_chain ใน supabase/goods_crate_count.sql)
   async function _whOutstanding(branch, warehouseId, beforeDate){
-    const [rcp, op] = await Promise.all([
-      sb.from('goods_receipts').select('crates_in,crates_return').eq('branch_id',branch||'').eq('warehouse_id',warehouseId).lt('work_date',beforeDate),
+    const [rcp, op, cnt] = await Promise.all([
+      sb.from('goods_receipts').select('crates_in,crates_return,work_date').eq('branch_id',branch||'').eq('warehouse_id',warehouseId).lt('work_date',beforeDate),
       sb.from('goods_opening').select('opening').eq('branch_id',branch||'').eq('warehouse_id',warehouseId).maybeSingle(),
+      sb.from('goods_crate_counts').select('counted,count_date').eq('branch_id',branch||'').eq('warehouse_id',warehouseId)
+        .lt('count_date',beforeDate).order('count_date',{ascending:false}).limit(1),
     ]);
-    let bal=(op.data&&op.data.opening)||0;   // ยอดคงค้างตั้งต้น + Σ(ลังเข้า − ลังคืน) ก่อนวันที่กำหนด
-    (rcp.data||[]).forEach(r=>{ bal += (r.crates_in||0) - (r.crates_return||0); });
+    const last=(cnt&&cnt.data&&cnt.data[0])||null;
+    let bal = last ? (last.counted||0) : ((op.data&&op.data.opening)||0);
+    (rcp.data||[]).forEach(r=>{
+      if(last && String(r.work_date) <= String(last.count_date)) return;   // ก่อน/วันเดียวกับที่นับ นับรวมไปแล้ว
+      bal += (r.crates_in||0) - (r.crates_return||0);
+    });
+    return bal;
+  }
+  // ยอดคงค้าง ณ "สิ้นวัน" ที่กำหนด — ใช้ตอนนับลัง (รวมใบรับสินค้าของวันนั้นด้วย)
+  async function _whBalanceEndOf(branch, warehouseId, date){
+    const base=await _whOutstanding(branch, warehouseId, date);
+    const { data }=await sb.from('goods_receipts').select('crates_in,crates_return')
+      .eq('branch_id',branch||'').eq('warehouse_id',warehouseId).eq('work_date',date);
+    let bal=base; (data||[]).forEach(r=>{ bal += (r.crates_in||0) - (r.crates_return||0); });
     return bal;
   }
   // ★ 15 ก.ย. 69 — งานรับสินค้าเข้าโฟลว์งานในผลัด
@@ -3170,6 +3187,129 @@
     // ยิง Flex เข้ากลุ่ม LINE ของสาขา (fire-and-forget · edge function กันซ้ำด้วย line_notified)
     try{ const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,''); if(base&&rid) fetch(base+'/functions/v1/line-goods-notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid})}); }catch(e){}
     return { ok:true, id:rid };
+  }
+
+  // ============================================================
+  // นับลังคงค้าง (ใบนับลัง)                               ★ 15 พ.ย. 69
+  //   นับของจริงทุกสัปดาห์ แล้วตั้งยอดคงค้างใหม่ ณ วันที่นับ
+  //   สิทธิ์: หัวหน้าผลัด หรือ ผจก. เท่านั้น
+  // ============================================================
+  async function _crateTypes(){
+    try{
+      const { data }=await sb.from('app_settings').select('value').eq('key','crate_types').maybeSingle();
+      const list=String((data&&data.value)||'').split(',').map(s=>s.trim()).filter(Boolean);
+      return list.length?list:['ลังแดง','ลังฟ้า','ลังนม','ลังผัก'];
+    }catch(e){ return ['ลังแดง','ลังฟ้า','ลังนม','ลังผัก']; }
+  }
+  async function _crateCtx(empId){
+    const emp=await lookupEmployee(empId); if(!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const {workDate,branch,group:shift}=await _shiftCtx(emp);
+    const lead=(await sb.from('shift_leads').select('emp_id,emp_name')
+      .eq('work_date',workDate).eq('branch_id',branch||'').eq('shift_id',shift||'').maybeSingle()).data;
+    const isLead=!!(lead && lead.emp_id===emp.emp_id);
+    const isMgr=!!emp.is_manager;
+    return { emp, branch, workDate, shift, lead, isLead, isMgr,
+             canEdit:(isLead||isMgr), role:isMgr?'mgr':(isLead?'lead':'') };
+  }
+
+  // สถานะหน้าจอนับลัง: ทุกคลัง + ยอดระบบ ณ วันนี้ + ใบนับของวันนี้ (ถ้ามี) + ใบนับล่าสุด
+  async function crateCountState(empId){
+    const c=await _crateCtx(empId);
+    const [whR, types]=await Promise.all([
+      sb.from('warehouses').select('id,code,name,active').order('sort').order('id'),
+      _crateTypes(),
+    ]);
+    const whs=(whR.data||[]).filter(w=>w.active!==false);
+    const [todayR, lastR]=await Promise.all([
+      sb.from('goods_crate_counts').select('*').eq('branch_id',c.branch||'').eq('count_date',c.workDate),
+      sb.from('goods_crate_counts').select('warehouse_id,count_date,counted,diff')
+        .eq('branch_id',c.branch||'').lt('count_date',c.workDate).order('count_date',{ascending:false}).limit(60),
+    ]);
+    const today={}; (todayR.data||[]).forEach(r=>{ today[r.warehouse_id]=r; });
+    const last={}; (lastR.data||[]).forEach(r=>{ if(!last[r.warehouse_id]) last[r.warehouse_id]=r; });
+    const rows=[];
+    for(const w of whs){
+      // expected = ยอดตามระบบ "ก่อนนับ" ของวันนี้ — ใช้วัดส่วนต่างเสมอ แม้นับซ้ำรอบสอง
+      const expected=await _whBalanceEndOf(c.branch, w.id, c.workDate);
+      const lc=last[w.id]||null;
+      const t=today[w.id]||null;
+      rows.push({ warehouse_id:w.id, code:w.code||'', name:w.name||('คลัง #'+w.id),
+        expected,
+        // current = ยอดคงค้างจริงตอนนี้ (ถ้านับวันนี้ไปแล้ว ยอดถูกตั้งใหม่เป็นจำนวนที่นับได้)
+        current: t ? (t.counted||0) : expected,
+        today:t, last_count:lc,
+        days_since: lc ? Math.round((Date.parse(c.workDate+'T00:00:00+07:00')-Date.parse(lc.count_date+'T00:00:00+07:00'))/86400000) : null });
+    }
+    return { ok:true, work_date:c.workDate, branch:c.branch, shift:c.shift,
+             canEdit:c.canEdit, role:c.role, lead:c.lead, crate_types:types, rows };
+  }
+
+  async function submitCrateCount({ empId, warehouse_id, by_type, reason, photos, note }){
+    const c=await _crateCtx(empId);
+    if(!c.canEdit) throw new Error('บันทึกผลนับลังได้เฉพาะหัวหน้าผลัดหรือผู้จัดการร้าน'
+      + (c.lead?(' — หัวหน้าผลัดตอนนี้คือ '+(c.lead.emp_name||c.lead.emp_id)):''));
+    const wid=Number(warehouse_id); if(!wid) throw new Error('เลือกคลังก่อน');
+    const types=await _crateTypes();
+    const bt={}; let counted=0;
+    types.forEach(t=>{ const n=Math.max(0, parseInt((by_type||{})[t])||0); bt[t]=n; counted+=n; });
+    const expected=await _whBalanceEndOf(c.branch, wid, c.workDate);
+    const diff=counted-expected;
+    const why=String(reason||'').trim();
+    if(diff!==0 && why.length<5)
+      throw new Error('นับได้ '+counted+' แต่ระบบมี '+expected+' ('+(diff>0?'เกิน ':'ขาด ')+Math.abs(diff)+' ลัง) — ต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร');
+    const urls=[];
+    for(const p of (photos||[])){ if(!p) continue;
+      if(typeof p==='string'&&/^https?:/i.test(p)) urls.push(p);
+      else urls.push(await uploadPhoto('employee-docs','crate/'+(c.branch||'x')+'_'+wid+'_'+Date.now()+'_'+urls.length+'.jpg', p)); }
+    const row={ branch_id:c.branch, warehouse_id:wid, count_date:c.workDate,
+      counted, by_type:bt, expected, diff, reason:why||null, note:(note||'').trim()||null,
+      photos:urls.length?urls:null, shift_id:c.shift||null,
+      counted_by:c.emp.emp_id, counted_name:c.emp.nickname||c.emp.name, counted_role:c.role,
+      updated_at:new Date().toISOString() };
+    const { error }=await sb.from('goods_crate_counts').upsert(row, { onConflict:'branch_id,warehouse_id,count_date' });
+    if(error) throw error;
+    // ยอดคงค้างถูกตั้งใหม่ → "ควรคืน/ส่วนต่าง" ของใบรับสินค้าหลังจากนี้เปลี่ยนตาม
+    try{ await sb.rpc('recalc_goods_chain', { p_branch:c.branch, p_wh:wid }); }catch(e){ console.warn('recalc_goods_chain', e); }
+    try{ await sb.from('activity_log').insert({ action:'นับลังคงค้าง', emp_id:String(c.emp.emp_id),
+      detail:'คลัง #'+wid+' นับได้ '+counted+' · ระบบ '+expected+' · ส่วนต่าง '+diff, actor:c.emp.nickname||c.emp.name }); }catch(e){}
+    return { ok:true, counted, expected, diff };
+  }
+
+  // ปิดงาน "นับลังคงค้าง" ของผลัด — ต้องนับครบทุกคลังที่เปิดใช้อยู่
+  async function crateCountConfirm({ empId }){
+    const c=await _crateCtx(empId);
+    if(!c.canEdit) throw new Error('ปิดงานนับลังได้เฉพาะหัวหน้าผลัดหรือผู้จัดการร้าน');
+    const defs=await _taskDefsFor(c.branch, c.workDate, c.shift);
+    const def=(defs||[]).find(d=>String(d.link_kind||'')==='นับลัง');
+    if(!def) throw new Error('กะนี้ไม่มีงานนับลังในรายการงาน — เปิดงานนี้ที่หน้า "ตั้งค่างาน" ก่อน');
+    const asg=await _findAsg(c.branch, c.workDate, c.shift, def.id);
+    const whR=await sb.from('warehouses').select('id,name,active').order('sort').order('id');
+    const whs=(whR.data||[]).filter(w=>w.active!==false);
+    const cntR=await sb.from('goods_crate_counts').select('warehouse_id,counted,diff,photos')
+      .eq('branch_id',c.branch||'').eq('count_date',c.workDate);
+    const done={}; (cntR.data||[]).forEach(r=>{ done[r.warehouse_id]=r; });
+    const missing=whs.filter(w=>!done[w.id]);
+    if(missing.length) throw new Error('ยังไม่ได้นับ '+missing.length+' คลัง: '+missing.map(w=>w.name).join(', '));
+    const rows=whs.map(w=>done[w.id]);
+    const off=rows.filter(r=>(r.diff||0)!==0).length;
+    const note='นับลังครบ '+whs.length+' คลัง · รวม '+rows.reduce((s,r)=>s+(r.counted||0),0)+' ลัง'
+      + (off?(' · ไม่ตรงกับระบบ '+off+' คลัง'):' · ตรงกับระบบทุกคลัง');
+    const photos=[]; rows.forEach(r=>{ (Array.isArray(r.photos)?r.photos:[]).forEach(u=>{ if(photos.indexOf(u)<0) photos.push(u); }); });
+    const now=new Date().toISOString();
+    let shiftMgr=true;
+    if(def.mgr_review && !def.mgr_owner && c.shift){
+      const sh=(await sb.from('shifts').select('mgr_review').eq('shift_id',c.shift).maybeSingle()).data;
+      shiftMgr = !sh || sh.mgr_review!==false;
+    }
+    const wantMgr=!!(def.mgr_review && shiftMgr);
+    const skipReview = def.need_review === false;
+    const upd=Object.assign(
+      { emp_note:note, submitted_at:now, needs_mgr:wantMgr, review_note:null },
+      skipReview ? { status:'approved', reviewer:'ไม่ต้องตรวจ (ตั้งค่าไว้)', reviewed_at:now }
+                 : { status:'submitted', reviewer:null, reviewed_at:null },
+      photos.length ? { photos, photo_url:photos[0] } : {});
+    if(asg){ const { error }=await sb.from('task_assignments').update(upd).eq('id',asg.id); if(error) throw error; }
+    return { ok:true, note };
   }
 
   // ★ 15 ก.ย. 69 — ปิดงานรับสินค้าของผลัด
@@ -4582,6 +4722,7 @@
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    crateCountState, submitCrateCount, crateCountConfirm,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
     getScaChecklist, saveScaTick, clearScaTicks, getScaProgress,
     getScaBranchesHr, getScaChecklistHr, saveScaTickHr, clearScaTicksHr, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
