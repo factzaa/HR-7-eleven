@@ -3200,6 +3200,15 @@ function mrNav(d){
     <input id="cq_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <button class="btn btn-pri btn-sm" id="cq_go">ดูใบนับ</button>
   </div>
+  <!-- ★ 15 พ.ย. 69 — แก้ชื่อ/เพิ่ม-ลดประเภทลังได้จากหน้านี้ ไม่ต้องไปรัน SQL -->
+  <div class="card" style="padding:11px 14px;margin:0 4px 10px">
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:5px">ประเภทลังที่ให้สาขากรอกตอนนับ — คั่นแต่ละชื่อด้วยเครื่องหมายจุลภาค ( , )</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="ct_types" type="text" placeholder="ลังแดง, ลังฟ้า, ลังนม, ลังผัก" style="flex:1;min-width:220px;padding:8px 11px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+      <button class="btn btn-pri btn-sm" id="ct_save">บันทึกประเภทลัง</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:5px">เปลี่ยนแล้วมีผลกับการนับครั้งต่อไปทันที · ใบนับเก่ายังเก็บชื่อเดิมที่กรอกไว้ตอนนั้น</div>
+  </div>
   <div id="cq_sum" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 4px 8px"></div>
   <div class="card"><div class="tablewrap"><table>
     <thead><tr><th>วันที่</th><th>สาขา</th><th>คลัง</th><th>นับได้</th><th>ระบบมี</th><th>ส่วนต่าง</th><th>แยกตามประเภท</th><th>เหตุผล</th><th>ผู้นับ</th></tr></thead>
@@ -13510,7 +13519,7 @@ async function loadGoodsTab(){
   await loadWarehouses();
   const brSel=$('gq_branch'); if(brSel && !brSel.dataset.filled){ brSel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); brSel.dataset.filled='1'; }
   if(!$('gq_start').value){ const d=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); $('gq_start').value=d; $('gq_end').value=d; }
-  loadGoodsOpening(); loadGoodsList(); loadGoodsAudit(); loadCrateCounts();
+  loadGoodsOpening(); loadGoodsList(); loadGoodsAudit(); loadCrateCounts(); loadCrateTypes();
   const cg=$('cq_go'); if(cg && !cg.dataset.wired){ cg.dataset.wired='1'; cg.onclick=loadCrateCounts;
     $('cq_start').onchange=loadCrateCounts; $('cq_end').onchange=loadCrateCounts; }
 }
@@ -13578,6 +13587,31 @@ async function loadGoodsAudit(){
     return `<tr><td>${esc(g.branch_name)}</td><td>${esc((g.warehouse_code?('['+g.warehouse_code+'] '):'')+g.warehouse_name)}</td><td class="mono">${g.range_in||0}</td><td class="mono">${g.range_return||0}</td><td class="mono">${g.range_docs||0}</td><td class="mono">${g.range_diff_docs||0}</td><td class="mono"><span class="pill ${dcls}">${(g.range_diff_sum||0)>0?'+':''}${g.range_diff_sum||0}</span></td><td class="mono"><span class="pill ${ocls}">${g.outstanding||0}</span></td><td style="font-size:12px">${gaCount(g)}</td></tr>`;
   }).join('');
 }
+// ★ 15 พ.ย. 69 — ประเภทลัง (app_settings.crate_types) แก้ได้จากหน้านี้
+const CT_DEFAULT='ลังแดง,ลังฟ้า,ลังนม,ลังผัก';
+async function loadCrateTypes(){
+  const el=$('ct_types'); if(!el) return;
+  const r=await post(Object.assign({ action:'hr_settings_get' }, authBody()));
+  const cur=((r&&r.ok&&r.settings)?r.settings.crate_types:'')||CT_DEFAULT;
+  el.value=String(cur).split(',').map(s=>s.trim()).filter(Boolean).join(', ');
+  const b=$('ct_save');
+  if(b && !b.dataset.wired){
+    b.dataset.wired='1';
+    b.onclick=async()=>{
+      const list=String(el.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+      if(!list.length){ toast('err','ต้องมีอย่างน้อย 1 ประเภท'); return; }
+      if(list.length>8){ toast('err','ใส่ได้ไม่เกิน 8 ประเภท — มากกว่านี้กรอกบนมือถือลำบาก'); return; }
+      const dup=list.filter((v,i)=>list.indexOf(v)!==i);
+      if(dup.length){ toast('err','ชื่อซ้ำ: '+dup[0]); return; }
+      b.disabled=true;
+      const r2=await post(Object.assign({ action:'hr_settings_save', key:'crate_types', value:list.join(',') }, authBody()));
+      b.disabled=false;
+      if(r2&&r2.ok){ el.value=list.join(', '); toast('ok','บันทึกประเภทลังแล้ว ('+list.length+' ประเภท)'); }
+      else toast('err',(r2&&r2.error)||'บันทึกไม่สำเร็จ');
+    };
+  }
+}
+
 // ★ 15 พ.ย. 69 — ใบนับลัง: ดูย้อนหลังว่าใครนับ เจอส่วนต่างเท่าไร เพราะอะไร
 let CQ_ROWS=[];
 async function loadCrateCounts(){
