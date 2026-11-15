@@ -3188,9 +3188,23 @@ function mrNav(d){
     <b>สูตร "ควรคืน"</b> = ยอดตั้งต้น + Σลังเข้า − Σลังคืน (ทุกใบก่อนหน้า) — ถ้าคืนครบทุกรอบ ค่านี้จะเท่ากับ <b>ลังที่รับเข้าครั้งก่อน</b> พอดี · ถ้ารอบก่อนคืนไม่ครบ ส่วนที่ขาดจะถูกยกยอดมารวมด้วย (ลังไม่หายไปไหน)
   </div>
   <div class="card"><div class="tablewrap"><table>
-    <thead><tr><th>สาขา</th><th>คลัง</th><th>ลังเข้า (ช่วง)</th><th>ลังคืน (ช่วง)</th><th>ใบ</th><th>ใบมีส่วนต่าง</th><th>ส่วนต่างสะสม</th><th>คงค้างล่าสุด</th></tr></thead>
+    <thead><tr><th>สาขา</th><th>คลัง</th><th>ลังเข้า (ช่วง)</th><th>ลังคืน (ช่วง)</th><th>ใบ</th><th>ใบมีส่วนต่าง</th><th>ส่วนต่างสะสม</th><th>คงค้างล่าสุด</th><th>นับลังล่าสุด</th></tr></thead>
     <tbody id="gaRows"></tbody>
   </table></div><div class="empty" id="gaEmpty" style="display:none">ไม่มีข้อมูล</div></div>
+
+  <!-- ★ 15 พ.ย. 69 — ใบนับลังรายสัปดาห์ -->
+  <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-top:14px">
+    <h3 style="flex:1;font-size:15px;font-weight:600">ใบนับลัง (นับของจริง)</h3>
+    <input id="cq_start" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <span style="color:var(--muted);font-size:13px">ถึง</span>
+    <input id="cq_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
+    <button class="btn btn-pri btn-sm" id="cq_go">ดูใบนับ</button>
+  </div>
+  <div id="cq_sum" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 4px 8px"></div>
+  <div class="card"><div class="tablewrap"><table>
+    <thead><tr><th>วันที่</th><th>สาขา</th><th>คลัง</th><th>นับได้</th><th>ระบบมี</th><th>ส่วนต่าง</th><th>แยกตามประเภท</th><th>เหตุผล</th><th>ผู้นับ</th></tr></thead>
+    <tbody id="cqRows"></tbody>
+  </table></div><div class="empty" id="cqEmpty" style="display:none">ยังไม่มีใบนับลังในช่วงนี้</div></div>
 </div>
 
 <!-- Activity: บันทึกกิจกรรม -->
@@ -13496,7 +13510,9 @@ async function loadGoodsTab(){
   await loadWarehouses();
   const brSel=$('gq_branch'); if(brSel && !brSel.dataset.filled){ brSel.innerHTML='<option value="">ทุกสาขา</option>'+(DATA.branches||[]).map(b=>`<option value="${esc(b.branch_id)}">${esc(b.name)}</option>`).join(''); brSel.dataset.filled='1'; }
   if(!$('gq_start').value){ const d=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); $('gq_start').value=d; $('gq_end').value=d; }
-  loadGoodsOpening(); loadGoodsList(); loadGoodsAudit();
+  loadGoodsOpening(); loadGoodsList(); loadGoodsAudit(); loadCrateCounts();
+  const cg=$('cq_go'); if(cg && !cg.dataset.wired){ cg.dataset.wired='1'; cg.onclick=loadCrateCounts;
+    $('cq_start').onchange=loadCrateCounts; $('cq_end').onchange=loadCrateCounts; }
 }
 async function loadGoodsOpening(){
   const r=await post({ action:'hr_goods_opening_list', password:pwd });
@@ -13548,8 +13564,53 @@ async function loadGoodsAudit(){
   const r=await post({ action:'hr_goods_audit', password:pwd, filter:gqFilter() });
   GA_ROWS=(r&&r.rows)||[];
   $('gaEmpty').style.display=GA_ROWS.length?'none':'block';
-  $('gaRows').innerHTML=GA_ROWS.map(g=>{ const ocls=(g.outstanding||0)===0?'ok':'warn'; const dcls=(g.range_diff_sum||0)===0?'ok':'bad';
-    return `<tr><td>${esc(g.branch_name)}</td><td>${esc((g.warehouse_code?('['+g.warehouse_code+'] '):'')+g.warehouse_name)}</td><td class="mono">${g.range_in||0}</td><td class="mono">${g.range_return||0}</td><td class="mono">${g.range_docs||0}</td><td class="mono">${g.range_diff_docs||0}</td><td class="mono"><span class="pill ${dcls}">${(g.range_diff_sum||0)>0?'+':''}${g.range_diff_sum||0}</span></td><td class="mono"><span class="pill ${ocls}">${g.outstanding||0}</span></td></tr>`;
+  // ★ 15 พ.ย. 69 — คอลัมน์ "นับลังล่าสุด": ยอดคงค้างเชื่อถือได้แค่ไหน
+  const gaCount=g=>{
+    if(!g.last_count) return '<span class="pill bad" title="ไม่เคยนับของจริงเลย ยอดคงค้างมาจากการคำนวณล้วน ๆ">ไม่เคยนับ</span>';
+    const d=g.last_count.diff||0;
+    const old=(g.days_since!=null && g.days_since>7);
+    return esc(beDate(g.last_count.count_date))
+      +(g.days_since!=null?(' <span class="muted">('+g.days_since+' วัน)</span>'):'')
+      +(old?' <span class="pill warn">เกิน 7 วัน</span>':'')
+      +(d!==0?(' <span class="pill bad">'+(d>0?('เกิน '+d):('ขาด '+Math.abs(d)))+'</span>'):'');
+  };
+  $('gaRows').innerHTML=GA_ROWS.map(g=>{ const ocls=(g.outstanding||0)===0?'ok':((g.outstanding||0)<0?'bad':'warn'); const dcls=(g.range_diff_sum||0)===0?'ok':'bad';
+    return `<tr><td>${esc(g.branch_name)}</td><td>${esc((g.warehouse_code?('['+g.warehouse_code+'] '):'')+g.warehouse_name)}</td><td class="mono">${g.range_in||0}</td><td class="mono">${g.range_return||0}</td><td class="mono">${g.range_docs||0}</td><td class="mono">${g.range_diff_docs||0}</td><td class="mono"><span class="pill ${dcls}">${(g.range_diff_sum||0)>0?'+':''}${g.range_diff_sum||0}</span></td><td class="mono"><span class="pill ${ocls}">${g.outstanding||0}</span></td><td style="font-size:12px">${gaCount(g)}</td></tr>`;
+  }).join('');
+}
+// ★ 15 พ.ย. 69 — ใบนับลัง: ดูย้อนหลังว่าใครนับ เจอส่วนต่างเท่าไร เพราะอะไร
+let CQ_ROWS=[];
+async function loadCrateCounts(){
+  const s=$('cq_start'), e=$('cq_end'); if(!s||!e) return;
+  if(!e.value) e.value=bkkTodayStr();
+  if(!s.value) s.value=snDay(e.value,-89);
+  const r=await post(Object.assign({ action:'hr_crate_counts', start:s.value, end:e.value, branch:gqFilter().branch_id||'' }, authBody()));
+  if(!r.ok){
+    CQ_ROWS=[]; $('cqRows').innerHTML='';
+    $('cqEmpty').style.display='block'; $('cqEmpty').textContent=r.error||'โหลดไม่สำเร็จ';
+    $('cq_sum').innerHTML=''; return;
+  }
+  CQ_ROWS=r.rows||[];
+  const st=r.stats||{};
+  $('cq_sum').innerHTML='<span style="font-size:12.5px;color:var(--muted);align-self:center">'+esc(beDate(r.start))+' – '+esc(beDate(r.end))+'</span>'
+    +'<span class="pill">ใบนับ '+(st.docs||0)+'</span>'
+    +'<span class="pill ok">ตรงกับระบบ '+(st.matched||0)+'</span>'
+    +((st.over||0)?('<span class="pill bad">ลังเกิน '+st.over+' ใบ · รวม '+st.over_sum+' ลัง</span>'):'')
+    +((st.short||0)?('<span class="pill bad">ลังขาด '+st.short+' ใบ · รวม '+st.short_sum+' ลัง</span>'):'');
+  $('cqEmpty').style.display=CQ_ROWS.length?'none':'block';
+  $('cqEmpty').textContent='ยังไม่มีใบนับลังในช่วงนี้';
+  $('cqRows').innerHTML=CQ_ROWS.map(c=>{
+    const d=c.diff||0;
+    const pill=d===0?'<span class="pill ok">ตรง</span>'
+      :'<span class="pill bad">'+(d>0?('เกิน '+d):('ขาด '+Math.abs(d)))+'</span>';
+    const by=c.by_type&&typeof c.by_type==='object'
+      ? Object.keys(c.by_type).filter(k=>c.by_type[k]).map(k=>esc(k)+' '+c.by_type[k]).join(' · ') : '';
+    return `<tr><td class="mono">${esc(beDate(c.count_date))}</td><td>${esc(c.branch_name)}</td>
+      <td>${esc((c.warehouse_code?('['+c.warehouse_code+'] '):'')+c.warehouse_name)}</td>
+      <td class="mono">${c.counted||0}</td><td class="mono">${c.expected==null?'—':c.expected}</td>
+      <td class="mono">${pill}</td><td style="font-size:12px">${by||'—'}</td>
+      <td style="font-size:12px">${esc(c.reason||'')}</td>
+      <td style="font-size:12px">${esc(c.counted_name||c.counted_by||'')}</td></tr>`;
   }).join('');
 }
 function gdToCsv(headers, rows){ const c=v=>{ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }; return '﻿'+[headers.map(c).join(',')].concat(rows.map(r=>r.map(c).join(','))).join('\n'); }
