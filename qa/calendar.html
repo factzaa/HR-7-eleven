@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00703c">
+<title>ปฏิทินสินค้าใกล้หมดอายุ · 7-Eleven</title>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--green:#00703c;--green-d:#00582f;--green-soft:#e7f3ec;--orange:#f5821f;--red:#e11f26;--bg:#eef1ec;--line:#dbe2dc;--muted:#6b756d;--txt:#1b2a20;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:'Kanit','Anuphan',sans-serif;background:var(--bg);color:var(--txt);min-height:100dvh}
+  .wrap{max-width:1000px;margin:0 auto;background:#fff;min-height:100dvh;box-shadow:0 0 40px rgba(0,0,0,.06)}
+  .top{background:linear-gradient(135deg,var(--green),var(--green-d));color:#fff;padding:18px;display:flex;align-items:center;gap:12px}
+  .top h1{font-size:18px;font-weight:600;flex:1}
+  .home{color:#fff;text-decoration:none;font-size:13px;background:rgba(255,255,255,.15);padding:6px 11px;border-radius:9px}
+  .body{padding:18px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px 2px;font-weight:500}
+  input,select{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:11px;font:inherit;font-size:16px;background:#fff;color:var(--txt)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:12px 16px;border:0;border-radius:11px;font:inherit;font-size:15px;font-weight:500;cursor:pointer}
+  .btn-pri{background:var(--green);color:#fff} .btn-sec{background:var(--green-soft);color:var(--green-d)}
+  .btn:disabled{opacity:.5}
+  .muted{color:var(--muted);font-size:13px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 15px;font:inherit;font-size:14px;cursor:pointer;color:var(--txt)}
+  .chip.on{background:var(--green);border-color:var(--green);color:#fff}
+  .chip .n{opacity:.65;font-size:12px;margin-left:4px}
+  .warn{background:#fff7e6;border:1px solid #f3d9a4;color:#8a5a00;border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.7;margin-bottom:12px}
+  .hide{display:none!important}
+  .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1b2a20;color:#fff;padding:11px 18px;border-radius:11px;font-size:14px;z-index:99;opacity:0;transition:.2s}
+  .toast.on{opacity:1}
+  .toast.err{background:var(--red)}
+
+  /* ====== แผ่นกระดาษ A4 ====== */
+  #sheets{background:var(--bg);padding:14px 0}
+  .sheet{background:#fff;width:190mm;margin:0 auto 16px;padding:6mm 7mm 8mm;border:1px solid var(--line);
+         font-family:'Anuphan','Kanit',sans-serif;color:#000}
+  .sh-head{display:flex;align-items:flex-end;gap:10px;border-bottom:2.5px solid #000;padding-bottom:5px;margin-bottom:7px}
+  .sh-head h2{font-size:17pt;font-weight:700;line-height:1.2}
+  .sh-head .sub{font-size:9.5pt;color:#333;margin-top:2px}
+  .sh-head .meta{margin-left:auto;text-align:right;font-size:9pt;color:#333;line-height:1.5;white-space:nowrap}
+  .sh-sum{display:flex;gap:6px;flex-wrap:wrap;font-size:9pt;margin-bottom:6px}
+  .sh-sum span{border:1px solid #999;border-radius:5px;padding:2px 8px}
+  table.cal{width:100%;border-collapse:collapse;table-layout:fixed}
+  table.cal th{border:1px solid #000;background:#eee;font-size:9pt;font-weight:700;padding:3px 0;text-align:center}
+  table.cal td{border:1px solid #000;vertical-align:top;height:26mm;padding:2px 3px;overflow:hidden}
+  table.cal td.off{background:#f6f6f6}
+  .dnum{font-size:10pt;font-weight:700;line-height:1.1}
+  .dnum .cnt{float:right;font-size:7.5pt;font-weight:400;background:#000;color:#fff;border-radius:7px;padding:0 5px}
+  .it{font-size:7.2pt;line-height:1.3;margin-top:1.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .it b{font-weight:700}
+  .it.done{text-decoration:line-through;color:#777}
+  .more{font-size:7pt;color:#555;margin-top:1px}
+  h3.ttl{font-size:11pt;font-weight:700;margin:9px 0 4px}
+  table.lst{width:100%;border-collapse:collapse}
+  table.lst th{border:1px solid #000;background:#eee;font-size:8.5pt;padding:3px 4px;text-align:left}
+  table.lst td{border:1px solid #000;font-size:8.5pt;padding:2.5px 4px;vertical-align:top}
+  table.lst tr.done td{color:#777;text-decoration:line-through}
+  table.lst tr.done td.keep{text-decoration:none;color:#000}
+  .sign{display:flex;gap:16px;margin-top:10px;font-size:9pt}
+  .sign div{flex:1;border-top:1px dotted #000;padding-top:3px;text-align:center;color:#333}
+  .nodata{font-size:10pt;color:#555;padding:10px 0}
+  .note{font-size:8pt;color:#444;margin-top:3px}
+
+  @media print{
+    @page{size:A4 portrait;margin:8mm}
+    html,body{background:#fff}
+    .wrap{box-shadow:none;max-width:none}
+    .screen-only{display:none!important}
+    #sheets{background:#fff;padding:0}
+    .sheet{width:auto;margin:0;padding:0;border:0;break-after:page;page-break-after:always}
+    .sheet:last-child{break-after:auto;page-break-after:auto}
+    table.lst thead{display:table-header-group}
+    tr{break-inside:avoid;page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top screen-only">
+    <span style="font-size:24px">📅</span>
+    <h1>ปฏิทินสินค้าใกล้หมดอายุ</h1>
+    <a class="home" href="./">QA สินค้า</a>
+  </div>
+
+  <div class="body screen-only">
+    <!-- เข้าสู่ระบบ -->
+    <div id="step_id">
+      <div class="card">
+        <label>รหัสพนักงาน</label>
+        <input id="empId" type="text" inputmode="numeric" placeholder="เช่น 0874701" autocomplete="off">
+        <button class="btn btn-pri" id="goBtn" style="width:100%;margin-top:10px">เริ่ม</button>
+        <p class="muted" style="margin-top:9px">ใช้ดูและพิมพ์ปฏิทินสินค้าใกล้หมดอายุไปติดบอร์ดหลังร้าน</p>
+      </div>
+    </div>
+
+    <!-- ตัวเลือก -->
+    <div id="step_main" class="hide">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div style="flex:1">
+            <div style="font-weight:600" id="who">—</div>
+            <div class="muted" id="whosub">—</div>
+          </div>
+          <button class="btn btn-sec" id="changeBtn" style="padding:8px 13px;font-size:13px">เปลี่ยนรหัส</button>
+        </div>
+        <label>สาขา</label>
+        <select id="brSel"></select>
+        <label style="margin-top:12px">เดือนที่สินค้าจะหมดอายุ (เลือกได้หลายเดือน)</label>
+        <div class="chips" id="mChips"></div>
+        <p class="muted" style="margin-top:8px">ตอนนี้ <b id="nowMon">—</b> — ปกติติดบอร์ดล่วงหน้า 2 เดือน</p>
+        <div style="display:flex;gap:9px;margin-top:13px;flex-wrap:wrap">
+          <button class="btn btn-pri" id="buildBtn" style="flex:1;min-width:150px">ดูตัวอย่างก่อนพิมพ์</button>
+          <button class="btn btn-sec" id="printBtn" style="flex:1;min-width:150px" disabled>🖨 พิมพ์</button>
+        </div>
+      </div>
+      <div id="warnBox"></div>
+      <p class="muted" id="hint" style="text-align:center;padding:8px 0">เลือกสาขาและเดือน แล้วกด “ดูตัวอย่างก่อนพิมพ์”</p>
+    </div>
+  </div>
+
+  <div id="sheets"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/session.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let TO=null;
+function toast(t,m){ const e=$('toast'); e.textContent=m; e.className='toast on'+(t==='err'?' err':''); clearTimeout(TO); TO=setTimeout(()=>e.className='toast',2400); }
+
+const TH_MON=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const TH_MON_S=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TH_DOW=['อา','จ','อ','พ','พฤ','ศ','ส'];
+const STATUS_TH={ on_shelf:'อยู่บนชั้น', sold:'ขายแล้ว', removed:'เก็บออกแล้ว' };
+
+let EMP=null, BRANCHES={}, ITEMS=[], MONTHS=[], SEL=new Set(), BAD=[];
+
+function bkkToday(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
+function branchName(id){ return BRANCHES[id]||id||'(ไม่ระบุสาขา)'; }
+function monKey(d){ return d.slice(0,7); }
+function monLabel(k){ const [y,m]=k.split('-').map(Number); return TH_MON[m-1]+' '+(y+543); }
+function monLabelS(k){ const [y,m]=k.split('-').map(Number); return TH_MON_S[m-1]+' '+String(y+543).slice(2); }
+function addMon(k,n){ const [y,m]=k.split('-').map(Number); const t=new Date(Date.UTC(y,m-1+n,1)); return t.toISOString().slice(0,7); }
+
+// วันหมดอายุที่คีย์เป็น พ.ศ. (เช่น 2569-11-11) — แปลงกลับให้ใช้งานได้ แต่ขึ้นเตือนให้ไปแก้
+function ceDate(d){
+  if(!d) return null;
+  const y=parseInt(d.slice(0,4),10);
+  if(y>2400) return String(y-543).padStart(4,'0')+d.slice(4);
+  return d;
+}
+
+// ===== เข้าสู่ระบบ =====
+async function boot(){
+  try{ const c=await window.HR.loadConfig(); (c.branches||[]).forEach(b=>BRANCHES[b.branch_id]=b.name); }catch(e){}
+  try{ const pf=HRSession.prefill&&HRSession.prefill(); if(pf) $('empId').value=pf; }catch(e){}
+}
+$('goBtn').onclick=async()=>{
+  const id=$('empId').value.trim(); if(!id){ toast('err','กรอกรหัสพนักงาน'); return; }
+  const b=$('goBtn'); b.innerHTML='<span class="spin"></span>';
+  try{
+    const emp=await window.HR.lookupEmployee(id);
+    if(!emp){ toast('err','ไม่พบรหัสพนักงานนี้'); b.textContent='เริ่ม'; return; }
+    if(emp.active===false){ toast('err','รหัสนี้ถูกปิดใช้งาน'); b.textContent='เริ่ม'; return; }
+    try{ HRSession.setEmp(emp.emp_id); }catch(e){}
+    enter(emp);
+  }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
+  b.textContent='เริ่ม';
+};
+$('changeBtn').onclick=()=>{ EMP=null; try{HRSession.clearEmp();}catch(e){} $('sheets').innerHTML=''; $('step_main').classList.add('hide'); $('step_id').classList.remove('hide'); };
+
+function enter(emp){
+  EMP=emp;
+  $('step_id').classList.add('hide'); $('step_main').classList.remove('hide');
+  $('who').textContent=(emp.nickname||emp.name||'')+'';
+  $('whosub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
+  const ids=Object.keys(BRANCHES);
+  const qb=new URLSearchParams(location.search).get('branch');
+  $('brSel').innerHTML=ids.map(id=>'<option value="'+esc(id)+'">'+esc(BRANCHES[id])+'</option>').join('');
+  const pick=(qb && BRANCHES[qb]) ? qb : (BRANCHES[emp.branch_id] ? emp.branch_id : ids[0]);
+  if(pick) $('brSel').value=pick;
+  const nowK=monKey(bkkToday());
+  $('nowMon').textContent=monLabel(nowK);
+  loadItems();
+}
+
+// ===== ข้อมูล =====
+async function loadItems(){
+  const nowK=monKey(bkkToday());
+  const rows=[]; const PAGE=1000;
+  for(let from=0;;from+=PAGE){
+    const { data, error } = await window.HR.sb.from('qa_items')
+      .select('id,barcode,name,size,qty,expiry_date,zone,status,branch_id,emp_name')
+      .order('expiry_date').range(from, from+PAGE-1);
+    if(error){ toast('err','โหลดข้อมูลไม่สำเร็จ'); break; }
+    rows.push(...(data||[]));
+    if(!data || data.length<PAGE) break;
+  }
+  BAD=rows.filter(r=>r.expiry_date && parseInt(r.expiry_date.slice(0,4),10)>2400);
+  ITEMS=rows.map(r=>Object.assign({},r,{ exp:ceDate(r.expiry_date), be:(parseInt((r.expiry_date||'0').slice(0,4),10)>2400) }))
+            .filter(r=>r.exp);
+  // เดือนที่เลือกได้ = ตั้งแต่เดือนนี้ไป 12 เดือน + เดือนที่มีของจริง
+  const set=new Set();
+  for(let i=0;i<13;i++) set.add(addMon(nowK,i));
+  ITEMS.forEach(r=>{ if(r.exp>=nowK+'-01') set.add(monKey(r.exp)); });
+  MONTHS=[...set].sort();
+  SEL=new Set([addMon(nowK,1), addMon(nowK,2)]);
+  renderChips();
+  renderWarn();
+}
+
+function countOf(k){
+  const br=$('brSel').value;
+  return ITEMS.filter(r=>r.branch_id===br && monKey(r.exp)===k).length;
+}
+function renderChips(){
+  $('mChips').innerHTML=MONTHS.map(k=>{
+    const n=countOf(k);
+    return '<button class="chip'+(SEL.has(k)?' on':'')+'" data-m="'+k+'">'+esc(monLabel(k))+'<span class="n">'+n+'</span></button>';
+  }).join('');
+  $('mChips').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.m; if(SEL.has(k)) SEL.delete(k); else SEL.add(k);
+    renderChips();
+  });
+}
+function renderWarn(){
+  const br=$('brSel').value;
+  const mine=BAD.filter(r=>r.branch_id===br);
+  $('warnBox').innerHTML = mine.length
+    ? '<div class="warn"><b>พบวันหมดอายุที่คีย์เป็น พ.ศ. '+mine.length+' รายการ</b><br>'
+      +mine.slice(0,5).map(r=>esc(r.name)+' — คีย์ไว้ '+esc(r.expiry_date)).join('<br>')
+      +(mine.length>5?'<br>…':'')
+      +'<br>ระบบแปลงให้เป็น ค.ศ. ให้ชั่วคราวแล้วเพื่อให้ขึ้นปฏิทิน แต่ควรเข้าไปแก้วันที่ในหน้า QA สินค้าให้ถูก</div>'
+    : '';
+}
+$('brSel').onchange=()=>{ renderChips(); renderWarn(); $('sheets').innerHTML=''; $('printBtn').disabled=true; };
+
+// ===== สร้างแผ่นพิมพ์ =====
+function build(){
+  const br=$('brSel').value;
+  const months=[...SEL].sort();
+  if(!months.length){ toast('err','เลือกเดือนอย่างน้อย 1 เดือน'); return; }
+  const printedAt=new Date(Date.now()+7*3600*1000);
+  const pStr=printedAt.getUTCDate()+' '+TH_MON_S[printedAt.getUTCMonth()]+' '+(printedAt.getUTCFullYear()+543)
+    +' '+String(printedAt.getUTCHours()).padStart(2,'0')+':'+String(printedAt.getUTCMinutes()).padStart(2,'0')+' น.';
+  $('sheets').innerHTML=months.map(k=>sheetHtml(k, br, pStr)).join('');
+  $('printBtn').disabled=false;
+  $('hint').textContent='พร้อมพิมพ์ '+months.length+' แผ่น — ตรวจดูด้านล่างแล้วกด “พิมพ์”';
+  $('sheets').scrollIntoView({behavior:'smooth'});
+}
+$('buildBtn').onclick=build;
+$('printBtn').onclick=()=>window.print();
+
+function sheetHtml(k, br, pStr){
+  const [y,m]=k.split('-').map(Number);
+  const rows=ITEMS.filter(r=>r.branch_id===br && monKey(r.exp)===k)
+                  .sort((a,b)=> a.exp===b.exp ? String(a.name).localeCompare(String(b.name),'th') : (a.exp<b.exp?-1:1));
+  const live=rows.filter(r=>r.status==='on_shelf');
+  const byDay={}; rows.forEach(r=>{ const d=parseInt(r.exp.slice(8,10),10); (byDay[d]=byDay[d]||[]).push(r); });
+
+  const first=new Date(Date.UTC(y,m-1,1)), dim=new Date(Date.UTC(y,m,0)).getUTCDate(), lead=first.getUTCDay();
+  const cells=[];
+  for(let i=0;i<lead;i++) cells.push('<td class="off"></td>');
+  for(let d=1;d<=dim;d++){
+    const list=byDay[d]||[];
+    const show=list.slice(0,4).map(r=>'<div class="it'+(r.status==='on_shelf'?'':' done')+'">'+esc(r.name)+' <b>×'+(r.qty||1)+'</b></div>').join('');
+    const more=list.length>4?'<div class="more">+ อีก '+(list.length-4)+' รายการ (ดูตารางท้ายแผ่น)</div>':'';
+    cells.push('<td data-d="'+d+'"><div class="dnum">'+d+(list.length?'<span class="cnt">'+list.length+'</span>':'')+'</div>'+show+more+'</td>');
+  }
+  while(cells.length%7) cells.push('<td class="off"></td>');
+  let grid=''; for(let i=0;i<cells.length;i+=7) grid+='<tr>'+cells.slice(i,i+7).join('')+'</tr>';
+
+  const lst = rows.length ? rows.map(r=>{
+    const done=r.status!=='on_shelf';
+    return '<tr'+(done?' class="done"':'')+'>'
+      +'<td class="keep" style="width:16mm;text-align:center">'+parseInt(r.exp.slice(8,10),10)+' '+TH_MON_S[m-1]+(r.be?' *':'')+'</td>'
+      +'<td style="width:26mm">'+esc(r.barcode||'')+'</td>'
+      +'<td>'+esc(r.name)+'</td>'
+      +'<td style="width:14mm">'+esc(r.size||'')+'</td>'
+      +'<td style="width:12mm;text-align:center">'+(r.qty||1)+'</td>'
+      +'<td style="width:16mm">'+esc(r.zone||'')+'</td>'
+      +'<td class="keep" style="width:22mm">'+esc(done?(STATUS_TH[r.status]||r.status):'')+'</td>'
+      +'<td class="keep" style="width:26mm"></td></tr>';
+  }).join('') : '';
+
+  return '<section class="sheet">'
+    +'<div class="sh-head"><div><h2>ปฏิทินสินค้าใกล้หมดอายุ — '+esc(monLabel(k))+'</h2>'
+      +'<div class="sub">สาขา '+esc(branchName(br))+' · รหัส '+esc(br)+'</div></div>'
+      +'<div class="meta">พิมพ์เมื่อ '+esc(pStr)+'<br>ระบบ QA สินค้า</div></div>'
+    +'<div class="sh-sum"><span>ทั้งหมด <b>'+rows.length+'</b> รายการ</span>'
+      +'<span>ยังอยู่บนชั้น <b>'+live.length+'</b></span>'
+      +'<span>จัดการแล้ว (ขีดฆ่า) <b>'+(rows.length-live.length)+'</b></span>'
+      +'<span>รวม <b>'+rows.reduce((s,r)=>s+(r.qty||1),0)+'</b> ชิ้น</span></div>'
+    +'<table class="cal"><thead><tr>'+TH_DOW.map(d=>'<th>'+d+'</th>').join('')+'</tr></thead><tbody>'+grid+'</tbody></table>'
+    +'<h3 class="ttl">รายการสินค้าทั้งหมดที่หมดอายุใน'+esc(monLabel(k))+'</h3>'
+    +(lst
+      ? '<table class="lst"><thead><tr><th>วันหมดอายุ</th><th>บาร์โค้ด</th><th>ชื่อสินค้า</th><th>ขนาด</th><th>จำนวน</th><th>โซน</th><th>สถานะ</th><th>ตรวจ / หมายเหตุ</th></tr></thead><tbody>'+lst+'</tbody></table>'
+      : '<div class="nodata">— ไม่มีสินค้าที่บันทึกไว้ว่าหมดอายุในเดือนนี้ —</div>')
+    +(rows.some(r=>r.be) ? '<div class="note">* วันหมดอายุรายการนี้ถูกคีย์เป็น พ.ศ. ในระบบ — แก้ให้เป็นปีที่ถูกต้องในหน้า QA สินค้า</div>' : '')
+    +'<div class="sign"><div>ผู้จัดทำ</div><div>ผู้จัดการร้าน</div><div>ผู้ตรวจ (QSSI)</div></div>'
+    +'</section>';
+}
+
+boot();
+</script>
+</body>
+</html>
