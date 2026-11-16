@@ -1863,6 +1863,8 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <button class="shsub-b on" type="button" data-qapan="near"><svg class="ei" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> สินค้าใกล้หมดอายุ <span id="qasub_cnt" class="shsub-badge" style="display:none">0</span></button>
     <button class="shsub-b" type="button" data-qapan="folders"><svg class="ei" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> โฟลเดอร์ทั้งหมด</button>
     <button class="shsub-b" type="button" data-qapan="new"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18M12 14v4M10 16h4"/></svg> สร้างโฟลเดอร์ใหม่</button>
+    <!-- ★ 16 พ.ย. 69 — ปฏิทินสินค้าใกล้หมดอายุ (เปิดหน้าพิมพ์ติดบอร์ด QSSI) -->
+    <a class="shsub-b" id="qa_cal_link" href="../qa/calendar.html" target="_blank" rel="noopener" style="text-decoration:none"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> ปฏิทินหมดอายุ (พิมพ์ติดบอร์ด)</a>
   </div>
 
   <div class="shpan" id="qapan_new" style="display:none">
@@ -18516,13 +18518,13 @@ function loadQaTab(){
   loadQaAll();
   loadQaFolders();
   if($('qasub') && !$('qasub').dataset.wired){
-    $('qasub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>qaTab(b.dataset.qapan));
+    $('qasub').querySelectorAll('.shsub-b[data-qapan]').forEach(b=>b.onclick=()=>qaTab(b.dataset.qapan));
     $('qasub').dataset.wired='1'; qaTab('near');
   }
 }
 function qaTab(name){
   ['near','folders','new'].forEach(k=>{ const p=$('qapan_'+k); if(p) p.style.display=(k===name)?'':'none'; });
-  document.querySelectorAll('#qasub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.qapan===name));
+  document.querySelectorAll('#qasub .shsub-b[data-qapan]').forEach(b=>b.classList.toggle('on', b.dataset.qapan===name));
 }
 // ========== LINE ฟีดกลุ่มสาขา ==========
 const LF_URGENT=["ปิดร้าน","ปิดสาขา","ของขาด","สินค้าขาด","ของหมด","สต๊อกหมด","ไฟดับ","ไฟไหม้","น้ำท่วม","น้ำรั่ว","ตู้แช่","ตู้เสีย","เครื่องเสีย","ระบบล่ม","เน็ตล่ม","ด่วน","ฉุกเฉิน","ทะเลาะ","วิวาท","ต่อยกัน","ขโมย","ของหาย","เงินหาย","เงินขาด","อุบัติเหตุ","รถชน","บาดเจ็บ","ป่วย","ลาป่วย","ลากะทันหัน","ไม่มาทำงาน","ขาดงาน","ร้องเรียน","ลูกค้าโวย","ตำรวจ","หนี","ลาออก"];
