@@ -388,6 +388,7 @@
         case 'hr_line_setcat':       return await hrLineSetCat(p);
         case 'hr_sales_list':        return await hrSalesList(p);
         case 'hr_sales_shift':       return await hrSalesShift(p);
+        case 'hr_sales_update':      return await hrSalesUpdate(p);
         case 'hr_audit_list':        return await hrAuditList(p);
         case 'hr_line_backfill':     return await hrLineBackfill(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
@@ -5080,7 +5081,7 @@
       done += chunk.length;
     }
     // บันทึกยอดขายที่แยกได้ (อัปเดตทับตาม branch/date/shift)
-    const salesRows = Object.values(salesMap);
+    const salesRows = await _salesKeepEdited(Object.values(salesMap));   // ★ ค่าที่แก้มือชนะไฟล์ไลน์
     let salesSaved = 0;
     for (let i = 0; i < salesRows.length; i += 300) {
       const chunk = salesRows.slice(i, i + 300);
@@ -5129,7 +5130,7 @@
     if (!start || !end) return { ok: false, error: 'ระบุช่วงวันที่' };
     const br = p.branch_id ? String(p.branch_id) : '';
     const qSales = () => { let x = sb().from('sales_daily')
-      .select('branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,per_head')
+      .select('branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,per_head,edited_at,edited_by,edit_note')
       .gte('sale_date', start).lte('sale_date', end).order('id');
       if (br) x = x.eq('branch_id', br); return x; };
     const qLead = () => { let x = sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id,emp_name')
@@ -5166,11 +5167,82 @@
         target_total: +x.target_total || 0, sales_total: +x.sales_total || 0,
         sales_product: +x.sales_product || 0, sales_card: +x.sales_card || 0,
         customers: +x.customers || 0, per_head: +x.per_head || 0,
+        edited_at: x.edited_at || null, edited_by: x.edited_by || '', edit_note: x.edit_note || '',
         lead_name: code ? (leadBy[k] || '') : '',
         staff_n: code ? ((staff[k] || { size: 0 }).size) : 0,
       };
     });
     return { ok: true, start, end, rows };
+  }
+
+  // ★ 17 พ.ย. 69 — แก้ยอดขายรายผลัดในแอป (กรณีพนักงานคีย์ในไลน์มาผิด)
+  //   แก้ได้ 3 ช่อง: เป้า · ยอดขาย · ลูกค้า — ยอดต่อหัวคำนวณใหม่ให้เอง
+  //   เก็บค่าเดิมครั้งแรกไว้ใน orig (กู้คืนได้) + บันทึกว่าใครแก้ เมื่อไร เพราะอะไร
+  //   ★ ค่าที่แก้มือ "ชนะเสมอ" — ถ้านำเข้าแชทไลน์ทับทีหลัง ระบบจะคงค่าที่แก้ไว้ (ดู _salesKeepEdited)
+  //   ต้องรัน supabase/sales_edit.sql ก่อน (เพิ่มคอลัมน์ edited_at/edited_by/edit_note/orig)
+  const SALES_EDIT_MAX = 2000000;
+  async function hrSalesUpdate(p) {
+    p = p || {};
+    const br = String(p.branch_id || ''), date = String(p.sale_date || ''), sh = String(p.shift || '');
+    if (!br || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !sh) return { ok: false, error: 'ข้อมูลไม่ครบ (สาขา/วันที่/ผลัด)' };
+    const num = (v) => { if (v === '' || v === null || v === undefined) return null; const n = Number(String(v).replace(/,/g, '')); return isFinite(n) ? n : NaN; };
+    const tgt = num(p.target_total), sale = num(p.sales_total), cust = num(p.customers);
+    for (const [k, v] of [['เป้า', tgt], ['ยอดขาย', sale], ['ลูกค้า', cust]]) {
+      if (v === null) continue;
+      if (isNaN(v) || v < 0) return { ok: false, error: k + ' ต้องเป็นตัวเลขไม่ติดลบ' };
+      if (v > SALES_EDIT_MAX) return { ok: false, error: k + ' ดูสูงผิดปกติ (เกิน ' + SALES_EDIT_MAX.toLocaleString() + ') — ตรวจอีกครั้ง' };
+    }
+    const { data: cur, error: e0 } = await sb().from('sales_daily')
+      .select('*').eq('branch_id', br).eq('sale_date', date).eq('shift', sh).maybeSingle();
+    if (e0) return { ok: false, error: e0.message };
+    if (!cur) return { ok: false, error: 'ไม่พบรายการนี้ (สาขา/วันที่/ผลัด)' };
+    const upd = {};
+    if (tgt !== null)  upd.target_total = tgt;
+    if (sale !== null) upd.sales_total  = sale;
+    if (cust !== null) upd.customers    = cust;
+    if (!Object.keys(upd).length) return { ok: false, error: 'ไม่มีอะไรเปลี่ยน' };
+    const nSale = upd.sales_total != null ? upd.sales_total : (+cur.sales_total || 0);
+    const nCust = upd.customers != null ? upd.customers : (+cur.customers || 0);
+    upd.per_head = nCust > 0 ? Math.round(nSale / nCust * 100) / 100 : null;
+    upd.edited_at = new Date().toISOString();
+    upd.edited_by = String(p.actor || 'HR').slice(0, 120);
+    upd.edit_note = String(p.note || '').slice(0, 300);
+    // เก็บค่าก่อนแก้ไว้ครั้งแรกครั้งเดียว — แก้ซ้ำรอบหลังยังย้อนกลับไปหาค่าจากไลน์ได้
+    if (!cur.orig) upd.orig = { target_total: cur.target_total, sales_total: cur.sales_total, customers: cur.customers, per_head: cur.per_head };
+    // จดค่าก่อนแก้ไว้ก่อนยิง update (อ่านจากแถวเดิมหลังอัปเดตไม่ได้)
+    const was0 = { t: cur.target_total, s: cur.sales_total, c: cur.customers };
+    const { error } = await sb().from('sales_daily').update(upd)
+      .eq('branch_id', br).eq('sale_date', date).eq('shift', sh);
+    if (error) return { ok: false, error: (/column .* does not exist/i.test(error.message) ? 'ยังไม่ได้รัน supabase/sales_edit.sql — ' : '') + error.message };
+    const was = [];
+    if (upd.target_total != null && +was0.t !== upd.target_total) was.push('เป้า ' + (was0.t == null ? '—' : was0.t) + ' → ' + upd.target_total);
+    if (upd.sales_total != null && +was0.s !== upd.sales_total)   was.push('ยอดขาย ' + (was0.s == null ? '—' : was0.s) + ' → ' + upd.sales_total);
+    if (upd.customers != null && +was0.c !== upd.customers)       was.push('ลูกค้า ' + (was0.c == null ? '—' : was0.c) + ' → ' + upd.customers);
+    await logAct('แก้ยอดขายรายผลัด', null, date + ' ' + sh + ' สาขา ' + br + ' · ' + (was.join(' · ') || 'ไม่มีตัวเลขเปลี่ยน') + (upd.edit_note ? (' · เหตุผล: ' + upd.edit_note) : ''), upd.edited_by);
+    return { ok: true, changed: was };
+  }
+
+  // ★ ค่าที่ HR/ผจก. แก้มือ ต้องไม่ถูกการนำเข้าแชทไลน์ทับ
+  //   รับแถวที่กำลังจะ upsert → คืนแถวเดิมที่ทับค่า 3 ช่องนั้นด้วยของที่แก้ไว้ (พร้อมธงว่าแก้แล้ว)
+  async function _salesKeepEdited(rows) {
+    if (!rows.length) return rows;
+    const dates = [...new Set(rows.map(r => r.sale_date))].sort();
+    let edited = [];
+    try {
+      edited = await fetchPaged(() => sb().from('sales_daily')
+        .select('branch_id,sale_date,shift,target_total,sales_total,customers,per_head,edited_at,edited_by,edit_note,orig')
+        .not('edited_at', 'is', null).gte('sale_date', dates[0]).lte('sale_date', dates[dates.length - 1]).order('id'));
+    } catch (e) { return rows; }   // ยังไม่ได้รัน sales_edit.sql → ทำงานแบบเดิม
+    if (!edited.length) return rows;
+    const m = {}; edited.forEach(e => { m[e.branch_id + '|' + e.sale_date + '|' + e.shift] = e; });
+    return rows.map(r => {
+      const e = m[r.branch_id + '|' + r.sale_date + '|' + r.shift];
+      if (!e) return r;
+      return Object.assign({}, r, {
+        target_total: e.target_total, sales_total: e.sales_total, customers: e.customers, per_head: e.per_head,
+        edited_at: e.edited_at, edited_by: e.edited_by, edit_note: e.edit_note, orig: e.orig,
+      });
+    });
   }
 
   // ดึงรายงานตรวจร้าน QSSI (แดชบอร์ด/นิดา)
@@ -5223,7 +5295,7 @@
         from += page;
       }
     }
-    const salesRows = Object.values(salesMap); let salesSaved = 0; let saveErr = null;
+    const salesRows = await _salesKeepEdited(Object.values(salesMap)); let salesSaved = 0; let saveErr = null;   // ★ ค่าที่แก้มือชนะไฟล์ไลน์
     for (let i = 0; i < salesRows.length; i += 300) { const chunk = salesRows.slice(i, i + 300); const { error: e3 } = await sb().from('sales_daily').upsert(chunk, { onConflict: 'branch_id,sale_date,shift' }); if (!e3) salesSaved += chunk.length; else if (!saveErr) saveErr = e3.message; }
 
     // ---- Pass 3: แยกรายงานตรวจร้าน QSSI จากทุกกลุ่ม (ค้นข้อความที่มีฟอร์มตรวจร้าน) ----
