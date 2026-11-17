@@ -18672,21 +18672,37 @@ async function drawSalesShift(){
   const rows=[];
   all.forEach(x=>{
     const f=sdFixSales(x); const sale=f.s, tgt=+x.target_total||0;
-    if(sale>SANE||tgt>SANE) return;                           // ตัดแถวที่เลขเพี้ยนจนใช้ไม่ได้
-    rows.push(Object.assign({},x,{ sale, tgt, pct:(tgt>0&&sale>0)?(sale/tgt*100):null }));
+    if(sale>SANE) return;                                     // ยอดขายเพี้ยนจนใช้ไม่ได้ → ตัดทิ้ง
+    rows.push(Object.assign({},x,{ sale, tgt }));
   });
+  // ★ เป้าที่คีย์ผิด (เช่น 17/11/69 ผลัดเช้า คีย์เป้าไว้ 26 บาท → ได้ 99,525% ของเป้า กราฟพังทั้งใบ)
+  //   เทียบกับ "ค่ากลางของเป้า" ของสาขานั้น × ผลัดนั้น — ต่ำกว่า 1/3 หรือเกิน 3 เท่า = เชื่อไม่ได้
+  //   ยอดขายของวันนั้นยังนับตามปกติ ตัดทิ้งเฉพาะการเทียบเป้า แล้วขึ้นเตือนให้ไปแก้ที่ต้นทาง
+  const BAD=[];
+  {
+    const grp={};
+    rows.forEach(x=>{ if(x.tgt>0) (grp[x.branch_id+'|'+x.shift]||(grp[x.branch_id+'|'+x.shift]=[])).push(x.tgt); });
+    const med={}; Object.keys(grp).forEach(k=>{ med[k]=sdMedian(grp[k]); });
+    rows.forEach(x=>{
+      const m=med[x.branch_id+'|'+x.shift]||0;
+      x.tok = x.tgt>0 && m>0 && x.tgt>=m/3 && x.tgt<=m*3;
+      if(x.tgt>0 && m>0 && !x.tok) BAD.push({ b:x.branch_name, d:x.sale_date, sh:x.shift, t:x.tgt, m });
+      x.pct = (x.tok && x.sale>0) ? (x.sale/x.tgt*100) : null;
+    });
+  }
   const multi=!$('sd_branch').value;
   const dates=[...new Set(rows.map(x=>x.sale_date))].sort();
 
   // ---- สรุปต่อผลัด ----
   const sum=sh=>{
     const a=rows.filter(x=>x.shift===sh);
-    const vt=a.filter(x=>x.tgt>0&&x.sale>0);
+    const vs=a.filter(x=>x.sale>0);                 // ทุกวันที่มียอดขาย — ใช้คิดยอดเฉลี่ย
+    const vt=a.filter(x=>x.tok&&x.sale>0);          // เฉพาะวันที่เป้าเชื่อได้ — ใช้เทียบเป้า
     const S=vt.reduce((s,x)=>s+x.sale,0), T=vt.reduce((s,x)=>s+x.tgt,0);
     const cu=a.filter(x=>x.customers>0);
     const nDay=new Set(a.map(x=>x.branch_id+'|'+x.sale_date)).size;
     return { sh, n:nDay, nt:vt.length, hit:vt.filter(x=>x.sale>=x.tgt).length,
-      avgS:vt.length?S/vt.length:0, avgT:vt.length?T/vt.length:0, pct:T?S/T*100:null,
+      avgS:vs.length?vs.reduce((s,x)=>s+x.sale,0)/vs.length:0, avgT:vt.length?T/vt.length:0, pct:T?S/T*100:null,
       cu:cu.length?cu.reduce((s,x)=>s+x.customers,0)/cu.length:0,
       head:(cu.length&&cu.reduce((s,x)=>s+x.customers,0))?cu.reduce((s,x)=>s+x.sale,0)/cu.reduce((s,x)=>s+x.customers,0):0,
       staff:(()=>{ const z=a.filter(x=>x.staff_n>0); return z.length?z.reduce((s,x)=>s+x.staff_n,0)/z.length:0; })() };
@@ -18709,14 +18725,17 @@ async function drawSalesShift(){
 
   // ---- กราฟแนวโน้ม % ของเป้า รายวัน 3 ผลัด ----
   const byDay={};
-  rows.forEach(x=>{ const k=x.sale_date+'|'+x.shift; const o=byDay[k]||(byDay[k]={s:0,t:0}); if(x.tgt>0&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; } });
+  rows.forEach(x=>{ const k=x.sale_date+'|'+x.shift; const o=byDay[k]||(byDay[k]={s:0,t:0}); if(x.tok&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; } });
   const series=SDS_SHIFTS.map(sh=>({ sh, pts:dates.map(d=>{ const o=byDay[d+'|'+sh]; return (o&&o.t)?(o.s/o.t*100):null; }) }));
   const W=1000,H=260,PL=42,PR=12,PT=14,PB=26;
   const vals=series.flatMap(x=>x.pts).filter(v=>v!=null);
-  const lo=Math.min(80,Math.floor((Math.min(...vals,100)-5)/10)*10), hi=Math.max(120,Math.ceil((Math.max(...vals,100)+5)/10)*10);
+  // ★ ล็อกสเกลไว้ไม่เกิน 50–200% กันวันที่ตัวเลขเพี้ยนลากกราฟจนวันอื่นแบนหมด
+  const lo=Math.max(50,Math.min(80,Math.floor((Math.min(...vals,100)-5)/10)*10));
+  const hi=Math.min(200,Math.max(120,Math.ceil((Math.max(...vals,100)+5)/10)*10));
+  const clamp=v=>Math.max(lo,Math.min(hi,v));
   const px=i=>PL+(dates.length<2?(W-PL-PR)/2:i*(W-PL-PR)/(dates.length-1));
-  const py=v=>PT+(hi-v)/(hi-lo)*(H-PT-PB);
-  const grid=[lo,100,hi].concat(hi>=150?[150]:[]).filter((v,i,a)=>a.indexOf(v)===i).map(v=>
+  const py=v=>PT+(hi-clamp(v))/(hi-lo)*(H-PT-PB);
+  const grid=[lo,100,hi].concat(hi>=150&&hi!==150?[150]:[]).filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>a-b).map(v=>
     '<line x1="'+PL+'" y1="'+py(v).toFixed(1)+'" x2="'+(W-PR)+'" y2="'+py(v).toFixed(1)+'" stroke="'+(v===100?'#111':'#e5e7eb')+'" stroke-width="'+(v===100?1.4:1)+'"'+(v===100?' stroke-dasharray="5 4"':'')+'/>'
     +'<text x="'+(PL-6)+'" y="'+(py(v)+4).toFixed(1)+'" text-anchor="end" font-size="11" fill="#6b7280">'+v+'%</text>').join('');
   const paths=series.map(sr=>{
@@ -18739,7 +18758,7 @@ async function drawSalesShift(){
   if(multi){
     const g={};
     rows.forEach(x=>{ const k=x.branch_id+'|'+x.shift; const o=g[k]||(g[k]={b:x.branch_name,sh:x.shift,s:0,t:0,n:0,hit:0});
-      if(x.tgt>0&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; o.n++; if(x.sale>=x.tgt) o.hit++; } });
+      if(x.tok&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; o.n++; if(x.sale>=x.tgt) o.hit++; } });
     const list=Object.values(g).filter(o=>o.n).sort((a,b)=>a.b===b.b?(SDS_SHIFTS.indexOf(a.sh)-SDS_SHIFTS.indexOf(b.sh)):(a.b<b.b?-1:1));
     brTable='<div class="card" style="margin-bottom:12px"><div class="tablewrap"><table>'
       +'<thead><tr><th>สาขา</th><th>ผลัด</th><th>ยอดเฉลี่ย/วัน</th><th>เป้าเฉลี่ย/วัน</th><th>% ของเป้า</th><th>ถึงเป้า</th></tr></thead><tbody>'
@@ -18760,8 +18779,9 @@ async function drawSalesShift(){
   const cell=x=>{
     if(!x) return '<td colspan="2" style="color:var(--muted);text-align:center">—</td>';
     const pct=x.pct;
-    return '<td class="mono" style="white-space:nowrap">'+_thb(x.sale)+'<div style="font-size:11px;color:var(--muted)">เป้า '+_thb(x.tgt)+'</div></td>'
-      +'<td style="white-space:nowrap"><span class="pill '+sdsPctCls(pct)+'">'+(pct==null?'—':Math.round(pct)+'%')+'</span>'
+    const tgtTxt = x.tgt>0 ? ('เป้า '+_thb(x.tgt)+(x.tok?'':' ⚠')) : 'ไม่มีเป้า';
+    return '<td class="mono" style="white-space:nowrap">'+_thb(x.sale)+'<div style="font-size:11px;color:'+(x.tok||!x.tgt?'var(--muted)':'#b45309')+'">'+tgtTxt+'</div></td>'
+      +'<td style="white-space:nowrap"><span class="pill '+sdsPctCls(pct)+'">'+(pct==null?(x.tgt>0?'เป้าผิด':'—'):Math.round(pct)+'%')+'</span>'
       +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(x.lead_name?esc(x.lead_name):'ไม่มีหัวหน้าผลัด')+(x.staff_n?(' · '+x.staff_n+' คน'):'')+'</div></td>';
   };
   const dayTable='<div class="card"><div class="tablewrap"><table>'
@@ -18770,8 +18790,8 @@ async function drawSalesShift(){
       +'<th rowspan="2">รวม 3 ผลัด</th></tr>'
     +'<tr>'+SDS_SHIFTS.map(()=>'<th style="border-left:2px solid var(--line2);font-size:12px">ยอด / เป้า</th><th style="font-size:12px">% · ใครคุมผลัด</th>').join('')+'</tr></thead><tbody>'
     +drows.map(o=>{
-      const tot=SDS_SHIFTS.reduce((a,sh)=>{ const x=o.sh[sh]; if(x&&x.tgt>0&&x.sale>0){ a.s+=x.sale; a.t+=x.tgt; } return a; },{s:0,t:0});
-      const tp=tot.t?tot.s/tot.t*100:null;
+      const tot=SDS_SHIFTS.reduce((a,sh)=>{ const x=o.sh[sh]; if(x&&x.sale>0){ a.s+=x.sale; if(x.tok) a.t+=x.tgt; else a.bad=1; } return a; },{s:0,t:0});
+      const tp=(tot.t&&!tot.bad)?tot.s/tot.t*100:null;   // มีผลัดไหนเป้าผิด = เทียบเป้ารวมทั้งวันไม่ได้
       const wd=TH_D[new Date(o.d+'T00:00:00Z').getUTCDay()];
       return '<tr><td style="white-space:nowrap">'+(+o.d.slice(8,10))+'/'+(+o.d.slice(5,7))+' <span style="color:var(--muted);font-size:11.5px">'+wd+'</span></td>'
         +(multi?('<td style="font-size:12.5px">'+esc(o.b)+'</td>'):'')
@@ -18785,7 +18805,11 @@ async function drawSalesShift(){
     +'<b>% ของเป้า</b> = ยอดจริง ÷ เป้า ของผลัดนั้น — เขียว = ถึงเป้า · ส้ม = 90–99% · แดง = ต่ำกว่า 90% · '
     +'<b>ใครคุมผลัด</b> = หัวหน้าผลัดที่กดรับหน้าที่ในแอป และจำนวนคนที่ถูกจัดเวรในกะนั้น'
     +'</div>';
-  box.innerHTML=note+'<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-bottom:12px">'+cards+'</div>'+chart+brTable+dayTable;
+  const warn = BAD.length ? ('<div style="background:#fff7e6;border:1px solid #f3d9a4;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#8a5a00;line-height:1.8">'
+    +'<b>เป้าที่คีย์ผิด '+BAD.length+' รายการ — ไม่ถูกนำมาคิด % ของเป้า</b> (ยอดขายของวันนั้นยังนับตามปกติ)<br>'
+    +BAD.slice(0,6).map(z=>esc(z.b)+' · '+(+z.d.slice(8,10))+'/'+(+z.d.slice(5,7))+' ผลัด'+esc(z.sh)+' — คีย์ไว้ <b>'+_thb(z.t)+'</b> (ปกติราว '+_thb(z.m)+')').join('<br>')
+    +(BAD.length>6?'<br>…':'')+'<br>แก้ที่ต้นทางในกลุ่มไลน์แล้วกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีด ตัวเลขจะกลับมาถูก</div>') : '';
+  box.innerHTML=note+warn+'<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-bottom:12px">'+cards+'</div>'+chart+brTable+dayTable;
 }
 
 async function drawSalesDash(){
