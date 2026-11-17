@@ -818,6 +818,23 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   </div>
 </div>
 
+<!-- ★ 17 พ.ย. 69 — แก้ยอดขายรายผลัด (กรณีคีย์ในไลน์มาผิด) -->
+<div class="overlay" id="seOverlay">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-h"><h2 style="font-size:16px">แก้ยอดขายรายผลัด</h2><button class="close" id="seClose">×</button></div>
+    <div class="modal-b">
+      <div id="se_head" style="font-size:13px;color:var(--muted);margin-bottom:10px"></div>
+      <div class="field"><label>เป้า (บาท)</label><input id="se_tgt" type="number" step="any" inputmode="decimal"></div>
+      <div class="field"><label>ยอดขาย (บาท)</label><input id="se_sale" type="number" step="any" inputmode="decimal"></div>
+      <div class="field"><label>จำนวนลูกค้า (คน)</label><input id="se_cust" type="number" inputmode="numeric"></div>
+      <div class="field"><label>เหตุผลที่แก้</label><input id="se_note" type="text" placeholder="เช่น พนักงานคีย์เป้าตกจุดทศนิยม"></div>
+      <div id="se_orig" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.7">ค่าที่แก้ที่นี่จะ<b>ชนะไฟล์ไลน์เสมอ</b> — ถึงนำเข้าแชทซ้ำทีหลังก็ไม่ถูกทับ · ระบบบันทึกชื่อผู้แก้และเหตุผลไว้ในบันทึกกิจกรรม</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-sec" id="seCancel">ยกเลิก</button><button class="btn btn-pri" id="seSave">บันทึก</button></div>
+  </div>
+</div>
+
 <!-- Board: บอร์ดวันนี้ -->
 <div id="view_board" class="container" style="display:none">
   <div class="toolbar">
@@ -18780,7 +18797,11 @@ async function drawSalesShift(){
     if(!x) return '<td colspan="2" style="color:var(--muted);text-align:center">—</td>';
     const pct=x.pct;
     const tgtTxt = x.tgt>0 ? ('เป้า '+_thb(x.tgt)+(x.tok?'':' ⚠')) : 'ไม่มีเป้า';
-    return '<td class="mono" style="white-space:nowrap">'+_thb(x.sale)+'<div style="font-size:11px;color:'+(x.tok||!x.tgt?'var(--muted)':'#b45309')+'">'+tgtTxt+'</div></td>'
+    // ★ กดที่ช่องยอด/เป้า เพื่อแก้ตัวเลขที่คีย์ผิดมาจากไลน์
+    const ed = x.edited_at ? ('<span title="แก้โดย '+esc(x.edited_by||'')+(x.edit_note?(' — '+esc(x.edit_note)):'')+'" style="color:#1d4ed8;font-size:10.5px">✎ แก้แล้ว</span>') : '';
+    return '<td class="mono sdsCell" data-se="'+esc(x.branch_id)+'|'+esc(x.sale_date)+'|'+esc(x.shift)+'" title="กดเพื่อแก้ตัวเลข" '
+        +'style="white-space:nowrap;cursor:pointer">'+_thb(x.sale)
+        +'<div style="font-size:11px;color:'+(x.tok||!x.tgt?'var(--muted)':'#b45309')+'">'+tgtTxt+' '+ed+'</div></td>'
       +'<td style="white-space:nowrap"><span class="pill '+sdsPctCls(pct)+'">'+(pct==null?(x.tgt>0?'เป้าผิด':'—'):Math.round(pct)+'%')+'</span>'
       +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(x.lead_name?esc(x.lead_name):'ไม่มีหัวหน้าผลัด')+(x.staff_n?(' · '+x.staff_n+' คน'):'')+'</div></td>';
   };
@@ -18810,7 +18831,41 @@ async function drawSalesShift(){
     +BAD.slice(0,6).map(z=>esc(z.b)+' · '+(+z.d.slice(8,10))+'/'+(+z.d.slice(5,7))+' ผลัด'+esc(z.sh)+' — คีย์ไว้ <b>'+_thb(z.t)+'</b> (ปกติราว '+_thb(z.m)+')').join('<br>')
     +(BAD.length>6?'<br>…':'')+'<br>แก้ที่ต้นทางในกลุ่มไลน์แล้วกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีด ตัวเลขจะกลับมาถูก</div>') : '';
   box.innerHTML=note+warn+'<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-bottom:12px">'+cards+'</div>'+chart+brTable+dayTable;
+  SDS_ROWS={}; rows.forEach(x=>{ SDS_ROWS[x.branch_id+'|'+x.sale_date+'|'+x.shift]=x; });
+  box.querySelectorAll('[data-se]').forEach(td=>td.onclick=()=>sdsEdit(td.dataset.se));
 }
+
+// ---- แก้ยอดขายรายผลัด (คีย์ผิดจากไลน์) ----
+let SDS_ROWS={}, SDS_EDIT=null;
+function sdsEdit(key){
+  const x=SDS_ROWS[key]; if(!x) return;
+  SDS_EDIT=x;
+  $('se_head').innerHTML='<b>'+esc(x.branch_name)+'</b> · '+esc(beDate(x.sale_date))+' · ผลัด<b>'+esc(x.shift)+'</b>'
+    +(x.lead_name?(' <span style="color:var(--muted)">(หัวหน้าผลัด '+esc(x.lead_name)+')</span>'):'');
+  $('se_tgt').value = x.tgt||'';
+  $('se_sale').value = x.sale||'';
+  $('se_cust').value = x.customers||'';
+  $('se_note').value = x.edit_note||'';
+  $('se_orig').innerHTML = x.edited_at
+    ? ('เคยแก้เมื่อ '+esc(fmtDT(x.edited_at))+' โดย '+esc(x.edited_by||'—'))
+    : (x.tok?'':'<span style="color:#b45309">เป้าที่คีย์ไว้ดูผิดปกติ — แก้ให้ถูกแล้ว % ของเป้าจะกลับมาใช้ได้</span>');
+  $('seOverlay').classList.add('show');
+}
+function sdsEditClose(){ $('seOverlay').classList.remove('show'); SDS_EDIT=null; }
+$('seClose').onclick=sdsEditClose; $('seCancel').onclick=sdsEditClose;
+$('seOverlay').onclick=e=>{ if(e.target===$('seOverlay')) sdsEditClose(); };
+$('seSave').onclick=async()=>{
+  if(!SDS_EDIT) return;
+  const b=$('seSave');
+  const payload={ action:'hr_sales_update', password:pwd, branch_id:SDS_EDIT.branch_id, sale_date:SDS_EDIT.sale_date, shift:SDS_EDIT.shift,
+    target_total:$('se_tgt').value, sales_total:$('se_sale').value, customers:$('se_cust').value,
+    note:$('se_note').value.trim(), actor:(MGR_MODE?('ผจก. '+(MGR_EMP||MGR_BRANCH||'')):'สำนักงานใหญ่') };
+  b.disabled=true; b.innerHTML='<span class="spin"></span>';
+  const r=await post(payload);
+  b.disabled=false; b.textContent='บันทึก';
+  if(r&&r.ok){ toast('ok','แก้แล้ว'+((r.changed&&r.changed.length)?(' — '+r.changed.join(' · ')):'')); sdsEditClose(); drawSalesShift(); }
+  else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
+};
 
 async function drawSalesDash(){
   $('sd_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
