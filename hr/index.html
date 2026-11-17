@@ -1955,7 +1955,13 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <input id="sd_end" type="date" style="padding:7px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:14px">
     <button class="btn btn-pri btn-sm" id="sd_go">ดู</button>
   </div>
+  <!-- ★ 17 พ.ย. 69 — แยกเป็น 2 มุมมอง: ภาพรวมรายวัน (เดิม) กับ รายผลัด (เป้า vs ยอดจริง) -->
+  <div class="shsub" id="sdsub" style="margin-bottom:10px">
+    <button class="shsub-b on" type="button" data-sdpan="day"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> ภาพรวมรายวัน</button>
+    <button class="shsub-b" type="button" data-sdpan="shift"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg> รายผลัด (เป้า vs ยอดจริง)</button>
+  </div>
   <div id="sd_body"><div class="empty">เลือกช่วงวันแล้วกด "ดู"</div></div>
+  <div id="sds_body" style="display:none"></div>
 </div>
 
 <!-- แดชบอร์ดตรวจร้าน QSSI -->
@@ -4001,7 +4007,7 @@ async function post(payload){
   if(MGR_MODE && payload && typeof payload==='object' && 'branch' in payload) payload.branch = MGR_BRANCH;
   // ★ 6 ต.ค. 69 — หน้ายอดขายใช้ชื่อพารามิเตอร์ branch_id (คนละตัวกับ branch ข้างบน) — บังคับสาขาตัวเองซ้ำอีกชั้น
   //   เผื่อหน้าจอส่งค่าว่างมา (= ทุกสาขา) ด้วยเหตุใดก็ตาม
-  if(MGR_MODE && payload && payload.action==='hr_sales_list') payload.branch_id = MGR_BRANCH;
+  if(MGR_MODE && payload && (payload.action==='hr_sales_list'||payload.action==='hr_sales_shift')) payload.branch_id = MGR_BRANCH;
   // ★ ทุก action ของหน้าเงินเดือน แนบรหัสที่ปลดล็อกไว้ไปด้วยเสมอ
   if(payload && typeof payload==='object' && typeof payload.action==='string'
      && payload.action.indexOf('hr_payroll_')===0 && !('pay_pass' in payload)) payload.pay_pass = PAY_PASS;
@@ -18620,9 +18626,11 @@ async function loadSalesDash(){
   }
   if(!$('sd_end').value && $('sd_month')){ applySdMonth($('sd_month').value); }
   if(!$('sd_body').dataset.wired){
-    $('sd_go').onclick=()=>{ if($('sd_month'))$('sd_month').value=''; drawSalesDash(); };
-    $('sd_branch').onchange=drawSalesDash;
-    $('sd_month').onchange=()=>{ if($('sd_month').value){ applySdMonth($('sd_month').value); drawSalesDash(); } };
+    const redraw=()=>{ const on=document.querySelector('#sdsub .shsub-b.on'); if(on && on.dataset.sdpan==='shift') drawSalesShift(); else drawSalesDash(); };
+    $('sd_go').onclick=()=>{ if($('sd_month'))$('sd_month').value=''; redraw(); };
+    $('sd_branch').onchange=redraw;
+    $('sd_month').onchange=()=>{ if($('sd_month').value){ applySdMonth($('sd_month').value); redraw(); } };
+    $('sdsub').querySelectorAll('.shsub-b').forEach(b=>b.onclick=()=>sdsTab(b.dataset.sdpan));
     $('sd_start').onchange=()=>{ if($('sd_month'))$('sd_month').value=''; };
     $('sd_end').onchange=()=>{ if($('sd_month'))$('sd_month').value=''; };
     $('sd_body').dataset.wired='1';
@@ -18643,6 +18651,143 @@ function sdFixSales(x){
   if(t && s>0 && s<t/50 && s*1000>t/3 && s*1000<3*t) return {s:s*1000, fix:'ยอดรวม '+s+' → '+_thb(s*1000)+' (จุดแทนจุลภาค)'};
   return {s, fix:''};
 }
+// ================= ★ 17 พ.ย. 69 — ยอดขายรายผลัด (เป้า vs ยอดจริง) =================
+//   ใช้ตัวกรองชุดเดียวกับหน้าภาพรวม (สาขา + ช่วงวัน) · เปิดมาครั้งแรกให้เป็นเดือนปัจจุบัน
+//   ซ่อมเลขที่พิมพ์ผิดจากไลน์ด้วย sdFixSales ชุดเดียวกับหน้ารายวัน ตัวเลขสองหน้าจะได้ตรงกัน
+const SDS_SHIFTS=['เช้า','บ่าย','ดึก'];
+const SDS_COLOR={'เช้า':'#f59e0b','บ่าย':'#2563eb','ดึก':'#7c3aed'};
+function sdsPctCls(p){ return p==null?'':(p>=100?'ok':(p>=90?'warn':'bad')); }
+function sdsTab(name){
+  ['day','shift'].forEach(k=>{ const el=$(k==='day'?'sd_body':'sds_body'); if(el) el.style.display=(k===name)?'':'none'; });
+  document.querySelectorAll('#sdsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.sdpan===name));
+  if(name==='shift') drawSalesShift();
+}
+async function drawSalesShift(){
+  const box=$('sds_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_sales_shift', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const all=(r.rows||[]).filter(x=>x.shift_code);            // เอาเฉพาะ เช้า/บ่าย/ดึก (แถว "สิ้นวัน" ใช้ในหน้ารายวัน)
+  if(!all.length){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">ช่วงนี้ยังไม่มียอดขายรายผลัด — นำเข้าแชทกลุ่มไลน์ก่อน</div></div></div>'; return; }
+  const SANE=2000000;
+  const rows=[];
+  all.forEach(x=>{
+    const f=sdFixSales(x); const sale=f.s, tgt=+x.target_total||0;
+    if(sale>SANE||tgt>SANE) return;                           // ตัดแถวที่เลขเพี้ยนจนใช้ไม่ได้
+    rows.push(Object.assign({},x,{ sale, tgt, pct:(tgt>0&&sale>0)?(sale/tgt*100):null }));
+  });
+  const multi=!$('sd_branch').value;
+  const dates=[...new Set(rows.map(x=>x.sale_date))].sort();
+
+  // ---- สรุปต่อผลัด ----
+  const sum=sh=>{
+    const a=rows.filter(x=>x.shift===sh);
+    const vt=a.filter(x=>x.tgt>0&&x.sale>0);
+    const S=vt.reduce((s,x)=>s+x.sale,0), T=vt.reduce((s,x)=>s+x.tgt,0);
+    const cu=a.filter(x=>x.customers>0);
+    const nDay=new Set(a.map(x=>x.branch_id+'|'+x.sale_date)).size;
+    return { sh, n:nDay, nt:vt.length, hit:vt.filter(x=>x.sale>=x.tgt).length,
+      avgS:vt.length?S/vt.length:0, avgT:vt.length?T/vt.length:0, pct:T?S/T*100:null,
+      cu:cu.length?cu.reduce((s,x)=>s+x.customers,0)/cu.length:0,
+      head:(cu.length&&cu.reduce((s,x)=>s+x.customers,0))?cu.reduce((s,x)=>s+x.sale,0)/cu.reduce((s,x)=>s+x.customers,0):0,
+      staff:(()=>{ const z=a.filter(x=>x.staff_n>0); return z.length?z.reduce((s,x)=>s+x.staff_n,0)/z.length:0; })() };
+  };
+  const S3=SDS_SHIFTS.map(sum);
+  const cards=S3.map(x=>{
+    const cls=sdsPctCls(x.pct);
+    return '<div class="card" style="padding:0;border-top:4px solid '+SDS_COLOR[x.sh]+'">'
+      +'<div class="card-b" style="padding:13px 15px">'
+      +'<div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:15px;font-weight:700">ผลัด'+esc(x.sh)+'</div>'
+        +'<span class="pill '+cls+'" style="font-size:13px">'+(x.pct==null?'—':(Math.round(x.pct*10)/10)+'% ของเป้า')+'</span></div>'
+      +'<div style="font-size:24px;font-weight:700;margin-top:6px">'+_thb(x.avgS)+' <span style="font-size:13px;font-weight:400;color:var(--muted)">บาท/วัน (เฉลี่ย)</span></div>'
+      +'<div style="font-size:13px;color:var(--muted);margin-top:2px">เป้าเฉลี่ย '+_thb(x.avgT)+' บาท/วัน</div>'
+      +'<div style="font-size:13px;margin-top:7px">ถึงเป้า <b>'+x.hit+'</b> จาก '+x.nt+' วัน'
+        +(x.nt?(' <span style="color:var(--muted)">('+Math.round(x.hit/x.nt*100)+'%)</span>'):'')+'</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:4px">ลูกค้าเฉลี่ย '+_thb(x.cu)+' คน · ต่อหัว '+(x.head?plB(Math.round(x.head*100)/100):'—')+' บาท'
+        +(x.staff?(' · คนในกะเฉลี่ย '+(Math.round(x.staff*10)/10)):'')+'</div>'
+      +'</div></div>';
+  }).join('');
+
+  // ---- กราฟแนวโน้ม % ของเป้า รายวัน 3 ผลัด ----
+  const byDay={};
+  rows.forEach(x=>{ const k=x.sale_date+'|'+x.shift; const o=byDay[k]||(byDay[k]={s:0,t:0}); if(x.tgt>0&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; } });
+  const series=SDS_SHIFTS.map(sh=>({ sh, pts:dates.map(d=>{ const o=byDay[d+'|'+sh]; return (o&&o.t)?(o.s/o.t*100):null; }) }));
+  const W=1000,H=260,PL=42,PR=12,PT=14,PB=26;
+  const vals=series.flatMap(x=>x.pts).filter(v=>v!=null);
+  const lo=Math.min(80,Math.floor((Math.min(...vals,100)-5)/10)*10), hi=Math.max(120,Math.ceil((Math.max(...vals,100)+5)/10)*10);
+  const px=i=>PL+(dates.length<2?(W-PL-PR)/2:i*(W-PL-PR)/(dates.length-1));
+  const py=v=>PT+(hi-v)/(hi-lo)*(H-PT-PB);
+  const grid=[lo,100,hi].concat(hi>=150?[150]:[]).filter((v,i,a)=>a.indexOf(v)===i).map(v=>
+    '<line x1="'+PL+'" y1="'+py(v).toFixed(1)+'" x2="'+(W-PR)+'" y2="'+py(v).toFixed(1)+'" stroke="'+(v===100?'#111':'#e5e7eb')+'" stroke-width="'+(v===100?1.4:1)+'"'+(v===100?' stroke-dasharray="5 4"':'')+'/>'
+    +'<text x="'+(PL-6)+'" y="'+(py(v)+4).toFixed(1)+'" text-anchor="end" font-size="11" fill="#6b7280">'+v+'%</text>').join('');
+  const paths=series.map(sr=>{
+    let d='',open=false;
+    sr.pts.forEach((v,i)=>{ if(v==null){ open=false; return; } d+=(open?'L':'M')+px(i).toFixed(1)+' '+py(v).toFixed(1)+' '; open=true; });
+    const dots=sr.pts.map((v,i)=>v==null?'':'<circle cx="'+px(i).toFixed(1)+'" cy="'+py(v).toFixed(1)+'" r="2.6" fill="'+SDS_COLOR[sr.sh]+'"/>').join('');
+    return (d?'<path d="'+d.trim()+'" fill="none" stroke="'+SDS_COLOR[sr.sh]+'" stroke-width="2" stroke-linejoin="round"/>':'')+dots;
+  }).join('');
+  const step=Math.max(1,Math.ceil(dates.length/12));
+  const xlab=dates.map((d,i)=>(i%step)?'':'<text x="'+px(i).toFixed(1)+'" y="'+(H-7)+'" text-anchor="middle" font-size="10.5" fill="#6b7280">'+(+d.slice(8,10))+'/'+(+d.slice(5,7))+'</text>').join('');
+  const legend=SDS_SHIFTS.map(sh=>'<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;font-size:13px"><span style="width:12px;height:3px;background:'+SDS_COLOR[sh]+';border-radius:2px"></span>'+sh+'</span>').join('')
+    +'<span style="font-size:12.5px;color:var(--muted)">เส้นประ = เป้า 100%</span>';
+  const chart='<div class="card" style="margin:12px 0"><div class="card-b" style="padding:13px 15px">'
+    +'<div style="font-size:14px;font-weight:600;margin-bottom:3px">แนวโน้ม % ของเป้า รายวัน</div>'
+    +'<div style="margin-bottom:8px">'+legend+'</div>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+grid+paths+xlab+'</svg></div></div>';
+
+  // ---- ตารางแยกสาขา × ผลัด (เฉพาะตอนดูหลายสาขา) ----
+  let brTable='';
+  if(multi){
+    const g={};
+    rows.forEach(x=>{ const k=x.branch_id+'|'+x.shift; const o=g[k]||(g[k]={b:x.branch_name,sh:x.shift,s:0,t:0,n:0,hit:0});
+      if(x.tgt>0&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; o.n++; if(x.sale>=x.tgt) o.hit++; } });
+    const list=Object.values(g).filter(o=>o.n).sort((a,b)=>a.b===b.b?(SDS_SHIFTS.indexOf(a.sh)-SDS_SHIFTS.indexOf(b.sh)):(a.b<b.b?-1:1));
+    brTable='<div class="card" style="margin-bottom:12px"><div class="tablewrap"><table>'
+      +'<thead><tr><th>สาขา</th><th>ผลัด</th><th>ยอดเฉลี่ย/วัน</th><th>เป้าเฉลี่ย/วัน</th><th>% ของเป้า</th><th>ถึงเป้า</th></tr></thead><tbody>'
+      +list.map(o=>{ const pct=o.t?o.s/o.t*100:null;
+        return '<tr><td>'+esc(o.b)+'</td><td><span style="color:'+SDS_COLOR[o.sh]+';font-weight:600">'+esc(o.sh)+'</span></td>'
+          +'<td class="mono">'+_thb(o.s/o.n)+'</td><td class="mono">'+_thb(o.t/o.n)+'</td>'
+          +'<td class="mono"><span class="pill '+sdsPctCls(pct)+'">'+(pct==null?'—':(Math.round(pct*10)/10)+'%')+'</span></td>'
+          +'<td class="mono">'+o.hit+'/'+o.n+'</td></tr>'; }).join('')
+      +'</tbody></table></div></div>';
+  }
+
+  // ---- ตารางรายวัน แยกผลัด ----
+  const key=x=>x.branch_id+'|'+x.sale_date;
+  const dayMap={};
+  rows.forEach(x=>{ const o=dayMap[key(x)]||(dayMap[key(x)]={b:x.branch_name,d:x.sale_date,sh:{}}); o.sh[x.shift]=x; });
+  const drows=Object.values(dayMap).sort((a,b)=> a.d===b.d ? (a.b<b.b?-1:1) : (a.d<b.d?1:-1));
+  const TH_D=['อา','จ','อ','พ','พฤ','ศ','ส'];
+  const cell=x=>{
+    if(!x) return '<td colspan="2" style="color:var(--muted);text-align:center">—</td>';
+    const pct=x.pct;
+    return '<td class="mono" style="white-space:nowrap">'+_thb(x.sale)+'<div style="font-size:11px;color:var(--muted)">เป้า '+_thb(x.tgt)+'</div></td>'
+      +'<td style="white-space:nowrap"><span class="pill '+sdsPctCls(pct)+'">'+(pct==null?'—':Math.round(pct)+'%')+'</span>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(x.lead_name?esc(x.lead_name):'ไม่มีหัวหน้าผลัด')+(x.staff_n?(' · '+x.staff_n+' คน'):'')+'</div></td>';
+  };
+  const dayTable='<div class="card"><div class="tablewrap"><table>'
+    +'<thead><tr><th rowspan="2">วันที่</th>'+(multi?'<th rowspan="2">สาขา</th>':'')
+      +SDS_SHIFTS.map(sh=>'<th colspan="2" style="text-align:center;border-left:2px solid var(--line2);color:'+SDS_COLOR[sh]+'">'+sh+'</th>').join('')
+      +'<th rowspan="2">รวม 3 ผลัด</th></tr>'
+    +'<tr>'+SDS_SHIFTS.map(()=>'<th style="border-left:2px solid var(--line2);font-size:12px">ยอด / เป้า</th><th style="font-size:12px">% · ใครคุมผลัด</th>').join('')+'</tr></thead><tbody>'
+    +drows.map(o=>{
+      const tot=SDS_SHIFTS.reduce((a,sh)=>{ const x=o.sh[sh]; if(x&&x.tgt>0&&x.sale>0){ a.s+=x.sale; a.t+=x.tgt; } return a; },{s:0,t:0});
+      const tp=tot.t?tot.s/tot.t*100:null;
+      const wd=TH_D[new Date(o.d+'T00:00:00Z').getUTCDay()];
+      return '<tr><td style="white-space:nowrap">'+(+o.d.slice(8,10))+'/'+(+o.d.slice(5,7))+' <span style="color:var(--muted);font-size:11.5px">'+wd+'</span></td>'
+        +(multi?('<td style="font-size:12.5px">'+esc(o.b)+'</td>'):'')
+        +SDS_SHIFTS.map(sh=>cell(o.sh[sh])).join('')
+        +'<td class="mono" style="white-space:nowrap">'+_thb(tot.s)+' <span class="pill '+sdsPctCls(tp)+'">'+(tp==null?'—':Math.round(tp)+'%')+'</span></td></tr>';
+    }).join('')
+    +'</tbody></table></div></div>';
+
+  const note='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#1e3a8a;line-height:1.7">'
+    +'<b>อ่านยังไง</b> — ตัวเลขทั้งหมดมาจากแบบฟอร์มแจ้งยอดขายที่แต่ละผลัดส่งในกลุ่มไลน์ (เป้าและยอดจริงของผลัดนั้น ๆ) · '
+    +'<b>% ของเป้า</b> = ยอดจริง ÷ เป้า ของผลัดนั้น — เขียว = ถึงเป้า · ส้ม = 90–99% · แดง = ต่ำกว่า 90% · '
+    +'<b>ใครคุมผลัด</b> = หัวหน้าผลัดที่กดรับหน้าที่ในแอป และจำนวนคนที่ถูกจัดเวรในกะนั้น'
+    +'</div>';
+  box.innerHTML=note+'<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-bottom:12px">'+cards+'</div>'+chart+brTable+dayTable;
+}
+
 async function drawSalesDash(){
   $('sd_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_sales_list', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
