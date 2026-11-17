@@ -1672,15 +1672,18 @@
     const cyc = cycleRange('current');
     let qEmp = sb().from('employees').select('emp_id,name,photo_url,active,branch_id,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + d).or('start_date.is.null,start_date.lte.' + d);
     let qToday = sb().from('attendance').select('emp_id,shift_id,branch_id,check_in,check_out,late_min,status,extend_until').eq('work_date', d);
-    let qD30 = sb().from('attendance').select('work_date,late_min,ot_hours,branch_id').gte('work_date', addDays(today, -29)).lte('work_date', today);
-    let qCyc = sb().from('attendance').select('emp_id,late_min,branch_id').gte('work_date', cyc.start).lte('work_date', cyc.end);
+    // ★ 17 พ.ย. 69 — ลงเวลา 30 วัน / ทั้งรอบ เกิน 1000 แถวแล้ว ต้องอ่านทีละหน้า
+    const qD30 = () => { let x = sb().from('attendance').select('work_date,late_min,ot_hours,branch_id').gte('work_date', addDays(today, -29)).lte('work_date', today).order('id');
+      if (branch) x = x.eq('branch_id', branch); return x; };
+    const qCyc = () => { let x = sb().from('attendance').select('emp_id,late_min,branch_id').gte('work_date', cyc.start).lte('work_date', cyc.end).order('id');
+      if (branch) x = x.eq('branch_id', branch); return x; };
     let qSch = sb().from('schedules').select('emp_id,shift_id,branch_id').eq('work_date', d);
-    if (branch) { qEmp = qEmp.eq('branch_id', branch); qToday = qToday.eq('branch_id', branch); qD30 = qD30.eq('branch_id', branch); qCyc = qCyc.eq('branch_id', branch); qSch = qSch.eq('branch_id', branch); }
+    if (branch) { qEmp = qEmp.eq('branch_id', branch); qToday = qToday.eq('branch_id', branch); qSch = qSch.eq('branch_id', branch); }
     const [empsR, shR, brR, todayR, d30R, cycR, schR, upLvR] = await Promise.all([
       qEmp,
       sb().from('shifts').select('shift_id,name,start_time,end_time'),
       sb().from('branches').select('branch_id,name'),
-      qToday, qD30, qCyc, qSch,
+      qToday, fetchPaged(qD30).then(d => ({ data: d })), fetchPaged(qCyc).then(d => ({ data: d })), qSch,
       sb().from('leaves').select('emp_id,type,start_date,end_date,status').eq('status', 'approved').gte('end_date', today).lte('start_date', addDays(today, 14)),  // ลาที่จะถึงใน 14 วัน
     ]);
     if (empsR.error) throw empsR.error;
@@ -2121,29 +2124,35 @@
 
   // ---------- REPORT ----------
   async function hrReport(f) {
-    let q = sb().from('attendance')
+    // ★ 17 พ.ย. 69 — ทุก query ที่ดึง "ทั้งรอบ/ทั้งร้าน" ต้องอ่านทีละหน้า (fetchPaged)
+    //   PostgREST คืนสูงสุด 1000 แถวต่อครั้ง · ลงเวลา 1 รอบ (55 คน × 28 วัน) เกิน 1000 แล้ว
+    //   แถวที่เกินถูกตัดทิ้งเงียบ ๆ → วันที่มาทำงานจริงหาย → ขึ้น "ขาดงาน" ปลอม (ดูเคส 22/10/2569)
+    const q = () => { let x = sb().from('attendance')
       .select('*, employees(name,photo_url,branch_id), shifts(name,day_value), branches(name)')
       .gte('work_date', f.start).lte('work_date', f.end)
-      .order('work_date', { ascending: false });
-    if (f.emp_id) q = q.eq('emp_id', f.emp_id);
-    if (f.branch_id) q = q.eq('branch_id', f.branch_id);
-    if (f.shift_id) q = q.eq('shift_id', f.shift_id);
+      .order('work_date', { ascending: false }).order('id');
+      if (f.emp_id) x = x.eq('emp_id', f.emp_id);
+      if (f.branch_id) x = x.eq('branch_id', f.branch_id);
+      if (f.shift_id) x = x.eq('shift_id', f.shift_id);
+      return x; };
     const today = bkkToday();
     // ตารางเวร + ใบลา ในช่วง (ใช้คำนวณ "ขาดงาน" และ "ลา" สำหรับ payroll)
-    let sq = sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', f.start).lte('work_date', f.end);   // ★ ดึง note มาด้วย ไว้กรองเวรเฉพาะกิจ
-    if (f.emp_id) sq = sq.eq('emp_id', f.emp_id);
-    if (f.shift_id) sq = sq.eq('shift_id', f.shift_id);   // ★ กรองกะด้วย ไม่งั้นขาด/ลา จะนับมาจากกะอื่น
+    const sq = () => { let x = sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', f.start).lte('work_date', f.end).order('id');   // ★ ดึง note มาด้วย ไว้กรองเวรเฉพาะกิจ
+      if (f.emp_id) x = x.eq('emp_id', f.emp_id);
+      if (f.shift_id) x = x.eq('shift_id', f.shift_id);   // ★ กรองกะด้วย ไม่งั้นขาด/ลา จะนับมาจากกะอื่น
+      return x; };
     let lq = sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', f.end).gte('end_date', f.start);
     if (f.emp_id) lq = lq.eq('emp_id', f.emp_id);
     // วันที่มาทำงานจริง (ไม่อิงฟิลเตอร์สาขา/กะ) ใช้คำนวณขาดงานให้ถูก แม้ไปทำแทนสาขาอื่น
-    let wq = sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', f.start).lte('work_date', f.end);
-    if (f.emp_id) wq = wq.eq('emp_id', f.emp_id);
+    const wq = () => { let x = sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', f.start).lte('work_date', f.end).order('id');
+      if (f.emp_id) x = x.eq('emp_id', f.emp_id);
+      return x; };
     const [{ data, error }, brR, schR, lvR, empR, wR, shR2, hdR] = await Promise.all([
-      q,
+      fetchPaged(q).then(d => ({ data: d })),
       sb().from('branches').select('branch_id,name'),
-      sq, lq,
+      fetchPaged(sq).then(d => ({ data: d })), lq,
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,is_manager,weekly_off,start_date,end_date'),
-      wq,
+      fetchPaged(wq).then(d => ({ data: d })),
       sb().from('shifts').select('shift_id,day_value,name,start_time,end_time'),
       sb().from('holidays').select('date,name').eq('active', true).gte('date', f.start).lte('date', f.end),   // วันหยุดบริษัทในช่วง
     ]);
@@ -2366,10 +2375,10 @@
     try { const { data: wv } = await sb().from('discipline_waivers').select('emp_id,reason,waived_by').eq('cycle_start', cyc.start); (wv || []).forEach(w => { waiverBy[w.emp_id] = { reason: w.reason || '', by: w.waived_by || '' }; }); } catch (_e) { /* ยังไม่ได้รัน discipline_waivers.sql */ }
     const [empsR, attR, holR, lvR, schR, shDVR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,photo_url,weekly_off,start_date,end_date,branch_id,is_manager').eq('active', true).or('end_date.is.null,end_date.gte.' + today),   // ★ ตัดคนที่สิ้นสุดการทำงานแล้ว (end_date < วันนี้) ออกจากบอร์ดวินัย
-      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,shift_id,early_out_min,day_value' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff),
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,ot_hours,shift_id,early_out_min,day_value' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),
       sb().from('holidays').select('date').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
-      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
+      fetchPaged(() => sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
     ]);
     if (empsR.error) throw empsR.error;
@@ -3306,7 +3315,7 @@
     if (actor.role === 'invalid') return { ok: false, error: 'PIN ไม่ถูกต้อง' };
     const [empsR, schR, brR, shR, hlpR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,default_shift,branch_id,phone,end_date,start_date').eq('active', true).or('end_date.is.null,end_date.gte.' + start).or('start_date.is.null,start_date.lte.' + end).order('emp_id'),
-      sb().from('schedules').select('*').gte('work_date', start).lte('work_date', end),
+      fetchPaged(() => sb().from('schedules').select('*').gte('work_date', start).lte('work_date', end).order('id')).then(d => ({ data: d })),
       sb().from('branches').select('branch_id,name').order('branch_id'),
       sb().from('shifts').select('shift_id,name').order('start_time'),
       // ★ 24 ก.ย. 69 — คนที่หัวหน้าผลัดกดเพิ่มเข้ามาช่วยงาน (คนละตารางกับเวร ไม่นับเป็นวันทำงาน)
@@ -3544,10 +3553,11 @@
     // ★ แก้ 15 ก.ย. 69 — เดิมไม่กรองสาขา ทำให้กด "คัดลอกสัปดาห์" ตอนกรองสาขาเดียว
     //   ไปลบตารางเวรของ "ทั้ง 3 สาขา" ในสัปดาห์ปลายทาง กู้คืนไม่ได้
     const fromEnd = addDays(fromStart, 6);
-    let selQ = sb().from('schedules').select('*').gte('work_date', fromStart).lte('work_date', fromEnd);
-    if (branchId) selQ = selQ.eq('branch_id', branchId);
-    const { data, error } = await selQ;
-    if (error) throw error;
+    const selQ = () => { let x = sb().from('schedules').select('*').gte('work_date', fromStart).lte('work_date', fromEnd).order('id');
+      if (branchId) x = x.eq('branch_id', branchId);
+      return x; };
+    const data = await fetchPaged(selQ);
+    const error = null;
     const offset = daysBetween(fromStart, toStart) - 1; // จำนวนวันเลื่อน
     const rows = (data || []).map(s => ({
       emp_id: s.emp_id, work_date: addDays(s.work_date, offset),
@@ -3592,10 +3602,10 @@
     f = f || {};
     const start = f.start, end = f.end;
     const [attR, empsR, brR, schR] = await Promise.all([
-      sb().from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in,late_min').gte('work_date', start).lte('work_date', end).not('check_in', 'is', null),
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in,late_min').gte('work_date', start).lte('work_date', end).not('check_in', 'is', null).order('id')).then(d => ({ data: d })),
       sb().from('employees').select('emp_id,name,branch_id'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('schedules').select('emp_id,work_date,note,branch_id').gte('work_date', start).lte('work_date', end),
+      fetchPaged(() => sb().from('schedules').select('emp_id,work_date,note,branch_id').gte('work_date', start).lte('work_date', end).order('id')).then(d => ({ data: d })),
     ]);
     if (attR.error) throw attR.error;
     const home = {}, empName = {}, brName = {};
@@ -4350,8 +4360,8 @@
       //   เดิม .eq('active', true) → คนลาออกหายจากคะแนน → หน้าเงินเดือน HR ได้เบี้ยวินัย 0 / สถิติว่าง ทั้งที่รอบนั้นยังต้องจ่าย
       //   (หน้าคะแนน/วินัยซ่อนคนที่ ended อยู่แล้ว ไม่รก)
       sb().from('employees').select('emp_id,name,nickname,photo_url,branch_id,start_date,end_date,is_manager,active').or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end),
-      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,day_value,shift_id' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff),
-      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,day_value,shift_id' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),
+      fetchPaged(() => sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),   // ★ note ไว้กรองเวรเฉพาะกิจ
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb().from('score_events').select('*').gte('event_date', cyc.start).lte('event_date', cyc.end),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time'),
@@ -5254,8 +5264,8 @@
     const back = cyc.start;
     const endEff = cyc.end < today ? cyc.end : today;
     const [schR, attR, lvR] = await Promise.all([
-      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', back).lte('work_date', endEff),   // ★ note ไว้กรองเวรเฉพาะกิจ
-      sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', back).lte('work_date', endEff),
+      fetchPaged(() => sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', back).lte('work_date', endEff).order('id')).then(d => ({ data: d })),   // ★ note ไว้กรองเวรเฉพาะกิจ
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date,check_in').not('check_in', 'is', null).gte('work_date', back).lte('work_date', endEff).order('id')).then(d => ({ data: d })),
       sb().from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').gte('end_date', back),
     ]);
     const workedBy = {}; (attR.data || []).forEach(a => { (workedBy[a.emp_id] || (workedBy[a.emp_id] = new Set())).add(a.work_date); });
@@ -11203,7 +11213,7 @@
     const [empR, brR, attR, mtR, defR, gdR, dscR, ssR, auR, slR, bizR, shR] = await Promise.all([
       sb().from('employees').select('emp_id,name,nickname,branch_id,is_manager,active,start_date,photo_url').eq('active', true),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,branch_id').gte('work_date', start).lte('work_date', endEff),
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date,check_in,check_out,late_min,branch_id').gte('work_date', start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),
       sb().from('mgr_tasks').select('branch_id,assignee_emp,status,due_date,emp_submitted_at,done_at,created_at,title'),
       sb().from('task_defs').select('id,title,mgr_owner,active'),
       sb().from('goods_receipts').select('branch_id,diff,work_date,no_delivery').gte('work_date', start).lte('work_date', endEff),
@@ -11666,7 +11676,7 @@
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
       sb().from('payroll_installment_charges').select('*').lte('period_start', cyc.start),
-      sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ตารางเวร — ใช้เครดิตควบกะที่สแกนไม่ครบ · ★ note ไว้กรองเวรเฉพาะกิจ
+      fetchPaged(() => sb().from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),   // ตารางเวร — ใช้เครดิตควบกะที่สแกนไม่ครบ · ★ note ไว้กรองเวรเฉพาะกิจ
     ]);
     const profM = {}; (profR.data || []).forEach(x => { profM[x.emp_id] = x; });
     const brName = {}; (brR.data || []).forEach(b => { brName[b.branch_id] = b.name; });
@@ -12100,13 +12110,14 @@
     d = d || {};
     if (!d.start || !d.end) return { error: 'ระบุช่วงวันที่' };
     const mode = d.mode === 'manual' ? 'manual' : 'schedule';
-    const { data: exist } = await sb().from('attendance').select('emp_id,work_date').gte('work_date', d.start).lte('work_date', d.end);
+    const exist = await fetchPaged(() => sb().from('attendance').select('emp_id,work_date').gte('work_date', d.start).lte('work_date', d.end).order('id'));
     const existSet = new Set((exist || []).map(r => r.emp_id + '|' + r.work_date));
     let candidates = [];
     if (mode === 'schedule') {
-      let q = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', d.start).lte('work_date', d.end);
-      if (d.branch) q = q.eq('branch_id', d.branch);
-      const { data: sch } = await q;
+      const q = () => { let x = sb().from('schedules').select('emp_id,work_date,shift_id,branch_id,note').gte('work_date', d.start).lte('work_date', d.end).order('id');
+        if (d.branch) x = x.eq('branch_id', d.branch);
+        return x; };
+      const sch = await fetchPaged(q);
       // ★ 20 ก.ย. 69 — ไม่เติมเวลาย้อนหลังให้ "เวรเพิ่มเข้ากะเฉพาะกิจ" ที่ไม่มีการลงเวลา
       //   เวรพวกนี้เกิดจากหัวหน้าผลัดกดเพิ่มคนเพื่อมอบงาน ไม่ใช่เวรที่ HR จัด → ไม่ควรสร้างใบลงเวลาปลอม
       candidates = (sch || []).filter(s => s.note !== ADHOC_SCHED_NOTE || existSet.has(s.emp_id + '|' + s.work_date))
