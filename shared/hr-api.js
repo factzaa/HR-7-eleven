@@ -387,6 +387,7 @@
         case 'hr_line_import':       return await hrLineImport(p);
         case 'hr_line_setcat':       return await hrLineSetCat(p);
         case 'hr_sales_list':        return await hrSalesList(p);
+        case 'hr_sales_shift':       return await hrSalesShift(p);
         case 'hr_audit_list':        return await hrAuditList(p);
         case 'hr_line_backfill':     return await hrLineBackfill(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
@@ -5117,6 +5118,61 @@
     const rows = (data || []).map(r => Object.assign({}, r, { branch_name: bn[r.branch_id] || r.branch_id }));
     return { ok: true, rows };
   }
+  // ★ 17 พ.ย. 69 — ยอดขายแยกรายผลัด (เป้า vs ยอดจริง) + ใครคุมผลัดนั้น
+  //   ข้อมูลเดิมใน sales_daily มีรายผลัดอยู่แล้ว (เช้า/บ่าย/ดึก/สิ้นวัน) แต่หน้าเดิมรวบเป็นรายวัน
+  //   ที่เพิ่มคือผูกกับ "คนทำงาน": หัวหน้าผลัดจาก shift_leads + จำนวนคนในกะจากตารางเวร
+  //   ชื่อผลัดในรายงานไลน์เป็นภาษาไทย ส่วนกะในระบบเป็นรหัส (M/A/N + กะย่อย เช่น M8, N17) → จับคู่ผ่าน main_shift
+  const SALES_SHIFT_CODE = { 'เช้า': 'M', 'บ่าย': 'A', 'ดึก': 'N' };
+  async function hrSalesShift(p) {
+    p = p || {};
+    const start = p.start, end = p.end;
+    if (!start || !end) return { ok: false, error: 'ระบุช่วงวันที่' };
+    const br = p.branch_id ? String(p.branch_id) : '';
+    const qSales = () => { let x = sb().from('sales_daily')
+      .select('branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,per_head')
+      .gte('sale_date', start).lte('sale_date', end).order('id');
+      if (br) x = x.eq('branch_id', br); return x; };
+    const qLead = () => { let x = sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id,emp_name')
+      .gte('work_date', start).lte('work_date', end).order('id');
+      if (br) x = x.eq('branch_id', br); return x; };
+    const qSch = () => { let x = sb().from('schedules').select('emp_id,branch_id,work_date,shift_id,note')
+      .gte('work_date', start).lte('work_date', end).order('id');
+      if (br) x = x.eq('branch_id', br); return x; };
+    const qAtt = () => sb().from('attendance').select('emp_id,work_date,check_in')
+      .not('check_in', 'is', null).gte('work_date', start).lte('work_date', end).order('id');
+    const [sales, leads, sch, att, shR, brR] = await Promise.all([
+      fetchPaged(qSales), fetchPaged(qLead), fetchPaged(qSch), fetchPaged(qAtt),
+      sb().from('shifts').select('shift_id,name,main_shift'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    const grpOf = {}; (shR.data || []).forEach(x => { grpOf[x.shift_id] = x.main_shift || x.shift_id; });
+    const bn = {}; (brR.data || []).forEach(b => { bn[b.branch_id] = b.name; });
+    // จำนวนคนในกะ — ตัดเวรเฉพาะกิจที่ไม่มีใครมาลงเวลา (กติกาเดียวกับหน้าวินัย)
+    const staff = {};
+    dropPhantomAdhoc(sch, workedKeySet(att)).forEach(x => {
+      if (!x.shift_id) return;
+      const g = grpOf[x.shift_id] || x.shift_id;
+      const k = (x.branch_id || '') + '|' + x.work_date + '|' + g;
+      (staff[k] || (staff[k] = new Set())).add(x.emp_id);
+    });
+    const leadBy = {};
+    leads.forEach(l => { leadBy[(l.branch_id || '') + '|' + l.work_date + '|' + (grpOf[l.shift_id] || l.shift_id)] = l.emp_name || l.emp_id; });
+    const rows = sales.map(x => {
+      const code = SALES_SHIFT_CODE[x.shift] || null;
+      const k = (x.branch_id || '') + '|' + x.sale_date + '|' + code;
+      return {
+        branch_id: x.branch_id, branch_name: bn[x.branch_id] || x.branch_id,
+        sale_date: x.sale_date, shift: x.shift, shift_code: code,
+        target_total: +x.target_total || 0, sales_total: +x.sales_total || 0,
+        sales_product: +x.sales_product || 0, sales_card: +x.sales_card || 0,
+        customers: +x.customers || 0, per_head: +x.per_head || 0,
+        lead_name: code ? (leadBy[k] || '') : '',
+        staff_n: code ? ((staff[k] || { size: 0 }).size) : 0,
+      };
+    });
+    return { ok: true, start, end, rows };
+  }
+
   // ดึงรายงานตรวจร้าน QSSI (แดชบอร์ด/นิดา)
   async function hrAuditList(p) {
     let q = sb().from('audit_reports').select('*').order('inspect_date', { ascending: false });
