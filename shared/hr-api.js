@@ -5129,10 +5129,12 @@
     const start = p.start, end = p.end;
     if (!start || !end) return { ok: false, error: 'ระบุช่วงวันที่' };
     const br = p.branch_id ? String(p.branch_id) : '';
-    const qSales = () => { let x = sb().from('sales_daily')
-      .select('branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,per_head,edited_at,edited_by,edit_note')
-      .gte('sale_date', start).lte('sale_date', end).order('id');
+    // ★ คอลัมน์ edited_* มีเฉพาะเมื่อรัน supabase/sales_edit.sql แล้ว — ยังไม่รันก็ต้องใช้งานได้ตามปกติ
+    const SALES_COLS = 'branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,per_head';
+    const qSalesCols = (cols) => () => { let x = sb().from('sales_daily')
+      .select(cols).gte('sale_date', start).lte('sale_date', end).order('id');
       if (br) x = x.eq('branch_id', br); return x; };
+    const qSales = qSalesCols(SALES_COLS + ',edited_at,edited_by,edit_note');
     const qLead = () => { let x = sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id,emp_name')
       .gte('work_date', start).lte('work_date', end).order('id');
       if (br) x = x.eq('branch_id', br); return x; };
@@ -5141,8 +5143,11 @@
       if (br) x = x.eq('branch_id', br); return x; };
     const qAtt = () => sb().from('attendance').select('emp_id,work_date,check_in')
       .not('check_in', 'is', null).gte('work_date', start).lte('work_date', end).order('id');
+    let salesP;
+    try { salesP = await fetchPaged(qSales); }
+    catch (e) { salesP = await fetchPaged(qSalesCols(SALES_COLS)); }   // ยังไม่ได้รัน sales_edit.sql
     const [sales, leads, sch, att, shR, brR] = await Promise.all([
-      fetchPaged(qSales), fetchPaged(qLead), fetchPaged(qSch), fetchPaged(qAtt),
+      salesP, fetchPaged(qLead), fetchPaged(qSch), fetchPaged(qAtt),
       sb().from('shifts').select('shift_id,name,main_shift'),
       sb().from('branches').select('branch_id,name'),
     ]);
