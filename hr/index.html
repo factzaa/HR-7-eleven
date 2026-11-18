@@ -1976,9 +1976,11 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
   <div class="shsub" id="sdsub" style="margin-bottom:10px">
     <button class="shsub-b on" type="button" data-sdpan="day"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> ภาพรวมรายวัน</button>
     <button class="shsub-b" type="button" data-sdpan="shift"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg> รายผลัด (เป้า vs ยอดจริง)</button>
+    <button class="shsub-b" type="button" data-sdpan="people"><svg class="ei" viewBox="0 0 24 24"><path d="M16 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="9" cy="6.5" r="3.5"/><path d="M22 20v-1.5a4 4 0 0 0-3-3.87"/><path d="M16.5 3.3a4 4 0 0 1 0 6.4"/></svg> ผลงานรายคน</button>
   </div>
   <div id="sd_body"><div class="empty">เลือกช่วงวันแล้วกด "ดู"</div></div>
   <div id="sds_body" style="display:none"></div>
+  <div id="sdp_body" style="display:none"></div>
 </div>
 
 <!-- แดชบอร์ดตรวจร้าน QSSI -->
@@ -3576,6 +3578,10 @@ function mrNav(d){
       <div class="field" style="max-width:300px"><label>ส่งสรุป "งานค้างสิ้นวัน" ให้ HR ตอนกี่โมง (0–23)</label><input id="taskEodHour" type="number" min="0" max="23" value="22"></div>
       <div class="field" style="max-width:300px"><label>ออกก่อนเวลา: ผ่อนผัน (นาที) — ออกก่อนไม่เกินนี้ ไม่นับว่าออกก่อน</label><input id="earlyOutGrace" type="number" min="0" value="10"></div>
       <div class="field" style="max-width:300px"><label>ออกก่อนเวลา: เตือน (<svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>) เมื่อออกก่อนเกิน (วัน/รอบ)</label><input id="earlyOutWarn" type="number" min="1" value="3"></div>
+      <!-- ★ 18 พ.ย. 69 — น้ำหนักของ "ยอดขายในกะตัวเอง" ในคะแนนพนักงานดีเด่น -->
+      <div class="field" style="max-width:300px"><label>พนักงานดีเด่น: น้ำหนักยอดขายในกะตัวเอง (0 = ไม่คิด)</label>
+        <input id="salesAxisW" type="number" min="0" max="40" value="10">
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:4px">ด้านอื่นรวมกัน 100 — ใส่ 10 แปลว่ายอดขายมีน้ำหนักเท่าความรู้/ความรับผิดชอบเสริม · คิดให้เฉพาะคนที่เข้ากะที่มีเป้าใช้ได้ตั้งแต่ 5 กะขึ้นไป · ทำเป้าได้ = เต็ม หรือถ้าเป้าสาขาตั้งไว้สูงเกินจริง จะเทียบกับเพื่อนในผลัดเดียวกันให้แทน</div></div>
     </div>
     <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px">
       <label style="display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer"><input type="checkbox" id="guardShiftStart" checked> <svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg> ห้ามทำ/แจกงาน <b>ก่อนถึงเวลาเข้ากะ</b></label>
@@ -18643,7 +18649,8 @@ async function loadSalesDash(){
   }
   if(!$('sd_end').value && $('sd_month')){ applySdMonth($('sd_month').value); }
   if(!$('sd_body').dataset.wired){
-    const redraw=()=>{ const on=document.querySelector('#sdsub .shsub-b.on'); if(on && on.dataset.sdpan==='shift') drawSalesShift(); else drawSalesDash(); };
+    const redraw=()=>{ const on=document.querySelector('#sdsub .shsub-b.on'); const k=on?on.dataset.sdpan:'day';
+      if(k==='shift') drawSalesShift(); else if(k==='people') drawSalesPeople(); else drawSalesDash(); };
     $('sd_go').onclick=()=>{ if($('sd_month'))$('sd_month').value=''; redraw(); };
     $('sd_branch').onchange=redraw;
     $('sd_month').onchange=()=>{ if($('sd_month').value){ applySdMonth($('sd_month').value); redraw(); } };
@@ -18675,9 +18682,11 @@ const SDS_SHIFTS=['เช้า','บ่าย','ดึก'];
 const SDS_COLOR={'เช้า':'#f59e0b','บ่าย':'#2563eb','ดึก':'#7c3aed'};
 function sdsPctCls(p){ return p==null?'':(p>=100?'ok':(p>=90?'warn':'bad')); }
 function sdsTab(name){
-  ['day','shift'].forEach(k=>{ const el=$(k==='day'?'sd_body':'sds_body'); if(el) el.style.display=(k===name)?'':'none'; });
+  ({day:'sd_body',shift:'sds_body',people:'sdp_body'}) && ['day','shift','people'].forEach(k=>{
+    const el=$({day:'sd_body',shift:'sds_body',people:'sdp_body'}[k]); if(el) el.style.display=(k===name)?'':'none'; });
   document.querySelectorAll('#sdsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.sdpan===name));
   if(name==='shift') drawSalesShift();
+  if(name==='people') drawSalesPeople();
 }
 async function drawSalesShift(){
   const box=$('sds_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -18874,6 +18883,97 @@ $('seSave').onclick=async()=>{
   if(r&&r.ok){ toast('ok','แก้แล้ว'+((r.changed&&r.changed.length)?(' — '+r.changed.join(' · ')):'')); sdsEditClose(); drawSalesShift(); }
   else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
 };
+
+// ================= ★ 18 พ.ย. 69 — ผลงานขายรายคน (ใช้คุยตอนประเมิน/โค้ช) =================
+//   แนวคิด: ยอดขายเป็นของ "กะ" ไม่ใช่ของคนเดียว → เอายอดของกะมาเฉลี่ยให้ทุกคนที่อยู่ในกะนั้น
+//   แล้วเทียบกับค่าเฉลี่ยของ "ผลัดเดียวกัน สาขาเดียวกัน" (ดัชนี 100 = เท่าค่าเฉลี่ย)
+//   เพราะยอดกะบ่ายกับกะดึกต่างกันหลายเท่า เอายอดดิบมาเทียบกันตรง ๆ ไม่ยุติธรรมกับคนเข้ากะดึก
+//   ตัวที่พนักงาน "คุมได้เอง" (All Cafe/ขนมจีบ/ซาลาเปา/Delivery/ยอดต่อหัว) แยกให้ดูต่างหาก
+let SDP_DATA=null, SDP_SORT='idx_pct';
+const SDP_SORTS=[['idx_pct','% ของเป้า (เทียบผลัดเดียวกัน)'],['hit_pct','อัตราทำเป้าสำเร็จ'],['idx_sale','ยอดขายของกะ'],
+  ['idx_head','ยอดต่อหัว'],['cafe','All Cafe'],['jeeb','ขนมจีบ'],['salapao','ซาลาเปา'],['deliv','Delivery'],['shifts','จำนวนกะ']];
+function sdpIdxCls(v){ return v==null?'':(v>=105?'ok':(v>=95?'':'bad')); }
+function sdpIdxTxt(v){ return v==null?'—':(v>=100?'+':'')+Math.round(v-100)+'%'; }
+async function drawSalesPeople(){
+  const box=$('sdp_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_sales_people', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  SDP_DATA=r; sdpRender();
+}
+function sdpRender(){
+  const box=$('sdp_body'), r=SDP_DATA; if(!r) return;
+  const people=(r.people||[]), pairs=(r.pairs||[]);
+  if(!people.length){ box.innerHTML='<div class="card"><div class="card-b"><div class="empty">ช่วงนี้ยังจับคู่ยอดขายกับคนเข้ากะไม่ได้ — ต้องมีทั้งยอดขายรายผลัด และการลงเวลาเข้างาน</div></div></div>'; return; }
+  const ready=people.filter(p=>p.enough), few=people.filter(p=>!p.enough);
+  const multi=!$('sd_branch').value;
+  const num=v=>v==null?-1e9:v;
+  const srt=ready.slice().sort((a,b)=>num(b[SDP_SORT])-num(a[SDP_SORT]));
+
+  const note='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#1e3a8a;line-height:1.75">'
+    +'<b>อ่านยังไงให้ยุติธรรม</b> — ยอดขายเป็นผลงานของ <b>ทั้งกะ</b> ไม่ใช่ของคนใดคนหนึ่ง ตารางนี้จึงให้ทุกคนที่อยู่ในกะได้ค่าเท่ากัน '
+    +'แล้วเทียบกับ<b>ค่าเฉลี่ยของผลัดเดียวกัน สาขาเดียวกัน</b> ในช่วงที่เลือก — <b>0%</b> คือเท่าค่าเฉลี่ย, <b>+10%</b> คือดีกว่าค่าเฉลี่ย 10% '
+    +'(กะดึกยอดน้อยกว่ากะบ่ายโดยธรรมชาติ จึงไม่เอายอดดิบมาเทียบกันตรง ๆ)<br>'
+    +'ใช้เป็น<b>หัวข้อตั้งต้นในการคุยและโค้ช</b> ไม่ใช่คำตัดสิน — สิ่งที่อยู่นอกการควบคุมของพนักงานมีเยอะ (ฝนตก ของขาด เครื่องเสีย ลูกค้าประจำ) '
+    +'ตัวที่พนักงานคุมได้จริงคือ <b>All Cafe / ขนมจีบ / ซาลาเปา / Delivery / ยอดต่อหัว</b> ควรให้น้ำหนักกับคอลัมน์พวกนี้มากกว่ายอดรวม<br>'
+    +'นับเฉพาะกะที่<b>ลงเวลาเข้างานจริง</b>และ<b>มียอดขายบันทึกไว้</b> · ต้องมีอย่างน้อย <b>'+r.min_shifts+' กะ</b> จึงจะเอามาเทียบ · รวม '+r.shifts_counted+' กะในช่วงนี้'
+    +'</div>';
+
+  const sortSel='<div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><span style="font-size:13px;color:var(--muted)">เรียงตาม</span>'
+    +'<select id="sdp_sort" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+    +SDP_SORTS.map(([k,t])=>'<option value="'+k+'"'+(k===SDP_SORT?' selected':'')+'>'+t+'</option>').join('')+'</select></div>';
+
+  const shTxt=p=>['เช้า','บ่าย','ดึก'].filter(sh=>p.by_shift[sh]).map(sh=>'<span style="color:'+SDS_COLOR[sh]+'">'+sh+' '+p.by_shift[sh]+'</span>').join(' · ');
+  const row=(p,i)=>'<tr><td style="color:var(--muted);text-align:right">'+(i+1)+'</td>'
+    +'<td style="white-space:nowrap"><b>'+esc(p.nickname||p.name)+'</b>'+(p.is_manager?' <span class="pill">ผจก.</span>':'')
+      +'<div style="font-size:11px;color:var(--muted)">'+esc(p.name)+(multi?(' · '+esc(p.branch_name)):'')+'</div></td>'
+    +'<td style="white-space:nowrap;font-size:12px">'+p.shifts+' กะ<div style="font-size:11px">'+shTxt(p)+'</div></td>'
+    +'<td><span class="pill '+sdpIdxCls(p.idx_pct)+'">'+sdpIdxTxt(p.idx_pct)+'</span>'
+      +'<div style="font-size:11px;color:var(--muted)">'+(p.avg_pct==null?'—':Math.round(p.avg_pct)+'% ของเป้า')+'</div></td>'
+    +'<td style="white-space:nowrap"><span class="pill '+(p.hit_pct>=70?'ok':(p.hit_pct>=40?'warn':'bad'))+'">'+(p.hit_pct==null?'—':p.hit_pct+'%')+'</span>'
+      +'<div style="font-size:11px;color:var(--muted)">'+p.hit+'/'+p.nt+' กะ</div></td>'
+    +'<td><span class="pill '+sdpIdxCls(p.idx_sale)+'">'+sdpIdxTxt(p.idx_sale)+'</span>'
+      +'<div class="mono" style="font-size:11px;color:var(--muted)">'+_thb(p.avg_sale)+'</div></td>'
+    +'<td><span class="pill '+sdpIdxCls(p.idx_head)+'">'+sdpIdxTxt(p.idx_head)+'</span>'
+      +'<div class="mono" style="font-size:11px;color:var(--muted)">'+(p.avg_head==null?'—':_thb(Math.round(p.avg_head))+'/หัว')+'</div></td>'
+    +['cafe','jeeb','salapao','deliv'].map(k=>'<td class="mono" style="text-align:right">'+(p[k]==null?'—':p[k])+'</td>').join('')
+    +'</tr>';
+  const table='<div class="card"><div class="tablewrap"><table>'
+    +'<thead><tr><th style="width:28px"></th><th>พนักงาน</th><th>กะที่เข้า</th><th>% ของเป้า<div style="font-weight:400;font-size:10.5px;color:var(--muted)">เทียบผลัดเดียวกัน</div></th>'
+    +'<th>ทำเป้าสำเร็จ</th><th>ยอดของกะ<div style="font-weight:400;font-size:10.5px;color:var(--muted)">เทียบผลัดเดียวกัน</div></th>'
+    +'<th>ยอดต่อหัว</th><th style="text-align:right">All Cafe<div style="font-weight:400;font-size:10.5px;color:var(--muted)">แก้ว/กะ</div></th>'
+    +'<th style="text-align:right">ขนมจีบ</th><th style="text-align:right">ซาลาเปา</th><th style="text-align:right">Delivery<div style="font-weight:400;font-size:10.5px;color:var(--muted)">บิล/กะ</div></th></tr></thead>'
+    +'<tbody>'+srt.map(row).join('')+'</tbody></table></div></div>';
+
+  const fewBox = few.length ? ('<div class="card" style="margin-top:12px"><div class="card-b">'
+    +'<div style="font-size:13px;font-weight:600;margin-bottom:6px">ยังมีข้อมูลไม่พอ ('+few.length+' คน)</div>'
+    +'<div style="font-size:12.5px;color:var(--muted);line-height:1.8">เข้ากะที่มียอดขายน้อยกว่า '+r.min_shifts+' กะในช่วงนี้ — ตัวเลขยังแกว่งเกินกว่าจะเอามาเทียบ<br>'
+    +few.sort((a,b)=>b.shifts-a.shifts).map(p=>esc(p.nickname||p.name)+' ('+p.shifts+')').join(' · ')+'</div></div></div>') : '';
+
+  // ---- คู่ที่เข้ากะด้วยกัน ----
+  let pairBox='';
+  if(pairs.length){
+    const prow=p=>'<tr><td style="white-space:nowrap"><b>'+esc(p.a_name)+'</b> + <b>'+esc(p.b_name)+'</b>'
+      +(multi?('<div style="font-size:11px;color:var(--muted)">'+esc(p.branch_name)+'</div>'):'')+'</td>'
+      +'<td style="text-align:center">'+p.n+'</td>'
+      +'<td><span class="pill '+sdpIdxCls(p.idx)+'">'+sdpIdxTxt(p.idx)+'</span></td>'
+      +'<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+(p.avg_pct==null?'—':Math.round(p.avg_pct)+'% ของเป้า')+' · ถึงเป้า '+p.hit+'/'+p.nt+'</td></tr>';
+    const ptab=(list,title,sub)=>'<div class="card" style="flex:1;min-width:280px"><div class="card-b" style="padding-bottom:4px">'
+      +'<div style="font-size:13.5px;font-weight:600">'+title+'</div><div style="font-size:11.5px;color:var(--muted)">'+sub+'</div></div>'
+      +'<div class="tablewrap"><table><thead><tr><th>คู่</th><th style="text-align:center">กะ</th><th>ยอดเทียบเฉลี่ย</th><th>รายละเอียด</th></tr></thead>'
+      +'<tbody>'+list.map(prow).join('')+'</tbody></table></div></div>';
+    const split=pairs.length>=8;
+    const top=split?pairs.slice(0,6):pairs, bot=split?pairs.slice(-6).reverse():[];
+    pairBox='<div style="margin-top:16px"><div style="font-size:14px;font-weight:600;margin-bottom:4px">เข้ากะด้วยกันแล้วเป็นยังไง</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:10px">คู่ที่เข้ากะเดียวกันตั้งแต่ '+r.pair_min+' กะขึ้นไป · ตัวเลขคือยอดของกะนั้นเทียบกับค่าเฉลี่ยผลัดเดียวกัน<br>'
+      +'<b>ระวัง</b> — คู่ที่ยอดดีอาจเพราะได้วันที่คนเยอะ (ศุกร์–อาทิตย์ สิ้นเดือน) ไม่ใช่เพราะเข้ากันได้ ใช้เป็นข้อสังเกตเพื่อไปดูของจริงหน้าร้าน ไม่ใช่ข้อสรุป</div>'
+      +'<div style="display:flex;gap:12px;flex-wrap:wrap">'
+      +ptab(top, split?'คู่ที่ยอดดีที่สุด':('ทุกคู่ที่เข้ากะด้วยกัน ('+pairs.length+' คู่)'), 'เรียงจากยอดดีที่สุดลงมา')
+      +(bot.length?ptab(bot,'คู่ที่ยอดต่ำที่สุด','ลองดูว่าติดอะไร — คนใหม่ยังไม่คล่อง? งานหลังร้านเยอะ?'):'')+'</div></div>';
+  }
+
+  box.innerHTML=note+sortSel+table+fewBox+pairBox;
+  const sel=$('sdp_sort'); if(sel) sel.onchange=()=>{ SDP_SORT=sel.value; sdpRender(); };
+}
 
 async function drawSalesDash(){
   $('sd_body').innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -20729,6 +20829,7 @@ async function loadCheckoutGrace(){
     if(s.task_eod_hour!=null && $('taskEodHour')) $('taskEodHour').value = s.task_eod_hour;
     if(s.early_out_grace_min!=null && $('earlyOutGrace')) $('earlyOutGrace').value = s.early_out_grace_min;
     if(s.early_out_warn_days!=null && $('earlyOutWarn')) $('earlyOutWarn').value = s.early_out_warn_days;
+    if($('salesAxisW')) $('salesAxisW').value = (s.sales_axis_weight!=null ? s.sales_axis_weight : 10);
     if($('guardShiftStart')) $('guardShiftStart').checked = (s.guard_shift_start==null || s.guard_shift_start==='1');
     if($('guardPrevShift'))  $('guardPrevShift').checked  = (s.guard_prev_shift==null  || s.guard_prev_shift==='1');
   }
@@ -20761,6 +20862,7 @@ async function saveCheckoutGrace(){
     post({ action:'hr_settings_save', password:pwd, key:'task_eod_hour', value:String(eod) }),
     post({ action:'hr_settings_save', password:pwd, key:'early_out_grace_min', value:String(eog) }),
     post({ action:'hr_settings_save', password:pwd, key:'early_out_warn_days', value:String(eow) }),
+    post({ action:'hr_settings_save', password:pwd, key:'sales_axis_weight', value:String(Math.max(0,Math.min(40,parseInt(($('salesAxisW')||{}).value)||0))) }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_shift_start', value:g1 }),
     post({ action:'hr_settings_save', password:pwd, key:'guard_prev_shift', value:g2 }),
   ]);
