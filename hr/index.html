@@ -18774,16 +18774,19 @@ async function drawSalesShift(){
   let brTable='';
   if(multi){
     const g={};
-    rows.forEach(x=>{ const k=x.branch_id+'|'+x.shift; const o=g[k]||(g[k]={b:x.branch_name,sh:x.shift,s:0,t:0,n:0,hit:0});
-      if(x.tok&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; o.n++; if(x.sale>=x.tgt) o.hit++; } });
+    rows.forEach(x=>{ const k=x.branch_id+'|'+x.shift; const o=g[k]||(g[k]={b:x.branch_name,sh:x.shift,s:0,t:0,n:0,hit:0,cu:0,cn:0,cs:0});
+      if(x.tok&&x.sale>0){ o.s+=x.sale; o.t+=x.tgt; o.n++; if(x.sale>=x.tgt) o.hit++; }
+      if(x.customers>0){ o.cu+=x.customers; o.cn++; o.cs+=x.sale; } });
     const list=Object.values(g).filter(o=>o.n).sort((a,b)=>a.b===b.b?(SDS_SHIFTS.indexOf(a.sh)-SDS_SHIFTS.indexOf(b.sh)):(a.b<b.b?-1:1));
     brTable='<div class="card" style="margin-bottom:12px"><div class="tablewrap"><table>'
-      +'<thead><tr><th>สาขา</th><th>ผลัด</th><th>ยอดเฉลี่ย/วัน</th><th>เป้าเฉลี่ย/วัน</th><th>% ของเป้า</th><th>ถึงเป้า</th></tr></thead><tbody>'
+      +'<thead><tr><th>สาขา</th><th>ผลัด</th><th>ยอดเฉลี่ย/วัน</th><th>เป้าเฉลี่ย/วัน</th><th>% ของเป้า</th><th>ถึงเป้า</th><th>ลูกค้าเฉลี่ย/วัน</th><th>ยอดต่อหัว</th></tr></thead><tbody>'
       +list.map(o=>{ const pct=o.t?o.s/o.t*100:null;
         return '<tr><td>'+esc(o.b)+'</td><td><span style="color:'+SDS_COLOR[o.sh]+';font-weight:600">'+esc(o.sh)+'</span></td>'
           +'<td class="mono">'+_thb(o.s/o.n)+'</td><td class="mono">'+_thb(o.t/o.n)+'</td>'
           +'<td class="mono"><span class="pill '+sdsPctCls(pct)+'">'+(pct==null?'—':(Math.round(pct*10)/10)+'%')+'</span></td>'
-          +'<td class="mono">'+o.hit+'/'+o.n+'</td></tr>'; }).join('')
+          +'<td class="mono">'+o.hit+'/'+o.n+'</td>'
+          +'<td class="mono">'+(o.cn?_thb(o.cu/o.cn):'—')+'</td>'
+          +'<td class="mono">'+(o.cu?_thb(Math.round(o.cs/o.cu)):'—')+'</td></tr>'; }).join('')
       +'</tbody></table></div></div>';
   }
 
@@ -18799,9 +18802,13 @@ async function drawSalesShift(){
     const tgtTxt = x.tgt>0 ? ('เป้า '+_thb(x.tgt)+(x.tok?'':' ⚠')) : 'ไม่มีเป้า';
     // ★ กดที่ช่องยอด/เป้า เพื่อแก้ตัวเลขที่คีย์ผิดมาจากไลน์
     const ed = x.edited_at ? ('<span title="แก้โดย '+esc(x.edited_by||'')+(x.edit_note?(' — '+esc(x.edit_note)):'')+'" style="color:#1d4ed8;font-size:10.5px">✎ แก้แล้ว</span>') : '';
+    // ★ 18 พ.ย. 69 — โชว์จำนวนลูกค้า + ยอดต่อหัว ของผลัดนั้นด้วย (ดูได้ว่ายอดมาจากคนเยอะหรือซื้อหัวละเยอะ)
+    const head = (x.customers>0 && x.sale>0) ? Math.round(x.sale/x.customers) : 0;
+    const cuTxt = x.customers>0 ? ('ลูกค้า '+_thb(x.customers)+' คน'+(head?(' · '+_thb(head)+'/หัว'):'')) : '';
     return '<td class="mono sdsCell" data-se="'+esc(x.branch_id)+'|'+esc(x.sale_date)+'|'+esc(x.shift)+'" title="กดเพื่อแก้ตัวเลข" '
         +'style="white-space:nowrap;cursor:pointer">'+_thb(x.sale)
-        +'<div style="font-size:11px;color:'+(x.tok||!x.tgt?'var(--muted)':'#b45309')+'">'+tgtTxt+' '+ed+'</div></td>'
+        +'<div style="font-size:11px;color:'+(x.tok||!x.tgt?'var(--muted)':'#b45309')+'">'+tgtTxt+' '+ed+'</div>'
+        +(cuTxt?('<div style="font-size:11px;color:var(--muted)">'+cuTxt+'</div>'):'')+'</td>'
       +'<td style="white-space:nowrap"><span class="pill '+sdsPctCls(pct)+'">'+(pct==null?(x.tgt>0?'เป้าผิด':'—'):Math.round(pct)+'%')+'</span>'
       +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(x.lead_name?esc(x.lead_name):'ไม่มีหัวหน้าผลัด')+(x.staff_n?(' · '+x.staff_n+' คน'):'')+'</div></td>';
   };
@@ -18809,15 +18816,16 @@ async function drawSalesShift(){
     +'<thead><tr><th rowspan="2">วันที่</th>'+(multi?'<th rowspan="2">สาขา</th>':'')
       +SDS_SHIFTS.map(sh=>'<th colspan="2" style="text-align:center;border-left:2px solid var(--line2);color:'+SDS_COLOR[sh]+'">'+sh+'</th>').join('')
       +'<th rowspan="2">รวม 3 ผลัด</th></tr>'
-    +'<tr>'+SDS_SHIFTS.map(()=>'<th style="border-left:2px solid var(--line2);font-size:12px">ยอด / เป้า</th><th style="font-size:12px">% · ใครคุมผลัด</th>').join('')+'</tr></thead><tbody>'
+    +'<tr>'+SDS_SHIFTS.map(()=>'<th style="border-left:2px solid var(--line2);font-size:12px">ยอด / เป้า / ลูกค้า</th><th style="font-size:12px">% · ใครคุมผลัด</th>').join('')+'</tr></thead><tbody>'
     +drows.map(o=>{
-      const tot=SDS_SHIFTS.reduce((a,sh)=>{ const x=o.sh[sh]; if(x&&x.sale>0){ a.s+=x.sale; if(x.tok) a.t+=x.tgt; else a.bad=1; } return a; },{s:0,t:0});
+      const tot=SDS_SHIFTS.reduce((a,sh)=>{ const x=o.sh[sh]; if(x&&x.sale>0){ a.s+=x.sale; a.c+=(+x.customers||0); if(x.tok) a.t+=x.tgt; else a.bad=1; } return a; },{s:0,t:0,c:0});
       const tp=(tot.t&&!tot.bad)?tot.s/tot.t*100:null;   // มีผลัดไหนเป้าผิด = เทียบเป้ารวมทั้งวันไม่ได้
       const wd=TH_D[new Date(o.d+'T00:00:00Z').getUTCDay()];
       return '<tr><td style="white-space:nowrap">'+(+o.d.slice(8,10))+'/'+(+o.d.slice(5,7))+' <span style="color:var(--muted);font-size:11.5px">'+wd+'</span></td>'
         +(multi?('<td style="font-size:12.5px">'+esc(o.b)+'</td>'):'')
         +SDS_SHIFTS.map(sh=>cell(o.sh[sh])).join('')
-        +'<td class="mono" style="white-space:nowrap">'+_thb(tot.s)+' <span class="pill '+sdsPctCls(tp)+'">'+(tp==null?'—':Math.round(tp)+'%')+'</span></td></tr>';
+        +'<td class="mono" style="white-space:nowrap">'+_thb(tot.s)+' <span class="pill '+sdsPctCls(tp)+'">'+(tp==null?'—':Math.round(tp)+'%')+'</span>'
+        +(tot.c?('<div style="font-size:11px;color:var(--muted)">ลูกค้า '+_thb(tot.c)+' คน'+(tot.s?(' · '+_thb(Math.round(tot.s/tot.c))+'/หัว'):'')+'</div>'):'')+'</td></tr>';
     }).join('')
     +'</tbody></table></div></div>';
 
