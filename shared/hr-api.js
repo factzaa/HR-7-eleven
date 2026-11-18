@@ -5307,6 +5307,23 @@
         x.head = x.customers > 0 ? (x.sale / x.customers) : null;
       });
     }
+    // ★ ตัวเชียร์ขายที่คีย์ผิดหน่วย (เช่น กรอกยอดเงินเดลิเวอรี 5,026 ลงช่องจำนวนบิล ซึ่งปกติ 12 บิล)
+    //   ค่าเดียวแบบนี้ดึงค่าเฉลี่ยของคนทั้งกะให้เพี้ยนทั้งรอบ → ถ้าเกิน 10 เท่าของค่ากลาง
+    //   ของสาขานั้น × ผลัดนั้น ให้ถือว่า "ไม่มีข้อมูล" (null) ไม่ใช่ 0 จะได้ไม่กดค่าเฉลี่ยลงเช่นกัน
+    {
+      const CH = ['cafe', 'jeeb', 'salapao', 'deliv'];
+      const g = {};
+      rows.forEach(x => { const k = x.branch_id + '|' + x.shift; const o = g[k] || (g[k] = { cafe: [], jeeb: [], salapao: [], deliv: [] });
+        CH.forEach(f => { if (x[f] > 0) o[f].push(x[f]); }); });
+      rows.forEach(x => {
+        const o = g[x.branch_id + '|' + x.shift] || {};
+        CH.forEach(f => {
+          const a = (o[f] || []).slice().sort((p, q) => p - q);
+          const m = a.length ? a[a.length >> 1] : 0;
+          if (m > 0 && x[f] > m * 10) x[f] = null;
+        });
+      });
+    }
     // ---- 2) ค่าเฉลี่ยของผลัดเดียวกัน สาขาเดียวกัน → ดัชนี 100 ----
     const base = {};
     rows.forEach(x => { const k = x.branch_id + '|' + x.shift; (base[k] || (base[k] = [])).push(x); });
@@ -5314,7 +5331,7 @@
     const baseAvg = {};
     Object.keys(base).forEach(k => {
       baseAvg[k] = { sale: avgOf(base[k], x => x.sale), pct: avgOf(base[k], x => x.pct), head: avgOf(base[k], x => x.head),
-        cafe: avgOf(base[k], x => x.cafe), jeeb: avgOf(base[k], x => x.jeeb), salapao: avgOf(base[k], x => x.salapao), deliv: avgOf(base[k], x => x.deliv) };
+        cafe: avgOf(base[k], x => x.cafe), jeeb: avgOf(base[k], x => x.jeeb), salapao: avgOf(base[k], x => x.salapao), deliv: avgOf(base[k], x => x.deliv) };   // avgOf ข้าม null ให้แล้ว
     });
     rows.forEach(x => {
       const b = baseAvg[x.branch_id + '|' + x.shift] || {};
@@ -5348,7 +5365,7 @@
         if (x.pct != null) { o.pct.push(x.pct); o.nt++; if (x.sale >= x.tgt) o.hit++; }
         if (x.head != null) o.head.push(x.head);
         ['idx_sale', 'idx_pct', 'idx_head'].forEach(f => { if (x[f] != null) o[f].push(x[f]); });
-        ['cafe', 'jeeb', 'salapao', 'deliv'].forEach(f => o[f].push(x[f]));
+        ['cafe', 'jeeb', 'salapao', 'deliv'].forEach(f => { if (x[f] != null) o[f].push(x[f]); });
       });
     });
     const mean = a => a.length ? a.reduce((s, z) => s + z, 0) / a.length : null;
