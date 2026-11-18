@@ -94,6 +94,11 @@
         <input id="empId" type="text" inputmode="numeric" placeholder="เช่น 0874701" autocomplete="off">
         <button class="btn btn-pri" id="goBtn" style="width:100%;margin-top:10px">เริ่ม</button>
         <p class="muted" style="margin-top:9px">ใช้ดูและพิมพ์ปฏิทินสินค้าใกล้หมดอายุไปติดบอร์ดหลังร้าน</p>
+        <!-- ★ 18 พ.ย. 69 — สำนักงานใหญ่ไม่มีรหัสพนักงาน จึงต้องเข้าด้วยรหัสผ่าน HR ได้ด้วย -->
+        <div style="border-top:1px solid var(--line);margin:14px 0 12px"></div>
+        <label>สำหรับสำนักงานใหญ่ — รหัสผ่าน HR</label>
+        <input id="hrPw" type="password" placeholder="รหัสผ่านหน้า HR" autocomplete="current-password">
+        <button class="btn btn-sec" id="hrBtn" style="width:100%;margin-top:10px">เข้าด้วยรหัส HR (เห็นทุกสาขา)</button>
       </div>
     </div>
 
@@ -130,6 +135,7 @@
 <script src="../shared/config.js"></script>
 <script src="../shared/supabase.js"></script>
 <script src="../shared/session.js"></script>
+<script src="../shared/hr-api.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -175,13 +181,24 @@ $('goBtn').onclick=async()=>{
   }catch(e){ toast('err','เกิดข้อผิดพลาด'); }
   b.textContent='เริ่ม';
 };
+$('hrBtn').onclick=async()=>{
+  const pw=$('hrPw').value; if(!pw){ toast('err','กรอกรหัสผ่าน HR'); return; }
+  const b=$('hrBtn'); b.innerHTML='<span class="spin"></span>';
+  try{
+    const r=await window.HRAPI.dispatch({ action:'hr_login', password:pw });
+    if(r&&r.ok){ $('hrPw').value=''; enter({ emp_id:'', name:'สำนักงานใหญ่', nickname:'สำนักงานใหญ่', branch_id:'', active:true, hr:true }); }
+    else toast('err',(r&&r.error)||'รหัสผ่านไม่ถูกต้อง');
+  }catch(e){ toast('err','เข้าระบบไม่สำเร็จ'); }
+  b.textContent='เข้าด้วยรหัส HR (เห็นทุกสาขา)';
+};
+$('hrPw').addEventListener('keydown',e=>{ if(e.key==='Enter') $('hrBtn').click(); });
 $('changeBtn').onclick=()=>{ EMP=null; try{HRSession.clearEmp();}catch(e){} $('sheets').innerHTML=''; $('step_main').classList.add('hide'); $('step_id').classList.remove('hide'); };
 
 function enter(emp){
   EMP=emp;
   $('step_id').classList.add('hide'); $('step_main').classList.remove('hide');
   $('who').textContent=(emp.nickname||emp.name||'')+'';
-  $('whosub').textContent='รหัส '+emp.emp_id+' · '+branchName(emp.branch_id);
+  $('whosub').textContent = emp.hr ? 'สำนักงานใหญ่ · เลือกได้ทุกสาขา' : ('รหัส '+emp.emp_id+' · '+branchName(emp.branch_id));
   const ids=Object.keys(BRANCHES);
   const qb=new URLSearchParams(location.search).get('branch');
   $('brSel').innerHTML=ids.map(id=>'<option value="'+esc(id)+'">'+esc(BRANCHES[id])+'</option>').join('');
