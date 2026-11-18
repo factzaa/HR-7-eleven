@@ -389,6 +389,7 @@
         case 'hr_sales_list':        return await hrSalesList(p);
         case 'hr_sales_shift':       return await hrSalesShift(p);
         case 'hr_sales_update':      return await hrSalesUpdate(p);
+        case 'hr_sales_people':      return await hrSalesPeople(p);
         case 'hr_audit_list':        return await hrAuditList(p);
         case 'hr_line_backfill':     return await hrLineBackfill(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
@@ -5250,6 +5251,148 @@
     });
   }
 
+  // ============================================================
+  // ★ 18 พ.ย. 69 — ผลงานขายรายคน: ผูกยอดของ "กะ" เข้ากับ "คนที่มาทำงานกะนั้นจริง"
+  // ------------------------------------------------------------
+  // เจตนา: เก็บสถิติไว้คุย/โค้ชตอนประเมิน และดูว่าใครเข้ากะด้วยกันแล้วยอดดี
+  // ข้อควรระวังที่ออกแบบเผื่อไว้:
+  //   · ยอดดิบเทียบข้ามผลัดไม่ได้ (บ่ายคนเดินเยอะกว่าดึกหลายเท่า) → ใช้ "ดัชนี" เทียบกับ
+  //     ค่าเฉลี่ยของผลัดเดียวกัน สาขาเดียวกัน ในช่วงที่เลือก (100 = เท่าค่าเฉลี่ย)
+  //   · ยอดเป็นของทีม ไม่ใช่ของคนเดียว → ทุกคนที่อยู่ในกะได้ค่าเดียวกัน และต้องมีจำนวนกะพอ
+  //     (SALES_MIN_SHIFTS) ก่อนจะเอาไปตีความ
+  //   · ตัวที่พนักงาน "คุมได้" จริง (All Cafe / ขนมจีบ / ซาลาเปา / Delivery / ยอดต่อหัว)
+  //     แยกออกมาให้ดูต่างหาก เพราะไม่ขึ้นกับจำนวนคนเดินเข้าร้าน
+  // ============================================================
+  const SALES_MIN_SHIFTS = 5;     // น้อยกว่านี้ถือว่ายังสรุปไม่ได้
+  const SALES_PAIR_MIN   = 5;     // คู่ที่เข้ากะด้วยกันน้อยกว่านี้ ไม่เอามาจัดอันดับ
+  const _exNum = (ex, k) => { try { const a = ex && ex[k]; return Array.isArray(a) ? (+a[a.length - 1] || 0) : (+a || 0); } catch (e) { return 0; } };
+
+  // คืน: rows (รายกะพร้อมดัชนี) · people (รวมรายคน) · pairs (คู่ที่เข้ากะด้วยกัน)
+  async function _salesPeopleCore(start, end, branch) {
+    const br = branch ? String(branch) : '';
+    const qSales = (cols) => () => { let x = sb().from('sales_daily').select(cols)
+      .gte('sale_date', start).lte('sale_date', end).order('id');
+      if (br) x = x.eq('branch_id', br); return x; };
+    const COLS = 'branch_id,sale_date,shift,target_total,sales_total,customers,allcafe_cups,delivery_bills,extra';
+    const qAtt = () => { let x = sb().from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in')
+      .not('check_in', 'is', null).gte('work_date', start).lte('work_date', end).order('id'); return x; };
+    const [sales, att, shR, empR, brR] = await Promise.all([
+      fetchPaged(qSales(COLS)), fetchPaged(qAtt),
+      sb().from('shifts').select('shift_id,main_shift'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,is_manager,active,end_date'),
+      sb().from('branches').select('branch_id,name'),
+    ]);
+    const grpOf = {}; (shR.data || []).forEach(x => { grpOf[x.shift_id] = x.main_shift || x.shift_id; });
+    const bn = {}; (brR.data || []).forEach(b => { bn[b.branch_id] = b.name; });
+    const emp = {}; (empR.data || []).forEach(e => { emp[e.emp_id] = e; });
+
+    // ---- 1) แถวยอดรายกะ (เฉพาะ เช้า/บ่าย/ดึก) + กรองเป้าที่คีย์ผิดด้วยค่ากลาง ----
+    const SANE = 2000000;
+    let rows = sales.filter(x => SALES_SHIFT_CODE[x.shift] && (+x.sales_total || 0) > 0 && (+x.sales_total || 0) <= SANE)
+      .map(x => ({
+        branch_id: x.branch_id, branch_name: bn[x.branch_id] || x.branch_id,
+        sale_date: x.sale_date, shift: x.shift, code: SALES_SHIFT_CODE[x.shift],
+        sale: +x.sales_total || 0, tgt: +x.target_total || 0, customers: +x.customers || 0,
+        cafe: +x.allcafe_cups || 0, deliv: +x.delivery_bills || 0,
+        jeeb: _exNum(x.extra, 'khanomjeeb'), salapao: _exNum(x.extra, 'salapao'),
+      }));
+    {
+      const g = {};
+      rows.forEach(x => { if (x.tgt > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(x.tgt); });
+      const med = {}; Object.keys(g).forEach(k => { const a = g[k].slice().sort((p, q) => p - q); med[k] = a[a.length >> 1]; });
+      rows.forEach(x => {
+        const m = med[x.branch_id + '|' + x.shift] || 0;
+        x.tok = x.tgt > 0 && m > 0 && x.tgt >= m / 3 && x.tgt <= m * 3;
+        x.pct = x.tok ? (x.sale / x.tgt * 100) : null;
+        x.head = x.customers > 0 ? (x.sale / x.customers) : null;
+      });
+    }
+    // ---- 2) ค่าเฉลี่ยของผลัดเดียวกัน สาขาเดียวกัน → ดัชนี 100 ----
+    const base = {};
+    rows.forEach(x => { const k = x.branch_id + '|' + x.shift; (base[k] || (base[k] = [])).push(x); });
+    const avgOf = (a, f) => { const v = a.map(f).filter(z => z != null && isFinite(z)); return v.length ? v.reduce((s, z) => s + z, 0) / v.length : null; };
+    const baseAvg = {};
+    Object.keys(base).forEach(k => {
+      baseAvg[k] = { sale: avgOf(base[k], x => x.sale), pct: avgOf(base[k], x => x.pct), head: avgOf(base[k], x => x.head),
+        cafe: avgOf(base[k], x => x.cafe), jeeb: avgOf(base[k], x => x.jeeb), salapao: avgOf(base[k], x => x.salapao), deliv: avgOf(base[k], x => x.deliv) };
+    });
+    rows.forEach(x => {
+      const b = baseAvg[x.branch_id + '|' + x.shift] || {};
+      x.idx_sale = (b.sale > 0) ? (x.sale / b.sale * 100) : null;
+      x.idx_pct  = (x.pct != null && b.pct > 0) ? (x.pct / b.pct * 100) : null;
+      x.idx_head = (x.head != null && b.head > 0) ? (x.head / b.head * 100) : null;
+    });
+    const byKey = {}; rows.forEach(x => { byKey[x.branch_id + '|' + x.sale_date + '|' + x.code] = x; });
+
+    // ---- 3) ใครอยู่กะไหน (ลงเวลาจริงเท่านั้น) ----
+    const crew = {};
+    att.forEach(a => {
+      const code = grpOf[a.shift_id] || a.shift_id;
+      const k = (a.branch_id || '') + '|' + a.work_date + '|' + code;
+      if (!byKey[k]) return;                       // กะที่ไม่มียอดขาย ไม่นับ
+      (crew[k] || (crew[k] = new Set())).add(a.emp_id);
+    });
+
+    // ---- 4) รวมรายคน ----
+    const P = {};
+    Object.keys(crew).forEach(k => {
+      const x = byKey[k];
+      crew[k].forEach(id => {
+        const o = P[id] || (P[id] = { emp_id: id, name: (emp[id] || {}).name || id, nickname: (emp[id] || {}).nickname || '',
+          branch_id: (emp[id] || {}).branch_id || '', is_manager: !!(emp[id] || {}).is_manager,
+          n: 0, by_shift: {}, sale: [], pct: [], head: [], idx_sale: [], idx_pct: [], idx_head: [],
+          cafe: [], jeeb: [], salapao: [], deliv: [], hit: 0, nt: 0, crewN: [] });
+        o.n++;
+        o.by_shift[x.shift] = (o.by_shift[x.shift] || 0) + 1;
+        o.sale.push(x.sale); o.crewN.push(crew[k].size);
+        if (x.pct != null) { o.pct.push(x.pct); o.nt++; if (x.sale >= x.tgt) o.hit++; }
+        if (x.head != null) o.head.push(x.head);
+        ['idx_sale', 'idx_pct', 'idx_head'].forEach(f => { if (x[f] != null) o[f].push(x[f]); });
+        ['cafe', 'jeeb', 'salapao', 'deliv'].forEach(f => o[f].push(x[f]));
+      });
+    });
+    const mean = a => a.length ? a.reduce((s, z) => s + z, 0) / a.length : null;
+    const r1 = v => v == null ? null : Math.round(v * 10) / 10;
+    const people = Object.values(P).map(o => ({
+      emp_id: o.emp_id, name: o.name, nickname: o.nickname, branch_id: o.branch_id, branch_name: bn[o.branch_id] || o.branch_id,
+      is_manager: o.is_manager, shifts: o.n, by_shift: o.by_shift, crew_avg: r1(mean(o.crewN)),
+      avg_sale: Math.round(mean(o.sale) || 0), avg_pct: r1(mean(o.pct)), avg_head: r1(mean(o.head)),
+      idx_sale: r1(mean(o.idx_sale)), idx_pct: r1(mean(o.idx_pct)), idx_head: r1(mean(o.idx_head)),
+      cafe: r1(mean(o.cafe)), jeeb: r1(mean(o.jeeb)), salapao: r1(mean(o.salapao)), deliv: r1(mean(o.deliv)),
+      hit: o.hit, nt: o.nt, hit_pct: o.nt ? Math.round(o.hit / o.nt * 100) : null,
+      enough: o.n >= SALES_MIN_SHIFTS,
+    })).sort((a, b) => (b.idx_pct || 0) - (a.idx_pct || 0));
+
+    // ---- 5) คู่ที่เข้ากะด้วยกัน ----
+    const pairMap = {};
+    Object.keys(crew).forEach(k => {
+      const x = byKey[k];
+      const ids = [...crew[k]].sort();
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+        const pk = ids[i] + '|' + ids[j];
+        const o = pairMap[pk] || (pairMap[pk] = { a: ids[i], b: ids[j], n: 0, idx: [], pct: [], hit: 0, nt: 0, branch: x.branch_id });
+        o.n++;
+        if (x.idx_pct != null) o.idx.push(x.idx_pct);
+        if (x.pct != null) { o.pct.push(x.pct); o.nt++; if (x.sale >= x.tgt) o.hit++; }
+      }
+    });
+    const nmOf = id => ((emp[id] || {}).nickname || (emp[id] || {}).name || id);
+    const pairs = Object.values(pairMap).filter(o => o.n >= SALES_PAIR_MIN && o.idx.length >= 3).map(o => ({
+      a: o.a, b: o.b, a_name: nmOf(o.a), b_name: nmOf(o.b), branch_name: bn[o.branch] || o.branch,
+      n: o.n, idx: r1(mean(o.idx)), avg_pct: r1(mean(o.pct)), hit: o.hit, nt: o.nt,
+    })).sort((x, y) => (y.idx || 0) - (x.idx || 0));
+
+    return { rows, people, pairs, min_shifts: SALES_MIN_SHIFTS, pair_min: SALES_PAIR_MIN };
+  }
+
+  async function hrSalesPeople(p) {
+    p = p || {};
+    if (!p.start || !p.end) return { ok: false, error: 'ระบุช่วงวันที่' };
+    const r = await _salesPeopleCore(p.start, p.end, p.branch_id || '');
+    return { ok: true, start: p.start, end: p.end, people: r.people, pairs: r.pairs,
+      min_shifts: r.min_shifts, pair_min: r.pair_min, shifts_counted: r.rows.length };
+  }
+
   // ดึงรายงานตรวจร้าน QSSI (แดชบอร์ด/นิดา)
   async function hrAuditList(p) {
     let q = sb().from('audit_reports').select('*').order('inspect_date', { ascending: false });
@@ -7883,7 +8026,7 @@
     const _d = (s) => Date.parse(String(s) + 'T00:00:00Z');
     const everFrom = new Date(_d(endEff) - 400 * 86400000).toISOString().slice(0, 10);
 
-    const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR, shcR, qaR, gdR, spR, mtR, everR] = await Promise.all([
+    const [scoreR, empR, brR, taR, exAtR, leadR, ctrlR, shcR, qaR, gdR, spR, mtR, everR, salesR, salesW] = await Promise.all([
       hrScoreGet(which),
       sb().from('employees').select('emp_id,name,nickname,branch_id,photo_url,is_manager,position,start_date,end_date,active,default_shift'),
       sb().from('branches').select('branch_id,name').order('branch_id'),
@@ -7902,8 +8045,17 @@
       sb().from('mgr_tasks').select('assignee_emp,emp_submitted_at').gte('emp_submitted_at', cyc.start).lte('emp_submitted_at', endEff + 'T23:59:59'),
       // ★ 9 พ.ย. 69 — วันทำงานสะสมของแต่ละคน (ไม่ใช่เฉพาะรอบนี้) ใช้คัดคนที่ยังใหม่เกินไปออกจากการเข้าชิง
       fetchPaged(() => sb().from('attendance').select('emp_id,work_date').gte('work_date', everFrom).lte('work_date', endEff)),
+      // ★ 18 พ.ย. 69 — ผลงานขายในกะของตัวเอง (ใช้เป็นอีกด้านหนึ่งของคะแนนพนักงานดีเด่น)
+      //   ใช้เครื่องคิดตัวเดียวกับหน้า "ผลงานรายคน" ตัวเลขสองที่จะได้ตรงกันเวลาพนักงานถาม
+      //   ยังไม่มียอดขาย/ยังไม่ได้ตั้งน้ำหนัก = ข้ามด้านนี้ไป ไม่ใช่ให้ 0
+      _salesPeopleCore(cyc.start, endEff, onlyBranch || '').catch(() => null),
+      getSettingNum('sales_axis_weight', 10),
     ]);
     if (empR.error) throw empR.error;
+
+    const SALES_W = Math.max(0, Math.min(40, +salesW || 0));
+    const SALES_BY = {};
+    if (SALES_W > 0 && salesR) (salesR.people || []).forEach(z => { SALES_BY[String(z.emp_id)] = z; });
 
     // นับเป็น "วัน" ไม่ใช่ "แถว" — ลงเวลาสองกะในวันเดียวต้องนับเป็นวันเดียว
     const everSet = {};
@@ -8036,6 +8188,19 @@
       // ★ 9 พ.ย. 69 — ใช้ assist (7 อย่าง) แทน help (2 อย่าง) · เต็ม 100 ที่ 8 ครั้งในรอบ
       axes.push({ k: 'assist', label: 'ความรับผิดชอบเสริม', w: 10, v: Math.min(100, assist / 8 * 100),
         why: assist ? ('รับงานเสริม ' + assist + ' ครั้ง (เต็มที่ 8)') : 'ยังไม่เคยรับงานนอกกะในรอบนี้' });
+      // ★ 18 พ.ย. 69 — ยอดขายในกะของตัวเอง
+      //   คิดสองทางแล้วเอาทางที่ดีกว่าให้พนักงาน เพื่อไม่ลงโทษคนที่เป้าสาขาตั้งไว้สูงเกินจริง:
+      //     ก) ทำเป้าได้ = เต็ม — % ของเป้าเฉลี่ยในกะตัวเอง (100% ขึ้นไป = 100 คะแนน)
+      //     ข) เทียบกับเพื่อนในผลัดเดียวกัน สาขาเดียวกัน — เท่าค่าเฉลี่ย = 50, ดีกว่า 20% = เต็ม
+      //   ต้องมีอย่างน้อย SALES_MIN_SHIFTS กะที่มีเป้าใช้ได้ ไม่งั้นข้ามด้านนี้ไปเลย
+      const _sp = SALES_BY[String(e.emp_id)];
+      if (_sp && _sp.nt >= SALES_MIN_SHIFTS && _sp.avg_pct != null) {
+        const vA = Math.min(100, _sp.avg_pct);
+        const vB = (_sp.idx_pct == null) ? 0 : Math.max(0, Math.min(100, 50 + (_sp.idx_pct - 100) * 2.5));
+        axes.push({ k: 'sales', label: 'ยอดขายในกะตัวเอง', w: SALES_W, v: Math.max(0, Math.max(vA, vB)),
+          why: 'ทำได้ ' + Math.round(_sp.avg_pct) + '% ของเป้า · ถึงเป้า ' + _sp.hit + '/' + _sp.nt + ' กะ'
+             + (_sp.idx_pct == null ? '' : (' · ' + (_sp.idx_pct >= 100 ? 'สูงกว่า' : 'ต่ำกว่า') + 'ค่าเฉลี่ยผลัดเดียวกัน ' + Math.abs(Math.round(_sp.idx_pct - 100)) + '%')) });
+      }
       const wsum = axes.reduce((s, a) => s + a.w, 0);
       const rank_score = wsum ? Math.round(axes.reduce((s, a) => s + a.v * a.w, 0) / wsum * 10) / 10 : null;
       // แปลงเป็น "ได้กี่คะแนนจากเต็มกี่คะแนน" ให้อ่านแล้วบวกเองได้ตรง ๆ
