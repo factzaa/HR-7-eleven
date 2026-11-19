@@ -13207,7 +13207,8 @@
       if (from) x = x.gte('period_ym', from); if (to) x = x.lte('period_ym', to); return x; };
     const qUp = () => { let x = sb().from('stock_uploads').select('branch_id,kind,period_ym,row_count').order('period_ym');
       if (from) x = x.gte('period_ym', from); if (to) x = x.lte('period_ym', to); return x; };
-    const [wo, ups, brR] = await Promise.all([ fetchPaged(qWo), fetchPaged(qUp), sb().from('branches').select('branch_id,name,active') ]);
+    // ตาราง branches ไม่มีคอลัมน์ active (เช็กกับของจริงแล้ว) — อย่าใส่เพิ่ม ไม่งั้น PostgREST ตอบ error แล้วได้สาขาว่าง
+    const [wo, ups, brR] = await Promise.all([ fetchPaged(qWo), fetchPaged(qUp), sb().from('branches').select('branch_id,name') ]);
     // ยอดขายรายเดือน — ใช้ทำตัวหารให้เทียบข้ามสาขาได้
     const qS = () => { let x = sb().from('sales_daily').select('branch_id,sale_date,shift,sales_total').order('id');
       if (from) x = x.gte('sale_date', from + '-01'); if (to) x = x.lte('sale_date', to + '-31'); return x; };
@@ -13218,7 +13219,7 @@
       saleBy[k] = (saleBy[k] || 0) + (+r.sales_total || 0); });
 
     const months = [...new Set(wo.map(x => x.period_ym).concat(ups.map(x => x.period_ym)))].filter(Boolean).sort();
-    const brs = (brR.data || []).filter(b => b.active !== false);
+    const brs = (brR.data || []);
     const upBy = {}; ups.forEach(u => { (upBy[u.branch_id + '|' + u.period_ym] = upBy[u.branch_id + '|' + u.period_ym] || {})[u.kind] = (+u.row_count || 0); });
     const cell = {};
     wo.forEach(x => { const k = x.branch_id + '|' + x.period_ym;
