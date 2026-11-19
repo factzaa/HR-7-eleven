@@ -18890,13 +18890,14 @@ $('seSave').onclick=async()=>{
 //   เพราะยอดกะบ่ายกับกะดึกต่างกันหลายเท่า เอายอดดิบมาเทียบกันตรง ๆ ไม่ยุติธรรมกับคนเข้ากะดึก
 //   ตัวที่พนักงาน "คุมได้เอง" (All Cafe/ขนมจีบ/ซาลาเปา/Delivery/ยอดต่อหัว) แยกให้ดูต่างหาก
 let SDP_DATA=null, SDP_SORT='idx_pct';
+let SDP_LOG=[], SDP_LOGN=60, SDP_LROW=null, SDP_SEL={};
 const SDP_SORTS=[['idx_pct','% ของเป้า (เทียบผลัดเดียวกัน)'],['hit_pct','อัตราทำเป้าสำเร็จ'],['idx_sale','ยอดขายของกะ'],
   ['idx_head','ยอดต่อหัว'],['cafe','All Cafe'],['jeeb','ขนมจีบ'],['salapao','ซาลาเปา'],['deliv','Delivery'],['shifts','จำนวนกะ']];
 function sdpIdxCls(v){ return v==null?'':(v>=105?'ok':(v>=95?'':'bad')); }
 function sdpIdxTxt(v){ return v==null?'—':(v>=100?'+':'')+Math.round(v-100)+'%'; }
 async function drawSalesPeople(){
   const box=$('sdp_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
-  const r=await post({ action:'hr_sales_people', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
+  const r=await post({ action:'hr_sales_crew', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
   SDP_DATA=r; sdpRender();
 }
@@ -18950,29 +18951,179 @@ function sdpRender(){
     +few.sort((a,b)=>b.shifts-a.shifts).map(p=>esc(p.nickname||p.name)+' ('+p.shifts+')').join(' · ')+'</div></div></div>') : '';
 
   // ---- คู่ที่เข้ากะด้วยกัน ----
-  let pairBox='';
-  if(pairs.length){
-    const prow=p=>'<tr><td style="white-space:nowrap"><b>'+esc(p.a_name)+'</b> + <b>'+esc(p.b_name)+'</b>'
-      +(multi?('<div style="font-size:11px;color:var(--muted)">'+esc(p.branch_name)+'</div>'):'')+'</td>'
-      +'<td style="text-align:center">'+p.n+'</td>'
-      +'<td><span class="pill '+sdpIdxCls(p.idx)+'">'+sdpIdxTxt(p.idx)+'</span></td>'
-      +'<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+(p.avg_pct==null?'—':Math.round(p.avg_pct)+'% ของเป้า')+' · ถึงเป้า '+p.hit+'/'+p.nt+'</td></tr>';
-    const ptab=(list,title,sub)=>'<div class="card" style="flex:1;min-width:280px"><div class="card-b" style="padding-bottom:4px">'
-      +'<div style="font-size:13.5px;font-weight:600">'+title+'</div><div style="font-size:11.5px;color:var(--muted)">'+sub+'</div></div>'
-      +'<div class="tablewrap"><table><thead><tr><th>คู่</th><th style="text-align:center">กะ</th><th>ยอดเทียบเฉลี่ย</th><th>รายละเอียด</th></tr></thead>'
-      +'<tbody>'+list.map(prow).join('')+'</tbody></table></div></div>';
-    const split=pairs.length>=8;
-    const top=split?pairs.slice(0,6):pairs, bot=split?pairs.slice(-6).reverse():[];
-    pairBox='<div style="margin-top:16px"><div style="font-size:14px;font-weight:600;margin-bottom:4px">เข้ากะด้วยกันแล้วเป็นยังไง</div>'
-      +'<div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:10px">คู่ที่เข้ากะเดียวกันตั้งแต่ '+r.pair_min+' กะขึ้นไป · ตัวเลขคือยอดของกะนั้นเทียบกับค่าเฉลี่ยผลัดเดียวกัน<br>'
-      +'<b>ระวัง</b> — คู่ที่ยอดดีอาจเพราะได้วันที่คนเยอะ (ศุกร์–อาทิตย์ สิ้นเดือน) ไม่ใช่เพราะเข้ากันได้ ใช้เป็นข้อสังเกตเพื่อไปดูของจริงหน้าร้าน ไม่ใช่ข้อสรุป</div>'
-      +'<div style="display:flex;gap:12px;flex-wrap:wrap">'
-      +ptab(top, split?'คู่ที่ยอดดีที่สุด':('ทุกคู่ที่เข้ากะด้วยกัน ('+pairs.length+' คู่)'), 'เรียงจากยอดดีที่สุดลงมา')
-      +(bot.length?ptab(bot,'คู่ที่ยอดต่ำที่สุด','ลองดูว่าติดอะไร — คนใหม่ยังไม่คล่อง? งานหลังร้านเยอะ?'):'')+'</div></div>';
+  // ★ 19 พ.ย. 69 — จัดทีม: ดูรายชื่อทั้งทีมของแต่ละกะ + สถิติทีม เพื่อใช้ตอนจัดจ็อบ
+  //   ข้อเท็จจริงจากข้อมูลจริง: ทีมเป๊ะ ๆ แทบไม่ซ้ำ (177 ทีม ซ้ำครั้งเดียว 141 ทีม)
+  //   จึงให้ทั้ง 3 อย่าง: ลองจัดทีม (ประมาณจากรายคน+คู่ย่อย) · ทีมที่ซ้ำพอเป็นสถิติ · บันทึกรายกะดิบ
+  let crewBox='';
+  {
+    const sr=(r.shift_rows||[]), crews=(r.crews||[]);
+    const rep=crews.filter(c=>c.n>=3 && c.ids.length>=2);
+    const warn='<div style="background:#fff7e6;border:1px solid #f3d9a4;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#8a5a00;line-height:1.75">'
+      +'<b>อ่านก่อนใช้จัดจ็อบ</b> — รอบนี้มีทีมที่ต่างกัน <b>'+crews.length+' ชุด</b> จาก '+sr.length+' กะ '
+      +'และ <b>'+crews.filter(c=>c.n===1).length+' ชุดเกิดขึ้นครั้งเดียว</b> เพราะกะเช้า/บ่ายสลับคนแทบทุกวัน<br>'
+      +'แปลว่า "ทีมชุดนี้ทำได้เท่าไร" เชื่อได้เฉพาะชุดที่เคยเข้าด้วยกันหลายครั้ง (ส่วนใหญ่เป็นกะดึกที่มี 2 คน) '
+      +'ชุดที่เพิ่งจัดครั้งแรกต้องประมาณจากสถิติรายคนกับคู่ย่อยแทน — ช่อง "ลองจัดทีม" ข้างล่างคิดให้แล้ว</div>';
+
+    // ---- ลองจัดทีม ----
+    const brs={}; sr.forEach(x=>{ brs[x.branch_id]=x.branch_name; });
+    const brOpts=Object.keys(brs).sort((a,b)=>(brs[a]<brs[b]?-1:1))
+      .map(b=>'<option value="'+esc(b)+'">'+esc(brs[b])+'</option>').join('');
+    const pick='<div class="card" style="margin-bottom:12px"><div class="card-b">'
+      +'<div style="font-size:13.5px;font-weight:600;margin-bottom:2px">ลองจัดทีม</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">เลือกสาขา + ผลัด แล้วติ๊กคนที่คิดจะจัดเข้ากะ ระบบจะบอกว่าชุดนี้เคยทำได้เท่าไร หรือถ้ายังไม่เคยจัดก็ประมาณให้</div>'
+      +'<div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+      +'<select id="cw_br" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'+brOpts+'</select>'
+      +'<select id="cw_sh" style="padding:6px 10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13.5px">'
+      +SDS_SHIFTS.map(sh=>'<option value="'+sh+'">ผลัด'+sh+'</option>').join('')+'</select>'
+      +'<button class="btn btn-sm" type="button" id="cw_clear">ล้างที่เลือก</button></div>'
+      +'<div id="cw_people" style="display:flex;flex-wrap:wrap;gap:6px"></div>'
+      +'<div id="cw_out" style="margin-top:10px"></div></div></div>';
+
+    // ---- ทีมที่เคยเข้าด้วยกันซ้ำ ----
+    const crow=c=>'<tr><td style="white-space:nowrap"><b>'+c.members.map(esc).join(' · ')+'</b>'
+      +'<div style="font-size:11px;color:var(--muted)">'+(multi?(esc(c.branch_name)+' · '):'')+'ผลัด'+esc(c.shift)+' · '+c.ids.length+' คน</div></td>'
+      +'<td style="text-align:center">'+c.n+'</td>'
+      +'<td><span class="pill '+sdpIdxCls(c.idx)+'">'+sdpIdxTxt(c.idx)+'</span></td>'
+      +'<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+(c.avg_pct==null?'—':Math.round(c.avg_pct)+'% ของเป้า')+' · ถึงเป้า '+c.hit+'/'+c.nt+'</td></tr>';
+    const repBox = rep.length ? ('<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding-bottom:4px">'
+      +'<div style="font-size:13.5px;font-weight:600">ทีมที่เคยเข้าด้วยกันตั้งแต่ 3 กะขึ้นไป ('+rep.length+' ชุด)</div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">เรียงจากเข้าด้วยกันบ่อยสุด · ตัวเลขคือยอดของกะเทียบค่าเฉลี่ยผลัดเดียวกัน</div></div>'
+      +'<div class="tablewrap"><table><thead><tr><th>ทีม</th><th style="text-align:center">กะ</th><th>ยอดเทียบเฉลี่ย</th><th>รายละเอียด</th></tr></thead>'
+      +'<tbody>'+rep.map(crow).join('')+'</tbody></table></div></div>')
+      : '<div class="card" style="margin-bottom:12px"><div class="card-b"><div style="font-size:12.5px;color:var(--muted)">ยังไม่มีทีมชุดไหนเข้าด้วยกันถึง 3 กะในช่วงนี้ — ใช้ "ลองจัดทีม" กับ "บันทึกรายกะ" ข้างล่างแทน</div></div></div>';
+
+    // ---- บันทึกรายกะ ----
+    const TH_D2=['อา','จ','อ','พ','พฤ','ศ','ส'];
+    const lrow=x=>{
+      const wd=TH_D2[new Date(x.sale_date+'T00:00:00Z').getUTCDay()];
+      return '<tr><td style="white-space:nowrap">'+(+x.sale_date.slice(8,10))+'/'+(+x.sale_date.slice(5,7))
+        +' <span style="color:var(--muted);font-size:11.5px">'+wd+'</span>'
+        +(multi?('<div style="font-size:11px;color:var(--muted)">'+esc(x.branch_name)+'</div>'):'')+'</td>'
+        +'<td style="white-space:nowrap;color:'+SDS_COLOR[x.shift]+';font-size:12.5px">'+esc(x.shift)+'</td>'
+        +'<td style="font-size:12.5px;min-width:160px">'+x.members.map(esc).join(' · ')
+          +'<div style="font-size:11px;color:var(--muted)">'+x.n+' คน</div></td>'
+        +'<td class="mono" style="white-space:nowrap">'+_thb(x.sale)+(x.tgt?('<div style="font-size:11px;color:var(--muted)">เป้า '+_thb(x.tgt)+'</div>'):'')+'</td>'
+        +'<td><span class="pill '+sdsPctCls(x.pct)+'">'+(x.pct==null?'เป้าผิด':Math.round(x.pct)+'%')+'</span></td>'
+        +'<td><span class="pill '+sdpIdxCls(x.idx_pct)+'">'+sdpIdxTxt(x.idx_pct)+'</span></td></tr>';
+    };
+    const LIM=60;
+    const logBox='<div class="card"><div class="card-b" style="padding-bottom:4px">'
+      +'<div style="font-size:13.5px;font-weight:600">บันทึกรายกะ — ใครอยู่กะไหน ทำได้เท่าไร</div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">ทั้งหมด '+sr.length+' กะในช่วงนี้ · ใช้เปิดดูตอนจัดจ็อบว่า "ทีมแบบนี้เคยทำได้เท่าไร"</div></div>'
+      +'<div class="tablewrap"><table><thead><tr><th>วันที่</th><th>ผลัด</th><th>ทีมที่เข้ากะ</th><th>ยอด / เป้า</th><th>% เป้า</th><th>เทียบเฉลี่ย</th></tr></thead>'
+      +'<tbody id="cw_log">'+sr.slice(0,LIM).map(lrow).join('')+'</tbody></table></div>'
+      +(sr.length>LIM?('<div class="card-b" style="padding-top:8px"><button class="btn btn-sm" type="button" id="cw_more">ดูทั้งหมด '+sr.length+' กะ</button></div>'):'')
+      +'</div>';
+
+    crewBox='<div style="margin-top:16px"><div style="font-size:14px;font-weight:600;margin-bottom:6px">จัดทีม — ใครอยู่ด้วยกันแล้วทำได้ดี</div>'
+      +warn+pick+repBox+logBox+'</div>';
+    SDP_LOG=sr; SDP_LOGN=LIM; SDP_LROW=lrow;
   }
 
-  box.innerHTML=note+sortSel+table+fewBox+pairBox;
+  box.innerHTML=note+sortSel+table+fewBox+crewBox;
+  sdpWireCrew();
   const sel=$('sdp_sort'); if(sel) sel.onchange=()=>{ SDP_SORT=sel.value; sdpRender(); };
+}
+
+// ★ 19 พ.ย. 69 — ลองจัดทีม: คิดให้ว่าชุดที่เลือกน่าจะทำได้แค่ไหน
+//   ลำดับความน่าเชื่อถือ: (1) ชุดนี้เคยเข้าด้วยกันจริง → ใช้ของจริง
+//                        (2) เคยอยู่ร่วมกะเดียวกันแต่มีคนอื่นด้วย → ใช้ค่านั้นประกอบ
+//                        (3) ไม่เคยเลย → ประมาณจากสถิติรายคน + คู่ย่อยในทีม พร้อมบอกตรง ๆ ว่าเป็นการประมาณ
+function sdpWireCrew(){
+  const r=SDP_DATA; if(!r || !$('cw_people')) return;
+  const more=$('cw_more');
+  if(more) more.onclick=()=>{ SDP_LOGN=SDP_LOG.length;
+    $('cw_log').innerHTML=SDP_LOG.map(SDP_LROW).join(''); more.style.display='none'; };
+  const brSel=$('cw_br'), shSel=$('cw_sh');
+  const draw=()=>{
+    const br=brSel.value, sh=shSel.value;
+    const rows=(r.shift_rows||[]).filter(x=>x.branch_id===br && x.shift===sh);
+    const seen={};
+    rows.forEach(x=>x.ids.forEach((id,i)=>{ seen[id]=x.members[i]; }));
+    const ids=Object.keys(seen).sort((a,b)=>(seen[a]<seen[b]?-1:1));
+    const key=br+'|'+sh;
+    SDP_SEL[key]=SDP_SEL[key]||{};
+    $('cw_people').innerHTML = ids.length
+      ? ids.map(id=>'<label class="shsub-b'+(SDP_SEL[key][id]?' on':'')+'" style="cursor:pointer;font-size:12.5px;padding:5px 10px">'
+          +'<input type="checkbox" data-cw="'+esc(id)+'"'+(SDP_SEL[key][id]?' checked':'')+' style="margin-right:5px;vertical-align:-1px">'
+          +esc(seen[id])+'</label>').join('')
+      : '<div style="font-size:12.5px;color:var(--muted)">ยังไม่มีใครเข้ากะนี้ในช่วงที่เลือก</div>';
+    $('cw_people').querySelectorAll('[data-cw]').forEach(cb=>cb.onchange=()=>{
+      SDP_SEL[key][cb.dataset.cw]=cb.checked; cb.closest('label').classList.toggle('on',cb.checked); out(); });
+    out();
+  };
+  const out=()=>{
+    const br=brSel.value, sh=shSel.value, key=br+'|'+sh;
+    const sel=Object.keys(SDP_SEL[key]||{}).filter(id=>SDP_SEL[key][id]).sort();
+    const box=$('cw_out');
+    if(sel.length<2){ box.innerHTML='<div style="font-size:12.5px;color:var(--muted)">ติ๊กอย่างน้อย 2 คนเพื่อดูสถิติของทีมนั้น</div>'; return; }
+    const nameOf={}; (r.people||[]).forEach(p=>nameOf[p.emp_id]=p.nickname||p.name);
+    const rows=(r.shift_rows||[]).filter(x=>x.branch_id===br && x.shift===sh);
+    const exact=rows.filter(x=>x.ids.length===sel.length && x.ids.join(',')===sel.join(','));
+    const withAll=rows.filter(x=>sel.every(id=>x.ids.indexOf(id)>=0));
+    const avg=a=>{ const v=a.filter(z=>z!=null&&isFinite(z)); return v.length?v.reduce((s,z)=>s+z,0)/v.length:null; };
+    const r1=v=>v==null?null:Math.round(v*10)/10;
+    const stat=(list)=>({ n:list.length, idx:r1(avg(list.map(x=>x.idx_pct))), pct:r1(avg(list.map(x=>x.pct))),
+      hit:list.filter(x=>x.pct!=null && x.sale>=x.tgt).length, nt:list.filter(x=>x.pct!=null).length,
+      dates:list.map(x=>x.sale_date).sort().reverse().slice(0,6) });
+    const line=(label,s,tone)=>'<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">'
+      +'<div style="font-size:12.5px">'+label+'<div style="font-size:11px;color:var(--muted)">อ้างอิง '+s.n+' กะ'
+        +(s.dates.length?(' · ล่าสุด '+s.dates.map(d=>(+d.slice(8,10))+'/'+(+d.slice(5,7))).join(', ')):'')+'</div></div>'
+      +'<div style="text-align:right;white-space:nowrap"><span class="pill '+sdpIdxCls(s.idx)+'">'+sdpIdxTxt(s.idx)+'</span>'
+        +'<div style="font-size:11px;color:var(--muted)">'+(s.pct==null?'—':Math.round(s.pct)+'% ของเป้า')+(s.nt?(' · ถึงเป้า '+s.hit+'/'+s.nt):'')+'</div></div></div>';
+    let html='<div style="font-size:12.5px;margin-bottom:6px">ทีมที่เลือก: <b>'+sel.map(id=>esc(nameOf[id]||id)).join(' · ')+'</b> ('+sel.length+' คน)</div>';
+    if(exact.length){
+      const s=stat(exact);
+      html+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:11px;padding:4px 12px 2px;margin-bottom:8px">'
+        +line('<b>ชุดนี้เคยเข้าด้วยกันจริง</b> — ตัวเลขจากของจริง', s)+'</div>';
+    } else {
+      html+='<div style="background:#fff7e6;border:1px solid #f3d9a4;border-radius:11px;padding:9px 12px;margin-bottom:8px;font-size:12.5px;color:#8a5a00;line-height:1.6">'
+        +'<b>ชุดนี้ยังไม่เคยจัดเข้ากะด้วยกันครบทั้งทีม</b> — ตัวเลขข้างล่างเป็นการ<b>ประมาณ</b>จากสถิติที่มี ไม่ใช่ผลจริงของทีมนี้</div>';
+      if(withAll.length) html+='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:11px;padding:4px 12px 2px;margin-bottom:8px">'
+        +line('เคยอยู่กะเดียวกันครบทุกคน (แต่มีคนอื่นร่วมด้วย)', stat(withAll))+'</div>';
+    }
+    // สถิติรายคนของสมาชิก
+    const P={}; (r.people||[]).forEach(p=>P[p.emp_id]=p);
+    const mem=sel.map(id=>P[id]).filter(Boolean);
+    const okMem=mem.filter(p=>p.enough), thin=sel.filter(id=>!P[id]||!P[id].enough);
+    const estIdx=r1(avg(okMem.map(p=>p.idx_pct)));
+    html+='<div class="tablewrap" style="margin-bottom:8px"><table><thead><tr><th>สมาชิก</th><th>กะที่เข้า</th><th>% ของเป้า</th><th>ทำเป้าสำเร็จ</th></tr></thead><tbody>'
+      +sel.map(id=>{ const p=P[id];
+        if(!p) return '<tr><td>'+esc(nameOf[id]||id)+'</td><td colspan="3" style="font-size:12px;color:var(--muted)">ยังไม่มีสถิติในช่วงนี้</td></tr>';
+        return '<tr><td style="white-space:nowrap">'+esc(p.nickname||p.name)+(p.enough?'':' <span class="pill">ข้อมูลน้อย</span>')+'</td>'
+          +'<td style="font-size:12.5px">'+p.shifts+' กะ</td>'
+          +'<td><span class="pill '+sdpIdxCls(p.idx_pct)+'">'+sdpIdxTxt(p.idx_pct)+'</span></td>'
+          +'<td style="font-size:12.5px;color:var(--muted)">'+(p.hit_pct==null?'—':p.hit_pct+'% ('+p.hit+'/'+p.nt+')')+'</td></tr>'; }).join('')
+      +'</tbody></table></div>';
+    if(estIdx!=null) html+='<div style="font-size:12.5px;margin-bottom:6px">ประมาณจากค่าเฉลี่ยรายคน: <span class="pill '+sdpIdxCls(estIdx)+'">'+sdpIdxTxt(estIdx)+'</span>'
+      +(thin.length?(' <span style="color:var(--muted)">(ไม่นับ '+thin.map(id=>esc(nameOf[id]||id)).join(', ')+' เพราะกะยังน้อย)</span>'):'')+'</div>';
+    // คู่ย่อยในทีม
+    const pm={}; (r.pairs||[]).forEach(p=>{ pm[[p.a,p.b].sort().join('|')]=p; });
+    const sub=[]; for(let i=0;i<sel.length;i++) for(let j=i+1;j<sel.length;j++){ const p=pm[[sel[i],sel[j]].sort().join('|')]; if(p) sub.push(p); }
+    if(sub.length){
+      sub.sort((a,b)=>(b.idx||0)-(a.idx||0));
+      html+='<div style="font-size:12.5px;font-weight:600;margin:8px 0 4px">คู่ย่อยในทีมนี้ที่เคยเข้าด้วยกัน</div>'
+        +'<div class="tablewrap"><table><thead><tr><th>คู่</th><th style="text-align:center">กะ</th><th>เทียบเฉลี่ย</th></tr></thead><tbody>'
+        +sub.map(p=>'<tr><td style="white-space:nowrap">'+esc(p.a_name)+' + '+esc(p.b_name)+'</td><td style="text-align:center">'+p.n+'</td>'
+          +'<td><span class="pill '+sdpIdxCls(p.idx)+'">'+sdpIdxTxt(p.idx)+'</span></td></tr>').join('')
+        +'</tbody></table></div>';
+    } else if(!exact.length){
+      html+='<div style="font-size:12px;color:var(--muted)">ยังไม่มีคู่ไหนในทีมนี้ที่เคยเข้ากะด้วยกันถึง '+r.pair_min+' กะ — ถ้าจัดชุดนี้ถือว่าเป็นการลองของใหม่</div>';
+    }
+    box.innerHTML=html;
+  };
+  brSel.onchange=draw; shSel.onchange=draw;
+  $('cw_clear').onclick=()=>{ SDP_SEL={}; draw(); };
+  // เปิดมาครั้งแรกให้เด้งไปที่สาขา × ผลัดที่มีข้อมูลมากที่สุด ไม่ใช่ช่องที่ว่างเปล่า
+  {
+    const cnt={};
+    (r.shift_rows||[]).forEach(x=>{ const k=x.branch_id+'|'+x.shift; cnt[k]=(cnt[k]||0)+1; });
+    const best=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+    if(best){ const [bb,ss]=best.split('|');
+      if([...brSel.options].some(o=>o.value===bb)) brSel.value=bb;
+      if([...shSel.options].some(o=>o.value===ss)) shSel.value=ss; }
+  }
+  draw();
 }
 
 async function drawSalesDash(){
