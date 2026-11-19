@@ -117,6 +117,7 @@
       <button class="imgbtn" id="bMenu3"><img src="../03_shift_handover_review.png?v=1" alt="รับผลัด · ตรวจงานผลัดก่อนหน้า"></button>
       <button class="imgbtn" id="bReport"><img src="../04_shift_report.png?v=1" alt="รายงานรับส่งผลัด"></button>
       <!-- ★ ส่งผลัด — ย้ายมาไว้หน้าแรก ให้หัวหน้าผลัดเห็นทันทีไม่ต้องเข้าเมนูย่อย -->
+      <div id="hoHandover" style="margin-top:10px"></div>
       <div id="hoPrevNote" style="margin-top:10px"></div>
       <div id="hoSendCard" style="margin-top:10px"></div>
       <!-- ★ 15 พ.ย. 69 — ทางเข้า "รับสินค้า/นับลัง" สำหรับ ผจก.
@@ -814,7 +815,8 @@ $('goBtn').onclick=async()=>{
     refreshSpBadge();        // นับงานพิเศษค้าง แสดง badge บนปุ่ม "งานที่ได้รับมอบหมาย"
     refreshCoCard();         // การ์ดเตือนกดออก/ควบกะ
     refreshExamCard();       // ★ แบบทดสอบที่ยังต้องทำ
-    refreshPrevNote();       // ★ หมายเหตุที่ผลัดก่อนหน้าฝากไว้
+    refreshHandover();       // ★ งาน/ข้อความที่ฝากกันระหว่างผลัด
+    refreshPrevNote();       // ★ หมายเหตุที่ผลัดก่อนหน้าฝากไว้ (แบบเดิม)
     refreshSendCard();       // ★ การ์ดส่งผลัด (หัวหน้าผลัดกดยืนยันงานพร้อมให้ตรวจ)
     if(window.refreshNotifyBtn) window.refreshNotifyBtn();
     // ★ ลิงก์ตรงจากการ์ด LINE — ?go=review เปิดหน้า "ตรวจรับผลัด" ให้ทันที
@@ -896,14 +898,18 @@ function shiftSendHTML(st){
       +(st.submitted.note?('<div style="margin-top:7px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 10px;font-size:12.5px;white-space:pre-wrap">📝 หมายเหตุที่ฝากผลัดถัดไป: '+esc(st.submitted.note)+'</div>'):'')
       +'</div>';
   }
-  var ok=st.pending.length===0;
+  // ★ 19 พ.ย. 69 — นับด่านงาน/ข้อความฝากผลัดเข้ามาด้วย (ดู handover_blocks ใน shiftSubmitState)
+  var hoBlk=st.handover_blocks||[];
+  var ok=st.pending.length===0 && hoBlk.length===0;
   var h='<div class="card" style="border-left:3px solid '+(ok?'#16a34a':'#dc2626')+'">'
     +'<div style="font-weight:700">ส่งผลัด</div>'
     +'<div class="muted" style="font-size:12.5px;margin:3px 0 7px">ส่งงานแล้ว '+st.done+'/'+st.total+' งาน'
       +(st.closed.length?(' · ปิดงาน '+st.closed.length+' งาน'):'')
       +(ok?'<br>กดส่งผลัดเพื่อส่งรายงานเข้าไลน์กลุ่มทันที ผลัดถัดไปจะได้ตรวจงานตอนที่ทีมยังอยู่'
-         :('<br>ยังเหลืองานค้าง '+st.pending.length+' รายการ — ทำให้เสร็จ หรือปิดงานพร้อมระบุเหตุผลก่อน'))+'</div>';
-  if(!ok) h+='<div style="font-size:12.5px;color:#b91c1c;line-height:1.7;margin-bottom:7px">'
+         :(st.pending.length?('<br>ยังเหลืองานค้าง '+st.pending.length+' รายการ — ทำให้เสร็จ หรือปิดงานพร้อมระบุเหตุผลก่อน'):''))+'</div>';
+  if(hoBlk.length) h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:8px 11px;margin-bottom:8px;font-size:12.5px;color:#b91c1c;line-height:1.8">'
+    +'<b>เรื่องฝากผลัดยังไม่เคลียร์</b><br>'+hoBlk.map(function(x){ return '• '+esc(x); }).join('<br>')+'</div>';
+  if(st.pending.length) h+='<div style="font-size:12.5px;color:#b91c1c;line-height:1.7;margin-bottom:7px">'
     +st.pending.slice(0,8).map(function(x){ return '• '+esc(x.title)+(x.emp_name?(' <span class="muted">· '+esc(x.emp_name)+'</span>'):''); }).join('<br>')
     +(st.pending.length>8?('<br><span class="muted">…และอีก '+(st.pending.length-8)+' รายการ</span>'):'')+'</div>';
   if(!st.is_lead) h+='<div class="muted" style="font-size:12.5px">ส่งผลัดได้เฉพาะหัวหน้าผลัด'
@@ -912,7 +918,7 @@ function shiftSendHTML(st){
   //   ปัญหาคือพิมพ์บนมือถือตอนใกล้เลิกกะมันขี้เกียจ — ใส่ปุ่มลัดให้แตะแล้วพิมพ์ต่อ
   //   และปุ่ม "ไม่มีเรื่องฝาก" ให้ระบุชัด ๆ ช่องว่างจะได้แปลว่า "ลืม" ไม่ใช่ "ไม่มีอะไร"
   else h+='<div style="margin:2px 0 8px">'
-      +'<div style="font-size:12.5px;font-weight:600;margin-bottom:4px">หมายเหตุถึงผลัดถัดไป <span class="muted" style="font-weight:400">(ไม่บังคับ)</span></div>'
+      +'<div style="font-size:12.5px;font-weight:600;margin-bottom:4px">สรุปปิดผลัด <span class="muted" style="font-weight:400">(ไม่บังคับ · เรื่องที่ต้องให้ผลัดถัดไปทำหรือรับทราบ ให้ใช้กล่อง "ฝากให้ผลัดถัดไป" ด้านบน)</span></div>'
       +'<div id="ss_chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
       + SS_CHIPS.map(function(c,i){
           return '<button type="button" class="ssChip" data-sschip="'+i+'" style="font:inherit;font-size:12px;font-weight:600;'
@@ -947,6 +953,170 @@ function wireCloseTask(){
     catch(e){ b.disabled=false; toast('err',(e.message||'ไม่สำเร็จ')); }
   }; });
 }
+// ★ 19 พ.ย. 69 — ฝาก "งาน" หรือ "ข้อความ" ให้ผลัดถัดไป (เดิมเป็นข้อความลอย ๆ ช่องเดียว)
+//   งาน     → เข้าไปอยู่ในงานของผลัดถัดไป หัวหน้าผลัดนั้นแจกให้คนในกะ · บังคับถ่ายรูปส่ง
+//   ข้อความ → ทุกคนในกะถัดไปต้องกดรับทราบ ยังไม่ครบ หัวหน้าส่งผลัดไม่ได้
+//   ใครในกะก็ฝากได้ แต่หัวหน้าผลัดต้องกดอนุมัติก่อน จึงจะถึงผลัดถัดไป
+var HO_BOARD=null, HO_KIND='msg';
+var HO_RV={ pending:['รอหัวหน้าผลัดอนุมัติ','#92400e','#fffbeb','#fde68a'],
+            approved:['ส่งต่อแล้ว','#166534','#f0fdf4','#bbf7d0'],
+            rejected:['หัวหน้าผลัดตีตก','#b91c1c','#fef2f2','#fecaca'] };
+var HO_ST={ open:'รอหัวหน้าผลัดแจกงาน', assigned:'แจกแล้ว', done:'เสร็จแล้ว', cancelled:'ปิดงานแล้ว' };
+function hoPill(txt,c,bg,bd){ return '<span style="display:inline-block;font-size:11.5px;font-weight:700;color:'+c
+  +';background:'+bg+';border:1px solid '+bd+';border-radius:999px;padding:1px 9px">'+esc(txt)+'</span>'; }
+
+function hoCardHTML(b){
+  if(!b || !b.has_shift) return '';
+  var h='';
+  // ---- รับเข้า: ข้อความที่ต้องกดรับทราบ ----
+  var msgs=b.msgs||[];
+  if(msgs.length){
+    h+='<div class="card" style="background:#fffbeb;border-color:#fde68a">'
+      +'<div style="font-weight:700;color:#92400e"><svg class="ei" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> ข้อความจากผลัดก่อนหน้า — ต้องกดรับทราบ</div>'
+      +'<div class="muted" style="font-size:11.5px;margin-top:2px">ถ้ายังมีคนในกะไม่กด หัวหน้าผลัดจะส่งผลัดไม่ได้</div>';
+    msgs.forEach(function(m){
+      h+='<div style="margin-top:9px;padding-top:9px;border-top:1px dashed #fde68a">'
+        +'<div style="font-size:13.5px;color:#7c2d12;white-space:pre-wrap">'+esc(m.title)+'</div>'
+        +'<div class="muted" style="font-size:11.5px;margin-top:3px">ฝากโดย '+esc(m.created_by_name||m.created_by||'')+'</div>'
+        +(m.i_acked
+           ? '<div style="font-size:12.5px;color:#166534;font-weight:600;margin-top:6px">✓ คุณกดรับทราบแล้ว</div>'
+           : '<button class="btn btn-pri btn-sm" data-hoack="'+m.id+'" style="margin-top:7px">กดรับทราบ</button>')
+        +((m.waiting||[]).length
+           ? '<div style="font-size:11.5px;color:#b91c1c;margin-top:5px">ยังไม่กด: '+m.waiting.map(function(w){return esc(w.name);}).join(', ')+'</div>'
+           : '<div style="font-size:11.5px;color:#166534;margin-top:5px">ครบทุกคนในกะแล้ว</div>')
+        +'</div>';
+    });
+    h+='</div>';
+  }
+  // ---- รับเข้า: งานฝาก ----
+  var tks=(b.tasks||[]).filter(function(t){ return t.status!=='cancelled'; });
+  if(tks.length){
+    var opts=(b.crew||[]).map(function(c){ return '<option value="'+esc(c.emp_id)+'">'+esc(c.name)+'</option>'; }).join('');
+    h+='<div class="card" style="background:#eff6ff;border-color:#bfdbfe;margin-top:10px">'
+      +'<div style="font-weight:700;color:#1e3a8a"><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> งานที่ผลัดก่อนหน้าฝากไว้</div>'
+      +'<div class="muted" style="font-size:11.5px;margin-top:2px">งานฝากต้องถ่ายรูปส่งเสมอ · ต้องเคลียร์ให้หมดก่อนส่งผลัด</div>';
+    tks.forEach(function(t){
+      h+='<div style="margin-top:9px;padding-top:9px;border-top:1px dashed #bfdbfe">'
+        +'<div style="font-size:13.5px;color:#1e3a8a;white-space:pre-wrap">'+esc(t.title)+'</div>'
+        +'<div class="muted" style="font-size:11.5px;margin-top:3px">ฝากโดย '+esc(t.created_by_name||t.created_by||'')
+          +' · '+esc(HO_ST[t.status]||t.status)+(t.assigned_name?(' → '+esc(t.assigned_name)):'')+'</div>';
+      if(t.status==='open'){
+        if(b.is_lead) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;align-items:center">'
+          +'<select id="hoasg_'+t.id+'" style="padding:6px 9px;border:1.5px solid #bfdbfe;border-radius:8px;font:inherit;font-size:13px">'+opts+'</select>'
+          +'<button class="btn btn-pri btn-sm" data-hoasg="'+t.id+'">แจกงาน</button>'
+          +'<button class="btn btn-sec btn-sm" data-hocancel="'+t.id+'">ปิดงาน</button></div>';
+        else h+='<div class="muted" style="font-size:11.5px;margin-top:5px">รอหัวหน้าผลัดแจกงานนี้ให้คนในกะ</div>';
+      }
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  // ---- ฝากให้ผลัดถัดไป ----
+  var mine=b.outgoing||[];
+  var waitRv=mine.filter(function(x){ return x.review==='pending'; });
+  h+='<div class="card" style="margin-top:10px">'
+    +'<div style="font-weight:700">ฝากให้ผลัด'+esc(b.next_shift_name||'ถัดไป')+'</div>'
+    +'<div class="muted" style="font-size:11.5px;margin:2px 0 8px">ใครในกะก็ฝากได้ · หัวหน้าผลัดกดอนุมัติก่อนจึงจะส่งต่อ</div>'
+    +'<div style="display:flex;gap:7px;margin-bottom:7px">'
+    +'<button type="button" class="btn btn-sm" data-hokind="msg"  id="hok_msg"  style="flex:1">💬 ข้อความ</button>'
+    +'<button type="button" class="btn btn-sm" data-hokind="task" id="hok_task" style="flex:1">📌 งาน</button></div>'
+    +'<div id="ho_hint" class="muted" style="font-size:11.5px;margin-bottom:5px"></div>'
+    +'<div id="ho_chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+    + SS_CHIPS.filter(function(c){ return !c.none; }).map(function(c,i){
+        return '<button type="button" data-hochip="'+i+'" style="font:inherit;font-size:12px;font-weight:600;padding:5px 11px;'
+          +'border:1.5px solid #d6d9e0;border-radius:999px;cursor:pointer;background:#fff;color:#475569">'+esc(c.label)+'</button>'; }).join('')
+    +'</div>'
+    +'<textarea id="ho_text" rows="3" placeholder="เขียนให้ผลัดถัดไปเข้าใจได้เลยว่าต้องทำอะไร / รู้อะไร" style="width:100%;padding:8px 10px;border:1.5px solid #d6d9e0;border-radius:9px;font:inherit;font-size:13.5px;resize:vertical"></textarea>'
+    +'<button class="btn btn-pri" id="ho_add" style="margin-top:7px;width:100%">ฝากเรื่องนี้</button>';
+  if(mine.length){
+    h+='<div style="margin-top:11px;font-size:12.5px;font-weight:700">เรื่องที่กะนี้ฝากไว้ ('+mine.length+')</div>';
+    mine.forEach(function(x){
+      var rv=HO_RV[x.review]||HO_RV.pending;
+      h+='<div style="margin-top:7px;padding:8px 10px;border:1px solid #e8eaef;border-radius:9px">'
+        +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:3px">'
+          +hoPill(x.kind==='task'?'งาน':'ข้อความ','#334155','#f1f5f9','#e2e8f0')+hoPill(rv[0],rv[1],rv[2],rv[3])+'</div>'
+        +'<div style="font-size:13px;white-space:pre-wrap">'+esc(x.title)+'</div>'
+        +'<div class="muted" style="font-size:11.5px;margin-top:2px">โดย '+esc(x.created_by_name||x.created_by||'')+'</div>'
+        +(x.review==='rejected'&&x.review_note?('<div style="font-size:11.5px;color:#b91c1c;margin-top:3px">เหตุผล: '+esc(x.review_note)+'</div>'):'')
+        +(x.review==='pending'
+           ? ('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">'
+              +(b.is_lead?('<button class="btn btn-pri btn-sm" data-hoapp="'+x.id+'">อนุมัติ</button>'
+                          +'<button class="btn btn-sec btn-sm" data-horej="'+x.id+'">ตีตก</button>'):'')
+              +(String(x.created_by)===String(b.me.emp_id)?('<button class="btn btn-sec btn-sm" data-hodrop="'+x.id+'">ถอน</button>'):'')
+              +'</div>') : '')
+        +'</div>';
+    });
+  }
+  if(b.is_lead && waitRv.length) h+='<div style="margin-top:9px;font-size:12px;color:#b91c1c">'
+    +'ยังมี '+waitRv.length+' เรื่องรอคุณตรวจ — ตรวจให้ครบก่อนจึงจะส่งผลัดได้</div>';
+  return h+'</div>';
+}
+
+function hoWire(){
+  var b=HO_BOARD; if(!b) return;
+  function setKind(k){
+    HO_KIND=k;
+    ['msg','task'].forEach(function(x){
+      var el=$('hok_'+x); if(!el) return;
+      el.className='btn btn-sm '+(x===k?'btn-pri':'btn-sec');
+    });
+    var hint=$('ho_hint');
+    if(hint) hint.textContent = (k==='task')
+      ? 'งาน: เข้าไปอยู่ในรายการงานของผลัด'+(b.next_shift_name||'ถัดไป')+' หัวหน้าผลัดนั้นแจกให้คนในกะ และต้องถ่ายรูปส่ง'
+      : 'ข้อความ: ทุกคนในกะ'+(b.next_shift_name||'ถัดไป')+' ต้องกดรับทราบ ถ้ายังไม่ครบ หัวหน้าผลัดนั้นจะส่งผลัดไม่ได้';
+  }
+  document.querySelectorAll('[data-hokind]').forEach(function(x){ x.onclick=function(){ setKind(x.dataset.hokind); }; });
+  setKind(HO_KIND);
+  var chips=SS_CHIPS.filter(function(c){ return !c.none; });
+  document.querySelectorAll('[data-hochip]').forEach(function(x){ x.onclick=function(){
+    var c=chips[Number(x.dataset.hochip)]; var ta=$('ho_text'); if(!c||!ta) return;
+    var cur=String(ta.value||'').trim(); ta.value=(cur?(cur+'\n'):'')+c.text; ta.focus();
+    try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(_e){}
+  }; });
+  var go=function(fn){ return async function(ev){ var btn=ev.currentTarget; btn.disabled=true;
+    try{ await fn(btn); await refreshHandover(); refreshSendCard(); }
+    catch(e){ btn.disabled=false; toast('err', e.message||'ไม่สำเร็จ'); } }; };
+  var add=$('ho_add');
+  if(add) add.onclick=go(async function(){
+    var t=(($('ho_text')||{}).value||'').trim();
+    await window.HR.handoverAdd({ empId:EMP.emp_id, kind:HO_KIND, title:t });
+    toast('ok', HO_KIND==='task' ? 'ฝากงานแล้ว — รอหัวหน้าผลัดอนุมัติ' : 'ฝากข้อความแล้ว — รอหัวหน้าผลัดอนุมัติ');
+  });
+  document.querySelectorAll('[data-hoack]').forEach(function(x){ x.onclick=go(async function(){
+    await window.HR.handoverAck({ empId:EMP.emp_id, id:Number(x.dataset.hoack) }); toast('ok','รับทราบแล้ว'); }); });
+  document.querySelectorAll('[data-hoapp]').forEach(function(x){ x.onclick=go(async function(){
+    var r=await window.HR.handoverReview({ empId:EMP.emp_id, id:Number(x.dataset.hoapp), approve:true });
+    toast('ok','อนุมัติแล้ว — ส่งถึงผลัดถัดไป'); return r; }); });
+  document.querySelectorAll('[data-horej]').forEach(function(x){ x.onclick=async function(){
+    var why=prompt('ตีตกเรื่องนี้เพราะอะไร\n\nเหตุผลจะขึ้นให้คนที่ฝากเห็น (อย่างน้อย 5 ตัวอักษร)');
+    if(why===null) return;
+    x.disabled=true;
+    try{ await window.HR.handoverReview({ empId:EMP.emp_id, id:Number(x.dataset.horej), approve:false, note:String(why).trim() });
+         toast('ok','ตีตกแล้ว'); await refreshHandover(); refreshSendCard(); }
+    catch(e){ x.disabled=false; toast('err', e.message||'ไม่สำเร็จ'); } }; });
+  document.querySelectorAll('[data-hodrop]').forEach(function(x){ x.onclick=go(async function(){
+    await window.HR.handoverDrop({ empId:EMP.emp_id, id:Number(x.dataset.hodrop) }); toast('ok','ถอนเรื่องแล้ว'); }); });
+  document.querySelectorAll('[data-hoasg]').forEach(function(x){ x.onclick=go(async function(){
+    var id=Number(x.dataset.hoasg); var sel=$('hoasg_'+id);
+    var r=await window.HR.handoverAssign({ empId:EMP.emp_id, id:id, toEmpId:(sel||{}).value||'' });
+    toast('ok','แจกงานให้ '+(r.emp_name||'')+' แล้ว — ขึ้นในงานของเขาเลย'); }); });
+  document.querySelectorAll('[data-hocancel]').forEach(function(x){ x.onclick=async function(){
+    var why=prompt('ปิดงานฝากนี้เพราะทำไม่ได้จริง\n\nระบุเหตุผล (อย่างน้อย 5 ตัวอักษร)\nเช่น "ไม่มีหลอดไฟสำรอง สั่งของแล้วรอของพรุ่งนี้"');
+    if(why===null) return;
+    x.disabled=true;
+    try{ await window.HR.handoverCancel({ empId:EMP.emp_id, id:Number(x.dataset.hocancel), reason:String(why).trim() });
+         toast('ok','ปิดงานแล้ว'); await refreshHandover(); refreshSendCard(); }
+    catch(e){ x.disabled=false; toast('err', e.message||'ไม่สำเร็จ'); } }; });
+}
+
+async function refreshHandover(){
+  var box=$('hoHandover'); if(!box) return;
+  try{ HO_BOARD=await window.HR.handoverBoard(EMP.emp_id); }
+  catch(e){ HO_BOARD=null; box.innerHTML=''; return; }
+  box.innerHTML=hoCardHTML(HO_BOARD);
+  hoWire();
+}
+
 // ★ 23 ก.ย. 2569 — หมายเหตุจากผลัดก่อนหน้า (ปัญหา/เรื่องที่ต้องตามต่อ) — ขึ้นบนสุดของหน้าเมนู
 async function refreshPrevNote(){
   var box=$('hoPrevNote'); if(!box) return;
