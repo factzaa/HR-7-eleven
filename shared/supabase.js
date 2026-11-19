@@ -926,35 +926,49 @@
         sale: +x.sales_total || 0, tgt: +x.target_total || 0, customers: +x.customers || 0,
         cafe: +x.allcafe_cups || 0, deliv: +x.delivery_bills || 0,
         jeeb: exNum(x.extra, 'khanomjeeb'), salapao: exNum(x.extra, 'salapao') }));
+    // ★ 19 พ.ย. 69 — ยอดขายที่คีย์ตกหลัก (เช่น 26.904 แทน 26,904) ตัดทิ้งทั้งแถว
+    //   ไม่งั้นกะนั้นจะถูกนับเป็นกะที่ยอดตกของเรา ทั้งที่เป็นเลขพิมพ์ผิดในแบบฟอร์ม
+    let rows2 = rows;
+    { const g = {};
+      rows2.forEach(x => { if (x.sale > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(x.sale); });
+      const mm = {}; Object.keys(g).forEach(k => { const a = g[k].sort((p, q) => p - q); mm[k] = a[a.length >> 1]; });
+      rows2 = rows2.filter(x => { const m = mm[x.branch_id + '|' + x.shift] || 0; return !(m > 0 && x.sale < m / 10); }); }
     // เป้าที่คีย์ผิด → ไม่เอามาคิด % (เทียบกับค่ากลางของสาขานั้น × ผลัดนั้น)
     const med = {};
     { const g = {};
-      rows.forEach(x => { if (x.tgt > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(x.tgt); });
+      rows2.forEach(x => { if (x.tgt > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(x.tgt); });
       Object.keys(g).forEach(k => { const a = g[k].sort((p, q) => p - q); med[k] = a[a.length >> 1]; }); }
     // ตัวเชียร์ขายที่คีย์ผิดหน่วย → ถือว่าไม่มีข้อมูล (null)
     const CH = ['cafe', 'jeeb', 'salapao', 'deliv'];
     { const g = {};
-      rows.forEach(x => { const k = x.branch_id + '|' + x.shift; const o = g[k] || (g[k] = { cafe: [], jeeb: [], salapao: [], deliv: [] });
+      rows2.forEach(x => { const k = x.branch_id + '|' + x.shift; const o = g[k] || (g[k] = { cafe: [], jeeb: [], salapao: [], deliv: [] });
         CH.forEach(f => { if (x[f] > 0) o[f].push(x[f]); }); });
-      rows.forEach(x => { const o = g[x.branch_id + '|' + x.shift] || {};
+      rows2.forEach(x => { const o = g[x.branch_id + '|' + x.shift] || {};
         CH.forEach(f => { const a = (o[f] || []).sort((p, q) => p - q); const m = a.length ? a[a.length >> 1] : 0;
           if (m > 0 && x[f] > m * 10) x[f] = null; }); }); }
-    rows.forEach(x => {
+    rows2.forEach(x => {
       const m = med[x.branch_id + '|' + x.shift] || 0;
       const tok = x.tgt > 0 && m > 0 && x.tgt >= m / 3 && x.tgt <= m * 3;
       x.pct = tok ? (x.sale / x.tgt * 100) : null;
-      x.head = x.customers > 0 ? (x.sale / x.customers) : null;
     });
+    // จำนวนลูกค้า: ปัดเศษทศนิยม · ค่าที่สลับช่องกับ "ยอดต่อหัว" ถือว่าไม่มีข้อมูล (กติกาเดียวกับหน้า HR)
+    { const g = {};
+      rows2.forEach(x => { if (x.customers > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(Math.round(x.customers)); });
+      const mm = {}; Object.keys(g).forEach(k => { const a = g[k].sort((p, q) => p - q); mm[k] = a[a.length >> 1]; });
+      rows2.forEach(x => { x.customers = Math.round(x.customers || 0);
+        const m = mm[x.branch_id + '|' + x.shift] || 0;
+        if (m > 0 && x.customers > 0 && (x.customers < m / 3 || x.customers > m * 3)) x.customers = 0;
+        x.head = x.customers > 0 ? (x.sale / x.customers) : null; }); }
     // ค่าเฉลี่ยของผลัดเดียวกัน สาขาเดียวกัน (ฐานเทียบ)
     const avg = (a) => { const v = a.filter(z => z != null && isFinite(z)); return v.length ? v.reduce((s, z) => s + z, 0) / v.length : null; };
     const base = {};
-    rows.forEach(x => { const k = x.branch_id + '|' + x.shift; (base[k] || (base[k] = [])).push(x); });
+    rows2.forEach(x => { const k = x.branch_id + '|' + x.shift; (base[k] || (base[k] = [])).push(x); });
     const baseAvg = {};
     Object.keys(base).forEach(k => { const L = base[k];
       baseAvg[k] = { n: L.length, sale: avg(L.map(x => x.sale)), pct: avg(L.map(x => x.pct)), head: avg(L.map(x => x.head)),
         cafe: avg(L.map(x => x.cafe)), jeeb: avg(L.map(x => x.jeeb)), salapao: avg(L.map(x => x.salapao)), deliv: avg(L.map(x => x.deliv)) }; });
     // กะของเรา
-    const byKey = {}; rows.forEach(x => { byKey[x.branch_id + '|' + x.sale_date + '|' + x.code] = x; });
+    const byKey = {}; rows2.forEach(x => { byKey[x.branch_id + '|' + x.sale_date + '|' + x.code] = x; });
     const mine = [];
     myAtt.forEach(a => {
       const code = grpOf[a.shift_id] || a.shift_id;
