@@ -584,6 +584,9 @@
         case 'hr_stock_summary':     return await hrStockSummary(p.branch, p.from, p.to);
         case 'hr_stock_chronic':     return await hrStockChronic(p.branch, p.from, p.to, p.min_months);
         case 'hr_stock_wo_top':      return await hrStockWoTop(p.branch, p.from, p.to, p.section);
+        case 'hr_stock_cmp':         return await hrStockBranchCompare(p);
+        case 'hr_late_pattern':      return await hrLatePattern(p);
+        case 'hr_task_speed':        return await hrTaskSpeed(p);
         case 'hr_stock_swap':        return await hrStockSwap(p.branch, p.from, p.to, p.pair_kind);
         case 'hr_stock_pma_items':   return await hrStockPmaItems(p.branch, p.from, p.to, p.pma, p.limit, p.risk);
         case 'hr_stock_month_diff':  return await hrStockMonthDiff(p.branch, p.a, p.b);
@@ -5287,7 +5290,9 @@
       .gte('sale_date', start).lte('sale_date', end).order('id');
       if (br) x = x.eq('branch_id', br); return x; };
     const COLS = 'branch_id,sale_date,shift,target_total,sales_total,customers,allcafe_cups,delivery_bills,extra';
-    const qAtt = () => { let x = sb().from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in')
+    // ★ 19 พ.ย. 69 — ดึง check_out มาด้วย เพื่อคิด "ชั่วโมงแรงงานจริง" ต่อกะ
+    //   ของเดิมรู้แค่ว่าใครอยู่ในกะ แต่ไม่รู้ว่าใช้คนไปกี่ชั่วโมงกับยอดเท่านั้น
+    const qAtt = () => { let x = sb().from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in,check_out')
       .not('check_in', 'is', null).gte('work_date', start).lte('work_date', end).order('id'); return x; };
     const [sales, att, shR, empR, brR] = await Promise.all([
       fetchPaged(qSales(COLS)), fetchPaged(qAtt),
@@ -5377,11 +5382,18 @@
 
     // ---- 3) ใครอยู่กะไหน (ลงเวลาจริงเท่านั้น) ----
     const crew = {};
+    // ★ 19 พ.ย. 69 — ชั่วโมงแรงงานจริงของแต่ละกะ (รวมเวลาพัก เพราะเป็นเวลาที่จ่ายค่าแรง)
+    //   ใช้เฉพาะแถวที่ปิดกะแล้วและเวลาสมเหตุสมผล (0–20 ชม.) กันแถวค้างเปิด/ลงเวลาเพี้ยน
+    const manH = {}, manN = {};
     att.forEach(a => {
       const code = grpOf[a.shift_id] || a.shift_id;
       const k = (a.branch_id || '') + '|' + a.work_date + '|' + code;
       if (!byKey[k]) return;                       // กะที่ไม่มียอดขาย ไม่นับ
       (crew[k] || (crew[k] = new Set())).add(a.emp_id);
+      if (!a.check_out) return;
+      const h = (Date.parse(a.check_out) - Date.parse(a.check_in)) / 3600000;
+      if (!(h > 0 && h < 20)) return;
+      manH[k] = (manH[k] || 0) + h; manN[k] = (manN[k] || 0) + 1;
     });
 
     // ---- 4) รวมรายคน ----
@@ -5440,9 +5452,13 @@
     const shiftRows = Object.keys(crew).map(k => {
       const x = byKey[k];
       const ids = [...crew[k]].sort();
+      const mh = manH[k] || 0, mn = manN[k] || 0;
       return { branch_id: x.branch_id, branch_name: x.branch_name, sale_date: x.sale_date, shift: x.shift,
         sale: x.sale, tgt: x.tgt, pct: r1(x.pct), idx_pct: r1(x.idx_pct), idx_sale: r1(x.idx_sale),
         customers: x.customers, head: r1(x.head), cafe: x.cafe, jeeb: x.jeeb, salapao: x.salapao, deliv: x.deliv,
+        // ★ 19 พ.ย. 69 — ชั่วโมงแรงงานกับยอดต่อชั่วโมง (ตอบว่า "ใช้คนเท่านี้คุ้มกับยอดไหม")
+        man_hours: mh > 0 ? r1(mh) : null, closed_n: mn,
+        per_hour: (mh > 0 && mn >= Math.max(1, ids.length - 1)) ? Math.round(x.sale / mh) : null,
         n: ids.length, ids, members: ids.map(nmOf2) };
     }).sort((a, b) => a.sale_date === b.sale_date ? (a.branch_name < b.branch_name ? -1 : 1) : (a.sale_date < b.sale_date ? 1 : -1));
     // ทีมเดียวกันเป๊ะ ๆ (สาขา + ผลัด + รายชื่อครบชุด)
@@ -5597,8 +5613,24 @@
     p = p || {};
     if (!p.start || !p.end) return { ok: false, error: 'ระบุช่วงวันที่' };
     const r = await _salesPeopleCore(p.start, p.end, p.branch_id || '');
+    // ★ 19 พ.ย. 69 — สรุปยอดต่อชั่วโมงแรงงาน รายสาขา × ผลัด
+    //   ใช้ค่ากลาง ไม่ใช่ค่าเฉลี่ย — กะที่ยอดพุ่งผิดปกติวันเดียวจะได้ไม่ลากภาพรวม
+    const L = {};
+    (r.shiftRows || []).forEach(x => { if (x.per_hour == null) return;
+      const k = x.branch_name + '|' + x.shift;
+      const o = L[k] || (L[k] = { branch_name: x.branch_name, shift: x.shift, ph: [], hrs: [], crew: [], sale: 0, h: 0, n: 0 });
+      o.ph.push(x.per_hour); o.hrs.push(x.man_hours); o.crew.push(x.n);
+      o.sale += x.sale; o.h += x.man_hours; o.n++; });
+    const _med = a => { if (!a.length) return null; const s = a.slice().sort((m, n) => m - n); return s[s.length >> 1]; };
+    const _avg = a => a.length ? a.reduce((m, n) => m + n, 0) / a.length : null;
+    const _r1 = v => v == null ? null : Math.round(v * 10) / 10;
+    const labour = Object.values(L).map(o => ({ branch_name: o.branch_name, shift: o.shift, shifts: o.n,
+      per_hour_med: _med(o.ph), per_hour_all: Math.round(o.sale / o.h),
+      avg_hours: _r1(_avg(o.hrs)), avg_crew: _r1(_avg(o.crew)) }))
+      .sort((a, b) => b.per_hour_med - a.per_hour_med);
     return { ok: true, start: p.start, end: p.end,
-      shift_rows: r.shiftRows, crews: r.crews, people: r.people, pairs: r.pairs,
+      shift_rows: r.shiftRows, crews: r.crews, people: r.people, pairs: r.pairs, labour,
+      labour_shifts: (r.shiftRows || []).filter(x => x.per_hour != null).length,
       min_shifts: r.min_shifts, pair_min: r.pair_min, shifts_counted: r.rows.length };
   }
 
@@ -9206,6 +9238,158 @@
     }
     return out;
   }
+  // ★ 19 พ.ย. 69 — รูปแบบการมาสาย: แยกให้ออกว่าเป็น "ปัญหาของคน" หรือ "ปัญหาของผลัด"
+  //   ของจริงที่เจอ: สาย 31% ของการลงเวลาทั้งหมด · ผลัดเช้าสาย 44% ขณะที่บ่าย/ดึกราว 24%
+  //   ถ้าดูรายคนเฉย ๆ คนกะเช้าจะดูแย่กว่าทุกคนทั้งที่อาจเป็นเรื่องของผลัดเอง (รอบรถ/เวลาเปิดร้าน)
+  //   จึงเทียบคนกับ "ค่ากลางของผลัดที่เขาเข้าจริง" ถ่วงน้ำหนักตามสัดส่วนกะที่เขาทำ
+  async function hrLatePattern(p) {
+    p = p || {};
+    const start = p.start, end = p.end;
+    if (!start || !end) return { ok: false, error: 'ระบุช่วงวันที่' };
+    const br = String(p.branch_id || p.branch || '');
+    const qAtt = () => { let x = sb().from('attendance')
+      .select('emp_id,work_date,shift_id,branch_id,check_in,late_min')
+      .not('check_in', 'is', null).gte('work_date', start).lte('work_date', end).order('id');
+      if (br) x = x.eq('branch_id', br); return x; };
+    const [att, shR, empR] = await Promise.all([
+      fetchPaged(qAtt),
+      sb().from('shifts').select('shift_id,name,main_shift'),
+      sb().from('employees').select('emp_id,name,nickname,branch_id,active'),
+    ]);
+    const shNm = {}, grpOf = {};
+    (shR.data || []).forEach(s => { shNm[s.shift_id] = s.name || s.shift_id; grpOf[s.shift_id] = s.main_shift || s.shift_id; });
+    const emp = {}; (empR.data || []).forEach(e => { emp[e.emp_id] = e; });
+
+    const rows = att.filter(a => a.late_min != null).map(a => ({
+      emp_id: String(a.emp_id), date: a.work_date, raw: a.shift_id || '',
+      grp: grpOf[a.shift_id] || a.shift_id || '—', late: (+a.late_min || 0),
+    }));
+    const _med = arr => { if (!arr.length) return null; const s = arr.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+    const pc = (l, n) => n ? Math.round(l / n * 1000) / 10 : null;
+
+    // ---- รายผลัด (ใช้เป็นฐานเทียบ) ----
+    const S = {};
+    rows.forEach(r => { const o = S[r.grp] || (S[r.grp] = { n: 0, late: 0, mins: [] });
+      o.n++; if (r.late > 0) { o.late++; o.mins.push(r.late); } });
+    const by_shift = Object.entries(S).map(([k, o]) => ({ shift: k, name: shNm[k] || k,
+      n: o.n, late: o.late, pct: pc(o.late, o.n), med_min: _med(o.mins) }))
+      .sort((a, b) => (b.pct || 0) - (a.pct || 0));
+    const basePct = {}; by_shift.forEach(s => { basePct[s.shift] = s.pct || 0; });
+
+    // ---- รายวันในสัปดาห์ ----
+    const TH_D = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์', 'เสาร์'];
+    const D = {};
+    rows.forEach(r => { const i = new Date(r.date + 'T00:00:00Z').getUTCDay();
+      const o = D[i] || (D[i] = { n: 0, late: 0 }); o.n++; if (r.late > 0) o.late++; });
+    const by_dow = Object.entries(D).map(([i, o]) => ({ dow: +i, name: TH_D[+i], n: o.n, late: o.late, pct: pc(o.late, o.n) }))
+      .sort((a, b) => a.dow - b.dow);
+
+    // ---- วันแรกหลังหยุด (ไม่ได้ลงเวลาเมื่อวาน) ----
+    const seen = {}; rows.forEach(r => { (seen[r.emp_id] = seen[r.emp_id] || new Set()).add(r.date); });
+    const back = { n: 0, late: 0 }, cont = { n: 0, late: 0 };
+    rows.forEach(r => { const y = _addDaysIso(r.date, -1);
+      const t = (seen[r.emp_id] && seen[r.emp_id].has(y)) ? cont : back;
+      t.n++; if (r.late > 0) t.late++; });
+
+    // ---- รายคน เทียบกับผลัดที่ตัวเองเข้าจริง ----
+    const P = {};
+    rows.forEach(r => { const o = P[r.emp_id] || (P[r.emp_id] = { n: 0, late: 0, mins: [], mix: {} });
+      o.n++; o.mix[r.grp] = (o.mix[r.grp] || 0) + 1; if (r.late > 0) { o.late++; o.mins.push(r.late); } });
+    const MIN_N = Math.max(5, Number(p.min_shifts) || 10);
+    const people = Object.entries(P).map(([id, o]) => {
+      const e = emp[id] || {};
+      let exp = 0; Object.entries(o.mix).forEach(([g, c]) => { exp += (basePct[g] || 0) * c; });
+      exp = o.n ? exp / o.n : 0;                           // % สายที่ "ควรเป็น" ถ้าเขาสายเท่าค่ากลางของผลัดที่เขาเข้า
+      const pct = pc(o.late, o.n);
+      return { emp_id: id, name: e.nickname || e.name || id, branch_id: e.branch_id || '',
+        active: e.active !== false, n: o.n, late: o.late, pct, med_min: _med(o.mins),
+        expected_pct: Math.round(exp * 10) / 10,
+        idx: (exp > 0 && pct != null) ? Math.round(pct / exp * 100) : null,
+        // ★ "สายเกินเพื่อนในผลัดเดียวกันกี่ครั้ง" — ใช้เรียงลำดับแทนดัชนีล้วน
+        //   ดัชนีล้วนจะดันคนที่สาย 30% ในผลัดที่ปกติไม่สาย ขึ้นเหนือคนที่สาย 90%
+        //   ซึ่งผิดจากความจริงที่ว่าคนสาย 90% คือคนที่ต้องคุยด้วยก่อน
+        excess: Math.round((o.late - (exp / 100) * o.n) * 10) / 10,
+        shift_mix: Object.entries(o.mix).sort((a, b) => b[1] - a[1])
+          .map(([g, c]) => (shNm[g] || g) + ' ' + c) };
+    }).filter(x => x.n >= MIN_N).sort((a, b) => (b.excess - a.excess) || ((b.idx || 0) - (a.idx || 0)));
+
+    const lateAll = rows.filter(r => r.late > 0);
+    return { ok: true, start, end, branch_id: br, min_shifts: MIN_N,
+      overall: { checkins: rows.length, late: lateAll.length, pct: pc(lateAll.length, rows.length),
+        med_min: _med(lateAll.map(r => r.late)), lost_min: lateAll.reduce((s, r) => s + r.late, 0) },
+      by_shift, by_dow, people,
+      after_off: { back_n: back.n, back_pct: pc(back.late, back.n), cont_n: cont.n, cont_pct: pc(cont.late, cont.n) } };
+  }
+  function _addDaysIso(d, n) { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+
+  // ★ 19 พ.ย. 69 — ตัวชี้วัดงานในกะแบบใหม่: "ใช้เวลาเท่าไรกว่าจะส่ง" ไม่ใช่ "ผ่าน/ไม่ผ่าน"
+  //   ของจริง: 90 วันล่าสุด 24,549 งาน ผ่าน 99.6% — ผลตรวจจึงแยกคนไม่ออกเลย
+  //   แต่เวลาที่ใช้กระจายตัวจริง (งานความสะอาด 3-4 ชม. · งานสั่งของ/QA 9-10 ชม.)
+  //   เทียบกับ "ค่ากลางของงานชิ้นนั้นในผลัดนั้น" เสมอ — ไม่เอางานถูพื้นไปเทียบกับงานสั่งของ
+  async function hrTaskSpeed(p) {
+    p = p || {};
+    const start = p.start, end = p.end;
+    if (!start || !end) return { ok: false, error: 'ระบุช่วงวันที่' };
+    const br = String(p.branch_id || p.branch || '');
+    const qT = () => { let x = sb().from('task_assignments')
+      .select('work_date,shift_id,emp_id,emp_name,branch_id,title,status,sent_back_count,created_at,submitted_at')
+      .gte('work_date', start).lte('work_date', end).order('id');
+      if (br) x = x.eq('branch_id', br); return x; };
+    const [all, shR] = await Promise.all([ fetchPaged(qT), sb().from('shifts').select('shift_id,name,main_shift') ]);
+    const shNm = {}, grpOf = {};
+    (shR.data || []).forEach(s => { shNm[s.shift_id] = s.name || s.shift_id; grpOf[s.shift_id] = s.main_shift || s.shift_id; });
+
+    const MAXH = 24;
+    const rows = [];
+    all.forEach(a => {
+      if (!a.created_at || !a.submitted_at) return;
+      const h = (Date.parse(a.submitted_at) - Date.parse(a.created_at)) / 3600000;
+      if (!(h >= 0 && h <= MAXH)) return;                 // งานที่เปิดค้างข้ามวัน/เวลาเพี้ยน ไม่เอามาคิด
+      const g = grpOf[a.shift_id] || a.shift_id || '—';
+      rows.push({ emp_id: String(a.emp_id), name: a.emp_name || a.emp_id, title: a.title || '—',
+        grp: g, h, back: (+a.sent_back_count || 0) });
+    });
+    const _med = arr => { if (!arr.length) return null; const s = arr.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+    const r1h = v => v == null ? null : Math.round(v * 10) / 10;
+
+    // ---- ค่ากลางของ "งานชิ้นนี้ ในผลัดนี้" = ฐานเทียบ ----
+    const K = {};
+    rows.forEach(r => { const k = r.title + '|' + r.grp; (K[k] || (K[k] = [])).push(r.h); });
+    const base = {}; Object.keys(K).forEach(k => { if (K[k].length >= 5) base[k] = _med(K[k]); });
+
+    // ---- รายงาน: งานไหนถูกดองไว้ท้ายสุด ----
+    const TT = {};
+    rows.forEach(r => { const o = TT[r.title] || (TT[r.title] = { hs: [], back: 0, n: 0 });
+      o.hs.push(r.h); o.n++; if (r.back > 0) o.back++; });
+    const tasks = Object.entries(TT).filter(([k, o]) => o.n >= 20)
+      .map(([k, o]) => ({ title: k, n: o.n, med_hours: r1h(_med(o.hs)),
+        back_pct: Math.round(o.back / o.n * 1000) / 10 }))
+      .sort((a, b) => b.med_hours - a.med_hours);
+
+    // ---- รายคน: เทียบกับฐานของงานชิ้นเดียวกันในผลัดเดียวกัน ----
+    const P = {};
+    rows.forEach(r => { const b = base[r.title + '|' + r.grp]; if (!(b > 0)) return;
+      const o = P[r.emp_id] || (P[r.emp_id] = { name: r.name, n: 0, ratio: [], hs: [], back: 0, shifts: {} });
+      o.n++; o.ratio.push(r.h / b); o.hs.push(r.h); if (r.back > 0) o.back++;
+      o.shifts[r.grp] = (o.shifts[r.grp] || 0) + 1; });
+    const MIN_N = Math.max(10, Number(p.min_tasks) || 30);
+    const people = Object.entries(P).map(([id, o]) => ({
+      emp_id: id, name: o.name, n: o.n, med_hours: r1h(_med(o.hs)),
+      idx: Math.round((_med(o.ratio) || 0) * 100),
+      back_pct: Math.round(o.back / o.n * 1000) / 10,
+      shift_mix: Object.entries(o.shifts).sort((a, b) => b[1] - a[1]).map(([g, c]) => (shNm[g] || g) + ' ' + c),
+    })).filter(x => x.n >= MIN_N).sort((a, b) => b.idx - a.idx);
+
+    const st = {}; all.forEach(a => { st[a.status || '—'] = (st[a.status || '—'] || 0) + 1; });
+    const appr = (st.approved || 0), tot = all.length;
+    return { ok: true, start, end, branch_id: br, min_tasks: MIN_N,
+      scanned: tot, measured: rows.length, status: st,
+      approve_pct: tot ? Math.round(appr / tot * 1000) / 10 : null,
+      med_hours: r1h(_med(rows.map(r => r.h))),
+      back_pct: rows.length ? Math.round(rows.filter(r => r.back > 0).length / rows.length * 1000) / 10 : null,
+      tasks, people };
+  }
+
   async function hrAnalytics(f) {
     f = f || {};
     const today = bkkToday();
@@ -13004,6 +13188,68 @@
     });
     if (error) throw error;
     return { ok: true, rows: data || [] };
+  }
+
+  // ★ 19 พ.ย. 69 — เทียบ "เงินที่หายไป" ข้ามสาขาในหน้าเดียว
+  //   ของเดิมดูได้ทีละสาขา จึงไม่มีใครเห็นว่า 2 สาขาไม่เคยอัปไฟล์เลยสักเดือน
+  //   และตัวเลขบาทดิบเทียบข้ามสาขาไม่ได้ (ขนาดร้านต่างกัน) จึงคิด % ของยอดขายให้ด้วย
+  //   แยก "วัสดุสิ้นเปลือง" ออกจาก "เสื่อมคุณภาพ" เพราะคนละสาเหตุคนละวิธีแก้:
+  //     เสื่อมคุณภาพ = สั่งเกิน/ขายไม่ทัน → แก้ที่การสั่งและ FIFO
+  //     วัสดุสิ้นเปลือง = ถุง/หลอด/น้ำยา → แก้ที่วิธีใช้และการเบิก ไม่เกี่ยวกับการสั่งของ
+  const STK_SEC = { 'เสื่อมคุณภาพ-สาขา': 'spoil', 'เสื่อมคุณภาพ-คลัง': 'dc',
+                    'วัสดุสิ้นเปลือง': 'consume', 'ชดเชยคืน': 'credit' };
+  const r2 = v => (v == null || !isFinite(v)) ? null : Math.round(v * 100) / 100;
+  async function hrStockBranchCompare(p) {
+    p = p || {};
+    if (!(await stockReady())) return STOCK_NOTREADY;
+    const from = String(p.from || ''), to = String(p.to || '');
+    const qWo = () => { let x = sb().from('stock_writeoff_items').select('branch_id,period_ym,section,amount').order('id');
+      if (from) x = x.gte('period_ym', from); if (to) x = x.lte('period_ym', to); return x; };
+    const qUp = () => { let x = sb().from('stock_uploads').select('branch_id,kind,period_ym,row_count').order('period_ym');
+      if (from) x = x.gte('period_ym', from); if (to) x = x.lte('period_ym', to); return x; };
+    const [wo, ups, brR] = await Promise.all([ fetchPaged(qWo), fetchPaged(qUp), sb().from('branches').select('branch_id,name,active') ]);
+    // ยอดขายรายเดือน — ใช้ทำตัวหารให้เทียบข้ามสาขาได้
+    const qS = () => { let x = sb().from('sales_daily').select('branch_id,sale_date,shift,sales_total').order('id');
+      if (from) x = x.gte('sale_date', from + '-01'); if (to) x = x.lte('sale_date', to + '-31'); return x; };
+    let sales = []; try { sales = await fetchPaged(qS); } catch (e) { sales = []; }
+    const saleBy = {};
+    sales.forEach(r => { if (r.shift !== 'สิ้นวัน') return;          // ใช้แถวสรุปสิ้นวันเท่านั้น กันนับซ้ำกับรายผลัด
+      const k = r.branch_id + '|' + String(r.sale_date).slice(0, 7);
+      saleBy[k] = (saleBy[k] || 0) + (+r.sales_total || 0); });
+
+    const months = [...new Set(wo.map(x => x.period_ym).concat(ups.map(x => x.period_ym)))].filter(Boolean).sort();
+    const brs = (brR.data || []).filter(b => b.active !== false);
+    const upBy = {}; ups.forEach(u => { (upBy[u.branch_id + '|' + u.period_ym] = upBy[u.branch_id + '|' + u.period_ym] || {})[u.kind] = (+u.row_count || 0); });
+    const cell = {};
+    wo.forEach(x => { const k = x.branch_id + '|' + x.period_ym;
+      const c = cell[k] || (cell[k] = { total: 0, spoil: 0, dc: 0, consume: 0, credit: 0 });
+      c.total += (+x.amount || 0);
+      const s = STK_SEC[x.section]; if (s) c[s] += (+x.amount || 0); });
+
+    const rows = brs.map(b => {
+      const per = months.map(m => {
+        const k = b.branch_id + '|' + m, c = cell[k], u = upBy[k];
+        const sale = saleBy[k] || 0;
+        return { period: m, has_file: !!u, wo_rows: (u && u.writeoff) || 0, audit_rows: (u && u.audit) || 0,
+          total: c ? r2(c.total) : null, spoil: c ? r2(c.spoil) : null, consume: c ? r2(c.consume) : null,
+          sale: sale ? r2(sale) : null, pct: (c && sale > 0) ? r2(c.total / sale * 100) : null };
+      });
+      const got = per.filter(x => x.total != null);
+      const first = got[0], last = got[got.length - 1];
+      return { branch_id: b.branch_id, branch_name: b.name || b.branch_id, months: per,
+        months_with_data: got.length, months_missing: per.filter(x => !x.has_file).map(x => x.period),
+        total: r2(got.reduce((s, x) => s + x.total, 0)),
+        spoil: r2(got.reduce((s, x) => s + (x.spoil || 0), 0)),
+        consume: r2(got.reduce((s, x) => s + (x.consume || 0), 0)),
+        avg_pct: (() => { const a = got.filter(x => x.pct != null); return a.length ? r2(a.reduce((s, x) => s + x.pct, 0) / a.length) : null; })(),
+        trend_pct: (first && last && got.length >= 2 && first.total > 0) ? r2((last.total - first.total) / first.total * 100) : null };
+    });
+    const tot = {};
+    months.forEach(m => { const g = rows.map(r => (r.months.find(x => x.period === m) || {}).total).filter(v => v != null);
+      tot[m] = g.length ? r2(g.reduce((a, b2) => a + b2, 0)) : null; });
+    return { ok: true, from, to, months, rows, month_total: tot,
+      grand: r2(rows.reduce((s, r) => s + r.total, 0)),
+      no_data: rows.filter(r => r.months_with_data === 0).map(r => r.branch_name) };
   }
 
   // รายการสินค้าในกลุ่ม PMA (กดจากตารางอันดับกลุ่ม) — pma ว่าง = ทุกกลุ่ม
