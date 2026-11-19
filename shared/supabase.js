@@ -464,10 +464,15 @@
       else if (st === 'closed') closed.push({ id:d.id, title:d.title, reason:(a && a.closed_reason) || '' });
       else pending.push({ id:d.id, title:d.title, status:st, emp_name:(a && a.emp_name) || '' });
     });
+    // ★ 19 พ.ย. 69 — ด่านงาน/ข้อความฝากผลัด (ดู _handoverGate)
+    const ho = await _handoverGate(branch, today, shift);
+    const hoBlocks = _handoverBlocks(ho);
     return { has_shift:true, shift, branch, work_date:today,
       lead, is_lead: !!(lead && String(lead.emp_id) === String(emp.emp_id)),
       submitted, total: defs.length, done, closed, pending,
-      can_submit: !!(lead && String(lead.emp_id) === String(emp.emp_id)) && !submitted && pending.length === 0 };
+      handover: ho, handover_blocks: hoBlocks,
+      can_submit: !!(lead && String(lead.emp_id) === String(emp.emp_id)) && !submitted
+                  && pending.length === 0 && hoBlocks.length === 0 };
   }
 
   // ---- กดส่งผลัด ----
@@ -481,11 +486,22 @@
       throw new Error('รหัสยืนยันไม่ตรงกับหัวหน้าผลัด');
     if (st.pending.length)
       throw new Error('ยังมีงานค้าง ' + st.pending.length + ' รายการ — ส่งงานให้ครบ หรือปิดงานพร้อมระบุเหตุผลก่อน');
+    // ★ 19 พ.ย. 69 — เรื่องที่ฝาก/รับฝากต้องเคลียร์ก่อน (ตรวจครบ · รับทราบครบ · งานฝากเสร็จ)
+    if ((st.handover_blocks || []).length) throw new Error(st.handover_blocks.join('\n'));
     await _assertNoOverdueFix(st.branch, st.work_date, st.shift);   // ★ งานตีกลับค้างข้ามวัน ต้องเคลียร์ก่อนส่งผลัด
     const emp = await lookupEmployee(empId);
+    // ★ สรุปเรื่องที่ฝากต่อ ลงช่อง note เดิม เพื่อให้รายงานไลน์/หน้าเก่ายังเห็นเหมือนเดิม
+    let hoNote = '';
+    try{
+      const { data: hs } = await sb.from('shift_handovers').select('kind,title')
+        .eq('branch_id', st.branch || '').eq('work_date', st.work_date).eq('shift_id', st.shift)
+        .eq('review', 'approved').order('id');
+      hoNote = (hs || []).map(h => (h.kind === 'task' ? '📌 งานฝาก: ' : '💬 ') + h.title).join('\n');
+    }catch(e){}
+    const noteAll = [String(note || '').trim(), hoNote].filter(Boolean).join('\n') || null;
     const rowIns = { work_date: st.work_date, branch_id: st.branch || '', shift_id: st.shift,
       emp_id: st.lead.emp_id, emp_name: st.lead.emp_name || (emp.nickname || emp.name),
-      total: st.total, done: st.done, closed: st.closed.length, note: (note || null) };
+      total: st.total, done: st.done, closed: st.closed.length, note: noteAll };
     const { error } = await sb.from('shift_submits').insert(rowIns);
     if (error && !String(error.message || '').match(/duplicate|unique/i)) throw error;
     try{ await sb.from('activity_log').insert({ action:'ส่งผลัด', emp_id: st.lead.emp_id,
@@ -4875,13 +4891,267 @@
     } catch (e) { location.replace(location.href); }
   }
 
+  // ============================================================
+  // ★ 19 พ.ย. 69 — ฝาก "งาน" หรือ "ข้อความ" ให้ผลัดถัดไป
+  //   ต้องรัน supabase/shift_handover.sql ก่อน
+  //   เดิม: ข้อความเดียวต่อผลัดใน shift_submits.note · เปิดแอปก็นับว่าอ่านแล้วอัตโนมัติ
+  //         ถ้าเป็นงานที่ต้องทำต่อ ก็ไม่มีที่ลง กลายเป็นข้อความลอย ๆ ไม่มีใครรับผิดชอบ
+  //   ใหม่: ใครในกะก็ฝากได้ → หัวหน้าผลัดอนุมัติ → ส่งถึงผลัดถัดไป
+  //         งาน     = หัวหน้าผลัดถัดไปแจกให้คนในกะ · ติดธง [งานฝาก] · บังคับถ่ายรูปส่ง
+  //         ข้อความ = ทุกคนในกะถัดไปต้องกดรับทราบ ยังไม่ครบ = ส่งผลัดไม่ได้
+  // ============================================================
+  const HO_TAG = '[งานฝาก] ';
+
+  // ผลัดหลักถัดไป — กระจกของ _prevMainGroup (ใช้ธง report_shift เดียวกัน)
+  async function _nextMainGroup(group, baseDate){
+    const today = baseDate || bangkokDate();
+    const list = (await sb.from('shifts').select('shift_id,main_shift,start_time,report_shift').order('start_time')).data || [];
+    const _hasRS = list.some(s => s.report_shift === true);
+    const chain = list.filter(s => _hasRS ? (s.report_shift === true) : (s.main_shift && s.main_shift === s.shift_id)).map(s => s.shift_id);
+    const idx = chain.indexOf(group);
+    if (idx < 0) return { group: null, date: today };
+    if (idx === chain.length - 1) return { group: chain[0] || null, date: _addDays(today, 1) };   // ผลัดสุดท้าย(ดึก) → เช้าของวันถัดไป
+    return { group: chain[idx + 1], date: today };
+  }
+
+  // คนที่อยู่ในกะนั้น "จริง ๆ" — ใช้ตัดสินว่าใครต้องกดรับทราบ และแจกงานให้ใครได้
+  //   ยึดคนที่สแกนเข้างานแล้ว ไม่ใช่ตารางเวร — คนลา/คนสลับกะจะได้ไม่ติดมาล็อกเพื่อน
+  async function _crewOf(branch, workDate, group){
+    const [atR, shR] = await Promise.all([
+      sb.from('attendance').select('emp_id,shift_id').eq('work_date', workDate)
+        .eq('branch_id', branch || '').not('check_in', 'is', null),
+      sb.from('shifts').select('shift_id,main_shift'),
+    ]);
+    const grpOf = {}; (shR.data || []).forEach(x => { grpOf[x.shift_id] = x.main_shift || x.shift_id; });
+    const ids = [...new Set((atR.data || [])
+      .filter(r => (grpOf[r.shift_id] || r.shift_id) === group).map(r => String(r.emp_id)))];
+    if (!ids.length) return [];
+    const { data } = await sb.from('employees').select('emp_id,name,nickname').in('emp_id', ids);
+    const nm = {}; (data || []).forEach(e => { nm[e.emp_id] = e.nickname || e.name || e.emp_id; });
+    return ids.map(id => ({ emp_id: id, name: nm[id] || id }));
+  }
+
+  async function _hoOne(id){
+    const { data } = await sb.from('shift_handovers').select('*').eq('id', Number(id)).maybeSingle();
+    if (!data) throw new Error('ไม่พบรายการที่ฝากไว้');
+    return data;
+  }
+
+  // ---- หน้าจอ: ของที่ฝากออกไป + ของที่รับมาจากผลัดก่อนหน้า ----
+  async function handoverBoard(empId){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { workDate, group: shift, branch } = await _shiftCtx(emp);
+    if (!shift) return { ok: true, has_shift: false };
+    const lead = await _leadOf(branch, workDate, shift);
+    const nx = await _nextMainGroup(shift, workDate);
+    const [outR, inR, crew, nxName] = await Promise.all([
+      sb.from('shift_handovers').select('*').eq('branch_id', branch || '')
+        .eq('work_date', workDate).eq('shift_id', shift).order('id'),
+      sb.from('shift_handovers').select('*').eq('branch_id', branch || '')
+        .eq('to_work_date', workDate).eq('to_shift_id', shift).eq('review', 'approved').order('id'),
+      _crewOf(branch, workDate, shift),
+      _shiftName(nx.group),
+    ]);
+    const inbox = inR.data || [];
+    const mids = inbox.filter(x => x.kind === 'msg').map(x => x.id);
+    const acks = mids.length
+      ? (((await sb.from('shift_handover_acks').select('handover_id,emp_id,emp_name,ack_at').in('handover_id', mids)).data) || [])
+      : [];
+    const ackBy = {}; acks.forEach(a => { (ackBy[a.handover_id] = ackBy[a.handover_id] || []).push(a); });
+    const msgs = inbox.filter(x => x.kind === 'msg').map(x => {
+      const got = ackBy[x.id] || [];
+      const gotIds = new Set(got.map(a => String(a.emp_id)));
+      return Object.assign({}, x, {
+        acked_by: got.map(a => ({ emp_id: String(a.emp_id), name: a.emp_name || a.emp_id, at: a.ack_at })),
+        waiting: crew.filter(c => !gotIds.has(c.emp_id)),
+        i_acked: gotIds.has(String(emp.emp_id)) });
+    });
+    return { ok: true, has_shift: true, branch, work_date: workDate, shift,
+      is_lead: !!(lead && String(lead.emp_id) === String(emp.emp_id)), lead,
+      me: { emp_id: String(emp.emp_id), name: emp.nickname || emp.name || '' },
+      crew, next_shift: nx.group, next_shift_name: nxName || nx.group || '', next_date: nx.date,
+      outgoing: outR.data || [], msgs, tasks: inbox.filter(x => x.kind === 'task') };
+  }
+
+  // ---- ฝากเรื่องใหม่ (ใครในกะก็ฝากได้ — รอหัวหน้าผลัดอนุมัติ) ----
+  async function handoverAdd({ empId, kind, title, photos }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const { workDate, group: shift, branch } = await _shiftCtx(emp);
+    if (!shift) throw new Error('วันนี้คุณไม่มีกะ จึงยังฝากเรื่องให้ผลัดถัดไปไม่ได้');
+    const k = String(kind || '').trim();
+    if (k !== 'task' && k !== 'msg') throw new Error('เลือกก่อนว่าเป็น "งาน" หรือ "ข้อความ"');
+    const t = String(title || '').trim();
+    if (t.length < 5) throw new Error('เขียนให้ผลัดถัดไปเข้าใจหน่อย — อย่างน้อย 5 ตัวอักษร');
+    if (t.length > 500) throw new Error('ยาวเกินไป — ไม่เกิน 500 ตัวอักษร');
+    const urls = [];
+    for (const p of (photos || [])) { if (!p) continue;
+      if (typeof p === 'string' && /^https?:/i.test(p)) urls.push(p);
+      else urls.push(await uploadPhoto('employee-docs', 'handover/' + (branch || 'x') + '_' + Date.now() + '_' + urls.length + '.jpg', p)); }
+    const row = { branch_id: branch || '', work_date: workDate, shift_id: shift,
+      kind: k, title: t, photos: urls, created_by: String(emp.emp_id),
+      created_by_name: emp.nickname || emp.name || '' };
+    const { data, error } = await sb.from('shift_handovers').insert(row).select('id').single();
+    if (error) throw new Error(/relation .* does not exist/i.test(error.message || '')
+      ? 'ยังไม่ได้รัน supabase/shift_handover.sql' : error.message);
+    try{ await sb.from('activity_log').insert({ action: 'ฝากให้ผลัดถัดไป', emp_id: String(emp.emp_id),
+      detail: (k === 'task' ? 'งาน: ' : 'ข้อความ: ') + t.slice(0, 120), actor: emp.nickname || emp.name || '' }); }catch(e){}
+    return { ok: true, id: data && data.id };
+  }
+
+  // ---- คนฝากถอนเรื่องของตัวเองได้ ถ้าหัวหน้ายังไม่ตรวจ ----
+  async function handoverDrop({ empId, id }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const h = await _hoOne(id);
+    if (String(h.created_by) !== String(emp.emp_id)) throw new Error('ถอนได้เฉพาะเรื่องที่ตัวเองฝากไว้');
+    if (h.review !== 'pending') throw new Error('หัวหน้าผลัดตรวจไปแล้ว ถอนไม่ได้');
+    const { error } = await sb.from('shift_handovers').delete().eq('id', Number(id));
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---- หัวหน้าผลัดอนุมัติ / ตีตก ----
+  async function handoverReview({ empId, id, approve, note }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const h = await _hoOne(id);
+    const lead = await _leadOf(h.branch_id, h.work_date, h.shift_id);
+    if (!lead) throw new Error('กะนี้ยังไม่มีหัวหน้าผลัด');
+    if (String(lead.emp_id) !== String(emp.emp_id))
+      throw new Error('อนุมัติได้เฉพาะหัวหน้าผลัด (' + (lead.emp_name || lead.emp_id) + ')');
+    if (h.review !== 'pending') throw new Error('เรื่องนี้ตรวจไปแล้ว');
+    const why = String(note || '').trim();
+    if (!approve && why.length < 5) throw new Error('ตีตกต้องบอกเหตุผลให้คนฝากรู้ อย่างน้อย 5 ตัวอักษร');
+    const upd = { review: approve ? 'approved' : 'rejected', reviewed_by: String(emp.emp_id),
+      reviewed_name: emp.nickname || emp.name || '', review_note: why || null, reviewed_at: new Date().toISOString() };
+    if (approve) {
+      const nx = await _nextMainGroup(h.shift_id, h.work_date);
+      if (!nx.group) throw new Error('หาผลัดถัดไปไม่เจอ — ตรวจการตั้งค่ากะก่อน');
+      upd.to_work_date = nx.date; upd.to_shift_id = nx.group;
+      upd.status = (h.kind === 'task') ? 'open' : 'done';   // ข้อความไม่ต้องแจก
+    }
+    const { error } = await sb.from('shift_handovers').update(upd).eq('id', Number(id));
+    if (error) throw error;
+    return { ok: true, to_shift: upd.to_shift_id || null, to_date: upd.to_work_date || null };
+  }
+
+  // ---- กดรับทราบข้อความ ----
+  async function handoverAck({ empId, id }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const h = await _hoOne(id);
+    if (h.kind !== 'msg') throw new Error('รายการนี้เป็นงาน ไม่ใช่ข้อความ');
+    if (h.review !== 'approved') throw new Error('เรื่องนี้ยังไม่ผ่านหัวหน้าผลัด');
+    const { workDate, group: shift, branch } = await _shiftCtx(emp);
+    if (String(h.to_shift_id) !== String(shift) || String(h.to_work_date) !== String(workDate) || String(h.branch_id) !== String(branch || ''))
+      throw new Error('ข้อความนี้ไม่ได้ฝากถึงกะของคุณ');
+    const { error } = await sb.from('shift_handover_acks').upsert(
+      { handover_id: Number(id), emp_id: String(emp.emp_id), emp_name: emp.nickname || emp.name || '' },
+      { onConflict: 'handover_id,emp_id', ignoreDuplicates: true });
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---- หัวหน้าผลัดปลายทางแจกงานฝากให้คนในกะ ----
+  async function handoverAssign({ empId, id, toEmpId }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const h = await _hoOne(id);
+    if (h.kind !== 'task') throw new Error('รายการนี้เป็นข้อความ ไม่ใช่งาน');
+    if (h.review !== 'approved') throw new Error('เรื่องนี้ยังไม่ผ่านหัวหน้าผลัดที่ฝากมา');
+    if (h.status !== 'open') throw new Error('งานนี้แจกไปแล้ว');
+    const lead = await _leadOf(h.branch_id, h.to_work_date, h.to_shift_id);
+    if (!lead || String(lead.emp_id) !== String(emp.emp_id))
+      throw new Error('แจกงานฝากได้เฉพาะหัวหน้าผลัด' + (lead ? (' (' + (lead.emp_name || lead.emp_id) + ')') : ''));
+    const crew = await _crewOf(h.branch_id, h.to_work_date, h.to_shift_id);
+    const who = crew.find(c => String(c.emp_id) === String(toEmpId));
+    if (!who) throw new Error('คนที่เลือกไม่ได้อยู่ในกะนี้ — แจกได้เฉพาะคนที่สแกนเข้างานแล้ว');
+    const row = { work_date: h.to_work_date, emp_id: who.emp_id, emp_name: who.name,
+      branch_id: h.branch_id, task_def_id: null, title: HO_TAG + h.title,
+      require_photo: true, status: 'todo' };
+    const { data, error } = await sb.from('task_assignments').insert(row).select('id').single();
+    if (error) throw error;
+    const { error: e2 } = await sb.from('shift_handovers').update({ status: 'assigned',
+      assignment_id: data && data.id, assigned_to: who.emp_id, assigned_name: who.name }).eq('id', Number(id));
+    if (e2) throw e2;
+    return { ok: true, assignment_id: data && data.id, emp_name: who.name };
+  }
+
+  // ---- หัวหน้าผลัดปลายทางปิดงานฝากพร้อมเหตุผล (ทางออกเวลาทำจริงไม่ได้) ----
+  async function handoverCancel({ empId, id, reason }){
+    const emp = await lookupEmployee(empId); if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
+    const h = await _hoOne(id);
+    if (h.kind !== 'task') throw new Error('ปิดได้เฉพาะงานฝาก');
+    const lead = await _leadOf(h.branch_id, h.to_work_date, h.to_shift_id);
+    if (!lead || String(lead.emp_id) !== String(emp.emp_id)) throw new Error('ปิดงานฝากได้เฉพาะหัวหน้าผลัด');
+    const why = String(reason || '').trim();
+    if (why.length < 5) throw new Error('ปิดงานต้องบอกเหตุผล อย่างน้อย 5 ตัวอักษร');
+    const { error } = await sb.from('shift_handovers').update({ status: 'cancelled',
+      cancel_reason: why, closed_at: new Date().toISOString() }).eq('id', Number(id));
+    if (error) throw error;
+    return { ok: true };
+  }
+
+  // ---- ด่านตอนส่งผลัด ----
+  //   1) เรื่องที่คนในกะฝากไว้ หัวหน้าต้องตรวจให้ครบก่อน (อนุมัติหรือตีตก)
+  //   2) ข้อความที่รับมา ต้องกดรับทราบครบทุกคนในกะ
+  //   3) งานฝากที่รับมา ต้องแจกและทำให้เสร็จ (หรือปิดพร้อมเหตุผล)
+  async function _handoverGate(branch, workDate, shift){
+    try{
+      const [outR, inR] = await Promise.all([
+        sb.from('shift_handovers').select('id,kind,title,review').eq('branch_id', branch || '')
+          .eq('work_date', workDate).eq('shift_id', shift).eq('review', 'pending'),
+        sb.from('shift_handovers').select('*').eq('branch_id', branch || '')
+          .eq('to_work_date', workDate).eq('to_shift_id', shift).eq('review', 'approved'),
+      ]);
+      // ยังไม่ได้รัน shift_handover.sql → ปิดด่านไปเลย อย่าไปล็อกใครไว้
+      if (outR.error || inR.error) return { review_pending: [], ack_waiting: [], unassigned: [], task_pending: [], off: true };
+      const inbox = inR.data || [];
+      const crew = await _crewOf(branch, workDate, shift);
+      const mids = inbox.filter(x => x.kind === 'msg').map(x => x.id);
+      const acks = mids.length
+        ? (((await sb.from('shift_handover_acks').select('handover_id,emp_id').in('handover_id', mids)).data) || [])
+        : [];
+      const by = {}; acks.forEach(a => { (by[a.handover_id] = by[a.handover_id] || new Set()).add(String(a.emp_id)); });
+      const ackWaiting = [];
+      inbox.filter(x => x.kind === 'msg').forEach(x => {
+        const got = by[x.id] || new Set();
+        const left = crew.filter(c => !got.has(c.emp_id));
+        if (left.length) ackWaiting.push({ id: x.id, title: x.title, waiting: left });
+      });
+      const hoTasks = inbox.filter(x => x.kind === 'task' && x.status !== 'cancelled');
+      const unassigned = hoTasks.filter(x => x.status === 'open').map(x => ({ id: x.id, title: x.title }));
+      const aIds = hoTasks.map(x => x.assignment_id).filter(Boolean);
+      const asg = aIds.length
+        ? (((await sb.from('task_assignments').select('id,title,status,emp_name').in('id', aIds)).data) || [])
+        : [];
+      const stOf = {}; asg.forEach(a => { stOf[a.id] = a; });
+      const taskPending = hoTasks.filter(x => {
+        const a = x.assignment_id ? stOf[x.assignment_id] : null;
+        if (!a) return false;                                    // ยังไม่แจก — นับใน unassigned แล้ว
+        return a.status !== 'submitted' && a.status !== 'approved';
+      }).map(x => { const a = stOf[x.assignment_id] || {};
+        return { id: x.id, title: x.title, status: a.status || 'todo', emp_name: a.emp_name || '' }; });
+      return { review_pending: (outR.data || []).map(x => ({ id: x.id, kind: x.kind, title: x.title })),
+        ack_waiting: ackWaiting, unassigned, task_pending: taskPending };
+    }catch(e){
+      // ยังไม่ได้รัน shift_handover.sql → อย่าล็อกใครไว้ ปล่อยให้ส่งผลัดได้เหมือนเดิม
+      return { review_pending: [], ack_waiting: [], unassigned: [], task_pending: [], off: true };
+    }
+  }
+  function _handoverBlocks(ho){
+    const out = [];
+    if (ho.review_pending.length) out.push('ยังมีเรื่องที่เพื่อนฝากไว้รอคุณตรวจ ' + ho.review_pending.length + ' รายการ — กดอนุมัติหรือตีตกให้ครบก่อน');
+    ho.ack_waiting.forEach(m => out.push('ข้อความ "' + String(m.title).slice(0, 40) + '" ยังไม่ได้กดรับทราบ: ' + m.waiting.map(w => w.name).join(', ')));
+    if (ho.unassigned.length) out.push('งานฝากจากผลัดก่อนยังไม่ได้แจก ' + ho.unassigned.length + ' รายการ');
+    if (ho.task_pending.length) out.push('งานฝากยังไม่ได้ส่ง ' + ho.task_pending.length + ' รายการ');
+    return out;
+  }
+
   // export
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
     riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, mySalesPerf, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     crateCountState, submitCrateCount, crateCountConfirm,
-    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
+    taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState,
+    handoverBoard, handoverAdd, handoverDrop, handoverReview, handoverAck, handoverAssign, handoverCancel, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
     getScaChecklist, saveScaTick, clearScaTicks, getScaProgress,
     getScaBranchesHr, getScaChecklistHr, saveScaTickHr, clearScaTicksHr, getMyShelves, submitShelfCheck, getMyExams, getExamPaper, submitExam, applyExamDiscipline, extendShift, requestDualShift, requestCheckoutCorrection, getCheckoutState, getPositions, getBranchesPublic, submitApplication,
     getAdvanceQuota, submitAdvance, myAdvances, cancelAdvance, getAdvanceWindow,
