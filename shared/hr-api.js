@@ -391,6 +391,7 @@
         case 'hr_sales_update':      return await hrSalesUpdate(p);
         case 'hr_sales_people':      return await hrSalesPeople(p);
         case 'hr_sales_crew':        return await hrSalesCrew(p);
+        case 'hr_sales_quality':     return await hrSalesQuality(p);
         case 'hr_audit_list':        return await hrAuditList(p);
         case 'hr_line_backfill':     return await hrLineBackfill(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
@@ -5194,8 +5195,14 @@
     if (!br || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !sh) return { ok: false, error: 'ข้อมูลไม่ครบ (สาขา/วันที่/ผลัด)' };
     const num = (v) => { if (v === '' || v === null || v === undefined) return null; const n = Number(String(v).replace(/,/g, '')); return isFinite(n) ? n : NaN; };
     const tgt = num(p.target_total), sale = num(p.sales_total), cust = num(p.customers);
-    for (const [k, v] of [['เป้า', tgt], ['ยอดขาย', sale], ['ลูกค้า', cust]]) {
-      if (v === null) continue;
+    // ★ 19 พ.ย. 69 — เปิดให้แก้ All Cafe กับ Delivery ด้วย เพราะเป็น 2 ช่องที่คีย์ผิดหน่วยบ่อยที่สุด
+    //   (เคสจริง: กรอกยอดเงินเดลิเวอรี 5,026 ลงช่องจำนวนบิล ซึ่งปกติ 12 บิล)
+    //   ส่งค่าว่าง = ไม่เปลี่ยน · ส่งคำว่า clear = ล้างเป็น "ไม่มีข้อมูล" (ไม่ใช่ 0 ที่จะกดค่าเฉลี่ยลง)
+    const CLR = v => String(v || '').trim().toLowerCase() === 'clear';
+    const cafe = CLR(p.allcafe_cups) ? 'clear' : num(p.allcafe_cups);
+    const deliv = CLR(p.delivery_bills) ? 'clear' : num(p.delivery_bills);
+    for (const [k, v] of [['เป้า', tgt], ['ยอดขาย', sale], ['ลูกค้า', cust], ['All Cafe', cafe], ['Delivery', deliv]]) {
+      if (v === null || v === 'clear') continue;
       if (isNaN(v) || v < 0) return { ok: false, error: k + ' ต้องเป็นตัวเลขไม่ติดลบ' };
       if (v > SALES_EDIT_MAX) return { ok: false, error: k + ' ดูสูงผิดปกติ (เกิน ' + SALES_EDIT_MAX.toLocaleString() + ') — ตรวจอีกครั้ง' };
     }
@@ -5207,6 +5214,8 @@
     if (tgt !== null)  upd.target_total = tgt;
     if (sale !== null) upd.sales_total  = sale;
     if (cust !== null) upd.customers    = cust;
+    if (cafe !== null)  upd.allcafe_cups   = (cafe === 'clear') ? null : cafe;
+    if (deliv !== null) upd.delivery_bills = (deliv === 'clear') ? null : deliv;
     if (!Object.keys(upd).length) return { ok: false, error: 'ไม่มีอะไรเปลี่ยน' };
     const nSale = upd.sales_total != null ? upd.sales_total : (+cur.sales_total || 0);
     const nCust = upd.customers != null ? upd.customers : (+cur.customers || 0);
@@ -5215,9 +5224,10 @@
     upd.edited_by = String(p.actor || 'HR').slice(0, 120);
     upd.edit_note = String(p.note || '').slice(0, 300);
     // เก็บค่าก่อนแก้ไว้ครั้งแรกครั้งเดียว — แก้ซ้ำรอบหลังยังย้อนกลับไปหาค่าจากไลน์ได้
-    if (!cur.orig) upd.orig = { target_total: cur.target_total, sales_total: cur.sales_total, customers: cur.customers, per_head: cur.per_head };
+    if (!cur.orig) upd.orig = { target_total: cur.target_total, sales_total: cur.sales_total, customers: cur.customers, per_head: cur.per_head,
+      allcafe_cups: cur.allcafe_cups, delivery_bills: cur.delivery_bills };
     // จดค่าก่อนแก้ไว้ก่อนยิง update (อ่านจากแถวเดิมหลังอัปเดตไม่ได้)
-    const was0 = { t: cur.target_total, s: cur.sales_total, c: cur.customers };
+    const was0 = { t: cur.target_total, s: cur.sales_total, c: cur.customers, f: cur.allcafe_cups, d: cur.delivery_bills };
     const { error } = await sb().from('sales_daily').update(upd)
       .eq('branch_id', br).eq('sale_date', date).eq('shift', sh);
     if (error) return { ok: false, error: (/column .* does not exist/i.test(error.message) ? 'ยังไม่ได้รัน supabase/sales_edit.sql — ' : '') + error.message };
@@ -5225,6 +5235,8 @@
     if (upd.target_total != null && +was0.t !== upd.target_total) was.push('เป้า ' + (was0.t == null ? '—' : was0.t) + ' → ' + upd.target_total);
     if (upd.sales_total != null && +was0.s !== upd.sales_total)   was.push('ยอดขาย ' + (was0.s == null ? '—' : was0.s) + ' → ' + upd.sales_total);
     if (upd.customers != null && +was0.c !== upd.customers)       was.push('ลูกค้า ' + (was0.c == null ? '—' : was0.c) + ' → ' + upd.customers);
+    if ('allcafe_cups' in upd && String(was0.f) !== String(upd.allcafe_cups))     was.push('All Cafe ' + (was0.f == null ? '—' : was0.f) + ' → ' + (upd.allcafe_cups == null ? 'ไม่มีข้อมูล' : upd.allcafe_cups));
+    if ('delivery_bills' in upd && String(was0.d) !== String(upd.delivery_bills)) was.push('Delivery ' + (was0.d == null ? '—' : was0.d) + ' → ' + (upd.delivery_bills == null ? 'ไม่มีข้อมูล' : upd.delivery_bills));
     await logAct('แก้ยอดขายรายผลัด', null, date + ' ' + sh + ' สาขา ' + br + ' · ' + (was.join(' · ') || 'ไม่มีตัวเลขเปลี่ยน') + (upd.edit_note ? (' · เหตุผล: ' + upd.edit_note) : ''), upd.edited_by);
     return { ok: true, changed: was };
   }
@@ -5450,6 +5462,122 @@
 
     return { rows, people, pairs, shiftRows, crews, min_shifts: SALES_MIN_SHIFTS, pair_min: SALES_PAIR_MIN };
   }
+
+  // ============================================================
+  // ★ 19 พ.ย. 69 — คุณภาพข้อมูลยอดขาย: หาเลขที่คีย์ผิดจากแบบฟอร์มในไลน์ให้ HR ไล่ดูเองได้ทุกเดือน
+  // ------------------------------------------------------------
+  //   ทุกข้อเทียบกับ "ค่ากลางของสาขานั้น × ผลัดนั้น" ในช่วงที่เลือก ไม่ใช้ค่าคงที่
+  //   แต่ละรายการบอกด้วยว่า "ระบบจัดการให้แล้วหรือยัง" เพื่อให้รู้ว่าเร่งแก้อันไหน:
+  //     auto = ระบบคัดออกจากการคำนวณให้แล้ว (ตัวเลขในแดชบอร์ดไม่เพี้ยน แต่ตารางยังโชว์ค่าดิบ)
+  //     open = ยังนับอยู่ ต้องแก้
+  // ============================================================
+  const QUAL_FIELDS = [
+    ['allcafe_cups', 'All Cafe', 'แก้ว'],
+    ['delivery_bills', 'Delivery', 'บิล'],
+  ];
+  async function hrSalesQuality(p) {
+    p = p || {};
+    if (!p.start || !p.end) return { ok: false, error: 'ระบุช่วงวันที่' };
+    const br = String(p.branch_id || '');
+    const qSales = () => { let x = sb().from('sales_daily')
+      .select('id,branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,allcafe_cups,delivery_bills,edited_at,edited_by')
+      .gte('sale_date', p.start).lte('sale_date', p.end).order('id');
+      if (br) x = x.eq('branch_id', br); return x; };
+    const [rowsAll, brR] = await Promise.all([ fetchPaged(qSales), sb().from('branches').select('branch_id,name') ]);
+    const bn = {}; (brR.data || []).forEach(b => { bn[b.branch_id] = b.name; });
+    const rows = rowsAll.filter(x => SALES_SHIFT_CODE[x.shift]);
+    const med = (arr) => { const a = arr.filter(v => v > 0).sort((x, y) => x - y); return a.length ? a[a.length >> 1] : 0; };
+    const key = x => x.branch_id + '|' + x.shift;
+    const M = {};
+    rows.forEach(x => { const k = key(x); const o = M[k] || (M[k] = { sale: [], tgt: [], cust: [], head: [], allcafe_cups: [], delivery_bills: [] });
+      o.sale.push(+x.sales_total || 0); o.tgt.push(+x.target_total || 0); o.cust.push(Math.round(+x.customers || 0));
+      if (+x.customers > 0 && +x.sales_total > 0) o.head.push((+x.sales_total) / Math.round(+x.customers));
+      QUAL_FIELDS.forEach(([f]) => o[f].push(+x[f] || 0)); });
+    const MED = {}; Object.keys(M).forEach(k => { MED[k] = {}; Object.keys(M[k]).forEach(f => { MED[k][f] = med(M[k][f]); }); });
+
+    const out = [];
+    const add = (x, o) => out.push(Object.assign({ id: x.id, branch_id: x.branch_id, branch_name: bn[x.branch_id] || x.branch_id,
+      sale_date: x.sale_date, shift: x.shift, edited_at: x.edited_at, edited_by: x.edited_by }, o));
+    // ---- หาแถวซ้ำ: ยอด + เป้า + ลูกค้า ตรงกันเป๊ะ แต่ต่างวัน (ส่งฟอร์มซ้ำ/ก๊อปของวันก่อน) ----
+    const dup = {};
+    rows.forEach(x => { if (!(+x.sales_total > 0)) return;
+      const dk = [x.branch_id, x.shift, x.sales_total, x.target_total, Math.round(+x.customers || 0)].join('|');
+      (dup[dk] || (dup[dk] = [])).push(x); });
+    Object.values(dup).forEach(g => {
+      if (g.length < 2) return;
+      const days = [...new Set(g.map(z => z.sale_date))];
+      // ซ้ำ 2-3 วัน = น่าจะก๊อป · ซ้ำเกินนั้นคือสาขานั้นรายงานเลขกลม ๆ ซ้ำ ๆ อยู่แล้ว ไม่ใช่การก๊อป
+      if (days.length < 2 || days.length > 3) return;
+      g.sort((a, b) => a.sale_date < b.sale_date ? -1 : 1);
+      g.slice(1).forEach(x => add(x, { kind: 'dup', sev: 'high', state: 'open',
+        field: 'ทั้งแถว', value: _thbq(x.sales_total), normal: '—',
+        why: 'ยอด/เป้า/ลูกค้า ตรงกันเป๊ะกับวันที่ ' + g.filter(z => z !== x).map(z => _dq(z.sale_date)).join(', ') + ' — น่าจะส่งฟอร์มซ้ำหรือก๊อปของวันก่อนมา',
+        todo: 'เทียบกับใบปิดยอดจริงของวันนี้ ถ้าซ้ำจริงให้แก้เป็นตัวเลขของวันนี้' }));
+    });
+    rows.forEach(x => {
+      const k = key(x), m = MED[k] || {};
+      const sale = +x.sales_total || 0, tgt = +x.target_total || 0, cust = +x.customers || 0;
+      // ---- ยอดขายที่คีย์ตกหลัก ----
+      if (sale > 0 && m.sale > 0 && sale < m.sale / 10) {
+        let guess = null;
+        [100, 1000].forEach(f => { if (guess == null && tgt > 0 && sale * f > tgt / 3 && sale * f < tgt * 3) guess = sale * f; });
+        const pc = (+x.sales_product || 0) + (+x.sales_card || 0);
+        add(x, { kind: 'sale_tiny', sev: 'high', state: 'auto', field: 'ยอดขาย', value: String(x.sales_total),
+          normal: _thbq(m.sale), why: 'ยอดขายต่ำกว่าค่ากลางของผลัดนี้เกิน 10 เท่า — น่าจะคีย์จุดทศนิยม/หลักพันตกไป',
+          suggest: guess, todo: guess ? ('น่าจะเป็น ' + _thbq(guess) + (pc > 0 && Math.abs(pc - guess) > 1 ? (' (สินค้า+บัตรรวม ' + _thbq(pc) + ')') : '')) : 'เทียบกับใบปิดยอดจริง' });
+      }
+      // ---- เป้าที่คีย์ผิด ----
+      if (tgt > 0 && m.tgt > 0 && (tgt < m.tgt / 3 || tgt > m.tgt * 3)) {
+        let guess = null;
+        [0.01, 0.001, 100, 1000].forEach(f => { if (guess == null && tgt * f > m.tgt / 3 && tgt * f < m.tgt * 3) guess = Math.round(tgt * f * 100) / 100; });
+        add(x, { kind: 'target_bad', sev: 'high', state: 'auto', field: 'เป้า', value: String(x.target_total),
+          normal: _thbq(m.tgt), why: 'เป้าห่างจากค่ากลางของผลัดนี้เกิน 3 เท่า — คิด % ของเป้าไม่ได้',
+          suggest: guess, todo: guess ? ('น่าจะเป็น ' + _thbq(guess)) : 'ดูใบเป้าจริงของวันนั้น' });
+      }
+      // ---- จำนวนลูกค้า ----
+      if (cust > 0) {
+        const head = sale > 0 ? sale / Math.round(cust) : 0;
+        const swap = m.cust > 0 && m.head > 0 && cust < m.cust / 3 && head > m.head * 2.5;
+        if (swap) add(x, { kind: 'cust_swap', sev: 'high', state: 'auto', field: 'ลูกค้า', value: String(x.customers),
+          normal: _thbq(m.cust), why: 'ลูกค้าน้อยผิดปกติ แต่ยอดต่อหัวสูงผิดปกติ (' + Math.round(head) + ' บาท/หัว ปกติ ' + Math.round(m.head) + ') — น่าจะสลับช่องกับยอดต่อหัว',
+          suggest: Math.round(sale / m.head), todo: 'สลับสองช่องกลับ — ลูกค้าน่าจะราว ' + Math.round(sale / m.head) + ' คน' });
+        else if (cust % 1 !== 0) add(x, { kind: 'cust_decimal', sev: 'low', state: 'auto', field: 'ลูกค้า', value: String(x.customers),
+          normal: _thbq(m.cust), why: 'จำนวนลูกค้ามีจุดทศนิยม (คนไม่มีเศษ) — น่าจะหลุดมาจากช่องยอดต่อหัว',
+          suggest: Math.round(cust), todo: 'ระบบปัดเป็น ' + Math.round(cust) + ' ให้แล้ว แก้ที่ต้นทางได้ตามสะดวก' });
+        else if (m.cust > 0 && (cust < m.cust / 3 || cust > m.cust * 3)) add(x, { kind: 'cust_odd', sev: 'mid', state: 'auto', field: 'ลูกค้า', value: String(x.customers),
+          normal: _thbq(m.cust), why: 'จำนวนลูกค้าห่างจากค่ากลางของผลัดนี้เกิน 3 เท่า', todo: 'เทียบกับเครื่องนับลูกค้าของวันนั้น' });
+      } else if (sale > 0) {
+        add(x, { kind: 'cust_zero', sev: 'mid', state: 'auto', field: 'ลูกค้า', value: '0',
+          normal: _thbq((MED[k] || {}).cust), why: 'ไม่ได้กรอกจำนวนลูกค้า — คิดยอดต่อหัวของกะนี้ไม่ได้', todo: 'กรอกย้อนหลังได้ถ้ายังหาตัวเลขได้' });
+      }
+      // ---- ตัวเชียร์ขายที่คีย์ผิดหน่วย ----
+      QUAL_FIELDS.forEach(([f, label, unit]) => {
+        const v = +x[f] || 0;
+        if (v > 0 && m[f] > 0 && v > m[f] * 10) add(x, { kind: 'cheer_unit', sev: 'high', state: 'auto', field: label, value: String(v),
+          normal: _thbq(m[f]) + ' ' + unit, why: label + ' สูงกว่าค่ากลางของผลัดนี้เกิน 10 เท่า — น่าจะกรอกยอดเงินลงช่องจำนวน' + unit,
+          todo: 'ถ้าหาจำนวน' + unit + 'จริงไม่ได้ ให้ล้างเป็น "ไม่มีข้อมูล" (อย่าใส่ 0)' });
+      });
+    });
+    // ---- ผลัดที่ยังไม่มียอดขายเลย ----
+    {
+      const have = {}; rows.forEach(x => { have[x.branch_id + '|' + x.sale_date + '|' + x.shift] = 1; });
+      const days = {}; rows.forEach(x => { (days[x.branch_id] || (days[x.branch_id] = new Set())).add(x.sale_date); });
+      Object.keys(days).forEach(b => { [...days[b]].sort().forEach(d => {
+        ['เช้า', 'บ่าย', 'ดึก'].forEach(sh => { if (!have[b + '|' + d + '|' + sh])
+          out.push({ id: null, branch_id: b, branch_name: bn[b] || b, sale_date: d, shift: sh,
+            kind: 'missing', sev: 'mid', state: 'open', field: 'ทั้งผลัด', value: 'ไม่มีข้อมูล', normal: '—',
+            why: 'วันนี้มียอดของผลัดอื่นแล้ว แต่ผลัดนี้ยังไม่มี — ยังไม่ได้ส่งฟอร์ม หรือนำเข้าไม่ติด',
+            todo: 'หาข้อความในกลุ่มไลน์แล้วกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีด' }); });
+      }); });
+    }
+    const SEV = { high: 0, mid: 1, low: 2 };
+    out.sort((a, b) => (SEV[a.sev] - SEV[b.sev]) || (a.sale_date < b.sale_date ? 1 : a.sale_date > b.sale_date ? -1 : 0));
+    const by = {}; out.forEach(o => { by[o.kind] = (by[o.kind] || 0) + 1; });
+    return { ok: true, start: p.start, end: p.end, rows_scanned: rows.length, issues: out, by_kind: by,
+      counts: { high: out.filter(o => o.sev === 'high').length, mid: out.filter(o => o.sev === 'mid').length, low: out.filter(o => o.sev === 'low').length } };
+  }
+  const _thbq = v => (v == null || !isFinite(v)) ? '—' : Math.round(v).toLocaleString('th-TH');
+  const _dq = d => (+String(d).slice(8, 10)) + '/' + (+String(d).slice(5, 7));
 
   // ทีมในแต่ละผลัด — ใช้ประกอบการจัดจ็อบ
   async function hrSalesCrew(p) {
