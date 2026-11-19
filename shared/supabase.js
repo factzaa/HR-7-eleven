@@ -896,6 +896,103 @@
     };
   }
 
+  // ---------- ★ 19 พ.ย. 69 — ผลงานขายในกะของตัวเอง (พนักงานดูของตัวเองได้) ----------
+  //   ใช้หลักเดียวกับหน้า "ผลงานรายคน" ของ HR เป๊ะ ๆ ตัวเลขสองที่จะได้ตรงกันเวลามาถาม:
+  //     · ยอดเป็นผลงานของทั้งกะ → ยอดของกะไหนที่เราลงเวลาเข้างานจริง ถือเป็นของเราด้วย
+  //     · เทียบกับค่าเฉลี่ยของผลัดเดียวกัน สาขาเดียวกัน ในรอบนี้ (ไม่เอายอดกะดึกไปชนกะบ่าย)
+  //   ตั้งใจไม่ส่งข้อมูลรายคนของเพื่อนกลับมา — พนักงานเห็นแต่ของตัวเองเทียบค่าเฉลี่ย
+  const MYSALES_MIN = 5;
+  const _mySaleShift = { 'เช้า': 'M', 'บ่าย': 'A', 'ดึก': 'N' };
+  async function mySalesPerf(empId) {
+    const b = await _empCycleBase(empId);
+    const cyc = b.cyc, today = b.today;
+    const endEff = cyc.end < today ? cyc.end : today;
+    // สาขาที่เราไปลงเวลาในรอบนี้ (ปกติสาขาเดียว แต่มีกดข้ามสาขาได้)
+    const myAtt = (await sb.from('attendance').select('work_date,shift_id,branch_id,check_in')
+      .eq('emp_id', empId).not('check_in', 'is', null)
+      .gte('work_date', cyc.start).lte('work_date', endEff)).data || [];
+    const brs = [...new Set(myAtt.map(a => String(a.branch_id || b.emp.branch_id || '')).filter(Boolean))];
+    if (!brs.length) return { ok: true, cycle: cyc, shifts: 0, enough: false, rows: [] };
+    const [salesR, shR] = await Promise.all([
+      sb.from('sales_daily').select('branch_id,sale_date,shift,target_total,sales_total,customers,allcafe_cups,delivery_bills,extra')
+        .in('branch_id', brs).gte('sale_date', cyc.start).lte('sale_date', endEff),
+      sb.from('shifts').select('shift_id,main_shift'),
+    ]);
+    const grpOf = {}; (shR.data || []).forEach(x => { grpOf[x.shift_id] = x.main_shift || x.shift_id; });
+    const exNum = (ex, k) => { try { const a = ex && ex[k]; return Array.isArray(a) ? (+a[a.length - 1] || 0) : (+a || 0); } catch (e) { return 0; } };
+    const SANE = 2000000;
+    const rows = (salesR.data || []).filter(x => _mySaleShift[x.shift] && (+x.sales_total || 0) > 0 && (+x.sales_total || 0) <= SANE)
+      .map(x => ({ branch_id: String(x.branch_id), sale_date: x.sale_date, shift: x.shift, code: _mySaleShift[x.shift],
+        sale: +x.sales_total || 0, tgt: +x.target_total || 0, customers: +x.customers || 0,
+        cafe: +x.allcafe_cups || 0, deliv: +x.delivery_bills || 0,
+        jeeb: exNum(x.extra, 'khanomjeeb'), salapao: exNum(x.extra, 'salapao') }));
+    // เป้าที่คีย์ผิด → ไม่เอามาคิด % (เทียบกับค่ากลางของสาขานั้น × ผลัดนั้น)
+    const med = {};
+    { const g = {};
+      rows.forEach(x => { if (x.tgt > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(x.tgt); });
+      Object.keys(g).forEach(k => { const a = g[k].sort((p, q) => p - q); med[k] = a[a.length >> 1]; }); }
+    // ตัวเชียร์ขายที่คีย์ผิดหน่วย → ถือว่าไม่มีข้อมูล (null)
+    const CH = ['cafe', 'jeeb', 'salapao', 'deliv'];
+    { const g = {};
+      rows.forEach(x => { const k = x.branch_id + '|' + x.shift; const o = g[k] || (g[k] = { cafe: [], jeeb: [], salapao: [], deliv: [] });
+        CH.forEach(f => { if (x[f] > 0) o[f].push(x[f]); }); });
+      rows.forEach(x => { const o = g[x.branch_id + '|' + x.shift] || {};
+        CH.forEach(f => { const a = (o[f] || []).sort((p, q) => p - q); const m = a.length ? a[a.length >> 1] : 0;
+          if (m > 0 && x[f] > m * 10) x[f] = null; }); }); }
+    rows.forEach(x => {
+      const m = med[x.branch_id + '|' + x.shift] || 0;
+      const tok = x.tgt > 0 && m > 0 && x.tgt >= m / 3 && x.tgt <= m * 3;
+      x.pct = tok ? (x.sale / x.tgt * 100) : null;
+      x.head = x.customers > 0 ? (x.sale / x.customers) : null;
+    });
+    // ค่าเฉลี่ยของผลัดเดียวกัน สาขาเดียวกัน (ฐานเทียบ)
+    const avg = (a) => { const v = a.filter(z => z != null && isFinite(z)); return v.length ? v.reduce((s, z) => s + z, 0) / v.length : null; };
+    const base = {};
+    rows.forEach(x => { const k = x.branch_id + '|' + x.shift; (base[k] || (base[k] = [])).push(x); });
+    const baseAvg = {};
+    Object.keys(base).forEach(k => { const L = base[k];
+      baseAvg[k] = { n: L.length, sale: avg(L.map(x => x.sale)), pct: avg(L.map(x => x.pct)), head: avg(L.map(x => x.head)),
+        cafe: avg(L.map(x => x.cafe)), jeeb: avg(L.map(x => x.jeeb)), salapao: avg(L.map(x => x.salapao)), deliv: avg(L.map(x => x.deliv)) }; });
+    // กะของเรา
+    const byKey = {}; rows.forEach(x => { byKey[x.branch_id + '|' + x.sale_date + '|' + x.code] = x; });
+    const mine = [];
+    myAtt.forEach(a => {
+      const code = grpOf[a.shift_id] || a.shift_id;
+      const x = byKey[String(a.branch_id || b.emp.branch_id || '') + '|' + a.work_date + '|' + code];
+      if (x && mine.indexOf(x) < 0) mine.push(x);
+    });
+    mine.sort((p, q) => p.sale_date < q.sale_date ? 1 : -1);
+    const r1 = v => v == null ? null : Math.round(v * 10) / 10;
+    const idx = (mineV, baseV) => (mineV != null && baseV > 0) ? Math.round(mineV / baseV * 1000) / 10 : null;
+    const byShift = {};
+    mine.forEach(x => { byShift[x.shift] = (byShift[x.shift] || 0) + 1; });
+    const withT = mine.filter(x => x.pct != null);
+    const mAvg = {
+      sale: avg(mine.map(x => x.sale)), pct: avg(mine.map(x => x.pct)), head: avg(mine.map(x => x.head)),
+      cafe: avg(mine.map(x => x.cafe)), jeeb: avg(mine.map(x => x.jeeb)), salapao: avg(mine.map(x => x.salapao)), deliv: avg(mine.map(x => x.deliv)),
+    };
+    // ฐานเทียบของเรา = ถัวตามจำนวนกะที่เราเข้าในแต่ละผลัด (เข้าบ่าย 10 ดึก 2 → ฐานหนักไปทางบ่าย)
+    const wBase = (f) => { let sw = 0, sv = 0;
+      Object.keys(byShift).forEach(sh => { brs.forEach(br => {
+        const o = baseAvg[br + '|' + sh]; if (!o || o[f] == null) return;
+        const w = byShift[sh]; sw += w; sv += o[f] * w; }); });
+      return sw ? sv / sw : null; };
+    const B = {}; ['sale', 'pct', 'head', 'cafe', 'jeeb', 'salapao', 'deliv'].forEach(f => { B[f] = wBase(f); });
+    return {
+      ok: true, cycle: cyc, emp: b.emp, min_shifts: MYSALES_MIN,
+      shifts: mine.length, by_shift: byShift, enough: mine.length >= MYSALES_MIN,
+      hit: withT.filter(x => x.sale >= x.tgt).length, nt: withT.length,
+      me: { sale: Math.round(mAvg.sale || 0), pct: r1(mAvg.pct), head: r1(mAvg.head),
+        cafe: r1(mAvg.cafe), jeeb: r1(mAvg.jeeb), salapao: r1(mAvg.salapao), deliv: r1(mAvg.deliv) },
+      team: { sale: Math.round(B.sale || 0), pct: r1(B.pct), head: r1(B.head),
+        cafe: r1(B.cafe), jeeb: r1(B.jeeb), salapao: r1(B.salapao), deliv: r1(B.deliv) },
+      index: { sale: idx(mAvg.sale, B.sale), pct: idx(mAvg.pct, B.pct), head: idx(mAvg.head, B.head),
+        cafe: idx(mAvg.cafe, B.cafe), jeeb: idx(mAvg.jeeb, B.jeeb), salapao: idx(mAvg.salapao, B.salapao), deliv: idx(mAvg.deliv, B.deliv) },
+      rows: mine.slice(0, 20).map(x => ({ sale_date: x.sale_date, shift: x.shift, sale: x.sale, tgt: x.tgt,
+        pct: r1(x.pct), customers: x.customers, head: r1(x.head), cafe: x.cafe, jeeb: x.jeeb, salapao: x.salapao, deliv: x.deliv })),
+    };
+  }
+
   // ---------- สถานะเต็มสำหรับป๊อปอัพหลังเช็กอิน (วินัย + คะแนน) ----------
   async function myStatus(empId) {
     const [b, discipline, scfgR, srR, sbR, st] = await Promise.all([
@@ -4768,7 +4865,7 @@
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, mySalesPerf, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     crateCountState, submitCrateCount, crateCountConfirm,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
     getScaChecklist, saveScaTick, clearScaTicks, getScaProgress,
