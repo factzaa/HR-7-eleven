@@ -9332,12 +9332,20 @@
     if (!start || !end) return { ok: false, error: 'ระบุช่วงวันที่' };
     const br = String(p.branch_id || p.branch || '');
     const qT = () => { let x = sb().from('task_assignments')
-      .select('work_date,shift_id,emp_id,emp_name,branch_id,title,status,sent_back_count,created_at,submitted_at')
+      .select('work_date,shift_id,emp_id,emp_name,branch_id,task_def_id,title,status,sent_back_count,created_at,submitted_at')
       .gte('work_date', start).lte('work_date', end).order('id');
       if (br) x = x.eq('branch_id', br); return x; };
-    const [all, shR] = await Promise.all([ fetchPaged(qT), sb().from('shifts').select('shift_id,name,main_shift') ]);
+    const [all, shR, tdR] = await Promise.all([ fetchPaged(qT),
+      sb().from('shifts').select('shift_id,name,main_shift'),
+      sb().from('task_defs').select('id,title,step') ]);
     const shNm = {}, grpOf = {};
     (shR.data || []).forEach(s => { shNm[s.shift_id] = s.name || s.shift_id; grpOf[s.shift_id] = s.main_shift || s.shift_id; });
+    // ★ 19 พ.ย. 69 — task_defs.step = ลำดับขั้นในกะที่ตั้งไว้ตั้งแต่แรก
+    //   (1 ประชุมผลัด/ลงเวลา · 3 ทำความสะอาด · 7 ปิดผลัด · 8 ส่งเอกสารสิ้นวัน · 9 ฝากธนาคาร)
+    //   ของจริงเรียงตามเวลาจริงเป๊ะ: step1 0.7 ชม. → step7 4.9 → step8 7.5
+    //   ถ้าไม่หารด้วยขั้น ตารางจะกลายเป็นแค่ "เรียงตาม step" แล้วไปกล่าวหางานสิ้นวันว่าถูกดอง
+    const stepOf = {}, stepByTitle = {};
+    (tdR.data || []).forEach(d => { if (d.step != null) { stepOf[d.id] = d.step; stepByTitle[d.title] = d.step; } });
 
     const MAXH = 24;
     const rows = [];
@@ -9346,8 +9354,11 @@
       const h = (Date.parse(a.submitted_at) - Date.parse(a.created_at)) / 3600000;
       if (!(h >= 0 && h <= MAXH)) return;                 // งานที่เปิดค้างข้ามวัน/เวลาเพี้ยน ไม่เอามาคิด
       const g = grpOf[a.shift_id] || a.shift_id || '—';
-      rows.push({ emp_id: String(a.emp_id), name: a.emp_name || a.emp_id, title: a.title || '—',
-        grp: g, h, back: (+a.sent_back_count || 0) });
+      const t = a.title || '—';
+      const st = (a.task_def_id != null && stepOf[a.task_def_id] != null) ? stepOf[a.task_def_id]
+               : (stepByTitle[t] != null ? stepByTitle[t] : null);
+      rows.push({ emp_id: String(a.emp_id), name: a.emp_name || a.emp_id, title: t,
+        grp: g, step: st, h, back: (+a.sent_back_count || 0) });
     });
     const _med = arr => { if (!arr.length) return null; const s = arr.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
     const r1h = v => v == null ? null : Math.round(v * 10) / 10;
@@ -9357,14 +9368,40 @@
     rows.forEach(r => { const k = r.title + '|' + r.grp; (K[k] || (K[k] = [])).push(r.h); });
     const base = {}; Object.keys(K).forEach(k => { if (K[k].length >= 5) base[k] = _med(K[k]); });
 
-    // ---- รายงาน: งานไหนถูกดองไว้ท้ายสุด ----
+    // ---- ฐานของแต่ละ "ขั้นในกะ" × ผลัด ----
+    //   งานปิดผลัด/ส่งเอกสารสิ้นวัน ช้าโดยธรรมชาติ ไม่ใช่ถูกดอง จึงต้องเทียบกับขั้นเดียวกันเท่านั้น
+    const SB = {}, SBT = {}, SBK = {};
+    rows.forEach(r => { if (r.step == null) return; const k = r.step + '|' + r.grp;
+      (SB[k] || (SB[k] = [])).push(r.h); (SBT[k] || (SBT[k] = new Set())).add(r.title);
+      ((SBK[k] || (SBK[k] = {}))[r.title] || (SBK[k][r.title] = [])).push(r.h); });
+    // ขั้นที่มีงานชนิดเดียว เทียบกับใครไม่ได้ (ฐานจะกลายเป็นตัวมันเอง → ได้ 100 เสมอ ไร้ความหมาย)
+    const okStep = k => SB[k].length >= 10 && SBT[k].size >= 2;
+    // ฐาน = ค่ากลางของ "ค่ากลางรายงาน" ไม่ใช่ค่ากลางของทุกแถว
+    //   ไม่งั้นงานที่มีจำนวนชิ้นเยอะจะลากฐานไปทั้งขั้น แล้วงานอื่นในขั้นเดียวกันเพี้ยนตาม
+    const _med2 = a => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y);
+      const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    const stepBase = {}; Object.keys(SB).forEach(k => { if (!okStep(k)) return;
+      stepBase[k] = _med2(Object.keys(SBK[k]).map(t => _med(SBK[k][t]))); });
+    const steps = Object.keys(SB).filter(k => SB[k].length >= 10)
+      .map(k => ({ step: +k.split('|')[0], shift: shNm[k.split('|')[1]] || k.split('|')[1],
+        n: SB[k].length, kinds: SBT[k].size, med_hours: r1h(_med(SB[k])), comparable: okStep(k) }))
+      .sort((a, b) => a.step - b.step || (b.n - a.n));
+
+    // ---- รายงาน: งานที่ช้ากว่างาน "ขั้นเดียวกัน" ----
     const TT = {};
-    rows.forEach(r => { const o = TT[r.title] || (TT[r.title] = { hs: [], back: 0, n: 0 });
-      o.hs.push(r.h); o.n++; if (r.back > 0) o.back++; });
+    rows.forEach(r => { const o = TT[r.title] || (TT[r.title] = { hs: [], back: 0, n: 0, step: r.step, rat: [] });
+      o.hs.push(r.h); o.n++; if (r.back > 0) o.back++;
+      if (o.step == null && r.step != null) o.step = r.step;
+      const b = (r.step == null) ? null : stepBase[r.step + '|' + r.grp];
+      if (b > 0) o.rat.push(r.h / b); });
     const tasks = Object.entries(TT).filter(([k, o]) => o.n >= 20)
-      .map(([k, o]) => ({ title: k, n: o.n, med_hours: r1h(_med(o.hs)),
+      .map(([k, o]) => ({ title: k, n: o.n, step: o.step, med_hours: r1h(_med(o.hs)),
+        step_med: (o.step == null) ? null : r1h(_med(Object.keys(stepBase)
+          .filter(z => +z.split('|')[0] === o.step).map(z => stepBase[z]))),
+        // ดัชนี 100 = ช้าพอ ๆ กับงานขั้นเดียวกันในผลัดเดียวกัน · เกิน 100 = ถูกดองจริง
+        idx: o.rat.length ? Math.round((_med(o.rat) || 0) * 100) : null,
         back_pct: Math.round(o.back / o.n * 1000) / 10 }))
-      .sort((a, b) => b.med_hours - a.med_hours);
+      .sort((a, b) => (b.idx == null ? -1 : b.idx) - (a.idx == null ? -1 : a.idx));
 
     // ---- รายคน: เทียบกับฐานของงานชิ้นเดียวกันในผลัดเดียวกัน ----
     const P = {};
@@ -9387,7 +9424,8 @@
       approve_pct: tot ? Math.round(appr / tot * 1000) / 10 : null,
       med_hours: r1h(_med(rows.map(r => r.h))),
       back_pct: rows.length ? Math.round(rows.filter(r => r.back > 0).length / rows.length * 1000) / 10 : null,
-      tasks, people };
+      no_step: rows.filter(r => r.step == null).length,
+      steps, tasks, people };
   }
 
   async function hrAnalytics(f) {
