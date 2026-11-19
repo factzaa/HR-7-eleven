@@ -390,6 +390,7 @@
         case 'hr_sales_shift':       return await hrSalesShift(p);
         case 'hr_sales_update':      return await hrSalesUpdate(p);
         case 'hr_sales_people':      return await hrSalesPeople(p);
+        case 'hr_sales_crew':        return await hrSalesCrew(p);
         case 'hr_audit_list':        return await hrAuditList(p);
         case 'hr_line_backfill':     return await hrLineBackfill(p);
         case 'hr_term_rules_get':    return await hrTermRulesGet();
@@ -5296,6 +5297,15 @@
         cafe: +x.allcafe_cups || 0, deliv: +x.delivery_bills || 0,
         jeeb: _exNum(x.extra, 'khanomjeeb'), salapao: _exNum(x.extra, 'salapao'),
       }));
+    // ★ 19 พ.ย. 69 — ยอดขายที่คีย์ตกหลัก (เคสจริง 16/10/69 ผลัดเช้า คีย์ 26.904 แทน 26,904)
+    //   ถ้าไม่คัดออก กะนั้นจะถูกนับเป็น "ยอด 27 บาท" แล้วลากค่าเฉลี่ยของทุกคนในกะนั้นพังทั้งรอบ
+    //   ต่ำกว่า 1/10 ของค่ากลางสาขานั้น × ผลัดนั้น = เชื่อไม่ได้ ตัดทิ้งทั้งแถว (ไม่ใช่แค่ไม่คิด %)
+    {
+      const g = {};
+      rows.forEach(x => { if (x.sale > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(x.sale); });
+      const med = {}; Object.keys(g).forEach(k => { const a = g[k].slice().sort((p, q) => p - q); med[k] = a[a.length >> 1]; });
+      rows = rows.filter(x => { const m = med[x.branch_id + '|' + x.shift] || 0; return !(m > 0 && x.sale < m / 10); });
+    }
     {
       const g = {};
       rows.forEach(x => { if (x.tgt > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(x.tgt); });
@@ -5304,6 +5314,18 @@
         const m = med[x.branch_id + '|' + x.shift] || 0;
         x.tok = x.tgt > 0 && m > 0 && x.tgt >= m / 3 && x.tgt <= m * 3;
         x.pct = x.tok ? (x.sale / x.tgt * 100) : null;
+      });
+    }
+    // ★ 19 พ.ย. 69 — จำนวนลูกค้า: ปัดเศษทศนิยมที่หลุดมาจากฟอร์ม · ค่าที่สลับช่องกับ "ยอดต่อหัว"
+    //   (เคสจริง 12/10 บ่าย คีย์ลูกค้า 93 ต่อหัว 353 ซึ่งกลับกัน) ให้ถือว่าไม่มีข้อมูลลูกค้า
+    {
+      const g = {};
+      rows.forEach(x => { if (x.customers > 0) (g[x.branch_id + '|' + x.shift] || (g[x.branch_id + '|' + x.shift] = [])).push(Math.round(x.customers)); });
+      const med = {}; Object.keys(g).forEach(k => { const a = g[k].slice().sort((p, q) => p - q); med[k] = a[a.length >> 1]; });
+      rows.forEach(x => {
+        x.customers = Math.round(x.customers || 0);
+        const m = med[x.branch_id + '|' + x.shift] || 0;
+        if (m > 0 && x.customers > 0 && (x.customers < m / 3 || x.customers > m * 3)) x.customers = 0;
         x.head = x.customers > 0 ? (x.sale / x.customers) : null;
       });
     }
@@ -5399,7 +5421,44 @@
       n: o.n, idx: r1(mean(o.idx)), avg_pct: r1(mean(o.pct)), hit: o.hit, nt: o.nt,
     })).sort((x, y) => (y.idx || 0) - (x.idx || 0));
 
-    return { rows, people, pairs, min_shifts: SALES_MIN_SHIFTS, pair_min: SALES_PAIR_MIN };
+    // ---- 6) ★ 19 พ.ย. 69 — รายชื่อทั้งทีมของแต่ละกะ (ใช้ตอนจัดจ็อบ)
+    //   ทีมเป๊ะ ๆ แทบไม่ซ้ำกัน (รอบจริง: 177 ทีม ซ้ำครั้งเดียว 141 ทีม) เพราะกะเช้า/บ่ายสลับคนทุกวัน
+    //   จึงส่งทั้ง "บันทึกรายกะ" (ดูได้ทุกกะ) และ "ทีมที่ซ้ำ" (เฉพาะชุดที่พอเป็นสถิติ) ออกไปทั้งคู่
+    const nmOf2 = id => ((emp[id] || {}).nickname || (emp[id] || {}).name || id);
+    const shiftRows = Object.keys(crew).map(k => {
+      const x = byKey[k];
+      const ids = [...crew[k]].sort();
+      return { branch_id: x.branch_id, branch_name: x.branch_name, sale_date: x.sale_date, shift: x.shift,
+        sale: x.sale, tgt: x.tgt, pct: r1(x.pct), idx_pct: r1(x.idx_pct), idx_sale: r1(x.idx_sale),
+        customers: x.customers, head: r1(x.head), cafe: x.cafe, jeeb: x.jeeb, salapao: x.salapao, deliv: x.deliv,
+        n: ids.length, ids, members: ids.map(nmOf2) };
+    }).sort((a, b) => a.sale_date === b.sale_date ? (a.branch_name < b.branch_name ? -1 : 1) : (a.sale_date < b.sale_date ? 1 : -1));
+    // ทีมเดียวกันเป๊ะ ๆ (สาขา + ผลัด + รายชื่อครบชุด)
+    const cmap = {};
+    shiftRows.forEach(r => {
+      const ck = r.branch_id + '|' + r.shift + '|' + r.ids.join(',');
+      const o = cmap[ck] || (cmap[ck] = { branch_name: r.branch_name, shift: r.shift, ids: r.ids, members: r.members,
+        n: 0, idx: [], pct: [], hit: 0, nt: 0, dates: [] });
+      o.n++; o.dates.push(r.sale_date);
+      if (r.idx_pct != null) o.idx.push(r.idx_pct);
+      if (r.pct != null) { o.pct.push(r.pct); o.nt++; if (r.sale >= r.tgt) o.hit++; }
+    });
+    const crews = Object.values(cmap).map(o => ({ branch_name: o.branch_name, shift: o.shift, ids: o.ids, members: o.members,
+      n: o.n, idx: r1(mean(o.idx)), avg_pct: r1(mean(o.pct)), hit: o.hit, nt: o.nt,
+      dates: o.dates.slice().sort().reverse().slice(0, 8) }))
+      .sort((a, b) => b.n - a.n || (b.idx || 0) - (a.idx || 0));
+
+    return { rows, people, pairs, shiftRows, crews, min_shifts: SALES_MIN_SHIFTS, pair_min: SALES_PAIR_MIN };
+  }
+
+  // ทีมในแต่ละผลัด — ใช้ประกอบการจัดจ็อบ
+  async function hrSalesCrew(p) {
+    p = p || {};
+    if (!p.start || !p.end) return { ok: false, error: 'ระบุช่วงวันที่' };
+    const r = await _salesPeopleCore(p.start, p.end, p.branch_id || '');
+    return { ok: true, start: p.start, end: p.end,
+      shift_rows: r.shiftRows, crews: r.crews, people: r.people, pairs: r.pairs,
+      min_shifts: r.min_shifts, pair_min: r.pair_min, shifts_counted: r.rows.length };
   }
 
   async function hrSalesPeople(p) {
