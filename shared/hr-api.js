@@ -5480,7 +5480,7 @@
     if (!p.start || !p.end) return { ok: false, error: 'ระบุช่วงวันที่' };
     const br = String(p.branch_id || '');
     const qSales = () => { let x = sb().from('sales_daily')
-      .select('id,branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,allcafe_cups,delivery_bills,edited_at,edited_by')
+      .select('id,branch_id,sale_date,shift,target_total,sales_total,sales_product,sales_card,customers,allcafe_cups,delivery_bills,edited_at,edited_by,edit_note')
       .gte('sale_date', p.start).lte('sale_date', p.end).order('id');
       if (br) x = x.eq('branch_id', br); return x; };
     const [rowsAll, brR] = await Promise.all([ fetchPaged(qSales), sb().from('branches').select('branch_id,name') ]);
@@ -5513,6 +5513,19 @@
         field: 'ทั้งแถว', value: _thbq(x.sales_total), normal: '—',
         why: 'ยอด/เป้า/ลูกค้า ตรงกันเป๊ะกับวันที่ ' + g.filter(z => z !== x).map(z => _dq(z.sale_date)).join(', ') + ' — น่าจะส่งฟอร์มซ้ำหรือก๊อปของวันก่อนมา',
         todo: 'เทียบกับใบปิดยอดจริงของวันนี้ ถ้าซ้ำจริงให้แก้เป็นตัวเลขของวันนี้' }));
+    });
+    // ---- ★ 19 พ.ย. 69 — แถวที่ด่านในฐานข้อมูลกันเลขเก่าทับไว้ (sales_copy_guard.sql) ----
+    //   ฟอร์มในไลน์มีทุกผลัดในข้อความเดียว คนส่งก๊อปของเดิมมาแล้วลืมแก้ผลัดที่ไม่ใช่ของตัวเอง
+    //   ด่านจะล้างตัวเลขทิ้งแทนที่จะปล่อยเลขเก่าลงระบบ → ผลัดนั้นจึง "ยังไม่มียอด" ต้องตามเอง
+    rows.forEach(x => {
+      if (+x.sales_total > 0) return;
+      const note = String(x.edit_note || '');
+      if (!/^ระบบกันไว้/.test(note)) return;
+      const md = note.match(/(\d{1,2}\/\d{1,2})/);
+      add(x, { kind: 'copy_blocked', sev: 'mid', state: 'auto', field: 'ทั้งผลัด', value: 'ยังไม่มียอด', normal: '—',
+        why: 'ฟอร์มที่ส่งมามียอด/เป้า/ลูกค้า ตรงกับผลัดเดียวกันของวันที่ ' + (md ? md[1] : 'ก่อนหน้า')
+             + ' เป๊ะ — ระบบกันไม่ให้เลขเก่าทับ ผลัดนี้จึงยังไม่มียอดจริง',
+        todo: 'ขอเลขจริงของผลัดนี้จากใบปิดยอด แล้วกด "แก้" ใส่เข้าไป' });
     });
     rows.forEach(x => {
       const k = key(x), m = MED[k] || {};
