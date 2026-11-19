@@ -8720,23 +8720,55 @@ async function anSpeedLoad(start, end, branch){
     +'<span style="color:var(--muted)">คิดจาก '+r.measured.toLocaleString('th-TH')+' ชิ้นที่มีเวลาครบและไม่ค้างข้ามวัน · '
     +'ช้าไม่ได้แปลว่าแย่เสมอไป บางงานต้องรอรอบรถหรือรอลูกค้าน้อย — ใช้เป็นหัวข้อคุย ไม่ใช่คำตัดสิน</span>'
     +'</div></div>';
-  const tk=(r.tasks||[]).slice(0,12);
-  if(tk.length){
-    const mx=Math.max.apply(null,tk.map(x=>x.med_hours||0).concat([1]));
+  // ★ 19 พ.ย. 69 — เทียบกับ "ขั้นในกะ" ไม่ใช่เทียบดิบ
+  //   งานปิดผลัด/ส่งเอกสารสิ้นวันช้าโดยธรรมชาติ (step 8 ค่ากลาง 7.5 ชม. · step 1 แค่ 0.7 ชม.)
+  //   ถ้าเรียงด้วยชั่วโมงดิบ ตารางจะกลายเป็นแค่ "เรียงตามลำดับขั้น" แล้วหาว่างานสิ้นวันถูกดอง
+  const ST=(r.steps||[]);
+  if(ST.length){
+    const byS={}; ST.forEach(function(x){ (byS[x.step]=byS[x.step]||[]).push(x); });
+    const ks=Object.keys(byS).sort(function(a,b){return (+a)-(+b);});
+    const mxS=Math.max.apply(null,ST.map(x=>x.med_hours||0).concat([1]));
     h+='<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding-bottom:4px">'
-      +'<div style="font-size:13.5px;font-weight:600">งานที่ถูกดองไว้ท้ายสุด</div>'
-      +'<div style="font-size:11.5px;color:var(--muted)">ถ้างานไหนช้าทุกคนทุกวัน = ตัวงานหรือเวลาที่แจกมีปัญหา ไม่ใช่คน</div></div>'
-      +'<div class="tablewrap"><table><thead><tr><th>งาน</th><th style="text-align:right">ค่ากลาง</th>'
-      +'<th style="text-align:right">ตีกลับ</th><th style="text-align:right">ชิ้น</th><th></th></tr></thead><tbody>'
+      +'<div style="font-size:13.5px;font-weight:600">ลำดับขั้นในกะใช้เวลาเท่าไร (ฐานเทียบ)</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);line-height:1.7">'
+      +'งานถูกตั้งลำดับขั้นไว้แล้วในระบบ (1 = ประชุมผลัด/ลงเวลา · 7 = ปิดผลัด · 8 = ส่งเอกสารสิ้นวัน)<br>'
+      +'<b>งานสิ้นวันช้าเป็นเรื่องปกติ ไม่ใช่ถูกดอง</b> — ตารางถัดไปจึงเทียบแต่ละงานกับงานขั้นเดียวกันเท่านั้น</div></div>'
+      +'<div class="card-b" style="padding-top:6px">'
+      +ks.map(function(s){
+        const g=byS[s], m=g.reduce(function(a,b){return a+b.med_hours;},0)/g.length;
+        const w=Math.max(3,Math.round((m/mxS)*100));
+        return '<div style="display:flex;align-items:center;gap:10px;padding:3px 0">'
+          +'<div style="width:52px;font-size:12px;color:var(--muted)">ขั้น '+s+'</div>'
+          +'<div style="flex:1"><div style="height:8px;border-radius:999px;background:var(--line2)">'
+            +'<div style="height:8px;border-radius:999px;width:'+w+'%;background:#94a3b8"></div></div></div>'
+          +'<div class="mono" style="width:58px;text-align:right;font-size:12px">'+m.toFixed(1)+' ชม.</div>'
+          +'<div style="width:74px;text-align:right;font-size:11px;color:var(--muted)">'
+            +(g.some(function(z){return z.comparable;})?'':'เทียบไม่ได้')+'</div></div>'; }).join('')
+      +'</div></div>';
+  }
+  const tk=(r.tasks||[]).filter(function(x){return x.idx!=null;}).slice(0,12);
+  if(tk.length){
+    h+='<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding-bottom:4px">'
+      +'<div style="font-size:13.5px;font-weight:600">งานที่ช้ากว่างานขั้นเดียวกัน</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);line-height:1.7">'
+      +'<b>ดัชนี 100</b> = ช้าพอ ๆ กับงานอื่นในขั้นเดียวกันของผลัดเดียวกัน (ปกติ) · '
+      +'<b>เกิน 100</b> = ช้ากว่างานขั้นเดียวกันจริง ๆ = ถูกดอง<br>'
+      +'ถ้างานไหนเกิน 100 ทุกคนทุกวัน = ตัวงานหรือเวลาที่แจกมีปัญหา ไม่ใช่คน</div></div>'
+      +'<div class="tablewrap"><table><thead><tr><th>งาน</th><th style="text-align:right">ขั้น</th>'
+      +'<th style="text-align:right">ดัชนี</th><th style="text-align:right">ค่ากลาง</th>'
+      +'<th style="text-align:right">ตีกลับ</th><th style="text-align:right">ชิ้น</th></tr></thead><tbody>'
       +tk.map(function(x){
-        const w=Math.max(3,Math.round((x.med_hours/mx)*100));
+        const c=x.idx>=150?'#b91c1c':x.idx>=115?'#b45309':x.idx<=75?'#166534':'var(--fg)';
         return '<tr><td style="font-size:12.5px">'+esc(x.title)+'</td>'
+          +'<td class="mono" style="text-align:right;color:var(--muted)">'+(x.step==null?'—':x.step)+'</td>'
+          +'<td class="mono" style="text-align:right;font-weight:700;color:'+c+'">'+x.idx+'</td>'
           +'<td class="mono" style="text-align:right;white-space:nowrap">'+hh(x.med_hours)+'</td>'
           +'<td class="mono" style="text-align:right">'+x.back_pct+'%</td>'
-          +'<td class="mono" style="text-align:right">'+x.n+'</td>'
-          +'<td style="width:28%;min-width:80px"><div style="height:8px;border-radius:999px;background:var(--line2)">'
-            +'<div style="height:8px;border-radius:999px;width:'+w+'%;background:#0ea5e9"></div></div></td></tr>'; }).join('')
-      +'</tbody></table></div></div>';
+          +'<td class="mono" style="text-align:right">'+x.n+'</td></tr>'; }).join('')
+      +'</tbody></table></div>'
+      +(r.no_step?('<div class="card-b" style="padding-top:8px;font-size:11.5px;color:var(--muted)">'
+        +'มีงาน '+r.no_step+' ชิ้นที่ไม่มีลำดับขั้น (เช่นงานฝากจากผลัดก่อน) — ไม่ถูกเอามาจัดอันดับในตารางนี้</div>'):'')
+      +'</div>';
   }
   const pp=(r.people||[]);
   if(pp.length){
