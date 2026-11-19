@@ -827,6 +827,9 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
       <div class="field"><label>เป้า (บาท)</label><input id="se_tgt" type="number" step="any" inputmode="decimal"></div>
       <div class="field"><label>ยอดขาย (บาท)</label><input id="se_sale" type="number" step="any" inputmode="decimal"></div>
       <div class="field"><label>จำนวนลูกค้า (คน)</label><input id="se_cust" type="number" inputmode="numeric"></div>
+      <!-- ★ 19 พ.ย. 69 — 2 ช่องที่คีย์ผิดหน่วยบ่อยสุด (กรอกยอดเงินลงช่องจำนวน) · ใส่ clear = ล้างเป็นไม่มีข้อมูล -->
+      <div class="field"><label>All Cafe (แก้ว) — ใส่ clear เพื่อล้างเป็น "ไม่มีข้อมูล"</label><input id="se_cafe" type="text" inputmode="numeric"></div>
+      <div class="field"><label>Delivery (บิล) — ใส่ clear เพื่อล้างเป็น "ไม่มีข้อมูล"</label><input id="se_deliv" type="text" inputmode="numeric"></div>
       <div class="field"><label>เหตุผลที่แก้</label><input id="se_note" type="text" placeholder="เช่น พนักงานคีย์เป้าตกจุดทศนิยม"></div>
       <div id="se_orig" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.7">ค่าที่แก้ที่นี่จะ<b>ชนะไฟล์ไลน์เสมอ</b> — ถึงนำเข้าแชทซ้ำทีหลังก็ไม่ถูกทับ · ระบบบันทึกชื่อผู้แก้และเหตุผลไว้ในบันทึกกิจกรรม</div>
@@ -1977,10 +1980,12 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <button class="shsub-b on" type="button" data-sdpan="day"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> ภาพรวมรายวัน</button>
     <button class="shsub-b" type="button" data-sdpan="shift"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/></svg> รายผลัด (เป้า vs ยอดจริง)</button>
     <button class="shsub-b" type="button" data-sdpan="people"><svg class="ei" viewBox="0 0 24 24"><path d="M16 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="9" cy="6.5" r="3.5"/><path d="M22 20v-1.5a4 4 0 0 0-3-3.87"/><path d="M16.5 3.3a4 4 0 0 1 0 6.4"/></svg> ผลงานรายคน</button>
+    <button class="shsub-b" type="button" data-sdpan="quality"><svg class="ei" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> คุณภาพข้อมูล</button>
   </div>
   <div id="sd_body"><div class="empty">เลือกช่วงวันแล้วกด "ดู"</div></div>
   <div id="sds_body" style="display:none"></div>
   <div id="sdp_body" style="display:none"></div>
+  <div id="sdq_body" style="display:none"></div>
 </div>
 
 <!-- แดชบอร์ดตรวจร้าน QSSI -->
@@ -18650,7 +18655,8 @@ async function loadSalesDash(){
   if(!$('sd_end').value && $('sd_month')){ applySdMonth($('sd_month').value); }
   if(!$('sd_body').dataset.wired){
     const redraw=()=>{ const on=document.querySelector('#sdsub .shsub-b.on'); const k=on?on.dataset.sdpan:'day';
-      if(k==='shift') drawSalesShift(); else if(k==='people') drawSalesPeople(); else drawSalesDash(); };
+      if(k==='shift') drawSalesShift(); else if(k==='people') drawSalesPeople();
+      else if(k==='quality') drawSalesQuality(); else drawSalesDash(); };
     $('sd_go').onclick=()=>{ if($('sd_month'))$('sd_month').value=''; redraw(); };
     $('sd_branch').onchange=redraw;
     $('sd_month').onchange=()=>{ if($('sd_month').value){ applySdMonth($('sd_month').value); redraw(); } };
@@ -18682,11 +18688,12 @@ const SDS_SHIFTS=['เช้า','บ่าย','ดึก'];
 const SDS_COLOR={'เช้า':'#f59e0b','บ่าย':'#2563eb','ดึก':'#7c3aed'};
 function sdsPctCls(p){ return p==null?'':(p>=100?'ok':(p>=90?'warn':'bad')); }
 function sdsTab(name){
-  ({day:'sd_body',shift:'sds_body',people:'sdp_body'}) && ['day','shift','people'].forEach(k=>{
-    const el=$({day:'sd_body',shift:'sds_body',people:'sdp_body'}[k]); if(el) el.style.display=(k===name)?'':'none'; });
+  const _PAN={day:'sd_body',shift:'sds_body',people:'sdp_body',quality:'sdq_body'};
+  Object.keys(_PAN).forEach(k=>{ const el=$(_PAN[k]); if(el) el.style.display=(k===name)?'':'none'; });
   document.querySelectorAll('#sdsub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.sdpan===name));
   if(name==='shift') drawSalesShift();
   if(name==='people') drawSalesPeople();
+  if(name==='quality') drawSalesQuality();
 }
 async function drawSalesShift(){
   const box=$('sds_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -18862,6 +18869,8 @@ function sdsEdit(key){
   $('se_tgt').value = x.tgt||'';
   $('se_sale').value = x.sale||'';
   $('se_cust').value = x.customers||'';
+  if($('se_cafe'))  $('se_cafe').value  = (x.cafe==null?'':x.cafe);
+  if($('se_deliv')) $('se_deliv').value = (x.deliv==null?'':x.deliv);
   $('se_note').value = x.edit_note||'';
   $('se_orig').innerHTML = x.edited_at
     ? ('เคยแก้เมื่อ '+esc(fmtDT(x.edited_at))+' โดย '+esc(x.edited_by||'—'))
@@ -18876,11 +18885,14 @@ $('seSave').onclick=async()=>{
   const b=$('seSave');
   const payload={ action:'hr_sales_update', password:pwd, branch_id:SDS_EDIT.branch_id, sale_date:SDS_EDIT.sale_date, shift:SDS_EDIT.shift,
     target_total:$('se_tgt').value, sales_total:$('se_sale').value, customers:$('se_cust').value,
+    allcafe_cups:(($('se_cafe')||{}).value||''), delivery_bills:(($('se_deliv')||{}).value||''),
     note:$('se_note').value.trim(), actor:(MGR_MODE?('ผจก. '+(MGR_EMP||MGR_BRANCH||'')):'สำนักงานใหญ่') };
   b.disabled=true; b.innerHTML='<span class="spin"></span>';
   const r=await post(payload);
   b.disabled=false; b.textContent='บันทึก';
-  if(r&&r.ok){ toast('ok','แก้แล้ว'+((r.changed&&r.changed.length)?(' — '+r.changed.join(' · ')):'')); sdsEditClose(); drawSalesShift(); }
+  if(r&&r.ok){ toast('ok','แก้แล้ว'+((r.changed&&r.changed.length)?(' — '+r.changed.join(' · ')):'')); sdsEditClose();
+    const on=document.querySelector('#sdsub .shsub-b.on'); const k=on?on.dataset.sdpan:'shift';
+    if(k==='quality') drawSalesQuality(); else if(k==='people') drawSalesPeople(); else drawSalesShift(); }
   else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
 };
 
@@ -19023,6 +19035,92 @@ function sdpRender(){
   box.innerHTML=note+sortSel+table+fewBox+crewBox;
   sdpWireCrew();
   const sel=$('sdp_sort'); if(sel) sel.onchange=()=>{ SDP_SORT=sel.value; sdpRender(); };
+}
+
+// ★ 19 พ.ย. 69 — คุณภาพข้อมูลยอดขาย: ไล่ดูเลขที่คีย์ผิดจากฟอร์มในไลน์ แล้วกดแก้ได้ในที่เดียว
+//   ตั้งใจให้เปิดดูเองทุกเดือน แทนที่จะต้องมาไล่หาทีละรอบ
+let SDQ_DATA=null, SDQ_FILTER='all';
+const SDQ_KIND={
+  dup:         'แถวซ้ำ (ส่งฟอร์มซ้ำ/ก๊อปของวันก่อน)',
+  sale_tiny:   'ยอดขายคีย์ตกหลัก',
+  target_bad:  'เป้าคีย์ผิด',
+  cust_swap:   'ลูกค้าสลับช่องกับยอดต่อหัว',
+  cust_decimal:'ลูกค้ามีจุดทศนิยม',
+  cust_odd:    'ลูกค้าห่างค่าปกติมาก',
+  cust_zero:   'ไม่ได้กรอกลูกค้า',
+  cheer_unit:  'ตัวเชียร์ขายคีย์ผิดหน่วย',
+  missing:     'ผลัดที่ยังไม่มียอด',
+};
+const SDQ_SEV={ high:{t:'ต้องแก้',c:'bad'}, mid:{t:'ควรดู',c:'warn'}, low:{t:'เล็กน้อย',c:''} };
+async function drawSalesQuality(){
+  const box=$('sdq_body'); box.innerHTML='<div class="empty">กำลังตรวจ…</div>';
+  const r=await post({ action:'hr_sales_quality', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'ตรวจไม่สำเร็จ')+'</div>'; return; }
+  SDQ_DATA=r; sdqRender();
+}
+function sdqRender(){
+  const box=$('sdq_body'), r=SDQ_DATA; if(!r) return;
+  const all=(r.issues||[]);
+  const multi=!$('sd_branch').value;
+  const note='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#1e3a8a;line-height:1.75">'
+    +'<b>หน้านี้คืออะไร</b> — ตรวจทุกแถวยอดขายในช่วงที่เลือก (ตรวจแล้ว '+_thb(r.rows_scanned)+' แถว) เทียบกับ<b>ค่ากลางของสาขานั้น × ผลัดนั้น</b> '
+    +'ไม่ได้ใช้เลขคงที่ จึงไม่ฟ้องผิดเวลายอดสาขาโตขึ้น<br>'
+    +'<b>ระบบคัดให้แล้ว</b> = เลขเพี้ยนนั้นไม่ถูกนำไปคิดในแดชบอร์ด/คะแนนพนักงานอยู่แล้ว (แต่ตารางยังโชว์ค่าดิบ) · '
+    +'<b>ยังนับอยู่</b> = ต้องไปตามเอง<br>'
+    +'ส่วนใหญ่กด <b>"แก้"</b> ท้ายแถวได้เลย — แก้ที่นี่ชนะไฟล์ไลน์เสมอ ถึงนำเข้าซ้ำทีหลังก็ไม่ถูกทับ และค่าเดิมถูกสำรองไว้กู้คืนได้'
+    +'</div>';
+  if(!all.length){
+    box.innerHTML=note+'<div class="card"><div class="card-b"><div class="empty" style="color:var(--green)">ไม่พบเลขที่ดูผิดปกติในช่วงนี้ — ข้อมูลสะอาด</div></div></div>';
+    return;
+  }
+  const c=r.counts||{};
+  const chip=(k,lab,n,cls)=>'<button class="shsub-b'+(SDQ_FILTER===k?' on':'')+'" type="button" data-sdq="'+k+'" style="font-size:12.5px;padding:5px 11px">'
+    +lab+' <b>'+n+'</b></button>';
+  const byKind=r.by_kind||{};
+  const chips='<div class="toolbar" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+    +chip('all','ทั้งหมด',all.length)
+    +chip('high','ต้องแก้',c.high||0)+chip('mid','ควรดู',c.mid||0)+chip('low','เล็กน้อย',c.low||0)
+    +Object.keys(byKind).map(k=>chip(k, SDQ_KIND[k]||k, byKind[k])).join('')
+    +'</div>';
+  const list=all.filter(o=>SDQ_FILTER==='all'||o.sev===SDQ_FILTER||o.kind===SDQ_FILTER);
+  const TH_D=['อา','จ','อ','พ','พฤ','ศ','ส'];
+  const row=o=>{
+    const wd=TH_D[new Date(o.sale_date+'T00:00:00Z').getUTCDay()];
+    const sv=SDQ_SEV[o.sev]||SDQ_SEV.low;
+    const canFix=o.kind!=='missing';
+    return '<tr><td style="white-space:nowrap"><span class="pill '+sv.c+'">'+sv.t+'</span>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(o.state==='auto'?'ระบบคัดให้แล้ว':'ยังนับอยู่')+'</div></td>'
+      +'<td style="white-space:nowrap">'+(+o.sale_date.slice(8,10))+'/'+(+o.sale_date.slice(5,7))
+        +' <span style="color:var(--muted);font-size:11.5px">'+wd+'</span>'
+        +'<div style="font-size:11px;color:'+(SDS_COLOR[o.shift]||'var(--muted)')+'">ผลัด'+esc(o.shift)+'</div>'
+        +(multi?('<div style="font-size:11px;color:var(--muted)">'+esc(o.branch_name)+'</div>'):'')+'</td>'
+      +'<td style="font-size:12.5px"><b>'+esc(SDQ_KIND[o.kind]||o.kind)+'</b>'
+        +'<div style="font-size:11.5px;color:var(--muted);line-height:1.6">'+esc(o.why)+'</div>'
+        +(o.todo?('<div style="font-size:11.5px;color:#1d4ed8;line-height:1.6">→ '+esc(o.todo)+'</div>'):'')
+        +(o.edited_at?('<div style="font-size:11px;color:var(--muted)">เคยแก้โดย '+esc(o.edited_by||'—')+'</div>'):'')+'</td>'
+      +'<td class="mono" style="white-space:nowrap">'+esc(String(o.field))+': <b>'+esc(String(o.value))+'</b>'
+        +'<div style="font-size:11px;color:var(--muted)">ปกติราว '+esc(String(o.normal))+'</div></td>'
+      +'<td style="white-space:nowrap">'+(canFix
+          ? ('<button class="btn btn-sm" type="button" data-sqfix="'+esc(o.branch_id)+'|'+esc(o.sale_date)+'|'+esc(o.shift)+'">แก้</button>')
+          : '<span style="font-size:11.5px;color:var(--muted)">ไปที่หน้าฟีด</span>')+'</td></tr>';
+  };
+  const table='<div class="card"><div class="tablewrap"><table>'
+    +'<thead><tr><th>ความเร่ง</th><th>วันที่</th><th>เรื่อง</th><th>ค่าที่คีย์ไว้</th><th></th></tr></thead>'
+    +'<tbody>'+list.map(row).join('')+'</tbody></table></div></div>';
+  box.innerHTML=note+chips+table;
+  box.querySelectorAll('[data-sdq]').forEach(b=>b.onclick=()=>{ SDQ_FILTER=b.dataset.sdq; sdqRender(); });
+  box.querySelectorAll('[data-sqfix]').forEach(b=>b.onclick=()=>sdqFix(b.dataset.sqfix));
+}
+// เปิดกล่องแก้ยอดเดิม โดยดึงค่าปัจจุบันของแถวนั้นมาก่อน (หน้านี้ไม่ได้โหลด SDS_ROWS ไว้)
+async function sdqFix(key){
+  const [br,date,sh]=key.split('|');
+  const r=await post({ action:'hr_sales_shift', password:pwd, branch_id:br, start:date, end:date });
+  const x=((r&&r.rows)||[]).find(z=>String(z.branch_id)===br && z.sale_date===date && z.shift===sh);
+  if(!x){ toast('err','หาแถวนี้ไม่เจอ'); return; }
+  const f=sdFixSales(x);
+  SDS_ROWS[br+'|'+date+'|'+sh]=Object.assign({},x,{ sale:f.s, tgt:+x.target_total||0, tok:true,
+    cafe:(x.allcafe_cups==null?null:+x.allcafe_cups), deliv:(x.delivery_bills==null?null:+x.delivery_bills) });
+  sdsEdit(br+'|'+date+'|'+sh);
 }
 
 // ★ 19 พ.ย. 69 — ลองจัดทีม: คิดให้ว่าชุดที่เลือกน่าจะทำได้แค่ไหน
