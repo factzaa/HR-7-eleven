@@ -2018,6 +2018,7 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
     <button class="shsub-b" type="button" data-stkpan="pma"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> รายกลุ่มสินค้า</button>
     <button class="shsub-b" type="button" data-stkpan="diff"><svg class="ei" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-4 3 3 4-6"/><path d="M7 20l4-2 3 1 4-3"/></svg> เทียบเดือน</button>
     <button class="shsub-b" type="button" data-stkpan="wo"><svg class="ei" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg> สินค้าตัดจ่าย</button>
+    <button class="shsub-b" type="button" data-stkpan="cmp"><svg class="ei" viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-6h6v6"/><path d="M3 21h18"/></svg> เทียบสาขา</button>
     <button class="shsub-b" type="button" data-stkpan="gp"><svg class="ei" viewBox="0 0 24 24"><path d="M12 2v20"/><path d="M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 2.8 5 3.3 5 1.4 5 3.3-2.2 3-5 3-5-1.1-5-3"/></svg> ผลต่อ GP</button>
     <button class="shsub-b" type="button" data-stkpan="nida"><svg class="ei" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M3 12v3M21 12v3"/></svg> นิดาวิเคราะห์</button>
     <button class="shsub-b" type="button" data-stkpan="profile"><svg class="ei" viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/></svg> โปรไฟล์สาขา</button>
@@ -2189,6 +2190,11 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
       <button class="btn btn-sec btn-sm" id="stk_wcsv" type="button">ดาวน์โหลด CSV</button>
     </div>
     <div style="overflow-x:auto"><div id="stk_wo"><div class="empty">กำลังโหลด…</div></div></div>
+  </div>
+
+  <!-- ===== ★ 19 พ.ย. 69 — เทียบ 3 สาขาในหน้าเดียว + จับสาขาที่ยังไม่อัปไฟล์ ===== -->
+  <div class="stkpan" id="stkpan_cmp" style="display:none">
+    <div id="stk_cmp"><div class="empty">กำลังโหลด…</div></div>
   </div>
 
   <!-- ===== ผลต่อ GP (เฟส 3 ส่วนที่ข้อมูลปัจจุบันรองรับ) ===== -->
@@ -8690,6 +8696,151 @@ async function runAnalytics(){
   if(!r.ok){ $('an_body').innerHTML='<div class="empty">โหลดไม่สำเร็จ: '+esc(r.error||'')+'</div>'; return; }
   ANALYTICS=r; $('an_rangelbl').textContent='ช่วง: '+(beDate(r.range.start)+' – '+beDate(r.range.end));
   renderAnalytics();
+  anLateLoad(r.range.start, r.range.end, branch);   // ★ 19 พ.ย. 69 — รูปแบบการมาสาย (ต่อท้าย ไม่บล็อกหน้าหลัก)
+  anSpeedLoad(r.range.start, r.range.end, branch);  // ★ 19 พ.ย. 69 — เวลาที่ใช้กว่าจะส่งงาน
+}
+// ★ 19 พ.ย. 69 — ตัวชี้วัดงานในกะแบบใหม่
+//   ผลตรวจงานผ่าน 99.6% จึงแยกคนไม่ออก แต่ "เวลาที่ใช้กว่าจะส่ง" กระจายตัวจริง
+//   เทียบกับค่ากลางของงานชิ้นเดียวกันในผลัดเดียวกันเสมอ — งานถูพื้นกับงานสั่งของเทียบกันไม่ได้
+async function anSpeedLoad(start, end, branch){
+  const host=$('an_body'); if(!host) return;
+  const slot=document.createElement('div'); slot.id='an_speed';
+  slot.innerHTML='<div class="an-sec">เวลาที่ใช้กว่าจะส่งงาน</div><div class="card"><div class="card-b muted" style="font-size:12.5px">กำลังคำนวณ…</div></div>';
+  host.appendChild(slot);
+  let r; try{ r=await post({ action:'hr_task_speed', password:pwd, start, end, branch_id:branch||'' }); }
+  catch(e){ slot.innerHTML=''; return; }
+  if(!r || !r.ok || !r.measured){ slot.innerHTML=''; return; }
+  const hh=v=>v==null?'—':v.toFixed(1)+' ชม.';
+  let h='<div class="an-sec">เวลาที่ใช้กว่าจะส่งงาน</div>'
+    +'<div class="card" style="margin-bottom:12px"><div class="card-b" style="font-size:12.5px;line-height:1.8">'
+    +'ช่วงนี้มีงาน <b>'+r.scanned.toLocaleString('th-TH')+'</b> ชิ้น · ตรวจผ่าน <b>'+(r.approve_pct==null?'—':r.approve_pct+'%')+'</b> '
+    +'· ถูกตีกลับ <b>'+(r.back_pct==null?'—':r.back_pct+'%')+'</b><br>'
+    +'<b style="color:#b45309">ผลตรวจเกือบทุกชิ้นผ่านหมด จึงใช้แยกคนเก่ง/ไม่เก่งไม่ได้</b> — '
+    +'หน้านี้จึงวัดจาก<b>เวลาที่ใช้ตั้งแต่งานขึ้นในกะจนกดส่ง</b> ซึ่งต่างกันจริง (ค่ากลางรวม '+hh(r.med_hours)+')<br>'
+    +'<span style="color:var(--muted)">คิดจาก '+r.measured.toLocaleString('th-TH')+' ชิ้นที่มีเวลาครบและไม่ค้างข้ามวัน · '
+    +'ช้าไม่ได้แปลว่าแย่เสมอไป บางงานต้องรอรอบรถหรือรอลูกค้าน้อย — ใช้เป็นหัวข้อคุย ไม่ใช่คำตัดสิน</span>'
+    +'</div></div>';
+  const tk=(r.tasks||[]).slice(0,12);
+  if(tk.length){
+    const mx=Math.max.apply(null,tk.map(x=>x.med_hours||0).concat([1]));
+    h+='<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding-bottom:4px">'
+      +'<div style="font-size:13.5px;font-weight:600">งานที่ถูกดองไว้ท้ายสุด</div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">ถ้างานไหนช้าทุกคนทุกวัน = ตัวงานหรือเวลาที่แจกมีปัญหา ไม่ใช่คน</div></div>'
+      +'<div class="tablewrap"><table><thead><tr><th>งาน</th><th style="text-align:right">ค่ากลาง</th>'
+      +'<th style="text-align:right">ตีกลับ</th><th style="text-align:right">ชิ้น</th><th></th></tr></thead><tbody>'
+      +tk.map(function(x){
+        const w=Math.max(3,Math.round((x.med_hours/mx)*100));
+        return '<tr><td style="font-size:12.5px">'+esc(x.title)+'</td>'
+          +'<td class="mono" style="text-align:right;white-space:nowrap">'+hh(x.med_hours)+'</td>'
+          +'<td class="mono" style="text-align:right">'+x.back_pct+'%</td>'
+          +'<td class="mono" style="text-align:right">'+x.n+'</td>'
+          +'<td style="width:28%;min-width:80px"><div style="height:8px;border-radius:999px;background:var(--line2)">'
+            +'<div style="height:8px;border-radius:999px;width:'+w+'%;background:#0ea5e9"></div></div></td></tr>'; }).join('')
+      +'</tbody></table></div></div>';
+  }
+  const pp=(r.people||[]);
+  if(pp.length){
+    h+='<div class="card"><div class="card-b" style="padding-bottom:4px">'
+      +'<div style="font-size:13.5px;font-weight:600">รายคน — เทียบกับงานชิ้นเดียวกันในผลัดเดียวกัน</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);line-height:1.7">'
+      +'<b>ดัชนี 100</b> = ใช้เวลาพอ ๆ กับคนอื่นที่ทำงานชิ้นเดียวกันในผลัดเดียวกัน · '
+      +'<b>ต่ำกว่า 100</b> = ส่งเร็วกว่า · นับเฉพาะคนที่มีงานอย่างน้อย '+r.min_tasks+' ชิ้น</div></div>'
+      +'<div class="tablewrap"><table><thead><tr><th>ชื่อ</th><th style="text-align:right">ดัชนี</th>'
+      +'<th style="text-align:right">ค่ากลางของเขา</th><th style="text-align:right">ตีกลับ</th>'
+      +'<th style="text-align:right">ชิ้น</th><th>ผลัดที่ทำ</th></tr></thead><tbody>'
+      +pp.map(function(x){
+        const c=x.idx>=140?'#b91c1c':x.idx>=110?'#b45309':x.idx<=80?'#166534':'var(--fg)';
+        return '<tr><td><b>'+esc(x.name)+'</b></td>'
+          +'<td class="mono" style="text-align:right;font-weight:700;color:'+c+'">'+x.idx+'</td>'
+          +'<td class="mono" style="text-align:right;white-space:nowrap">'+hh(x.med_hours)+'</td>'
+          +'<td class="mono" style="text-align:right">'+x.back_pct+'%</td>'
+          +'<td class="mono" style="text-align:right">'+x.n+'</td>'
+          +'<td style="font-size:11.5px;color:var(--muted)">'+x.shift_mix.map(esc).join(' · ')+'</td></tr>'; }).join('')
+      +'</tbody></table></div></div>';
+  }
+  slot.innerHTML=h;
+}
+// ★ 19 พ.ย. 69 — รูปแบบการมาสาย: ตอบว่าเป็นปัญหา "ของคน" หรือ "ของผลัด"
+//   ถ้าดูรายคนเฉย ๆ คนกะเช้าจะดูแย่กว่าทุกคน ทั้งที่กะเช้าสายกันทั้งผลัด
+//   จึงเทียบแต่ละคนกับค่ากลางของผลัดที่ตัวเองเข้าจริง ถ่วงน้ำหนักตามสัดส่วนกะ
+async function anLateLoad(start, end, branch){
+  const host=$('an_body'); if(!host) return;
+  const slot=document.createElement('div'); slot.id='an_late';
+  slot.innerHTML='<div class="an-sec">รูปแบบการมาสาย</div><div class="card"><div class="card-b muted" style="font-size:12.5px">กำลังคำนวณ…</div></div>';
+  host.appendChild(slot);
+  let r; try{ r=await post({ action:'hr_late_pattern', password:pwd, start, end, branch_id:branch||'' }); }
+  catch(e){ slot.innerHTML=''; return; }
+  if(!r || !r.ok || !r.overall || !r.overall.checkins){ slot.innerHTML=''; return; }
+  const o=r.overall;
+  const pct=v=>v==null?'—':v.toFixed(1)+'%';
+  const bar=(v,max,color)=>'<div style="height:8px;border-radius:999px;background:var(--line2)">'
+    +'<div style="height:8px;border-radius:999px;width:'+Math.max(2,Math.round((v/Math.max(max,1))*100))+'%;background:'+color+'"></div></div>';
+  const maxS=Math.max.apply(null,(r.by_shift||[]).map(x=>x.pct||0).concat([1]));
+  let h='<div class="an-sec">รูปแบบการมาสาย</div>'
+    +'<div class="card" style="margin-bottom:12px"><div class="card-b">'
+    +'<div style="font-size:13.5px;line-height:1.8">ช่วงนี้ลงเวลา <b>'+o.checkins.toLocaleString('th-TH')+'</b> ครั้ง '
+    +'· มาสาย <b style="color:'+(o.pct>=30?'#b91c1c':o.pct>=15?'#b45309':'#166534')+'">'+pct(o.pct)+'</b> '
+    +'· สายครั้งละ <b>'+(o.med_min||0)+'</b> นาที (ค่ากลาง) · รวม <b>'+Math.round(o.lost_min/60).toLocaleString('th-TH')+'</b> ชั่วโมง</div>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.7">'
+    +'ถ้าทั้งผลัดสายเหมือนกันหมด แปลว่าเป็นเรื่องของผลัด (รอบรถ/เวลาเปิดร้าน/ตารางเวร) ไม่ใช่เรื่องของคน — ตารางล่างแยกให้แล้ว</div>'
+    +'</div></div>';
+  // รายผลัด
+  h+='<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding-bottom:4px">'
+    +'<div style="font-size:13.5px;font-weight:600">สายรายผลัด — ดูว่าเป็นปัญหาเชิงระบบไหม</div></div>'
+    +'<div class="tablewrap"><table><thead><tr><th>ผลัด</th><th style="text-align:right">สาย</th>'
+    +'<th style="text-align:right">นาที (ค่ากลาง)</th><th style="text-align:right">ครั้ง</th><th></th></tr></thead><tbody>'
+    +(r.by_shift||[]).map(function(x){
+      return '<tr><td><b>'+esc(x.name)+'</b></td>'
+        +'<td class="mono" style="text-align:right;font-weight:700;color:'+(x.pct>=40?'#b91c1c':x.pct>=25?'#b45309':'#166534')+'">'+pct(x.pct)+'</td>'
+        +'<td class="mono" style="text-align:right">'+(x.med_min||0)+'</td>'
+        +'<td class="mono" style="text-align:right">'+x.n+'</td>'
+        +'<td style="width:30%;min-width:80px">'+bar(x.pct||0,maxS,'#b45309')+'</td></tr>'; }).join('')
+    +'</tbody></table></div></div>';
+  // รายวัน + วันแรกหลังหยุด
+  const maxD=Math.max.apply(null,(r.by_dow||[]).map(x=>x.pct||0).concat([1]));
+  h+='<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding-bottom:4px">'
+    +'<div style="font-size:13.5px;font-weight:600">สายรายวันในสัปดาห์</div></div>'
+    +'<div class="card-b" style="padding-top:6px">'
+    +(r.by_dow||[]).map(function(x){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:4px 0">'
+        +'<div style="width:62px;font-size:12.5px">'+esc(x.name)+'</div>'
+        +'<div style="flex:1">'+bar(x.pct||0,maxD,'#64748b')+'</div>'
+        +'<div class="mono" style="width:54px;text-align:right;font-size:12.5px">'+pct(x.pct)+'</div></div>'; }).join('')
+    +'</div>';
+  const ao=r.after_off||{};
+  if(ao.back_n>=10 && ao.cont_n>=10) h+='<div class="card-b" style="padding-top:2px;font-size:12.5px;line-height:1.8;color:var(--muted)">'
+    +'<b style="color:var(--fg)">วันแรกหลังหยุด</b> สาย <b style="color:'+(ao.back_pct>ao.cont_pct?'#b91c1c':'var(--fg)')+'">'+pct(ao.back_pct)+'</b> ('+ao.back_n+' ครั้ง) '
+    +'· วันทำงานต่อเนื่อง สาย <b>'+pct(ao.cont_pct)+'</b> ('+ao.cont_n+' ครั้ง)'
+    +(ao.back_pct>ao.cont_pct+5?'<br>วันแรกหลังหยุดสายกว่าชัดเจน — เตือนล่วงหน้าคืนก่อนน่าจะช่วยได้':'')+'</div>';
+  h+='</div>';
+  // รายคน
+  const pp=(r.people||[]);
+  if(pp.length){
+    h+='<div class="card"><div class="card-b" style="padding-bottom:4px">'
+      +'<div style="font-size:13.5px;font-weight:600">รายคน — เทียบกับผลัดที่ตัวเองเข้า</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);line-height:1.7">'
+      +'<b>ดัชนี 100</b> = สายพอ ๆ กับค่ากลางของผลัดที่เขาเข้า · <b>เกิน 100</b> = สายมากกว่าเพื่อนในผลัดเดียวกัน<br>'
+      +'<b>เกินกี่ครั้ง</b> = สายมากกว่าค่ากลางของผลัดตัวเองกี่ครั้ง — เรียงตามช่องนี้ เพราะคนที่สาย 18 ใน 20 ครั้ง '
+      +'ต้องคุยก่อนคนที่สาย 6 ครั้งแต่อยู่ผลัดที่ปกติไม่มีใครสาย<br>'
+      +'นับเฉพาะคนที่ลงเวลาอย่างน้อย '+r.min_shifts+' ครั้ง</div></div>'
+      +'<div class="tablewrap"><table><thead><tr><th>ชื่อ</th><th style="text-align:right">สายจริง</th>'
+      +'<th style="text-align:right">ควรเป็น</th><th style="text-align:right">ดัชนี</th>'
+      +'<th style="text-align:right">เกินกี่ครั้ง</th>'
+      +'<th style="text-align:right">นาที</th><th style="text-align:right">ครั้ง</th><th>ผลัดที่เข้า</th></tr></thead><tbody>'
+      +pp.map(function(x){
+        const c=x.idx==null?'var(--muted)':(x.idx>=150?'#b91c1c':x.idx>=110?'#b45309':x.idx<=70?'#166534':'var(--fg)');
+        return '<tr><td><b>'+esc(x.name)+'</b>'+(x.active?'':'<span class="muted" style="font-size:11px"> (ออกแล้ว)</span>')+'</td>'
+          +'<td class="mono" style="text-align:right">'+pct(x.pct)+'</td>'
+          +'<td class="mono" style="text-align:right;color:var(--muted)">'+pct(x.expected_pct)+'</td>'
+          +'<td class="mono" style="text-align:right;font-weight:700;color:'+c+'">'+(x.idx==null?'—':x.idx)+'</td>'
+          +'<td class="mono" style="text-align:right;color:'+(x.excess>0?'#b91c1c':'#166534')+'">'
+            +(x.excess>0?('+'+x.excess):x.excess)+'</td>'
+          +'<td class="mono" style="text-align:right">'+(x.med_min||0)+'</td>'
+          +'<td class="mono" style="text-align:right">'+x.n+'</td>'
+          +'<td style="font-size:11.5px;color:var(--muted)">'+x.shift_mix.map(esc).join(' · ')+'</td></tr>'; }).join('')
+      +'</tbody></table></div></div>';
+  }
+  slot.innerHTML=h;
 }
 // เส้นโค้งมน (Catmull-Rom → cubic bezier)
 function _smoothPath(pts){
@@ -14672,11 +14823,56 @@ async function stkInit(){
   }
   stkReload(false);
 }
+// ★ 19 พ.ย. 69 — เทียบสาขา: ของเดิมดูได้ทีละสาขา เลยไม่มีใครเห็นว่าบางสาขาไม่เคยอัปไฟล์เลย
+//   บาทดิบเทียบข้ามสาขาไม่ได้ (ร้านคนละขนาด) จึงโชว์ % ของยอดขายคู่กันเสมอ
+async function stkLoadCmp(){
+  const box=$('stk_cmp'); if(!box) return;
+  box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  const r=await post({ action:'hr_stock_cmp', password:pwd, from:STK.from||'', to:STK.to||'' });
+  if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
+  const M=r.months||[], rows=(r.rows||[]).slice().sort((a,b)=>b.total-a.total);
+  const mn=m=>{ const p=String(m).split('-'); return (+p[1])+'/'+String(p[0]).slice(2); };
+  const thb=v=>v==null?'—':Math.round(v).toLocaleString('th-TH');
+  let h='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#1e3a8a;line-height:1.75">'
+    +'<b>หน้านี้คืออะไร</b> — เงินที่หายไปจากการตัดจ่าย เทียบ<b>ทุกสาขาในหน้าเดียว</b> '
+    +'· คิด <b>% ของยอดขาย</b> ให้ด้วย เพราะร้านคนละขนาดเทียบบาทดิบกันไม่ได้<br>'
+    +'<b>เสื่อมคุณภาพ</b> = สั่งเกิน/ขายไม่ทัน แก้ที่การสั่งและ FIFO · '
+    +'<b>วัสดุสิ้นเปลือง</b> = ถุง/หลอด/น้ำยา แก้ที่วิธีใช้และการเบิก — คนละเรื่องกัน อย่ารวมกันแล้วแก้ทางเดียว</div>';
+  if((r.no_data||[]).length) h+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#b91c1c;line-height:1.75">'
+    +'<b>ยังไม่เคยอัปไฟล์เลย '+r.no_data.length+' สาขา:</b> '+r.no_data.map(esc).join(' · ')
+    +'<br>เงินส่วนนี้ของสาขาเหล่านี้ยังมองไม่เห็น — ต้องให้อัปไฟล์ Audit/ตัดจ่ายก่อน ถึงจะเทียบกันได้</div>';
+  h+='<div class="card"><div class="tablewrap"><table><thead><tr><th>สาขา</th>'
+    +M.map(m=>'<th style="text-align:right;white-space:nowrap">'+mn(m)+'</th>').join('')
+    +'<th style="text-align:right">รวม</th><th style="text-align:right">% ยอดขาย</th><th style="text-align:right">แนวโน้ม</th></tr></thead><tbody>';
+  rows.forEach(b=>{
+    h+='<tr><td style="white-space:nowrap"><b>'+esc(b.branch_name)+'</b>'
+      +'<div style="font-size:11px;color:var(--muted)">เสื่อมคุณภาพ '+thb(b.spoil)+' · วัสดุสิ้นเปลือง '+thb(b.consume)+'</div></td>';
+    M.forEach(m=>{ const c=(b.months||[]).find(x=>x.period===m)||{};
+      h+='<td class="mono" style="text-align:right;white-space:nowrap">'
+        +(c.total!=null?thb(c.total):'<span style="color:#b91c1c;font-size:11.5px">ไม่มีไฟล์</span>')
+        +(c.pct!=null?('<div style="font-size:11px;color:var(--muted)">'+c.pct.toFixed(2)+'%</div>'):'')+'</td>'; });
+    const tr=b.trend_pct;
+    h+='<td class="mono" style="text-align:right;font-weight:700">'+thb(b.total)+'</td>'
+      +'<td class="mono" style="text-align:right">'+(b.avg_pct!=null?b.avg_pct.toFixed(2)+'%':'—')+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;font-weight:700;color:'+(tr==null?'var(--muted)':(tr>0?'#b91c1c':'#166534'))+'">'
+      +(tr==null?'—':((tr>0?'+':'')+Math.round(tr)+'%'))+'</td></tr>';
+  });
+  h+='<tr style="background:var(--bg2)"><td><b>รวมทุกสาขา</b></td>'
+    +M.map(m=>'<td class="mono" style="text-align:right;font-weight:700">'+thb((r.month_total||{})[m])+'</td>').join('')
+    +'<td class="mono" style="text-align:right;font-weight:700">'+thb(r.grand)+'</td><td></td><td></td></tr>';
+  h+='</tbody></table></div></div>';
+  const miss=rows.filter(b=>b.months_with_data>0 && (b.months_missing||[]).length);
+  if(miss.length) h+='<div class="card" style="margin-top:10px"><div class="card-b" style="font-size:12.5px;line-height:1.8">'
+    +'<b>เดือนที่ยังขาดไฟล์</b><br>'+miss.map(b=>'• '+esc(b.branch_name)+': '+b.months_missing.map(mn).join(', ')).join('<br>')
+    +'</div></div>';
+  box.innerHTML=h;
+}
 function stkPan(name){
   STK.pan=name;
   document.querySelectorAll('#stksub .shsub-b').forEach(b=>b.classList.toggle('on', b.dataset.stkpan===(name==='drill'?(STK.panBack||'pma'):name)));
-  ['over','chronic','swap','pma','drill','diff','wo','gp','nida','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
-  if(name==='chronic' && !STK.chronic.length) stkLoadChronic();
+  ['over','chronic','swap','pma','drill','diff','wo','cmp','gp','nida','profile','upload'].forEach(k=>{ const el=$('stkpan_'+k); if(el) el.style.display=(k===name?'':'none'); });
+  if(name==='cmp') stkLoadCmp();
+  else if(name==='chronic' && !STK.chronic.length) stkLoadChronic();
   else if(name==='swap' && !STK.swap.length) stkLoadSwap();
   else if(name==='diff' && !STK.diff.length) stkLoadDiff();
   else if(name==='wo' && !STK.wo.length) stkLoadWo();
@@ -19016,19 +19212,48 @@ function sdpRender(){
           +'<div style="font-size:11px;color:var(--muted)">'+x.n+' คน</div></td>'
         +'<td class="mono" style="white-space:nowrap">'+_thb(x.sale)+(x.tgt?('<div style="font-size:11px;color:var(--muted)">เป้า '+_thb(x.tgt)+'</div>'):'')+'</td>'
         +'<td><span class="pill '+sdsPctCls(x.pct)+'">'+(x.pct==null?'เป้าผิด':Math.round(x.pct)+'%')+'</span></td>'
+        +'<td class="mono" style="white-space:nowrap">'+(x.per_hour==null?'<span style="color:var(--muted);font-size:11.5px">—</span>'
+            :(_thb(x.per_hour)+'<div style="font-size:11px;color:var(--muted)">'+x.man_hours+' ชม.</div>'))+'</td>'
         +'<td><span class="pill '+sdpIdxCls(x.idx_pct)+'">'+sdpIdxTxt(x.idx_pct)+'</span></td></tr>';
     };
     const LIM=60;
     const logBox='<div class="card"><div class="card-b" style="padding-bottom:4px">'
       +'<div style="font-size:13.5px;font-weight:600">บันทึกรายกะ — ใครอยู่กะไหน ทำได้เท่าไร</div>'
       +'<div style="font-size:11.5px;color:var(--muted)">ทั้งหมด '+sr.length+' กะในช่วงนี้ · ใช้เปิดดูตอนจัดจ็อบว่า "ทีมแบบนี้เคยทำได้เท่าไร"</div></div>'
-      +'<div class="tablewrap"><table><thead><tr><th>วันที่</th><th>ผลัด</th><th>ทีมที่เข้ากะ</th><th>ยอด / เป้า</th><th>% เป้า</th><th>เทียบเฉลี่ย</th></tr></thead>'
+      +'<div class="tablewrap"><table><thead><tr><th>วันที่</th><th>ผลัด</th><th>ทีมที่เข้ากะ</th><th>ยอด / เป้า</th><th>% เป้า</th><th>฿/ชม.แรงงาน</th><th>เทียบเฉลี่ย</th></tr></thead>'
       +'<tbody id="cw_log">'+sr.slice(0,LIM).map(lrow).join('')+'</tbody></table></div>'
       +(sr.length>LIM?('<div class="card-b" style="padding-top:8px"><button class="btn btn-sm" type="button" id="cw_more">ดูทั้งหมด '+sr.length+' กะ</button></div>'):'')
       +'</div>';
 
+    // ★ 19 พ.ย. 69 — ยอดต่อชั่วโมงแรงงาน: ตอบว่า "ใช้คนเท่านี้ในผลัดนี้ คุ้มกับยอดไหม"
+    //   ใช้ค่ากลาง ไม่ใช่ค่าเฉลี่ย — วันที่ยอดพุ่งผิดปกติจะได้ไม่ลากภาพรวม
+    const lb=r.labour||[];
+    let labBox='';
+    if(lb.length){
+      const best=lb[0].per_hour_med||1;
+      labBox='<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding-bottom:4px">'
+        +'<div style="font-size:13.5px;font-weight:600">ยอดขายต่อชั่วโมงแรงงาน</div>'
+        +'<div style="font-size:11.5px;color:var(--muted);line-height:1.7">ชั่วโมงแรงงาน = เวลาสแกนเข้าถึงสแกนออกจริงของทุกคนในกะรวมกัน (รวมเวลาพัก เพราะเป็นเวลาที่จ่ายค่าแรง)<br>'
+        +'คิดจาก '+r.labour_shifts+' กะที่ปิดกะครบ · ใช้เทียบว่าผลัดไหนใช้คนคุ้มกว่ากัน ไม่ใช่ตัวตัดสินคน</div></div>'
+        +'<div class="tablewrap"><table><thead><tr><th>สาขา · ผลัด</th><th style="text-align:right">฿/ชม.</th>'
+        +'<th style="text-align:right">คน/กะ</th><th style="text-align:right">ชม./กะ</th><th style="text-align:right">กะ</th><th></th></tr></thead><tbody>'
+        +lb.map(function(x){
+          const w=Math.max(4,Math.round((x.per_hour_med/best)*100));
+          return '<tr><td style="white-space:nowrap"><b>'+esc(x.shift)+'</b>'
+            +'<div style="font-size:11px;color:var(--muted)">'+esc(x.branch_name)+'</div></td>'
+            +'<td class="mono" style="text-align:right;font-weight:700;white-space:nowrap">'+_thb(x.per_hour_med)+'</td>'
+            +'<td class="mono" style="text-align:right">'+x.avg_crew+'</td>'
+            +'<td class="mono" style="text-align:right">'+x.avg_hours+'</td>'
+            +'<td class="mono" style="text-align:right">'+x.shifts+'</td>'
+            +'<td style="width:34%;min-width:90px"><div style="height:8px;border-radius:999px;background:var(--line2)">'
+              +'<div style="height:8px;border-radius:999px;width:'+w+'%;background:var(--accent)"></div></div></td></tr>';
+        }).join('')+'</tbody></table></div></div>';
+    } else {
+      labBox='<div class="card" style="margin-bottom:12px"><div class="card-b" style="font-size:12.5px;color:var(--muted)">'
+        +'ยังคิดยอดต่อชั่วโมงแรงงานไม่ได้ — ช่วงนี้ยังไม่มีกะที่ทุกคนสแกนออกครบ</div></div>';
+    }
     crewBox='<div style="margin-top:16px"><div style="font-size:14px;font-weight:600;margin-bottom:6px">จัดทีม — ใครอยู่ด้วยกันแล้วทำได้ดี</div>'
-      +warn+pick+repBox+logBox+'</div>';
+      +warn+labBox+pick+repBox+logBox+'</div>';
     SDP_LOG=sr; SDP_LOGN=LIM; SDP_LROW=lrow;
   }
 
