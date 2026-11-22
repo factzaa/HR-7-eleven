@@ -19490,6 +19490,8 @@ async function drawSalesDash(){
   if(!rows.length){ $('sd_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ยังไม่มีข้อมูลยอดขายในช่วงนี้ — นำเข้าไฟล์แชท หรือกด "จัดหมวด/แยกยอดขายย้อนหลัง" ที่หน้าฟีดก่อน</div></div></div>'; return; }
   const single=$('sd_branch').value;
   const exBaht=(ex,k)=>{ try{ const a=ex&&ex[k]; return Array.isArray(a)?(+a[a.length-1]||0):0; }catch(e){ return 0; } };
+  // จำนวนบิล delivery — ต้องเป็นจำนวนเต็มและอยู่ในช่วงที่เป็นไปได้ · null = ยังไม่กรอก · false = เลขผิดรูป (เช่นกรอกยอดบาทลงช่องบิล)
+  const dBills=v=>{ if(v==null||v==='') return null; const n=+v; if(!isFinite(n)||n<0) return false; if(Math.abs(n-Math.round(n))>1e-9||n>300) return false; return Math.round(n); };
   const today=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
   const SANE=2000000;
   const dq={fix:[],drop:[],tgt:[],cust:[],part:[],mis:[],out:[]};   // กล่องคุณภาพข้อมูล
@@ -19501,7 +19503,7 @@ async function drawSalesDash(){
     if((+x.sales_total||0)>SANE*50 && !((+x.sales_product||0)+(+x.sales_card||0))){ dq.drop.push({b:x.branch_id,d:x.sale_date,sh:x.shift,v:+x.sales_total}); return; }
     const k=x.branch_id+'|'+x.sale_date;
     const d=dayMap[k]||(dayMap[k]={branch_id:x.branch_id,branch_name:x.branch_name||nm(x.branch_id),sale_date:x.sale_date,end:null,endS:0,
-      sh:{},sTot:0,sTgt:0,sCust:0,card:0,cafe:0,deliv:0,tmw:0,pai:0,jeeb:0,salapao:0});
+      sh:{},sTot:0,sTgt:0,sCust:0,card:0,cafe:0,deliv:0,dbill:0,dbillN:0,tmw:0,pai:0,jeeb:0,salapao:0});
     const f=sdFixSales(x); let s=f.s;
     if(f.fix) dq.fix.push({b:x.branch_id,d:x.sale_date,sh:x.shift,t:f.fix});
     if(s>SANE){ dq.drop.push({b:x.branch_id,d:x.sale_date,sh:x.shift,v:s}); return; }
@@ -19510,10 +19512,16 @@ async function drawSalesDash(){
     d.sTot+=s; d.sTgt+=(+x.target_total||0); d.sCust+=(+x.customers||0);
     d.card+=(+x.sales_card||0); d.cafe+=(+x.allcafe_baht||0);
     d.deliv+=(+x.delivery_baht||0); d.tmw+=(+x.truewallet_baht||0);
+    const db=dBills(x.delivery_bills);
+    if(db===false) dq.fix.push({b:x.branch_id,d:x.sale_date,sh:x.shift,t:'จำนวนบิล delivery ผิดรูป ('+x.delivery_bills+') — ไม่นำมานับ'});
+    else if(db!=null){ d.dbill+=db; d.dbillN++; }
     d.pai+=exBaht(x.extra,'pai'); d.jeeb+=exBaht(x.extra,'khanomjeeb'); d.salapao+=exBaht(x.extra,'salapao');
   });
   let drows=Object.values(dayMap).map(d=>{
     const e=d.end, pick=(sum,key)=> sum>0?sum:(e?(+(e[key]||0)||0):0);
+    // บิล delivery: ครบ 3 ผลัด → ใช้ผลรวมรายผลัด · ไม่ครบ → ใช้แถวสิ้นวัน · ไม่มีทั้งคู่ → ว่าง (ไม่ใช่ 0)
+    const eBr=e?dBills(e.delivery_bills):null, eB=(eBr===false?null:eBr);
+    const dBill = d.dbillN>=3 ? d.dbill : (eB!=null ? eB : (d.dbillN>0 ? d.dbill : null));
     const has3=['เช้า','บ่าย','ดึก'].every(k=>d.sh[k]>0);
     const full=!!e || (has3 && d.sale_date<today);
     const sales_total = e? d.endS : d.sTot;
@@ -19521,7 +19529,7 @@ async function drawSalesDash(){
     const customers   = e&&e.customers!=null? +e.customers : d.sCust;
     const mis=(e && has3 && d.sTot>0 && Math.abs(sales_total-d.sTot)/sales_total>0.03)?Math.round(sales_total-d.sTot):0;
     return { branch_id:d.branch_id, branch_name:d.branch_name, sale_date:d.sale_date, full, sales_total, target_total, customers,
-      sales_card:pick(d.card,'sales_card'), allcafe_baht:pick(d.cafe,'allcafe_baht'), delivery_baht:pick(d.deliv,'delivery_baht'), truewallet_baht:pick(d.tmw,'truewallet_baht'),
+      sales_card:pick(d.card,'sales_card'), allcafe_baht:pick(d.cafe,'allcafe_baht'), delivery_baht:pick(d.deliv,'delivery_baht'), delivery_bills:dBill, truewallet_baht:pick(d.tmw,'truewallet_baht'),
       _pai:d.pai,_jeeb:d.jeeb,_salapao:d.salapao, sh:d.sh, mis, nSh:Object.keys(d.sh).length,
       wd:new Date(d.sale_date+'T00:00:00Z').getUTCDay() };
   });
@@ -19548,16 +19556,23 @@ async function drawSalesDash(){
     const wd={}; ok.forEach(x=>{ (wd[x.wd]=wd[x.wd]||[]).push(x.sales_total); });
     const best=ok.slice().sort((a,c)=>c.sales_total-a.sales_total)[0], worst=ok.slice().sort((a,c)=>a.sales_total-c.sales_total)[0];
     const per=k=>n?ok.reduce((s,x)=>s+(+x[k]||0),0)/n:0;
+    // เฉลี่ยแบบข้ามค่าว่าง — วันที่ยังไม่กรอกบิลต้องไม่ถูกนับเป็น 0 (จะทำให้ค่าเฉลี่ยต่ำกว่าจริง)
+    const perN=k=>{ const a=ok.filter(x=>x[k]!=null); return a.length?a.reduce((s,x)=>s+(+x[k]||0),0)/a.length:null; };
+    const dbOk=ok.filter(x=>x.delivery_bills>0), dbB=dbOk.reduce((s,x)=>s+(+x.delivery_baht||0),0), dbN=dbOk.reduce((s,x)=>s+x.delivery_bills,0);
     return {...b, n, avg, total:S(ok), tavg:vt.length?tS/vt.length:0, ach:tS?S(vt)/tS*100:null, hit:vt.filter(x=>x.sales_total>=x.target_total).length, nt:vt.length,
       cu:vc.length?vc.reduce((s,x)=>s+x.customers,0)/vc.length:0, ph:vc.length?S(vc)/vc.reduce((s,x)=>s+x.customers,0):0,
       best, worst, wd:Object.fromEntries(Object.entries(wd).map(([k,v])=>[k,v.reduce((a,c)=>a+c,0)/v.length])),
-      card:per('sales_card'), cafe:per('allcafe_baht'), deliv:per('delivery_baht'), tmw:per('truewallet_baht'), pai:per('_pai'), jeeb:per('_jeeb'), salapao:per('_salapao') };
+      card:per('sales_card'), cafe:per('allcafe_baht'), deliv:per('delivery_baht'), tmw:per('truewallet_baht'), pai:per('_pai'), jeeb:per('_jeeb'), salapao:per('_salapao'),
+      deliv_bill:perN('delivery_bills'), deliv_bill_n:ok.filter(x=>x.delivery_bills!=null).length, deliv_per_bill:dbN?dbB/dbN:null };
   }).sort((a,b)=>b.avg-a.avg);
   branches.forEach((b,i)=>b.color=SD_COLORS[i%SD_COLORS.length]);
   const act=branches.filter(b=>b.n);
   if(!act.length){ $('sd_body').innerHTML='<div class="card"><div class="card-b"><div class="empty">ช่วงนี้ยังไม่มีวันที่ปิดยอดครบ (ต้องมีรายงานสิ้นวัน หรือครบ 3 ผลัด)</div></div></div>'; return; }
   const dates=[...new Set(drows.map(x=>x.sale_date))].sort();
   const sumAvg=act.reduce((s,b)=>s+b.avg,0), sumCu=act.reduce((s,b)=>s+b.cu,0);
+  // บิล delivery รวมทุกสาขา — เฉลี่ยต่อวัน + ยอดเฉลี่ยต่อบิล
+  const bBr=act.filter(b=>b.deliv_bill!=null), sumBill=bBr.reduce((s,b)=>s+b.deliv_bill,0);
+  const billPer=(()=>{ let q=0,n=0; act.forEach(b=>b.rows.filter(x=>x.sok&&x.delivery_bills>0).forEach(x=>{ q+=(+x.delivery_baht||0); n+=x.delivery_bills; })); return n?q/n:null; })();
   const tB=act.filter(b=>b.ach!=null);
   const achAll=(()=>{ let s=0,t=0; act.forEach(b=>b.rows.filter(x=>x.sok&&x.tok).forEach(x=>{s+=x.sales_total;t+=x.target_total;})); return t?s/t*100:null; })();
   const gap=tB.reduce((s,b)=>s+(b.avg-b.tavg),0);
@@ -19574,6 +19589,8 @@ async function drawSalesDash(){
     +sdKpi('เข้าเป้าเฉลี่ย', achAll!=null?achAll.toFixed(1)+'%':'—', achAll!=null?((gap>=0?'เกินเป้าเฉลี่ย ฿':'ขาดเป้าเฉลี่ย ฿')+_thb(Math.abs(gap))+'/วัน'):'ไม่มีเป้าที่ใช้ได้', achCol(achAll))
     +sdKpi(nB>1?'ลูกค้าเฉลี่ย/วัน (รวม)':'ลูกค้าเฉลี่ย/วัน', _thb(sumCu)+' คน', nB>1?('≈ '+_thb(sumCu/nB)+' คน/สาขา'):'')
     +sdKpi('ยอดต่อหัว', allC?'฿'+Math.round(allS/allC):'—', 'ยอดขาย ÷ ลูกค้า')
+    +sdKpi(nB>1?'บิล Delivery/วัน (รวม)':'บิล Delivery/วัน', bBr.length?sumBill.toFixed(1)+' บิล':'—',
+      bBr.length?(billPer!=null?'เฉลี่ย ฿'+Math.round(billPer)+'/บิล':''):'ยังไม่กรอกจำนวนบิล')
     +sdKpi('ยอดรวมทั้งช่วง (อ้างอิง)', '฿'+_thb(totAll), act.map(b=>b.n).join(' / ')+' วันที่ครบ','var(--muted)',false,true)
     +'</div>';
   // ---- การ์ดรายสาขา ----
@@ -19616,27 +19633,34 @@ async function drawSalesDash(){
     +'</div>';
   // ---- ตารางรายสาขา (เฉลี่ยต่อวัน) ----
   const anyPai=act.some(b=>b.pai),anyJeeb=act.some(b=>b.jeeb),anySalapao=act.some(b=>b.salapao);
-  const cols=[['ลูกค้า','cu'],['All Cafe','cafe'],['Delivery','deliv'],['TrueWallet','tmw'],['ยอดบัตร','card']];
+  // c[2]: 1 = จำนวนบิล (ทศนิยม 1 ตำแหน่ง + ว่างได้) · 2 = บาทต่อบิล (ว่างได้) · ไม่ใส่ = บาท
+  const cols=[['ลูกค้า','cu'],['All Cafe','cafe'],['Delivery','deliv'],['บิล Delivery','deliv_bill',1],['฿/บิล','deliv_per_bill',2],['TrueWallet','tmw'],['ยอดบัตร','card']];
   if(anyPai)cols.push(['พายอบ','pai']); if(anyJeeb)cols.push(['ขนมจีบ','jeeb']); if(anySalapao)cols.push(['ซาลาเปา','salapao']);
-  h+='<div class="card"><div class="card-h"><h3>ตารางรายสาขา — เฉลี่ยต่อวัน (บาท)</h3></div><div class="tablewrap"><table style="font-size:13px"><thead><tr><th>สาขา</th><th class="num">วันที่นับ</th><th class="num">ยอดขาย/วัน</th><th class="num">เป้า/วัน</th><th class="num">เข้าเป้า%</th><th class="num">ต่อหัว</th>'
+  const cfmt=(c,v)=> v==null?'<span style="color:var(--muted)">—</span>' : c[2]===1?(+v).toFixed(1) : c[2]===2?('฿'+Math.round(v)) : _thb(v);
+  const csum=c=>{ const a=act.filter(b=>b[c[1]]!=null); if(!a.length) return null;
+    if(c[2]===2){ let q=0,n=0; act.forEach(b=>b.rows.filter(x=>x.sok&&x.delivery_bills>0).forEach(x=>{ q+=(+x.delivery_baht||0); n+=x.delivery_bills; })); return n?q/n:null; }
+    return a.reduce((s,b)=>s+b[c[1]],0); };
+  h+='<div class="card"><div class="card-h"><h3>ตารางรายสาขา — เฉลี่ยต่อวัน (บาท · คอลัมน์บิลเป็นจำนวนบิล)</h3></div><div class="tablewrap"><table style="font-size:13px"><thead><tr><th>สาขา</th><th class="num">วันที่นับ</th><th class="num">ยอดขาย/วัน</th><th class="num">เป้า/วัน</th><th class="num">เข้าเป้า%</th><th class="num">ต่อหัว</th>'
     +cols.map(c=>'<th class="num">'+esc(c[0])+'</th>').join('')+'<th class="num">ยอดรวมช่วง</th></tr></thead><tbody>'
     +act.map(b=>'<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+b.color+';margin-right:5px"></i>'+esc(b.name)+'</td><td class="num">'+b.n+'</td><td class="num"><b>'+_thb(b.avg)+'</b></td><td class="num">'+(b.tavg?_thb(b.tavg):'—')+'</td>'
       +'<td class="num" style="color:'+achCol(b.ach)+';font-weight:600">'+(b.ach!=null?b.ach.toFixed(1)+'%':'—')+'</td><td class="num">'+(b.ph?'฿'+Math.round(b.ph):'—')+'</td>'
-      +cols.map(c=>'<td class="num">'+_thb(b[c[1]])+'</td>').join('')+'<td class="num" style="color:var(--muted)">'+_thb(b.total)+'</td></tr>').join('')
+      +cols.map(c=>'<td class="num"'+(c[2]===1&&b.deliv_bill!=null?' title="กรอกจำนวนบิลแล้ว '+b.deliv_bill_n+' จาก '+b.n+' วัน"':'')+'>'+cfmt(c,b[c[1]])+'</td>').join('')+'<td class="num" style="color:var(--muted)">'+_thb(b.total)+'</td></tr>').join('')
     +(nB>1?('<tr style="font-weight:700;border-top:2px solid var(--line)"><td>รวมทุกสาขา</td><td class="num">'+act.reduce((s,b)=>s+b.n,0)+'</td><td class="num">'+_thb(sumAvg)+'</td><td class="num">'+_thb(tB.reduce((s,b)=>s+b.tavg,0))+'</td><td class="num" style="color:'+achCol(achAll)+'">'+(achAll!=null?achAll.toFixed(1)+'%':'—')+'</td><td class="num">'+(allC?'฿'+Math.round(allS/allC):'—')+'</td>'
-      +cols.map(c=>'<td class="num">'+_thb(act.reduce((s,b)=>s+b[c[1]],0))+'</td>').join('')+'<td class="num" style="color:var(--muted)">'+_thb(totAll)+'</td></tr>'):'')
+      +cols.map(c=>'<td class="num">'+cfmt(c,csum(c))+'</td>').join('')+'<td class="num" style="color:var(--muted)">'+_thb(totAll)+'</td></tr>'):'')
     +'</tbody></table></div></div>';
   // ---- รายละเอียดรายวัน (เลือกสาขาเดียว) ----
   if(single && act[0]){
     const b=act[0]; const dr=b.rows.slice().sort((a,c)=>a.sale_date<c.sale_date?1:-1);
-    h+='<div class="card" style="margin-top:14px"><div class="card-h"><h3>รายละเอียดรายวัน — '+esc(b.name)+'</h3></div><div class="tablewrap"><table style="font-size:12.5px"><thead><tr><th>วันที่</th><th class="num">ยอดขาย</th><th class="num">เทียบเฉลี่ย</th><th class="num">เป้า</th><th class="num">เข้าเป้า%</th><th class="num">ลูกค้า</th><th class="num">ต่อหัว</th><th class="num">All Cafe</th><th class="num">Delivery</th><th class="num">TrueWallet</th><th class="num">บัตร</th></tr></thead><tbody>'
+    h+='<div class="card" style="margin-top:14px"><div class="card-h"><h3>รายละเอียดรายวัน — '+esc(b.name)+'</h3></div><div class="tablewrap"><table style="font-size:12.5px"><thead><tr><th>วันที่</th><th class="num">ยอดขาย</th><th class="num">เทียบเฉลี่ย</th><th class="num">เป้า</th><th class="num">เข้าเป้า%</th><th class="num">ลูกค้า</th><th class="num">ต่อหัว</th><th class="num">All Cafe</th><th class="num">Delivery</th><th class="num">บิล</th><th class="num">TrueWallet</th><th class="num">บัตร</th></tr></thead><tbody>'
       +dr.map(x=>{ const s=+x.sales_total||0,t=x.tok?x.target_total:0,ac=t?s/t*100:null, rr=b.avg?s/b.avg-1:0, dim=!x.sok;
         const tag=!x.full?' <span style="font-size:10.5px;border-radius:5px;padding:1px 6px;background:var(--bg2);color:var(--muted)">'+(x.sale_date>=today?'วันนี้ · ยังไม่ปิดยอด':'ไม่ครบ '+x.nSh+' ผลัด')+'</span>':(!x.sok?' <span style="font-size:10.5px;border-radius:5px;padding:1px 6px;background:var(--red-soft);color:var(--red)">ผิดปกติ</span>':'');
         return '<tr style="'+(dim?'color:var(--muted)':'')+'"><td class="mono">'+SD_THD[x.wd]+' '+beDate(x.sale_date)+tag+'</td><td class="num">'+_thb(s)+'</td><td class="num">'+(x.sok?((Math.round(rr*100)>0?'+':'')+Math.round(rr*100)+'%'):'—')+'</td>'
           +'<td class="num">'+(x.target_total?(x.tok?_thb(x.target_total):'<s title="เป้าผิดปกติ ไม่นำมาคิด">'+_thb(x.target_total)+'</s>'):'—')+'</td>'
           +'<td class="num" style="color:'+achCol(ac)+'">'+(ac!=null?ac.toFixed(0)+'%':'—')+'</td>'
           +'<td class="num">'+(x.cok?_thb(x.customers):(x.customers?'<s>'+_thb(x.customers)+'</s>':'—'))+'</td><td class="num">'+(x.cok?'฿'+Math.round(s/x.customers):'—')+'</td>'
-          +'<td class="num">'+_thb(+x.allcafe_baht||0)+'</td><td class="num">'+_thb(+x.delivery_baht||0)+'</td><td class="num">'+_thb(+x.truewallet_baht||0)+'</td><td class="num">'+_thb(+x.sales_card||0)+'</td></tr>'; }).join('')
+          +'<td class="num">'+_thb(+x.allcafe_baht||0)+'</td><td class="num">'+_thb(+x.delivery_baht||0)+'</td>'
+          +'<td class="num"'+(x.delivery_bills>0?' title="เฉลี่ย ฿'+Math.round((+x.delivery_baht||0)/x.delivery_bills)+' ต่อบิล"':'')+'>'+(x.delivery_bills!=null?x.delivery_bills:'<span style="color:var(--muted)">—</span>')+'</td>'
+          +'<td class="num">'+_thb(+x.truewallet_baht||0)+'</td><td class="num">'+_thb(+x.sales_card||0)+'</td></tr>'; }).join('')
       +'</tbody></table></div></div>';
   }
   $('sd_body').innerHTML=h;
