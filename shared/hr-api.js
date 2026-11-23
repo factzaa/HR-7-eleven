@@ -12428,7 +12428,8 @@
       //   ผลคือพอ HR ปิดใช้งานรหัสวันที่ลาออก แถวค่าจ้างงวดสุดท้ายหายและถูกลบทิ้งตอนคำนวณซ้ำ
       sb().from('employees').select('emp_id,name,nickname,branch_id,email,bank_name,bank_account,end_date,start_date,is_manager,active').or('active.eq.true,end_date.gte.' + cyc.start).or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id'),
       sb().from('branches').select('branch_id,name'),
-      sb().from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,day_value,shift_id,branch_id,status' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff),
+      // ★ 23 พ.ย. 69 — ต้องไล่หน้า: ลงเวลา 1 รอบเกิน 1,000 แถวแล้ว ถ้าดึงรวดเดียวแถวที่เกินหายเงียบ ๆ → วันทำงานในสลิปขาด
+      fetchPaged(() => sb().from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,day_value,shift_id,branch_id,status' + _LEG).gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),
       sb().from('shifts').select('shift_id,day_value,start_time,end_time,main_shift,night_allowance,name'),
       sb().from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', endEff),
       sb().from('payroll_installments').select('*').eq('status', 'active'),
