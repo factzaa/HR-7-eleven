@@ -850,9 +850,10 @@
   // ★ 21 ก.ย. 69 — สูตรวันทำงาน/ขาด/สาย เดียวกับหน้า HR ทุกข้อ (ดู _workDaysFor / _schedMapFor)
   //   เดิม: ขาดนับหัวไม่ถ่วงครึ่งวัน · ไม่ตัดเวรเฉพาะกิจ · ไม่ดูวันเริ่มงาน · วันทำงาน = วันที่จัดเวรแล้วมา
   //   ตัวเลขที่พนักงานเห็นจึงอาจไม่ตรงกับที่ HR/เงินเดือนใช้จริง
-  async function _empCycleBase(empId) {
+  //   refIso = วันอ้างอิงในรอบที่ต้องการ (ไม่ใส่ = รอบปัจจุบัน) — ใช้ดูรอบย้อนหลังใน "ประวัติเวลางานของฉัน"
+  async function _empCycleBase(empId, refIso) {
     const today = bangkokDate();
-    const cyc = cycleRange21();
+    const cyc = cycleRange21(refIso);
     const endEff = cyc.end < today ? cyc.end : today;
     const [empR, attR, schR, lvR, shR] = await Promise.all([
       sb.from('employees').select('emp_id,name,nickname,default_shift,branch_id,weekly_off,photo_url,start_date,end_date,is_manager').eq('emp_id', empId).maybeSingle(),
@@ -909,6 +910,68 @@
       },
       stats: { days_worked: b.days_worked, days_should: b.days_should, late_count: b.late_count, late_total: b.late_total, absent: b.absent, leave_days: b.leave_days },
       level,
+    };
+  }
+
+  // ---------- ★ 23 พ.ย. 69 — ประวัติเวลางานย้อนหลังของตัวเอง ----------
+  //   เจตนา: ให้พนักงานเปิดดูรอบที่ผ่านมาเองได้ตอนสลิปออก จะได้ตรวจวัน/สาย/ขาด/ลา/OT เทียบกันเองก่อนมาถาม
+  //   ตั้งใจ "ไม่คิดเลขใหม่" — ใช้ชุดเดียวกับที่ HR และหน้าตรวจเงินเดือนใช้ (_empCycleBase + reviewShiftDetail)
+  //   ถ้าสองที่คิดคนละสูตร พนักงานจะเห็นเลขไม่ตรงกับสลิปแล้วกลายเป็นเรื่องแทน
+  //   ไม่มีตัวเงินในนี้โดยตั้งใจ (ค่าแรง/OT เป็นบาท/ยอดสุทธิ อยู่ในตารางเงินเดือนซึ่งไม่เปิดให้แอปพนักงาน)
+  const MYHIST_BACK = 2;            // ย้อนหลังได้ถึง 2 รอบก่อนหน้า → รวมรอบปัจจุบันเป็น 3 รอบ
+  const _THM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  function _cycLabel(c) {
+    const s = c.start.split('-'), e = c.end.split('-');
+    return (+s[2]) + ' ' + _THM[+s[1] - 1] + ' – ' + (+e[2]) + ' ' + _THM[+e[1] - 1] + ' ' + String(+e[0] + 543).slice(2);
+  }
+  function myHistoryCycles() {
+    const out = [];
+    for (let b = 0; b <= MYHIST_BACK; b++) {
+      const c = reviewCycleRange(b);
+      out.push({ back: b, start: c.start, end: c.end, label: _cycLabel(c), current: b === 0 });
+    }
+    return out;
+  }
+  async function myWorkHistory(empId, back) {
+    if (!empId) throw new Error('ไม่พบรหัสพนักงาน');
+    const b = Math.max(0, Math.min(MYHIST_BACK, parseInt(back, 10) || 0));
+    const cyc = reviewCycleRange(b);
+    const [base, det, lvR] = await Promise.all([
+      _empCycleBase(empId, cyc.start),
+      reviewShiftDetail(empId, b),
+      sb.from('leaves').select('leave_id,start_date,end_date,type,reason,status,hr_note')
+        .eq('emp_id', empId).lte('start_date', cyc.end).gte('end_date', cyc.start).order('start_date'),
+    ]);
+    const rows = det.rows || [];
+    const r1 = n => Math.round(n * 10) / 10;
+    return {
+      ok: true, back: b, cycle: { start: cyc.start, end: cyc.end, label: _cycLabel(cyc) },
+      options: myHistoryCycles(),
+      closed: cyc.end < bangkokDate(),          // รอบปิดแล้ว = ตัวเลขนิ่ง เทียบสลิปได้
+      summary: {
+        days_worked: base.days_worked, days_should: base.days_should,
+        late_count: base.late_count, late_total: base.late_total,
+        absent: base.absent, leave_days: base.leave_days,
+        ot_hours: det.ot_total, ot_whole: det.ot_whole,
+        present_days: rows.filter(x => x.has_att && x.check_in).length,
+        early_out_total: rows.reduce((s, x) => s + (x.early_out_min || 0), 0),
+        no_checkout: rows.filter(x => x.check_in && !x.check_out).length,
+        ot_days: rows.filter(x => (x.ot_counted || 0) > 0).length,
+        dual_days: rows.filter(x => x.dual && x.dual.credited).length,
+      },
+      days: rows.map(x => ({
+        work_date: x.work_date, shift_name: x.shift_name, status: x.status,
+        check_in: x.check_in, check_out: x.check_out, act_hr: x.act_hr,
+        late_min: x.late_min, early_out_min: x.early_out_min,
+        ot_hours: r1(x.ot_hours || 0), ot_counted: r1(x.ot_counted || 0),
+        day_value: x.day_value, day_note: x.day_note || '',
+        leave_type: x.leave_type, is_holiday: x.is_holiday, holiday_name: x.holiday_name,
+        dual: x.dual ? { shifts: x.dual.shifts, credited: x.dual.credited } : null,
+      })),
+      leaves: (lvR.data || []).map(l => ({
+        start_date: l.start_date, end_date: l.end_date || l.start_date, type: l.type || 'ลา',
+        status: l.status, reason: l.reason || '', hr_note: l.hr_note || '',
+      })),
     };
   }
 
@@ -5148,7 +5211,7 @@
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, mySalesPerf, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     crateCountState, submitCrateCount, crateCountConfirm,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState,
     handoverBoard, handoverAdd, handoverDrop, handoverReview, handoverAck, handoverAssign, handoverCancel, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
