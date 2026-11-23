@@ -4,7 +4,24 @@
 // ต้องโหลดหลัง shared/supabase.js (ใช้ window.HR.sb)
 // ============================================================
 (function () {
-  const sb = () => window.HR.sb;
+  // ★ 23 พ.ย. 69 — ตาราง payroll_items / payroll_profiles ถูกล็อกด้วย RLS แล้ว
+  //   (ดู supabase/payroll_lock.sql) คำขอต้องแนบ header x-payroll-pass ไม่งั้นได้ 0 แถวและเขียนไม่ได้
+  //   ระหว่างทำ action เงินเดือนที่ผ่านประตูรหัสแล้ว sb() จะคืน client ที่แนบ header ให้เอง
+  //   จึงไม่ต้องแก้จุดที่เรียก sb() ทีละจุด · รหัสอยู่ในตัวแปรของหน้าเท่านั้น ไม่ลง localStorage
+  let _payCtx = null, _payCtxFor = null, _payCtxSb = null;
+  function _payrollClient(pass) {
+    const s = String(pass || '');
+    if (!s) return null;
+    if (_payCtxFor !== s) {
+      try {
+        const c = window.SUPABASE_CONFIG;
+        _payCtxSb = window.supabase.createClient(c.url, c.anonKey, { global: { headers: { 'x-payroll-pass': s } } });
+        _payCtxFor = s;
+      } catch (e) { console.warn('[HRAPI] สร้าง client เงินเดือนไม่สำเร็จ', e); return null; }
+    }
+    return _payCtxSb;
+  }
+  const sb = () => _payCtx || window.HR.sb;
 
   // ---------- helpers ----------
   const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -264,6 +281,7 @@
       await hasLeg2();
       if (p && typeof p.action === 'string' && p.action.indexOf('hr_payroll_') === 0 && !_PAYROLL_OPEN[p.action]) {
         if (!(await _payrollGate(p.pay_pass))) return { ok: false, error: 'ต้องปลดล็อกหน้าเงินเดือนก่อน' };
+        _payCtx = _payrollClient(p.pay_pass);   // ผ่านประตูแล้ว → ต่อจากนี้ sb() แนบ header ให้ RLS
       }
       switch (p.action) {
         case 'hr_login':          return await hrLogin(p.password);
@@ -637,6 +655,8 @@
     } catch (e) {
       console.error('[HRAPI]', p.action, e);
       return { ok: false, error: e.message || String(e) };
+    } finally {
+      _payCtx = null;   // ออกจาก action เงินเดือนแล้ว กลับไปใช้ client ปกติทันที
     }
   }
 
