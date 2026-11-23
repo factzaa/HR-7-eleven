@@ -1350,6 +1350,20 @@
     return { start: _iso(start), end: _iso(end) };
   }
   function _daysBetween(a, b) { const s = new Date(a + 'T00:00:00'), e = new Date((b || a) + 'T00:00:00'); return Math.round((e - s) / 86400000) + 1; }
+  // ★ 23 พ.ย. 69 — PostgREST คืนได้สูงสุด 1000 แถวต่อคำขอ ถ้าไม่ไล่หน้า แถวที่เกินจะหายเงียบ ๆ ไม่มี error
+  //   ของจริงในรอบ 21 ต.ค.–20 พ.ย.: ลงเวลา 1,155 แถว · ตารางเวร 1,225 แถว
+  //   → หน้าตรวจข้อมูลเข้าเงินเดือนนับวันทำงานขาดไปทั้งสาขา (ไร เฟิร์น ได้ 22 วันทั้งที่ลงเวลาจริง 25 วัน)
+  //   builder ต้องมี .order('id') ด้วย ไม่งั้นลำดับไม่นิ่ง แถวจะซ้ำหรือหายตอนไล่หน้า
+  async function _paged(build, pageSize) {
+    const SZ = pageSize || 1000; const out = [];
+    for (let from = 0; from < 200000; from += SZ) {
+      const { data, error } = await build().range(from, from + SZ - 1);
+      if (error) throw error;
+      const rows = data || []; out.push(...rows);
+      if (rows.length < SZ) break;
+    }
+    return out;
+  }
   const _DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
   function _workingDays(start, end, weeklyOff, holidaySet) {
     const off = new Set(); String(weeklyOff || '').split(',').map(x => x.trim().toLowerCase().slice(0, 3)).forEach(x => { if (x in _DOW) off.add(_DOW[x]); });
@@ -4427,9 +4441,9 @@
     const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR, ctrlR] = await Promise.all([
       empQ,
       sb.from('branches').select('branch_id,name').order('branch_id'),
-      sb.from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,late_min,day_value,shift_id,status,branch_id').gte('work_date', cyc.start).lte('work_date', endEff),
+      _paged(() => sb.from('attendance').select('emp_id,work_date,check_in,check_out,ot_hours,late_min,day_value,shift_id,status,branch_id').gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),
       sb.from('shifts').select('shift_id,day_value,name,start_time,end_time,main_shift,night_allowance'),
-      sb.from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff),   // ★ note ไว้ตัดเวรเฉพาะกิจ
+      _paged(() => sb.from('schedules').select('emp_id,work_date,shift_id,note').gte('work_date', cyc.start).lte('work_date', endEff).order('id')).then(d => ({ data: d })),   // ★ note ไว้ตัดเวรเฉพาะกิจ
       sb.from('leaves').select('emp_id,start_date,end_date,status').eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       sb.from('payroll_review').select('*').eq('period_start', cyc.start),
       // ★ 21 ก.ย. 69 — กรองรอบหักแบบเดียวกับเงินเดือน HR: รอบที่เริ่มแล้ว = ตกทอดใบเก่า (≤ เดือนสิ้นรอบ) · รอบอนาคต = เฉพาะเดือนนั้น
@@ -4560,7 +4574,7 @@
       sb.from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', cyc.end),
       sb.from('employees').select('emp_id,name,nickname'),
       sb.from('branches').select('branch_id,name'),
-      sb.from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in').gte('work_date', cyc.start).lte('work_date', cyc.end),
+      _paged(() => sb.from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in').gte('work_date', cyc.start).lte('work_date', cyc.end).order('id')).then(d => ({ data: d })),
       sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift,night_allowance'),
     ]);
     const empN = {}; (empR.data || []).forEach(e => empN[e.emp_id] = e.nickname || e.name || e.emp_id);
