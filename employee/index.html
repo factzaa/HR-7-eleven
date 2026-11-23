@@ -1491,7 +1491,8 @@ async function showSelf(){
       (HR.getMyNotifications?HR.getMyNotifications(empMatch.emp_id):Promise.resolve({all:[]})).catch(()=>({all:[]})),
       (HR.mySalesPerf?HR.mySalesPerf(empMatch.emp_id):Promise.resolve(null)).catch(()=>null)   // ★ ผลงานขายในกะของตัวเอง (พังก็ไม่ล้มหน้า)
     ]);
-    body.innerHTML = renderSelf(s, ms&&ms.score) + renderMySales(sp) + renderNotifHistory(notifs&&notifs.all, s.cycle) + renderProposalHistory(props&&props.history, s.cycle) + renderMyLeaves(leaves, s.cycle);
+    body.innerHTML = renderSelf(s, ms&&ms.score) + renderMySales(sp) + '<div id="selfHist"></div>' + renderNotifHistory(notifs&&notifs.all, s.cycle) + renderProposalHistory(props&&props.history, s.cycle) + renderMyLeaves(leaves, s.cycle);
+    loadSelfHist(0);   // ★ ประวัติเวลางานย้อนหลัง — โหลดแยกทีหลัง ถ้าช้า/พัง ส่วนบนยังขึ้นครบ
   }catch(e){ console.error(e); body.innerHTML='<p style="color:var(--red)">โหลดไม่สำเร็จ: '+escH(e.message||'')+'</p>'; }
 }
 // ประวัติข้อเสนอ/การสื่อสารกับ HR (แสดงในสถานะของฉัน)
@@ -1577,6 +1578,93 @@ function renderMySales(p){
   return head
     +'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">เข้ากะที่มียอดขาย '+p.shifts+' กะ'+(shTxt?(' · '+shTxt):'')+'</div>'
     +warn+grid+detail+note;
+}
+// ★ 23 พ.ย. 69 — ประวัติเวลางานย้อนหลัง 3 รอบ (พนักงานเปิดดูเองได้ตอนสลิปออก)
+//   เจตนา: ให้ตรวจวัน/สาย/ขาด/ลา/OT ของรอบที่ผ่านมาเองก่อน ไม่ต้องมาขอดูใบลงเวลาทีละคน
+//   ตัวเลขดึงจาก HR.myWorkHistory ซึ่งใช้สูตรเดียวกับหน้า HR และหน้าตรวจเงินเดือน
+const HIST_DOW=['อา','จ','อ','พ','พฤ','ศ','ส'];
+function histTime(ts){ if(!ts) return null; try{ const d=new Date(ts); if(isNaN(d)) return null; return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }catch(e){ return null; } }
+async function loadSelfHist(back){
+  const box=$('selfHist'); if(!box||!empMatch||empMatch.unknown) return;
+  box.innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-top:14px">กำลังโหลดประวัติ…</div>';
+  try{
+    const h=await HR.myWorkHistory(empMatch.emp_id, back);
+    box.innerHTML=renderMyHistory(h);
+    const sel=$('histCyc'); if(sel) sel.onchange=()=>loadSelfHist(sel.value);
+  }catch(e){
+    console.error(e);
+    box.innerHTML='<div style="font-size:12.5px;color:var(--red);margin-top:14px">เปิดประวัติไม่สำเร็จ: '+escH(e.message||'')+'</div>';
+  }
+}
+function renderMyHistory(h){
+  if(!h||!h.ok) return '';
+  const s=h.summary||{};
+  const n1=v=>(Math.round((+v||0)*10)/10).toLocaleString('th-TH');
+  const opts=(h.options||[]).map(o=>'<option value="'+o.back+'"'+(o.back===h.back?' selected':'')+'>'+escH(o.label)+(o.current?' · รอบนี้':'')+'</option>').join('');
+  const head='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:7px">'
+    +'<div style="font-weight:700">ประวัติเวลางานของฉัน</div>'
+    +'<select id="histCyc" style="font:inherit;font-size:12.5px;padding:5px 9px;border:1.5px solid var(--line);border-radius:9px;background:#fff;max-width:100%">'+opts+'</select></div>';
+  const state = h.closed
+    ? '<div style="background:var(--green-soft);border:1px solid var(--line);border-radius:11px;padding:8px 11px;font-size:12px;line-height:1.6;margin-bottom:8px">รอบนี้ปิดแล้ว — ตัวเลขนิ่งแล้ว ใช้เทียบกับสลิปเงินเดือนได้</div>'
+    : '<div style="background:#fff7e6;border:1px solid #f3d9a4;color:#8a5a00;border-radius:11px;padding:8px 11px;font-size:12px;line-height:1.6;margin-bottom:8px">รอบนี้ยังไม่ปิด (ถึง '+escH(beDate(h.cycle.end))+') ตัวเลขยังเปลี่ยนได้จนจบรอบ</div>';
+  const cell=(label,val,sub,col)=>'<div style="background:#fafbf9;border:1px solid var(--line);border-radius:12px;padding:9px 10px">'
+    +'<div style="font-size:11.5px;color:var(--muted)">'+label+'</div>'
+    +'<div style="font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:1px'+(col?(';color:'+col):'')+'">'+val+'</div>'
+    +(sub?('<div style="font-size:11px;color:var(--muted);margin-top:1px">'+sub+'</div>'):'')+'</div>';
+  const grid='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    +cell('วันทำงาน', n1(s.days_worked)+' วัน', 'เวรที่จัดไว้ '+n1(s.days_should)+' วัน')
+    +cell('OT', n1(s.ot_hours)+' ชม.', (s.ot_days?(s.ot_days+' วันที่มี OT'):'ไม่มี OT ในรอบนี้'))
+    +cell('มาสาย', (s.late_count||0)+' ครั้ง', 'รวม '+n1(s.late_total)+' นาที', (s.late_count?'var(--red)':''))
+    +cell('ขาดงาน', n1(s.absent)+' วัน', 'ลาที่อนุมัติ '+n1(s.leave_days)+' วัน', ((+s.absent)?'var(--red)':''))
+    +'</div>';
+  const extra=[];
+  if(s.dual_days) extra.push('ควบกะ '+s.dual_days+' วัน');
+  if(s.early_out_total) extra.push('ออกก่อนเวลารวม '+n1(s.early_out_total)+' นาที');
+  if(s.no_checkout) extra.push('<span style="color:var(--red)">ลืมกดออกงาน '+s.no_checkout+' วัน</span>');
+  const extraTxt = extra.length?('<div style="font-size:12px;color:var(--muted);margin-top:7px;line-height:1.7">'+extra.join(' · ')+'</div>'):'';
+  // ---- รายวัน (ตัดวันหยุดที่ไม่มีอะไรเกิดขึ้นออก ไม่ให้รายการยาวเกินจำเป็น) ----
+  const days=(h.days||[]).filter(d=>d.status!=='none');
+  const SB={present:['มาทำงาน','ok'],late:['มาสาย','bad'],leave:['ลา','idle'],absent:['ขาดงาน','bad'],scheduled:['มีเวร','idle']};
+  const rows=days.slice().reverse().map(d=>{
+    const dt=new Date(d.work_date+'T00:00:00');
+    const head2='<b>'+HIST_DOW[dt.getDay()]+' '+dt.getDate()+'/'+(dt.getMonth()+1)+'</b>'
+      +(d.shift_name?(' <span style="color:var(--muted)">'+escH(d.shift_name)+'</span>'):'')
+      +(d.is_holiday?(' <span style="color:#b45309">· '+escH(d.holiday_name||'วันหยุด')+'</span>'):'');
+    const bits=[];
+    const ci=histTime(d.check_in), co=histTime(d.check_out);
+    if(ci) bits.push(ci+' – '+(co||'<span style="color:var(--red)">ไม่ได้กดออก</span>'));
+    if(d.act_hr) bits.push(n1(d.act_hr)+' ชม.');
+    if(d.late_min>0) bits.push('<span style="color:var(--red)">สาย '+d.late_min+' นาที</span>');
+    if(d.early_out_min>0) bits.push('<span style="color:var(--red)">ออกก่อน '+d.early_out_min+' นาที</span>');
+    if(d.ot_counted>0) bits.push('OT '+n1(d.ot_counted)+' ชม.'+((d.ot_hours>d.ot_counted)?(' <span style="color:var(--muted)">(ทำจริง '+n1(d.ot_hours)+')</span>'):''));
+    if(d.dual&&d.dual.credited) bits.push('ควบกะ');
+    if(d.leave_type) bits.push(escH(d.leave_type));
+    if(d.day_note) bits.push('<span style="color:var(--muted)">'+escH(d.day_note)+'</span>');
+    const sb=SB[d.status]||['','idle'];
+    return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--line)">'
+      +'<div style="font-size:12.5px;min-width:0"><div>'+head2+'</div>'
+        +(bits.length?('<div style="font-size:11.5px;color:var(--txt);margin-top:2px;line-height:1.6">'+bits.join(' · ')+'</div>'):'')+'</div>'
+      +'<span class="pill '+sb[1]+'" style="font-size:11px;padding:3px 9px">'+sb[0]+'</span></div>';
+  }).join('');
+  const detail = rows
+    ? ('<details style="margin-top:9px"><summary style="font-size:12.5px;color:#1d4ed8;cursor:pointer">ดูรายวัน ('+days.length+' วัน)</summary><div style="margin-top:4px">'+rows+'</div></details>')
+    : '<div style="font-size:12.5px;color:var(--muted);margin-top:8px">รอบนี้ยังไม่มีรายการลงเวลา</div>';
+  // ---- ใบลาในรอบนี้ (ทุกสถานะ ไม่ใช่เฉพาะที่อนุมัติ) ----
+  const LS={approved:['อนุมัติแล้ว','ok'],rejected:['ไม่อนุมัติ','bad'],pending:['รออนุมัติ','idle']};
+  const lvRows=(h.leaves||[]).map(l=>{
+    const st=LS[l.status]||[escH(l.status||'—'),'idle'];
+    const range=(l.end_date&&l.end_date!==l.start_date)?(beDate(l.start_date)+' – '+beDate(l.end_date)):beDate(l.start_date);
+    return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)">'
+      +'<div style="font-size:12.5px"><b>'+escH(range)+'</b> <span style="color:var(--muted)">'+escH(l.type)+'</span>'
+        +(l.hr_note?('<div style="font-size:11px;color:var(--muted)">HR: '+escH(l.hr_note)+'</div>'):'')+'</div>'
+      +'<span class="pill '+st[1]+'" style="font-size:11px;padding:3px 9px">'+st[0]+'</span></div>';
+  }).join('');
+  const lvBox = lvRows ? ('<details style="margin-top:4px"><summary style="font-size:12.5px;color:#1d4ed8;cursor:pointer">ใบลาในรอบนี้ ('+h.leaves.length+')</summary><div style="margin-top:4px">'+lvRows+'</div></details>') : '';
+  const note='<div style="font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:9px">'
+    +'ตัวเลขชุดนี้คือชุดเดียวกับที่ HR ใช้ตอนทำเงินเดือน'
+    +(s.ot_whole?' · OT นับเป็นชั่วโมงเต็ม เศษนาทีไม่ถูกนับ (เลขในวงเล็บคือเวลาที่ทำจริง)':'')
+    +' · ถ้าเห็นวันไหนไม่ตรงกับที่จำได้ แจ้งผู้จัดการให้ตรวจใบลงเวลาวันนั้นได้เลย ก่อนรอบจะปิด</div>';
+  return head+state+grid+extraTxt+detail+lvBox+note;
 }
 function renderSelf(s, sc){
   const e=s.emp, st=s.stats, lv=s.level, t=s.today;
