@@ -10,12 +10,65 @@
   }
   const sb = window.supabase.createClient(cfg.url, cfg.anonKey);
 
+  // ★ 24 พ.ย. 69 — ตาราง employees มีข้อมูลส่วนบุคคล (เลขบัตร · ที่อยู่ · บัญชีธนาคาร · ใบหน้า · PIN)
+  //   แอปฝั่งพนักงาน/ผจก. ไม่ได้ใช้คอลัมน์พวกนั้นเลย จึงย้ายไปอ่านผ่าน view employees_pub ที่ตัดออกแล้ว
+  //   ต้องรัน supabase/employees_lock.sql ก่อน — ถ้ายังไม่รัน ระบบจะถอยไปใช้ตารางเดิมให้เอง ไม่พัง
+  let _empT = null;
+  async function _EMPT() {
+    if (_empT) return _empT;
+    try {
+      const r = await sb.from('employees_pub').select('emp_id').limit(1);
+      _empT = r.error ? 'employees' : 'employees_pub';
+      if (r.error) console.warn('[พนักงาน] ยังไม่มี employees_pub — ใช้ตารางเดิมไปก่อน (รัน supabase/employees_lock.sql เพื่อปิดข้อมูลส่วนบุคคล)');
+    } catch (e) { _empT = 'employees'; }
+    return _empT;
+  }
+  function _euclid(a, b) {
+    if (!a || !b) return null;
+    const n = Math.min(a.length, b.length); if (n < 1) return null;
+    let s = 0; for (let i = 0; i < n; i++) { const d = (+a[i] || 0) - (+b[i] || 0); s += d * d; }
+    return Math.sqrt(s);
+  }
+  // โปรไฟล์ของตัวเอง (มีคอลัมน์อ่อนไหว) — ดึงผ่านฟังก์ชัน ทีละคน แทนการอ่านตารางตรง ๆ
+  //   cols = คอลัมน์ที่ผู้เรียกต้องการ · ถ้ายังไม่ได้รัน SQL จะถอยไปอ่านตารางเดิมให้เอง
+  async function _empSelf(empId, cols) {
+    const id = String(empId || ''); if (!id) return null;
+    try {
+      const r = await sb.rpc('emp_profile_self', { p_emp_id: id });
+      if (!r.error) {
+        if (!r.data) return null;
+        const want = String(cols || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (!want.length) return r.data;
+        const out = {}; want.forEach(k => { out[k] = r.data[k] !== undefined ? r.data[k] : null; });
+        return out;
+      }
+    } catch (e) { /* ยังไม่ได้รัน SQL → ถอยไปวิธีเดิม */ }
+    const { data } = await sb.from('employees').select(cols || '*').eq('emp_id', id).maybeSingle();
+    return data || null;
+  }
+  // เทียบใบหน้า — ให้ฐานข้อมูลเทียบให้ ข้อมูลใบหน้าจึงไม่ต้องถูกส่งออกมาที่เครื่องอีก
+  //   คืน true=ตรง · false=ไม่ตรง · null=ยังไม่ได้ลงทะเบียนใบหน้า (ความหมายเดียวกับของเดิม)
+  async function faceCheck(empId, descriptor, threshold) {
+    const d = Array.isArray(descriptor) ? descriptor : Array.from(descriptor || []);
+    if (!empId || !d.length) return null;
+    try {
+      const r = await sb.rpc('emp_face_check', { p_emp_id: String(empId), p_descriptor: d, p_threshold: threshold || 0.5 });
+      if (!r.error) return r.data === null || r.data === undefined ? null : !!r.data;
+    } catch (e) { /* ยังไม่ได้รัน SQL → ถอยไปวิธีเดิมด้านล่าง */ }
+    // ถอยกลับ: ดึงใบหน้าของคนนี้ "คนเดียว" มาเทียบในเครื่อง (ยังดีกว่าโหลดของทุกคนแบบเดิม)
+    const { data } = await sb.from('employees').select('face_descriptor').eq('emp_id', String(empId)).maybeSingle();
+    const ref = data && Array.isArray(data.face_descriptor) ? data.face_descriptor : null;
+    if (!ref) return null;
+    const dist = _euclid(ref, d);
+    return dist == null ? null : dist <= (threshold || 0.5);
+  }
+
   // ---------- ข้อมูลตั้งต้น (config สาธารณะ) ----------
   async function loadConfig() {
     const [branches, shifts, employees] = await Promise.all([
       sb.from('branches').select('*'),
       sb.from('shifts').select('*'),
-      sb.from('employees').select('emp_id,name,nickname,default_shift,branch_id,active,face_descriptor').eq('active', true),
+      sb.from(await _EMPT()).select('emp_id,name,nickname,default_shift,branch_id,active').eq('active', true),
     ]);
     return {
       branches: branches.data || [],
@@ -37,6 +90,11 @@
 
   // ---------- ลงทะเบียนใบหน้า ----------
   async function registerFace(empId, descriptor) {
+    const d = Array.isArray(descriptor) ? descriptor : Array.from(descriptor || []);
+    try {
+      const r = await sb.rpc('emp_face_register', { p_emp_id: String(empId), p_descriptor: d });
+      if (!r.error) return true;
+    } catch (e) { /* ยังไม่ได้รัน SQL → ถอยไปเขียนตารางตรง ๆ แบบเดิม */ }
     const { error } = await sb.from('employees')
       .update({ face_descriptor: descriptor }).eq('emp_id', empId);
     if (error) throw error;
@@ -229,7 +287,7 @@
       const recentHrs = Number(st.recent_checkout_hours || 8);   // เพิ่งออกงานภายใน N ชม. → เตือน
 
       // 1) นอกกะ: หา "กะที่คาดหวัง" จากตารางเวรวันนี้/เมื่อวาน (รองรับข้ามคืน) ถ้าไม่มีใช้กะประจำ
-      const { data: emp } = await sb.from('employees').select('default_shift').eq('emp_id', empId).maybeSingle();
+      const { data: emp } = await sb.from(await _EMPT()).select('default_shift').eq('emp_id', empId).maybeSingle();
       const { data: sch } = await sb.from('schedules').select('work_date,shift_id').eq('emp_id', empId).in('work_date', [today, yday]);
       const cand = [];
       (sch || []).forEach(s => { if (s.shift_id) cand.push({ d: s.work_date, sid: s.shift_id }); });
@@ -298,7 +356,7 @@
     const whoOf = r => String(r.fix_emp || r.emp_id || '');
     const ids = [...new Set(all.map(whoOf).filter(Boolean))];
     const [esR, schR, shR, lvR, atR] = await Promise.all([
-      ids.length ? sb.from('employees').select('emp_id,name,nickname').in('emp_id', ids) : Promise.resolve({ data: [] }),
+      ids.length ? sb.from(await _EMPT()).select('emp_id,name,nickname').in('emp_id', ids) : Promise.resolve({ data: [] }),
       ids.length ? sb.from('schedules').select('emp_id,shift_id').eq('work_date', workDate).in('emp_id', ids) : Promise.resolve({ data: [] }),
       sb.from('shifts').select('shift_id,main_shift'),
       // ★ 16 ก.ย. 69 — ใบลาที่อนุมัติแล้ว (ตารางเวรไม่ได้ถูกลบ คนลาจึงยังมีแถวกะอยู่)
@@ -556,7 +614,7 @@
     try{
       const wd = row.work_date, sid = row.shift_id || '';
       if (!sid) return null;
-      const { data: e } = await sb.from('employees').select('is_manager').eq('emp_id', empId).maybeSingle();
+      const { data: e } = await sb.from(await _EMPT()).select('is_manager').eq('emp_id', empId).maybeSingle();
       if (e && e.is_manager) return null;                       // ผจก. ไม่ติดล็อก (เป็นคนปลดล็อกให้คนอื่น)
       const { data: ov } = await sb.from('checkout_overrides').select('id,used_at')
         .eq('emp_id', empId).eq('work_date', wd).maybeSingle();
@@ -856,7 +914,7 @@
     const cyc = cycleRange21(refIso);
     const endEff = cyc.end < today ? cyc.end : today;
     const [empR, attR, schR, lvR, shR] = await Promise.all([
-      sb.from('employees').select('emp_id,name,nickname,default_shift,branch_id,weekly_off,photo_url,start_date,end_date,is_manager').eq('emp_id', empId).maybeSingle(),
+      sb.from(await _EMPT()).select('emp_id,name,nickname,default_shift,branch_id,weekly_off,photo_url,start_date,end_date,is_manager').eq('emp_id', empId).maybeSingle(),
       sb.from('attendance').select('work_date,check_in,check_out,late_min,status,day_value,shift_id' + (await _legSel())).eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('schedules').select('work_date,shift_id,note').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('start_date,end_date,status').eq('emp_id', empId).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
@@ -1683,7 +1741,7 @@
   async function lookupEmployee(empId) {
     // ★ แก้ 15 ก.ย. 69 — ต้องมี is_manager ด้วย ไม่งั้นโค้ดที่เช็ก emp.is_manager ไม่เคยทำงาน
     //   (ทำให้ ผจก. เปิดหน้ารับส่งผลัดแล้วไม่เห็นงานของตัวเอง)
-    const { data } = await sb.from('employees').select('emp_id,name,nickname,active,branch_id,default_shift,is_manager').eq('emp_id', empId).maybeSingle();
+    const { data } = await sb.from(await _EMPT()).select('emp_id,name,nickname,active,branch_id,default_shift,is_manager').eq('emp_id', empId).maybeSingle();
     return data || null;
   }
   // ★ ดึงข้อมูลที่เคยกรอกไว้ มาแสดงในฟอร์ม (แก้ไขต่อได้ ไม่ต้องพิมพ์ใหม่ทั้งหมด)
@@ -1692,9 +1750,7 @@
     'bank_name', 'bank_account', 'id_card', 'photo_url', 'idcard_url', 'bankbook_url', 'house_url', 'edu_url'];
   async function getMyProfile(empId) {
     if (!empId) return null;
-    const { data: emp } = await sb.from('employees')
-      .select('emp_id,name,nickname,active,branch_id,' + PROFILE_FIELDS.join(','))
-      .eq('emp_id', String(empId)).maybeSingle();
+    const emp = await _empSelf(empId, 'emp_id,name,nickname,active,branch_id,' + PROFILE_FIELDS.join(','));
     if (!emp) return null;
 
     const { data: subs } = await sb.from('profile_submissions').select('*')
@@ -1797,7 +1853,7 @@
       sb.from('advance_requests').select('amount,approved_amount,status,kind')
         .eq('emp_id', emp.emp_id).eq('cycle_month', month),
       getAdvanceWindow(emp.emp_id),
-      sb.from('employees').select('start_date,end_date,is_manager,bank_name,bank_account,branch_id,nickname,name').eq('emp_id', emp.emp_id).maybeSingle(),
+      _empSelf(emp.emp_id, 'start_date,end_date,is_manager,bank_name,bank_account,branch_id,nickname,name').then(d => ({ data: d })),
       sb.from('schedules').select('work_date,shift_id,note').eq('emp_id', emp.emp_id).gte('work_date', cyc.start).lte('work_date', endEff),
       sb.from('leaves').select('start_date,end_date').eq('emp_id', emp.emp_id).eq('status', 'approved').lte('start_date', cyc.end).gte('end_date', cyc.start),
       _loadSettings(),
@@ -2351,7 +2407,7 @@
       const gSpan=_span(shById[group]); if(!gSpan) return [];
       const ids=[...new Set((scs||[]).map(r=>r.emp_id))];
       if(!ids.length) return [];
-      const {data:emps}=await sb.from('employees').select('emp_id,name,nickname,is_manager,start_date,end_date')
+      const {data:emps}=await sb.from(await _EMPT()).select('emp_id,name,nickname,is_manager,start_date,end_date')
         .in('emp_id', ids).eq('active',true).eq('is_manager',true);
       if(!emps||!emps.length) return [];
       // ★ 20 ก.ย. 69 — ตัด ผจก. ที่พ้นสภาพแล้วออกด้วย (active อย่างเดียวไม่พอ — หลายคนลาออกแล้วแต่ active ยัง true)
@@ -2423,7 +2479,7 @@
       //   (HR ใส่ end_date ให้ แต่ไม่ได้ปิดสวิตช์ active) → ชื่อยังโผล่ในดรอปดาวน์ "เพิ่มคนเข้ากะ" + "มอบงาน"
       //   เคสจริง: ฟาง (0657377) ลาออก 06/09 · สาขา 06573 มีแบบนี้ 5 คน (ฟาง ใบปอ บี เฟรช เมย์)
       //   และเป็นคนกลุ่มเดียวกับที่โดนกดเพิ่มเข้ากะ 19/09 แล้วขึ้นขาดงานปลอม
-      sb.from('employees').select('emp_id,name,nickname,branch_id,start_date,end_date').eq('active', true),   // ทั้งหมด → resolve ชื่อคนทำแทนจากสาขาอื่นได้
+      sb.from(await _EMPT()).select('emp_id,name,nickname,branch_id,start_date,end_date').eq('active', true),   // ทั้งหมด → resolve ชื่อคนทำแทนจากสาขาอื่นได้
       sb.from('shifts').select('shift_id,name,main_shift').order('start_time'),
       sb.from('branches').select('branch_id,name'),
     ]);
@@ -3799,7 +3855,7 @@
     if(emp.branch_id){
       const [biR, beR] = await Promise.all([
         sb.from('qa_items').select('folder_id').eq('branch_id', emp.branch_id).limit(5000),
-        sb.from('employees').select('emp_id').eq('branch_id', emp.branch_id).limit(300),
+        sb.from(await _EMPT()).select('emp_id').eq('branch_id', emp.branch_id).limit(300),
       ]);
       (biR.data||[]).forEach(x=>ids.add(x.folder_id));
       const mates=(beR.data||[]).map(x=>x.emp_id);
@@ -4128,7 +4184,7 @@
     const hsBy={}; const hsEmp=new Set();
     (hsR.data||[]).forEach(h=>{ const a=hsBy[h.shelf_id]||(hsBy[h.shelf_id]=[]); if(a.length<5){ a.push(h); if(h.emp_id) hsEmp.add(h.emp_id); } });
     const hsNm={};
-    if(hsEmp.size){ try{ const { data: es }=await sb.from('employees').select('emp_id,name,nickname').in('emp_id',[...hsEmp]); (es||[]).forEach(e=>{ hsNm[e.emp_id]=e.nickname||e.name||e.emp_id; }); }catch(_e){} }
+    if(hsEmp.size){ try{ const { data: es }=await sb.from(await _EMPT()).select('emp_id,name,nickname').in('emp_id',[...hsEmp]); (es||[]).forEach(e=>{ hsNm[e.emp_id]=e.nickname||e.name||e.emp_id; }); }catch(_e){} }
     const DEF_CL=['ทำความสะอาดเชลฟ์เรียบร้อย','จัดเรียงสินค้าหน้าตรง เต็มชั้น','FIFO — สินค้าตรงป้ายราคา','ตรวจวันหมดอายุครบทุกแถว'];
     const rows=rowsA.map(a=>{ const s=shBy[a.shelf_id]||{}; const cl=(Array.isArray(s.checklist)&&s.checklist.length)?s.checklist:DEF_CL; return {
       assignment_id:a.id, shelf_id:a.shelf_id, shelf_code:s.shelf_code||'', name:s.name||('#'+a.shelf_id),
@@ -4162,7 +4218,7 @@
   // ไรเดอร์: เบิกซ่อมบำรุงรถ (ฝั่งพนักงาน)
   // ============================================================
   async function riderIsRider(empId) {
-    const { data } = await sb.from('employees').select('is_rider').eq('emp_id', empId).maybeSingle();
+    const { data } = await sb.from(await _EMPT()).select('is_rider').eq('emp_id', empId).maybeSingle();
     return !!(data && data.is_rider);
   }
   async function riderMyVehicles(empId) {
@@ -4436,7 +4492,7 @@
     // ★ 21 ก.ย. 69 — รวมคนที่ปิดใช้งานแล้วแต่ยังทำงานในรอบนี้ (ลาออกกลางรอบ) — รอบนั้นยังต้องจ่ายเงินเดือน
     //   เดิม .eq('active', true) → รอบ 21/08–20/09 หายไป 10 คน (ปอย 14 วัน · ฟาง 16 · แตงโม 12 · ทิว 9 · ใบปอ 8 ฯลฯ)
     //   ใช้เงื่อนไขเดียวกับเงินเดือนฝั่ง HR (hrPayrollRun): ยังเป็นพนักงาน หรือ วันสิ้นสุด ≥ วันเริ่มรอบ
-    let empQ = sb.from('employees').select('emp_id,name,nickname,branch_id,end_date,start_date,is_manager,active').or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id');
+    let empQ = sb.from(await _EMPT()).select('emp_id,name,nickname,branch_id,end_date,start_date,is_manager,active').or('end_date.is.null,end_date.gte.' + cyc.start).or('start_date.is.null,start_date.lte.' + cyc.end).order('emp_id');
     if (branch) empQ = empQ.eq('branch_id', branch);
     const [empR, brR, attR, shR, schR, lvR, rvR, advR, drR, scfgR, srR, sbR, seR, pcfgR, ctrlR] = await Promise.all([
       empQ,
@@ -4572,7 +4628,7 @@
     const cyc = reviewCycleRange(which);
     const [leadR, empR, brR, attR, shR] = await Promise.all([
       sb.from('shift_leads').select('branch_id,work_date,shift_id,emp_id').gte('work_date', cyc.start).lte('work_date', cyc.end),
-      sb.from('employees').select('emp_id,name,nickname'),
+      sb.from(await _EMPT()).select('emp_id,name,nickname'),
       sb.from('branches').select('branch_id,name'),
       _paged(() => sb.from('attendance').select('emp_id,work_date,shift_id,branch_id,check_in').gte('work_date', cyc.start).lte('work_date', cyc.end).order('id')).then(d => ({ data: d })),
       sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift,night_allowance'),
@@ -4724,7 +4780,7 @@
       sb.from('holidays').select('date,name').eq('active', true).gte('date', cyc.start).lte('date', cyc.end),
       sb.from('dual_requests').select('work_date,extra_shift,status').eq('emp_id', empId).gte('work_date', cyc.start).lte('work_date', cyc.end).in('status', ['pending', 'approved']),
     ]);
-    const { data: empRow } = await sb.from('employees').select('is_manager').eq('emp_id', empId).maybeSingle();
+    const { data: empRow } = await sb.from(await _EMPT()).select('is_manager').eq('emp_id', empId).maybeSingle();
     const isMgr = !!(empRow && empRow.is_manager === true);
     const _st = await _loadSettings(); const otWhole = (_st['ot_whole_day'] === '1' || _st['ot_whole_day'] === 'true');
     const holiName = {}; (holR.data || []).forEach(h => holiName[h.date] = h.name || 'วันหยุดบริษัท');
@@ -4802,7 +4858,7 @@
   async function reviewMarkDay({ emp_id, work_date, action, shift_id, branch_id, by }) {
     if (!emp_id || !work_date) throw new Error('ข้อมูลไม่ครบ');
     if (action === 'present') {
-      const { data: veh } = await sb.from('employees').select('branch_id,default_shift').eq('emp_id', emp_id).maybeSingle();
+      const { data: veh } = await sb.from(await _EMPT()).select('branch_id,default_shift').eq('emp_id', emp_id).maybeSingle();
       const row = {
         emp_id, work_date, shift_id: shift_id || (veh && veh.default_shift) || null, branch_id: branch_id || (veh && veh.branch_id) || null,
         check_in: work_date + 'T00:00:00+07:00', check_out: work_date + 'T00:00:00+07:00',
@@ -4849,7 +4905,7 @@
   async function shirtMyState(empId) {
     const id = String(empId || '').trim();
     if (!id) throw new Error('กรุณากรอกรหัสพนักงาน');
-    const { data: emp } = await sb.from('employees')
+    const { data: emp } = await sb.from(await _EMPT())
       .select('emp_id,name,nickname,active,branch_id,is_rider').eq('emp_id', id).maybeSingle();
     if (!emp) throw new Error('ไม่พบรหัสพนักงานนี้');
     if (emp.active === false) throw new Error('รหัสนี้ไม่ได้ทำงานแล้ว');
@@ -5003,7 +5059,7 @@
     const ids = [...new Set((atR.data || [])
       .filter(r => (grpOf[r.shift_id] || r.shift_id) === group).map(r => String(r.emp_id)))];
     if (!ids.length) return [];
-    const { data } = await sb.from('employees').select('emp_id,name,nickname').in('emp_id', ids);
+    const { data } = await sb.from(await _EMPT()).select('emp_id,name,nickname').in('emp_id', ids);
     const nm = {}; (data || []).forEach(e => { nm[e.emp_id] = e.nickname || e.name || e.emp_id; });
     return ids.map(id => ({ emp_id: id, name: nm[id] || id }));
   }
@@ -5225,7 +5281,7 @@
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, faceCheck, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     crateCountState, submitCrateCount, crateCountConfirm,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState,
     handoverBoard, handoverAdd, handoverDrop, handoverReview, handoverAck, handoverAssign, handoverCancel, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
