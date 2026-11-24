@@ -18302,23 +18302,44 @@ function renderEmpAnalysis(r){
 }
 // ★ 8 พ.ย. 69 — ป้าย "พนักงานดีเด่นประจำเดือน" บนหัวหน้าสรุปรายบุคคล
 //   อ่านจากข้อมูลบัตรที่โหลดไว้แล้ว (EC_DATA) จึงไม่ต้องยิง API เพิ่ม
-function esStarBanner(empId){
-  if(!empId || !EC_DATA || !EC_DATA.rows) return '';
-  const row=EC_DATA.rows.find(x=>String(x.emp_id)===String(empId));
-  if(!row || !row.star_award) return '';
-  const a=row.star_award;
+// ★ 24 พ.ย. 69 — อ่านจาก star_history ที่ API ส่งมากับหน้าสรุปโดยตรง
+//   ของเดิมอ่านจาก EC_DATA (ผลของหน้าบัตร) — ถ้ายังไม่เคยเปิดแท็บบัตรในครั้งนั้น ป้ายจะไม่ขึ้นเลย
+//   และเห็นได้แค่รอบเดียว จึงเพิ่ม "เคยได้มาแล้วกี่ครั้ง" ต่อท้ายให้ด้วย
+function esCycTH(c){ try{ const [y,m]=String(c).split('-'); return beDate(y+'-'+m+'-01').replace(/^\d+ /,''); }catch(e){ return String(c||'—'); } }
+function esStarBanner(r){
+  const hist=(r && r.star_history)||[];
+  if(!hist.length) return '';
+  const now=hist.find(x=>x.in_range);
+  const past=hist.filter(x=>!x.in_range);
+  if(!now){
+    return '<div class="es-starbadge">🏅 <b>เคยเป็นพนักงานดีเด่นประจำเดือน '+hist.length+' ครั้ง</b>'
+      +' <span>'+esc(hist.map(x=>esCycTH(x.cycle)).join(' · '))+'</span>'
+      +' <span class="by">รอบที่กำลังดูอยู่นี้ยังไม่ได้รับ</span></div>';
+  }
   return '<div class="es-starbadge">🏅 <b>พนักงานดีเด่นประจำเดือน</b>'
-    +' <span>รอบ '+esc(beDate(EC_DATA.range.start)+' – '+beDate(EC_DATA.range.end))+'</span>'
-    +' <span>เบี้ยพนักงานคุณภาพ '+esc(String(a.amount))+' บาท</span>'
-    +(a.awarded_by?(' <span class="by">ยืนยันโดย '+esc(a.awarded_by)+'</span>'):'')
-    +(a.note?('<div class="nt">'+esc(a.note)+'</div>'):'')
+    +' <span>รอบ '+esc(esCycTH(now.cycle))+'</span>'
+    +' <span>เบี้ยพนักงานคุณภาพ '+esc(String(now.amount))+' บาท</span>'
+    +(now.awarded_by?(' <span class="by">ยืนยันโดย '+esc(now.awarded_by)+'</span>'):'')
+    +(past.length?(' <span class="by">เคยได้มาแล้วอีก '+past.length+' ครั้ง</span>'):'')
+    +(now.note?('<div class="nt">'+esc(now.note)+'</div>'):'')
     +'</div>';
+}
+// ตารางประวัติรางวัล — ใช้ทั้งบนจอและในเอกสาร A4 (คนละคลาส แต่เนื้อเดียวกัน)
+function esStarRows(hist, cls){
+  return '<table class="'+cls+'"><tr><th>รอบ</th><th>เบี้ยที่ได้รับ</th><th>คะแนนรวมรอบนั้น</th><th>ยืนยันโดย</th><th>หมายเหตุ</th></tr>'
+    + hist.map(x=>'<tr'+(x.in_range?' style="background:#fffbeb"':'')+'>'
+        +'<td>'+esc(esCycTH(x.cycle))+'</td>'
+        +'<td>'+esc(String(x.amount==null?'—':x.amount))+' บาท</td>'
+        +'<td>'+esc(String(x.rank_score==null?'—':x.rank_score))+'</td>'
+        +'<td>'+esc(x.awarded_by||'—')+'</td>'
+        +'<td>'+esc(x.note||'—')+'</td></tr>').join('')
+    + '</table>';
 }
 function renderEmpSum(r){
   const e=r.emp, a=r.attendance, d=r.discipline, t=r.tasks, sp=r.special, det=r.details;
   const g=new Date(r.range.generated); const genTxt=g.toLocaleDateString('th-TH')+' '+g.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
   // ★ 8 พ.ย. 69 — ป้ายพนักงานดีเด่นประจำเดือน (ขึ้นทั้งบนจอและในเอกสารที่พิมพ์)
-  let h=esStarBanner(e && e.emp_id);
+  let h=esStarBanner(r);
   h+=renderEmpAnalysis(r);
   /* ★ 24 พ.ย. 69 — รวมที่มาของคะแนนพนักงานดีเด่นมาไว้ในหน้านี้ด้วย จะได้ไม่ต้องเปิดสองที่
      โหลดแบบขอเพิ่มทีหลัง (ใช้ชุดเดียวกับหน้าบัตร + แคช sessionStorage) จะได้ไม่ถ่วงหน้าสรุป */
@@ -18370,6 +18391,14 @@ function renderEmpSum(r){
         }).join('')
       + '</table><div class="es-detail" style="font-size:11px;color:#94a3b8">แถวพื้นส้ม = เกิดขึ้นในรอบที่ประเมินนี้</div>';
   }
+
+  /* ★ 24 พ.ย. 69 — ประวัติรางวัลพนักงานดีเด่น คู่กับประวัติวินัย
+     เจตนา: หน้านี้ต้องเล่าได้ทั้งสองด้าน ไม่ใช่มีแต่ด้านที่ผิด — เวลาพิจารณาปรับ/เลื่อนขั้น จะได้เห็นครบในใบเดียว */
+  const sh=(r.star_history||[]);
+  h+='<div class="es-sec">2.1) ประวัติรางวัลพนักงานดีเด่นประจำเดือน</div>';
+  if(!sh.length) h+='<div class="es-detail">— ยังไม่เคยได้รับรางวัลพนักงานดีเด่น —</div>';
+  else h+=esStarRows(sh,'es-tbl')
+    +'<div class="es-detail" style="font-size:11px;color:#94a3b8">รวม '+sh.length+' ครั้ง · แถวพื้นเหลือง = รอบที่ประเมินนี้</div>';
 
   const pf=r.performance||{};
   const pct=v=>(v==null?'—':v+'%');
@@ -18600,8 +18629,12 @@ function buildEmpSumDoc(r, genTxt){
   // ---- 4) สิ่งที่ทำได้ดีในรอบนี้ ----
   h+='<div class="es-dsec">ส่วนที่ 4 — สิ่งที่ทำได้ดีในรอบนี้</div>';
   const strong=(an.strong||[]);
+  /* ★ 24 พ.ย. 69 — ถ้าได้รางวัลพนักงานดีเด่นในรอบนี้ ให้ขึ้นเป็นบรรทัดแรกของจุดเด่น */
+  const _stNow=((r.star_history||[]).filter(x=>x.in_range))[0];
+  const strongLines=(_stNow?['ได้รับคัดเลือกเป็น <b>พนักงานดีเด่นประจำเดือน</b> รอบนี้ (เบี้ยพนักงานคุณภาพ '+esc(String(_stNow.amount))+' บาท)']:[])
+    .concat(strong.slice(0,4).map(x=>esc(x)));
   h+='<table class="es-dt"><tr><td style="line-height:1.85">'
-    + (strong.length ? strong.slice(0,4).map(x=>'• '+esc(x)).join('<br>') : '— ยังไม่พบจุดเด่นที่ชัดเจนจากข้อมูลในรอบนี้ —')
+    + (strongLines.length ? strongLines.map(x=>'• '+x).join('<br>') : '— ยังไม่พบจุดเด่นที่ชัดเจนจากข้อมูลในรอบนี้ —')
     + '</td></tr></table>';
 
   // ---- 5) เรื่องที่ต้องแก้ไข / ปรับปรุง (ฝ่ายบุคคลกรอก) ----
@@ -18673,7 +18706,15 @@ function buildEmpSumDoc(r, genTxt){
       + '</table>';
   }
 
-  h+='<div class="es-dsec">ง — งานและความรับผิดชอบทั้งหมดในรอบ</div>';
+  /* ★ 24 พ.ย. 69 — ประวัติรางวัลพนักงานดีเด่น ลงเอกสารด้วย (เดิมมีแต่ป้ายบนหัว ไม่มีในภาคผนวก)
+     เอกสารนี้ใช้ประกอบการพิจารณาปรับ/เลื่อนขั้น จึงต้องมีทั้งด้านที่ผิดและด้านที่ดีอยู่ในฉบับเดียวกัน */
+  const sh=(r.star_history||[]);
+  h+='<div class="es-dsec">ง — ประวัติรางวัลพนักงานดีเด่นประจำเดือน</div>';
+  if(!sh.length) h+='<div class="es-note">— ไม่ปรากฏประวัติการได้รับรางวัลพนักงานดีเด่น —</div>';
+  else h+=esStarRows(sh,'es-dt')
+    +'<div class="es-note">ได้รับรวม '+sh.length+' ครั้ง</div>';
+
+  h+='<div class="es-dsec">จ — งานและความรับผิดชอบทั้งหมดในรอบ</div>';
   const rv=pf.review||{}, fx=pf.fixes||{}, du=pf.duty||{}, gd=pf.goods||{}, ho=pf.handover||{}, qa=pf.qa||{}, shf=pf.shelf||{}, mt=pf.mgr_tasks||{};
   h+='<table class="es-dt">'+rows2([
       ['งานในกะทั้งหมด (งาน)', n(t.total)],
