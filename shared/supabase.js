@@ -982,6 +982,55 @@
     const s = c.start.split('-'), e = c.end.split('-');
     return (+s[2]) + ' ' + _THM[+s[1] - 1] + ' – ' + (+e[2]) + ' ' + _THM[+e[1] - 1] + ' ' + String(+e[0] + 543).slice(2);
   }
+  // ============================================================
+  // ★ 24 พ.ย. 69 — พนักงานดีเด่น ฝั่งพนักงาน
+  //   เดิมฝั่งพนักงานไม่รู้เลยว่าตัวเองได้รางวัล (คำว่า "ดีเด่น" ไม่มีในแอปพนักงานสักที่)
+  //   ทั้งสามฟังก์ชันนี้ "พังเงียบ" ได้หมด — ยังไม่ได้รัน star_awards.sql / star_seen.sql
+  //   ก็แค่ไม่มีอะไรโผล่ ไม่ทำให้หน้าลงเวลาล้ม
+  // ============================================================
+  const _STAR_COLS = 'cycle,branch_id,emp_id,emp_name,amount,note,awarded_by,awarded_at';
+  async function myStarAwards(empId) {
+    if (!empId) return [];
+    // ลองดึง seen_at ก่อน · ถ้ายังไม่ได้รัน star_seen.sql คอลัมน์ยังไม่มี ให้ถอยไปชุดเดิม
+    for (const cols of [_STAR_COLS + ',seen_at', _STAR_COLS]) {
+      try {
+        const { data, error } = await sb.from('star_awards').select(cols)
+          .eq('emp_id', String(empId)).order('cycle', { ascending: false }).limit(36);
+        if (!error) return (data || []).slice()
+          .sort((a, b) => String(b.cycle || '').localeCompare(String(a.cycle || '')));
+      } catch (_e) { /* ลองชุดถัดไป */ }
+    }
+    return [];
+  }
+  // คนที่ได้รางวัลในสาขาเดียวกัน (รอบล่าสุดที่สาขานั้นมีผู้ได้รับ) — ให้เพื่อนร่วมสาขาเห็นด้วย
+  async function branchStars(branchId) {
+    if (!branchId) return { cycle: '', rows: [] };
+    try {
+      const { data, error } = await sb.from('star_awards')
+        .select('cycle,branch_id,emp_id,emp_name,amount')
+        .eq('branch_id', String(branchId)).order('cycle', { ascending: false }).limit(24);
+      if (error) return { cycle: '', rows: [] };
+      const rows = (data || []).slice().sort((a, b) => String(b.cycle || '').localeCompare(String(a.cycle || '')));
+      if (!rows.length) return { cycle: '', rows: [] };
+      const top = rows[0].cycle;
+      return { cycle: top, rows: rows.filter(r => String(r.cycle) === String(top)) };
+    } catch (_e) { return { cycle: '', rows: [] }; }
+  }
+  // บันทึกว่า "ดูฉากฉลองแล้ว" — เก็บในฐานข้อมูลเพื่อไม่ให้เด้งซ้ำตอนเปลี่ยนเครื่อง
+  //   ยังไม่ได้รัน star_seen.sql → ถอยไปจำในเครื่องแทน (ดีกว่าเด้งซ้ำทุกครั้ง)
+  function _starSeenKey(empId, cycle) { return 'starseen:' + empId + ':' + cycle; }
+  function starSeenLocal(empId, cycle) {
+    try { return localStorage.getItem(_starSeenKey(empId, cycle)) === '1'; } catch (_e) { return false; }
+  }
+  async function markStarSeen(empId, cycle) {
+    if (!empId || !cycle) return false;
+    try { localStorage.setItem(_starSeenKey(empId, cycle), '1'); } catch (_e) {}
+    try {
+      const { error } = await sb.rpc('star_mark_seen', { p_emp: String(empId), p_cycle: String(cycle) });
+      return !error;
+    } catch (_e) { return false; }
+  }
+
   function myHistoryCycles() {
     const out = [];
     for (let b = 0; b <= MYHIST_BACK; b++) {
@@ -5281,7 +5330,7 @@
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, faceCheck, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, faceCheck, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, myStarAwards, branchStars, markStarSeen, starSeenLocal, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     crateCountState, submitCrateCount, crateCountConfirm,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState,
     handoverBoard, handoverAdd, handoverDrop, handoverReview, handoverAck, handoverAssign, handoverCancel, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
