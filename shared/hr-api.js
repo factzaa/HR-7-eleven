@@ -5444,7 +5444,38 @@
       cafe: r1(mean(o.cafe)), jeeb: r1(mean(o.jeeb)), salapao: r1(mean(o.salapao)), deliv: r1(mean(o.deliv)),
       hit: o.hit, nt: o.nt, hit_pct: o.nt ? Math.round(o.hit / o.nt * 100) : null,
       enough: o.n >= SALES_MIN_SHIFTS,
-    })).sort((a, b) => (b.idx_pct || 0) - (a.idx_pct || 0));
+    }));
+
+    // ★ 24 พ.ย. 69 — ถ่วงน้ำหนักตามจำนวนกะ ก่อนเอามาจัดอันดับ
+    //   ปัญหาจริงที่เจอ: คนเข้ากะน้อยไปกองอยู่ทั้งหัวตารางและท้ายตาราง ไม่ใช่เพราะเก่งหรือแย่ แต่เพราะตัวอย่างน้อย
+    //   วัดจากข้อมูลจริง (พ.ย. 69 · 48 คน · 716 กะ): ความสัมพันธ์ จำนวนกะ ↔ %ทำเป้า = -0.01 คือไม่มีเลย
+    //   แต่การกระจายต่างกันชัด — กะ <12 เหวี่ยง ±17.6 จุด · กะ ≥12 เหวี่ยง ±13.0 จุด
+    //   ที่ค่าเฉลี่ย 73% ความคลาดเคลื่อนจากดวงล้วน ๆ คือ 5 กะ ±20 จุด · 25 กะ ±9 จุด
+    //   คนฝีมือกลาง ๆ มีโอกาส 15% ที่จะทำเป้าครบ 6/6 กะ → 100% จาก 6 กะ แทบไม่ได้บอกอะไร
+    //   วิธีแก้: ดึงเข้าหาค่ากลางของกลุ่มตามจำนวนกะ กะยิ่งน้อยยิ่งถูกดึงแรง · เลขดิบยังเก็บไว้โชว์คู่กัน
+    //   ตั้งใจไม่บวกแต้มให้คนอายุงานมาก เพราะนั่นคือเอานิ้วกดตาชั่งอีกข้าง ซึ่งไม่ยุติธรรมเหมือนกัน
+    const SHRINK_K = 12;                       // เท่ากับสมมุติว่าทุกคนมี 12 กะ "ฝีมือกลาง ๆ" ติดตัวมาก่อน
+    const totHit = people.reduce((s, p) => s + p.hit, 0);
+    const totNt  = people.reduce((s, p) => s + p.nt, 0);
+    const muHit  = totNt ? totHit / totNt : 0;
+    const wilson = (h, n) => {                 // ช่วงความเชื่อมั่น 95% ของอัตราทำเป้า
+      if (!n) return [null, null];
+      const z = 1.96, p = h / n, d = 1 + z * z / n;
+      const c = (p + z * z / (2 * n)) / d;
+      const m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d;
+      return [Math.round(Math.max(0, c - m) * 100), Math.round(Math.min(1, c + m) * 100)];
+    };
+    const shrinkIdx = (v, n) => v == null ? null : r1((n * v + SHRINK_K * 100) / (n + SHRINK_K));
+    people.forEach(p => {
+      p.adj_hit_pct = p.nt ? Math.round((p.hit + SHRINK_K * muHit) / (p.nt + SHRINK_K) * 100) : null;
+      const w = wilson(p.hit, p.nt); p.hit_lo = w[0]; p.hit_hi = w[1];
+      p.swing = p.nt ? Math.round(Math.sqrt(muHit * (1 - muHit) / p.nt) * 100) : null;   // ±จุด ที่เป็นดวงล้วน ๆ
+      p.adj_idx_pct  = shrinkIdx(p.idx_pct,  p.shifts);
+      p.adj_idx_sale = shrinkIdx(p.idx_sale, p.shifts);
+      p.adj_idx_head = shrinkIdx(p.idx_head, p.shifts);
+      p.conf = p.shifts >= 20 ? 'high' : (p.shifts >= 12 ? 'mid' : 'low');
+    });
+    people.sort((a, b) => (b.adj_idx_pct || 0) - (a.adj_idx_pct || 0));
 
     // ---- 5) คู่ที่เข้ากะด้วยกัน ----
     const pairMap = {};
@@ -5496,7 +5527,8 @@
       dates: o.dates.slice().sort().reverse().slice(0, 8) }))
       .sort((a, b) => b.n - a.n || (b.idx || 0) - (a.idx || 0));
 
-    return { rows, people, pairs, shiftRows, crews, min_shifts: SALES_MIN_SHIFTS, pair_min: SALES_PAIR_MIN };
+    return { rows, people, pairs, shiftRows, crews, min_shifts: SALES_MIN_SHIFTS, pair_min: SALES_PAIR_MIN,
+      shrink_k: SHRINK_K, mu_hit: Math.round(muHit * 100) };
   }
 
   // ============================================================
@@ -5651,7 +5683,8 @@
     return { ok: true, start: p.start, end: p.end,
       shift_rows: r.shiftRows, crews: r.crews, people: r.people, pairs: r.pairs, labour,
       labour_shifts: (r.shiftRows || []).filter(x => x.per_hour != null).length,
-      min_shifts: r.min_shifts, pair_min: r.pair_min, shifts_counted: r.rows.length };
+      min_shifts: r.min_shifts, pair_min: r.pair_min, shifts_counted: r.rows.length,
+      shrink_k: r.shrink_k, mu_hit: r.mu_hit };
   }
 
   async function hrSalesPeople(p) {
