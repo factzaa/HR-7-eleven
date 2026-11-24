@@ -8300,6 +8300,11 @@
   //   (เคยลองนับเฉพาะในรอบ แต่ผิดเจตนา: คนเก่าที่ตารางให้ทำ 24 วันจะตกไปด้วย
   //    ทั้งที่มาครบทุกเวรตามตาราง · เกณฑ์นี้ไว้กรอง "คนใหม่" ไม่ใช่ "คนที่ตารางให้ทำน้อย")
   const STAR_MIN_SHIFTS = 26;         // วันทำงานสะสมขั้นต่ำถึงเข้าชิงได้
+  // ★ 24 พ.ย. 69 — สเกลของด้าน "ยอดขายในกะตัวเอง" (ดูเหตุผลเต็มที่จุดคำนวณใน hrEmpCards)
+  //   เลือก 70/4 จากการกางข้อมูลจริง: ได้ค่ากลาง ~71 ช่วง 46–90 ไม่มีใครชนเพดานทั้งสองฝั่ง
+  //   ถ้าในอนาคตผลงานกระจายกว้างขึ้นแล้วเริ่มมีคนชน 0 หรือ 100 ให้ลด SLOPE ลง ไม่ใช่ขยับ MID
+  const STAR_SALES_MID   = 70;        // ดัชนีเท่าค่าเฉลี่ยของผลัดเดียวกัน = ได้กี่คะแนน
+  const STAR_SALES_SLOPE = 4;         // ดัชนีต่างจากค่าเฉลี่ย 1 จุด = คะแนนต่างกันกี่คะแนน
   function starCycleKey(which) { return cycleRange(cycleBack(which)).end.slice(0, 7); }
   async function starAmount() { return await getSettingNum('star_award_amount', 500); }
   async function starAwardsOf(cycleKey) {
@@ -8356,8 +8361,11 @@
     if (empR.error) throw empR.error;
 
     const SALES_W = Math.max(0, Math.min(40, +salesW || 0));
+    // ★ 24 พ.ย. 69 — เก็บตัวเลขยอดขายรายคนไว้เสมอ แม้น้ำหนักจะเป็น 0
+    //   เพราะแผง "ที่มาของคะแนน" ต้องชี้แจงได้ว่าด้านนี้คิดจากกะไหน เทียบกับอะไร
+    //   ตั้งน้ำหนัก 0 = ไม่เอามาคิดคะแนน แต่ยังต้องอ่านดูได้
     const SALES_BY = {};
-    if (SALES_W > 0 && salesR) (salesR.people || []).forEach(z => { SALES_BY[String(z.emp_id)] = z; });
+    if (salesR) (salesR.people || []).forEach(z => { SALES_BY[String(z.emp_id)] = z; });
 
     // นับเป็น "วัน" ไม่ใช่ "แถว" — ลงเวลาสองกะในวันเดียวต้องนับเป็นวันเดียว
     const everSet = {};
@@ -8490,18 +8498,32 @@
       // ★ 9 พ.ย. 69 — ใช้ assist (7 อย่าง) แทน help (2 อย่าง) · เต็ม 100 ที่ 8 ครั้งในรอบ
       axes.push({ k: 'assist', label: 'ความรับผิดชอบเสริม', w: 10, v: Math.min(100, assist / 8 * 100),
         why: assist ? ('รับงานเสริม ' + assist + ' ครั้ง (เต็มที่ 8)') : 'ยังไม่เคยรับงานนอกกะในรอบนี้' });
-      // ★ 18 พ.ย. 69 — ยอดขายในกะของตัวเอง
-      //   คิดสองทางแล้วเอาทางที่ดีกว่าให้พนักงาน เพื่อไม่ลงโทษคนที่เป้าสาขาตั้งไว้สูงเกินจริง:
-      //     ก) ทำเป้าได้ = เต็ม — % ของเป้าเฉลี่ยในกะตัวเอง (100% ขึ้นไป = 100 คะแนน)
-      //     ข) เทียบกับเพื่อนในผลัดเดียวกัน สาขาเดียวกัน — เท่าค่าเฉลี่ย = 50, ดีกว่า 20% = เต็ม
-      //   ต้องมีอย่างน้อย SALES_MIN_SHIFTS กะที่มีเป้าใช้ได้ ไม่งั้นข้ามด้านนี้ไปเลย
+      // ★ 24 พ.ย. 69 — เปลี่ยนวิธีคิดด้าน "ยอดขายในกะตัวเอง" ทั้งหมด
+      //   ของเดิม (18 พ.ย. 69) เอา max ของสองทาง โดยทางหนึ่งคือ min(100, % ของเป้า)
+      //   วัดกับของจริงรอบ 21 ต.ค.–20 พ.ย. 69 (54 คนที่เข้าเกณฑ์): คน 51 คนได้ 100 เต็ม
+      //   ส่วนเบี่ยงเบนของด้านนี้ = 0.4 จุด · ต่ำสุด 98.2 — แปลว่าแทบไม่ได้แยกใครออกจากใครเลย
+      //   สาเหตุ: ค่าเฉลี่ยที่ทำได้จริงคือ 107.9% ของเป้า (เป้าตั้งไว้ต่ำกว่าที่ทำได้) จึงชนเพดานพร้อมกันหมด
+      //   ผลเสียที่เกิดขึ้นจริง: ด้านนี้กลายเป็นแจกฟรีเท่ากันทุกคน แล้วไปเจือจางด้านที่วัดได้จริง
+      //   (ตรงเวลา 25 · มาครบ 25 · คุณภาพงาน 20 · วินัย 20) ลงประมาณ 9% ของคะแนนรวม
+      //   ของใหม่: เทียบกับเพื่อนใน "ผลัดเดียวกัน สาขาเดียวกัน" แล้วถ่วงตามจำนวนกะก่อน
+      //     (adj_idx_pct จาก _salesPeopleCore — คนเข้ากะน้อยจะถูกดึงเข้าหาค่ากลาง ไม่ได้เปรียบและไม่เสียเปรียบ)
+      //     เท่าค่าเฉลี่ยกลุ่ม = STAR_SALES_MID คะแนน · ต่างจากค่าเฉลี่ย 1 จุด = STAR_SALES_SLOPE คะแนน
+      //   ผลกับข้อมูลจริงชุดเดียวกัน: เฉลี่ย 70.7 · ช่วง 45.6–89.5 · ไม่มีใครชน 0 หรือ 100
+      //     คะแนนรวมของแต่ละคนขยับ -1 ถึง -4.9 จุด (ที่น้ำหนัก 10) ตามผลงานจริง ไม่ใช่ลดเท่ากันหมด
+      //   ตั้งใจไม่ใช้ "% ของเป้า" เป็นตัวให้คะแนนอีก เพราะเป้าเป็นของสาขา ไม่ใช่ของพนักงาน
+      //     ถ้าเป้าตั้งหลวมทุกคนได้เต็ม ถ้าเป้าตั้งแน่นทุกคนตก — ทั้งสองแบบไม่ได้วัดตัวพนักงาน
+      //     แต่ยังแสดง % ของเป้าไว้ในคำอธิบาย เพราะเป็นภาษาที่หน้าร้านใช้คุยกัน
       const _sp = SALES_BY[String(e.emp_id)];
-      if (_sp && _sp.nt >= SALES_MIN_SHIFTS && _sp.avg_pct != null) {
-        const vA = Math.min(100, _sp.avg_pct);
-        const vB = (_sp.idx_pct == null) ? 0 : Math.max(0, Math.min(100, 50 + (_sp.idx_pct - 100) * 2.5));
-        axes.push({ k: 'sales', label: 'ยอดขายในกะตัวเอง', w: SALES_W, v: Math.max(0, Math.max(vA, vB)),
-          why: 'ทำได้ ' + Math.round(_sp.avg_pct) + '% ของเป้า · ถึงเป้า ' + _sp.hit + '/' + _sp.nt + ' กะ'
-             + (_sp.idx_pct == null ? '' : (' · ' + (_sp.idx_pct >= 100 ? 'สูงกว่า' : 'ต่ำกว่า') + 'ค่าเฉลี่ยผลัดเดียวกัน ' + Math.abs(Math.round(_sp.idx_pct - 100)) + '%')) });
+      if (SALES_W > 0 && _sp && _sp.nt >= SALES_MIN_SHIFTS && _sp.adj_idx_pct != null) {
+        const _gap = Math.round((_sp.adj_idx_pct - 100) * 10) / 10;
+        const _cf  = _sp.conf === 'high' ? 'เชื่อถือได้' : (_sp.conf === 'mid' ? 'พอใช้' : 'กะยังน้อย ยังตัดสินไม่ได้');
+        axes.push({ k: 'sales', label: 'ยอดขายในกะตัวเอง', w: SALES_W,
+          v: Math.max(0, Math.min(100, STAR_SALES_MID + (_sp.adj_idx_pct - 100) * STAR_SALES_SLOPE)),
+          why: 'จาก ' + _sp.shifts + ' กะ · ' + (_gap >= 0 ? 'สูงกว่า' : 'ต่ำกว่า') + 'ค่าเฉลี่ยผลัดเดียวกัน '
+             + Math.abs(_gap) + '% (ถ่วงจำนวนกะแล้ว)'
+             + (_sp.idx_pct == null ? '' : (' · เลขดิบ ' + (Math.round((_sp.idx_pct - 100) * 10) / 10 >= 0 ? '+' : '') + (Math.round((_sp.idx_pct - 100) * 10) / 10) + '%'))
+             + (_sp.avg_pct == null ? '' : (' · ทำได้ ' + Math.round(_sp.avg_pct) + '% ของเป้า'))
+             + ' · ถึงเป้า ' + _sp.hit + '/' + _sp.nt + ' กะ · ' + _cf });
       }
       const wsum = axes.reduce((s, a) => s + a.w, 0);
       const rank_score = wsum ? Math.round(axes.reduce((s, a) => s + a.v * a.w, 0) / wsum * 10) / 10 : null;
@@ -8547,6 +8569,19 @@
         medals, star: medals.length >= 3, tone, foot, thin,
         help_count: help, assist_count: assist, exam_total: myEx.length, exam_pass_all: exFirstAll,
         rank_score, rank_axes, eligible: block.length === 0, block_reasons: block,
+        // ★ 24 พ.ย. 69 — ตัวเลขยอดขายดิบ+ถ่วง ติดไปกับการ์ด เพื่อให้แผง "ที่มาของคะแนน"
+        //   ชี้แจงได้ว่าด้านยอดขายคิดจากกี่กะ เทียบกับอะไร เชื่อได้แค่ไหน และอะไรที่เขาคุมได้เอง
+        //   ไม่ต้องยิง API เพิ่มอีกรอบตอนกดดู (ข้อมูลชุดนี้คำนวณไปแล้วอยู่ดี)
+        sales: _sp ? {
+          shifts: _sp.shifts, by_shift: _sp.by_shift, crew_avg: _sp.crew_avg,
+          nt: _sp.nt, hit: _sp.hit, hit_pct: _sp.hit_pct, adj_hit_pct: _sp.adj_hit_pct,
+          hit_lo: _sp.hit_lo, hit_hi: _sp.hit_hi, swing: _sp.swing, conf: _sp.conf,
+          avg_pct: _sp.avg_pct, idx_pct: _sp.idx_pct, adj_idx_pct: _sp.adj_idx_pct,
+          avg_sale: _sp.avg_sale, idx_sale: _sp.idx_sale, adj_idx_sale: _sp.adj_idx_sale,
+          avg_head: _sp.avg_head, idx_head: _sp.idx_head, adj_idx_head: _sp.adj_idx_head,
+          cafe: _sp.cafe, jeeb: _sp.jeeb, salapao: _sp.salapao, deliv: _sp.deliv,
+          counted: !!(SALES_W > 0 && _sp.nt >= SALES_MIN_SHIFTS && _sp.adj_idx_pct != null),
+        } : null,
       };
     }).sort((a, b) => (b.medals.length - a.medals.length) || String(a.name).localeCompare(String(b.name), 'th'));
 
@@ -8583,6 +8618,9 @@
       //   ถ้ายืนยันกลางรอบแล้วเขาขาดงานทีหลัง ธงกับเบี้ย 500 จะค้างอยู่ทั้งที่ไม่ผ่านเกณฑ์แล้ว
       star: { per_branch: STAR_PER_BRANCH, by_branch: starByBranch, table_missing: aw.missing, closed: cyc.end < today,
               min_shifts: STAR_MIN_SHIFTS },
+      // ★ 24 พ.ย. 69 — กติกาของด้านยอดขาย ส่งไปให้หน้าเว็บอธิบายตรง ๆ ไม่ต้อง hard-code ซ้ำสองที่
+      sales_meta: { weight: SALES_W, min_shifts: SALES_MIN_SHIFTS, mid: STAR_SALES_MID, slope: STAR_SALES_SLOPE,
+                    shrink_k: salesR ? salesR.shrink_k : null, mu_hit: salesR ? salesR.mu_hit : null },
       stats: { total: rows.length, star: rows.filter(r => r.star).length, watch: rows.filter(r => r.tone === 'bad' || r.tone === 'warn').length },
     };
   }
