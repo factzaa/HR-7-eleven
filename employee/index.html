@@ -818,6 +818,8 @@ $('toast').onclick = ()=>$('toast').classList.remove('show');
 
 // ====== events ======
 let PIN_OK_FOR='', PIN_BUSY=false;
+// ★ 24 พ.ย. 69 — รหัสที่เช็กรางวัลพนักงานดีเด่นไปแล้วในการเปิดแอปครั้งนี้ (กันยิงซ้ำทุกตัวอักษร)
+const STAR_CHECKED=new Set();
 $('empId').addEventListener('input', async e=>{
   e.target.value = e.target.value.replace(/\D/g,'');
   empMatch = lookupEmp(e.target.value);
@@ -832,6 +834,13 @@ $('empId').addEventListener('input', async e=>{
   }
   if(!empMatch) PIN_OK_FOR='';
   try{ if(empMatch) HRSession.setEmp(empMatch.emp_id); }catch(_e){}   // จำรหัสข้ามหน้า
+  // ★ 24 พ.ย. 69 — ใส่รหัส + PIN ถูกปุ๊บ ฉากฉลองพนักงานดีเด่นเด้งเลย
+  //   ของเดิมรอให้เปิดหน้า "สถานะของฉัน" ซึ่งพนักงานส่วนใหญ่ไม่ได้เปิดทุกวัน → คนได้รางวัลไม่มีทางเห็น
+  //   เช็กครั้งเดียวต่อรหัสต่อการเปิดแอปหนึ่งครั้ง ไม่ยิงซ้ำทุกตัวอักษรที่พิมพ์
+  if(empMatch && !empMatch.unknown && PIN_OK_FOR===empMatch.emp_id && !STAR_CHECKED.has(empMatch.emp_id)){
+    STAR_CHECKED.add(empMatch.emp_id);
+    checkStarAward(empMatch.emp_id, empMatch);
+  }
   evaluateZone();   // ประเมินสาขาใหม่ โดยยึดสาขาประจำของพนักงานคนนี้
   renderHint($('empHint'), empMatch, e.target.value);
   updateUI();
@@ -1739,13 +1748,38 @@ function renderBranchStars(bs, myId){
 function starUnseen(hist, empId){
   return (hist||[]).find(x => !x.seen_at && !HR.starSeenLocal(empId, x.cycle)) || null;
 }
-// เรียกหลังพนักงานทำธุระเสร็จแล้วเท่านั้น (ไม่เด้งทับตอนกำลังลงเวลา)
-async function checkStarAward(empId, emp){
+// ★ 24 พ.ย. 69 — มีหน้าต่างอื่นเปิดค้างอยู่ไหม (ประกาศ HR / แจ้งเตือน / ข้อเสนอลา / ผลการลงเวลา ฯลฯ)
+//   ฉากฉลองห้ามไปทับของพวกนี้ เพราะเป็นเรื่องที่ต้องกดรับทราบจริง ๆ
+function starBusy(){
+  try{
+    const ov=document.getElementById('stOv');
+    if(ov && ov.classList.contains('show')) return true;              // เด้งอยู่แล้ว ไม่ต้องซ้อน
+    const ann=document.getElementById('annPopOv');
+    if(ann && ann.style.display!=='none' && ann.innerHTML) return true;
+    for(const id of ['ackOverlay','notifOverlay','propOverlay','rulesOverlay','regOverlay','selfOverlay']){
+      const el=document.getElementById(id);
+      if(el && el.classList.contains('show')) return true;
+    }
+  }catch(e){}
+  return false;
+}
+// ★ 24 พ.ย. 69 — เด้งทันทีที่ใส่รหัสผ่าน PIN ถูก (พี่แฟคสั่ง: ให้ขึ้นเลย ไม่ต้องรอเปิดหน้าสถานะ)
+//   ถ้าจังหวะนั้นมีหน้าต่างอื่นค้างอยู่ จะรอแล้วลองใหม่เป็นระยะ ไม่ใช่เงียบหายไปเลย
+let STAR_WAIT=null;
+async function checkStarAward(empId, emp, tries){
   try{
     if(!empId || !HR.myStarAwards) return;
     const hist=await HR.myStarAwards(empId);
     const aw=starUnseen(hist, empId);
-    if(aw) starCelebrate(aw, emp||empMatch);
+    if(!aw) return;
+    const who=emp||empMatch;
+    if(starBusy()){
+      if((tries||0) >= 12) return;                                    // ~18 วินาที แล้วปล่อย ไว้เจอกันรอบหน้า
+      if(STAR_WAIT) clearTimeout(STAR_WAIT);
+      STAR_WAIT=setTimeout(()=>checkStarAward(empId, who, (tries||0)+1), 1500);
+      return;
+    }
+    starCelebrate(aw, who);
   }catch(e){ /* เงียบ */ }
 }
 
