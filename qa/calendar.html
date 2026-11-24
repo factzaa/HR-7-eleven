@@ -26,6 +26,10 @@
   .chip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 15px;font:inherit;font-size:14px;cursor:pointer;color:var(--txt)}
   .chip.on{background:var(--green);border-color:var(--green);color:#fff}
   .chip .n{opacity:.65;font-size:12px;margin-left:4px}
+  /* ★ 24 พ.ย. 69 — เดือนที่ผ่านมาแล้ว (พิมพ์ย้อนหลังได้ แต่ให้เห็นชัดว่าไม่ใช่เดือนข้างหน้า) */
+  .chip.past{border-style:dashed;color:var(--muted)}
+  .chip.past.on{background:#64748b;border-color:#64748b;border-style:solid;color:#fff}
+  .chip .pt{font-size:11px;opacity:.7;margin-left:4px}
   .warn{background:#fff7e6;border:1px solid #f3d9a4;color:#8a5a00;border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.7;margin-bottom:12px}
   .hide{display:none!important}
   .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .7s linear infinite}
@@ -116,7 +120,7 @@
         <select id="brSel"></select>
         <label style="margin-top:12px">เดือนที่สินค้าจะหมดอายุ (เลือกได้หลายเดือน)</label>
         <div class="chips" id="mChips"></div>
-        <p class="muted" style="margin-top:8px">ตอนนี้ <b id="nowMon">—</b> — ปกติติดบอร์ดล่วงหน้า 2 เดือน</p>
+        <p class="muted" style="margin-top:8px">ตอนนี้ <b id="nowMon">—</b> — ปกติติดบอร์ดล่วงหน้า 2 เดือน · เดือนที่ผ่านมาแล้ว (เส้นประ) เลือกพิมพ์ย้อนหลังได้ถึง 2 เดือน สำหรับตรวจทานหรือทำเอกสารย้อนหลัง</p>
         <div style="display:flex;gap:9px;margin-top:13px;flex-wrap:wrap">
           <button class="btn btn-pri" id="buildBtn" style="flex:1;min-width:150px">ดูตัวอย่างก่อนพิมพ์</button>
           <button class="btn btn-sec" id="printBtn" style="flex:1;min-width:150px" disabled>🖨 พิมพ์</button>
@@ -151,6 +155,8 @@ let EMP=null, BRANCHES={}, ITEMS=[], MONTHS=[], SEL=new Set(), BAD=[];
 
 function bkkToday(){ return new Date(Date.now()+7*3600*1000).toISOString().slice(0,10); }
 function branchName(id){ return BRANCHES[id]||id||'(ไม่ระบุสาขา)'; }
+// ★ 24 พ.ย. 69 — ย้อนหลังได้กี่เดือน (พิมพ์ใบของเดือนที่ผ่านมาแล้วเพื่อตรวจทาน/ทำเอกสาร)
+const BACK_MONTHS=2;
 function monKey(d){ return d.slice(0,7); }
 function monLabel(k){ const [y,m]=k.split('-').map(Number); return TH_MON[m-1]+' '+(y+543); }
 function monLabelS(k){ const [y,m]=k.split('-').map(Number); return TH_MON_S[m-1]+' '+String(y+543).slice(2); }
@@ -224,10 +230,14 @@ async function loadItems(){
   BAD=rows.filter(r=>r.expiry_date && parseInt(r.expiry_date.slice(0,4),10)>2400);
   ITEMS=rows.map(r=>Object.assign({},r,{ exp:ceDate(r.expiry_date), be:(parseInt((r.expiry_date||'0').slice(0,4),10)>2400) }))
             .filter(r=>r.exp);
-  // เดือนที่เลือกได้ = ตั้งแต่เดือนนี้ไป 12 เดือน + เดือนที่มีของจริง
+  // เดือนที่เลือกได้ = ย้อนหลัง BACK_MONTHS เดือน ถึงล่วงหน้า 12 เดือน + เดือนที่มีของจริง
+  // ★ 24 พ.ย. 69 — เปิดให้พิมพ์ย้อนหลังได้ 2 เดือน
+  //   ของเดิมตัดเดือนที่ผ่านมาแล้วทิ้งทั้งหมด พอสิ้นเดือนจะพิมพ์ใบของเดือนที่เพิ่งจบไม่ได้เลย
+  //   ทั้งที่ของยังอยู่บนเชลฟ์และต้องใช้ตรวจทาน/ทำเอกสารย้อนหลัง
+  const minK=addMon(nowK,-BACK_MONTHS);
   const set=new Set();
-  for(let i=0;i<13;i++) set.add(addMon(nowK,i));
-  ITEMS.forEach(r=>{ if(r.exp>=nowK+'-01') set.add(monKey(r.exp)); });
+  for(let i=-BACK_MONTHS;i<13;i++) set.add(addMon(nowK,i));
+  ITEMS.forEach(r=>{ const k=monKey(r.exp); if(k>=minK) set.add(k); });
   MONTHS=[...set].sort();
   SEL=new Set([addMon(nowK,1), addMon(nowK,2)]);
   renderChips();
@@ -241,7 +251,9 @@ function countOf(k){
 function renderChips(){
   $('mChips').innerHTML=MONTHS.map(k=>{
     const n=countOf(k);
-    return '<button class="chip'+(SEL.has(k)?' on':'')+'" data-m="'+k+'">'+esc(monLabel(k))+'<span class="n">'+n+'</span></button>';
+    const past = k < monKey(bkkToday());
+    return '<button class="chip'+(SEL.has(k)?' on':'')+(past?' past':'')+'" data-m="'+k+'">'
+      +esc(monLabel(k))+'<span class="n">'+n+'</span>'+(past?'<span class="pt">ย้อนหลัง</span>':'')+'</button>';
   }).join('');
   $('mChips').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{
     const k=b.dataset.m; if(SEL.has(k)) SEL.delete(k); else SEL.add(k);
