@@ -19135,6 +19135,144 @@ const SDP_SORTS=[['idx_pct','% ของเป้า (เทียบผลั�
   ['idx_head','ยอดต่อหัว'],['cafe','All Cafe'],['jeeb','ขนมจีบ'],['salapao','ซาลาเปา'],['deliv','Delivery'],['shifts','จำนวนกะ']];
 function sdpIdxCls(v){ return v==null?'':(v>=105?'ok':(v>=95?'':'bad')); }
 function sdpIdxTxt(v){ return v==null?'—':(v>=100?'+':'')+Math.round(v-100)+'%'; }
+// ★ 24 พ.ย. 69 — จัดอันดับด้วยเลขที่ถ่วงจำนวนกะแล้ว (ดูเหตุผลใน shared/hr-api.js)
+//   เลขดิบยังโชว์ใต้เลขถ่วงทุกช่อง เพื่อให้ตรวจย้อนได้ว่ามาจากไหน
+const SDP_ADJ={idx_pct:'adj_idx_pct',hit_pct:'adj_hit_pct',idx_sale:'adj_idx_sale',idx_head:'adj_idx_head'};
+const SDP_CONF={high:['เชื่อถือได้','ok'],mid:['พอใช้','' ],low:['ยังตัดสินไม่ได้','warn']};
+function sdpConf(p){ const c=SDP_CONF[p.conf]||SDP_CONF.low;
+  return '<span class="pill '+c[1]+'" style="font-size:10px;padding:1px 7px" title="จำนวนกะยิ่งน้อย ตัวเลขยิ่งเหวี่ยง'
+    +(p.swing!=null?(' — รอบนี้เหวี่ยงได้ถึง ±'+p.swing+' จุดจากดวงล้วน ๆ'):'')+'">'+c[0]+'</span>'; }
+// ★ 24 พ.ย. 69 — กดที่แถวเพื่อดู "ตัวเลขนี้มาจากไหน · เทียบกับอะไร · เชื่อได้แค่ไหน · คุมอะไรได้เอง"
+//   ส่วนที่เป็นข้อเท็จจริงคำนวณตรงจากข้อมูล ไม่ได้ให้ AI เขียน — AI มาต่อตอน "ควรคุยยังไง" เท่านั้น
+//   เจตนา: เวลาเอาไปคุยกับพนักงาน ต้องชี้ได้ว่าเลขมาจากกะไหนบ้าง ไม่ใช่ยื่นเปอร์เซ็นต์ลอย ๆ ให้เขา
+function sdpOpen(empId){
+  const r=SDP_DATA; if(!r) return;
+  const p=(r.people||[]).find(x=>String(x.emp_id)===String(empId)); if(!p) return;
+  const mine=(r.shift_rows||[]).filter(x=>(x.ids||[]).map(String).includes(String(empId)));
+  const peers=(r.people||[]).filter(x=>x.enough && x.branch_id===p.branch_id && x.emp_id!==p.emp_id);
+  const avgOf=(a,k)=>{ const v=a.map(x=>x[k]).filter(x=>x!=null); return v.length? v.reduce((s,x)=>s+x,0)/v.length : null; };
+  const n1=v=>v==null?'—':(Math.round(v*10)/10).toLocaleString('th-TH');
+  const sec=(t,b)=>'<div style="margin-top:14px"><div style="font-weight:700;font-size:13.5px;margin-bottom:5px">'+t+'</div>'+b+'</div>';
+  const li=a=>'<ul style="margin:0;padding-left:18px;font-size:12.5px;line-height:1.85">'+a.map(x=>'<li>'+x+'</li>').join('')+'</ul>';
+
+  // 1) เลขนี้มาจากไหน
+  const shBits=['เช้า','บ่าย','ดึก'].filter(s=>p.by_shift[s]).map(s=>s+' '+p.by_shift[s]+' กะ');
+  const s1=li([
+    'นับจาก <b>'+p.shifts+' กะ</b> ที่ '+esc(p.nickname||p.name)+' ลงเวลาเข้างานจริง<b>และ</b>กะนั้นมียอดขายบันทึกไว้ ('+shBits.join(' · ')+')',
+    'ยอดขายเป็นของ<b>ทั้งกะ</b> — ทุกคนที่อยู่ในกะเดียวกันได้ตัวเลขชุดเดียวกัน เฉลี่ยกะละ '+p.crew_avg+' คน',
+    '<b>% ของเป้า</b> = เอา (ยอดจริง ÷ เป้า) ของแต่ละกะมาเฉลี่ย ได้ <b>'+(p.avg_pct==null?'—':Math.round(p.avg_pct)+'%')+'</b> '
+      +'แล้วเทียบกับค่าเฉลี่ยของ<b>ผลัดเดียวกัน สาขาเดียวกัน</b>ในช่วงนี้ → ดิบ '+sdpIdxTxt(p.idx_pct),
+    '<b>ทำเป้าสำเร็จ</b> = '+p.hit+' จาก '+p.nt+' กะที่มีเป้าใช้ได้ → ดิบ '+(p.hit_pct==null?'—':p.hit_pct+'%'),
+    'ตัวเลขใหญ่ที่เห็นในตารางคือเลขที่<b>ถ่วงจำนวนกะแล้ว</b> (ดึงเข้าหาค่ากลางของกลุ่ม '+(r.mu_hit||'—')+'% เทียบเท่าการสมมุติว่าทุกคนมี '+(r.shrink_k||12)+' กะฝีมือกลาง ๆ ติดตัวมาก่อน) → '
+      +'% ของเป้า <b>'+sdpIdxTxt(p.adj_idx_pct)+'</b> · ทำเป้าสำเร็จ <b>'+(p.adj_hit_pct==null?'—':p.adj_hit_pct+'%')+'</b>',
+  ]);
+
+  // 2) เชื่อถือได้แค่ไหน
+  const cf=SDP_CONF[p.conf]||SDP_CONF.low;
+  const s2=li([
+    'ความน่าเชื่อถือของตัวเลขชุดนี้: <b>'+cf[0]+'</b> (จาก '+p.shifts+' กะ)',
+    p.swing!=null?('ที่จำนวนกะเท่านี้ ตัวเลขเหวี่ยงได้ถึง <b>±'+p.swing+' จุด</b> จากดวงล้วน ๆ โดยที่ฝีมือไม่ได้เปลี่ยน'):'—',
+    p.hit_lo!=null?('อัตราทำเป้าที่แท้จริงของเขาอยู่ที่ไหนสักแห่งระหว่าง <b>'+p.hit_lo+'–'+p.hit_hi+'%</b> '
+      +(p.hit_hi-p.hit_lo>=35?'— ช่วงนี้กว้างมาก ยังฟันธงไม่ได้ว่าดีกว่าหรือแย่กว่าคนอื่น':'— ช่วงแคบพอจะเอาไปคุยได้')):'—',
+    (p.shifts<12?'<b>ข้อควรระวัง</b> เข้ากะน้อย ตัวเลขยังไม่นิ่ง อย่าเพิ่งเอาไปตัดสินหรือเทียบอันดับกับคนที่เข้ากะเยอะ':
+      'เข้ากะพอสมควรแล้ว ตัวเลขนิ่งระดับที่เอาไปตั้งต้นคุยได้'),
+  ]);
+
+  // 3) สิ่งที่คุมได้เอง
+  const CTL=[['cafe','All Cafe','แก้ว/กะ'],['jeeb','ขนมจีบ','ชิ้น/กะ'],['salapao','ซาลาเปา','ลูก/กะ'],['deliv','Delivery','บิล/กะ']];
+  const ctlRows=CTL.map(([k,t,u])=>{ const me=p[k], pr=avgOf(peers,k);
+    const d=(me!=null&&pr!=null&&pr>0)?Math.round((me/pr-1)*100):null;
+    return '<tr><td style="padding:3px 8px 3px 0">'+t+'</td><td class="mono" style="text-align:right;padding:3px 10px">'+n1(me)+' <span style="color:var(--muted);font-size:11px">'+u+'</span></td>'
+      +'<td class="mono" style="text-align:right;color:var(--muted);padding:3px 10px">'+n1(pr)+'</td>'
+      +'<td style="padding:3px 0"><span class="pill '+(d==null?'':(d>=5?'ok':(d<=-5?'bad':'')))+'" style="font-size:11px;padding:1px 7px">'+(d==null?'—':(d>0?'+':'')+d+'%')+'</span></td></tr>'; }).join('');
+  const s3='<div style="font-size:12.5px;color:var(--muted);margin-bottom:5px">ยอดรวมของกะเขาคุมไม่ได้ (ฝนตก ของขาด เครื่องเสีย ลูกค้าประจำ) — ตัวพวกนี้คุมได้จริง ควรให้น้ำหนักมากกว่า</div>'
+    +'<table style="font-size:12.5px"><thead><tr><th style="text-align:left;font-weight:600">รายการ</th><th style="text-align:right;font-weight:600">ของเขา</th>'
+    +'<th style="text-align:right;font-weight:600;color:var(--muted)">เพื่อนในสาขา</th><th></th></tr></thead><tbody>'+ctlRows
+    +'<tr><td style="padding:3px 8px 3px 0">ยอดต่อหัว</td><td class="mono" style="text-align:right;padding:3px 10px">'+(p.avg_head==null?'—':_thb(Math.round(p.avg_head)))+'</td>'
+    +'<td style="text-align:right;color:var(--muted);padding:3px 10px;font-size:11px">เทียบผลัดเดียวกัน</td>'
+    +'<td style="padding:3px 0"><span class="pill '+sdpIdxCls(p.adj_idx_head)+'" style="font-size:11px;padding:1px 7px">'+sdpIdxTxt(p.adj_idx_head)+'</span></td></tr>'
+    +'</tbody></table>';
+
+  // 4) กะที่เอามาคิด (ย้อนดูได้ว่ามาจากวันไหนบ้าง)
+  const lastRows=mine.slice(0,12).map(x=>'<tr><td style="white-space:nowrap;padding:2px 10px 2px 0">'+(+x.sale_date.slice(8,10))+'/'+(+x.sale_date.slice(5,7))
+    +' <span style="color:'+(SDS_COLOR[x.shift]||'var(--muted)')+';font-size:11.5px">'+esc(x.shift)+'</span></td>'
+    +'<td class="mono" style="text-align:right;padding:2px 10px">'+_thb(x.sale)+'</td>'
+    +'<td class="mono" style="text-align:right;color:var(--muted);padding:2px 10px">'+(x.tgt?_thb(x.tgt):'—')+'</td>'
+    +'<td style="padding:2px 10px"><span class="pill '+(x.pct==null?'':(x.pct>=100?'ok':'bad'))+'" style="font-size:11px;padding:1px 7px">'+(x.pct==null?'เป้าผิด':Math.round(x.pct)+'%')+'</span></td>'
+    +'<td style="color:var(--muted);font-size:11.5px;padding:2px 0">'+x.n+' คน</td></tr>').join('');
+  const s4='<div style="max-height:220px;overflow:auto"><table style="font-size:12.5px;width:100%"><thead><tr>'
+    +'<th style="text-align:left;font-weight:600">วันที่</th><th style="text-align:right;font-weight:600">ยอดจริง</th>'
+    +'<th style="text-align:right;font-weight:600;color:var(--muted)">เป้า</th><th style="font-weight:600">ถึงเป้า</th><th style="font-weight:600">ทีม</th></tr></thead>'
+    +'<tbody>'+lastRows+'</tbody></table></div>'
+    +(mine.length>12?('<div style="font-size:11.5px;color:var(--muted);margin-top:4px">แสดง 12 กะล่าสุด จากทั้งหมด '+mine.length+' กะ</div>'):'');
+
+  const head='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
+    +'<div><div style="font-size:17px;font-weight:700">'+esc(p.nickname||p.name)+'</div>'
+    +'<div style="font-size:12px;color:var(--muted)">'+esc(p.name)+' · '+esc(p.branch_name)+' · '+p.shifts+' กะ '+sdpConf(p)+'</div></div>'
+    +'<button class="btn btn-sec btn-sm" type="button" id="sdpClose">ปิด</button></div>';
+  const nida='<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'
+    +'<button class="btn btn-pri btn-sm" type="button" id="sdpNida">ให้นิดาสรุปและเสนอหัวข้อคุย</button>'
+    +'<div id="sdpNidaOut" style="margin-top:10px;font-size:13px;line-height:1.85;white-space:pre-wrap"></div></div>';
+
+  let ov=$('sdpOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='sdpOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 14px;overflow:auto';
+    document.body.appendChild(ov); }
+  ov.innerHTML='<div style="background:var(--card,#fff);border-radius:16px;max-width:760px;width:100%;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.25)">'
+    +head
+    +sec('1 · ตัวเลขนี้มาจากไหน เทียบกับอะไร', s1)
+    +sec('2 · เชื่อถือได้แค่ไหน', s2)
+    +sec('3 · สิ่งที่เขาคุมได้เอง', s3)
+    +sec('4 · กะที่เอามาคิด', s4)
+    +nida+'</div>';
+  ov.style.display='flex';
+  ov.onclick=e=>{ if(e.target===ov) ov.style.display='none'; };
+  $('sdpClose').onclick=()=>{ ov.style.display='none'; };
+  $('sdpNida').onclick=()=>sdpAskNida(p, mine, peers);
+}
+// ให้นิดาต่อยอดเฉพาะส่วน "ควรคุยยังไง" — ข้อเท็จจริงส่งไปให้ครบ ไม่ให้ไปเดาเอง
+async function sdpAskNida(p, mine, peers){
+  const btn=$('sdpNida'), out=$('sdpNidaOut'); if(!btn||!out) return;
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> นิดากำลังอ่าน…'; out.textContent='';
+  try{
+    const avgOf=(a,k)=>{ const v=a.map(x=>x[k]).filter(x=>x!=null); return v.length? Math.round(v.reduce((s,x)=>s+x,0)/v.length*10)/10 : null; };
+    const facts={
+      ชื่อเล่น:p.nickname||p.name, สาขา:p.branch_name, จำนวนกะที่นับ:p.shifts, แยกผลัด:p.by_shift,
+      เฉลี่ยคนต่อกะ:p.crew_avg,
+      เปอร์เซ็นต์ของเป้าเฉลี่ย:p.avg_pct, ดัชนีเทียบผลัดเดียวกัน_ดิบ:p.idx_pct, ดัชนีหลังถ่วงจำนวนกะ:p.adj_idx_pct,
+      ทำเป้าสำเร็จ:p.hit+'/'+p.nt, ทำเป้าสำเร็จเปอร์เซ็นต์ดิบ:p.hit_pct, ทำเป้าหลังถ่วง:p.adj_hit_pct,
+      ช่วงความเชื่อมั่นของอัตราทำเป้า:(p.hit_lo!=null?(p.hit_lo+'-'+p.hit_hi+'%'):null),
+      ความเหวี่ยงจากดวงล้วนๆ:(p.swing!=null?('±'+p.swing+' จุด'):null),
+      ความน่าเชื่อถือ:(SDP_CONF[p.conf]||SDP_CONF.low)[0],
+      สิ่งที่คุมได้เอง:{ AllCafe:p.cafe, ขนมจีบ:p.jeeb, ซาลาเปา:p.salapao, Delivery:p.deliv, ยอดต่อหัว:p.avg_head },
+      ค่าเฉลี่ยเพื่อนในสาขาเดียวกัน:{ AllCafe:avgOf(peers,'cafe'), ขนมจีบ:avgOf(peers,'jeeb'),
+        ซาลาเปา:avgOf(peers,'salapao'), Delivery:avgOf(peers,'deliv') },
+      กะล่าสุด:mine.slice(0,10).map(x=>({ วันที่:x.sale_date, ผลัด:x.shift, ยอด:x.sale, เป้า:x.tgt,
+        เปอร์เซ็นต์ของเป้า:x.pct, คนในกะ:x.n })),
+    };
+    const prompt='คุณคือนิดา ผู้ช่วยฝ่ายบุคคลของร้าน 7-Eleven พูดไทยแบบคนทำงานหน้าร้าน ไม่ใช้ศัพท์วิชาการ\n'
+      +'ด้านล่างคือตัวเลขผลงานขายของพนักงาน 1 คน ที่ดึงจากระบบจริง\n\n'
+      +'กติกาสำคัญที่ต้องเข้าใจก่อนตอบ:\n'
+      +'- ยอดขายเป็นผลงานของทั้งกะ ไม่ใช่ของคนคนเดียว ห้ามพูดเหมือนเขาทำยอดคนเดียว\n'
+      +'- "ดัชนีหลังถ่วงจำนวนกะ" คือตัวเลขที่ดึงเข้าหาค่ากลางตามจำนวนกะแล้ว คนเข้ากะน้อยตัวเลขเหวี่ยงมาก จึงถูกดึงแรงกว่า\n'
+      +'- ถ้าช่วงความเชื่อมั่นกว้าง หรือเข้ากะน้อยกว่า 12 กะ ให้บอกตรง ๆ ว่ายังตัดสินไม่ได้ ห้ามชมหรือตำหนิแรง\n'
+      +'- สิ่งที่พนักงานคุมได้จริงคือ All Cafe / ขนมจีบ / ซาลาเปา / Delivery / ยอดต่อหัว ให้น้ำหนักกับพวกนี้มากกว่ายอดรวม\n\n'
+      +'เขียนตอบสั้น ๆ 3 ส่วน หัวข้อละ 2-4 บรรทัด ไม่ต้องใส่หัวข้อซ้ำ ไม่ต้องสรุปซ้ำท้ายคำตอบ:\n'
+      +'1) สรุปว่าตอนนี้เขาอยู่ตรงไหน และเชื่อตัวเลขนี้ได้แค่ไหน\n'
+      +'2) จุดที่น่าชมจริง ๆ กับจุดที่ควรดูต่อ (อิงเฉพาะตัวที่เขาคุมได้)\n'
+      +'3) ถ้าจะเรียกมาคุย ควรเปิดบทสนทนาว่าอย่างไร ขอ 1-2 ประโยคที่ใช้พูดได้เลย\n\n'
+      +'ตัวเลขจริง:\n'+JSON.stringify(facts, null, 1);
+    const {base,key}=asstApiBase(); if(!base) throw new Error('ไม่พบ URL ระบบ');
+    const res=await fetch(base+'/functions/v1/hr-assistant',{ method:'POST',
+      headers:{ 'Content-Type':'application/json', apikey:key, Authorization:'Bearer '+key },
+      body: JSON.stringify({ password:pwd, messages:[{ role:'user', text:prompt }] }) });
+    const j=await res.json().catch(()=>({}));
+    const body=String((j&&(j.reply||j.text||j.message))||'').trim();
+    if(!body) throw new Error((j&&j.error)||'นิดาไม่ตอบกลับ');
+    out.textContent=body;
+  }catch(e){ console.error(e); out.innerHTML='<span style="color:var(--red)">'+esc(e.message||'ขอให้นิดาสรุปไม่สำเร็จ')+'</span>'; }
+  finally{ btn.disabled=false; btn.textContent='ให้นิดาสรุปและเสนอหัวข้อคุย'; }
+}
 async function drawSalesPeople(){
   const box=$('sdp_body'); box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   const r=await post({ action:'hr_sales_crew', password:pwd, branch_id:$('sd_branch').value||'', start:$('sd_start').value, end:$('sd_end').value });
@@ -19148,7 +19286,8 @@ function sdpRender(){
   const ready=people.filter(p=>p.enough), few=people.filter(p=>!p.enough);
   const multi=!$('sd_branch').value;
   const num=v=>v==null?-1e9:v;
-  const srt=ready.slice().sort((a,b)=>num(b[SDP_SORT])-num(a[SDP_SORT]));
+  const sortKey=SDP_ADJ[SDP_SORT]||SDP_SORT;
+  const srt=ready.slice().sort((a,b)=>num(b[sortKey])-num(a[sortKey]));
 
   const note='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#1e3a8a;line-height:1.75">'
     +'<b>อ่านยังไงให้ยุติธรรม</b> — ยอดขายเป็นผลงานของ <b>ทั้งกะ</b> ไม่ใช่ของคนใดคนหนึ่ง ตารางนี้จึงให้ทุกคนที่อยู่ในกะได้ค่าเท่ากัน '
@@ -19156,7 +19295,10 @@ function sdpRender(){
     +'(กะดึกยอดน้อยกว่ากะบ่ายโดยธรรมชาติ จึงไม่เอายอดดิบมาเทียบกันตรง ๆ)<br>'
     +'ใช้เป็น<b>หัวข้อตั้งต้นในการคุยและโค้ช</b> ไม่ใช่คำตัดสิน — สิ่งที่อยู่นอกการควบคุมของพนักงานมีเยอะ (ฝนตก ของขาด เครื่องเสีย ลูกค้าประจำ) '
     +'ตัวที่พนักงานคุมได้จริงคือ <b>All Cafe / ขนมจีบ / ซาลาเปา / Delivery / ยอดต่อหัว</b> ควรให้น้ำหนักกับคอลัมน์พวกนี้มากกว่ายอดรวม<br>'
-    +'นับเฉพาะกะที่<b>ลงเวลาเข้างานจริง</b>และ<b>มียอดขายบันทึกไว้</b> · ต้องมีอย่างน้อย <b>'+r.min_shifts+' กะ</b> จึงจะเอามาเทียบ · รวม '+r.shifts_counted+' กะในช่วงนี้'
+    +'นับเฉพาะกะที่<b>ลงเวลาเข้างานจริง</b>และ<b>มียอดขายบันทึกไว้</b> · ต้องมีอย่างน้อย <b>'+r.min_shifts+' กะ</b> จึงจะเอามาเทียบ · รวม '+r.shifts_counted+' กะในช่วงนี้<br>'
+    +'<b>ตัวเลขใหญ่ถูกถ่วงตามจำนวนกะแล้ว</b> — คนเข้ากะน้อยตัวเลขจะเหวี่ยงแรงกว่ามาก (5 กะ เหวี่ยงได้ ±20 จุดจากดวงล้วน ๆ · 25 กะ เหลือ ±9) '
+    +'ระบบจึงดึงเลขของคนกะน้อยเข้าหาค่ากลางของกลุ่ม ('+(r.mu_hit!=null?r.mu_hit+'%':'ค่าเฉลี่ยรวม')+') ก่อนจัดอันดับ '
+    +'ทั้งขาขึ้นและขาลง — เลขดิบยังแสดงไว้ใต้ทุกช่อง · <b>กดที่แถวเพื่อดูที่มาของตัวเลขและให้นิดาสรุปให้</b>'
     +'</div>';
 
   const sortSel='<div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><span style="font-size:13px;color:var(--muted)">เรียงตาม</span>'
@@ -19164,18 +19306,20 @@ function sdpRender(){
     +SDP_SORTS.map(([k,t])=>'<option value="'+k+'"'+(k===SDP_SORT?' selected':'')+'>'+t+'</option>').join('')+'</select></div>';
 
   const shTxt=p=>['เช้า','บ่าย','ดึก'].filter(sh=>p.by_shift[sh]).map(sh=>'<span style="color:'+SDS_COLOR[sh]+'">'+sh+' '+p.by_shift[sh]+'</span>').join(' · ');
-  const row=(p,i)=>'<tr><td style="color:var(--muted);text-align:right">'+(i+1)+'</td>'
+  const raw=t=>'<div style="font-size:10.5px;color:var(--muted)">'+t+'</div>';
+  const row=(p,i)=>'<tr data-sdpopen="'+esc(p.emp_id)+'" style="cursor:pointer" title="กดเพื่อดูที่มาของตัวเลขและให้นิดาสรุป">'
+    +'<td style="color:var(--muted);text-align:right">'+(i+1)+'</td>'
     +'<td style="white-space:nowrap"><b>'+esc(p.nickname||p.name)+'</b>'+(p.is_manager?' <span class="pill">ผจก.</span>':'')
       +'<div style="font-size:11px;color:var(--muted)">'+esc(p.name)+(multi?(' · '+esc(p.branch_name)):'')+'</div></td>'
-    +'<td style="white-space:nowrap;font-size:12px">'+p.shifts+' กะ<div style="font-size:11px">'+shTxt(p)+'</div></td>'
-    +'<td><span class="pill '+sdpIdxCls(p.idx_pct)+'">'+sdpIdxTxt(p.idx_pct)+'</span>'
-      +'<div style="font-size:11px;color:var(--muted)">'+(p.avg_pct==null?'—':Math.round(p.avg_pct)+'% ของเป้า')+'</div></td>'
-    +'<td style="white-space:nowrap"><span class="pill '+(p.hit_pct>=70?'ok':(p.hit_pct>=40?'warn':'bad'))+'">'+(p.hit_pct==null?'—':p.hit_pct+'%')+'</span>'
-      +'<div style="font-size:11px;color:var(--muted)">'+p.hit+'/'+p.nt+' กะ</div></td>'
-    +'<td><span class="pill '+sdpIdxCls(p.idx_sale)+'">'+sdpIdxTxt(p.idx_sale)+'</span>'
-      +'<div class="mono" style="font-size:11px;color:var(--muted)">'+_thb(p.avg_sale)+'</div></td>'
-    +'<td><span class="pill '+sdpIdxCls(p.idx_head)+'">'+sdpIdxTxt(p.idx_head)+'</span>'
-      +'<div class="mono" style="font-size:11px;color:var(--muted)">'+(p.avg_head==null?'—':_thb(Math.round(p.avg_head))+'/หัว')+'</div></td>'
+    +'<td style="white-space:nowrap;font-size:12px">'+p.shifts+' กะ '+sdpConf(p)+'<div style="font-size:11px">'+shTxt(p)+'</div></td>'
+    +'<td><span class="pill '+sdpIdxCls(p.adj_idx_pct)+'">'+sdpIdxTxt(p.adj_idx_pct)+'</span>'
+      +raw('ดิบ '+sdpIdxTxt(p.idx_pct)+' · '+(p.avg_pct==null?'—':Math.round(p.avg_pct)+'% ของเป้า'))+'</td>'
+    +'<td style="white-space:nowrap"><span class="pill '+(p.adj_hit_pct>=70?'ok':(p.adj_hit_pct>=40?'warn':'bad'))+'">'+(p.adj_hit_pct==null?'—':p.adj_hit_pct+'%')+'</span>'
+      +raw('ดิบ '+(p.hit_pct==null?'—':p.hit_pct+'%')+' · '+p.hit+'/'+p.nt+' กะ'+(p.hit_lo!=null?(' · ช่วงจริง '+p.hit_lo+'–'+p.hit_hi+'%'):''))+'</td>'
+    +'<td><span class="pill '+sdpIdxCls(p.adj_idx_sale)+'">'+sdpIdxTxt(p.adj_idx_sale)+'</span>'
+      +raw('ดิบ '+sdpIdxTxt(p.idx_sale)+' · ฿'+_thb(p.avg_sale))+'</td>'
+    +'<td><span class="pill '+sdpIdxCls(p.adj_idx_head)+'">'+sdpIdxTxt(p.adj_idx_head)+'</span>'
+      +raw('ดิบ '+sdpIdxTxt(p.idx_head)+' · '+(p.avg_head==null?'—':_thb(Math.round(p.avg_head))+'/หัว'))+'</td>'
     +['cafe','jeeb','salapao','deliv'].map(k=>'<td class="mono" style="text-align:right">'+(p[k]==null?'—':p[k])+'</td>').join('')
     +'</tr>';
   const table='<div class="card"><div class="tablewrap"><table>'
@@ -19292,6 +19436,7 @@ function sdpRender(){
   box.innerHTML=note+sortSel+table+fewBox+crewBox;
   sdpWireCrew();
   const sel=$('sdp_sort'); if(sel) sel.onchange=()=>{ SDP_SORT=sel.value; sdpRender(); };
+  box.querySelectorAll('[data-sdpopen]').forEach(tr=>tr.onclick=()=>sdpOpen(tr.dataset.sdpopen));
 }
 
 // ★ 19 พ.ย. 69 — คุณภาพข้อมูลยอดขาย: ไล่ดูเลขที่คีย์ผิดจากฟอร์มในไลน์ แล้วกดแก้ได้ในที่เดียว
