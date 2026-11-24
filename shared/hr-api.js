@@ -336,6 +336,7 @@
         case 'hr_mgrrec_delete':  return await hrMgrRecurringDelete(p.id);
         case 'hr_mgrrec_testclear': return await hrMgrRecTestClear();
         case 'hr_warnings_list':  return await hrWarningsList();
+        case 'hr_warning_stats':  return await hrWarningStats(p.data, p);
         case 'hr_warning_issue':  return await hrWarningIssue(p.data);
         case 'hr_warning_get':    return await hrWarningGet(p.warning_id);
         case 'hr_warning_update': return await hrWarningUpdate(p.data);
@@ -2912,6 +2913,51 @@
     let n = 0;
     if (data && data.length) { const m = String(data[0].warning_id).match(/(\d+)$/); if (m) n = parseInt(m[1], 10) || 0; }
     return pre + String(n + 1).padStart(4, '0');
+  }
+
+  // ============================================================
+  // ★ 24 พ.ย. 69 — สถิติ "สะสมย้อนหลัง" สำหรับใบเตือน
+  //   ปัญหาจริงที่เจอกับใบ W-2026-0013: ส่วนที่ 1 ของเอกสารดึงสถิติ "เฉพาะรอบปัจจุบัน"
+  //   ออกใบวันที่ 24 พ.ย. ซึ่งรอบใหม่ (21 พ.ย.–20 ธ.ค.) เพิ่งเริ่มได้ 4 วัน → สาย 0 ครั้ง 0 นาที
+  //   แต่เนื้อหาในส่วนที่ 2 เขียนว่า "มาสายรวม 60 นาที ขาดงาน 2 ครั้ง ออกก่อนเวลา 70 นาที"
+  //   เอกสารจึงขัดกันเอง และอ่านแล้วเหมือนพนักงานไม่ได้ทำอะไรผิด — เป็นจุดอ่อนทางกฎหมาย
+  //   สาเหตุ: ระบบตัดสินว่าควรออกใบเตือนจาก "ประวัติสะสม N เดือน" (disc_window_months)
+  //           แต่เอกสารกลับโชว์แค่รอบเดียว ซึ่งเป็นคนละช่วงกัน
+  //   ทางแก้: คืนสถิติของทั้งช่วงสะสม ให้เอกสารโชว์คู่กับรอบปัจจุบัน
+  //   ใช้ hrEmpSummary ตัวเดิมคิดให้ ตัวเลขจะได้ตรงกับหน้าสรุปรายบุคคลเป๊ะ ๆ ไม่มีสูตรที่สอง
+  //   ช่วงเวลายึดจาก "วันที่ออกเอกสาร" ย้อนหลัง N เดือน — เปิดเอกสารเดิมซ้ำเมื่อไรก็ได้ช่วงเดิม
+  // ============================================================
+  async function hrWarningStats(p, auth) {
+    p = p || {};
+    if (!p.emp_id) return { ok: false, error: 'ไม่ระบุพนักงาน' };
+    const months = await getSettingNum('disc_window_months', 6);
+    const m = (months > 0 ? months : 6);
+    const end = String(p.to || bkkToday()).slice(0, 10);
+    let start = p.from ? String(p.from).slice(0, 10) : '';
+    if (!start) {
+      const d0 = new Date(end + 'T00:00:00');
+      d0.setMonth(d0.getMonth() - m);
+      start = d0.toISOString().slice(0, 10);
+    }
+    let r;
+    try { r = await hrEmpSummary({ emp_id: p.emp_id, start, end }, auth); }
+    catch (e) { return { ok: false, error: String(e.message || e) }; }
+    if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'ดึงสถิติย้อนหลังไม่สำเร็จ' };
+    const a = r.attendance || {};
+    // นับขั้นวินัยที่เคยทำในช่วงเดียวกัน ไว้ประกอบเอกสารด้วย
+    const hist = (r.disc_history || []).filter(h => String(h.at || '').slice(0, 10) >= start);
+    // ออกก่อนเวลา: รวมเป็น "นาที" ตรง ๆ จากรายวัน ไม่แปลงกลับจากชั่วโมงที่ปัดแล้ว
+    //   (1.1667 ชม. ปัดเป็น 1.2 → คูณ 60 ได้ 72 นาที ทั้งที่ของจริง 70 — เอกสารทางวินัยพลาดแบบนี้ไม่ได้)
+    const eoMin = ((r.details || {}).early_out || []).reduce((s, x) => s + (Number(x.min) || 0), 0);
+    return {
+      ok: true, months: m, start, end,
+      late_count: a.late_count || 0, late_total: a.late_total || 0,
+      absent: a.absent || 0, leave_days: a.leave_days || 0,
+      early_out_count: a.early_out_count || 0, early_out_min: eoMin, early_out_hours: a.early_out_hours || 0,
+      days_should: a.days_should || 0, days_worked: a.days_worked || 0,
+      disc_count: hist.length,
+      warn_count: hist.filter(h => h.type === 'warning').length,
+    };
   }
 
   async function hrWarningIssue(d) {
