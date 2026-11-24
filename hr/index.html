@@ -1347,6 +1347,10 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
 .ec-f-warn{background:#fff7ed;color:#9a3412;border-top:1px solid #fed7aa}
 .ec-f-bad{background:#fef2f2;color:#b91c1c;border-top:1px solid #fecaca}
 .ec-f-none{background:#f8fafc;color:#64748b;border-top:1px solid #e2e8f0}
+/* ★ 24 พ.ย. 69 — ชิปเล็กบนท้ายการ์ด กดดูที่มาของคะแนนรวม (คนละปุ่มกับการกดการ์ดเพื่อเปิดสรุปเต็ม) */
+.ec-why{display:inline-block;margin-top:3px;font-style:normal;font-size:9px;font-weight:600;letter-spacing:.2px;
+  padding:1px 7px;border-radius:999px;background:rgba(15,23,42,.08);color:inherit;opacity:.9;cursor:pointer}
+.ec-why:hover{background:rgba(15,23,42,.16);opacity:1}
 .ec-star{position:absolute;top:36px;right:6px;z-index:2;background:#eab308;color:#fff;width:21px;height:21px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 5px rgba(0,0,0,.25)}
 .ec-legend{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:18px}
@@ -17362,6 +17366,163 @@ async function loadEmpCards(force){
   if(!r||!r.ok){ $('es_cards').innerHTML='<div class="empty">'+esc((r&&r.error)||'โหลดไม่สำเร็จ')+'</div>'; return; }
   EC_DATA=r; ecCacheSet(cyc,r); renderEmpCards();
 }
+// ============================================================
+// ★ 24 พ.ย. 69 — แผง "ที่มาของคะแนนพนักงานดีเด่น"
+//   เจตนา: เวลาพนักงานถามว่า "ทำไมเขาได้ ผมไม่ได้" ต้องชี้ได้ทีละด้านว่ามาจากตัวเลขอะไร
+//   ทุกอย่างในแผงนี้คำนวณจากข้อมูลจริงที่ API ส่งมาแล้ว ไม่ได้ให้ AI เขียน
+//   นิดามาต่อเฉพาะส่วน "ควรคุยกับเขาว่าอย่างไร" ท้ายสุด
+// ============================================================
+const ECW_CONF={high:['เชื่อถือได้','ok'],mid:['พอใช้',''],low:['กะยังน้อย ยังตัดสินไม่ได้','warn']};
+// คืนเนื้อแผง 4 ส่วน (ไม่รวมหัวและปุ่มนิดา) — ใช้ร่วมกันทั้งแบบ modal และแบบฝังในหน้าสรุปรายบุคคล
+function ecWhySections(r, D){
+  const sm=(D&&D.sales_meta)||{};
+  const n1=v=>v==null?'—':(Math.round(v*10)/10).toLocaleString('th-TH');
+  const sgn=v=>v==null?'—':((v>0?'+':'')+(Math.round(v*10)/10));
+  const sec=(t,b)=>'<div style="margin-top:14px"><div style="font-weight:700;font-size:13.5px;margin-bottom:5px">'+t+'</div>'+b+'</div>';
+  const li=a=>'<ul style="margin:0;padding-left:18px;font-size:12.5px;line-height:1.85">'+a.filter(Boolean).map(x=>'<li>'+x+'</li>').join('')+'</ul>';
+
+  // 1) คะแนนรวมมาจากด้านไหนบ้าง — ด้านที่ไม่มีข้อมูลถูกข้ามไป น้ำหนักเฉลี่ยจากที่เหลือ
+  const ax=(r.rank_axes||[]);
+  const axRows=ax.map(a=>'<tr><td style="padding:3px 10px 3px 0;white-space:nowrap">'+esc(a.label)+'</td>'
+    +'<td style="padding:3px 0;width:38%"><span style="display:block;height:7px;border-radius:99px;background:rgba(15,23,42,.1)">'
+      +'<i style="display:block;height:7px;border-radius:99px;background:var(--pri,#0f766e);width:'+Math.max(2,Math.min(100,a.pct))+'%"></i></span></td>'
+    +'<td class="mono" style="text-align:right;padding:3px 10px;white-space:nowrap">'+n1(a.got)+'<span style="color:var(--muted)">/'+n1(a.full)+'</span></td>'
+    +'<td style="color:var(--muted);font-size:11.5px;padding:3px 0">'+esc(a.why||'')+'</td></tr>').join('');
+  const s1='<table style="font-size:12.5px;width:100%"><tbody>'+axRows
+    +'<tr><td style="padding:6px 10px 0 0;font-weight:700">รวม</td><td></td>'
+    +'<td class="mono" style="text-align:right;padding:6px 10px 0;font-weight:700">'+n1(r.rank_score)+'<span style="color:var(--muted)">/100</span></td><td></td></tr>'
+    +'</tbody></table>'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:5px">ด้านที่ยังไม่มีข้อมูลจะถูก<b>ข้ามไป</b> ไม่ใช่ให้ 0 '
+    +'แล้วเฉลี่ยจากน้ำหนักที่เหลือ — เลขช่องขวาคือ "ได้เท่าไรจากเต็มเท่าไร" บวกกันได้ตรง ๆ</div>';
+
+  // 2) เข้าชิงรางวัลได้หรือยัง — ประตูขั้นต่ำ คนละเรื่องกับคะแนนมากน้อย
+  const s2=r.eligible
+    ? '<div style="font-size:12.5px"><span class="pill ok">ผ่านเกณฑ์เข้าชิงครบทุกข้อ</span> '
+      +'<span style="color:var(--muted)">มาครบ · สายไม่เกิน 1 · วินัยเต็ม · ไม่มีงานค้างแก้ · วันทำงานสะสม '+(r.days_ever||0)+' วัน</span></div>'
+    : li((r.block_reasons||['—']).map(x=>'<span style="color:var(--red)">'+esc(x)+'</span>'));
+
+  // 3) ด้านยอดขาย — เชื่อถือได้แค่ไหน และทำไมไม่ใช้ "% ของเป้า" มาให้คะแนนแล้ว
+  const sp=r.sales;
+  let s3;
+  if(!sp){ s3='<div style="font-size:12.5px;color:var(--muted)">รอบนี้ยังไม่มีกะที่ทั้งลงเวลาจริงและมียอดขายบันทึกไว้ — ด้านนี้ถูกข้ามไป</div>'; }
+  else {
+    const cf=ECW_CONF[sp.conf]||ECW_CONF.low;
+    const shBits=['เช้า','บ่าย','ดึก'].filter(s=>sp.by_shift&&sp.by_shift[s]).map(s=>s+' '+sp.by_shift[s]).join(' · ');
+    s3=li([
+      'นับจาก <b>'+sp.shifts+' กะ</b> ที่ลงเวลาจริงและกะนั้นมียอดขายบันทึกไว้'+(shBits?(' ('+shBits+')'):'')
+        +' · เฉลี่ยกะละ '+n1(sp.crew_avg)+' คน <span class="pill '+cf[1]+'" style="font-size:10px;padding:1px 7px">'+cf[0]+'</span>',
+      'เทียบกับเพื่อนใน<b>ผลัดเดียวกัน สาขาเดียวกัน</b>: เลขดิบ <b>'+sgn(sp.idx_pct==null?null:sp.idx_pct-100)+'%</b> → '
+        +'ถ่วงจำนวนกะแล้ว <b>'+sgn(sp.adj_idx_pct==null?null:sp.adj_idx_pct-100)+'%</b>'
+        +(sp.counted?(' → คิดเป็น <b>'+n1(Math.max(0,Math.min(100,(sm.mid||70)+((sp.adj_idx_pct||100)-100)*(sm.slope||4))))+'</b> คะแนนด้านนี้')
+                    :' <span style="color:var(--muted)">(ยังไม่เอามาคิดคะแนน — ต้องมีกะที่มีเป้าใช้ได้อย่างน้อย '+(sm.min_shifts||5)+' กะ)</span>'),
+      sp.swing!=null?('ที่จำนวนกะเท่านี้ ตัวเลขเหวี่ยงได้ถึง <b>±'+sp.swing+' จุด</b> จากดวงล้วน ๆ'
+        +(sp.hit_lo!=null?(' · อัตราทำเป้าจริงอยู่ช่วง <b>'+sp.hit_lo+'–'+sp.hit_hi+'%</b>'):'')):null,
+      'ทำได้ <b>'+(sp.avg_pct==null?'—':Math.round(sp.avg_pct)+'%')+' ของเป้า</b> · ถึงเป้า '+sp.hit+'/'+sp.nt+' กะ — '
+        +'<span style="color:var(--muted)">ตัวเลขนี้<b>ไม่ได้</b>ใช้ให้คะแนนแล้ว เพราะเป้าเป็นของสาขา ไม่ใช่ของพนักงาน '
+        +'เป้าหลวมทุกคนได้เต็ม เป้าแน่นทุกคนตก (รอบที่วัด ค่าเฉลี่ยทุกคนอยู่ที่ '+(sm.mu_hit!=null?('ถึงเป้า '+sm.mu_hit+'% ของกะ'):'สูงกว่าเป้า')+') — เก็บไว้ให้คุยกันเท่านั้น</span>',
+    ]);
+  }
+
+  // 4) สิ่งที่เขาคุมได้เอง — เทียบกับเพื่อนในสาขาเดียวกันที่มีข้อมูลพอ
+  let s4='<div style="font-size:12.5px;color:var(--muted)">ยังไม่มีข้อมูลพอเทียบ</div>';
+  if(sp){
+    const peers=((D&&D.rows)||[]).filter(x=>x.sales && x.branch_id===r.branch_id && x.emp_id!==r.emp_id && x.sales.shifts>=(sm.min_shifts||5));
+    const avgOf=k=>{ const v=peers.map(x=>x.sales[k]).filter(z=>z!=null); return v.length? v.reduce((s,z)=>s+z,0)/v.length : null; };
+    const CTL=[['cafe','All Cafe','แก้ว/กะ'],['jeeb','ขนมจีบ','ชิ้น/กะ'],['salapao','ซาลาเปา','ลูก/กะ'],['deliv','Delivery','บิล/กะ']];
+    const rowsH=CTL.map(([k,t,u])=>{ const me=sp[k], pr=avgOf(k);
+      const d=(me!=null&&pr!=null&&pr>0)?Math.round((me/pr-1)*100):null;
+      return '<tr><td style="padding:3px 8px 3px 0">'+t+'</td>'
+        +'<td class="mono" style="text-align:right;padding:3px 10px">'+n1(me)+' <span style="color:var(--muted);font-size:11px">'+u+'</span></td>'
+        +'<td class="mono" style="text-align:right;color:var(--muted);padding:3px 10px">'+n1(pr)+'</td>'
+        +'<td style="padding:3px 0"><span class="pill '+(d==null?'':(d>=5?'ok':(d<=-5?'bad':'')))+'" style="font-size:11px;padding:1px 7px">'+(d==null?'—':(d>0?'+':'')+d+'%')+'</span></td></tr>'; }).join('');
+    s4='<div style="font-size:12.5px;color:var(--muted);margin-bottom:5px">ยอดรวมของกะเขาคุมไม่ได้ (ฝนตก ของขาด เครื่องเสีย) — ตัวพวกนี้คุมได้จริง ควรให้น้ำหนักมากกว่าเวลาคุยกัน</div>'
+      +'<table style="font-size:12.5px"><thead><tr><th style="text-align:left;font-weight:600">รายการ</th>'
+      +'<th style="text-align:right;font-weight:600">ของเขา</th><th style="text-align:right;font-weight:600;color:var(--muted)">เพื่อนในสาขา</th><th></th></tr></thead><tbody>'+rowsH
+      +'<tr><td style="padding:3px 8px 3px 0">ยอดต่อหัว</td>'
+      +'<td class="mono" style="text-align:right;padding:3px 10px">'+(sp.avg_head==null?'—':_thb(Math.round(sp.avg_head)))+'</td>'
+      +'<td style="text-align:right;color:var(--muted);padding:3px 10px;font-size:11px">เทียบผลัดเดียวกัน</td>'
+      +'<td style="padding:3px 0"><span class="pill '+sdpIdxCls(sp.adj_idx_head)+'" style="font-size:11px;padding:1px 7px">'+sdpIdxTxt(sp.adj_idx_head)+'</span></td></tr>'
+      +'</tbody></table>';
+  }
+
+  return sec('1 · คะแนนรวมมาจากด้านไหนบ้าง', s1)
+    +sec('2 · เข้าชิงรางวัลได้หรือยัง', s2)
+    +sec('3 · ด้านยอดขาย เชื่อถือได้แค่ไหน', s3)
+    +sec('4 · สิ่งที่เขาคุมได้เอง', s4);
+}
+function ecWhyOpen(empId){
+  const D=EC_DATA; if(!D) return;
+  const r=(D.rows||[]).find(x=>String(x.emp_id)===String(empId)); if(!r) return;
+  const head='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
+    +'<div><div style="font-size:17px;font-weight:700">'+esc(r.nickname||r.name)+(r.star_award?' <span class="pill ok" style="font-size:10px">ดีเด่นรอบนี้</span>':'')+'</div>'
+    +'<div style="font-size:12px;color:var(--muted)">'+esc(r.name)+' · '+esc(r.branch_name)+' · รอบนี้ '+(r.shifts||0)+' วัน · สะสม '+(r.days_ever||0)+' วัน</div></div>'
+    +'<button class="btn btn-sec btn-sm" type="button" id="ecwClose">ปิด</button></div>';
+  const nida='<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'
+    +'<button class="btn btn-pri btn-sm" type="button" id="ecwNida">ให้นิดาสรุปและเสนอหัวข้อคุย</button>'
+    +'<div id="ecwNidaOut" style="margin-top:10px;font-size:13px;line-height:1.85;white-space:pre-wrap"></div></div>';
+
+  let ov=$('ecwOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='ecwOv';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 14px;overflow:auto';
+    document.body.appendChild(ov); }
+  ov.innerHTML='<div style="background:var(--card,#fff);border-radius:16px;max-width:780px;width:100%;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.25)">'
+    +head+ecWhySections(r, EC_DATA)+nida+'</div>';
+  ov.style.display='flex';
+  ov.onclick=e=>{ if(e.target===ov) ov.style.display='none'; };
+  $('ecwClose').onclick=()=>{ ov.style.display='none'; };
+  $('ecwNida').onclick=()=>ecWhyNida(r,'ecwNida','ecwNidaOut');
+}
+// ส่งข้อเท็จจริงให้นิดาครบ แล้วขอแค่ "ควรคุยยังไง" — ไม่ให้ไปเดาตัวเลขเอง
+async function ecWhyNida(r, btnId, outId){
+  const btn=$(btnId||'ecwNida'), out=$(outId||'ecwNidaOut'); if(!btn||!out) return;
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> นิดากำลังอ่าน…'; out.textContent='';
+  try{
+    const D=EC_DATA||{}, sm=D.sales_meta||{}, sp=r.sales;
+    const peers=(D.rows||[]).filter(x=>x.sales && x.branch_id===r.branch_id && x.emp_id!==r.emp_id && x.sales.shifts>=(sm.min_shifts||5));
+    const avgOf=k=>{ const v=peers.map(x=>x.sales[k]).filter(z=>z!=null); return v.length? Math.round(v.reduce((s,z)=>s+z,0)/v.length*10)/10 : null; };
+    const facts={
+      ชื่อเล่น:r.nickname||r.name, สาขา:r.branch_name, ตำแหน่ง:r.position||'พนักงานร้าน',
+      วันทำงานรอบนี้:r.shifts, วันทำงานสะสม:r.days_ever, สายในรอบ:r.late_count, ขาดงานในรอบ:r.absent_count,
+      คะแนนรวม:r.rank_score,
+      คะแนนรายด้าน:(r.rank_axes||[]).map(a=>({ ด้าน:a.label, ได้:a.got, เต็ม:a.full, ที่มา:a.why })),
+      เข้าชิงรางวัลได้:r.eligible, เหตุที่ยังไม่เข้าชิง:r.block_reasons||[],
+      ได้รางวัลรอบนี้แล้ว:!!r.star_award,
+      ด้านยอดขาย: sp? {
+        จำนวนกะที่นับ:sp.shifts, แยกผลัด:sp.by_shift, เฉลี่ยคนต่อกะ:sp.crew_avg,
+        ดัชนีเทียบผลัดเดียวกันดิบ:sp.idx_pct, ดัชนีหลังถ่วงจำนวนกะ:sp.adj_idx_pct,
+        เปอร์เซ็นต์ของเป้าเฉลี่ย:sp.avg_pct, ถึงเป้า:sp.hit+'/'+sp.nt,
+        ช่วงอัตราทำเป้าที่แท้จริง:(sp.hit_lo!=null?(sp.hit_lo+'-'+sp.hit_hi+'%'):null),
+        ความเหวี่ยงจากดวงล้วนๆ:(sp.swing!=null?('±'+sp.swing+' จุด'):null),
+        ความน่าเชื่อถือ:(ECW_CONF[sp.conf]||ECW_CONF.low)[0],
+        สิ่งที่คุมได้เอง:{ AllCafe:sp.cafe, ขนมจีบ:sp.jeeb, ซาลาเปา:sp.salapao, Delivery:sp.deliv, ยอดต่อหัว:sp.avg_head },
+        ค่าเฉลี่ยเพื่อนในสาขา:{ AllCafe:avgOf('cafe'), ขนมจีบ:avgOf('jeeb'), ซาลาเปา:avgOf('salapao'), Delivery:avgOf('deliv') },
+      } : null,
+    };
+    const prompt='คุณคือนิดา ผู้ช่วยฝ่ายบุคคลของร้าน 7-Eleven พูดไทยแบบคนทำงานหน้าร้าน ไม่ใช้ศัพท์วิชาการ\n'
+      +'ด้านล่างคือคะแนน "พนักงานดีเด่นประจำเดือน" ของพนักงาน 1 คน ที่ระบบคำนวณจากข้อมูลจริง\n\n'
+      +'กติกาสำคัญที่ต้องเข้าใจก่อนตอบ:\n'
+      +'- รางวัลนี้คัดจาก 7 ด้าน ตรงต่อเวลาและมาครบตามเวรมีน้ำหนักมากที่สุด ไม่ใช่วัดจากยอดขายเป็นหลัก\n'
+      +'- "เข้าชิงรางวัลได้" เป็นประตูขั้นต่ำ คนละเรื่องกับคะแนนมากน้อย ติดข้อเดียวก็ยังไม่เข้าชิงแม้คะแนนจะสูง\n'
+      +'- ยอดขายเป็นผลงานของทั้งกะ ไม่ใช่ของคนคนเดียว ห้ามพูดเหมือนเขาทำยอดคนเดียว\n'
+      +'- "ดัชนีหลังถ่วงจำนวนกะ" ถูกดึงเข้าหาค่ากลางตามจำนวนกะแล้ว คนเข้ากะน้อยตัวเลขเหวี่ยงมาก จึงถูกดึงแรงกว่า\n'
+      +'- เปอร์เซ็นต์ของเป้าไม่ได้ใช้ให้คะแนนแล้ว เพราะเป้าเป็นของสาขา ไม่ใช่ของพนักงาน อย่าเอามาชมหรือตำหนิ\n'
+      +'- ถ้าช่วงอัตราทำเป้ากว้าง หรือเข้ากะน้อยกว่า 12 กะ ให้บอกตรง ๆ ว่ายังตัดสินไม่ได้\n\n'
+      +'เขียนตอบสั้น ๆ 3 ส่วน หัวข้อละ 2-4 บรรทัด ไม่ต้องใส่หัวข้อซ้ำ ไม่ต้องสรุปซ้ำท้ายคำตอบ:\n'
+      +'1) คะแนนนี้บอกอะไร ด้านไหนดึงขึ้น ด้านไหนดึงลง และเชื่อตัวเลขได้แค่ไหน\n'
+      +'2) ถ้ายังไม่เข้าชิง ต้องแก้อะไรให้เข้าชิงได้รอบหน้า (อิงเฉพาะข้อที่ติดจริง)\n'
+      +'3) ถ้าจะเรียกมาคุย ควรเปิดบทสนทนาว่าอย่างไร ขอ 1-2 ประโยคที่ใช้พูดได้เลย\n\n'
+      +'ตัวเลขจริง:\n'+JSON.stringify(facts, null, 1);
+    const {base,key}=asstApiBase(); if(!base) throw new Error('ไม่พบ URL ระบบ');
+    const res=await fetch(base+'/functions/v1/hr-assistant',{ method:'POST',
+      headers:{ 'Content-Type':'application/json', apikey:key, Authorization:'Bearer '+key },
+      body: JSON.stringify({ password:pwd, messages:[{ role:'user', text:prompt }] }) });
+    const j=await res.json().catch(()=>({}));
+    const body=String((j&&(j.reply||j.text||j.message))||'').trim();
+    if(!body) throw new Error((j&&j.error)||'นิดาไม่ตอบกลับ');
+    out.textContent=body;
+  }catch(e){ console.error(e); out.innerHTML='<span style="color:var(--red)">'+esc(e.message||'ขอให้นิดาสรุปไม่สำเร็จ')+'</span>'; }
+  finally{ btn.disabled=false; btn.textContent='ให้นิดาสรุปและเสนอหัวข้อคุย'; }
+}
 function ecCardHTML(r){
   const medals=(r.medals||[]).slice(0,3);
   const posTxt=r.position||'พนักงานร้าน';
@@ -17389,7 +17550,9 @@ function ecCardHTML(r){
       + '<span class="ec-pos '+ecPosClass(r)+'">'+esc(posTxt)+'</span>'
       + '<span class="ec-id">รหัส <b>'+esc(r.emp_id)+'</b></span>'
     + '</span>'
-    + '<span class="ec-foot ec-f-'+(r.tone||'none')+'">'+esc(r.foot||'')+'</span>'
+    + '<span class="ec-foot ec-f-'+(r.tone||'none')+'">'+esc(r.foot||'')
+      + ((r.rank_axes&&r.rank_axes.length)?('<br><i class="ec-why" data-ecwhy="'+esc(r.emp_id)+'">ที่มาคะแนน</i>'):'')
+      + '</span>'
     + '</button>';
 }
 // ★ 24 ก.ย. 69 — กรอง/ค้นหา = ซ่อน-โชว์การ์ดที่วาดไว้แล้ว ไม่สร้าง DOM ใหม่
@@ -17490,6 +17653,8 @@ function ecStarPanel(D){
                     +'<span class="sp-wsc">'+esc(String(a.got))+'<small>/'+esc(String(a.full))+'</small></span>'
                     +'<span class="sp-wwhy">'+esc(a.why||'')+'</span></div>').join('')
                 +'<div class="sp-wsum">รวม <b>'+esc(String(s.rank_score))+'</b> คะแนน'
+                /* ★ 24 พ.ย. 69 — ที่มาแบบละเอียด + ให้นิดาสรุปหัวข้อคุย (แถบด้านบนยังอยู่ครบเหมือนเดิม) */
+                +'<button type="button" class="sp-wfull" data-ecwhy="'+esc(s.emp_id)+'">ที่มาละเอียด + ให้นิดาสรุป →</button>'
                 +'<button type="button" class="sp-wfull" data-staropen="'+esc(s.emp_id)+'">เปิดสรุปรายบุคคลเต็ม →</button></div>'
                 +'</div>')
              : '')
@@ -17506,7 +17671,7 @@ function ecStarPanel(D){
     h+='</div>';
     if(reserves.length){
       h+='<div class="sp-res"><span class="sp-reslbl">สำรอง</span>'
-        +reserves.map((c,i)=>'<span class="sp-reschip">'+face(c,26)
+        +reserves.map((c,i)=>'<span class="sp-reschip" data-ecwhy="'+esc(c.emp_id)+'" style="cursor:pointer" title="กดดูที่มาของคะแนน">'+face(c,26)
           +esc(c.nickname||c.name)+' <b>'+esc(String(c.rank_score==null?'—':c.rank_score))+'</b></span>').join('')
         +'</div>';
     }
@@ -17514,6 +17679,13 @@ function ecStarPanel(D){
   });
   h+='<div class="sp-foot">คัดจากหัวข้อประเมินในหน้าสรุปรายบุคคลเท่านั้น — ตรงเวลา 25 · มาครบตามเวร 25 · คุณภาพงานในกะ 20 · วินัย 20 · ความรู้ 10 · ความรับผิดชอบเสริม 10'
     +'<br><span style="opacity:.85">ความรับผิดชอบเสริม = หัวหน้าผลัด · ผู้คุมผลัด · ตรวจเชลฟ์ · QA · รับสินค้า · งานพิเศษ · งานที่ ผจก. มอบ (นับเฉพาะในรอบ)</span>'
+    /* ★ 24 พ.ย. 69 — บอกกติกาด้านยอดขายให้ตรงกับที่คิดจริง ไม่ให้เข้าใจว่ายังวัดจาก % ของเป้า */
+    +((EC_DATA&&EC_DATA.sales_meta&&EC_DATA.sales_meta.weight>0)
+       ? ('<br><span style="opacity:.85">ยอดขายในกะตัวเอง '+EC_DATA.sales_meta.weight+' — เทียบกับเพื่อนใน<b>ผลัดเดียวกัน สาขาเดียวกัน</b> '
+          +'แล้ว<b>ถ่วงตามจำนวนกะ</b>ก่อน (คนเข้ากะน้อยตัวเลขเหวี่ยงแรง จึงถูกดึงเข้าหาค่ากลางทั้งขาขึ้นและขาลง) '
+          +'· ไม่ได้ใช้ "% ของเป้า" ให้คะแนน เพราะเป้าเป็นของสาขาไม่ใช่ของพนักงาน</span>')
+       : '<br><span style="opacity:.85">ยอดขายในกะตัวเอง — ตั้งน้ำหนักเป็น 0 อยู่ จึงยังไม่เอามาคิดคะแนน</span>')
+    +'<br><span style="opacity:.85">กดชิป "ที่มาคะแนน" บนการ์ดพนักงานคนไหนก็ได้ เพื่อดูว่าคะแนนมาจากด้านไหน เชื่อได้แค่ไหน และให้นิดาสรุปหัวข้อคุยให้</span>'
     +(MGR_MODE?'<br>สำนักงาน (HR) เป็นผู้ยืนยันรางวัล หลังรอบจบแล้ว'
               :'<br>ยืนยันได้หลังรอบจบเท่านั้น · ยืนยันแล้ว เบี้ยพนักงานคุณภาพจะขึ้นในสลิปเงินเดือนรอบนั้นให้เอง — กดคำนวณเงินเดือนรอบนั้นใหม่หลังยืนยัน')+'</div></div>';
   return h;
@@ -17583,6 +17755,11 @@ function renderEmpCards(){
     const open = box.style.display==='none';
     box.style.display = open ? '' : 'none';
     el.textContent = open ? 'ซ่อนที่มาของคะแนน ▴' : 'ทำไมถึงได้คะแนนนี้ ▾';
+  }; });
+  // ★ 24 พ.ย. 69 — ชิป "ที่มาคะแนน" บนการ์ดทุกใบ + ปุ่มในแท่นรางวัล + ชิปสำรอง → แผงละเอียด
+  //   stopPropagation ไว้ เพราะการ์ดทั้งใบเป็นปุ่มเปิดสรุปรายบุคคลอยู่แล้ว (คนละปุ่มกัน)
+  $('es_cards').querySelectorAll('[data-ecwhy]').forEach(el=>{ el.onclick=e=>{
+    e.stopPropagation(); e.preventDefault(); ecWhyOpen(el.getAttribute('data-ecwhy'));
   }; });
   ecApplyFilter();
 }
@@ -18143,6 +18320,9 @@ function renderEmpSum(r){
   // ★ 8 พ.ย. 69 — ป้ายพนักงานดีเด่นประจำเดือน (ขึ้นทั้งบนจอและในเอกสารที่พิมพ์)
   let h=esStarBanner(e && e.emp_id);
   h+=renderEmpAnalysis(r);
+  /* ★ 24 พ.ย. 69 — รวมที่มาของคะแนนพนักงานดีเด่นมาไว้ในหน้านี้ด้วย จะได้ไม่ต้องเปิดสองที่
+     โหลดแบบขอเพิ่มทีหลัง (ใช้ชุดเดียวกับหน้าบัตร + แคช sessionStorage) จะได้ไม่ถ่วงหน้าสรุป */
+  h+='<div class="card no-print" id="esRankBox" style="margin-top:12px"><div class="empty" style="padding:10px">กำลังดึงที่มาของคะแนนพนักงานดีเด่น…</div></div>';
   h+='<div class="no-print" style="margin:4px 0 12px"><button class="btn btn-sec btn-sm" id="es_toggle">▸ ดูเอกสาร A4 (ฉบับพิมพ์/เซ็นรับทราบ)</button></div>';
   h+='<div id="es_docwrap" class="es-docwrap" style="display:none"><div class="es-report">';
   h+='<div class="es-head"><div><div class="es-title">สรุปผลการปฏิบัติงานและวินัย รายบุคคล</div>'
@@ -18282,6 +18462,40 @@ function renderEmpSum(r){
   $('an_prev') && ($('an_prev').onclick=()=>{ const m=$('es_mode'); if(!m) return; m.value='previous'; m.dispatchEvent(new Event('change')); genEmpSum(); });
   $('es_ai') && ($('es_ai').onclick=esAskNida);
   $('es_bonus') && ($('es_bonus').onclick=()=>openBonusModal(r.emp.emp_id, r.emp.name, null, ''));
+  esRankFill(r.emp.emp_id);
+}
+// ★ 24 พ.ย. 69 — ที่มาของคะแนนพนักงานดีเด่น ฝังในหน้าสรุปรายบุคคล
+//   ใช้ผลลัพธ์ hr_emp_cards ชุดเดียวกับหน้าบัตร เพื่อให้ตัวเลขสองหน้าตรงกันเสมอ
+//   คะแนนชุดนี้คิดตามรอบเงินเดือน 21–20 เท่านั้น ถ้าผู้ใช้เลือกช่วงวันที่เอง จะบอกไว้ให้ชัด
+async function esRankFill(empId){
+  const box=$('esRankBox'); if(!box) return;
+  const mode=($('es_mode')&&$('es_mode').value)||'current';
+  const cyc=(mode==='previous')?'previous':'current';
+  try{
+    let D=(EC_DATA && EC_DATA.cycle===cyc) ? EC_DATA : (typeof ecCacheGet==='function' ? ecCacheGet(cyc) : null);
+    if(!D){
+      const rr=await post({action:'hr_emp_cards', ...authBody(), data:{cycle:cyc}});
+      if(!rr||!rr.ok) throw new Error((rr&&rr.error)||'โหลดไม่สำเร็จ');
+      D=rr; try{ ecCacheSet(cyc,rr); }catch(_e){}
+      if(!EC_DATA) EC_DATA=rr;
+    }
+    const row=(D.rows||[]).find(x=>String(x.emp_id)===String(empId));
+    if(!row || !(row.rank_axes||[]).length){ box.style.display='none'; return; }
+    const rg=D.range||{};
+    box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">'
+      +'<div style="font-size:15px;font-weight:700">ที่มาของคะแนนพนักงานดีเด่น'
+        +' <span style="font-size:19px;color:var(--pri,#0f766e)">'+esc(String(row.rank_score==null?'—':row.rank_score))+'</span>'
+        +'<span style="font-size:12px;color:var(--muted)">/100</span></div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">รอบ '+esc(beDate(rg.start))+' – '+esc(beDate(rg.end))+''
+        +(mode==='custom'?' · คะแนนรางวัลคิดตามรอบเงินเดือนเท่านั้น ไม่ใช่ช่วงวันที่ที่เลือกไว้ด้านบน':'')+'</div></div>'
+      +ecWhySections(row, D)
+      +'<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'
+      +'<button class="btn btn-pri btn-sm" type="button" id="esRankNida">ให้นิดาสรุปและเสนอหัวข้อคุย</button>'
+      +'<div id="esRankNidaOut" style="margin-top:10px;font-size:13px;line-height:1.85;white-space:pre-wrap"></div></div>';
+    $('esRankNida') && ($('esRankNida').onclick=()=>ecWhyNida(row,'esRankNida','esRankNidaOut'));
+  }catch(e){
+    box.innerHTML='<div class="empty" style="padding:10px">ดึงที่มาของคะแนนพนักงานดีเด่นไม่สำเร็จ — '+esc(e.message||'')+'</div>';
+  }
 }
 
 // ================= เอกสารทางการ (สำหรับสั่งพิมพ์) =================
