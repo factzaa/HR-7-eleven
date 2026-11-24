@@ -9138,6 +9138,21 @@
     // ★ ใบเตือนที่ถูก "ลบ" หรือ "ยกเลิก" ต้องไม่ค้างอยู่ในประวัติ
     //   (แถวใน disc_actions ผูกกับ warning_id — ถ้าใบหายไปแล้วต้องไม่แสดง)
     const { data: wAll } = await sb().from('warnings').select('warning_id,status').eq('emp_id', p.emp_id);
+    // ★ 24 พ.ย. 69 — ประวัติรางวัลพนักงานดีเด่นของคนนี้ (ทุกรอบที่เคยได้ ไม่ใช่เฉพาะรอบนี้)
+    //   ของเดิมหน้าสรุปรู้เรื่องรางวัลจาก EC_DATA (ผลของหน้าบัตร) เท่านั้น — ถ้ายังไม่เคยเปิดแท็บบัตร
+    //   ป้ายรางวัลจะไม่ขึ้นเลย และต่อให้ขึ้น ก็เห็นแค่รอบเดียว ไม่ใช่ประวัติ
+    //   ดึงที่นี่ทีเดียวจบ · ยังไม่ได้รัน star_awards.sql ก็คืนลิสต์ว่าง ไม่ทำให้สรุปพัง
+    let star_history = [];
+    try {
+      const { data: stH, error: stE } = await sb().from('star_awards')
+        .select('cycle,branch_id,amount,rank_score,reasons,note,awarded_by,awarded_at')
+        .eq('emp_id', p.emp_id).order('cycle', { ascending: false }).limit(36);
+      if (!stE) star_history = (stH || []).map(s => Object.assign({}, s, {
+        // รอบนี้ = รอบที่กำลังดูอยู่หรือเปล่า (ใช้ติดป้ายบนหัวเอกสาร)
+        in_range: String(s.cycle || '') === String(end).slice(0, 7),
+      // เรียงซ้ำฝั่งนี้ด้วย ไม่ฝากลำดับไว้กับฐานข้อมูลอย่างเดียว — เอกสารต้องเรียงล่าสุดขึ้นก่อนเสมอ
+      })).sort((a, b) => String(b.cycle || '').localeCompare(String(a.cycle || '')));
+    } catch (_e) { /* ไม่มีตาราง star_awards ก็ข้ามไป */ }
     const liveWarn = new Set((wAll || []).filter(w => w.status !== 'cancelled').map(w => String(w.warning_id)));
     const disc_history = (dvR.data || [])
       .filter(a => a.status !== 'cancelled')                                  // การดำเนินการที่ถูกยกเลิก
@@ -9294,6 +9309,7 @@
       },
       discipline: { level: lv.level, level_name: lv.level_name, level_color: lv.level_color, issued: !!lv.issued },
       disc_history,
+      star_history,
       tasks: { total: t_total, approved: t_approved, submitted: t_submitted, todo: t_todo, sent_back: t_sentback, sent_back_total, pass_rate },
       special: { total: sp_total, approved: sp_approved, submitted: sp_submitted, open: sp_open },
       performance,
