@@ -6101,6 +6101,32 @@ function openIssueWarning(empId){
   $('w_reason').value = (x.action_needed==='warning')
     ? (base + ' · คะแนนวินัยคงเหลือ '+x.score+'/'+(x.start_score||100)+' ซึ่งเข้าข่าย "'+(x.band_label||'')+'" ตามระเบียบบริษัท')
     : '';
+  /* ★ 24 พ.ย. 69 — ดึงประวัติสะสมย้อนหลังมาโชว์ให้ HR เห็นตั้งแต่ตอนกรอก
+     เหตุผล: ระบบตัดสินว่าควรออกใบเตือนจากประวัติสะสม แต่กล่องสรุปเดิมโชว์แค่รอบปัจจุบัน
+     ถ้ารอบเพิ่งเริ่ม HR จะเห็น "สาย 0 ครั้ง" แล้วต้องไปพิมพ์ตัวเลขสะสมเองในเนื้อหา
+     ซึ่งเป็นที่มาของใบ W-2026-0013 ที่ส่วนที่ 1 กับส่วนที่ 2 ขัดกันเอง */
+  (async()=>{
+    try{
+      const rs = await post({ action:'hr_warning_stats', ...authBody(), data:{ emp_id:x.emp_id } });
+      if(!rs || !rs.ok || !$('w_summary')) return;
+      const eoMin = rs.early_out_min||0;
+      $('w_summary').insertAdjacentHTML('beforeend',
+        '<div class="stats" style="margin-top:7px;background:#fffbeb;border:1px solid #f3dfa6;border-radius:10px;padding:9px 11px">'
+        +'<b>ประวัติสะสมย้อนหลัง '+rs.months+' เดือน</b> ('+beDate(rs.start)+' – '+beDate(rs.end)+')<br>'
+        +'สาย <b>'+rs.late_count+'</b> ครั้ง รวม <b>'+rs.late_total+'</b> นาที · ขาดงาน <b>'+rs.absent+'</b> วัน'
+        +(rs.early_out_count?(' · ออกก่อนเวลา <b>'+rs.early_out_count+'</b> ครั้ง'+(eoMin?(' ('+eoMin+' นาที)'):'')):'')
+        +(rs.disc_count?('<br>เคยดำเนินการทางวินัยมาแล้ว <b>'+rs.disc_count+'</b> ครั้ง'+(rs.warn_count?(' · ใบเตือน '+rs.warn_count+' ใบ'):'')):'')
+        +'<br><span style="color:var(--muted)">ตัวเลขชุดนี้คือช่วงที่ระบบใช้ตัดสินขั้นวินัย และจะถูกพิมพ์ลงในเอกสารให้เอง</span></div>');
+      // เติมตัวเลขสะสมเข้าไปในเนื้อหาที่ระบบร่างไว้ให้ด้วย เพื่อไม่ให้เนื้อหากับสถิติขัดกัน
+      const ta=$('w_reason');
+      if(ta && ta.value && !/ย้อนหลัง/.test(ta.value)){
+        ta.value += '\nประวัติสะสมย้อนหลัง '+rs.months+' เดือน: มาสาย '+rs.late_count+' ครั้ง รวม '+rs.late_total+' นาที'
+          + (rs.absent?(' · ขาดงาน '+rs.absent+' วัน'):'')
+          + (rs.early_out_count?(' · ออกก่อนเวลา '+rs.early_out_count+' ครั้ง'+(eoMin?(' รวม '+eoMin+' นาที'):'')):'')
+          + (rs.disc_count?(' · เคยถูกดำเนินการทางวินัย '+rs.disc_count+' ครั้ง'):'');
+      }
+    }catch(_e){ /* ดึงไม่ได้ก็ยังออกใบเตือนได้ตามปกติ */ }
+  })();
   $('w_reason').placeholder = 'ระบุเหตุแห่งการออกใบเตือน (บังคับ) เช่น ละทิ้งหน้าที่ระหว่างกะเมื่อวันที่ ...';
   // ★ บันไดวินัย — ออกใบเตือนต้องผ่านวาจา+ลายลักษณ์อักษรมาก่อน · รูปประกอบไม่บังคับ (หลักฐานรับทราบ = ลายเซ็นขั้น ③)
   W_PHOTOS=[];
@@ -6178,6 +6204,29 @@ async function openWarningView(wid){
 
   // เอกสารทางการ — ใช้ส่วนหัวชุดเดียวกับรายงานสรุปรายบุคคล
   await loadDocSettings();
+  /* ★ 24 พ.ย. 69 — ดึงสถิติ "สะสมย้อนหลัง" มาคู่กับสถิติรอบปัจจุบัน
+     เคสจริง W-2026-0013: ออกใบวันที่ 24 พ.ย. รอบใหม่เพิ่งเริ่ม 4 วัน ส่วนที่ 1 จึงขึ้น "สาย 0 ครั้ง"
+     ทั้งที่เนื้อหาในส่วนที่ 2 เขียนว่าสายรวม 60 นาที — เอกสารขัดกันเอง อ่านแล้วเหมือนไม่ได้ทำผิดอะไร
+     ต้องรอให้ได้ตัวเลขก่อนค่อยวาดเอกสาร จะได้ไม่มีจังหวะที่กดพิมพ์ออกมาแล้วตัวเลขยังว่าง */
+  let WS = null;
+  try{
+    const rs = await post({ action:'hr_warning_stats', ...authBody(),
+      data:{ emp_id:w.emp_id, to:String(w.issue_date||'').slice(0,10) } });
+    if(rs && rs.ok) WS = rs;
+  }catch(_e){ /* ดึงไม่ได้ก็ยังออกเอกสารได้ แค่ไม่มีบล็อกสะสม */ }
+  const winBlock = WS
+    ? ('<table class="es-dt" style="margin-top:6px">'
+        + '<tr><td class="k" colspan="4" style="background:#eef2f7;font-weight:700">ประวัติสะสมย้อนหลัง '+WS.months+' เดือน ('+beDate(WS.start)+' – '+beDate(WS.end)+') — ช่วงที่ใช้พิจารณาขั้นวินัย</td></tr>'
+        + '<tr><td class="k">มาทำงานสาย</td><td class="n">'+WS.late_count+' ครั้ง</td>'
+          + '<td class="k">รวมเวลามาสาย</td><td class="n">'+WS.late_total+' นาที</td></tr>'
+        + '<tr><td class="k">ขาดงาน</td><td class="n">'+WS.absent+' วัน</td>'
+          + '<td class="k">ออกก่อนเวลา</td><td class="n">'+(WS.early_out_count||0)+' ครั้ง'
+            +((WS.early_out_min>0)?(' (รวม '+WS.early_out_min+' นาที)'):'')+'</td></tr>'
+        + '<tr><td class="k">มาปฏิบัติงาน</td><td class="n">'+WS.days_worked+' วัน จากที่ต้องมา '+WS.days_should+' วัน</td>'
+          + '<td class="k">ดำเนินการทางวินัยมาแล้ว</td><td class="n">'+WS.disc_count+' ครั้ง'
+            +(WS.warn_count?(' (ใบเตือน '+WS.warn_count+' ใบ)'):'')+'</td></tr>'
+        + '</table>')
+    : '';
   const photoCell = w.photo_url
     ? '<img src="'+esc(w.photo_url)+'" alt="" style="width:100%;max-width:92px;height:112px;object-fit:cover;display:block;margin:0 auto;border:1px solid #000">'
     : '<div style="width:92px;height:112px;border:1px dashed #666;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted)">ไม่มีรูปถ่าย</div>';
@@ -6200,11 +6249,15 @@ async function openWarningView(wid){
 
     + '<div class="es-dsec">ส่วนที่ 1 — ข้อเท็จจริงและสถิติประกอบ</div>'
     + '<table class="es-dt">'
+      /* ★ 24 พ.ย. 69 — ติดป้ายให้ชัดว่าตัวเลขชุดนี้คือ "เฉพาะรอบ" ไม่ใช่ทั้งหมดที่เคยทำมา */
+      + '<tr><td class="k" colspan="4" style="background:#eef2f7;font-weight:700">เฉพาะรอบที่ประเมิน (' + beDate(w.cycle_start) + ' – ' + beDate(w.cycle_end) + ')</td></tr>'
       + '<tr><td class="k">มาทำงานสาย</td><td class="n">' + w.late_count + ' ครั้ง</td>'
         + '<td class="k">รวมเวลามาสาย</td><td class="n">' + w.late_total + ' นาที</td></tr>'
       + '<tr><td class="k">ขาดงาน</td><td class="n">' + w.absent_count + ' วัน</td>'
         + '<td class="k">คะแนนวินัยคงเหลือ</td><td class="n">' + (w.score != null ? (w.score + ' คะแนน' + (w.band_label ? (' · ' + esc(w.band_label)) : '')) : '—') + '</td></tr>'
       + '</table>'
+    + winBlock
+    + (WS ? '<div class="es-note" style="font-size:10.5px;margin-top:4px">เอกสารฉบับนี้พิจารณาจากประวัติสะสมย้อนหลัง ไม่ใช่เฉพาะรอบปัจจุบัน — รอบปัจจุบันเพิ่งเริ่มจึงอาจมีสถิติน้อยหรือเป็นศูนย์ได้</div>' : '')
 
     + '<div class="es-dsec">ส่วนที่ 2 — เหตุแห่งการตักเตือน</div>'
     + '<table class="es-dt"><tr><td style="padding:8px 10px;line-height:1.7">' + esc(w.reason).replace(/\n/g, '<br>') + '</td></tr></table>'
