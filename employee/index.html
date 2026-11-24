@@ -636,7 +636,8 @@ async function submit(action){
   try{
     const descriptor = await getDescriptor();
     if(!descriptor){ showToast('err','ไม่พบใบหน้าชัดเจน — กรุณาหันหน้าเข้ากล้องให้เห็นเต็มหน้า แล้วลองใหม่'); return; }
-    const faceMatch = matchFace(descriptor, empMatch);  // true=ตรง / false=ไม่ตรง / null=ยังไม่ลงทะเบียน
+    // ★ 24 พ.ย. 69 — ให้ฐานข้อมูลเทียบใบหน้าให้ ไม่ต้องโหลดใบหน้าของทุกคนมาเก็บในเครื่องอีก
+    const faceMatch = await HR.faceCheck(empMatch.emp_id, descriptor, CFG.threshold);  // true=ตรง / false=ไม่ตรง / null=ยังไม่ลงทะเบียน
     // บังคับ: ต้องลงทะเบียนใบหน้าก่อน (คนยังไม่ลงทะเบียน = ลงเวลาไม่ได้)
     if(faceMatch===null){ showToast('err','คุณยังไม่ได้ลงทะเบียนใบหน้า จึงลงเวลาไม่ได้\nกรุณากดปุ่ม "ลงทะเบียนใบหน้า" ก่อน หรือให้ผู้จัดการลงทะเบียนให้'); return; }
     // บังคับ: ลงทะเบียนแล้วแต่หน้าไม่ตรง → บล็อก (กันลงเวลาผิดคน/ถ่ายเพดาน)
@@ -780,7 +781,7 @@ async function refreshAdvEmg(){
 async function advVerifyFace(){
   const descriptor = await getDescriptor();
   if(!descriptor) throw new Error('ไม่พบใบหน้าชัดเจน — หันหน้าเข้ากล้องแล้วลองใหม่');
-  const m = matchFace(descriptor, empMatch);           // true=ตรง / false=ไม่ตรง / null=ยังไม่ลงทะเบียน
+  const m = await HR.faceCheck(empMatch.emp_id, descriptor, CFG.threshold);  // true=ตรง / false=ไม่ตรง / null=ยังไม่ลงทะเบียน
   if(m===null) throw new Error('คุณยังไม่ได้ลงทะเบียนใบหน้า — ให้ผู้จัดการลงทะเบียนให้ก่อน จึงจะเบิกฉุกเฉินได้');
   return m===true;
 }
