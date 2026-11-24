@@ -1763,23 +1763,25 @@ function starBusy(){
   }catch(e){}
   return false;
 }
-// ★ 24 พ.ย. 69 — เด้งทันทีที่ใส่รหัสผ่าน PIN ถูก (พี่แฟคสั่ง: ให้ขึ้นเลย ไม่ต้องรอเปิดหน้าสถานะ)
-//   ถ้าจังหวะนั้นมีหน้าต่างอื่นค้างอยู่ จะรอแล้วลองใหม่เป็นระยะ ไม่ใช่เงียบหายไปเลย
+// ★ 24 พ.ย. 69 — เด้งทันทีที่ใส่รหัสผ่าน PIN ถูก (ไม่ต้องรอเปิดหน้าสถานะ)
+//   ของจริงที่เจอตอนทดสอบ: หน้าแรกมี "ประกาศจาก HR" ค้างให้กดรับทราบอยู่แล้ว
+//   ฉากฉลองจึงต้องเข้าคิวรอ ไม่ไปทับ — แล้วค่อยเด้งตามมาเองเมื่อพนักงานปิดประกาศ
+//   รอแค่เช็กหน้าจอ ไม่ยิงฐานข้อมูลซ้ำ (ถามครั้งเดียวตอนใส่รหัส) · รอได้ถึงราว 90 วินาที
+//     เพราะประกาศยาว ๆ อ่านเกิน 20 วินาทีเป็นเรื่องปกติ
 let STAR_WAIT=null;
-async function checkStarAward(empId, emp, tries){
+function starQueue(aw, who, tries){
+  if(!starBusy()){ starCelebrate(aw, who); return; }
+  if((tries||0) >= 60) return;                                        // เกินกว่านี้ปล่อย ไว้เจอกันรอบหน้า
+  if(STAR_WAIT) clearTimeout(STAR_WAIT);
+  STAR_WAIT=setTimeout(()=>starQueue(aw, who, (tries||0)+1), 1500);
+}
+async function checkStarAward(empId, emp){
   try{
     if(!empId || !HR.myStarAwards) return;
     const hist=await HR.myStarAwards(empId);
     const aw=starUnseen(hist, empId);
     if(!aw) return;
-    const who=emp||empMatch;
-    if(starBusy()){
-      if((tries||0) >= 12) return;                                    // ~18 วินาที แล้วปล่อย ไว้เจอกันรอบหน้า
-      if(STAR_WAIT) clearTimeout(STAR_WAIT);
-      STAR_WAIT=setTimeout(()=>checkStarAward(empId, who, (tries||0)+1), 1500);
-      return;
-    }
-    starCelebrate(aw, who);
+    starQueue(aw, emp||empMatch, 0);
   }catch(e){ /* เงียบ */ }
 }
 
