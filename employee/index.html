@@ -122,6 +122,105 @@
         border-radius:50%; display:inline-block; animation:sp .7s linear infinite; vertical-align:-2px;}
   button.out .spin, .sheet .spin{border-color:rgba(0,112,60,.3); border-top-color:var(--green);}
   @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ============================================================
+     ★ 24 พ.ย. 69 — ฉากฉลองพนักงานดีเด่นประจำเดือน (แบบเต็มจอ)
+     ลำดับ: แสงพุ่งหมุน → ถ้วยหล่นเด้ง → กระดาษโปรย → ป้าย → ชื่อ → เบี้ยนับขึ้น → ปุ่ม
+     กระดาษจงใจโปรยแถบข้าง ๆ (mask) ไม่ให้บังชื่อกับตัวเลข
+     ============================================================ */
+  .stOv{position:fixed; inset:0; z-index:100040; display:none; overflow:hidden;
+    background:radial-gradient(130% 85% at 50% 22%,#0a7a45 0%,#00512c 45%,#003a1f 100%);}
+  .stOv.show{display:block;}
+  .stRays{position:absolute; left:50%; top:30%; width:1100px; height:1100px; margin:-550px 0 0 -550px;
+    background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.115) 0deg 7deg,transparent 7deg 20deg);
+    opacity:0; animation:stSpin 26s linear infinite, stFade .7s .15s both;
+    -webkit-mask-image:radial-gradient(closest-side,#000 18%,transparent 72%);
+            mask-image:radial-gradient(closest-side,#000 18%,transparent 72%);}
+  @keyframes stSpin{to{transform:rotate(360deg)}}
+  @keyframes stFade{to{opacity:1}}
+  .stVig{position:absolute; inset:0; background:radial-gradient(70% 50% at 50% 30%,transparent 40%,rgba(0,0,0,.42) 100%);}
+  .stConf{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;
+    -webkit-mask-image:linear-gradient(90deg,#000 0 22%,rgba(0,0,0,.18) 38% 62%,#000 78% 100%);
+            mask-image:linear-gradient(90deg,#000 0 22%,rgba(0,0,0,.18) 38% 62%,#000 78% 100%);}
+  .stIn{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; text-align:center;
+    max-width:460px; margin:0 auto;
+    padding:calc(34px + env(safe-area-inset-top,0px)) 24px calc(20px + env(safe-area-inset-bottom,0px));}
+  .stMute{position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); right:14px; z-index:3;
+    width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,.28); cursor:pointer;
+    background:rgba(255,255,255,.12); color:#fff; font-size:16px; line-height:1; padding:0;}
+  .stTrophy{position:relative; width:min(188px,46vw); aspect-ratio:188/206; flex:none; opacity:0;
+    animation:stDrop .95s cubic-bezier(.2,1.5,.42,1) .3s both;}
+  @keyframes stDrop{
+    0%{opacity:0; transform:translateY(-78px) scale(.64) rotate(-9deg)}
+    58%{opacity:1; transform:translateY(8px) scale(1.07) rotate(2deg)}
+    78%{transform:translateY(-3px) scale(.985) rotate(-1deg)}
+    100%{opacity:1; transform:none}}
+  .stGlow{position:absolute; left:50%; top:48%; width:300px; height:300px; margin:-150px 0 0 -150px;
+    background:radial-gradient(closest-side,rgba(246,196,69,.58),rgba(246,196,69,.14) 52%,transparent 72%);
+    opacity:0; animation:stPulse 2.6s 1s ease-in-out infinite, stFade .8s .8s both;}
+  @keyframes stPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+  .stTrophy svg{position:relative; display:block; width:100%; height:100%;
+    filter:drop-shadow(0 14px 18px rgba(0,0,0,.38));}
+  .stShine{position:absolute; inset:0; overflow:hidden; border-radius:16px; pointer-events:none;}
+  .stShine i{position:absolute; top:-30%; left:-60%; width:38%; height:160%; transform:rotate(18deg);
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.78),transparent);
+    opacity:0; animation:stSweep 2.4s 1.25s ease-in-out infinite;}
+  @keyframes stSweep{0%{left:-60%;opacity:0}12%{opacity:.95}42%{left:118%;opacity:0}100%{left:118%;opacity:0}}
+  .stPlate{margin-top:16px; opacity:0; animation:stRise .6s .95s cubic-bezier(.2,.9,.3,1) both;}
+  @keyframes stRise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+  .stRib{display:inline-flex; align-items:center; gap:7px; color:#4a3200; font-weight:700; font-size:13px;
+    background:linear-gradient(180deg,#ffe9a3,#f6c445 55%,#c98b10); padding:7px 18px; border-radius:999px;
+    box-shadow:0 6px 16px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.75);}
+  .stCyc{margin-top:11px; font-size:12px; letter-spacing:1.6px; color:rgba(255,255,255,.72);}
+  .stWho{margin-top:20px; opacity:0; animation:stPop .55s 1.25s cubic-bezier(.2,1.4,.4,1) both;}
+  @keyframes stPop{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
+  .stNm{font-size:clamp(26px,8vw,33px); font-weight:700; color:#fff; line-height:1.12; text-wrap:balance;
+    text-shadow:0 3px 14px rgba(0,0,0,.42);}
+  .stSub{font-size:13px; color:rgba(255,255,255,.76); margin-top:5px;}
+  .stMoney{margin-top:auto; width:100%; max-width:330px; opacity:0;
+    animation:stRise .6s 1.6s cubic-bezier(.2,.9,.3,1) both;
+    background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:18px; padding:14px 16px;
+    -webkit-backdrop-filter:blur(7px); backdrop-filter:blur(7px);}
+  .stMoney .lb{font-size:11.5px; color:rgba(255,255,255,.72); letter-spacing:.4px;}
+  .stMoney .vl{font-size:31px; font-weight:600; color:#ffe9a3; line-height:1.15; margin-top:2px;
+    font-variant-numeric:tabular-nums;}
+  .stMoney .vl small{font-size:14px; font-weight:400; color:rgba(255,255,255,.8); margin-left:5px;}
+  .stMoney .nt{font-size:11.5px; color:rgba(255,255,255,.66); margin-top:6px; line-height:1.6;
+    border-top:1px dashed rgba(255,255,255,.22); padding-top:7px;}
+  .stCta{margin-top:12px; width:100%; max-width:330px; opacity:0; animation:stRise .5s 2.05s both;}
+  .stCta button{width:100%; font:inherit; font-size:15px; font-weight:600; border:0; cursor:pointer;
+    background:linear-gradient(180deg,#ffe9a3,#f6c445 58%,#c98b10); color:#4a3200; padding:14px; border-radius:15px;
+    box-shadow:0 8px 20px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.7);}
+  @media (prefers-reduced-motion:reduce){
+    .stOv *{animation-duration:.01ms !important; animation-iteration-count:1 !important;}
+  }
+
+  /* ป้ายถาวร + ประวัติ + กระดานของสาขา (อยู่ในหน้า "สถานะของฉัน") */
+  .stBadge{display:flex; align-items:center; gap:13px; cursor:pointer;
+    background:linear-gradient(135deg,#fffdf5,#fff6dd); border:1px solid #f0dca6; border-radius:16px; padding:12px 14px;}
+  .stBadge .ic{width:46px; height:52px; flex:none;}
+  .stBadge .ic svg{width:100%; height:100%; display:block;}
+  .stBadge .tx{flex:1; min-width:0;}
+  .stBadge .tx b{font-size:14px; color:#7a5406; display:block; line-height:1.3;}
+  .stBadge .tx span{font-size:11.5px; color:#9a7a2e; display:block; margin-top:2px; line-height:1.5;}
+  .stBadge .cnt{flex:none; text-align:center; background:#fff; border:1px solid #f0dca6; border-radius:11px; padding:5px 9px;}
+  .stBadge .cnt b{display:block; font-size:18px; color:#8a5f06; line-height:1; font-variant-numeric:tabular-nums;}
+  .stBadge .cnt span{font-size:9.5px; color:#9a7a2e;}
+  .stHist{margin-top:7px; border:1px solid var(--line); border-radius:14px; padding:2px 13px; background:#fff;}
+  .stHist .r{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line);}
+  .stHist .r:last-child{border-bottom:0;}
+  .stHist .dot{width:28px; height:28px; border-radius:50%; flex:none; display:flex; align-items:center;
+    justify-content:center; background:linear-gradient(180deg,#ffe9a3,#f6c445); font-size:13px;}
+  .stHist .m{flex:1; min-width:0;}
+  .stHist .m b{font-size:13px; font-weight:600; display:block;}
+  .stHist .m span{font-size:11.5px; color:var(--muted);}
+  .stHist .a{font-size:12.5px; color:#8a5f06; font-weight:600; font-variant-numeric:tabular-nums;}
+  .stBoard{border:1px solid #f0dca6; background:#fffdf5; border-radius:14px; padding:11px 13px;}
+  .stBoard .hd{font-size:11.5px; color:#9a7a2e; font-weight:600; letter-spacing:.3px;}
+  .stBoard ul{margin:6px 0 0; padding-left:0; list-style:none; display:flex; flex-wrap:wrap; gap:6px;}
+  .stBoard li{display:inline-flex; align-items:center; gap:5px; background:#fff; border:1px solid #f0dca6;
+    border-radius:999px; padding:4px 11px; font-size:12.5px; color:#7a5406; font-weight:600;}
+  .stBoard li.me{background:linear-gradient(180deg,#ffe9a3,#f6c445); border-color:#e0b43a;}
 </style>
 <link rel="manifest" href="../manifest.webmanifest">
 <meta name="theme-color" content="#16a34a">
@@ -1441,9 +1540,12 @@ function showOneProposal(list, idx, empId){
 // ====== กล่องแจ้งเตือนจากระบบ (หลังเช็กอิน) — เด้งทีละอัน ======
 async function showMyNotifications(empId){
   if(!empId || !HR.getMyNotifications) return;
-  let res; try{ res=await HR.getMyNotifications(empId); }catch(e){ return; }
+  let res; try{ res=await HR.getMyNotifications(empId); }catch(e){ checkStarAward(empId); return; }
   const list=(res&&res.unseen)||[];
+  // ★ 24 พ.ย. 69 — ฉากฉลองพนักงานดีเด่น ต่อท้ายสุดของสายเด้ง (หลังลงเวลา/อ่านแจ้งเตือนครบแล้ว)
+  //   จงใจไม่เด้งตอนกดปุ่มเข้า–ออกงาน จะได้ไม่ขวางงานหน้าร้าน
   if(list.length) showOneNotif(list, 0, empId);
+  else checkStarAward(empId);
 }
 function notifStyle(kind){
   if(kind==='score_deduct') return {bg:'var(--red)', ic:'<svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>'};
@@ -1451,7 +1553,7 @@ function notifStyle(kind){
   return {bg:'var(--green)', ic:'<svg class="ei" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>'};
 }
 function showOneNotif(list, idx, empId){
-  if(idx>=list.length){ $('notifOverlay').classList.remove('show'); return; }
+  if(idx>=list.length){ $('notifOverlay').classList.remove('show'); checkStarAward(empId); return; }
   const n=list[idx]; const st=notifStyle(n.kind);
   $('notifHead').style.background=st.bg;
   $('notifHead').textContent=st.ic+' แจ้งเตือนจากระบบ'+(list.length>1?(' ('+(idx+1)+'/'+list.length+')'):'');
@@ -1478,22 +1580,200 @@ function renderNotifHistory(rows, cyc){
         +'<div style="font-size:11px;color:var(--muted);margin-top:3px">'+beDateTime(n.created_at)+'</div></div>';
     }).join('');
 }
+// ============================================================
+// ★ 24 พ.ย. 69 — พนักงานดีเด่นประจำเดือน ฝั่งพนักงาน
+//   เดิมคนที่ได้รางวัลไม่มีทางรู้เลยจากแอปตัวเอง (ไม่มีคำว่า "ดีเด่น" อยู่สักที่)
+//   ทั้งก้อนนี้ล้มได้โดยไม่กระทบหน้าลงเวลา — ทุกจุดหุ้ม try/catch และถ้าไม่มีข้อมูลก็เงียบ
+// ============================================================
+const STAR_SND_KEY='starSoundOff';
+function starSoundOff(){ try{ return localStorage.getItem(STAR_SND_KEY)==='1'; }catch(e){ return false; } }
+function starSoundSet(off){ try{ localStorage.setItem(STAR_SND_KEY, off?'1':'0'); }catch(e){} }
+// เสียงแตรสังเคราะห์เอง — ไม่ต้องโหลดไฟล์เสียง ไม่มีเรื่องลิขสิทธิ์ ไม่กินเน็ต
+function starFanfare(){
+  if(starSoundOff()) return;
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    const ac=new AC(); if(ac.state==='suspended') ac.resume();
+    const t0=ac.currentTime+0.02;
+    const note=(f,at,dur,vol,type)=>{
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.type=type||'triangle'; o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001, t0+at);
+      g.gain.exponentialRampToValueAtTime(vol, t0+at+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+at+dur);
+      o.connect(g); g.connect(ac.destination); o.start(t0+at); o.stop(t0+at+dur+0.05);
+    };
+    // โด–มี–ซอล–โด (เมเจอร์ไทรแอด) แล้วปิดท้ายด้วยคอร์ดค้าง
+    [[523.25,0,.18],[659.25,.16,.18],[783.99,.32,.2]].forEach(n=>note(n[0],n[1],n[2],.16));
+    note(1046.5,.52,.9,.2); note(659.25,.52,.9,.1); note(783.99,.52,.9,.1);
+    // ประกายเล็ก ๆ ท้ายเสียง
+    [1568,1864.7,2093].forEach((f,i)=>note(f,.95+i*0.07,.25,.055,'sine'));
+    setTimeout(()=>{ try{ ac.close(); }catch(e){} }, 3000);
+  }catch(e){ /* เครื่องไม่ให้เล่นเสียงก็ข้ามไป ไม่ต้องแจ้ง */ }
+}
+function starTrophySVG(){
+  return '<svg viewBox="0 0 120 140" aria-hidden="true">'
+    +'<defs>'
+      +'<linearGradient id="stA" x1="0" y1="0" x2="1" y2="1">'
+        +'<stop offset="0" stop-color="#ffefb9"/><stop offset=".42" stop-color="#f6c445"/><stop offset="1" stop-color="#c17f09"/></linearGradient>'
+      +'<linearGradient id="stB" x1="0" y1="0" x2="0" y2="1">'
+        +'<stop offset="0" stop-color="#eab93f"/><stop offset="1" stop-color="#9d6a08"/></linearGradient>'
+    +'</defs>'
+    +'<path d="M28 30 H16 a11 11 0 0 0-11 11 v4 c0 17 13 30 29 32" fill="none" stroke="url(#stB)" stroke-width="7.5" stroke-linecap="round"/>'
+    +'<path d="M92 30 H104 a11 11 0 0 1 11 11 v4 c0 17-13 30-29 32" fill="none" stroke="url(#stB)" stroke-width="7.5" stroke-linecap="round"/>'
+    +'<path d="M26 24 h68 v22 c0 23-15 40-34 40 S26 69 26 46 Z" fill="url(#stA)"/>'
+    +'<rect x="21" y="14" width="78" height="13" rx="6.5" fill="url(#stA)"/>'
+    +'<rect x="54" y="84" width="12" height="15" rx="2" fill="url(#stB)"/>'
+    +'<path d="M38 99 h44 l7 13 H31 z" fill="url(#stB)"/>'
+    +'<rect x="25" y="112" width="70" height="13" rx="4.5" fill="url(#stA)"/>'
+    +'<path d="M60 36 l5.6 11.4 12.6 1.8-9.1 8.9 2.2 12.5L60 64.7 48.7 70.6l2.2-12.5-9.1-8.9 12.6-1.8z" fill="#fff8e0" opacity=".92"/>'
+    +'</svg>';
+}
+const ST_MON=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+function starCycTH(c){
+  const m=/^(\d{4})-(\d{2})$/.exec(String(c||'')); if(!m) return String(c||'—');
+  return ST_MON[(+m[2])-1]+' '+(+m[1]+543);
+}
+let STAR_RAF=null;
+function starCelebrate(aw, emp){
+  if(!aw) return;
+  let ov=document.getElementById('stOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='stOv'; ov.className='stOv'; document.body.appendChild(ov); }
+  const nick=escH((emp&&(emp.nickname||emp.name))||'');
+  ov.innerHTML='<div class="stRays"></div><div class="stVig"></div>'
+    +'<canvas class="stConf" id="stConf"></canvas>'
+    +'<button class="stMute" id="stMute" type="button" aria-label="เปิด/ปิดเสียง">'+(starSoundOff()?'🔇':'🔊')+'</button>'
+    +'<div class="stIn">'
+      +'<div class="stTrophy"><div class="stGlow"></div>'+starTrophySVG()+'<div class="stShine"><i></i></div></div>'
+      +'<div class="stPlate"><div class="stRib">★ พนักงานดีเด่นประจำเดือน ★</div>'
+        +'<div class="stCyc">รอบ '+escH(starCycTH(aw.cycle))+'</div></div>'
+      +'<div class="stWho"><div class="stNm">ยินดีด้วย '+nick+'!</div>'
+        +'<div class="stSub">'+escH(branchNm(aw.branch_id||(emp&&emp.branch_id)))
+          +(aw.awarded_by?(' · คัดเลือกโดย '+escH(aw.awarded_by)):'')+'</div></div>'
+      +'<div class="stMoney"><div class="lb">เบี้ยพนักงานคุณภาพ เข้าสลิปรอบนี้</div>'
+        +'<div class="vl"><span id="stAmt">0</span><small>บาท</small></div>'
+        +(aw.note?('<div class="nt">'+escH(aw.note)+'</div>'):'')+'</div>'
+      +'<div class="stCta"><button id="stOk" type="button">ขอบคุณครับ / ค่ะ</button></div>'
+    +'</div>';
+  ov.classList.add('show');
+  starConfetti();
+  starCountUp(Number(aw.amount||0), 1600, 900);
+  starFanfare();
+  const mt=document.getElementById('stMute');
+  if(mt) mt.onclick=()=>{ const off=!starSoundOff(); starSoundSet(off); mt.textContent=off?'🔇':'🔊'; if(!off) starFanfare(); };
+  const ok=document.getElementById('stOk');
+  if(ok) ok.onclick=async function(){
+    ov.classList.remove('show');
+    if(STAR_RAF){ cancelAnimationFrame(STAR_RAF); STAR_RAF=null; }
+    try{ await HR.markStarSeen((emp&&emp.emp_id)||'', aw.cycle); }catch(e){}
+  };
+}
+function starCountUp(to, ms, delay){
+  const el=document.getElementById('stAmt'); if(!el) return;
+  const s=performance.now()+delay;
+  (function step(now){
+    if(!document.getElementById('stAmt')) return;
+    let k=(now-s)/ms;
+    if(k<0){ requestAnimationFrame(step); return; }
+    k=Math.min(1,k); const e=1-Math.pow(1-k,3);
+    el.textContent=Math.round(to*e).toLocaleString('th-TH');
+    if(k<1) requestAnimationFrame(step);
+  })(performance.now());
+}
+function starConfetti(){
+  const cvs=document.getElementById('stConf'); if(!cvs) return;
+  const ctx=cvs.getContext('2d'); if(!ctx) return;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const W=cvs.clientWidth, H=cvs.clientHeight;
+  cvs.width=Math.round(W*dpr); cvs.height=Math.round(H*dpr); ctx.setTransform(dpr,0,0,dpr,0,0);
+  const C=['#f6c445','#ffe9a3','#f5821f','#ffffff','#7ddba6','#e11f26'];
+  const ps=[];
+  for(let i=0;i<120;i++) ps.push({
+    x:(Math.random()<.5? Math.random()*W*.3 : W*.7+Math.random()*W*.3),
+    y:-20-Math.random()*220, vx:(Math.random()-.5)*1.5, vy:1.4+Math.random()*2.6,
+    w:5+Math.random()*7, h:7+Math.random()*9, a:Math.random()*Math.PI, va:(Math.random()-.5)*.22,
+    c:C[(Math.random()*C.length)|0], sw:.5+Math.random()*.9 });
+  const t0=performance.now();
+  (function tick(now){
+    const age=(now-t0)/1000;
+    ctx.clearRect(0,0,W,H);
+    for(const p of ps){
+      p.x+=p.vx; p.y+=p.vy; p.vy+=0.012; p.a+=p.va;
+      if(p.y>H+30){ p.y=-25; p.x=Math.random()*W; p.vy=1.2+Math.random()*2.2; }
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a);
+      ctx.globalAlpha = age>7 ? Math.max(0,1-(age-7)/2.5) : 1;
+      ctx.fillStyle=p.c;
+      ctx.fillRect(-p.w/2,-p.h/2, p.w*Math.abs(Math.cos(p.a*p.sw)), p.h);
+      ctx.restore();
+    }
+    const ov=document.getElementById('stOv');
+    if(age<10 && ov && ov.classList.contains('show')) STAR_RAF=requestAnimationFrame(tick);
+    else { ctx.clearRect(0,0,W,H); STAR_RAF=null; }
+  })(t0);
+}
+// ป้ายถาวร + ประวัติ (กดที่ป้ายเพื่อกาง)
+function renderStarBadge(hist){
+  if(!Array.isArray(hist) || !hist.length) return '';
+  const last=hist[0];
+  return '<div style="margin-top:12px">'
+    +'<div class="stBadge" id="stBadge">'
+      +'<div class="ic">'+starTrophySVG()+'</div>'
+      +'<div class="tx"><b>พนักงานดีเด่นประจำเดือน</b>'
+        +'<span>ล่าสุด '+escH(starCycTH(last.cycle))+(last.amount?(' · เบี้ย '+Number(last.amount).toLocaleString('th-TH')+' บาท'):'')+'</span></div>'
+      +'<div class="cnt"><b>'+hist.length+'</b><span>ครั้ง</span></div>'
+    +'</div>'
+    +'<div class="stHist" id="stHistBox" style="display:none">'
+      + hist.map(x=>'<div class="r"><div class="dot">🏆</div>'
+          +'<div class="m"><b>'+escH(starCycTH(x.cycle))+'</b>'
+          +'<span>'+escH(branchNm(x.branch_id))+(x.note?(' · '+escH(x.note)):(x.awarded_by?(' · ยืนยันโดย '+escH(x.awarded_by)):''))+'</span></div>'
+          +'<div class="a">'+(x.amount?Number(x.amount).toLocaleString('th-TH'):'—')+'</div></div>').join('')
+    +'</div></div>';
+}
+// กระดานของสาขา — ให้เพื่อนร่วมสาขาเห็นว่ารอบนี้ใครได้
+function renderBranchStars(bs, myId){
+  if(!bs || !bs.rows || !bs.rows.length) return '';
+  return '<div class="stBoard" style="margin-top:12px"><div class="hd">พนักงานดีเด่นของสาขา · รอบ '+escH(starCycTH(bs.cycle))+'</div>'
+    +'<ul>'+bs.rows.map(r=>'<li'+(String(r.emp_id)===String(myId)?' class="me"':'')+'>🏆 '+escH(r.emp_name||r.emp_id)+'</li>').join('')+'</ul></div>';
+}
+// หารางวัลที่ยังไม่เคยดูฉากฉลอง
+function starUnseen(hist, empId){
+  return (hist||[]).find(x => !x.seen_at && !HR.starSeenLocal(empId, x.cycle)) || null;
+}
+// เรียกหลังพนักงานทำธุระเสร็จแล้วเท่านั้น (ไม่เด้งทับตอนกำลังลงเวลา)
+async function checkStarAward(empId, emp){
+  try{
+    if(!empId || !HR.myStarAwards) return;
+    const hist=await HR.myStarAwards(empId);
+    const aw=starUnseen(hist, empId);
+    if(aw) starCelebrate(aw, emp||empMatch);
+  }catch(e){ /* เงียบ */ }
+}
+
 async function showSelf(){
   $('selfOverlay').classList.add('show');
   const body = $('selfBody');
   if(!empMatch || empMatch.unknown){ body.innerHTML='<p style="color:var(--red)">กรอกรหัสพนักงานให้ถูกต้องก่อน</p>'; return; }
   body.innerHTML='<p>กำลังโหลด…</p>';
   try{
-    const [s, ms, leaves, props, notifs, sp] = await Promise.all([
+    const [s, ms, leaves, props, notifs, sp, stars, bstars] = await Promise.all([
       HR.selfStatus(empMatch.emp_id),
       HR.myStatus(empMatch.emp_id).catch(()=>null),   // คะแนนจริง (สูตรเดียวกับ HR)
       HR.myLeaves(empMatch.emp_id).catch(()=>[]),
       (HR.getLeaveProposals?HR.getLeaveProposals(empMatch.emp_id):Promise.resolve({history:[]})).catch(()=>({history:[]})),
       (HR.getMyNotifications?HR.getMyNotifications(empMatch.emp_id):Promise.resolve({all:[]})).catch(()=>({all:[]})),
-      (HR.mySalesPerf?HR.mySalesPerf(empMatch.emp_id):Promise.resolve(null)).catch(()=>null)   // ★ ผลงานขายในกะของตัวเอง (พังก็ไม่ล้มหน้า)
+      (HR.mySalesPerf?HR.mySalesPerf(empMatch.emp_id):Promise.resolve(null)).catch(()=>null),   // ★ ผลงานขายในกะของตัวเอง (พังก็ไม่ล้มหน้า)
+      // ★ 24 พ.ย. 69 — รางวัลพนักงานดีเด่นของตัวเอง + ของเพื่อนในสาขา
+      (HR.myStarAwards?HR.myStarAwards(empMatch.emp_id):Promise.resolve([])).catch(()=>[]),
+      (HR.branchStars?HR.branchStars(empMatch.branch_id):Promise.resolve(null)).catch(()=>null)
     ]);
-    body.innerHTML = renderSelf(s, ms&&ms.score) + renderMySales(sp) + '<div id="selfHist"></div>' + renderNotifHistory(notifs&&notifs.all, s.cycle) + renderProposalHistory(props&&props.history, s.cycle) + renderMyLeaves(leaves, s.cycle);
+    body.innerHTML = renderSelf(s, ms&&ms.score) + renderStarBadge(stars) + renderBranchStars(bstars, empMatch.emp_id)
+      + renderMySales(sp) + '<div id="selfHist"></div>' + renderNotifHistory(notifs&&notifs.all, s.cycle) + renderProposalHistory(props&&props.history, s.cycle) + renderMyLeaves(leaves, s.cycle);
+    const _sb=$('stBadge'), _sh=$('stHistBox');
+    if(_sb&&_sh) _sb.onclick=()=>{ _sh.style.display = _sh.style.display==='none' ? '' : 'none'; };
     loadSelfHist(0);   // ★ ประวัติเวลางานย้อนหลัง — โหลดแยกทีหลัง ถ้าช้า/พัง ส่วนบนยังขึ้นครบ
+    // ★ ยังไม่เคยดูฉากฉลองรอบนี้ → เด้งให้ดูตรงนี้ (หน้านี้เปิดเองโดยพนักงาน ไม่ทับงานลงเวลา)
+    const _aw=starUnseen(stars, empMatch.emp_id);
+    if(_aw) setTimeout(()=>starCelebrate(_aw, empMatch), 300);
   }catch(e){ console.error(e); body.innerHTML='<p style="color:var(--red)">โหลดไม่สำเร็จ: '+escH(e.message||'')+'</p>'; }
 }
 // ประวัติข้อเสนอ/การสื่อสารกับ HR (แสดงในสถานะของฉัน)
