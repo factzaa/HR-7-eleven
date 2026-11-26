@@ -419,6 +419,20 @@
     .modal{box-shadow:none; border:0; border-radius:0; max-width:100%;}
     .modal-b{max-height:none; overflow:visible; padding:0;}
   }
+  /* ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง */
+  .jd-g{border:1px solid var(--line);border-radius:13px;background:var(--card);margin-bottom:9px;overflow:hidden}
+  .jd-g>summary{cursor:pointer;padding:11px 14px;font-size:14px;list-style:none;background:#f7faf8}
+  .jd-g>summary::-webkit-details-marker{display:none}
+  .jd-g>summary:before{content:'▸';margin-right:8px;color:var(--muted);display:inline-block;transition:.15s}
+  .jd-g[open]>summary:before{transform:rotate(90deg)}
+  .jd-l{list-style:none;margin:0;padding:4px 14px 10px}
+  .jd-l li{padding:9px 0;border-bottom:1px dashed var(--line)}
+  .jd-l li:last-child{border-bottom:0}
+  .jd-it{font-size:13.5px;line-height:1.6}
+  .jd-m{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:4px}
+  .jd-n{font-size:11.5px;color:var(--muted)}
+  .jd-r{font-size:10.5px;color:#9aa1a8}
+  @media print{ .tabs,.topbar,.mrp,#jd_open,#jd_close,#jd_print{display:none!important} .jd-g{break-inside:avoid} }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
@@ -624,6 +638,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <button class="tab" id="tab_branches"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 9l1-5h14l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M9 20v-5h4v5"/></svg></span>สาขา</button>
   <button class="tab" id="tab_goods"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8v13"/><path d="M12 8S10.5 4 8.5 4a2 2 0 0 0 0 4zM12 8s1.5-4 3.5-4a2 2 0 0 1 0 4z"/></svg></span>รับสินค้า</button>
   <button class="tab" id="tab_manual"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M8 7.5h7M8 11h7"/></svg></span>คู่มือ</button>
+<button class="tab" id="tab_jobdesc"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 12h8M8 16h5"/></svg></span>หน้าที่ตามตำแหน่ง</button>
   <button class="tab" id="tab_promo"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><path d="M20 12l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></svg></span>โปรโมชั่น</button>
   <button class="tab" id="tab_poster"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 18l5-4 4 3 3-2 4 3"/></svg></span>สร้างสื่อ</button>
   <button class="tab" id="tab_settings"><span class="tabicon"><svg class="tic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5z"/></svg></span>ตั้งค่ากะ</button>
@@ -2562,6 +2577,20 @@ body.es-measure .es-doc .es-doc-head{padding-bottom:6px;margin-bottom:8px}
 </div>
 
 <!-- Goods receiving: คลัง + รับสินค้า -->
+<div id="view_jobdesc" class="container" style="display:none">
+  <div class="card"><div class="card-h"><h3><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8 12h8M8 16h5"/></svg> หน้าที่ตามตำแหน่ง (Job Description)</h3></div>
+    <div class="card-b">
+      <div class="mrp" id="jd_roles"></div>
+      <div class="mrp" id="jd_shifts"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
+        <button class="btn btn-sec btn-sm" id="jd_open">กางทุกข้อ</button>
+        <button class="btn btn-sec btn-sm" id="jd_close">พับทุกข้อ</button>
+        <button class="btn btn-sec btn-sm" id="jd_print">🖨 พิมพ์</button>
+      </div>
+      <div id="jd_body"><div class="empty">กำลังโหลด…</div></div>
+    </div></div>
+</div>
+
 <div id="view_manual" class="container" style="display:none">
 
   <style>
@@ -4030,7 +4059,7 @@ function authBody(){ return MGR_MODE ? { mgr_emp: MGR_EMP, mgr_pin: MGR_PIN } : 
 // ★ 8 พ.ย. 69 — เปิดเมนู "สรุปรายบุคคล" (empsum) ให้ ผจก. — ดูอย่างเดียว เห็นเฉพาะพนักงานสาขาตัวเอง
 //   เซิร์ฟเวอร์กรองสาขาให้เอง (hrEmpCards/hrEmpSummary) ไม่ได้พึ่งการซ่อนฝั่งหน้าเว็บอย่างเดียว
 //   ปุ่มที่เขียนข้อมูล (บวกคะแนน · ให้นิดาแนะนำคะแนน · ช่องบันทึกของ HR) ถูกซ่อน · พิมพ์เอกสาร/ออกบัตรยังใช้ได้
-const MGR_TABS = ['shirt','mgrtasks','dashboard','stock','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit','empsum','probation'];
+const MGR_TABS = ['shirt','mgrtasks','dashboard','stock','board','salesDash','manual','handover','taskset','special','qa','shelf','auditDash','schedule','shiftexit','discipline','terminate','advance','rider','employees','recruit','empsum','probation','jobdesc'];
 let DATA = { headers:[], rows:[], branches:[], shifts:[] };
 let editing = null;
 let photoState = { url:'', newBase64:'' };
@@ -13718,7 +13747,64 @@ async function loadMdailyDash(){
     +'</div>';
 }
 
-const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','probation','mgreval','analytics','salesDash','auditDash','stock','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual'];
+const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','probation','mgreval','analytics','salesDash','auditDash','stock','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual','jobdesc'];
+// ============================================================
+// ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง (Job Description)
+//   เนื้อหาอยู่ในฐานข้อมูลล้วน ๆ (ตาราง job_desc) ไม่ฝังในโค้ด
+//   เพราะถอดมาจากคู่มือ QSS Standard ซึ่งเป็นลิขสิทธิ์ CP ALL / ปัญญธารา
+//   และ repo ของแอปนี้เป็น public — ติดตั้งด้วย supabase/job_desc.sql ในเครื่อง
+// ============================================================
+let JD=null, JD_ROLE='', JD_SHIFT='';
+async function jdInit(){
+  if(JD){ jdRender(); return; }
+  const box=$('jd_body'); if(box) box.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let r; try{ r = await HR.jobDesc(); }catch(e){ r=null; }
+  if(!r || !r.ok || !r.roles.length){
+    if(box) box.innerHTML='<div class="empty">ยังไม่ได้ติดตั้งข้อมูลหน้าที่ตามตำแหน่ง<br>'
+      +'<span style="font-size:12.5px;color:var(--muted)">ให้รันไฟล์ <b>job_desc.sql</b> ใน Supabase → SQL Editor ก่อน '
+      +'(ไฟล์อยู่ในโฟลเดอร์ _local-ห้ามอัป-github เพราะเนื้อหาเป็นลิขสิทธิ์ CP ALL ใช้ภายในร้านเท่านั้น)</span></div>';
+    return;
+  }
+  JD=r; JD_ROLE=JD.roles[0].role; JD_SHIFT=JD.roles[0].shifts[0].key; jdRender();
+}
+function jdRole(){ return (JD.roles.find(x=>x.role===JD_ROLE)) || JD.roles[0]; }
+function jdRender(){
+  if(!JD) return;
+  const R=jdRole();
+  if(!R.shifts.some(s=>s.key===JD_SHIFT)) JD_SHIFT=R.shifts[0].key;
+  $('jd_roles').innerHTML = JD.roles.map(x=>{
+    const n=x.shifts.reduce((a,b)=>a+b.count,0);
+    return '<button data-jdr="'+esc(x.role)+'"'+(x.role===JD_ROLE?' class="on"':'')+'>'+esc(x.role_name)
+      +' <span style="opacity:.6;font-size:11.5px">'+n+'</span></button>';
+  }).join('');
+  $('jd_shifts').innerHTML = R.shifts.map(sh=>'<button data-jds="'+esc(sh.key)+'"'+(sh.key===JD_SHIFT?' class="on"':'')+'>'
+      +esc(sh.name)+' <span style="opacity:.6;font-size:11.5px">'+sh.count+'</span></button>').join('');
+  const S=R.shifts.find(x=>x.key===JD_SHIFT)||R.shifts[0];
+  $('jd_body').innerHTML = jdStagesHTML(R, S);
+  $('jd_roles').querySelectorAll('[data-jdr]').forEach(b=>b.onclick=()=>{ JD_ROLE=b.dataset.jdr; jdRender(); });
+  $('jd_shifts').querySelectorAll('[data-jds]').forEach(b=>b.onclick=()=>{ JD_SHIFT=b.dataset.jds; jdRender(); });
+  const all=on=>$('jd_body').querySelectorAll('details.jd-g').forEach(d=>d.open=on);
+  $('jd_open') && ($('jd_open').onclick=()=>all(true));
+  $('jd_close') && ($('jd_close').onclick=()=>all(false));
+  $('jd_print') && ($('jd_print').onclick=()=>{ all(true); setTimeout(()=>window.print(),120); });
+}
+// กางพับด้วย <details> ล้วน ๆ — ไม่ต้องมี JS คุมสถานะ และพิมพ์ออกมาได้ตามที่กางไว้
+function jdStagesHTML(R, S){
+  if(!S || !S.stages.length) return '<div class="empty">ยังไม่มีข้อมูลของตำแหน่งนี้ในผลัดนี้</div>';
+  const pill=(t,c)=>'<span class="pill '+(c||'')+'" style="font-size:11px;padding:1px 8px">'+esc(t)+'</span>';
+  return '<div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">'
+      +esc(R.role_name)+' · '+esc(S.name)+' — รวม <b>'+S.count+'</b> หน้าที่ · กดหัวข้อเพื่อกางดูรายละเอียด</div>'
+    + S.stages.map(g=>'<details class="jd-g" open>'
+        +'<summary><b>'+esc(g.name||'อื่น ๆ')+'</b> <span style="color:var(--muted);font-weight:400">'+g.items.length+' ข้อ</span></summary>'
+        +'<ul class="jd-l">'+g.items.map(it=>'<li>'
+            +'<div class="jd-it">'+esc(it.item)+'</div>'
+            +'<div class="jd-m">'
+              +(it.freq?pill(it.freq,'ok'):'')
+              +(it.area?pill(it.area):'')
+              +(it.note?('<span class="jd-n">'+esc(it.note)+'</span>'):'')
+              +(it.ref?('<span class="jd-r">'+esc(it.ref)+'</span>'):'')
+            +'</div></li>').join('')+'</ul></details>').join('');
+}
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
   if(name==='dashboard'){ loadDashboard(); loadNotifications(); loadCheckoutCorr(); loadOpenTasks(); loadRiderPending(); loadAdvancePending(); loadDutyRecords(); loadMdailyDash(); }
@@ -13732,6 +13818,7 @@ showTab = function(name){
     mrInit();
     if(!MGR_MODE){ cmInit(); cmLoad(); exInit(); }
   }
+  else if(name==='jobdesc') jdInit();
   else if(name==='board') loadBoard();
   else if(name==='employees') renderEmployees();
   else if(name==='recruit') loadRecruit();
