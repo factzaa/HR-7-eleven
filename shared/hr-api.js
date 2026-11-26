@@ -546,6 +546,14 @@
         case 'hr_applicant_restore': return await hrApplicantRestore(p.id, p);
         case 'hr_applicant_purge':   return await hrApplicantPurge(p.id, p);
         case 'hr_positions_list':    return await hrPositionsList();
+        case 'hr_iv_bank':           return await hrIvBank(p.data, p);
+        case 'hr_iv_open':           return await hrIvOpen(p.data, p);
+        case 'hr_iv_save':           return await hrIvSave(p.data, p);
+        case 'hr_iv_submit':         return await hrIvSubmit(p.data, p);
+        case 'hr_iv_redraw':         return await hrIvRedraw(p.data, p);
+        case 'hr_iv_sms_mark':       return await hrIvSmsMark(p.data, p);
+        case 'hr_iv_question_save':  return await hrIvQuestionSave(p.data, p);
+        case 'hr_iv_section_save':   return await hrIvSectionSave(p.data, p);
         case 'hr_position_save':     return await hrPositionSave(p.data);
         case 'hr_position_delete':   return await hrPositionDelete(p.id);
         case 'rider_vehicles_list':  return await hrRiderVehiclesList(p.branch, p.emp_id);
@@ -10318,6 +10326,266 @@
     return { ok: true };
   }
   // ---------- ตำแหน่งงาน (สำหรับหน้าสมัคร) ----------
+  // ============================================================
+  // ★ 26 พ.ย. 69 — ประเมินการสัมภาษณ์งาน (สุ่มคำถาม + ให้คะแนน)
+  //   เสียบอยู่ระหว่าง "นัดสัมภาษณ์" กับ "รับเข้าทำงาน/ไม่ผ่าน" ของเดิม ไม่แตะ flow เดิม
+  //   สิทธิ์: ผจก. เปิดรอบ/ให้คะแนน/ส่งผลของสาขาตัวเองได้ (เป็นคนสัมภาษณ์จริง)
+  //           ส่วนการตัดสิน "ไม่ผ่าน" + ส่ง SMS และ "รับเข้าทำงาน" ยังเป็นของสำนักงานเหมือนเดิม
+  //   ยังไม่ได้รัน interview_eval.sql → ทุกฟังก์ชันคืน missing:true ไม่ใช่ error ให้หน้าเว็บพัง
+  // ============================================================
+  async function _ivMissing(e) {
+    return { ok: false, missing: true, error: 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์ — ต้องรันไฟล์ supabase/interview_eval.sql ก่อน' };
+  }
+  // คะแนน 1-5 ของแต่ละส่วน → เปอร์เซ็นต์ (ข้อที่ไม่ได้ถาม/0 ไม่นับทั้งตัวตั้งและตัวหาร)
+  function _ivCalc(sections, questions, scores) {
+    const byId = {}; (questions || []).forEach(q => { byId[String(q.id)] = q; });
+    const per = {}, secPct = {};
+    Object.keys(scores || {}).forEach(k => {
+      const n = Number(scores[k]);
+      if (!(n >= 1 && n <= 5)) return;                 // 0 / ว่าง = ไม่ได้ถาม
+      const q = byId[k]; if (!q) return;
+      const s = per[q.section] || (per[q.section] = { sum: 0, cnt: 0 });
+      s.sum += n; s.cnt += 1;
+    });
+    let num = 0, den = 0, gateFail = null;
+    (sections || []).forEach(sec => {
+      const p = per[sec.key];
+      if (!p || !p.cnt) return;                        // ส่วนที่ไม่ได้ให้คะแนนเลย → ตัดออกจากการคิด
+      const pct = (p.sum / (p.cnt * 5)) * 100;
+      secPct[sec.key] = Math.round(pct * 10) / 10;
+      const w = Number(sec.weight) || 0;
+      num += pct * w; den += w;
+      if (sec.gate_min != null && pct < Number(sec.gate_min) && !gateFail) {
+        gateFail = { key: sec.key, name: sec.name, pct: Math.round(pct * 10) / 10, min: Number(sec.gate_min) };
+      }
+    });
+    return { total: den ? Math.round((num / den) * 10) / 10 : null, secPct, gateFail, scored: den > 0 };
+  }
+
+  // คลังคำถาม + ส่วน + ข้อตัดสิทธิ์ + เกณฑ์ (ใช้ทั้งหน้าประเมินและหน้าตั้งค่า)
+  async function hrIvBank(p, auth) {
+    p = p || {};
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    let sections, questions, kos, cfgs;
+    try {
+      const [rs, rq, rk, rc] = await Promise.all([
+        sb().from('iv_section').select('key,name,weight,draw_n,sort,gate_min,active').order('sort'),
+        sb().from('iv_question').select('id,section,position,question,probe,good_answer,sort,active').order('section').order('sort'),
+        sb().from('iv_knockout').select('id,label,sort,active').order('sort'),
+        sb().from('iv_config').select('position,pass_pct'),
+      ]);
+      if (rs.error || rq.error || rk.error || rc.error) return await _ivMissing();
+      sections = rs.data || []; questions = rq.data || []; kos = rk.data || []; cfgs = rc.data || [];
+    } catch (e) { return await _ivMissing(); }
+    if (!sections.length) return await _ivMissing();
+    const passBy = {}; cfgs.forEach(c => { passBy[String(c.position || '')] = Number(c.pass_pct); });
+    return {
+      ok: true, sections, questions, knockouts: kos, configs: cfgs,
+      pass_pct: (passBy[String(p.position || '')] != null ? passBy[String(p.position || '')] : (passBy[''] != null ? passBy[''] : 70)),
+      is_hq: g.actor.role !== 'mgr',
+    };
+  }
+
+  // เปิดรอบสัมภาษณ์ — มีอยู่แล้วคืนของเดิม (ชุดคำถามถูกล็อก) ยังไม่มีก็สุ่มใหม่แล้วล็อก
+  async function hrIvOpen(p, auth) {
+    p = p || {};
+    if (!p.applicant_id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    const bad = await _apAssertOwn(g.actor, p.applicant_id); if (bad) return { ok: false, error: bad };
+    const bank = await hrIvBank({ position: p.position }, auth);
+    if (!bank.ok) return bank;
+
+    let sess = null;
+    try {
+      const { data, error } = await sb().from('iv_session').select('*').eq('applicant_id', p.applicant_id).maybeSingle();
+      if (error) return await _ivMissing();
+      sess = data || null;
+    } catch (e) { return await _ivMissing(); }
+
+    if (!sess) {
+      const { data: a } = await sb().from('applicants').select('id,full_name,position,branch_id').eq('id', p.applicant_id).maybeSingle();
+      if (!a) return { ok: false, error: 'ไม่พบใบสมัคร' };
+      const pos = String(a.position || '');
+      const picked = [];
+      bank.sections.filter(s => s.active !== false).forEach(sec => {
+        // คำถามของส่วนนี้ที่ใช้กับตำแหน่งนี้ได้ (ว่าง = ทุกตำแหน่ง)
+        const pool = bank.questions.filter(q => q.active !== false && q.section === sec.key
+          && (!q.position || String(q.position) === pos));
+        const n = Number(sec.draw_n) || 0;
+        if (n <= 0 || n >= pool.length) { pool.forEach(q => picked.push(q.id)); return; }  // 0 = ถามทุกข้อ
+        const bag = pool.slice();
+        for (let i = 0; i < n && bag.length; i++) picked.push(bag.splice(Math.floor(Math.random() * bag.length), 1)[0].id);
+      });
+      const row = {
+        applicant_id: p.applicant_id, branch_id: String(a.branch_id || ''), position: pos,
+        interviewer: String(p.interviewer || ''), questions: picked,
+      };
+      try {
+        const { data: ins, error } = await sb().from('iv_session').insert(row).select('*').maybeSingle();
+        if (error) throw error;
+        sess = ins;
+      } catch (e) {
+        // ชนกันเพราะเปิดพร้อมกัน 2 เครื่อง → อ่านของที่มีอยู่แทน
+        const { data: again } = await sb().from('iv_session').select('*').eq('applicant_id', p.applicant_id).maybeSingle();
+        if (!again) return { ok: false, error: (e && e.message) || 'เปิดรอบสัมภาษณ์ไม่สำเร็จ' };
+        sess = again;
+      }
+      await logAct('เปิดรอบประเมินสัมภาษณ์', null, '#' + p.applicant_id + ' · สุ่ม ' + picked.length + ' ข้อ');
+    }
+
+    // ส่งเฉพาะคำถามที่ถูกล็อกไว้ เรียงตามลำดับส่วน
+    const ids = (sess.questions || []).map(String);
+    const secOrder = {}; bank.sections.forEach((s, i) => { secOrder[s.key] = i; });
+    const qs = bank.questions.filter(q => ids.indexOf(String(q.id)) >= 0)
+      .sort((a, b) => (secOrder[a.section] - secOrder[b.section]) || (a.sort - b.sort));
+    const calc = _ivCalc(bank.sections, qs, sess.scores || {});
+    return {
+      ok: true, session: sess, questions: qs, sections: bank.sections,
+      knockouts: bank.knockouts.filter(k => k.active !== false),
+      pass_pct: bank.pass_pct, is_hq: bank.is_hq, calc,
+    };
+  }
+
+  // บันทึกคะแนนระหว่างสัมภาษณ์ (กดได้บ่อย ๆ ไม่สรุปผล)
+  async function hrIvSave(p, auth) {
+    p = p || {};
+    if (!p.applicant_id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    const bad = await _apAssertOwn(g.actor, p.applicant_id); if (bad) return { ok: false, error: bad };
+    const patch = {};
+    if (p.scores && typeof p.scores === 'object') patch.scores = p.scores;
+    if (Array.isArray(p.knockouts)) patch.knockouts = p.knockouts;
+    if (p.note !== undefined) patch.note = String(p.note || '');
+    if (p.interviewer !== undefined) patch.interviewer = String(p.interviewer || '');
+    if (!Object.keys(patch).length) return { ok: true, nothing: true };
+    try {
+      const { error } = await sb().from('iv_session').update(patch).eq('applicant_id', p.applicant_id);
+      if (error) throw error;
+    } catch (e) { return { ok: false, error: (e && e.message) || 'บันทึกไม่สำเร็จ' }; }
+    return { ok: true };
+  }
+
+  // สรุปผล — คำนวณคะแนน เทียบเกณฑ์ แล้วบันทึก (ยังไม่เปลี่ยนสถานะใบสมัคร)
+  async function hrIvSubmit(p, auth) {
+    p = p || {};
+    if (!p.applicant_id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    const bad = await _apAssertOwn(g.actor, p.applicant_id); if (bad) return { ok: false, error: bad };
+    const r = await hrIvOpen({ applicant_id: p.applicant_id }, auth);
+    if (!r.ok) return r;
+    const sess = r.session;
+    const scores = (p.scores && typeof p.scores === 'object') ? p.scores : (sess.scores || {});
+    const kos = Array.isArray(p.knockouts) ? p.knockouts : (sess.knockouts || []);
+    const calc = _ivCalc(r.sections, r.questions, scores);
+    if (!calc.scored && !kos.length) return { ok: false, error: 'ยังไม่ได้ให้คะแนนสักข้อ' };
+
+    const koLabels = r.knockouts.filter(k => kos.map(String).indexOf(String(k.id)) >= 0).map(k => k.label);
+    let result = 'pass', why = [];
+    if (koLabels.length) { result = 'fail'; why.push('ข้อตัดสิทธิ์: ' + koLabels.join(' · ')); }
+    if (calc.gateFail) { result = 'fail'; why.push(calc.gateFail.name + ' ได้ ' + calc.gateFail.pct + '% (ต่ำกว่าขั้นต่ำ ' + calc.gateFail.min + '%)'); }
+    if (calc.total != null && calc.total < Number(r.pass_pct)) { result = 'fail'; why.push('คะแนนรวม ' + calc.total + '% (เกณฑ์ ' + r.pass_pct + '%)'); }
+
+    const patch = {
+      scores, knockouts: kos, total_pct: calc.total, section_pct: calc.secPct,
+      result, fail_reason: why.join(' · '), submitted_at: new Date().toISOString(),
+      decided_by: (g.actor.role === 'mgr' ? ('ผจก. ' + (g.actor.emp_id || '')) : 'สนง.ใหญ่ (HR)'),
+    };
+    if (p.note !== undefined) patch.note = String(p.note || '');
+    try {
+      const { error } = await sb().from('iv_session').update(patch).eq('applicant_id', p.applicant_id);
+      if (error) throw error;
+    } catch (e) { return { ok: false, error: (e && e.message) || 'บันทึกผลไม่สำเร็จ' }; }
+    await logAct('สรุปผลประเมินสัมภาษณ์', null, '#' + p.applicant_id + ' · ' + (result === 'pass' ? 'ผ่าน' : 'ไม่ผ่าน') + ' ' + (calc.total != null ? calc.total + '%' : ''));
+    return { ok: true, result, total: calc.total, section_pct: calc.secPct, pass_pct: r.pass_pct, why: why, knockouts: koLabels };
+  }
+
+  // สุ่มคำถามชุดใหม่ — เฉพาะรอบที่ยังไม่ได้สรุปผล และต้องระบุเหตุผล (กันสุ่มจนกว่าจะได้ชุดที่ชอบ)
+  async function hrIvRedraw(p, auth) {
+    p = p || {};
+    if (!p.applicant_id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    const bad = await _apAssertOwn(g.actor, p.applicant_id); if (bad) return { ok: false, error: bad };
+    try {
+      const { data: s } = await sb().from('iv_session').select('result,submitted_at').eq('applicant_id', p.applicant_id).maybeSingle();
+      if (!s) return { ok: false, error: 'ยังไม่ได้เปิดรอบสัมภาษณ์' };
+      if (s.submitted_at) return { ok: false, error: 'รอบนี้สรุปผลไปแล้ว สุ่มใหม่ไม่ได้' };
+      const { error } = await sb().from('iv_session').delete().eq('applicant_id', p.applicant_id);
+      if (error) throw error;
+    } catch (e) { return { ok: false, error: (e && e.message) || 'สุ่มใหม่ไม่สำเร็จ' }; }
+    await logAct('สุ่มคำถามสัมภาษณ์ใหม่', null, '#' + p.applicant_id + (p.reason ? (' · ' + p.reason) : ''));
+    return await hrIvOpen({ applicant_id: p.applicant_id, interviewer: p.interviewer }, auth);
+  }
+
+  // บันทึกเวลาที่ส่ง SMS แจ้งผลไม่ผ่าน (ตัว SMS ส่งผ่าน edge function sms-send เหมือนของเดิม)
+  async function hrIvSmsMark(p, auth) {
+    p = p || {};
+    if (!p.applicant_id) return { ok: false, error: 'ไม่ระบุผู้สมัคร' };
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    try { await sb().from('iv_session').update({ sms_sent_at: new Date().toISOString() }).eq('applicant_id', p.applicant_id); } catch (e) { }
+    return { ok: true };
+  }
+
+  // ---------- หน้าตั้งค่า (สำนักงานเท่านั้น) ----------
+  async function hrIvQuestionSave(p, auth) {
+    p = p || {};
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') return { ok: false, error: 'การแก้คลังคำถามเป็นสิทธิ์ของสำนักงาน' };
+    const d = p.data || {};
+    try {
+      if (p.del) {
+        if (!d.id) return { ok: false, error: 'ไม่ระบุคำถาม' };
+        const { error } = await sb().from('iv_question').update({ active: false }).eq('id', d.id);
+        if (error) throw error;
+        await logAct('ปิดใช้คำถามสัมภาษณ์', null, '#' + d.id);
+        return { ok: true };
+      }
+      if (!d.section || !String(d.question || '').trim()) return { ok: false, error: 'ระบุส่วนและคำถาม' };
+      const row = {
+        section: String(d.section), position: String(d.position || ''),
+        question: String(d.question).trim(), probe: String(d.probe || '').trim(),
+        good_answer: String(d.good_answer || '').trim(),
+        sort: Number(d.sort) || 0, active: d.active !== false,
+      };
+      if (d.id) {
+        const { error } = await sb().from('iv_question').update(row).eq('id', d.id);
+        if (error) throw error;
+      } else {
+        const { error } = await sb().from('iv_question').insert(row);
+        if (error) throw error;
+      }
+      await logAct('แก้คลังคำถามสัมภาษณ์', null, (d.id ? '#' + d.id : 'เพิ่มใหม่') + ' · ' + row.section);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: (e && e.message) || 'บันทึกไม่สำเร็จ' }; }
+  }
+  async function hrIvSectionSave(p, auth) {
+    p = p || {};
+    const g = await _apGate(auth); if (g.err) return { ok: false, error: g.err };
+    if (g.actor.role === 'mgr') return { ok: false, error: 'การแก้น้ำหนักคะแนนเป็นสิทธิ์ของสำนักงาน' };
+    const rows = Array.isArray(p.sections) ? p.sections : [];
+    if (!rows.length) return { ok: false, error: 'ไม่มีข้อมูล' };
+    const sum = rows.reduce((n, r) => n + (Number(r.weight) || 0), 0);
+    if (sum !== 100) return { ok: false, error: 'น้ำหนักรวมต้องได้ 100% พอดี (ตอนนี้ได้ ' + sum + '%)' };
+    try {
+      for (const r of rows) {
+        if (!r.key) continue;
+        const patch = { weight: Number(r.weight) || 0, draw_n: Math.max(0, Number(r.draw_n) || 0) };
+        if (r.gate_min === '' || r.gate_min === null) patch.gate_min = null;
+        else if (r.gate_min !== undefined) patch.gate_min = Math.max(0, Math.min(100, Number(r.gate_min) || 0));
+        const { error } = await sb().from('iv_section').update(patch).eq('key', r.key);
+        if (error) throw error;
+      }
+      if (p.pass_pct !== undefined) {
+        const pct = Math.max(0, Math.min(100, Number(p.pass_pct) || 0));
+        const { error } = await sb().from('iv_config').upsert(
+          { position: String(p.position || ''), pass_pct: pct, updated_at: new Date().toISOString(), updated_by: 'สนง.ใหญ่ (HR)' },
+          { onConflict: 'position' });
+        if (error) throw error;
+      }
+      await logAct('แก้เกณฑ์ประเมินสัมภาษณ์', null, 'น้ำหนักรวม ' + sum + '%');
+      return { ok: true };
+    } catch (e) { return { ok: false, error: (e && e.message) || 'บันทึกไม่สำเร็จ' }; }
+  }
+
   async function hrPositionsList() {
     const { data, error } = await sb().from('positions').select('*').order('sort').order('id');
     if (error) throw error;
