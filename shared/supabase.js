@@ -988,6 +988,48 @@
   //   ทั้งสามฟังก์ชันนี้ "พังเงียบ" ได้หมด — ยังไม่ได้รัน star_awards.sql / star_seen.sql
   //   ก็แค่ไม่มีอะไรโผล่ ไม่ทำให้หน้าลงเวลาล้ม
   // ============================================================
+  // ============================================================
+  // ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง (Job Description)
+  //   เนื้อหาถอดจากคู่มือ QSS Standard ตารางที่ 7-8 ซึ่งเป็นลิขสิทธิ์ CP ALL / ปัญญธารา
+  //   repo นี้เป็น public จึง "ไม่ฝังเนื้อหาไว้ในโค้ด" — เก็บในฐานข้อมูลอย่างเดียว
+  //   ไฟล์ติดตั้งอยู่ที่ supabase/job_desc.sql ในเครื่อง (โฟลเดอร์ _local-ห้ามอัป-github)
+  //   ยังไม่ได้รัน SQL → คืน missing:true ให้หน้าเว็บขึ้นข้อความบอก ไม่ใช่หน้าพัง
+  // ============================================================
+  const _JD_ROLE_ORDER = ['mgr', 'asst', 'ctrl', 'staff', 'cashier', 'rider'];
+  const _JD_SHIFT_NAME = { m: 'ผลัดเช้า', a: 'ผลัดบ่าย', n: 'ผลัดดึก' };
+  function _jdGroup(rows) {
+    const byRole = {};
+    (rows || []).forEach(r => {
+      const R = byRole[r.role] || (byRole[r.role] = { role: r.role, role_name: r.role_name, shifts: {} });
+      const sk = r.shift || '';
+      const S = R.shifts[sk] || (R.shifts[sk] = { key: sk, name: _JD_SHIFT_NAME[sk] || (r.role === 'rider' ? 'ทุกผลัด' : 'งานที่ไม่ผูกกับผลัด'), stages: {} });
+      const gk = r.stage_no + '|' + r.stage;
+      const G = S.stages[gk] || (S.stages[gk] = { no: r.stage_no, name: r.stage, items: [] });
+      G.items.push({ item: r.item, area: r.area, freq: r.freq, note: r.note, ref: r.ref });
+    });
+    // ผลัดเรียง เช้า→บ่าย→ดึก แล้วปิดท้ายด้วยงานที่ไม่ผูกผลัด
+    const shOrder = { m: 1, a: 2, n: 3, '': 9 };
+    return _JD_ROLE_ORDER.filter(k => byRole[k]).concat(Object.keys(byRole).filter(k => _JD_ROLE_ORDER.indexOf(k) < 0))
+      .map(k => {
+        const R = byRole[k];
+        return { role: R.role, role_name: R.role_name,
+          shifts: Object.values(R.shifts).sort((a, b) => (shOrder[a.key] || 5) - (shOrder[b.key] || 5))
+            .map(S => ({ key: S.key, name: S.name,
+              stages: Object.values(S.stages).sort((a, b) => a.no - b.no || String(a.name).localeCompare(String(b.name), 'th')),
+              count: Object.values(S.stages).reduce((n, g) => n + g.items.length, 0) })) };
+      });
+  }
+  async function jobDesc() {
+    try {
+      const { data, error } = await sb.from('job_desc')
+        .select('role,role_name,shift,stage_no,stage,area,item,freq,note,ref,sort')
+        .eq('active', true).order('sort');
+      if (error) return { ok: false, missing: true, roles: [] };
+      if (!data || !data.length) return { ok: false, missing: true, roles: [] };
+      return { ok: true, roles: _jdGroup(data) };
+    } catch (_e) { return { ok: false, missing: true, roles: [] }; }
+  }
+
   const _STAR_COLS = 'cycle,branch_id,emp_id,emp_name,amount,note,awarded_by,awarded_at';
   async function myStarAwards(empId) {
     if (!empId) return [];
@@ -5330,7 +5372,7 @@
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, faceCheck, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, myStarAwards, branchStars, markStarSeen, starSeenLocal, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, faceCheck, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, myStarAwards, branchStars, markStarSeen, starSeenLocal, jobDesc, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     crateCountState, submitCrateCount, crateCountConfirm,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState,
     handoverBoard, handoverAdd, handoverDrop, handoverReview, handoverAck, handoverAssign, handoverCancel, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
