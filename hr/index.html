@@ -419,20 +419,50 @@
     .modal{box-shadow:none; border:0; border-radius:0; max-width:100%;}
     .modal-b{max-height:none; overflow:visible; padding:0;}
   }
-  /* ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง */
-  .jd-g{border:1px solid var(--line);border-radius:13px;background:var(--card);margin-bottom:9px;overflow:hidden}
-  .jd-g>summary{cursor:pointer;padding:11px 14px;font-size:14px;list-style:none;background:#f7faf8}
+  /* ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง · เส้นเวลาในกะ */
+  .jd-bl{font-size:11.5px;font-weight:700;color:var(--muted);align-self:center;padding-right:2px}
+  .jd-sep{width:1px;align-self:stretch;background:var(--line);margin:2px 6px}
+  .jd-cfgbtn{font-size:12.5px!important}
+  .jd-head{font-size:12.5px;color:var(--muted);margin:2px 0 12px}
+  .jd-tl{position:relative;padding-left:62px}
+  .jd-tl:before{content:'';position:absolute;left:25px;top:10px;bottom:10px;width:2px;background:var(--line)}
+  .jd-bd{position:relative;margin-bottom:15px}
+  .jd-dot{position:absolute;left:-45px;top:4px;width:18px;height:18px;border-radius:50%;background:var(--brand,#16a34a);border:3px solid var(--card);box-shadow:0 0 0 2px var(--line)}
+  .jd-clk{position:absolute;left:-62px;top:25px;width:54px;text-align:center;font-size:12px;font-weight:800;color:var(--brand,#16a34a);font-variant-numeric:tabular-nums;line-height:1.25}
+  .jd-cx{display:block;font-size:9.5px;font-weight:600;color:#b45309}
+  .jd-bh{font-size:16px}
+  .jd-sub{font-size:12.5px;color:var(--muted);font-weight:400;display:block}
+  .jd-cnt{font-weight:700;color:var(--brand,#16a34a)}
+  .jd-box{border:1px solid var(--line);border-radius:13px;padding:2px 12px 8px;margin-top:8px;background:var(--card)}
+  .jd-dv{border:1px solid #f3d38a;background:#fff8ec;border-radius:11px;padding:9px 12px;margin:10px 0 2px}
+  .jd-dv h4{font-size:12.5px;font-weight:800;color:#b45309;margin:0 0 5px}
+  .jd-dvr{display:flex;align-items:center;gap:9px;padding:4px 0;border-bottom:1px dashed #f0dcb0;font-size:13.5px}
+  .jd-dvr:last-child{border-bottom:0}
+  .jd-dvr .tm{font-weight:800;color:#b45309;font-variant-numeric:tabular-nums;min-width:46px}
+  .jd-dchip{font-size:11px;font-weight:600;background:#fff4e0;color:#b45309;border-radius:99px;padding:1px 9px;letter-spacing:.5px}
+  .jd-dno{font-size:11px;color:#9aa1a8;font-style:italic}
+  .jd-g{border:1px solid var(--line);border-radius:13px;background:var(--card);margin:9px 0;overflow:hidden}
+  .jd-g>summary{cursor:pointer;padding:10px 13px;font-size:13.5px;list-style:none;background:#f7faf8}
   .jd-g>summary::-webkit-details-marker{display:none}
   .jd-g>summary:before{content:'▸';margin-right:8px;color:var(--muted);display:inline-block;transition:.15s}
   .jd-g[open]>summary:before{transform:rotate(90deg)}
-  .jd-l{list-style:none;margin:0;padding:4px 14px 10px}
-  .jd-l li{padding:9px 0;border-bottom:1px dashed var(--line)}
+  .jd-l{list-style:none;margin:0;padding:4px 13px 9px}
+  .jd-l li{padding:8px 0;border-bottom:1px dashed var(--line)}
   .jd-l li:last-child{border-bottom:0}
   .jd-it{font-size:13.5px;line-height:1.6}
   .jd-m{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:4px}
   .jd-n{font-size:11.5px;color:var(--muted)}
   .jd-r{font-size:10.5px;color:#9aa1a8}
-  @media print{ .tabs,.topbar,.mrp,#jd_open,#jd_close,#jd_print{display:none!important} .jd-g{break-inside:avoid} }
+  .jd-cfgh{font-size:13.5px;font-weight:700;color:var(--brand,#16a34a);margin:14px 0 8px}
+  .jd-scroll{overflow-x:auto}
+  .jd-tb{width:100%;border-collapse:collapse;font-size:13.5px;min-width:440px}
+  .jd-tb th{background:#f3f7f4;color:var(--brand,#16a34a);text-align:left;padding:8px 10px;font-size:12.5px;border-bottom:1px solid var(--line)}
+  .jd-tb td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .jd-inp{font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;width:92px;text-align:center;background:var(--card);color:inherit;font-variant-numeric:tabular-nums}
+  .jd-dy{display:flex;gap:3px}
+  .jd-dy span{width:23px;height:23px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;background:#f3f4f6;color:#9aa1a8;cursor:pointer;user-select:none}
+  .jd-dy span.on{background:var(--brand,#16a34a);color:#fff}
+  @media print{ .tabs,.topbar,.mrp,#jd_open,#jd_close,#jd_print{display:none!important} .jd-g,.jd-bd{break-inside:avoid} .jd-tl{padding-left:56px} }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
@@ -13749,61 +13779,176 @@ async function loadMdailyDash(){
 
 const ALL_TABS = ['shirt','mgrtasks','mgrdash','dashboard','board','employees','recruit','mgrdailyrev','report','discipline','score','terminate','advance','payroll','rider','empsum','probation','mgreval','analytics','salesDash','auditDash','stock','handover','taskset','special','qa','shelf','lineFeed','exams','leaves','schedule','attnedit','shiftexit','branches','goods','poster','settings','mgrtaskset','submissions','activity','notifylog','promo','manual','jobdesc'];
 // ============================================================
-// ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง (Job Description)
+// ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง (Job Description) · เส้นเวลาในกะ
 //   เนื้อหาอยู่ในฐานข้อมูลล้วน ๆ (ตาราง job_desc) ไม่ฝังในโค้ด
 //   เพราะถอดมาจากคู่มือ QSS Standard ซึ่งเป็นลิขสิทธิ์ CP ALL / ปัญญธารา
-//   และ repo ของแอปนี้เป็น public — ติดตั้งด้วย supabase/job_desc.sql ในเครื่อง
+//   และ repo ของแอปนี้เป็น public — ติดตั้งด้วย job_desc.sql ในเครื่อง
+//   เวลาแต่ละช่วงคำนวณจากเวลากะจริงในตาราง shifts แล้วให้แต่ละสาขาแก้ทับได้
+//   (ตาราง job_desc_band / job_desc_delivery — supabase/job_desc_cfg.sql)
 // ============================================================
-let JD=null, JD_ROLE='', JD_SHIFT='';
+let JD=null, JD_ROLE='', JD_SHIFT='', JD_BR='', JD_TAB='view', JD_CFG=null;
+const JD_DAY=['','จ','อ','พ','พฤ','ศ','ส','อา'];
+
+function jdBranches(){
+  const all=(DATA.branches||[]).map(b=>({id:String(b.branch_id),name:b.name||b.branch_id}));
+  return MGR_MODE ? all.filter(b=>b.id===String(MGR_BRANCH)) : all;
+}
+function jdCanEdit(){ return !MGR_MODE || !!MGR_BRANCH; }   // HR แก้ได้ทุกสาขา · ผจก. แก้ได้เฉพาะสาขาตัวเอง
+function jdWho(){ return MGR_MODE ? ('ผจก. '+(MGR_EMP||'')) : 'สนง.ใหญ่ (HR)'; }
+
 async function jdInit(){
+  if(!JD_BR){ const bs=jdBranches(); JD_BR = bs.length ? bs[0].id : ''; }
   if(JD){ jdRender(); return; }
   const box=$('jd_body'); if(box) box.innerHTML='<div class="empty">กำลังโหลด…</div>';
-  let r; try{ r = await HR.jobDesc(); }catch(e){ r=null; }
+  let r; try{ r = await HR.jobDesc(JD_BR); }catch(e){ r=null; }
   if(!r || !r.ok || !r.roles.length){
     if(box) box.innerHTML='<div class="empty">ยังไม่ได้ติดตั้งข้อมูลหน้าที่ตามตำแหน่ง<br>'
       +'<span style="font-size:12.5px;color:var(--muted)">ให้รันไฟล์ <b>job_desc.sql</b> ใน Supabase → SQL Editor ก่อน '
       +'(ไฟล์อยู่ในโฟลเดอร์ _local-ห้ามอัป-github เพราะเนื้อหาเป็นลิขสิทธิ์ CP ALL ใช้ภายในร้านเท่านั้น)</span></div>';
+    const rr=$('jd_roles'), ss=$('jd_shifts'); if(rr) rr.innerHTML=''; if(ss) ss.innerHTML='';
     return;
   }
   JD=r; JD_ROLE=JD.roles[0].role; JD_SHIFT=JD.roles[0].shifts[0].key; jdRender();
 }
+async function jdReload(){ JD=null; JD_CFG=null; await jdInit(); }
+
 function jdRole(){ return (JD.roles.find(x=>x.role===JD_ROLE)) || JD.roles[0]; }
+function jdShift(R){ return R.shifts.find(x=>x.key===JD_SHIFT) || R.shifts[0]; }
+
 function jdRender(){
   if(!JD) return;
   const R=jdRole();
   if(!R.shifts.some(s=>s.key===JD_SHIFT)) JD_SHIFT=R.shifts[0].key;
-  $('jd_roles').innerHTML = JD.roles.map(x=>{
-    const n=x.shifts.reduce((a,b)=>a+b.count,0);
-    return '<button data-jdr="'+esc(x.role)+'"'+(x.role===JD_ROLE?' class="on"':'')+'>'+esc(x.role_name)
-      +' <span style="opacity:.6;font-size:11.5px">'+n+'</span></button>';
-  }).join('');
+  const bs=jdBranches();
+  $('jd_roles').innerHTML =
+    (bs.length>1 ? ('<span class="jd-bl">สาขา</span>'+bs.map(b=>'<button data-jdb="'+esc(b.id)+'"'+(b.id===JD_BR?' class="on"':'')+'>'+esc(b.name)+'</button>').join('')+'<span class="jd-sep"></span>') : '')
+    + JD.roles.map(x=>'<button data-jdr="'+esc(x.role)+'"'+(x.role===JD_ROLE?' class="on"':'')+'>'+esc(x.role_name)+'</button>').join('');
   $('jd_shifts').innerHTML = R.shifts.map(sh=>'<button data-jds="'+esc(sh.key)+'"'+(sh.key===JD_SHIFT?' class="on"':'')+'>'
-      +esc(sh.name)+' <span style="opacity:.6;font-size:11.5px">'+sh.count+'</span></button>').join('');
-  const S=R.shifts.find(x=>x.key===JD_SHIFT)||R.shifts[0];
-  $('jd_body').innerHTML = jdStagesHTML(R, S);
-  $('jd_roles').querySelectorAll('[data-jdr]').forEach(b=>b.onclick=()=>{ JD_ROLE=b.dataset.jdr; jdRender(); });
-  $('jd_shifts').querySelectorAll('[data-jds]').forEach(b=>b.onclick=()=>{ JD_SHIFT=b.dataset.jds; jdRender(); });
-  const all=on=>$('jd_body').querySelectorAll('details.jd-g').forEach(d=>d.open=on);
-  $('jd_open') && ($('jd_open').onclick=()=>all(true));
-  $('jd_close') && ($('jd_close').onclick=()=>all(false));
-  $('jd_print') && ($('jd_print').onclick=()=>{ all(true); setTimeout(()=>window.print(),120); });
+      +esc(sh.name)+(sh.start?(' <span style="opacity:.65;font-size:11px">'+esc(sh.start)+'–'+esc(sh.end)+'</span>'):'')
+      +' <span style="opacity:.6;font-size:11.5px">'+sh.count+'</span></button>').join('')
+    + (jdCanEdit() ? '<span class="jd-sep"></span><button data-jdtab="'+(JD_TAB==='view'?'cfg':'view')+'" class="jd-cfgbtn">'
+        +(JD_TAB==='view'?'⚙ ตั้งค่าเวลา / รถส่งของ':'← กลับไปดูหน้าที่')+'</button>' : '');
+  if(JD_TAB==='cfg'){ jdRenderCfg(); } else { $('jd_body').innerHTML = jdTimelineHTML(R, jdShift(R)); }
+  jdWire();
 }
-// กางพับด้วย <details> ล้วน ๆ — ไม่ต้องมี JS คุมสถานะ และพิมพ์ออกมาได้ตามที่กางไว้
-function jdStagesHTML(R, S){
-  if(!S || !S.stages.length) return '<div class="empty">ยังไม่มีข้อมูลของตำแหน่งนี้ในผลัดนี้</div>';
-  const pill=(t,c)=>'<span class="pill '+(c||'')+'" style="font-size:11px;padding:1px 8px">'+esc(t)+'</span>';
-  return '<div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">'
-      +esc(R.role_name)+' · '+esc(S.name)+' — รวม <b>'+S.count+'</b> หน้าที่ · กดหัวข้อเพื่อกางดูรายละเอียด</div>'
-    + S.stages.map(g=>'<details class="jd-g" open>'
-        +'<summary><b>'+esc(g.name||'อื่น ๆ')+'</b> <span style="color:var(--muted);font-weight:400">'+g.items.length+' ข้อ</span></summary>'
-        +'<ul class="jd-l">'+g.items.map(it=>'<li>'
-            +'<div class="jd-it">'+esc(it.item)+'</div>'
-            +'<div class="jd-m">'
-              +(it.freq?pill(it.freq,'ok'):'')
-              +(it.area?pill(it.area):'')
-              +(it.note?('<span class="jd-n">'+esc(it.note)+'</span>'):'')
-              +(it.ref?('<span class="jd-r">'+esc(it.ref)+'</span>'):'')
-            +'</div></li>').join('')+'</ul></details>').join('');
+function jdWire(){
+  $('jd_roles').querySelectorAll('[data-jdr]').forEach(b=>b.onclick=()=>{ JD_ROLE=b.dataset.jdr; JD_TAB='view'; jdRender(); });
+  $('jd_roles').querySelectorAll('[data-jdb]').forEach(b=>b.onclick=()=>{ JD_BR=b.dataset.jdb; jdReload(); });
+  $('jd_shifts').querySelectorAll('[data-jds]').forEach(b=>b.onclick=()=>{ JD_SHIFT=b.dataset.jds; jdRender(); });
+  $('jd_shifts').querySelectorAll('[data-jdtab]').forEach(b=>b.onclick=()=>{ JD_TAB=b.dataset.jdtab; jdRender(); });
+  const all=on=>$('jd_body').querySelectorAll('details.jd-g').forEach(d=>d.open=on);
+  if($('jd_open'))  $('jd_open').onclick =()=>all(true);
+  if($('jd_close')) $('jd_close').onclick=()=>all(false);
+  if($('jd_print')) $('jd_print').onclick=()=>{ all(true); setTimeout(()=>window.print(),120); };
+}
+
+// ---------- เส้นเวลา ----------
+function jdTimelineHTML(R, S){
+  if(!S || !S.bands.length) return '<div class="empty">ยังไม่มีข้อมูลของตำแหน่งนี้ในผลัดนี้</div>';
+  const head='<div class="jd-head">'+esc(R.role_name)+' · '+esc(S.name)
+    +(S.start?(' <b>'+esc(S.start)+' – '+esc(S.end)+'</b>'):'')
+    +' — รวม <b>'+S.count+'</b> หน้าที่ · วันนี้วัน'+esc(JD.dayName||'')+'</div>';
+  return head+'<div class="jd-tl">'+S.bands.map(b=>jdBandHTML(b, S)).join('')+'</div>';
+}
+function jdBandHTML(b, S){
+  // รถส่งของที่ลงผลัดนี้และลงวันนี้ → ขึ้นเป็นกล่องแยกบนหัวช่วง "ระหว่างผลัด"
+  let dv='';
+  if(b.no===2){
+    const seen={}, list=[];
+    b.secs.forEach(g=>g.items.forEach(it=>{
+      if(it.deliv && it.deliv.days.indexOf(JD.today)>=0 && (!it.deliv.shift || it.deliv.shift===S.key) && !seen[it.vendor]){
+        seen[it.vendor]=1; list.push(it);
+      }
+    }));
+    list.sort((x,y)=>String(x.deliv.at||'zz').localeCompare(String(y.deliv.at||'zz')));
+    if(list.length) dv='<div class="jd-dv"><h4>🚚 รถส่งของวันนี้ (วัน'+esc(JD.dayName||'')+') · '+list.length+' เจ้า</h4>'
+      +list.map(it=>'<div class="jd-dvr"><span class="tm">'+esc(it.deliv.at||'—')+'</span><span>'+esc(it.vendor)+'</span>'
+        +(it.deliv.note?'<span class="jd-n">'+esc(it.deliv.note)+'</span>':'')+'</div>').join('')+'</div>';
+  }
+  return '<div class="jd-bd"><div class="jd-dot"></div><div class="jd-clk">'+esc(b.at||'')+(b.custom?'<span class="jd-cx">ตั้งเอง</span>':'')+'</div>'
+    +'<div class="jd-bh"><b>'+esc(b.name)+'</b> <span class="jd-sub">'+esc(b.sub)+' · <span class="jd-cnt">'+b.count+' หน้าที่</span></span></div>'
+    +'<div class="jd-box">'+dv+b.secs.map(g=>jdSecHTML(g)).join('')+'</div></div>';
+}
+function jdSecHTML(g){
+  return '<details class="jd-g" open><summary><b>'+esc(g.name||'อื่น ๆ')+'</b> '
+    +'<span style="color:var(--muted);font-weight:400">'+g.items.length+' ข้อ</span></summary>'
+    +'<ul class="jd-l">'+g.items.map(it=>{
+      let d='';
+      if(it.deliv && it.deliv.days.length){
+        d='<span class="jd-dchip">'+it.deliv.days.map(x=>JD_DAY[x]).join(' ')
+          +(it.deliv.at?(' · '+esc(it.deliv.at)):'')+'</span>';
+      } else if(it.vendor){
+        d='<span class="jd-dno">ยังไม่ได้ตั้งวัน/เวลา</span>';
+      }
+      return '<li><div class="jd-it">'+esc(it.item)+'</div><div class="jd-m">'
+        +(it.freq?('<span class="pill '+(/สัปดาห์|เดือน/.test(it.freq)?'warn':'ok')+'" style="font-size:11px;padding:1px 8px">'+esc(it.freq)+'</span>'):'')
+        +d
+        +(it.only_shift?('<span class="pill warn" style="font-size:11px;padding:1px 8px">'+esc(it.only_shift)+'</span>'):'')
+        +(it.note?('<span class="jd-n">'+esc(it.note)+'</span>'):'')
+        +(it.ref?('<span class="jd-r">'+esc(it.ref)+'</span>'):'')
+        +'</div></li>';
+    }).join('')+'</ul></details>';
+}
+
+// ---------- หน้าตั้งค่า ----------
+async function jdRenderCfg(){
+  const box=$('jd_body');
+  box.innerHTML='<div class="empty">กำลังโหลดการตั้งค่า…</div>';
+  let c; try{ c=await HR.jobDescCfg(JD_BR); }catch(e){ c=null; }
+  if(!c){ box.innerHTML='<div class="empty">โหลดการตั้งค่าไม่สำเร็จ</div>'; return; }
+  JD_CFG=c;
+  const miss = c.missing ? '<div class="note warn" style="margin-bottom:12px">ยังไม่ได้ติดตั้งตารางตั้งค่า — ให้รันไฟล์ <b>supabase/job_desc_cfg.sql</b> ก่อน จึงจะบันทึกได้<br><span style="font-size:12px">ระหว่างนี้เมนูยังใช้ได้ปกติ เวลาจะคำนวณจากเวลากะในระบบให้เอง</span></div>' : '';
+  const shs=c.shifts.length?c.shifts:[{key:'m',name:'ผลัดเช้า'},{key:'a',name:'ผลัดบ่าย'},{key:'n',name:'ผลัดดึก'}];
+  const sk = shs.some(s=>s.key===JD_SHIFT) ? JD_SHIFT : shs[0].key;
+  const def = c.defaults[sk]||['','','','','','',''];
+  const rows=(c.bandNames||[]).slice(0,6).map((b,i)=>{
+    const v=c.bands[sk+'|'+i]||'';
+    return '<tr><td><b>'+esc(b.name)+'</b><div class="jd-n">'+esc(b.sub)+'</div></td>'
+      +'<td><input class="jd-inp" data-jdband="'+i+'" value="'+esc(v)+'" placeholder="'+esc(def[i]||'—')+'" inputmode="numeric"></td>'
+      +'<td class="jd-n">ค่าเริ่มต้น '+esc(def[i]||'—')+(v?' · <b style="color:var(--warn,#b45309)">ตั้งเอง</b>':'')+'</td></tr>';
+  }).join('');
+  const dv=(c.deliv||[]).map(d=>{
+    const on=String(d.days||'').split(',').filter(Boolean);
+    return '<tr data-jddv="'+d.id+'"><td>'+esc(d.vendor)+'</td>'
+      +'<td><div class="jd-dy">'+[1,2,3,4,5,6,7].map(x=>'<span data-d="'+x+'"'+(on.indexOf(String(x))>=0?' class="on"':'')+'>'+JD_DAY[x]+'</span>').join('')+'</div></td>'
+      +'<td><select class="jd-inp" data-f="shift"><option value="">—</option>'
+        +shs.map(s=>'<option value="'+esc(s.key)+'"'+(String(d.shift)===s.key?' selected':'')+'>'+esc(s.name)+'</option>').join('')+'</select></td>'
+      +'<td><input class="jd-inp" style="width:72px" data-f="at_time" value="'+esc(d.at_time||'')+'" placeholder="--:--" inputmode="numeric"></td></tr>';
+  }).join('');
+  box.innerHTML = miss
+    + '<div class="jd-cfgh">1 · เวลาของแต่ละช่วง — <span class="jd-n">'+esc(jdBranches().find(b=>b.id===JD_BR)?jdBranches().find(b=>b.id===JD_BR).name:JD_BR)+' · '+esc((shs.find(s=>s.key===sk)||{}).name||'')+'</span></div>'
+    + '<div class="jd-scroll"><table class="jd-tb"><thead><tr><th>ช่วงเวลา</th><th style="width:108px">เวลา</th><th>ค่าเริ่มต้น</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+    + '<p class="jd-n" style="margin:8px 0 18px">เว้นว่าง = ใช้ค่าเริ่มต้นที่คำนวณจากเวลากะในระบบ · แก้แล้วมีผลเฉพาะสาขานี้ · กดนอกช่องเพื่อบันทึก</p>'
+    + (dv ? ('<div class="jd-cfgh">2 · ตารางรถส่งของ <span class="jd-n">กดวันเพื่อเปิด/ปิด</span></div>'
+        + '<div class="jd-scroll"><table class="jd-tb"><thead><tr><th>รถ / ผู้ส่ง</th><th style="width:168px">วันที่ลง</th><th style="width:118px">ผลัด</th><th style="width:88px">เวลา</th></tr></thead><tbody>'+dv+'</tbody></table></div>'
+        + '<p class="jd-n" style="margin-top:8px">ตั้งเสร็จแล้วรายการจะไปขึ้นในกล่อง "รถส่งของวันนี้" บนเส้นเวลาของผลัดนั้น เฉพาะวันที่มีรถจริง</p>')
+      : '<p class="jd-n">ยังไม่มีรายการรถส่งของของสาขานี้</p>');
+  jdWireCfg(sk);
+}
+function jdWireCfg(sk){
+  const box=$('jd_body');
+  box.querySelectorAll('[data-jdband]').forEach(inp=>{
+    inp.onchange=async()=>{
+      const r=await HR.jobDescSaveBand(JD_BR, sk, +inp.dataset.jdband, inp.value.trim(), jdWho());
+      if(r&&r.ok){ toast('ok', r.cleared?'กลับไปใช้ค่าเริ่มต้นแล้ว':'บันทึกเวลาแล้ว'); JD=null; jdRenderCfg(); }
+      else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
+    };
+  });
+  box.querySelectorAll('[data-jddv]').forEach(tr=>{
+    const id=+tr.dataset.jddv;
+    const read=()=>({ id,
+      days:[...tr.querySelectorAll('.jd-dy span.on')].map(s=>s.dataset.d).join(','),
+      shift:tr.querySelector('[data-f=shift]').value,
+      at_time:tr.querySelector('[data-f=at_time]').value.trim() });
+    const save=async()=>{
+      const r=await HR.jobDescSaveDelivery(read(), jdWho());
+      if(r&&r.ok){ toast('ok','บันทึกแล้ว'); JD=null; }
+      else toast('err',(r&&r.error)||'บันทึกไม่สำเร็จ');
+    };
+    tr.querySelectorAll('.jd-dy span').forEach(s=>s.onclick=()=>{ s.classList.toggle('on'); save(); });
+    tr.querySelector('[data-f=shift]').onchange=save;
+    tr.querySelector('[data-f=at_time]').onchange=save;
+  });
 }
 showTab = function(name){
   ALL_TABS.forEach(n=>{ const t=$('tab_'+n), v=$('view_'+n); if(t) t.classList.toggle('active', n===name); if(v) v.style.display = n===name?'block':'none'; });
