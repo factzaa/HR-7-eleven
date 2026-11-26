@@ -462,6 +462,43 @@
   .jd-dy{display:flex;gap:3px}
   .jd-dy span{width:23px;height:23px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;background:#f3f4f6;color:#9aa1a8;cursor:pointer;user-select:none}
   .jd-dy span.on{background:var(--brand,#16a34a);color:#fff}
+  /* ★ 26 พ.ย. 69 — ประเมินสัมภาษณ์งาน */
+  .iv-sh{display:flex;align-items:center;gap:8px;margin:14px 0 6px;font-size:13.5px;color:var(--brand,#16a34a)}
+  .iv-sh span{font-size:11.5px;color:var(--muted);font-weight:400;margin-left:auto;white-space:nowrap}
+  .iv-q{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:var(--card)}
+  .iv-qt{font-size:14px;font-weight:600;line-height:1.55}
+  .iv-pr{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .iv-ga{font-size:12.5px;color:#15803d;background:#f0fdf4;border-left:3px solid #86efac;padding:6px 9px;border-radius:0 8px 8px 0;margin-top:6px}
+  .iv-sc{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+  .iv-sc button{font:inherit;font-size:13px;font-weight:700;width:38px;height:36px;border:1.5px solid var(--line);background:var(--card);border-radius:9px;cursor:pointer;color:inherit}
+  .iv-sc button.on{background:var(--brand,#16a34a);border-color:var(--brand,#16a34a);color:#fff}
+  .iv-sc button.na{width:auto;padding:0 10px;font-size:12px;font-weight:500}
+  .iv-an{font-size:11px;color:var(--muted);margin-top:4px}
+  .iv-ko{border:1px solid #fecaca;background:#fef2f2;border-radius:12px;padding:11px 12px;margin-top:12px}
+  .iv-ko h4{font-size:13px;font-weight:800;color:#b91c1c;margin-bottom:6px}
+  .iv-ko label{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;padding:4px 0;cursor:pointer;color:var(--ink,#1f2937)}
+  .iv-ko input{margin-top:4px;width:17px;height:17px;accent-color:#b91c1c;flex:none}
+  .iv-live{margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#f7faf8}
+  .iv-res{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .iv-big{font-size:34px;font-weight:800;color:var(--brand,#16a34a);font-variant-numeric:tabular-nums;line-height:1}
+  .iv-big.no{color:#b91c1c}
+  .iv-bars{flex:1;min-width:240px}
+  .iv-bar{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:3px}
+  .iv-bar .nm{width:50%;display:block;text-align:right;color:var(--muted)}
+  .iv-bar .tr{flex:1;display:block;height:8px;background:#eef0f2;border-radius:99px;overflow:hidden}
+  .iv-bar .fl{display:block;height:8px;background:var(--brand,#16a34a);border-radius:99px}
+  .iv-bar .fl.low{background:#b45309}.iv-bar .fl.bad{background:#b91c1c}
+  .iv-bar .vl{width:42px;display:block;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+  .iv-vd{border-radius:11px;padding:11px 13px;font-size:13.5px;font-weight:600}
+  .iv-vd.ok{background:#f0fdf4;border:1px solid #86efac;color:#15803d}
+  .iv-vd.no{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}
+  .iv-lab{font-size:12px;font-weight:800;letter-spacing:.3px;color:var(--muted);text-transform:uppercase;margin:14px 0 6px}
+  .iv-chk{list-style:none;margin:0;padding:0;font-size:13.5px}
+  .iv-chk li{padding:6px 0;border-bottom:1px dashed var(--line)}
+  .iv-chk li:last-child{border-bottom:0}
+  .iv-chk li:before{content:'\2610';color:var(--muted);margin-right:8px}
+  .iv-note2{font-size:12.5px;color:var(--muted);background:#f7faf8;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:8px}
+  .iv-note3{background:#fff4e0;border:1px solid #f3d38a;border-radius:10px;padding:9px 11px;font-size:12.5px;color:#b45309;margin-top:8px}
   @media print{ .tabs,.topbar,.mrp,#jd_open,#jd_close,#jd_print{display:none!important} .jd-g,.jd-bd{break-inside:avoid} .jd-tl{padding-left:56px} }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -10173,12 +10210,246 @@ async function openApplicant(id){
   renderRcActions(a);
   $('rcOverlay').classList.add('show');
 }
+// ============================================================
+// ★ 26 พ.ย. 69 — ประเมินการสัมภาษณ์งาน (สุ่มคำถาม + ให้คะแนน)
+//   เสียบเป็นปุ่มใหม่ในการ์ดผู้สมัคร ไม่แตะปุ่มเดิม
+//   ยังไม่ได้รัน supabase/interview_eval.sql → ขึ้นข้อความบอก ไม่ใช่หน้าพัง
+// ============================================================
+let IV=null, IV_SC={}, IV_KO=[], IV_SAVE=null;
+const IV_ANCH='1 = ไม่ตอบ/ตอบไม่ตรงคำถาม · 2 = ตอบกว้าง ๆ · 3 = ตอบได้พอใช้ · 4 = ตอบชัด มีเหตุผล · 5 = ตอบดี มีตัวอย่างจริง';
+
+function ivWho(){ return MGR_MODE ? ('ผจก. '+(MGR_EMP||'')) : 'สนง.ใหญ่ (HR)'; }
+function ivSecOf(key){ return (IV&&IV.sections||[]).find(s=>s.key===key) || {name:key,weight:0}; }
+
+async function ivOpen(a){
+  const box=$('rc_actionbox');
+  box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div class="empty">กำลังเปิดรอบสัมภาษณ์…</div></div>';
+  const r=await post({ action:'hr_iv_open', ...authBody(), data:{ applicant_id:a.id, position:a.position, interviewer:ivWho() } });
+  if(!r.ok){
+    box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div class="empty">'
+      +(r.missing
+        ? 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์<br><span style="font-size:12.5px;color:var(--muted)">ให้รันไฟล์ <b>supabase/interview_eval.sql</b> ใน Supabase → SQL Editor ก่อน (ส่วนอื่นของเมนูรับสมัครงานยังใช้ได้ปกติ)</span>'
+        : esc(r.error||'เปิดไม่สำเร็จ'))+'</div></div>';
+    return;
+  }
+  IV=r; IV_SC=Object.assign({}, r.session.scores||{}); IV_KO=(r.session.knockouts||[]).map(String);
+  ivRender(a);
+}
+
+function ivRender(a){
+  const box=$('rc_actionbox');
+  const S=IV.session, done=!!S.submitted_at;
+  let h='<div class="card" style="padding:12px;border:1.5px solid var(--line2)">'
+    +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+    +'<div style="font-weight:700"><svg class="ei" viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg> ประเมินสัมภาษณ์ '
+    +'<span style="font-weight:400;font-size:12px;color:var(--muted)">· เกณฑ์ผ่าน '+IV.pass_pct+'%</span></div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +(done?'':'<button class="btn btn-sec btn-sm" id="iv_redraw">สุ่มคำถามใหม่</button>')
+    +'<button class="btn btn-sec btn-sm" id="iv_close2">ปิด</button></div></div>';
+
+  if(done){
+    h+=ivResultHTML(a);
+  }else{
+    h+='<div class="note" style="margin-bottom:10px;font-size:12.5px">สุ่มมา <b>'+IV.questions.length+' ข้อ</b> และ<b>ล็อกไว้กับรอบนี้แล้ว</b> — ปิดแล้วเปิดใหม่ได้ชุดเดิม ย้อนตรวจทีหลังได้ว่าถามอะไรไป</div>';
+    let curSec='';
+    IV.questions.forEach(q=>{
+      if(q.section!==curSec){
+        curSec=q.section; const sec=ivSecOf(curSec);
+        h+='<div class="iv-sh"><b>'+esc(sec.name)+'</b><span>น้ำหนัก '+sec.weight+'%'
+          +(sec.gate_min!=null?(' · ขั้นต่ำ '+sec.gate_min+'%'):'')+'</span></div>';
+      }
+      const v=String(IV_SC[String(q.id)]||'');
+      h+='<div class="iv-q"><div class="iv-qt">'+esc(q.question)+'</div>'
+        +(q.probe?'<div class="iv-pr">↳ ถามต่อ: '+esc(q.probe)+'</div>':'')
+        +(q.good_answer?'<div class="iv-ga"><b>คำตอบที่ถือว่าดี:</b> '+esc(q.good_answer)+'</div>':'')
+        +'<div class="iv-sc" data-ivq="'+q.id+'">'
+        +[1,2,3,4,5].map(n=>'<button data-n="'+n+'"'+(v===String(n)?' class="on"':'')+'>'+n+'</button>').join('')
+        +'<button class="na" data-n="0"'+(v==='0'?' class="na on"':'')+'>ไม่ได้ถาม</button></div>'
+        +'<div class="iv-an">'+IV_ANCH+'</div></div>';
+    });
+    h+='<div class="iv-ko"><h4>⚠ ข้อตัดสิทธิ์ — ติ๊กข้อใดข้อหนึ่ง = ไม่ผ่านทันที ไม่ว่าคะแนนจะเท่าไร</h4>'
+      +IV.knockouts.map(k=>'<label><input type="checkbox" data-ivko="'+k.id+'"'
+        +(IV_KO.indexOf(String(k.id))>=0?' checked':'')+'><span>'+esc(k.label)+'</span></label>').join('')+'</div>';
+    h+='<div class="field" style="margin-top:10px"><label>บันทึกของผู้สัมภาษณ์ (เก็บภายใน ผู้สมัครไม่เห็น)</label>'
+      +'<textarea id="iv_note" rows="3" placeholder="สิ่งที่สังเกต ข้อกังวล จุดเด่น…">'+esc(S.note||'')+'</textarea></div>';
+    h+='<div id="iv_live" class="iv-live"></div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+      +'<button class="btn btn-pri btn-sm" id="iv_submit">สรุปผลประเมิน</button>'
+      +'<button class="btn btn-sec btn-sm" id="iv_savenow">บันทึกไว้ก่อน</button></div>';
+  }
+  h+='</div>';
+  box.innerHTML=h;
+  ivWire(a, done);
+}
+
+function ivWire(a, done){
+  if($('iv_close2')) $('iv_close2').onclick=()=>{ $('rc_actionbox').innerHTML=''; IV=null; };
+  if($('iv_redraw')) $('iv_redraw').onclick=async()=>{
+    const why=prompt('สุ่มคำถามชุดใหม่ — ระบุเหตุผลสั้น ๆ (บันทึกไว้ในประวัติการใช้งาน):'); if(why===null) return;
+    const r=await post({ action:'hr_iv_redraw', ...authBody(), data:{ applicant_id:a.id, reason:why, interviewer:ivWho() } });
+    if(!r.ok){ toast('err', r.error||'สุ่มใหม่ไม่สำเร็จ'); return; }
+    IV=r; IV_SC={}; IV_KO=[]; toast('ok','สุ่มคำถามชุดใหม่แล้ว'); ivRender(a);
+  };
+  if(done){
+    const t=$('iv_sms');
+    if(t){
+      const upd=()=>{ if($('iv_len')) $('iv_len').textContent=t.value.length; };
+      upd(); t.oninput=upd;
+      if($('iv_copy')) $('iv_copy').onclick=async()=>{
+        try{ await navigator.clipboard.writeText(t.value); }
+        catch(e){ t.select(); try{ document.execCommand('copy'); }catch(_){} }
+        toast('ok','คัดลอกแล้ว');
+      };
+      if($('iv_sendsms')) $('iv_sendsms').onclick=async()=>{
+        const m=(t.value||'').trim(); if(!m){ toast('err','ไม่มีข้อความ'); return; }
+        if(!confirm('ส่ง SMS แจ้งผลไม่ผ่านไปที่ '+a.phone+' ?\n\nข้อความนี้ไม่มีคะแนนและเหตุผลภายใน')) return;
+        const btn=$('iv_sendsms'), html=btn.innerHTML; btn.innerHTML='<span class="spin"></span>';
+        const base=String((window.SUPABASE_CONFIG||{}).url||'').replace(/\/$/,'');
+        try{
+          const res=await fetch(base+'/functions/v1/sms-send',{ method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ password:pwd, to:a.phone, msg:m, applicant_id:a.id }) });
+          const j=await res.json().catch(()=>({}));
+          if(j&&j.ok){
+            toast('ok','ส่ง SMS แล้ว'+(j.credit!=null?(' · เครดิตเหลือ '+j.credit):''));
+            await post({ action:'hr_iv_sms_mark', ...authBody(), data:{ applicant_id:a.id } });
+            const o=await post({ action:'hr_iv_open', ...authBody(), data:{ applicant_id:a.id } });
+            if(o.ok){ IV=o; ivRender(a); return; }
+          } else toast('err',(j&&j.error)||'ส่งไม่สำเร็จ');
+        }catch(e){ toast('err','เรียก sms-send ไม่ได้ (deploy edge function แล้วหรือยัง)'); }
+        btn.innerHTML=html;
+      };
+    }
+    return;
+  }
+
+  $('rc_actionbox').querySelectorAll('.iv-sc').forEach(g=>{
+    g.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      g.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); IV_SC[String(g.dataset.ivq)]=Number(b.dataset.n);
+      ivLive(); ivQueueSave(a);
+    });
+  });
+  $('rc_actionbox').querySelectorAll('[data-ivko]').forEach(c=>c.onchange=()=>{
+    const id=String(c.dataset.ivko);
+    if(c.checked){ if(IV_KO.indexOf(id)<0) IV_KO.push(id); }
+    else IV_KO=IV_KO.filter(x=>x!==id);
+    ivLive(); ivQueueSave(a);
+  });
+  if($('iv_note')) $('iv_note').onchange=()=>ivQueueSave(a);
+  if($('iv_savenow')) $('iv_savenow').onclick=async()=>{ await ivSave(a); toast('ok','บันทึกแล้ว'); };
+  if($('iv_submit')) $('iv_submit').onclick=()=>ivSubmit(a);
+  ivLive();
+}
+
+// คำนวณสดฝั่งหน้าเว็บให้เห็นคะแนนระหว่างสัมภาษณ์ (ตัวจริงคำนวณซ้ำที่ฝั่ง API ตอนสรุปผล)
+function ivCalcLocal(){
+  const per={}, secPct={};
+  IV.questions.forEach(q=>{
+    const n=Number(IV_SC[String(q.id)]);
+    if(!(n>=1&&n<=5)) return;
+    const s=per[q.section]||(per[q.section]={sum:0,cnt:0}); s.sum+=n; s.cnt++;
+  });
+  let num=0, den=0, gate=null, answered=0;
+  IV.sections.forEach(sec=>{
+    const p=per[sec.key]; if(!p||!p.cnt) return;
+    const pct=(p.sum/(p.cnt*5))*100; secPct[sec.key]=Math.round(pct*10)/10;
+    answered+=p.cnt; num+=pct*(Number(sec.weight)||0); den+=(Number(sec.weight)||0);
+    if(sec.gate_min!=null && pct<Number(sec.gate_min) && !gate) gate={name:sec.name,pct:Math.round(pct*10)/10,min:Number(sec.gate_min)};
+  });
+  return { total: den?Math.round((num/den)*10)/10:null, secPct, gate, answered, den };
+}
+function ivLive(){
+  const el=$('iv_live'); if(!el||!IV) return;
+  const c=ivCalcLocal();
+  if(c.total==null && !IV_KO.length){ el.innerHTML='<span style="color:var(--muted);font-size:12.5px">ยังไม่ได้ให้คะแนน</span>'; return; }
+  const pass = !IV_KO.length && !c.gate && c.total!=null && c.total>=Number(IV.pass_pct);
+  el.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+    +'<b style="font-size:26px;color:'+(pass?'var(--brand,#16a34a)':'var(--red,#b91c1c)')+'">'+(c.total!=null?c.total+'%':'—')+'</b>'
+    +'<span style="font-size:12.5px;color:var(--muted)">ให้คะแนนแล้ว '+c.answered+' / '+IV.questions.length+' ข้อ</span>'
+    +(IV_KO.length?'<span class="pill warn" style="font-size:11.5px">ติดข้อตัดสิทธิ์ '+IV_KO.length+' ข้อ</span>':'')
+    +(c.gate?'<span class="pill warn" style="font-size:11.5px">'+esc(c.gate.name)+' '+c.gate.pct+'% ต่ำกว่าขั้นต่ำ '+c.gate.min+'%</span>':'')
+    +'</div><div style="font-size:11.5px;color:var(--muted);margin-top:3px">คะแนนสดระหว่างสัมภาษณ์ · ข้อที่ยังไม่ให้คะแนนยังไม่ถูกนับ</div>';
+}
+function ivQueueSave(a){ if(IV_SAVE) clearTimeout(IV_SAVE); IV_SAVE=setTimeout(()=>ivSave(a), 1200); }
+async function ivSave(a){
+  if(IV_SAVE){ clearTimeout(IV_SAVE); IV_SAVE=null; }
+  if(!IV) return;
+  await post({ action:'hr_iv_save', ...authBody(), data:{ applicant_id:a.id,
+    scores:IV_SC, knockouts:IV_KO, note:($('iv_note')?$('iv_note').value:(IV.session.note||'')), interviewer:ivWho() } });
+}
+async function ivSubmit(a){
+  const c=ivCalcLocal();
+  const left=IV.questions.length-c.answered;
+  if(!c.answered && !IV_KO.length){ toast('err','ยังไม่ได้ให้คะแนนสักข้อ'); return; }
+  if(left>0 && !confirm('ยังไม่ได้ให้คะแนนอีก '+left+' ข้อ\nข้อที่ไม่ได้ให้คะแนนจะไม่ถูกนับในคะแนนรวม\n\nสรุปผลเลยไหม?')) return;
+  await ivSave(a);
+  const r=await post({ action:'hr_iv_submit', ...authBody(), data:{ applicant_id:a.id,
+    scores:IV_SC, knockouts:IV_KO, note:($('iv_note')?$('iv_note').value:'') } });
+  if(!r.ok){ toast('err', r.error||'สรุปผลไม่สำเร็จ'); return; }
+  toast('ok', r.result==='pass'?('ผ่านเกณฑ์ '+r.total+'%'):('ไม่ผ่านเกณฑ์'+(r.total!=null?(' '+r.total+'%'):'')));
+  const o=await post({ action:'hr_iv_open', ...authBody(), data:{ applicant_id:a.id } });
+  if(o.ok){ IV=o; IV_SC=Object.assign({},o.session.scores||{}); IV_KO=(o.session.knockouts||[]).map(String); ivRender(a); }
+}
+
+function ivResultHTML(a){
+  const S=IV.session, pass=S.result==='pass';
+  const koLabels=IV.knockouts.filter(k=>(S.knockouts||[]).map(String).indexOf(String(k.id))>=0).map(k=>k.label);
+  let h='<div class="iv-res"><div class="iv-big'+(pass?'':' no')+'">'+(S.total_pct!=null?S.total_pct+'%':'—')+'</div><div class="iv-bars">';
+  IV.sections.forEach(sec=>{
+    const v=(S.section_pct||{})[sec.key];
+    if(v==null){ h+='<div class="iv-bar"><span class="nm">'+esc(sec.name)+'</span><span class="tr"></span><span class="vl" style="color:var(--muted)">—</span></div>'; return; }
+    const cls=v>=70?'':(v>=60?'low':'bad');
+    h+='<div class="iv-bar"><span class="nm">'+esc(sec.name)+'</span><span class="tr"><span class="fl '+cls+'" style="width:'+Math.max(0,Math.min(100,v))+'%"></span></span><span class="vl">'+v+'%</span></div>';
+  });
+  h+='</div></div>';
+  h+='<div class="iv-vd '+(pass?'ok':'no')+'">'+(pass
+    ? 'ผ่านเกณฑ์ · ผู้สัมภาษณ์แจ้งผู้สมัครได้ทันที'
+    : 'ไม่ผ่านเกณฑ์'+(S.fail_reason?(' · '+esc(S.fail_reason)):''))+'</div>';
+  h+='<div style="font-size:11.5px;color:var(--muted);margin-top:6px">สรุปผลเมื่อ '+beDateTime(S.submitted_at)+' โดย '+esc(S.decided_by||'')+(S.note?(' · มีบันทึกของผู้สัมภาษณ์'):'')+'</div>';
+  if(S.note) h+='<div class="iv-note2"><b>บันทึกของผู้สัมภาษณ์:</b> '+esc(S.note)+'</div>';
+
+  if(pass){
+    h+='<div class="iv-lab">เช็กลิสต์ชี้แจงก่อนปล่อยกลับ</div><ul class="iv-chk">'
+      +['นัดวันเริ่มงาน และเวลาที่ต้องมาถึง (ก่อนเข้ากะ 30 นาที)',
+        'กะที่จะได้เข้า และรอบการจัดตาราง',
+        'กฎระเบียบสำคัญ — ตรวจค้นตัวก่อนออกจากร้าน · ลงเวลาด้วยใบหน้า · ห้ามหยิบของในร้าน',
+        'ข้อห้ามตามกฎหมาย — ห้ามขายบุหรี่/สุราให้ผู้ที่อายุต่ำกว่าเกณฑ์ และห้ามขายนอกเวลา',
+        'การแต่งกาย และสิ่งที่ต้องเตรียมมาวันแรก',
+        'เอกสารที่ยังขาด (ถ้ามี)',
+        'วิธีลา/แจ้งมาสาย และช่องทางติดต่อหัวหน้า'].map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+    h+='<div style="font-size:12.5px;color:var(--muted);margin-top:6px">ชี้แจงครบแล้วกดปุ่ม <b>รับเริ่มงาน</b> ด้านล่างการ์ด — ระบบไม่ส่ง SMS ให้เองเพราะแจ้งปากเปล่าไปแล้ว'
+      +(MGR_MODE?' <b>(ปุ่มรับเริ่มงานเป็นสิทธิ์ของสำนักงาน)</b>':'')+'</div>';
+  }else{
+    h+='<div class="iv-lab">ข้อความแจ้งผู้สมัคร (แก้ไขได้ก่อนส่ง)</div>'
+      +'<textarea id="iv_sms" rows="7" style="width:100%;padding:10px;border:1.5px solid var(--line2);border-radius:9px;font:inherit;font-size:13px;color:inherit;background:var(--card)">'+esc(ivFailMsg(a))+'</textarea>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">ยาว <span id="iv_len"></span> ตัวอักษร · ภาษาไทยส่งได้ 70 ตัว/ข้อความ</div>'
+      +'<div class="iv-note3"><b>ตั้งใจไม่บอกคะแนนและเหตุผลในข้อความ</b> — คะแนน บันทึก และเหตุผลภายในเก็บไว้ให้สำนักงานดูเท่านั้น'
+      +(koLabels.length?('<br><span style="font-size:12px">ติดข้อตัดสิทธิ์: '+esc(koLabels.join(' · '))+'</span>'):'')+'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
+      +'<button class="btn btn-sec btn-sm" id="iv_copy">คัดลอกข้อความ</button>'
+      +(a.phone?('<button class="btn btn-pri btn-sm" id="iv_sendsms">ส่ง SMS ไป '+esc(a.phone)+'</button>')
+               :'<span style="font-size:12px;color:var(--muted);align-self:center">— ไม่มีเบอร์ ส่ง SMS ไม่ได้ —</span>')
+      +'</div>'
+      +(S.sms_sent_at?('<div style="font-size:11.5px;color:var(--brand,#16a34a);margin-top:6px">ส่ง SMS แล้วเมื่อ '+beDateTime(S.sms_sent_at)+'</div>'):'')
+      +(MGR_MODE?'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">การกด <b>ไม่ผ่าน</b> ในใบสมัครและการส่ง SMS เป็นสิทธิ์ของสำนักงาน — ผจก. ให้คะแนนและสรุปผลได้ แต่สำนักงานเป็นคนปิดเคส</div>':'');
+  }
+  return h;
+}
+function ivFailMsg(a){
+  const nm=(a.full_name||'').trim();
+  return 'สวัสดีค่ะ/ครับ'+(nm?(' คุณ'+nm.split(' ')[0]):'')+'\n\n'
+    +'ทางร้านขอขอบคุณที่ให้ความสนใจสมัครงานและสละเวลามาสัมภาษณ์\n\n'
+    +'สำหรับตำแหน่งนี้ ทางร้านขอแจ้งว่ายังไม่สามารถรับเข้าร่วมงานได้ในครั้งนี้\n\n'
+    +'หากมีตำแหน่งที่เหมาะสมในอนาคต ทางร้านจะติดต่อกลับอีกครั้ง ขอบคุณค่ะ/ครับ\n\n'
+    +'7-Eleven '+(a.branch_name||'');
+}
 function renderRcActions(a){
   const btns=[];
   // ★ 24 ก.ย. 69 — ผจก. คัดกรอง/นัดสัมภาษณ์ได้ · รับเข้าทำงาน-ไม่ผ่าน-ลบใบสมัคร สงวนไว้ให้สำนักงาน
   if(a.status!=='hired' && a.status!=='rejected'){
     if(a.status==='new') btns.push('<button class="btn btn-sec btn-sm" data-rcact="reviewing"><svg class="ei" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg> รอพิจารณา</button>');
     btns.push('<button class="btn btn-sec btn-sm" data-rcact="interview"><svg class="ei" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg> นัดสัมภาษณ์</button>');
+    btns.push('<button class="btn btn-sec btn-sm" data-rcact="eval"><svg class="ei" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 11l2 2 4-4"/></svg> ประเมินสัมภาษณ์</button>');
     if(!MGR_MODE){
       btns.push('<button class="btn btn-pri btn-sm" data-rcact="hire"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg> รับเริ่มงาน</button>');
       btns.push('<button class="btn btn-warn btn-sm" data-rcact="reject"><svg class="ei" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> ไม่ผ่าน</button>');
@@ -10196,6 +10467,7 @@ function renderRcActions(a){
 }
 async function rcAct(act, a){
   const box=$('rc_actionbox');
+  if(act==='eval'){ ivOpen(a); return; }
   if(act==='reviewing'){
     const r=await post({ action:'hr_applicant_stage', ...authBody(), id:a.id, status:'reviewing' });
     if(r.ok){ toast('ok','ย้ายไปรอพิจารณา'); closeApplicant(); loadRecruit(); } else toast('err', r.error||'ไม่สำเร็จ');
