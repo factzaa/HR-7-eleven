@@ -989,45 +989,199 @@
   //   ก็แค่ไม่มีอะไรโผล่ ไม่ทำให้หน้าลงเวลาล้ม
   // ============================================================
   // ============================================================
-  // ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง (Job Description)
+  // ★ 26 พ.ย. 69 — หน้าที่ตามตำแหน่ง (Job Description) · แบ่งตามช่วงเวลาในกะ
   //   เนื้อหาถอดจากคู่มือ QSS Standard ตารางที่ 7-8 ซึ่งเป็นลิขสิทธิ์ CP ALL / ปัญญธารา
   //   repo นี้เป็น public จึง "ไม่ฝังเนื้อหาไว้ในโค้ด" — เก็บในฐานข้อมูลอย่างเดียว
-  //   ไฟล์ติดตั้งอยู่ที่ supabase/job_desc.sql ในเครื่อง (โฟลเดอร์ _local-ห้ามอัป-github)
-  //   ยังไม่ได้รัน SQL → คืน missing:true ให้หน้าเว็บขึ้นข้อความบอก ไม่ใช่หน้าพัง
+  //   ไฟล์ติดตั้งอยู่ใน _local-ห้ามอัป-github/job_desc.sql (เนื้อหา)
+  //   กับ supabase/job_desc_cfg.sql (ตั้งค่าเวลา/รถส่งของ ไม่มีเนื้อหาคู่มือ ขึ้น repo ได้)
+  //
+  //   พังเงียบได้ทุกชั้น:
+  //     ยังไม่รัน job_desc.sql      → missing:true ให้หน้าเว็บขึ้นข้อความบอก ไม่ใช่หน้าพัง
+  //     ยังไม่รัน job_desc_cfg.sql  → เวลาคำนวณจากตาราง shifts ให้เอง รถส่งของขึ้นรวมในรายการปกติ
   // ============================================================
   const _JD_ROLE_ORDER = ['mgr', 'asst', 'ctrl', 'staff', 'cashier', 'rider'];
-  const _JD_SHIFT_NAME = { m: 'ผลัดเช้า', a: 'ผลัดบ่าย', n: 'ผลัดดึก' };
-  function _jdGroup(rows) {
+  const _JD_SHIFT_NAME = { m: 'ผลัดเช้า', a: 'ผลัดบ่าย', n: 'ผลัดดึก', mng: 'กะผู้จัดการ' };
+  const _JD_BAND = [
+    { name: 'ก่อนเข้างาน', sub: 'ถึงร้านก่อนเริ่มกะ' },
+    { name: 'ต้นผลัด', sub: 'รับมอบผลัด' },
+    { name: 'ระหว่างผลัด', sub: 'งานหลักของกะ' },
+    { name: 'กลางผลัด', sub: 'เวลาพัก' },
+    { name: 'ก่อนหมดกะ', sub: 'ปิดผลัดและส่งผลัด' },
+    { name: 'หลังปิดผลัด', sub: 'ก่อนออกจากร้าน' },
+    { name: 'งานที่ไม่ผูกกับผลัด', sub: 'ทำเมื่อถึงรอบ' },
+  ];
+  const _JD_DAY = ['', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+
+  function _jdMin(hhmm) {
+    const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})/);
+    return m ? (+m[1] * 60 + +m[2]) : null;
+  }
+  function _jdHM(min) {
+    const v = ((min % 1440) + 1440) % 1440;
+    return String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+  }
+  // เวลาเริ่มต้นของแต่ละช่วง คำนวณจากเวลากะจริงในตาราง shifts
+  function _jdBandTimes(sh) {
+    const a = _jdMin(sh && sh.start_time), b0 = _jdMin(sh && sh.end_time);
+    if (a == null || b0 == null) return ['', '', '', '', '', '', ''];
+    const b = (b0 <= a) ? b0 + 1440 : b0;              // กะข้ามคืน
+    return [_jdHM(a - 30), _jdHM(a), _jdHM(a + 30), _jdHM(a + Math.floor((b - a) / 2)),
+      _jdHM(b - 30), _jdHM(b), ''];
+  }
+  // วันนี้ตามเวลาไทย คืนค่า จ=1 … อา=7
+  function _jdToday() {
+    try {
+      const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+      return d.getDay() === 0 ? 7 : d.getDay();
+    } catch (_e) { const d = new Date(); return d.getDay() === 0 ? 7 : d.getDay(); }
+  }
+  function _jdDays(s) {
+    return String(s || '').split(',').map(x => parseInt(x, 10)).filter(x => x >= 1 && x <= 7);
+  }
+
+  function _jdGroup(rows, shiftsById, bandOv, deliv) {
     const byRole = {};
     (rows || []).forEach(r => {
       const R = byRole[r.role] || (byRole[r.role] = { role: r.role, role_name: r.role_name, shifts: {} });
       const sk = r.shift || '';
-      const S = R.shifts[sk] || (R.shifts[sk] = { key: sk, name: _JD_SHIFT_NAME[sk] || (r.role === 'rider' ? 'ทุกผลัด' : 'งานที่ไม่ผูกกับผลัด'), stages: {} });
-      const gk = r.stage_no + '|' + r.stage;
-      const G = S.stages[gk] || (S.stages[gk] = { no: r.stage_no, name: r.stage, items: [] });
-      G.items.push({ item: r.item, area: r.area, freq: r.freq, note: r.note, ref: r.ref });
+      const S = R.shifts[sk] || (R.shifts[sk] = { key: sk, bands: {} });
+      const bn = Math.max(0, Math.min(6, Number(r.band) || 0));
+      const B = S.bands[bn] || (S.bands[bn] = { no: bn, secs: {} });
+      const ak = r.area || r.stage || '';
+      const G = B.secs[ak] || (B.secs[ak] = { name: ak, items: [] });
+      const dv = r.vendor ? (deliv[r.vendor] || null) : null;
+      G.items.push({
+        item: r.item, freq: r.freq, note: r.note, ref: r.ref, stage: r.stage,
+        only_shift: r.only_shift || '', vendor: r.vendor || '',
+        deliv: dv ? { days: _jdDays(dv.days), shift: dv.shift || '', at: dv.at_time || '', note: dv.note || '' } : null,
+      });
     });
-    // ผลัดเรียง เช้า→บ่าย→ดึก แล้วปิดท้ายด้วยงานที่ไม่ผูกผลัด
-    const shOrder = { m: 1, a: 2, n: 3, '': 9 };
+    const shOrder = { mng: 0, m: 1, a: 2, n: 3, '': 9 };
     return _JD_ROLE_ORDER.filter(k => byRole[k]).concat(Object.keys(byRole).filter(k => _JD_ROLE_ORDER.indexOf(k) < 0))
       .map(k => {
         const R = byRole[k];
-        return { role: R.role, role_name: R.role_name,
-          shifts: Object.values(R.shifts).sort((a, b) => (shOrder[a.key] || 5) - (shOrder[b.key] || 5))
-            .map(S => ({ key: S.key, name: S.name,
-              stages: Object.values(S.stages).sort((a, b) => a.no - b.no || String(a.name).localeCompare(String(b.name), 'th')),
-              count: Object.values(S.stages).reduce((n, g) => n + g.items.length, 0) })) };
+        return {
+          role: R.role, role_name: R.role_name,
+          shifts: Object.keys(R.shifts).map(x => R.shifts[x])
+            .sort((a, b) => (shOrder[a.key] === undefined ? 5 : shOrder[a.key]) - (shOrder[b.key] === undefined ? 5 : shOrder[b.key]))
+            .map(S => {
+              const sh = shiftsById[String(S.key).toUpperCase()] || null;
+              const def = _jdBandTimes(sh);
+              const bands = Object.keys(S.bands).map(x => S.bands[x]).sort((a, b) => a.no - b.no).map(B => {
+                const ov = bandOv[S.key + '|' + B.no];
+                const secs = Object.keys(B.secs).map(x => B.secs[x]);
+                return {
+                  no: B.no, name: _JD_BAND[B.no].name, sub: _JD_BAND[B.no].sub,
+                  at: ov || def[B.no] || '', custom: !!ov,
+                  secs: secs, count: secs.reduce((n, g) => n + g.items.length, 0),
+                };
+              });
+              return {
+                key: S.key,
+                name: _JD_SHIFT_NAME[S.key] || (R.role === 'rider' ? 'ทุกผลัด' : 'งานที่ไม่ผูกกับผลัด'),
+                start: sh ? String(sh.start_time || '').slice(0, 5) : '',
+                end: sh ? String(sh.end_time || '').slice(0, 5) : '',
+                bands: bands, count: bands.reduce((n, b) => n + b.count, 0),
+              };
+            }),
+        };
       });
   }
-  async function jobDesc() {
+
+  // branchId ว่าง = ใช้ค่ากลาง (ยังโชว์ได้ปกติ แค่ไม่มีตารางรถส่งของของสาขา)
+  async function jobDesc(branchId) {
+    let rows;
     try {
       const { data, error } = await sb.from('job_desc')
-        .select('role,role_name,shift,stage_no,stage,area,item,freq,note,ref,sort')
+        .select('role,role_name,shift,band,stage,area,item,freq,note,ref,only_shift,vendor,sort')
         .eq('active', true).order('sort');
-      if (error) return { ok: false, missing: true, roles: [] };
-      if (!data || !data.length) return { ok: false, missing: true, roles: [] };
-      return { ok: true, roles: _jdGroup(data) };
+      if (error || !data || !data.length) return { ok: false, missing: true, roles: [] };
+      rows = data;
     } catch (_e) { return { ok: false, missing: true, roles: [] }; }
+
+    const shiftsById = {};
+    try {
+      const { data: sh } = await sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift');
+      (sh || []).forEach(s => { if (s.main_shift && String(s.main_shift) === String(s.shift_id)) shiftsById[String(s.shift_id).toUpperCase()] = s; });
+    } catch (_e) { }
+
+    const bandOv = {};
+    try {
+      const { data: bd } = await sb.from('job_desc_band').select('branch_id,shift,band,at_time')
+        .in('branch_id', ['', String(branchId || '')]);
+      (bd || []).sort((a, b) => String(a.branch_id).length - String(b.branch_id).length)   // สาขาทับค่ากลาง
+        .forEach(x => { if (x.at_time) bandOv[x.shift + '|' + x.band] = String(x.at_time).slice(0, 5); });
+    } catch (_e) { }
+
+    const deliv = {};
+    if (branchId) {
+      try {
+        const { data: dv } = await sb.from('job_desc_delivery')
+          .select('vendor,days,shift,at_time,note').eq('branch_id', String(branchId)).eq('active', true);
+        (dv || []).forEach(x => { deliv[x.vendor] = x; });
+      } catch (_e) { }
+    }
+    return { ok: true, today: _jdToday(), dayName: _JD_DAY[_jdToday()], roles: _jdGroup(rows, shiftsById, bandOv, deliv) };
+  }
+
+  // ---------- หน้าตั้งค่า (HR / ผจก. ของสาขาตัวเอง) ----------
+  async function jobDescCfg(branchId) {
+    const out = { ok: true, missing: false, bands: {}, defaults: {}, deliv: [], shifts: [] };
+    try {
+      const { data: sh } = await sb.from('shifts').select('shift_id,name,start_time,end_time,main_shift').order('start_time');
+      (sh || []).forEach(s => {
+        if (s.main_shift && String(s.main_shift) === String(s.shift_id)) {
+          const k = String(s.shift_id).toLowerCase();
+          out.shifts.push({ key: k, name: _JD_SHIFT_NAME[k] || s.name || s.shift_id, start: String(s.start_time || '').slice(0, 5), end: String(s.end_time || '').slice(0, 5) });
+          out.defaults[k] = _jdBandTimes(s);
+        }
+      });
+    } catch (_e) { }
+    try {
+      const { data: bd, error } = await sb.from('job_desc_band').select('branch_id,shift,band,at_time').eq('branch_id', String(branchId || ''));
+      if (error) out.missing = true;
+      (bd || []).forEach(x => { out.bands[x.shift + '|' + x.band] = String(x.at_time || '').slice(0, 5); });
+    } catch (_e) { out.missing = true; }
+    try {
+      const { data: dv, error } = await sb.from('job_desc_delivery')
+        .select('id,vendor,days,shift,at_time,note,active,sort').eq('branch_id', String(branchId || '')).order('sort');
+      if (error) out.missing = true;
+      out.deliv = dv || [];
+    } catch (_e) { out.missing = true; }
+    out.bandNames = _JD_BAND;
+    return out;
+  }
+  // at ว่าง = ลบค่าที่ตั้งเอง กลับไปใช้ค่าที่คำนวณจากเวลากะ
+  async function jobDescSaveBand(branchId, shift, band, at, by) {
+    const b = String(branchId || ''), s = String(shift || ''), n = Number(band);
+    const t = String(at || '').trim();
+    if (!s || !(n >= 0 && n <= 6)) return { ok: false, error: 'ข้อมูลไม่ครบ' };
+    try {
+      if (!t) {
+        const { error } = await sb.from('job_desc_band').delete().eq('branch_id', b).eq('shift', s).eq('band', n);
+        if (error) throw error;
+        return { ok: true, cleared: true };
+      }
+      if (!/^\d{1,2}:\d{2}$/.test(t)) return { ok: false, error: 'รูปแบบเวลาต้องเป็น ชช:นน เช่น 06:30' };
+      const { error } = await sb.from('job_desc_band')
+        .upsert({ branch_id: b, shift: s, band: n, at_time: t, updated_at: new Date().toISOString(), updated_by: String(by || '') },
+          { onConflict: 'branch_id,shift,band' });
+      if (error) throw error;
+      return { ok: true };
+    } catch (e) { return { ok: false, error: (e && e.message) || 'บันทึกไม่สำเร็จ' }; }
+  }
+  async function jobDescSaveDelivery(row, by) {
+    if (!row || !row.id) return { ok: false, error: 'ไม่พบรายการ' };
+    const t = String(row.at_time || '').trim();
+    if (t && !/^\d{1,2}:\d{2}$/.test(t)) return { ok: false, error: 'รูปแบบเวลาต้องเป็น ชช:นน เช่น 21:00' };
+    try {
+      const { error } = await sb.from('job_desc_delivery').update({
+        days: String(row.days || ''), shift: String(row.shift || ''), at_time: t,
+        note: String(row.note || ''), updated_at: new Date().toISOString(), updated_by: String(by || ''),
+      }).eq('id', row.id);
+      if (error) throw error;
+      return { ok: true };
+    } catch (e) { return { ok: false, error: (e && e.message) || 'บันทึกไม่สำเร็จ' }; }
   }
 
   const _STAR_COLS = 'cycle,branch_id,emp_id,emp_name,amount,note,awarded_by,awarded_at';
@@ -5372,7 +5526,7 @@
   window.HR = { sb, loadConfig, uploadPhoto, hardRefresh,
     reviewCheckPassword, reviewSetPassword, reviewCycleRange, reviewLoad, reviewSave, reviewSetDil, reviewShiftDetail, reviewShiftControllers, reviewMarkDay, reviewSetDayOT, installmentList, installmentCreate, installmentCancel, installmentDiscount,
     riderIsRider, riderMyVehicles, riderItems, riderEligibility, riderSubmitClaim, riderMyClaims, riderDistanceYear, riderTodayOdometer, riderLogOdometer,
-    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, faceCheck, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, myStarAwards, branchStars, markStarSeen, starSeenLocal, jobDesc, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
+    riderFuelConfig, riderFuelQuota, riderFuelSubmit, riderFuelMyList, registerFace, faceCheck, checkIn, checkInAdvisory, checkOut, bangkokDate, todayAttendance, selfStatus, myWorkHistory, myHistoryCycles, mySalesPerf, myStarAwards, branchStars, markStarSeen, starSeenLocal, jobDesc, jobDescCfg, jobDescSaveBand, jobDescSaveDelivery, requestLeave, myLeaves, getLeaveProposals, respondProposal, getMyNotifications, markNotificationsSeen, lookupEmployee, submitProfile, getMyProfile, getLeaveRules, getLeaveUsage, acceptRules, getRuleAck, submitHandover, getPendingHandover, receiveHandover, reportNoHandover, getMyTasks, submitTask, getBranchTasks, reviewTask, getShiftBoard, doTaskSelf, assignColleague, leaderLogin, addShiftMember, leaderInfo, leaderConfirm, getMyAssignments, pullTask, submitTaskMulti, taskDraftPush, taskDraftDrop, taskDraftNote, getPrevShiftReview, reviewPrevTask, getMyFixTasks, getHandoverReport, myStatus, acknowledgeStatus, getAnnouncements, getPendingAnnouncements, getImageAnnouncements, markAnnouncementOpened, ackAnnouncement, getPendingDiscAcks, ackDiscAction, myDisciplineLadder, getPendingHqReviews, ackHqReview, getSpecialTasks, submitSpecialTask, getMyMgrTasks, submitMgrTaskByEmp, getWarehouses, getShiftController, claimShiftController, releaseShiftController, getGoodsReceiving, submitGoodsReceipt, goodsConfirm, qssRef,
     crateCountState, submitCrateCount, crateCountConfirm,
     taskCloseCannotDo, taskReopen, shiftSubmitState, shiftSubmit, prevShiftNotes, unsubmitTask, overdueFixState,
     handoverBoard, handoverAdd, handoverDrop, handoverReview, handoverAck, handoverAssign, handoverCancel, getQaFolders, getQaItems, qaLookupProduct, qaFindDuplicate, qaAddItem, qaUpdateItemStatus, qaCreateFolder, getQssiChecklist, submitQssiCheck, undoQssiCheck, addQssiPhotos, saveQssiDraft,
