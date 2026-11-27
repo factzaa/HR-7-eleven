@@ -10333,8 +10333,26 @@
   //           ส่วนการตัดสิน "ไม่ผ่าน" + ส่ง SMS และ "รับเข้าทำงาน" ยังเป็นของสำนักงานเหมือนเดิม
   //   ยังไม่ได้รัน interview_eval.sql → ทุกฟังก์ชันคืน missing:true ไม่ใช่ error ให้หน้าเว็บพัง
   // ============================================================
+  // ★ 27 พ.ย. 69 — เดิมเหมาว่าพังเพราะยังไม่ได้ติดตั้งเสมอ ทำให้ปัญหาอื่น (เน็ตหลุด · สิทธิ์ · โค้ดค้าง cache)
+  //   ขึ้นข้อความ "ให้ไปรัน SQL" ทั้งที่รันไปแล้ว — ตอนนี้แยกให้ชัดว่าตารางหายจริงหรือพังด้วยเหตุอื่น
+  function _ivErrIsMissing(e) {
+    if (!e) return true;
+    const t = (String((e && (e.message || e.msg)) || '') + ' ' + String((e && (e.code || e.hint)) || '')).toLowerCase();
+    return t.indexOf('42p01') >= 0 || t.indexOf('pgrst205') >= 0 || t.indexOf('pgrst202') >= 0
+        || t.indexOf('schema cache') >= 0 || t.indexOf('does not exist') >= 0
+        || t.indexOf('could not find the table') >= 0 || t.indexOf('relation') >= 0 && t.indexOf('not exist') >= 0;
+  }
   async function _ivMissing(e) {
+    if (!_ivErrIsMissing(e)) {
+      return { ok: false, error: 'อ่านข้อมูลแบบประเมินไม่สำเร็จ: ' + String((e && (e.message || e.code)) || 'ไม่ทราบสาเหตุ') };
+    }
     return { ok: false, missing: true, error: 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์ — ต้องรันไฟล์ supabase/interview_eval.sql ก่อน' };
+  }
+  // กันข้อตัดสิทธิ์ซ้ำ (เผื่อรันไฟล์ติดตั้งซ้ำ) — ซ้ำข้อความไหนเอาตัวแรกพอ
+  function _ivUniq(rows) {
+    const seen = {}, out = [];
+    (rows || []).forEach(k => { const t = String(k.label || '').trim(); if (seen[t]) return; seen[t] = 1; out.push(k); });
+    return out;
   }
   // คะแนน 1-5 ของแต่ละส่วน → เปอร์เซ็นต์ (ข้อที่ไม่ได้ถาม/0 ไม่นับทั้งตัวตั้งและตัวหาร)
   function _ivCalc(sections, questions, scores) {
@@ -10374,13 +10392,13 @@
         sb().from('iv_knockout').select('id,label,sort,active').order('sort'),
         sb().from('iv_config').select('position,pass_pct'),
       ]);
-      if (rs.error || rq.error || rk.error || rc.error) return await _ivMissing();
+      if (rs.error || rq.error || rk.error || rc.error) return await _ivMissing(rs.error || rq.error || rk.error || rc.error);
       sections = rs.data || []; questions = rq.data || []; kos = rk.data || []; cfgs = rc.data || [];
-    } catch (e) { return await _ivMissing(); }
+    } catch (e) { return await _ivMissing(e); }
     if (!sections.length) return await _ivMissing();
     const passBy = {}; cfgs.forEach(c => { passBy[String(c.position || '')] = Number(c.pass_pct); });
     return {
-      ok: true, sections, questions, knockouts: kos, configs: cfgs,
+      ok: true, sections, questions, knockouts: _ivUniq(kos), configs: cfgs,
       pass_pct: (passBy[String(p.position || '')] != null ? passBy[String(p.position || '')] : (passBy[''] != null ? passBy[''] : 70)),
       is_hq: g.actor.role !== 'mgr',
     };
@@ -10398,9 +10416,9 @@
     let sess = null;
     try {
       const { data, error } = await sb().from('iv_session').select('*').eq('applicant_id', p.applicant_id).maybeSingle();
-      if (error) return await _ivMissing();
+      if (error) return await _ivMissing(error);
       sess = data || null;
-    } catch (e) { return await _ivMissing(); }
+    } catch (e) { return await _ivMissing(e); }
 
     if (!sess) {
       const { data: a } = await sb().from('applicants').select('id,full_name,position,branch_id').eq('id', p.applicant_id).maybeSingle();
