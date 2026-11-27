@@ -105,13 +105,19 @@ on conflict (key) do nothing;
 insert into public.iv_config (position, pass_pct) values ('', 70)
 on conflict (position) do nothing;
 
+-- ★ 27 พ.ย. 69 — ของเดิมเขียน on conflict do nothing โดยที่ label ไม่มี unique → รันไฟล์ซ้ำแล้วได้ข้อตัดสิทธิ์ซ้ำ
+--   ล้างตัวซ้ำทิ้ง (เก็บ id น้อยสุด) แล้วทำ unique index ให้ on conflict ทำงานจริง
+delete from public.iv_knockout a using public.iv_knockout b
+ where a.label = b.label and a.id > b.id;
+create unique index if not exists iv_knockout_label_uq on public.iv_knockout (label);
+
 insert into public.iv_knockout (label, sort) values
   ('เข้ากะที่ตำแหน่งนี้ต้องเข้าไม่ได้เลย (เช่น ตำแหน่งต้องมีกะดึก แต่เข้าไม่ได้)',1),
   ('ยืนยันว่าจะขายบุหรี่หรือสุราให้ผู้ที่อายุต่ำกว่าเกณฑ์ หรือขายนอกเวลาที่กฎหมายกำหนด',2),
   ('ไม่ยินยอมให้ตรวจค้นตัวและกระเป๋าก่อนออกจากร้านตามระเบียบ',3),
   ('ไม่ยินยอมลงเวลาเข้า-ออกตามระบบของร้าน',4),
   ('ข้อมูลในใบสมัครไม่ตรงกับที่สัมภาษณ์อย่างมีนัยสำคัญ',5)
-on conflict do nothing;
+on conflict (label) do nothing;
 
 -- คำถาม 77 ข้อ — ใส่เฉพาะตอนคลังยังว่าง จะได้รันไฟล์นี้ซ้ำโดยไม่ทับที่แก้ไว้เอง
 do $$
