@@ -499,6 +499,14 @@
   .iv-chk li:before{content:'\2610';color:var(--muted);margin-right:8px}
   .iv-note2{font-size:12.5px;color:var(--muted);background:#f7faf8;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:8px}
   .iv-note3{background:#fff4e0;border:1px solid #f3d38a;border-radius:10px;padding:9px 11px;font-size:12.5px;color:#b45309;margin-top:8px}
+  /* ★ 27 พ.ย. 69 — หน้าตั้งค่าแบบประเมินสัมภาษณ์ (สำนักงาน) */
+  .ivc-hd{font-size:12px;font-weight:800;letter-spacing:.3px;color:var(--muted);text-transform:uppercase;margin:2px 0 8px}
+  .ivc-sum{margin-top:10px;padding:9px 12px;border-radius:10px;font-size:13px;font-variant-numeric:tabular-nums}
+  .ivc-sum.ok{background:#f0fdf4;border:1px solid #86efac;color:#15803d}
+  .ivc-sum.bad{background:#fff4e0;border:1px solid #f3d38a;color:#b45309}
+  .ivc-qm{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:9px}
+  .ivc-del{background:#fee2e2;color:#b91c1c;border:1.5px solid #fecaca}
+  .iv-q.ivc-off{opacity:.55;background:repeating-linear-gradient(135deg,transparent,transparent 7px,rgba(0,0,0,.025) 7px,rgba(0,0,0,.025) 14px)}
   @media print{ .tabs,.topbar,.mrp,#jd_open,#jd_close,#jd_print{display:none!important} .jd-g,.jd-bd{break-inside:avoid} .jd-tl{padding-left:56px} }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -821,6 +829,8 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <button class="btn btn-sec btn-sm" id="rc_refresh"><svg class="ei" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg></button>
     <!-- ★ 21 ต.ค. 69 — ถังขยะใบสมัคร (เฉพาะสำนักงาน) -->
     <button class="btn btn-sec btn-sm" id="rc_trashbtn"><svg class="ei" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg> ถังขยะ <span id="rc_trashn" class="shsub-badge" style="display:none">0</span></button>
+    <!-- ★ 27 พ.ย. 69 — ตั้งค่าแบบประเมินสัมภาษณ์ (เฉพาะสำนักงาน) -->
+    <button class="btn btn-sec btn-sm" id="rc_cfgbtn" title="น้ำหนักคะแนน · จำนวนข้อที่สุ่ม · เกณฑ์ผ่าน · คลังคำถาม"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M4.5 7.2l2.6 1.5M16.9 15.3l2.6 1.5M4.5 16.8l2.6-1.5M16.9 8.7l2.6-1.5"/></svg> ตั้งค่าแบบประเมิน</button>
   </div>
   <!-- ★ 21 ต.ค. 69 — แยกเป็น 2 แผง: ใบสมัคร (โฟลเดอร์ตามสถานะ) · ประวัติ (ตาราง) -->
   <div class="shsub" id="rcsub">
@@ -830,6 +840,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
   <div id="rc_board"><div class="empty">กำลังโหลด…</div></div>
   <div id="rc_hist" style="display:none"></div>
   <div id="rc_trash" style="display:none"></div>
+  <div id="rc_cfg" style="display:none"></div>
 </div>
 
 <!-- Applicant detail modal -->
@@ -838,6 +849,15 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;backgr
     <div class="modal-h"><h2 id="rc_title">ผู้สมัคร</h2><button class="close" id="rcClose">×</button></div>
     <div class="modal-b" id="rc_body"></div>
     <div class="modal-f" id="rc_foot"></div>
+  </div>
+</div>
+
+<!-- ★ 27 พ.ย. 69 — กล่องเพิ่ม/แก้คำถามสัมภาษณ์ -->
+<div class="overlay" id="ivqOverlay">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-h"><h2 id="ivq_title">คำถาม</h2><button class="close" id="ivqClose">×</button></div>
+    <div class="modal-b" id="ivq_body"></div>
+    <div class="modal-f" id="ivq_foot"></div>
   </div>
 </div>
 
@@ -9925,7 +9945,9 @@ async function rcTrashCount(){
 async function rcTrashShow(on){
   const box=$('rc_trash'), board=$('rc_board');
   if(!on){ box.style.display='none'; if(typeof RC_PAN!=='undefined'&&RC_PAN==='hist'){ $('rc_hist').style.display=''; } else board.style.display=''; return; }
-  board.style.display='none'; if($('rc_hist')) $('rc_hist').style.display='none'; box.style.display='block';
+  board.style.display='none'; if($('rc_hist')) $('rc_hist').style.display='none';
+  if($('rc_cfg')) $('rc_cfg').style.display='none';
+  box.style.display='block';
   box.innerHTML='<div class="empty">กำลังโหลด…</div>';
   let r; try{ r=await post({ action:'hr_applicants_trash', ...authBody() }); }
   catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
@@ -9997,9 +10019,12 @@ async function loadRecruit(){
     $('rc_clear').onclick=()=>{ $('rc_search').value=''; $('rc_position').value=''; $('rc_status').value=''; $('rc_branch').value=''; $('rc_from').value=''; $('rc_to').value=''; _rcRe(); };
     document.querySelectorAll('#rcsub .shsub-b').forEach(b=>b.onclick=()=>rcPan(b.dataset.rcpan));
     if($('rc_trashbtn')) $('rc_trashbtn').onclick=()=>rcTrashShow($('rc_trash').style.display==='none');
+    if($('rc_cfgbtn')) $('rc_cfgbtn').onclick=()=>ivcShow($('rc_cfg').style.display==='none');
   }
   // ถังขยะเป็นสิทธิ์ของสำนักงาน — โหมด ผจก. ซ่อนปุ่มไปเลย
   if($('rc_trashbtn')) $('rc_trashbtn').style.display = MGR_MODE ? 'none' : '';
+  // แก้น้ำหนัก/เกณฑ์/คลังคำถาม เป็นสิทธิ์ของสำนักงานเช่นกัน
+  if($('rc_cfgbtn')) $('rc_cfgbtn').style.display = MGR_MODE ? 'none' : '';
   if(!MGR_MODE) rcTrashCount();
   let r; try{ r=await post({ action:'hr_applicants_list', ...authBody() }); }catch(e){ box.innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; return; }
   if(!r.ok){ box.innerHTML='<div class="empty">'+esc(r.error||'โหลดไม่สำเร็จ')+'</div>'; return; }
@@ -10024,6 +10049,7 @@ function rcPan(name){
   $('rc_board').style.display = (name==='folder')?'':'none';
   $('rc_hist').style.display  = (name==='hist')?'':'none';
   $('rc_trash').style.display = 'none';
+  if($('rc_cfg')) $('rc_cfg').style.display = 'none';
   if(name==='hist') renderRcHistory(); else renderRcBoard();
 }
 // กรองร่วมของทั้งสองแผง
@@ -10443,6 +10469,220 @@ function ivFailMsg(a){
     +'หากมีตำแหน่งที่เหมาะสมในอนาคต ทางร้านจะติดต่อกลับอีกครั้ง ขอบคุณค่ะ/ครับ\n\n'
     +'7-Eleven '+(a.branch_name||'');
 }
+// ★ 27 พ.ย. 69 — ตั้งค่าแบบประเมินสัมภาษณ์ (สำนักงานเท่านั้น)
+//   แก้น้ำหนักคะแนนแต่ละส่วน · จำนวนข้อที่สุ่ม · คะแนนขั้นต่ำรายส่วน · เกณฑ์ผ่านรวม · คลังคำถาม
+let IVC = null, IVC_W = {}, IVC_PASS = null, IVC_FILTER = '', IVC_OFF = false;
+
+function ivcShow(on){
+  const box = $('rc_cfg'); if(!box) return;
+  if(!on){
+    box.style.display = 'none';
+    if(RC_PAN === 'hist'){ $('rc_hist').style.display = ''; } else { $('rc_board').style.display = ''; }
+    return;
+  }
+  $('rc_board').style.display = 'none';
+  if($('rc_hist'))  $('rc_hist').style.display  = 'none';
+  if($('rc_trash')) $('rc_trash').style.display = 'none';
+  box.style.display = 'block';
+  ivcLoad();
+}
+
+async function ivcLoad(){
+  const box = $('rc_cfg');
+  box.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  let r; try{ r = await post({ action:'hr_iv_bank', ...authBody(), data:{} }); }catch(e){ r = null; }
+  if(!r || !r.ok){
+    box.innerHTML = '<div class="card"><div class="card-b"><div class="empty">'+((r && r.missing)
+      ? 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์<br><span style="font-size:12.5px;color:var(--muted)">ให้รันไฟล์ <b>supabase/interview_eval.sql</b> ใน Supabase → SQL Editor ก่อน</span>'
+      : esc((r && r.error) || 'โหลดไม่สำเร็จ'))+'</div>'
+      +'<div style="text-align:center"><button class="btn btn-sec btn-sm" id="ivc_back0">← กลับไปรายชื่อผู้สมัคร</button></div></div></div>';
+    if($('ivc_back0')) $('ivc_back0').onclick = () => ivcShow(false);
+    return;
+  }
+  IVC = r;
+  IVC_W = {};
+  (r.sections||[]).forEach(s => { IVC_W[s.key] = { weight:String(s.weight==null?0:s.weight),
+    draw_n:String(s.draw_n==null?0:s.draw_n), gate_min:(s.gate_min==null?'':String(s.gate_min)) }; });
+  IVC_PASS = String(r.pass_pct == null ? 70 : r.pass_pct);
+  ivcRender();
+}
+
+function ivcPool(key, withOff){
+  return (IVC.questions||[]).filter(q => q.section===key && (withOff ? true : q.active!==false));
+}
+function ivcSum(){ return (IVC.sections||[]).reduce((n,s) => n + (Number(IVC_W[s.key].weight)||0), 0); }
+function ivcDrawTotal(){
+  return (IVC.sections||[]).reduce((n,s) => {
+    const pool = ivcPool(s.key).length, d = Number(IVC_W[s.key].draw_n)||0;
+    return n + ((d<=0 || d>=pool) ? pool : d);
+  }, 0);
+}
+
+function ivcRender(){
+  const box = $('rc_cfg');
+  let h = '<div class="card" style="margin-bottom:12px"><div class="card-h">'
+    +'<h3 style="font-size:15px;font-weight:700;flex:1;min-width:150px"><svg class="ei" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M4.5 7.2l2.6 1.5M16.9 15.3l2.6 1.5M4.5 16.8l2.6-1.5M16.9 8.7l2.6-1.5"/></svg> ตั้งค่าแบบประเมินสัมภาษณ์</h3>'
+    +'<button class="btn btn-sec btn-sm" id="ivc_back">← กลับไปรายชื่อผู้สมัคร</button></div>'
+    +'<div class="card-b">'
+    +'<div class="ivc-hd">1 · น้ำหนักคะแนน และจำนวนข้อที่สุ่ม</div>'
+    +'<div class="jd-scroll"><table class="jd-tb"><thead><tr>'
+    +'<th>ส่วนที่ประเมิน</th><th style="width:84px">น้ำหนัก %</th><th style="width:84px">สุ่มกี่ข้อ</th>'
+    +'<th style="width:84px">ขั้นต่ำ %</th><th style="width:72px">ในคลัง</th></tr></thead><tbody>';
+  (IVC.sections||[]).forEach(s => {
+    const pool = ivcPool(s.key).length, v = IVC_W[s.key];
+    h += '<tr><td style="font-weight:600">'+esc(s.name)+'</td>'
+      +'<td><input class="jd-inp" style="width:70px" data-ivcw="'+esc(s.key)+'" value="'+esc(v.weight)+'" inputmode="numeric"></td>'
+      +'<td><input class="jd-inp" style="width:70px" data-ivcd="'+esc(s.key)+'" value="'+esc(v.draw_n)+'" inputmode="numeric" placeholder="0"></td>'
+      +'<td><input class="jd-inp" style="width:70px" data-ivcg="'+esc(s.key)+'" value="'+esc(v.gate_min)+'" inputmode="numeric" placeholder="—"></td>'
+      +'<td class="jd-n" style="text-align:center">'+pool+' ข้อ</td></tr>';
+  });
+  h += '</tbody></table></div>'
+    +'<div class="ivc-sum" id="ivc_sum"></div>'
+    +'<div class="jd-n" style="line-height:1.65;margin:8px 2px 0">'
+    +'<b>สุ่มกี่ข้อ</b> — ใส่ <b>0</b> คือถามทุกข้อในส่วนนั้น ไม่สุ่ม (ส่วนแนะนำตัวตั้งไว้ 0)<br>'
+    +'<b>ขั้นต่ำ %</b> — เว้นว่างคือไม่กั้น ถ้าใส่ไว้แล้วส่วนนั้นได้ต่ำกว่านี้ ถือว่าไม่ผ่านทันทีแม้คะแนนรวมจะถึงเกณฑ์<br>'
+    +'เปลี่ยนค่าแล้วมีผลกับ<b>รอบที่เปิดใหม่</b>เท่านั้น รอบที่สุ่มคำถามไปแล้วยังใช้ชุดเดิม</div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">'
+    +'<div class="field" style="margin:0;max-width:170px"><label>เกณฑ์ผ่าน (คะแนนรวม %)</label>'
+    +'<input id="ivc_pass" type="text" inputmode="numeric" value="'+esc(IVC_PASS)+'"></div>'
+    +'<button class="btn btn-pri btn-sm" id="ivc_save">บันทึกน้ำหนักและเกณฑ์</button></div>'
+    +'</div></div>';
+
+  const act = (IVC.questions||[]).filter(q => q.active!==false).length;
+  const off = (IVC.questions||[]).filter(q => q.active===false).length;
+  h += '<div class="card"><div class="card-h">'
+    +'<h3 style="font-size:15px;font-weight:700;flex:1;min-width:140px">2 · คลังคำถาม '
+    +'<span class="jd-n" style="font-weight:400">ใช้งาน '+act+' ข้อ'+(off?(' · ปิดใช้ '+off+' ข้อ'):'')+'</span></h3>'
+    +(off?('<button class="btn btn-sec btn-sm" id="ivc_toff">'+(IVC_OFF?'ซ่อนข้อที่ปิดใช้':('แสดงข้อที่ปิดใช้ '+off))+'</button>'):'')
+    +'</div><div class="card-b">'
+    +'<div class="mrp"><button type="button" data-ivcf=""'+(IVC_FILTER?'':' class="on"')+'>ทุกส่วน</button>'
+    + (IVC.sections||[]).map(s => '<button type="button" data-ivcf="'+esc(s.key)+'"'+(IVC_FILTER===s.key?' class="on"':'')
+        +'>'+esc(s.name)+'</button>').join('')+'</div>';
+
+  (IVC.sections||[]).filter(s => !IVC_FILTER || s.key===IVC_FILTER).forEach(s => {
+    const list = ivcPool(s.key, IVC_OFF);
+    h += '<div class="iv-sh"><b>'+esc(s.name)+'</b><span>'+ivcPool(s.key).length+' ข้อ'
+      +' &nbsp;<button class="btn btn-sec btn-sm" data-ivcadd="'+esc(s.key)+'">+ เพิ่มคำถาม</button></span></div>';
+    if(!list.length){ h += '<div class="jd-n" style="padding:4px 2px 8px">ยังไม่มีคำถามในส่วนนี้</div>'; return; }
+    h += list.map(q => {
+      const dead = q.active===false;
+      return '<div class="iv-q'+(dead?' ivc-off':'')+'">'
+        +'<div class="iv-qt">'+esc(q.question)+(dead?' <span class="jd-n">(ปิดใช้)</span>':'')+'</div>'
+        +(q.probe?('<div class="iv-pr">↳ ถามต่อ: '+esc(q.probe)+'</div>'):'')
+        +(q.good_answer?('<div class="iv-ga"><b>คำตอบที่ถือว่าดี:</b> '+esc(q.good_answer)+'</div>'):'')
+        +'<div class="ivc-qm">'
+        +(q.position?('<span class="pill warn" style="font-size:11px;padding:2px 9px">เฉพาะตำแหน่ง '+esc(q.position)+'</span>'):'')
+        +'<button class="btn btn-sec btn-sm" data-ivced="'+q.id+'">แก้ไข</button>'
+        +(dead
+          ? '<button class="btn btn-sec btn-sm" data-ivcon="'+q.id+'">เปิดใช้อีกครั้ง</button>'
+          : '<button class="btn btn-sm ivc-del" data-ivcdel="'+q.id+'">ปิดใช้</button>')
+        +'</div></div>';
+    }).join('');
+  });
+  h += '</div></div>';
+  box.innerHTML = h;
+  ivcWire();
+}
+
+function ivcSumTxt(){
+  const el = $('ivc_sum'); if(!el) return;
+  const sum = ivcSum();
+  el.className = 'ivc-sum' + (sum===100 ? ' ok' : ' bad');
+  el.innerHTML = 'น้ำหนักรวม <b>'+sum+'%</b>'
+    + (sum===100 ? ' ✓' : ' — ต้องได้ 100% พอดีจึงจะบันทึกได้')
+    + ' · สัมภาษณ์จริงจะได้ <b>'+ivcDrawTotal()+' ข้อ</b> ต่อผู้สมัคร 1 คน';
+}
+
+function ivcWire(){
+  const box = $('rc_cfg');
+  const num = (el, set) => { el.oninput = () => { el.value = el.value.replace(/\D/g,'').slice(0,3); set(el.value); }; };
+  if($('ivc_back')) $('ivc_back').onclick = () => ivcShow(false);
+  if($('ivc_toff')) $('ivc_toff').onclick = () => { IVC_OFF = !IVC_OFF; ivcRender(); };
+  box.querySelectorAll('[data-ivcw]').forEach(el => num(el, v => { IVC_W[el.dataset.ivcw].weight = v;  ivcSumTxt(); }));
+  box.querySelectorAll('[data-ivcd]').forEach(el => num(el, v => { IVC_W[el.dataset.ivcd].draw_n = v;  ivcSumTxt(); }));
+  box.querySelectorAll('[data-ivcg]').forEach(el => num(el, v => { IVC_W[el.dataset.ivcg].gate_min = v; }));
+  if($('ivc_pass')) num($('ivc_pass'), v => { IVC_PASS = v; });
+
+  if($('ivc_save')) $('ivc_save').onclick = async () => {
+    const sum = ivcSum();
+    if(sum !== 100){ toast('err','น้ำหนักรวมต้องได้ 100% พอดี (ตอนนี้ได้ '+sum+'%)'); return; }
+    const pass = Number(IVC_PASS);
+    if(!(pass >= 1 && pass <= 100)){ toast('err','เกณฑ์ผ่านต้องอยู่ระหว่าง 1–100'); return; }
+    const sections = (IVC.sections||[]).map(s => ({
+      key: s.key,
+      weight: Number(IVC_W[s.key].weight)||0,
+      draw_n: Number(IVC_W[s.key].draw_n)||0,
+      gate_min: (IVC_W[s.key].gate_min==='' ? null : Number(IVC_W[s.key].gate_min)),
+    }));
+    const b = $('ivc_save'); b.disabled = true;
+    const r = await post({ action:'hr_iv_section_save', ...authBody(), data:{ sections, pass_pct:pass, position:'' } });
+    b.disabled = false;
+    if(r && r.ok){ toast('ok','บันทึกแล้ว'); ivcLoad(); }
+    else toast('err',(r && r.error) || 'บันทึกไม่สำเร็จ');
+  };
+
+  box.querySelectorAll('[data-ivcf]').forEach(b => b.onclick = () => { IVC_FILTER = b.dataset.ivcf; ivcRender(); });
+  box.querySelectorAll('[data-ivcadd]').forEach(b => b.onclick = () => ivcEdit({ section:b.dataset.ivcadd }));
+  box.querySelectorAll('[data-ivced]').forEach(b => b.onclick = () => {
+    const q = (IVC.questions||[]).find(x => String(x.id)===String(b.dataset.ivced));
+    if(q) ivcEdit(q);
+  });
+  box.querySelectorAll('[data-ivcdel]').forEach(b => b.onclick = async () => {
+    const q = (IVC.questions||[]).find(x => String(x.id)===String(b.dataset.ivcdel)); if(!q) return;
+    if(!confirm('ปิดใช้คำถามนี้?\n\n'+q.question+'\n\nไม่ได้ลบทิ้ง — เปิดใช้คืนได้ และรอบที่สุ่มคำถามนี้ไปแล้วยังเห็นเหมือนเดิม')) return;
+    const r = await post({ action:'hr_iv_question_save', ...authBody(), data:{ del:true, data:{ id:q.id } } });
+    if(r && r.ok){ toast('ok','ปิดใช้แล้ว'); ivcLoad(); } else toast('err',(r && r.error)||'ไม่สำเร็จ');
+  });
+  box.querySelectorAll('[data-ivcon]').forEach(b => b.onclick = async () => {
+    const q = (IVC.questions||[]).find(x => String(x.id)===String(b.dataset.ivcon)); if(!q) return;
+    const r = await post({ action:'hr_iv_question_save', ...authBody(), data:{ data:{
+      id:q.id, section:q.section, position:q.position||'', question:q.question,
+      probe:q.probe||'', good_answer:q.good_answer||'', sort:q.sort||0, active:true } } });
+    if(r && r.ok){ toast('ok','เปิดใช้แล้ว'); ivcLoad(); } else toast('err',(r && r.error)||'ไม่สำเร็จ');
+  });
+  ivcSumTxt();
+}
+
+// กล่องแก้คำถาม
+function ivcEdit(q){
+  q = q || {};
+  const isNew = !q.id;
+  const poss = [...new Set((RC_ROWS||[]).map(a => a.position).filter(Boolean))].sort();
+  if(q.position && poss.indexOf(q.position) < 0) poss.push(q.position);
+  const secOpt = (IVC.sections||[]).map(s =>
+    '<option value="'+esc(s.key)+'"'+(s.key===q.section?' selected':'')+'>'+esc(s.name)+'</option>').join('');
+  const posOpt = '<option value="">ทุกตำแหน่ง</option>'+poss.map(p =>
+    '<option value="'+esc(p)+'"'+(String(q.position||'')===p?' selected':'')+'>'+esc(p)+'</option>').join('');
+  $('ivq_title').textContent = isNew ? 'เพิ่มคำถาม' : 'แก้ไขคำถาม';
+  $('ivq_body').innerHTML =
+     '<div class="field"><label>ส่วนที่ประเมิน</label><select id="ivq_sec">'+secOpt+'</select></div>'
+    +'<div class="field" style="margin-top:10px"><label>ใช้กับตำแหน่ง</label><select id="ivq_pos">'+posOpt+'</select>'
+    +'<div class="jd-n" style="margin-top:4px">เลือกตำแหน่งเดียว = สุ่มขึ้นเฉพาะคนที่สมัครตำแหน่งนั้น</div></div>'
+    +'<div class="field" style="margin-top:10px"><label>คำถาม<span class="req">*</span></label>'
+    +'<textarea id="ivq_q" rows="2">'+esc(q.question||'')+'</textarea></div>'
+    +'<div class="field" style="margin-top:10px"><label>คำถามเจาะลึกต่อ</label>'
+    +'<input id="ivq_probe" type="text" value="'+esc(q.probe||'')+'" placeholder="เช่น ถ้าหัวหน้าไม่อยู่จะทำยังไง"></div>'
+    +'<div class="field" style="margin-top:10px"><label>คำตอบที่ถือว่าดี</label>'
+    +'<textarea id="ivq_good" rows="3" placeholder="เขียนให้ผู้สัมภาษณ์ทุกสาขาให้คะแนนตรงกัน">'+esc(q.good_answer||'')+'</textarea></div>';
+  $('ivq_foot').innerHTML = '<button class="btn btn-sec btn-sm" id="ivq_cancel">ยกเลิก</button>'
+    +'<button class="btn btn-pri btn-sm" id="ivq_save">บันทึก</button>';
+  $('ivqOverlay').classList.add('show');
+  $('ivq_cancel').onclick = ivcEditClose;
+  $('ivq_save').onclick = async () => {
+    const text = ($('ivq_q').value||'').trim();
+    if(!text){ toast('err','ใส่คำถามก่อน'); return; }
+    const b = $('ivq_save'); b.disabled = true;
+    const r = await post({ action:'hr_iv_question_save', ...authBody(), data:{ data:{
+      id:q.id, section:$('ivq_sec').value, position:$('ivq_pos').value, question:text,
+      probe:($('ivq_probe').value||'').trim(), good_answer:($('ivq_good').value||'').trim(),
+      sort:(q.sort||0), active:true } } });
+    b.disabled = false;
+    if(r && r.ok){ toast('ok','บันทึกแล้ว'); ivcEditClose(); ivcLoad(); }
+    else toast('err',(r && r.error)||'บันทึกไม่สำเร็จ');
+  };
+}
+function ivcEditClose(){ $('ivqOverlay').classList.remove('show'); }
+
 function renderRcActions(a){
   const btns=[];
   // ★ 24 ก.ย. 69 — ผจก. คัดกรอง/นัดสัมภาษณ์ได้ · รับเข้าทำงาน-ไม่ผ่าน-ลบใบสมัคร สงวนไว้ให้สำนักงาน
@@ -11443,6 +11683,8 @@ async function loadPositions(){
 }
 $('rcClose') && ($('rcClose').onclick=closeApplicant);
 $('rcOverlay') && $('rcOverlay').addEventListener('click', e=>{ if(e.target===$('rcOverlay')) closeApplicant(); });
+$('ivqClose') && ($('ivqClose').onclick = ivcEditClose);
+$('ivqOverlay') && $('ivqOverlay').addEventListener('click', e=>{ if(e.target===$('ivqOverlay')) ivcEditClose(); });
 
 // ========== งาน ผจก. (Manager Tasks) ==========
 let MT_ROWS=[], MT_CUR=null, MT_PHOTOS=[], MT_POLL=null, MTA_PHOTOS=[], MT_CH=null, MT_BOARD_CH=null, MT_BOARD_T=null, MT_FEED=[];
