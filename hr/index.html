@@ -506,6 +506,7 @@
   .ivc-sum.bad{background:#fff4e0;border:1px solid #f3d38a;color:#b45309}
   .ivc-qm{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:9px}
   .ivc-del{background:#fee2e2;color:#b91c1c;border:1.5px solid #fecaca}
+  .iv-diag{white-space:pre-wrap;text-align:left;font-size:11.5px;line-height:1.65;color:var(--muted);background:#f7faf8;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .iv-q.ivc-off{opacity:.55;background:repeating-linear-gradient(135deg,transparent,transparent 7px,rgba(0,0,0,.025) 7px,rgba(0,0,0,.025) 14px)}
   @media print{ .tabs,.topbar,.mrp,#jd_open,#jd_close,#jd_print{display:none!important} .jd-g,.jd-bd{break-inside:avoid} .jd-tl{padding-left:56px} }
 </style>
@@ -10247,6 +10248,15 @@ const IV_ANCH='1 = ไม่ตอบ/ตอบไม่ตรงคำถาม
 function ivWho(){ return MGR_MODE ? ('ผจก. '+(MGR_EMP||'')) : 'สนง.ใหญ่ (HR)'; }
 function ivSecOf(key){ return (IV&&IV.sections||[]).find(s=>s.key===key) || {name:key,weight:0}; }
 
+// ★ 27 พ.ย. 69 — เวลาเปิดแบบประเมินไม่ได้ ให้โชว์ผลตรวจทีละตาราง และเลขเวอร์ชันโค้ดที่เครื่องนี้โหลดอยู่
+function ivDiag(r){
+  const ver = (r && r.ver) ? r.ver : null;
+  const lines = (r && r.probe && r.probe.length) ? r.probe.join('\n') : '';
+  if(!ver && !lines) return '';
+  return '<div class="iv-diag"><b>ผลตรวจระบบ</b> · โค้ดที่เครื่องนี้ใช้อยู่: '
+    + (ver ? esc(ver) : 'เก่ากว่า v318 — ปิดแอปแล้วเปิดใหม่อีกครั้ง')
+    + (lines ? ('\n' + esc(lines)) : '') + '</div>';
+}
 async function ivOpen(a){
   const box=$('rc_actionbox');
   box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div class="empty">กำลังเปิดรอบสัมภาษณ์…</div></div>';
@@ -10255,7 +10265,7 @@ async function ivOpen(a){
     box.innerHTML='<div class="card" style="padding:12px;border:1.5px solid var(--line2)"><div class="empty">'
       +(r.missing
         ? 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์<br><span style="font-size:12.5px;color:var(--muted)">ให้รันไฟล์ <b>supabase/interview_eval.sql</b> ใน Supabase → SQL Editor ก่อน (ส่วนอื่นของเมนูรับสมัครงานยังใช้ได้ปกติ)</span>'
-        : esc(r.error||'เปิดไม่สำเร็จ'))+'</div></div>';
+        : esc(r.error||'เปิดไม่สำเร็จ'))+'</div>'+ivDiag(r)+'</div>';
     return;
   }
   IV=r; IV_SC=Object.assign({}, r.session.scores||{}); IV_KO=(r.session.knockouts||[]).map(String);
@@ -10494,8 +10504,8 @@ async function ivcLoad(){
   if(!r || !r.ok){
     box.innerHTML = '<div class="card"><div class="card-b"><div class="empty">'+((r && r.missing)
       ? 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์<br><span style="font-size:12.5px;color:var(--muted)">ให้รันไฟล์ <b>supabase/interview_eval.sql</b> ใน Supabase → SQL Editor ก่อน</span>'
-      : esc((r && r.error) || 'โหลดไม่สำเร็จ'))+'</div>'
-      +'<div style="text-align:center"><button class="btn btn-sec btn-sm" id="ivc_back0">← กลับไปรายชื่อผู้สมัคร</button></div></div></div>';
+      : esc((r && r.error) || 'โหลดไม่สำเร็จ'))+'</div>'+ivDiag(r)
+      +'<div style="text-align:center;margin-top:10px"><button class="btn btn-sec btn-sm" id="ivc_back0">← กลับไปรายชื่อผู้สมัคร</button></div></div></div>';
     if($('ivc_back0')) $('ivc_back0').onclick = () => ivcShow(false);
     return;
   }
