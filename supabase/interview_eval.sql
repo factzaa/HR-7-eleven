@@ -87,6 +87,28 @@ create table if not exists public.iv_session (
   unique (applicant_id)
 );
 create index if not exists iv_session_br_idx on public.iv_session(branch_id, started_at desc);
+-- ★ 27 พ.ย. 69 — บั๊กของไฟล์เดิม: ประกาศ applicant_id ไว้เป็น bigint
+--   แต่ applicants.id ของระบบนี้เป็น uuid → เปิดรอบสัมภาษณ์ไม่ได้เลย
+--   บล็อกนี้ดึงชนิดจริงของ applicants.id มาใส่ให้เอง รันซ้ำกี่รอบก็ได้
+do $$
+declare want text; have text;
+begin
+  select format_type(a.atttypid, a.atttypmod) into want
+    from pg_attribute a
+   where a.attrelid = 'public.applicants'::regclass and a.attname = 'id' and a.attnum > 0;
+  select format_type(a.atttypid, a.atttypmod) into have
+    from pg_attribute a
+   where a.attrelid = 'public.iv_session'::regclass and a.attname = 'applicant_id' and a.attnum > 0;
+  if want is null then
+    raise notice 'ไม่พบตาราง applicants — ข้ามการปรับชนิด applicant_id';
+  elsif want is distinct from have then
+    execute format('alter table public.iv_session alter column applicant_id type %s using applicant_id::text::%s', want, want);
+    raise notice 'ปรับ iv_session.applicant_id จาก % → %', have, want;
+  else
+    raise notice 'iv_session.applicant_id ชนิดตรงกันอยู่แล้ว (%)', have;
+  end if;
+end $$;
+
 
 -- ---------- [6] ข้อมูลตั้งต้น ----------
 insert into public.iv_section (key,name,weight,draw_n,sort,gate_min) values
