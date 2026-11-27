@@ -10252,7 +10252,7 @@ function ivSecOf(key){ return (IV&&IV.sections||[]).find(s=>s.key===key) || {nam
 function ivDiag(r){
   const ver = (r && r.ver) ? r.ver : null;
   const lines = (r && r.probe && r.probe.length) ? r.probe.join('\n') : '';
-  if(!ver && !lines) return '';
+  // ไม่มีทั้งสองอย่าง = เครื่องนี้ยังโหลดโค้ดเก่าอยู่ ต้องบอกให้รู้
   return '<div class="iv-diag"><b>ผลตรวจระบบ</b> · โค้ดที่เครื่องนี้ใช้อยู่: '
     + (ver ? esc(ver) : 'เก่ากว่า v318 — ปิดแอปแล้วเปิดใหม่อีกครั้ง')
     + (lines ? ('\n' + esc(lines)) : '') + '</div>';
