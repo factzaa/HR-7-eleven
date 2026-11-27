@@ -10342,11 +10342,29 @@
         || t.indexOf('schema cache') >= 0 || t.indexOf('does not exist') >= 0
         || t.indexOf('could not find the table') >= 0 || t.indexOf('relation') >= 0 && t.indexOf('not exist') >= 0;
   }
-  async function _ivMissing(e) {
-    if (!_ivErrIsMissing(e)) {
-      return { ok: false, error: 'อ่านข้อมูลแบบประเมินไม่สำเร็จ: ' + String((e && (e.message || e.code)) || 'ไม่ทราบสาเหตุ') };
+  // ★ 27 พ.ย. 69 — เวลาพัง ให้ไล่ยิงทีละตารางแล้วรายงานกลับว่าตารางไหนพังเพราะอะไร
+  //   จะได้ไม่ต้องเดากันว่า "รัน SQL แล้วแต่ยังขึ้นว่าไม่ได้รัน" เกิดจากอะไร
+  const IV_VER = 'v318';
+  async function _ivProbe() {
+    const out = [];
+    for (const n of ['iv_section', 'iv_question', 'iv_knockout', 'iv_config', 'iv_session']) {
+      try {
+        const r = await sb().from(n).select('*', { count: 'exact', head: true });
+        out.push(n + ': ' + (r.error
+          ? ('พัง ' + (r.error.code || '') + ' ' + String(r.error.message || '').slice(0, 90))
+          : ((r.count == null ? '?' : r.count) + ' แถว')));
+      } catch (e) { out.push(n + ': พัง ' + String((e && e.message) || e).slice(0, 90)); }
     }
-    return { ok: false, missing: true, error: 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์ — ต้องรันไฟล์ supabase/interview_eval.sql ก่อน' };
+    try { out.push('client: ' + (_payCtx ? 'payroll' : 'ปกติ') + ' · ' + String((window.SUPABASE_CONFIG || {}).url || '').replace(/^https?:\/\//, '').slice(0, 30)); } catch (e) {}
+    return out;
+  }
+  async function _ivMissing(e) {
+    const probe = await _ivProbe();
+    if (!_ivErrIsMissing(e)) {
+      return { ok: false, ver: IV_VER, probe, error: 'อ่านข้อมูลแบบประเมินไม่สำเร็จ: ' + String((e && (e.message || e.code)) || 'ไม่ทราบสาเหตุ') };
+    }
+    return { ok: false, missing: true, ver: IV_VER, probe,
+      error: 'ยังไม่ได้ติดตั้งระบบประเมินสัมภาษณ์ — ต้องรันไฟล์ supabase/interview_eval.sql ก่อน' };
   }
   // กันข้อตัดสิทธิ์ซ้ำ (เผื่อรันไฟล์ติดตั้งซ้ำ) — ซ้ำข้อความไหนเอาตัวแรกพอ
   function _ivUniq(rows) {
@@ -10395,10 +10413,11 @@
       if (rs.error || rq.error || rk.error || rc.error) return await _ivMissing(rs.error || rq.error || rk.error || rc.error);
       sections = rs.data || []; questions = rq.data || []; kos = rk.data || []; cfgs = rc.data || [];
     } catch (e) { return await _ivMissing(e); }
-    if (!sections.length) return await _ivMissing();
+    if (!sections.length) return { ok: false, ver: IV_VER, probe: await _ivProbe(),
+      error: 'ตาราง iv_section มีอยู่แต่ไม่มีข้อมูลเลย — ให้รัน supabase/interview_eval.sql ซ้ำอีกครั้ง (รันซ้ำได้ ไม่ทับคำถามที่แก้ไว้)' };
     const passBy = {}; cfgs.forEach(c => { passBy[String(c.position || '')] = Number(c.pass_pct); });
     return {
-      ok: true, sections, questions, knockouts: _ivUniq(kos), configs: cfgs,
+      ok: true, ver: IV_VER, sections, questions, knockouts: _ivUniq(kos), configs: cfgs,
       pass_pct: (passBy[String(p.position || '')] != null ? passBy[String(p.position || '')] : (passBy[''] != null ? passBy[''] : 70)),
       is_hq: g.actor.role !== 'mgr',
     };
